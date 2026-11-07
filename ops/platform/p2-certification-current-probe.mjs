@@ -188,13 +188,74 @@ export async function observeP2CertificationPhysical(input,{getUrl},expectedProf
   }finally{try{await client.end();demand(!lost);}catch{throw new Error('P2_CERTIFICATION_OBSERVER_CLEANUP_UNCERTAIN');}}
 }
 
+// The Linux guard invokes this fixed command only after independently accepting
+// the physical probe, retaining its canonical flock, and reaping its mutators.
+export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
+  const {job,plan,owner,historicalLogins,receipt}=probe;
+  const selectedProfile=profileFields(currentProfile,plan,job,historicalLogins);
+  requireQualificationTargetProfile(currentProfile,probe,receipt,receipt.target);
+  const target=job.target;
+  demand(probe.version===2&&receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT'&&
+    name(owner.name)&&/^[1-9][0-9]{0,9}$/u.test(owner.oid??'')&&isDeepStrictEqual(receipt.owner,owner)&&
+    plan.sourceCommit===job.sourceCommit&&plan.originalReleaseId===job.releaseId&&
+    receipt.sourceCommit===job.sourceCommit&&receipt.releaseId===job.releaseId&&
+    receipt.certificationActionId===plan.certificationActionId&&receipt.planSha256===plan.planSha256&&
+    receipt.candidateSha256===plan.candidateSha256&&receipt.targetSha256===plan.targetSha256&&plan.targetSha256===targetHash(target)&&
+    ['host','port','database','user','serverMajor'].every(key=>receipt.target[key]===target[key])&&
+    receipt.admission?.epoch===plan.initialEpoch&&receipt.admission.newWork===false&&receipt.admission.recovery===false);
+  const client=new Client(options(await getUrl(),target));let lock=false,started=false,lost=false;
+  client.on('error',()=>{lost=true;});
+  const verify=async()=>{
+    demand(!lost&&client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
+    const identity=(await client.query("SELECT current_user AS role,session_user AS session_role,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
+    demand(identity?.role===target.user&&identity.session_role===target.user&&identity.database===target.database&&identity.major===target.serverMajor);
+    if(lock)demand((await client.query(RECOVERY_HELD_LOCK,[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true);
+  };
+  try{
+    await client.connect();await verify();
+    lock=(await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS held',[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true;
+    demand(lock,'guard-physical-lock');await verify();
+    await client.query('BEGIN');started=true;
+    const role=(await client.query('SELECT oid::text,rolcanlogin,rolsuper FROM pg_catalog.pg_roles WHERE rolname=$1',[owner.name])).rows[0];
+    demand(role?.oid===owner.oid&&role.rolcanlogin===false&&role.rolsuper===false);
+    demand((await client.query("SELECT nspowner::text AS oid FROM pg_catalog.pg_namespace WHERE nspname='frontend_admission'")).rows[0]?.oid===owner.oid);
+    await client.query(`SET LOCAL ROLE "${owner.name}"`);
+    const rows=(await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton FOR UPDATE NOWAIT')).rows;
+    const row=rows[0];
+    demand(rows.length===1&&row.environment==='staging'&&row.target_sha256===plan.targetSha256&&/^[1-9][0-9]{0,17}$/u.test(row.epoch??'')&&
+      typeof row.new_work==='boolean'&&typeof row.recovery==='boolean'&&BigInt(row.epoch)>=BigInt(plan.initialEpoch)&&
+      BigInt(row.epoch)<=BigInt(plan.initialEpoch)+4n);
+    const changed=row.new_work||row.recovery;
+    const epoch=changed?(await client.query('UPDATE frontend_admission.control SET new_work=false,recovery=false,epoch=epoch+1 WHERE singleton AND epoch=$1::bigint RETURNING epoch::text',[row.epoch])).rows[0]?.epoch:row.epoch;
+    demand(epoch===(BigInt(row.epoch)+(changed?1n:0n)).toString());
+    await client.query('COMMIT');started=false;await verify();
+    await client.query('BEGIN READ ONLY');started=true;
+    await client.query(`SET LOCAL ROLE "${owner.name}"`);
+    const closed=(await client.query('SELECT epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton AND environment=$1 AND target_sha256=$2',['staging',plan.targetSha256])).rows;
+    demand(closed.length===1&&closed[0].epoch===epoch&&closed[0].new_work===false&&closed[0].recovery===false);
+    await client.query('ROLLBACK');started=false;await verify();
+    return {version:2,...selectedProfile,status:'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED',environment:'staging',
+      releaseId:job.releaseId,sourceCommit:job.sourceCommit,certificationActionId:plan.certificationActionId,
+      candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
+      epoch,frontendAdmissionClosed:true,admissionChanged:changed,sqlReplayed:false,releaseAccepted:false};
+  }finally{
+    if(started)try{await client.query('ROLLBACK');}catch{lost=true;}
+    try{await client.end();}catch{lost=true;}
+    demand(!lost,'guard-session-cleanup');
+  }
+}
+
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
-    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&flags[0]==='--profiled-current'));
+    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence'].includes(flags[0])));
     const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);
     const expectedProfile=flags.length?currentProfile:undefined;
     const input=expectedProfile?decodeQualificationTargetJson(raw,'carrier'):JSON.parse(raw);
-    console.log(JSON.stringify(await observeP2CertificationPhysical(input,{getUrl:()=>process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL},expectedProfile)));
+    const dependencies={getUrl:()=>process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL};
+    const output=flags[0]==='--profiled-current-guard-fence'
+      ?await containP2ProfiledCertificationAdmission(input,dependencies)
+      :await observeP2CertificationPhysical(input,dependencies,expectedProfile);
+    console.log(JSON.stringify(output));
   }
   catch{console.error('P2_CERTIFICATION_PHYSICAL_REFUSED');process.exitCode=1;}
 }

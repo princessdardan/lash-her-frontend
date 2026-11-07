@@ -97,11 +97,11 @@ test("actual Git source handoff accepts exactly 41 MB and refuses one extra deco
     assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files}))<=56_000_000);
     writeFileSync(last,Buffer.alloc(1_000_001,120));
     assert.throws(()=>readOperatorSourceFiles(directory));
-    writeFileSync(last,Buffer.alloc(1_700_000,120));
+    writeFileSync(last,Buffer.alloc(1_850_000,120));
     const profiled=readProfiledCurrentOperatorSourceFiles(directory);
-    assert.equal(profiled.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),41_700_000);
+    assert.equal(profiled.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),41_850_000);
     assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files:profiled}))<=56_000_000);
-    writeFileSync(last,Buffer.alloc(1_700_001,120));
+    writeFileSync(last,Buffer.alloc(1_850_001,120));
     assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory));
   } finally {rmSync(directory,{recursive:true,force:true});}
 });

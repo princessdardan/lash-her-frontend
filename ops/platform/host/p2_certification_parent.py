@@ -4,6 +4,7 @@
 No SQL executor, role preparation, deployment or runtime replacement is exposed.
 """
 import base64
+import fcntl
 import copy
 import datetime
 import hashlib
@@ -35,7 +36,7 @@ from frontend_release_adapters import LockedClient,LockedProbe
 import p2_lifecycle_native as native
 from p2_release_broker import Broker,PhysicalObserver,LOCK,MAXIMUM,decode
 from p2_release_scope import P2ReleaseScope
-from p2_source_closure import verify_profiled_current_source_closure,verify_source_closure
+from p2_source_closure import private_observer_program,verify_profiled_current_source_closure,verify_source_closure
 from p2_certification_profile import require_profile as require_certification_profile
 from p2_certification_fault import P2CertificationFaultStage,GATEWAY_OBSERVER,frontend_target_sha256
 import p2_identity_negative_probe as identity_probe
@@ -505,7 +506,8 @@ def _remove_private_probe(initial):
 def _scrub_suspension_credentials(initial):
     """Independent cleanup after the source mutator group has been reaped."""
     if initial['certificationPlan']['mode']!='browser-pending':return
-    plan=initial['browserPlan'];require(re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',plan['actionId']),'P2_CERTIFICATION_BROWSER_ACTION_REQUIRED')
+    plan=initial['sourceSuspensionPlan'] if initial.get('mode')==PROFILED_CERTIFICATION_MODE else initial['browserPlan']
+    require(re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',plan['actionId']),'P2_CERTIFICATION_BROWSER_ACTION_REQUIRED')
     directory=Path('/run/lash-her-p2-suspension-private')/plan['actionId']
     require(directory.resolve()==directory and not any(path.is_symlink() for path in (directory,*directory.parents)),'P2_CERTIFICATION_PRIVATE_CAPTURE_PATH_CHANGED')
     if not directory.exists():return
@@ -540,6 +542,101 @@ def contain_certification_native(initial,armed,source):
     except BaseException:pass
     return result
 
+
+
+def _profiled_guard_context(initial, armed, source):
+    from p2_release_supervisor import require_profiled_certification_guard_arm
+    expected = _profiled_context()
+    vercel.require_record_profile(expected, initial, armed, initial.get('certificationPlan'))
+    require(initial.get('mode') == PROFILED_CERTIFICATION_MODE and
+            source == PROFILED_OPERATOR_ROOT / initial['sourceCommit'] and os.geteuid() == 0,
+            'P2_PROFILED_CERTIFICATION_GUARD_CONTEXT_REQUIRED')
+    descriptor = initial.get('_guardLockDescriptor')
+    require(type(descriptor) is int and descriptor >= 0, 'P2_PROFILED_CERTIFICATION_GUARD_LOCK_REQUIRED')
+    lock = os.lstat(LOCK)
+    held = os.fstat(descriptor)
+    require(stat.S_ISREG(lock.st_mode) and lock.st_uid == 0 and not lock.st_mode & 0o077 and
+            (lock.st_dev, lock.st_ino) == (held.st_dev, held.st_ino), 'P2_PROFILED_CERTIFICATION_GUARD_LOCK_CHANGED')
+    witness = os.open(LOCK, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        try:
+            fcntl.flock(witness, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            raise ValueError('P2_PROFILED_CERTIFICATION_GUARD_LOCK_NOT_HELD')
+    finally:
+        os.close(witness)
+    require_profiled_certification_guard_arm(initial, armed)
+    require(armed['plan'] == initial['certificationPlan'], 'P2_PROFILED_CERTIFICATION_GUARD_PLAN_CHANGED')
+    return expected
+
+
+def contain_profiled_certification_native(initial, armed, source):
+    result = {'nativeDisabled': None, 'nativeDisableAttempted': False}
+    try:
+        expected = _profiled_guard_context(initial, armed, source)
+        context = {'candidate': initial['candidate'], 'plan': initial['certificationPlan']['nativePlan']}
+        client = vercel.Client(initial['vercelToken'])
+        before = native.observe_metadata(context, client, expected_profile=expected)
+        if before['nativeEnabled']:
+            result['nativeDisableAttempted'] = True
+            client.request('PATCH', f"/v1/projects/{context['plan']['projectId']}/crons", {'enabled': False})
+        if native.observe_metadata(context, client, expected_profile=expected)['nativeEnabled'] is False:
+            result['nativeDisabled'] = True
+    except Exception:
+        pass
+    for cleanup in (_remove_private_probe, _scrub_suspension_credentials):
+        try:
+            cleanup(initial)
+        except Exception:
+            pass
+    return result
+
+
+def contain_profiled_certification_frontend(initial, armed, source):
+    result = {'frontendAdmissionClosed': None, 'frontendCloseAttempted': False}
+    try:
+        expected = _profiled_guard_context(initial, armed, source)
+        credential = initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL']
+        require(type(credential) is str and 0 < len(credential) <= 16384,
+                'P2_PROFILED_CERTIFICATION_GUARD_CREDENTIAL_REQUIRED')
+        directory = Path(initial['results']) / ('p2-profiled-current-certification-' + initial['certificationActionId'])
+        program = private_observer_program(initial, directory / 'guard-frontend-source')
+        core = _cache_core(program.parent)
+        from uuid import uuid4
+        container = 'lash-p2-profiled-certification-guard-close-' + uuid4().hex
+        args = ['docker', 'run', '--rm', '--pull', 'never', '--name', container, '--interactive', '--network', 'host',
+                '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '256m',
+                '--pids-limit', '64', '--env', 'FRONTEND_STAGING_MIGRATION_DATABASE_URL',
+                '--mount', f'type=bind,src={program},dst=/app/ops/platform/p2-frontend-live-probe.mjs,readonly',
+                '--mount', f'type=bind,src={core},dst=/app/ops/platform/p2-recovery-current-probe.mjs,readonly',
+                '--entrypoint', 'node', initial['candidate']['artifacts']['frontendMigration']['image'],
+                'ops/platform/p2-frontend-live-probe.mjs', '--profiled-current-guard-fence']
+        environment = {**runtime.SAFE_ENV, 'FRONTEND_STAGING_MIGRATION_DATABASE_URL': credential}
+        result['frontendCloseAttempted'] = True
+        try:
+            child = subprocess.run(args, input=json.dumps(armed), env=environment, capture_output=True, text=True, timeout=30, check=True)
+        finally:
+            subprocess.run(['docker', 'rm', '--force', container], env=runtime.SAFE_ENV, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=15, check=False)
+            require(not runtime.command(['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + container + '$',
+                                         '--format', '{{.ID}}'], runtime.SAFE_ENV, 15), 'P2_PROFILED_CERTIFICATION_GUARD_CONTAINER_REMAINS')
+        from qualification_target_profile import decode_qualification_target_json
+        require(not child.stderr and 0 < len(child.stdout) <= 8192, 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_OUTPUT_REFUSED')
+        value = decode_qualification_target_json(child.stdout, 'carrier')
+        vercel.require_record_profile(expected, value)
+        plan = armed['plan']
+        require(value.get('status') == 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED' and
+                value.get('environment') == 'staging' and value.get('releaseId') == plan['originalReleaseId'] and
+                all(value.get(key) == plan[key] for key in ('sourceCommit', 'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256')) and
+                value.get('frontendAdmissionClosed') is True and value.get('sqlReplayed') is False and value.get('releaseAccepted') is False,
+                'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_BINDING_REQUIRED')
+        _profiled_guard_context(initial, armed, source)
+        result['frontendAdmissionClosed'] = True
+    except Exception:
+        pass
+    return result
 
 class P2CertificationPhysicalObserver(PhysicalObserver):
     def __init__(self, selected, request, source, credential, *, program=None, program_sha256=None, expected_profile=None):
@@ -769,7 +866,13 @@ class P2CertificationBroker(Broker):
     def directory_name(self):return 'p2-certification-'+self.action_id()
     def terminal_filename(self):return 'p2-certification-outcome.json'
 
-    def initialize(self):
+    def certification_profile(self):return None
+
+    def profile_arguments(self):
+        expected = self.certification_profile()
+        return {} if expected is None else {'expected_profile': expected}
+
+    def _initialize_certification_state(self):
         self.certification_started=time.monotonic();self.native_mutex=threading.Lock();self.boundary_stop=threading.Event();self.boundary_thread=None
         self.fault_stage=None;self.runtime_current=None;self.last_boundary=None;self.external_armed=False
         self.native_enable_attempted=False;self.admission_fd=None;self.process_snapshot=None;self.api_cycle=0
@@ -780,6 +883,9 @@ class P2CertificationBroker(Broker):
         self.worker_stage=None;self.worker_retained=None;self.worker_source_sha256=None
         self.known_ack_recorder=None;self.known_ack_boundary=None;self.known_ack_outcome=None;self.known_ack_replace_attempted=False
         self.known_ack_new_gateway_process=None
+
+    def initialize(self):
+        self._initialize_certification_state()
         super().initialize()
 
     def select_release(self,initial):
@@ -829,9 +935,35 @@ class P2CertificationBroker(Broker):
         require(PRIVATE_ROOT.resolve()==PRIVATE_ROOT and not PRIVATE_ROOT.is_symlink(),'P2_CERTIFICATION_FIXED_PRIVATE_ROOT_REQUIRED')
         directory=_private_probe_directory(self.action_id());directory.mkdir(mode=0o700)
         value=self.initial['privateProbe']
-        require(isinstance(value,dict) and set(value)=={'environment','projectId','sourceCommit','releaseId','secret','expiresAt','gatewayOrigin'},'P2_CERTIFICATION_PRIVATE_PROBE_SHAPE_REQUIRED')
+        fields={'environment','projectId','sourceCommit','releaseId','secret','expiresAt','gatewayOrigin'}
+        if self.certification_profile() is not None:
+            fields |= {'version','qualificationTargetProfile'}
+        require(isinstance(value,dict) and set(value)==fields,'P2_CERTIFICATION_PRIVATE_PROBE_SHAPE_REQUIRED')
         migrate.write_json(directory,frontend_probe.PRIVATE_FILE,value)
-        frontend_probe._private_input(directory,{'environment':'staging','projectId':self.selected['workload']['projectId'],'sourceCommit':self.selected['sources']['frontend']['commit'],'releaseId':self.selected['releaseId']})
+        frontend_probe._private_input(directory,self._probe_identity(),**self.profile_arguments())
+
+    def _probe_identity(self):
+        identity={'environment':'staging','projectId':self.selected['workload']['projectId'],
+            'sourceCommit':self.selected['sources']['frontend']['commit'],'releaseId':self.selected['releaseId']}
+        expected=self.certification_profile()
+        if expected is not None:identity.update(version=2,qualificationTargetProfile=expected)
+        return identity
+
+    def _scope_arguments(self):
+        return {}
+
+    def _accept_guard_arm(self,probe):
+        self.safety({'operation':'armed','probe':probe})
+
+    def _read_api_current(self,directory):
+        directory.mkdir(mode=0o700)
+        api={}
+        for service in ('course','community'):
+            target=directory/service;target.mkdir(mode=0o700)
+            api[service]=observe_certification_api(self.scope,self.jobs,self.source,service,target)
+        require(all(row.get('status')=='P2_RECOVERY_API_DATABASE_CURRENT' for row in api.values()),
+                'P2_CERTIFICATION_ALL_CURRENT_REQUIRED')
+        return api
 
     def arm(self,request):
         self.check();require(self.scope is None and self.observer is None and not self.external_armed,'P2_CERTIFICATION_ALREADY_ARMED')
@@ -841,27 +973,23 @@ class P2CertificationBroker(Broker):
             probe.get('historicalLogins')==self.initial['historicalLogins'],'P2_CERTIFICATION_CURRENT_PROBE_BINDING_REQUIRED')
         self.frontend_raw=raw;self.armed_probe=probe
         self.observer=self.observer_type(self.selected,probe,self.source,self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'],
-            program=self.observer_program,program_sha256=self.initial['sourceSha256'][OBSERVER])
+            program=self.observer_program,program_sha256=self.initial['sourceSha256'][OBSERVER],**self.profile_arguments())
         self.observer.start(self.abort)
         self.scope=P2CertificationScope(self.lock_fd,LOCK,self.check,receipt,self.initial['candidateSha256'],release=self.selected,jobs=self.jobs,
-            configuration_sha256=self.initial['configurationSha256'],certification_plan=cert)
+            configuration_sha256=self.initial['configurationSha256'],certification_plan=cert,**self._scope_arguments())
         # Independent cleanup is armed before readonly helpers are launched.
         # There is still no native/admission/fault mutation authority.
-        self.safety({'operation':'armed','probe':probe})
-        if cert['mode']=='contain-native':native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check))
+        self._accept_guard_arm(probe)
+        if cert['mode']=='contain-native':native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
         else:
             self._store_private_probe()
             require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
-        output=self.directory/'current-api';output.mkdir(mode=0o700)
-        api={}
-        for service in ('course','community'):
-            target=output/service;target.mkdir(mode=0o700)
-            api[service]=observe_certification_api(self.scope,self.jobs,self.source,service,target)
+        api=self._read_api_current(self.directory/'current-api')
         self.runtime_snapshot=self.configuration
         token=runtime._command_scope.set(self.scope)
-        try:self.runtime_current=runtime.check_containers(self.selected,self.configuration)
+        try:self.runtime_current=runtime.check_containers(self.selected,self.configuration,**self.profile_arguments())
         finally:runtime._command_scope.reset(token)
-        require(len(self.runtime_current)==10 and all(api[service].get('status')=='P2_RECOVERY_API_DATABASE_CURRENT' for service in api),'P2_CERTIFICATION_ALL_CURRENT_REQUIRED')
+        require(len(self.runtime_current)==10,'P2_CERTIFICATION_ALL_CURRENT_REQUIRED')
         self.last_api_verified=time.monotonic()
         require(_sha(_canonical(self.runtime_current))==cert['runtimeInventorySha256'],'P2_CERTIFICATION_REVIEWED_RUNTIME_SELECTION_REQUIRED')
         self.admission_fd=os.open(self.configuration/'admission',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);self.admission_identity=os.fstat(self.admission_fd)
@@ -870,14 +998,7 @@ class P2CertificationBroker(Broker):
         require(actual.get('newWork') is expected and actual.get('recovery') is expected and
             all(actual.get('uncertain',{}).get(key)==0 for key in ('newWork','recovery')) and
             (expected or all(actual.get('active',{}).get(key)==0 for key in ('newWork','recovery'))),'P2_CERTIFICATION_REVIEWED_GATEWAY_STATE_REQUIRED')
-        if cert['mode']=='browser-pending':
-            self.suspension_stage=P2LifecycleSuspensionEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
-                self.initial['browserPlan'],self.initial['persistenceReviewed'],self.initial['browserResources'])
-            self.suspension_stage.register_source_parent(self.initial['sourceParentChallenge'])
-        if cert['mode']=='direct-worker':
-            self.worker_stage=P2LifecycleWorkerEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,self.initial['workerPlan'],
-                self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
-                observe_frontend=lambda:self.observer.probe('witness'))
+        self._prepare_lifecycle_stages(cert['mode'])
         if cert['mode'] in ('auth-preparation','browser-pending'):
             self.browser_origin=self._retain_browser_observation('arm')['canonicalBrowserObservation']
         self.last_boundary=time.monotonic();self.external_armed=True
@@ -887,6 +1008,16 @@ class P2CertificationBroker(Broker):
         self._start_boundary_watch()
         return self.ready
 
+    def _prepare_lifecycle_stages(self,mode):
+        if mode=='browser-pending':
+            self.suspension_stage=P2LifecycleSuspensionEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
+                self.initial['browserPlan'],self.initial['persistenceReviewed'],self.initial['browserResources'])
+            self.suspension_stage.register_source_parent(self.initial['sourceParentChallenge'])
+        if mode=='direct-worker':
+            self.worker_stage=P2LifecycleWorkerEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,self.initial['workerPlan'],
+                self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
+                observe_frontend=lambda:self.observer.probe('witness'))
+
     def _verify_boundary(self):
         self.scope.require_frontend(self.selected,self.jobs['frontend']);self.scope.require_configuration(self.configuration)
         if self.known_ack_boundary is not None:
@@ -895,12 +1026,12 @@ class P2CertificationBroker(Broker):
             self.last_boundary=time.monotonic();return
         if self.known_ack_recorder is not None:self.known_ack_recorder.verify_backend_idle()
         token=runtime._command_scope.set(self.scope)
-        try:require(runtime.check_containers(self.selected,self.configuration)==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
+        try:require(runtime.check_containers(self.selected,self.configuration,**self.profile_arguments())==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
         finally:runtime._command_scope.reset(token)
         require(self._runtime_processes()==self.process_snapshot,'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
         self._gateway_current()
         if self.initial['certificationPlan']['mode']=='contain-native':
-            native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check))
+            native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
         else:
             # The same source mutex serializes toggles and healthy readbacks.
             # A provider enable or feature/writer drift outside our declared
@@ -930,7 +1061,7 @@ class P2CertificationBroker(Broker):
         self.check();require(self.external_armed,'P2_CERTIFICATION_MUTATION_BEFORE_ARM_REFUSED')
         context=self._native_context();client=LockedClient(self.vercel,self.check)
         if operation=='native-observe':return self._native_observe()
-        if operation=='native-metadata':return native.observe_metadata(context,client)
+        if operation=='native-metadata':return native.observe_metadata(context,client,**self.profile_arguments())
         require(operation=='native-toggle' and type(request.get('enabled')) is bool,'P2_CERTIFICATION_FIXED_NATIVE_OPERATION_REQUIRED')
         with self.native_mutex:
             self.check()
@@ -944,24 +1075,23 @@ class P2CertificationBroker(Broker):
                 require(gateway.get('newWork') is False and gateway.get('recovery') is True and all(gateway[category][key]==0 for category in ('active','uncertain') for key in ('newWork','recovery')),
                     'P2_CERTIFICATION_NATIVE_GATEWAY_BARRIER_REQUIRED')
                 self.native_enable_attempted=True
-            elif native.observe_metadata(context,client)['nativeEnabled'] is False:
+            elif native.observe_metadata(context,client,**self.profile_arguments())['nativeEnabled'] is False:
                 self.native_expected=False
-                return {'status':'P2_NATIVE_ALREADY_DISABLED','observation':native.observe_metadata(context,client)}
+                return {'status':'P2_NATIVE_ALREADY_DISABLED','observation':native.observe_metadata(context,client,**self.profile_arguments())}
             attempt=self.directory/('provider-'+('enable' if request['enabled'] else 'disable')+'-'+str(request['id']));attempt.mkdir(mode=0o700)
-            observed=native.set_enabled(context,client,request['enabled'],attempt,self.check)
+            observed=native.set_enabled(context,client,request['enabled'],attempt,self.check,**self.profile_arguments())
             self.native_expected=request['enabled'];return observed
 
     def _native_observe(self):
-        result=native.observe(self._native_context(),LockedClient(self.vercel,self.check))
-        frontend_probe._private_input(_private_probe_directory(self.action_id()),{'environment':'staging','projectId':self.selected['workload']['projectId'],
-            'sourceCommit':self.selected['sources']['frontend']['commit'],'releaseId':self.selected['releaseId']})
+        result=native.observe(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
+        frontend_probe._private_input(_private_probe_directory(self.action_id()),self._probe_identity(),**self.profile_arguments())
         return result
 
     def _observe_browser_origin(self):
         # Both provider and protected alias HTTPS calls retain the source/physical
         # verifier. No old phase2 fallback or private-probe renewal is allowed.
         result=canonical_browser.observe(self._native_context(),LockedClient(self.vercel,self.check),
-            probe=LockedProbe(self.check,canonical_browser.CanonicalBrowserProbeClient()))
+            probe=LockedProbe(self.check,canonical_browser.CanonicalBrowserProbeClient()),**self.profile_arguments())
         require(result['browserOrigin']==self.initial['browserPlan']['browserOrigin'],'P2_CERTIFICATION_CANONICAL_BROWSER_PLAN_REQUIRED')
         return result
 
@@ -1103,7 +1233,7 @@ class P2CertificationBroker(Broker):
         require(physical['epoch']==str(int(cert['initialEpoch'])+1) and physical['newWork'] is True and physical['recovery'] is False and physical['uncertain']==0 and
             gateway['newWork'] is True and gateway['recovery'] is False and all(gateway['uncertain'][key]==0 for key in ('newWork','recovery')),
             'P2_CERTIFICATION_AUTHENTICATION_STATE_REQUIRED')
-        require(native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check))['nativeEnabled'] is False,'P2_CERTIFICATION_AUTHENTICATION_NATIVE_OFF_REQUIRED')
+        require(native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())['nativeEnabled'] is False,'P2_CERTIFICATION_AUTHENTICATION_NATIVE_OFF_REQUIRED')
         canonical=self._retain_browser_observation('authentication');self.browser_origin=canonical['canonicalBrowserObservation']
         self.authentication_issued=True
         return {'status':'P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD','bindingSha256':_sha(_canonical(plan)),'certificationActionId':self.action_id(),**canonical}
@@ -1234,7 +1364,7 @@ class P2CertificationBroker(Broker):
         healthy=cert['mode']!='contain-native'
         if healthy:self._native_observe()
         canonical=self._retain_browser_observation('terminal') if cert['mode'] in ('auth-preparation','browser-pending') else None
-        final=native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check));require(final['nativeEnabled'] is False,'P2_CERTIFICATION_FINAL_NATIVE_OFF_REQUIRED')
+        final=native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments());require(final['nativeEnabled'] is False,'P2_CERTIFICATION_FINAL_NATIVE_OFF_REQUIRED')
         qualified=cert['mode']=='native-window' and case.get('status')=='P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED' and evidence['qualified'] and ordered and known is None
         self.prepared_terminal={**{key:cert[key] for key in ('version','environment','certificationActionId','originalReleaseId','sourceCommit','operatorSourceCommit','candidateSha256','candidateObjectSha256',
             'inventorySha256','configurationSha256','targetSha256','contractPhase','phase2ContractManifestSha256','mode','planSha256')},
@@ -1245,11 +1375,15 @@ class P2CertificationBroker(Broker):
             'caseStatus':case.get('status'),'caseOutcomeSha256':_sha(_canonical(case)),'requestEvidence':evidence,'knownAckLoss':known,'witnessSha256':physical['witnessSha256'],
             'sqlReplayed':False,'runtimeReplaced':cert['mode']=='known-ack-recovery','rolesPrepared':False,'historicalLoginsRestored':False,'frontendBuilt':False,'frontendPromoted':False,
             'providerQueuedInvocations':None,'providerCancellationVerified':False,'trafficAuthorized':False,'wholeReleaseAccepted':False}
+        self._bind_terminal_profile()
         migrate.require_contract_identity(self.selected,self.prepared_terminal)
         migrate.write_json(self.directory,'p2-certification-close-prepared.json',self.prepared_terminal)
         self.boundary_stop.set()
         if self.boundary_thread and self.boundary_thread is not threading.current_thread():self.boundary_thread.join(35)
         self.observer.stop();self.closing_at=time.monotonic();return copy.deepcopy(self.prepared_terminal)
+
+    def _bind_terminal_profile(self):
+        return
 
     def finish_certification(self,value):
         self.check();raw,outcome=decode(value['certification']);migrate.require_contract_identity(self.selected,outcome)
@@ -1317,6 +1451,155 @@ class P2CertificationBroker(Broker):
             except BaseException:pass
             if self.admission_fd is not None:os.close(self.admission_fd);self.admission_fd=None
 
+
+
+class P2ProfiledCertificationBroker(P2CertificationBroker):
+    def certification_profile(self):
+        return _profiled_context()
+
+    def failure_profile(self):
+        return self.certification_profile()
+
+    def directory_name(self):
+        return 'p2-profiled-current-certification-' + self.action_id()
+
+    def terminal_filename(self):
+        return 'p2-profiled-current-certification-outcome.json'
+
+    def initialize(self):
+        self._initialize_certification_state()
+        self.api_proof = None
+        initial = self.initial
+        plan = initial['certificationPlan']
+        mode = plan['mode']
+        require(mode in SUSPENSION_MODES | {'native-window', 'contain-native'},
+                'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
+        review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
+        private_fields = {'confirmation', 'credentials', 'vercelToken'}
+        if mode != 'contain-native':
+            private_fields.add('privateProbe')
+        if mode in BROWSER_MODES:
+            private_fields.add('sourceParentChallenge')
+        if mode == 'browser-pending':
+            private_fields.update(('persistenceReviewed', 'browserResources'))
+        if mode == 'direct-worker':
+            private_fields.add('persistenceReviewed')
+        guard_fields = {'_guardLayout', '_guardObserverSource', '_guardObserverProgram', '_guardLockDescriptor'}
+        require(set(initial) == review_fields | private_fields | guard_fields and
+                initial['confirmation'] == 'staging/' + self.action_id() and
+                self.shared_lock_fd is not None and self.shared_lock_fd == initial['_guardLockDescriptor'] and
+                self.safety_write is not None and self.guard_read is not None and os.geteuid() == 0,
+                'P2_PROFILED_CERTIFICATION_FIXED_GUARDED_START_REQUIRED')
+        self.source = Path(__file__).resolve().parents[3]
+        review = {key: initial[key] for key in review_fields}
+        verified = prepare_profiled_current_certification_input(review, self.source)
+        require(verified['originalReleasePlanHashHostVerified'] is True, 'P2_PROFILED_CERTIFICATION_ORIGINAL_PLAN_PROOF_REQUIRED')
+        self.bundle, self.configuration, self.results = (Path(initial[key]) for key in ('bundle', 'configuration', 'results'))
+        self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration,
+            self.source / 'ops/platform/compose.yaml', **self.profile_arguments())
+        runtime.assert_host(self.plan)
+        self.lock_fd = self.shared_lock_fd
+        self.lock_info = os.fstat(self.lock_fd)
+        self.start_guard_health()
+        require(self.guard_pulsed.wait(5) and self.guard_alive, 'P2_INDEPENDENT_GUARD_HANDSHAKE_REQUIRED')
+        credentials = initial['credentials']
+        require(type(credentials) is dict and set(credentials) == {'FRONTEND_STAGING_MIGRATION_DATABASE_URL',
+            'COURSE_STAGING_DATABASE_URL', 'COMMUNITY_STAGING_DATABASE_URL'} and
+            all(type(value) is str and 0 < len(value) <= 16384 for value in credentials.values()),
+            'P2_PROFILED_CERTIFICATION_CREDENTIALS_REQUIRED')
+        self.vercel = vercel.Client(initial['vercelToken'])
+        initial['nativePlan'] = plan['nativePlan']
+        initial['producers'] = initial['inventory']['producers']
+        initial['historicalLogins'] = initial['inventory']['historicalLogins']
+        if mode in BROWSER_MODES:
+            initial['browserPlan'] = initial['sourceSuspensionPlan']
+        if mode == 'direct-worker':
+            initial['workerPlan'] = plan['workerPlan']
+        self.directory = self.results / self.directory_name()
+        self.directory.mkdir(mode=0o700)
+        self.observer_program = private_observer_program(initial, self.directory / 'private-source')
+        self.outcome.update(version=2, qualificationTargetProfile=self.certification_profile(),
+            environment='staging', releaseId=self.selected['releaseId'], sourceCommit=initial['sourceCommit'],
+            candidateSha256=initial['candidateSha256'], frontendSqlApplied=False)
+        migrate.write_json(self.directory, 'p2-profiled-certification-input-verified.json', verified)
+        self.check()
+
+    def _scope_arguments(self):
+        return {**self.profile_arguments(), 'physical_observer': self.observer}
+
+    def _accept_guard_arm(self,probe):
+        from p2_release_supervisor import require_profiled_certification_guard_arm
+        self.safety({'operation':'armed','probe':probe})
+        expires = time.monotonic() + 10
+        while True:
+            self.check()
+            try:
+                require_profiled_certification_guard_arm(self.initial, probe)
+                return
+            except FileNotFoundError:
+                require(time.monotonic() < expires, 'P2_PROFILED_CERTIFICATION_GUARD_ARM_TIMEOUT')
+                time.sleep(0.05)
+
+    def _read_api_current(self,directory):
+        credentials = {'course': self.initial['credentials']['COURSE_STAGING_DATABASE_URL'],
+                       'community': self.initial['credentials']['COMMUNITY_STAGING_DATABASE_URL']}
+        self.api_proof, outcome = check_profiled_certification_apis(self.scope, self.jobs, self.source, self.bundle, directory,
+            credentials, self.initial['sourceSha256'], **self.profile_arguments())
+        return outcome
+
+    def _refresh_api(self):
+        with self.api_mutex:
+            self.api_cycle += 1
+            self._read_api_current(self.directory / ('current-api-' + str(self.api_cycle)))
+            self.last_api_verified = time.monotonic()
+
+    def _release_evidence(self):
+        return {key: self.initial[key] for key in ('originalReleaseReceipt', 'readyReceipts')}
+
+    def _prepare_lifecycle_stages(self,mode):
+        if mode == 'browser-pending':
+            self.suspension_stage = P2LifecycleSuspensionEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
+                self.initial['browserPlan'],self.initial['persistenceReviewed'],self.initial['browserResources'],
+                release_evidence=self._release_evidence(),**self.profile_arguments())
+            self.suspension_stage.register_source_parent(self.initial['sourceParentChallenge'])
+        if mode == 'direct-worker':
+            self.worker_stage = P2LifecycleWorkerEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
+                self.initial['workerPlan'],self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],
+                native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
+                observe_frontend=lambda:self.observer.probe('witness'),bundle=self.bundle,database_proof=self.api_proof,
+                release_evidence=self._release_evidence(),**self.profile_arguments())
+
+    def _bind_terminal_profile(self):
+        self.prepared_terminal.update(status='P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',
+            qualificationTargetProfile=self.certification_profile(),frontendSqlApplied=False,
+            releaseAccepted=False,releaseId=self.selected['releaseId'])
+        self.prepared_terminal['configurationSha256'] = self.initial['configurationSha256']
+
+    def abort(self):
+        # The independent guard owns provider and FE containment after reap.
+        Broker.abort(self)
+
+    def contain_failure_without_guard(self):
+        # Revoke all registered operations before the surviving broker uses
+        # the same closed guard action. Uncertain reap keeps the flock held.
+        try:
+            if self.scope:
+                self.scope.revoke()
+                with self.scope.mutations:
+                    require(not any(process.poll() is None for process in self.scope.processes),
+                            'P2_PROFILED_CERTIFICATION_SCOPE_REAP_REQUIRED')
+            if self.observer:
+                self.observer.stop()
+        except Exception:
+            self.outcome['workerProcessCleanupUncertain'] = True
+            return False
+        if not self.armed_probe:
+            return True
+        result = {**contain_profiled_certification_native(self.initial,self.armed_probe,self.source),
+                  **contain_profiled_certification_frontend(self.initial,self.armed_probe,self.source)}
+        contained = super().contain_failure_without_guard()
+        self.outcome.update(result)
+        return contained
 
 def main():
     if sys.argv[1:] == ['--plan-profiled-current']:

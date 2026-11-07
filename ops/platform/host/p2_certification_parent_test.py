@@ -51,6 +51,9 @@ LEGACY_FIXTURE_ONLY_OMISSIONS = frozenset({
     'ops/platform/host/p2_certification_parent_test.py',
     'ops/platform/host/p2_certification_fault_test.py',
     'ops/platform/host/p2_lifecycle_authority_timing_test.py',
+    'ops/platform/host/p2_lifecycle_persistence_probe_test.py',
+    'ops/platform/p2-lifecycle-suspension-evidence.test.mjs',
+    'ops/platform/p2-lifecycle-worker-evidence.test.mjs',
     'ops/platform/p2-certification.test.mjs',
     'ops/platform/p2-lifecycle-native.test.mjs',
 })
@@ -720,6 +723,34 @@ class ProfiledCertificationInputTests(unittest.TestCase):
         self.rehash()
         with self.assertRaisesRegex(ValueError, 'SOURCE_WORKER_REQUIRED'):
             self.prepare()
+
+    def test_profiled_guard_frontend_proof_requires_bound_output_and_reaped_child(self):
+        initial = {**self.initial, 'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-fixture-only'}}
+        armed = {'plan': self.plan}
+        value = {'version': 2, 'qualificationTargetProfile': self.profile,
+                 'status': 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED',
+                 'environment': 'staging', 'releaseId': self.release_id,
+                 **{key: self.plan[key] for key in ('sourceCommit', 'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256')},
+                 'frontendAdmissionClosed': True, 'sqlReplayed': False, 'releaseAccepted': False}
+        program = self.source / 'ops/platform/p2-certification-current-probe.mjs'
+        core = self.source / 'ops/platform/p2-recovery-current-probe.mjs'
+        for changes, remaining, accepted in (({}, '', True), ({'targetSha256': '1'*64}, '', None), ({}, 'running', None)):
+            with self.subTest(changes=changes, remaining=remaining), \
+                 patch.object(parent, '_profiled_guard_context', return_value=self.profile), \
+                 patch.object(parent, 'private_observer_program', return_value=program), \
+                 patch.object(parent, '_cache_core', return_value=core), \
+                 patch.object(parent.runtime, 'command', return_value=remaining), \
+                 patch.object(parent.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps({**value, **changes}),stderr='')) as child:
+                self.assertEqual(parent.contain_profiled_certification_frontend(initial, armed, self.source),
+                                 {'frontendAdmissionClosed': accepted, 'frontendCloseAttempted': True})
+                args, kwargs = child.call_args_list[0]
+                self.assertEqual(args[0][-1], '--profiled-current-guard-fence')
+                self.assertEqual(json.loads(kwargs['input']), armed)
+                self.assertEqual(len(child.call_args_list), 2)
+        with patch.object(parent, '_profiled_guard_context', side_effect=ValueError('owned refusal')), \
+             patch.object(parent.subprocess, 'run', side_effect=AssertionError('guard refused before Docker')):
+            self.assertEqual(parent.contain_profiled_certification_frontend(initial, armed, self.source),
+                             {'frontendAdmissionClosed': None, 'frontendCloseAttempted': False})
 
     def test_profile_and_hash_are_required_on_the_nested_native_plan(self):
         native_plan = self.plan['nativePlan']

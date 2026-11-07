@@ -42,7 +42,7 @@ def verify_profiled_current_source_closure(initial, root):
     if initial['mode'] == 'p2-bounded-certification-profiled-current':
         required |= {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
                      'ops/platform/p2-certification-current-probe.mjs', 'ops/platform/p2-lifecycle-native.mjs'}
-    return _verify_source_closure(initial, root, required, 544, 41_700_000)
+    return _verify_source_closure(initial, root, required, 544, 41_850_000)
 
 
 def _verify_source_closure(initial, root, required, max_files, max_bytes):

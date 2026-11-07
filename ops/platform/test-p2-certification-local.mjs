@@ -11,7 +11,7 @@ import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
 import {reconcileFrontendOperation} from './frontend-admission.mjs';
-import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent} from './p2-certification-current-probe.mjs';
+import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent,containP2ProfiledCertificationAdmission} from './p2-certification-current-probe.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
 const run=(program,args,options={})=>execFileSync(program,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'},...options});
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -154,9 +154,9 @@ async function child(){
     const currentJob={...job,version:2,...selectedProfile,target:profileTarget};
     const profiled={migration:{...prepared.migration,job:currentJob},plan:{...prepared.plan,
       historicalLogins:{...prepared.plan.historicalLogins,version:2,...selectedProfile,target:profileTarget}}};
-    const profiledPlan={...plan,version:2,...selectedProfile,initialEpoch:'3',
+    const profiledPlan={...plan,version:2,...selectedProfile,originalReleaseId:job.releaseId,initialEpoch:'3',
       nativePlan:{...nativePlan,version:2,...selectedProfile,target:profileTarget,initialEpoch:'4'}};
-    await withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({probe,receipt})=>{
+    const guardProbe=await withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({probe,receipt})=>{
       assert.equal(receipt.version,2);assert.deepEqual(receipt.qualificationTargetProfile,profile);
       assert.equal(receipt.sqlReplayed,false);
       const observed=await observeP2CertificationPhysical({...probe,operation:'witness'},deps,profile);
@@ -167,6 +167,8 @@ async function child(){
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps));
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'fence'},deps,profile));
       await assert.rejects(observeP2CertificationPhysical({...probe,marker:'f'.repeat(64),operation:'observe'},deps,profile));
+      await assert.rejects(containP2ProfiledCertificationAdmission(probe,deps),error=>error.checkpoint==='guard-physical-lock');
+      return probe;
     },profile);
     await assert.rejects(withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({client,probe,verify})=>{
       assert.equal((await client.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS unlocked',[probe.marker])).rows[0].unlocked,true);
@@ -174,6 +176,13 @@ async function child(){
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps,profile));
     },profile));
     checks.push('actual-profiled-current-certification-lock-readback-and-fence-refusal');
+    await admin.query('UPDATE frontend_admission.control SET epoch=4,new_work=true,recovery=false');
+    const guardClosed=await containP2ProfiledCertificationAdmission(guardProbe,deps);
+    assert.equal(guardClosed.frontendAdmissionClosed,true);assert.equal(guardClosed.admissionChanged,true);
+    assert.equal(guardClosed.epoch,'5');
+    assert.equal((await containP2ProfiledCertificationAdmission(guardProbe,deps)).admissionChanged,false);
+    assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control')).rows,[{new_work:false,recovery:false}]);
+    checks.push('actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
