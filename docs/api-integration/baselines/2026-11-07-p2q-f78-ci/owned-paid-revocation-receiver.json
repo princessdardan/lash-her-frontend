@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "scope": "Owned three-repository PostgreSQL 16 TLS/SCRAM regression. Uses actual Course publisher claim and settlement, signed receiver, and Community projection. The paid subjourney calls the Course API directly with the course-support profile.",
+  "courseAncestors": {
+    "approvedSharedAdministrationPolicy": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+    "canonicalManagedMuxCallback": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b"
+  },
+  "correctedSource": {
+    "exitCode": 0,
+    "receipt": {
+      "version": 1,
+      "status": "PHASE2_LIFECYCLE_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "tlsVerified": true,
+      "runtimeAuthentication": "SCRAM-SHA-256",
+      "harnessFiles": {
+        "test-phase2-lifecycle-local.mjs": "fc2889686ae8b78bbf38b39183650c3e4029a7c71dbed07ffbe7fbf23d8544f0",
+        "harness/owned-phase2-lifecycle-frontend.mjs": "0d90d70b0d86e9752750ea05327fb82420239337d4a4b7bfe553672dbce9d523",
+        "harness/owned-phase2-lifecycle-receiver.mjs": "56ac944607e4730bf4fb71aa2c48c115aad58bb06431efa8341b0030e6a505e9"
+      },
+      "sourcePins": {
+        "frontend": {
+          "commit": "10fcac476f24fdc124f7dade283dc738234eb75e",
+          "archiveSha256": "0f55729b4f08691163ca2f32afb4eb24a2e90241386d42c2bbc05f582ebcc630",
+          "lockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886"
+        },
+        "course": {
+          "commit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+          "archiveSha256": "e2693e1346a61fbc3f378aaf047c0d68cdfa6cd643d8f52172211987b91c71e4",
+          "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+        },
+        "community": {
+          "commit": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+          "archiveSha256": "3591ef1f8cf1336fa364d3e396d66ca85cc750e6c9838ae5f0e9047074c3d7fd",
+          "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+        }
+      },
+      "apiArtifacts": {
+        "course": {
+          "sourceSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+          "frontendCandidateSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+          "lifecycleOperationsSha256": "e66953bdd46b5ca5c5e1cdab9fb9a421687d621ac1780d62ff204e20be5ecb5e"
+        },
+        "community": {
+          "sourceSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+          "frontendCandidateSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+          "lifecycleOperationsSha256": "7df30b91e17da53ce70d6fa02cc6a6e3ab58161baf201be57d4cf95994e744d5"
+        }
+      },
+      "contractQualification": "Actual typed lifecycle command/export operations match source artifacts; learning prerequisites use actual API routes",
+      "migrations": {
+        "frontend": {
+          "count": 83,
+          "appliedSha256": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+          "journalSha256": "466a9e19076eb90bbf680f879393d73e35393576c76cab2baa8164bfd2423c70"
+        },
+        "course": {
+          "count": 22,
+          "appliedSha256": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+          "journalSha256": "733047196af8a592ecbbbc8069075eeca32274e2b13fe8daae8df3d9f88b610f"
+        },
+        "community": {
+          "count": 11,
+          "appliedSha256": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a",
+          "journalSha256": "d28dd40d3196b9a317ae5a2317bf03339cb86400433d5e8bbb4c3b6eedebcf8a"
+        }
+      },
+      "admission": [
+        {
+          "state": "completed",
+          "count": 24
+        },
+        {
+          "state": "uncertain",
+          "count": 3
+        }
+      ],
+      "checks": [
+        "runtime-wrong-password-and-plaintext-refused-before-business-work",
+        "real-admin-authoring-free-ledger-grant-progress-quiz-and-Course-publisher-to-Community-receiver",
+        "audited-orderless-paid-grants-preserve-independent-access-and-publish-exact-last-revocation-to-Community",
+        "real-dedicated-JWTs-and-runtime-validated-export-aggregation-after-lost-committed-receipt",
+        "private-UUID-owner-export-and-cross-profile-service-credential-isolation",
+        "exact-24-hour-expiry-physical-cleanup-and-export-replay-never-renews-private-data",
+        "suspension-revokes-sessions-and-existing-protected-operation-authority",
+        "receiver-outage-keeps-frontend-suspended-until-both-ordered-predecessor-and-restore-acknowledgments",
+        "customer-fresh-session-deletion-removes-progress-profile-links-preferences-and-private-artifacts",
+        "quiz-results-deidentified-once-with-immutable-grant-audit-history-retained",
+        "terminal-tombstones-deny-delayed-grants-assessment-and-member-access-while-exact-replay-cannot-restore"
+      ],
+      "findings": [],
+      "providerTouched": false,
+      "liveCertification": false,
+      "productionActivation": false
+    }
+  },
+  "priorSource": {
+    "courseCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+    "exitCode": 1,
+    "receipt": {
+      "status": "PHASE2_LIFECYCLE_OWNED_POSTGRES_FAILED",
+      "phase": "real-frontend-to-both-api-journey",
+      "reason": "AssertionError: Expected one revoked transition at version 2\n\n0 !== 1\n",
+      "providerTouched": false
+    }
+  },
+  "stagingPublisherAndReceiverVerified": false
+}
