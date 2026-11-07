@@ -35,6 +35,7 @@ class P2ProfiledCurrentScope(P2ReleaseScope):
         self._recovery_action_id = recovery_action_id
         self.close_deadline = None
         self.runtime_parent = None
+        self.runtime_suspension_started = False
         require_profiled(release, jobs['frontend']['job'], jobs['frontend']['job']['target'], receipt)
         super().__init__(descriptor, path, verify_frontend, receipt, candidate_sha256,
                          release=release, jobs=jobs, configuration_sha256=configuration_sha256)
@@ -58,7 +59,17 @@ class P2ProfiledCurrentScope(P2ReleaseScope):
 
     def suspend_api_runtime(self, environment, env):
         migrate.demand(environment == self.release['environment'] == 'staging' and
-                       _suspending_runtime.get() is None, 'P2_PROFILED_CURRENT_STOP_STAGE_REQUIRED')
+                       _suspending_runtime.get() is None and not self.runtime_suspension_started,
+                       'P2_PROFILED_CURRENT_STOP_STAGE_REQUIRED')
+        self.verify()
+        self.require_prior_gateway()
+        self.runtime_suspension_started = True
+        if self.prior_gateway.stopped:
+            # A qualified earlier stop may have removed the gateway. Keep its
+            # latest ordered proof while stopping any remaining API services.
+            stopped = migrate.suspend_runtime(environment, env, _runner=self.run)
+            self.verify()
+            return stopped
         self.before_api_suspension()
         token = _suspending_runtime.set(self)
         try:

@@ -79,6 +79,7 @@ class CurrentDatabasesTests(unittest.TestCase):
             if "qualificationTargetProfile" in job:
                 record.update(version=2, qualificationTargetProfile=job["qualificationTargetProfile"],
                               checks=["selected-image-operator-role-policy"])
+            record.update(migrate.contract_identity(job))
             if self.bad_api:
                 record["target"]["host"] = "other.invalid"
             return subprocess.CompletedProcess(args, 0, json.dumps(record).encode(), b"")

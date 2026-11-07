@@ -132,12 +132,14 @@ class ProfiledCurrentScopeTests(unittest.TestCase):
     def test_runtime_stop_keeps_real_child_and_lock_under_the_physical_scope(self):
         class OwnedBoundary:
             api_suspension_started = api_suspension_finished = False
+            stopped = False
 
             def verify(inner):
                 if inner.api_suspension_started and not inner.api_suspension_finished:
                     raise ValueError('PRIOR_GATEWAY_API_SUSPENSION_UNVERIFIED')
 
             def before_api_suspension(inner):
+                self.assertFalse(inner.stopped, "a prior stop receipt must be reused")
                 inner.api_suspension_started = True
 
             def after_api_suspension(inner):
@@ -149,6 +151,7 @@ class ProfiledCurrentScopeTests(unittest.TestCase):
 import fcntl, os, sys
 from pathlib import Path
 root = Path(__file__).parent
+prior_stopped = (root / 'retained-stop').exists()
 with (root / 'actual-host.lock').open() as lock:
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -160,7 +163,7 @@ if sys.argv[1:3] == ['stop', '--timeout']:
     assert sys.argv[3:] == ['30', 'a' * 64]
     (root / 'stopped').touch()
 elif sys.argv[1:3] == ['ps', '--filter']:
-    print('a' * 64, 'gateway')
+    print('a' * 64, 'course-api' if prior_stopped else 'gateway')
 elif sys.argv[1:3] == ['ps', '-q']:
     assert (root / 'stopped').exists()
 else:
@@ -174,6 +177,17 @@ else:
         self.assertGreaterEqual(self.reads - before, 8)
         self.assertEqual(self.scope.processes, set())
         self.assertNotEqual(self.contender(), 0)
+        self.scope.revoke()
+        self.scope = self.new()
+        self.scope.prior_gateway = OwnedBoundary()
+        self.scope.prior_gateway.stopped = True
+        (self.root / 'stopped').unlink()
+        (self.root / 'retained-stop').write_bytes(b'original qualified stop\n')
+        self.assertEqual(self.scope.suspend_api_runtime('staging', {'PATH': str(self.root)}), ['a' * 64])
+        self.assertFalse(self.scope.prior_gateway.api_suspension_started)
+        self.assertEqual((self.root / 'retained-stop').read_bytes(), b'original qualified stop\n')
+        with self.assertRaisesRegex(ValueError, 'STOP_STAGE_REQUIRED'):
+            self.scope.suspend_api_runtime('staging', {'PATH': str(self.root)})
 
     def test_close_deadline_and_replaced_lock_never_become_success(self):
         for seconds in (True, 0, 11, 900):

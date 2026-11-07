@@ -142,6 +142,101 @@ class RuntimeReleaseTests(unittest.TestCase):
                         forged, expected_profile=ref, _profiled_current_scope=object())
         self.assertEqual(list(self.results.iterdir()), [])
 
+    def test_current_restore_composes_real_readonly_proof_and_runtime_without_migration(self):
+        import current_databases as checks
+        from current_databases_test import CurrentDatabasesTests
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker
+        from p2_profiled_current_scope import COMMON, TARGET, P2ProfiledCurrentScope
+        from staging_state import configuration_hashes
+        from unittest.mock import Mock
+
+        self.root = self.fixture.root = self.root.resolve()
+        self.bundle = self.fixture.bundle = self.bundle.resolve()
+        self.results = self.fixture.results = self.results.resolve()
+        self.configuration, self.compose = self.configuration.resolve(), self.compose.resolve()
+        self.fixture.add_frontend()
+        ref = self.fixture.profiled()
+        self.fixture.jobs["frontend"]["target"].update(approvedPendingTags=[], allowEmptyBootstrap=False)
+        for name in ("course", "community"):
+            self.fixture.jobs[name]["target"]["serverMajor"] = 18
+        for carrier in (self.fixture.release, self.fixture.release["frontendMigration"], *self.fixture.jobs.values()):
+            carrier.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "e" * 64)
+        self.fixture.save()
+        self.target.update(version=2, qualificationTargetProfile=ref)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com")
+        self.save("runtime.json", self.target); self.save("gateway.json", self.gateway)
+        selected, jobs, _, _ = release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        self.assertTrue(all(jobs[name]["job"]["target"]["approvedPendingTags"] for name in ("course", "community")))
+        candidate_sha = migrate.file_hash(migrate.read_input(self.bundle, "release.candidate.json"))
+        job = jobs["frontend"]["job"]
+        journal = [{"hash": "b" * 64, "created_at": "1"}]
+        receipt = {**{key: job[key] for key in COMMON}, "version": 2, "qualificationTargetProfile": ref,
+                   "target": {key: job["target"][key] for key in TARGET}, "status": "DATABASE_VERIFIED", "service": "frontend",
+                   "migrationMode": "verify-current-only", "readOnlyVerified": True, "schemaVerified": True,
+                   "runtimeRoleVerified": True, "trafficAuthorized": False, "before": journal, "after": journal, "applied": []}
+        self.gateway["admission"] = {"file": "/admission/state.json", "releaseId": selected["releaseId"], "candidateSha256": candidate_sha}
+        self.save("gateway.json", self.gateway)
+        parent = object.__new__(P2ProfiledCurrentRecoveryBroker)
+        parent.bundle, parent.selected, parent.jobs = self.bundle, selected, jobs
+        parent.initial = {"recoveryActionId": "owned-current-restore", "disposition": "restore-current-runtime",
+                          "apiJobSha256": migrate.profiled_current_job_hashes(self.bundle)}
+        parent.directory = self.root / "parent"
+        parent.directory.mkdir(mode=0o700)
+        parent.frontend_raw = json.dumps(receipt).encode()
+        parent.continuation_started_raw = b'{"status":"FRONTEND_CONTINUATION_STARTED"}\n'
+        migrate.write_exact_bytes(parent.directory, "frontend-original-database-receipt.json", parent.frontend_raw)
+        migrate.write_exact_bytes(parent.directory, "frontend-continuation-started.json", parent.continuation_started_raw)
+        # Project the container and gateway boundaries. The real checker
+        # produces the in-process proof that the runtime consumer must adopt.
+        db = CurrentDatabasesTests()
+        db.selected, db.jobs, db.output = selected, jobs, self.root / "read-only-result"
+        db.checker = self.root / "checker.mjs"
+        db.checker.write_text("// owned fixture\n")
+        db.checker_hash = migrate.file_hash(db.checker.read_bytes())
+        db.credentials = {name: name + "-private-fixture" for name in ("course", "community")}
+        db.calls, db.bad_frontend, db.bad_api, db.bad_cleanup = [], False, False, False
+        lock_path = self.root / "release.lock"
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        scope = P2ProfiledCurrentScope(fd, lock_path, lambda: None, receipt, candidate_sha, release=selected, jobs=jobs,
+            configuration_sha256=configuration_hashes(self.configuration), recovery_action_id=parent.action_id())
+        parent.lock_fd, parent.scope = fd, scope
+        scope.bind_runtime_parent(parent)
+        def docker(args, **kwargs):
+            if args[1] == "compose" and "up" in args:
+                self.calls.append(args)
+                self.running.update(args[args.index("90") + 1:])
+                self.assertEqual(migrate.read_json(db.output, "current-databases-outcome.json")["status"],
+                                 "CURRENT_DATABASES_READ_ONLY_VERIFIED")
+                with lock_path.open() as lock, self.assertRaises(BlockingIOError):
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return subprocess.CompletedProcess(args, 0, "", "")
+            return self.docker(args, **kwargs)
+        try:
+            with patch.object(scope, "run", side_effect=lambda args, *, env, input=None, **opts: db.run_child(args, env, input)):
+                proof = checks.check_all(selected, jobs, db.output, db.credentials, db.checker, db.checker_hash,
+                                         expected_profile=ref, _profiled_current_scope=scope)
+            boundary = Mock(api_suspension_started=False, api_suspension_finished=False, stopped=False)
+            boundary.before_api_suspension.side_effect = lambda: setattr(boundary, "api_suspension_started", True)
+            boundary.after_api_suspension.side_effect = lambda: setattr(boundary, "api_suspension_finished", True)
+            scope.prior_gateway = boundary
+            with patch.object(scope, "run", side_effect=docker), patch.object(release, "assert_host"), \
+                    patch.object(P2ProfiledCurrentRecoveryBroker, "runtime_ready") as ready, \
+                    patch.object(migrate, "execute", side_effect=AssertionError("recovery invoked the migration executor")):
+                outcome = release.restore_profiled_current_runtime(self.bundle, self.configuration, self.results, self.compose,
+                    proof, expected_profile=ref, _profiled_current_scope=scope)
+            self.assertEqual(outcome["status"], "API_RUNTIME_READY")
+            self.assertFalse(outcome["migrationsExecuted"])
+            self.assertEqual(outcome["currentDatabasesOutcomeSha256"],
+                             migrate.file_hash(migrate.read_input(db.output, "current-databases-outcome.json")))
+            self.assertEqual(ready.call_args.args[2], db.output)
+            self.assertEqual(self.running, set(release.SERVICES))
+            self.assertEqual(len([args for args, _, _ in db.calls if args[1] == "run"]), 2)
+        finally:
+            scope.revoke()
+            os.close(fd)
+
     def test_profiled_runtime_requires_the_registered_project_and_gateway_origin(self):
         ref = self.fixture.profiled()
         self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)
