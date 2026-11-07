@@ -7,25 +7,29 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
+import shlex
 import subprocess
 
 
 def main():
     assert os.geteuid() == 0
     platform = Path("/source/ops/platform")
-    source = (platform / "recreation_ssh.mjs").read_text()
-    header = json.loads('"' + re.search(r'const header = "(.*?)";', source).group(1) + '"')
-    program = header + re.search(r"const sourceInstall = header \+ `([\s\S]*?)`;", source).group(1)
-    compile(program, "reviewed-source-receiver", "exec")
+    commands = json.loads(Path("/owned-source-receivers.json").read_bytes())
+    assert set(commands) == {"legacy", "profiled"}
+    programs = {}
+    for mode, command in commands.items():
+        parts = shlex.split(command)
+        assert len(parts) == 5 and parts[:4] == ["sudo", "-n", "/usr/bin/python3", "-c"]
+        programs[mode] = parts[4]
+        compile(parts[4], "reviewed-source-receiver", "exec")
     code = b"export const owned = true;\n"
     import base64
-    payload = {"commit": "1" * 40, "files": [{"path": "ops/owned.mjs", "sha256": hashlib.sha256(code).hexdigest(),
-        "data": base64.b64encode(code).decode()}]}
+    first_file = {"path": "ops/owned.mjs", "sha256": hashlib.sha256(code).hexdigest(), "data": base64.b64encode(code).decode()}
+    payload = {"commit": "1" * 40, "files": [first_file]}
     environment = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME": "/root"}
     records = []
-    def receiver(success=True, marker=None):
-        result = subprocess.run(["python3", "-B", "-c", program], input=json.dumps(payload).encode(),
+    def receiver(success=True, marker=None, mode="legacy"):
+        result = subprocess.run(["python3", "-B", "-c", programs[mode]], input=json.dumps(payload).encode(),
                                 capture_output=True, env=environment, timeout=15)
         if success:
             assert result.returncode == 0, "OWNED_PUBLIC_RECEIVER_FAILED"
@@ -72,6 +76,12 @@ def main():
     receiver(False, "SOURCE_HASH_REFUSED")
     assert not (Path("/opt/lash-her/operators") / payload["commit"]).exists()
     records.append("public-source-over-forty-megabytes-refused-before-installation")
+    payload = {"commit": "4" * 40, "files": [{**first_file, "path": f"ops/profiled-{index}.mjs"}
+        for index in range(513)]}
+    receiver(False, "SOURCE_FILES_REQUIRED")
+    assert receiver(mode="profiled")["files"] == 513
+    assert receiver(mode="profiled")["existingSourceVerified"] is True
+    records.append("profiled-source-installs-and-rechecks-above-legacy-count")
     units = Path("/tmp/recreation-systemd-owned"); units.mkdir(mode=0o700)
     (units / "docker.service").write_text("[Service]\nType=oneshot\nExecStart=/bin/true\n")
     names = ["lash-her-watchdog.service", "lash-her-watchdog.timer", "lash-her-certificates-staging.service", "lash-her-certificates-staging.timer"]
@@ -80,7 +90,7 @@ def main():
     assert result.returncode == 0, "OWNED_SYSTEMD_UNITS_INVALID"
     records.append("four-systemd-units-verified-with-owned-docker-dependency")
     print(json.dumps({"status": "OWNED_RECREATION_CONTROLS_PASS", "checks": records, "passed": len(records),
-        "publicReceiverSha256": hashlib.sha256(program.encode()).hexdigest(), "providerContacted": False,
+        "publicReceiverSha256": hashlib.sha256(programs["legacy"].encode()).hexdigest(), "providerContacted": False,
         "actualStagingChanged": False, "ownedDockerDependencyFixture": True}))
 
 

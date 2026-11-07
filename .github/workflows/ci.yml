@@ -213,14 +213,36 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL --cap-add NET_ADMIN \
             --security-opt no-new-privileges --tmpfs /tmp:size=32m --tmpfs /run:size=1m lash-her-firewall-test:ci
       - name: Verify recreation source receiver and maintenance units offline
-        run: >-
-          docker run --rm --network none --read-only --cap-drop ALL
-          --security-opt no-new-privileges
-          --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777
-          --tmpfs /opt/lash-her:rw,nosuid,nodev,size=32m,mode=0700
-          --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly"
-          --entrypoint python3 lash-her-firewall-test:ci
-          -B /source/ops/platform/harness/owned-recreation-controls.py
+        run: |
+          node --input-type=module > "$RUNNER_TEMP/owned-source-receivers.json" <<'NODE'
+          import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+          import { tmpdir } from "node:os";
+          import { join } from "node:path";
+          import { recreationSsh } from "./ops/platform/recreation_ssh.mjs";
+          const directory = await mkdtemp(join(await realpath(tmpdir()), "owned-source-receiver-"));
+          try {
+            const knownHosts = join(directory, "known-hosts"), keyFile = join(directory, "identity");
+            await writeFile(knownHosts, "owned fixture", { mode: 0o600 });
+            await writeFile(keyFile, "owned fixture", { mode: 0o400 });
+            const commands = [];
+            const ssh = await recreationSsh({ knownHosts, keyFile, diagnostics: directory,
+              execute: async (args) => {
+                commands.push(args.at(-1));
+                return { exitCode: 0, stdout: Buffer.from("{}"), stderr: Buffer.alloc(0) };
+              } });
+            await ssh.installSource({});
+            await ssh.installProfiledCurrentSource({});
+            process.stdout.write(JSON.stringify({ legacy: commands[0], profiled: commands[1] }));
+          } finally { await rm(directory, { recursive: true }); }
+          NODE
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777 \
+            --tmpfs /opt/lash-her:rw,nosuid,nodev,size=32m,mode=0700 \
+            --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/owned-source-receivers.json,dst=/owned-source-receivers.json,readonly" \
+            --entrypoint python3 lash-her-firewall-test:ci \
+            -B /source/ops/platform/harness/owned-recreation-controls.py
       - name: Verify actual Docker inspection with optional healthchecks
         run: >-
           python3 ops/platform/harness/owned-docker-inspection.py
