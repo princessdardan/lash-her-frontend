@@ -96,9 +96,9 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     }
   });
 
-  function evidence(stage: string, route: string, timestamp = issued) {
-    const selector = stage === "identity" ? "7032712d637573746f6d65722d7631008d680a9280714fd09da2c4d350aa729d"
-      : stage === "authoring" ? "7032712d617574686f72696e672d76318e2280dc03894248b21cf87427f9e85c" : undefined;
+  function evidence(stage: string, route: string, timestamp = issued, selected?: string) {
+    const selector = selected ?? (stage === "identity" ? "7032712d637573746f6d65722d7631008d680a9280714fd09da2c4d350aa729d"
+      : stage === "authoring" ? "7032712d617574686f72696e672d76318e2280dc03894248b21cf87427f9e85c" : undefined);
     const body = [selector ? "v2" : "v1", epoch, stage, issued - 90, issued + 90, nonce, ...(selector ? [selector] : [])].join(".");
     const browserMac = createHmac("sha256", secret)
       .update(["lash-her:p2q:interactive:browser:v1", deployment, source, frontendTarget, body].join("\n")).digest("hex");
@@ -156,10 +156,18 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(authoring.cookie, authoring.proxyProof, () => send({
     method: "POST", path: "/v1/admin/courses", body: draftBody, applicationToken: "owned.admin.jwt",
   }), draftRoute);
+  const editPath = "/v1/admin/courses/12345678-1234-4123-8123-123456789abc";
+  const editRoute = "PATCH /api/admin/courses/12345678-1234-4123-8123-123456789abc";
+  const edit = evidence("authoring", editRoute, issued, "7032712d617574682d656469742d76318e2280dc03894248b21cf87427f9e85c");
+  const editBody = '{"title":"Updated draft","expectedRevision":1}';
+  await inBrowser(edit.cookie, edit.proxyProof, () => send({
+    method: "PATCH", path: editPath, body: editBody, applicationToken: "owned.admin.jwt",
+  }), editRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
     { stage: "authoring", method: "POST", target: "/course/v1/admin/courses", bytes: [draftBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [editBody, "owned.admin.jwt", ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -197,6 +205,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 14);
-  assert.ok(captured.slice(3).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, 15);
+  assert.ok(captured.slice(4).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

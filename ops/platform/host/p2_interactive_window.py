@@ -38,7 +38,8 @@ _GATEWAY_GID = 65532
 _ZERO = {"newWork": 0, "recovery": 0}
 CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
 EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | {"authoring"}
-_AUTHORING_REQUESTS = (("GET", "/course/v1/admin/courses?limit=100", 200), ("POST", "/course/v1/admin/courses", 201))
+_CREATE_DRAFT = "create-draft"
+_EDIT_DRAFT = "edit-and-stale-draft"
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
 demand = migrate.demand
@@ -143,6 +144,13 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
             "identityWitnessSha256": _receipt_sha(witness)}
 
 
+def _authoring_requests(action):
+    if action["operation"] == _EDIT_DRAFT:
+        path = f'/course/v1/admin/courses/{action["courseId"]}'
+        return (("GET", path, 3, 200), ("PATCH", path, 1, 200), ("PATCH", path, 1, 409))
+    return (("GET", "/course/v1/admin/courses?limit=100", 1, 200), ("POST", "/course/v1/admin/courses", 1, 201))
+
+
 def authoring_gateway_receipt(plan, artifact):
     common = browser_receipt(plan, "GATEWAY_OBSERVED")
     fields = set(common) | {"epoch", "gatewayStateSha256", "gatewayAcknowledgements", "gatewayActive", "gatewayUncertain"}
@@ -151,37 +159,59 @@ def authoring_gateway_receipt(plan, artifact):
            artifact["epoch"] == str(int(plan["initialEpoch"]) + 1) and _digest(artifact["gatewayStateSha256"]) and
            all(type(artifact[key]) is int and artifact[key] == 0 for key in ("gatewayActive", "gatewayUncertain")),
            "P2_INTERACTIVE_AUTHORING_GATEWAY_ARTIFACT_REQUIRED")
+    requests = _authoring_requests(plan["scopedAction"]["authoringAction"])
     rows = artifact["gatewayAcknowledgements"]
-    demand(type(rows) is list and len(rows) == len(_AUTHORING_REQUESTS) and all(
+    demand(type(rows) is list and len(rows) == sum(row[2] for row in requests) and all(
                _closed_fields(row, "requestId proofRequestId requestIndex upstreamStatus") and
                _matches(_UUID, row["requestId"]) and _matches(_UUID, row["proofRequestId"]) and
-               type(row["requestIndex"]) is int and row["requestIndex"] == index and
-               type(row["upstreamStatus"]) is int and row["upstreamStatus"] == _AUTHORING_REQUESTS[index][2]
-               for index, row in enumerate(rows)) and
+               type(row["requestIndex"]) is int and 0 <= row["requestIndex"] < len(requests) and
+               type(row["upstreamStatus"]) is int and row["upstreamStatus"] == requests[row["requestIndex"]][3]
+               for row in rows) and
            len({row["requestId"] for row in rows}) == len({row["proofRequestId"] for row in rows}) == len(rows),
+           "P2_INTERACTIVE_AUTHORING_ACKNOWLEDGEMENTS_REQUIRED")
+    indices = [row["requestIndex"] for row in rows]
+    expected_order = [0, 0, 1, 0, 2] if len(requests) == 3 else [0, 1]
+    demand(indices == expected_order,
            "P2_INTERACTIVE_AUTHORING_ACKNOWLEDGEMENTS_REQUIRED")
     return {**artifact, "gatewayEvidenceSha256": _receipt_sha(artifact)}
 
 
 def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
-    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_AUTHORING_EVIDENCE_REQUIRED")
-    gateway = authoring_gateway_receipt(plan, gateway_artifact)
-    post_id = gateway["gatewayAcknowledgements"][1]["requestId"]
-    browser, witness = evidence["browserResponse"], evidence["courseWitness"]
-    demand(_closed_fields(browser, "method pathname status requestId body") and browser["method"] == "POST" and
-           browser["pathname"] == "/api/admin/courses" and type(browser["status"]) is int and browser["status"] == 200 and
-           browser["requestId"] == post_id, "P2_INTERACTIVE_AUTHORING_BROWSER_RESPONSE_REQUIRED")
-    body = browser["body"]
     selected = action["authoringAction"]
+    editing = selected["operation"] == _EDIT_DRAFT
+    browser_key = "browserResponses" if editing else "browserResponse"
+    demand(_closed_fields(evidence, f"{browser_key} courseWitness"), "P2_INTERACTIVE_AUTHORING_EVIDENCE_REQUIRED")
+    gateway = authoring_gateway_receipt(plan, gateway_artifact)
+    mutations = [row["requestId"] for row in gateway["gatewayAcknowledgements"] if row["requestIndex"] > 0]
+    response, witness = evidence[browser_key], evidence["courseWitness"]
+    browser = response
+    pathname = "/api/admin/courses"
+    method, revision = "POST", 1
+    if editing:
+        demand(_closed_fields(response, "winner stale"), "P2_INTERACTIVE_AUTHORING_EVIDENCE_REQUIRED")
+        browser, stale = response["winner"], response["stale"]
+        pathname += f'/{selected["courseId"]}'
+        method, revision = "PATCH", selected["revision"] + 1
+        demand(_closed_fields(stale, "method pathname status requestId body dirtyInputPreserved") and
+               stale["method"] == method and stale["pathname"] == pathname and type(stale["status"]) is int and
+               stale["status"] == 409 and stale["requestId"] == mutations[1] and stale["body"] == {"code": "conflict"} and
+               stale["dirtyInputPreserved"] is True, "P2_INTERACTIVE_AUTHORING_STALE_RESPONSE_REQUIRED")
+    demand(_closed_fields(browser, "method pathname status requestId body") and browser["method"] == method and
+           browser["pathname"] == pathname and type(browser["status"]) is int and browser["status"] == 200 and
+           browser["requestId"] == mutations[0], "P2_INTERACTIVE_AUTHORING_BROWSER_RESPONSE_REQUIRED")
+    body = browser["body"]
     demand(_closed_fields(body, "courseId slug revision status") and _matches(_UUID, body["courseId"]) and
-           body["slug"] == selected["slug"] and type(body["revision"]) is int and body["revision"] == 1 and
+           (not editing or body["courseId"] == selected["courseId"]) and body["slug"] == selected["slug"] and
+           type(body["revision"]) is int and body["revision"] == revision and
            body["status"] == "draft", "P2_INTERACTIVE_AUTHORING_BROWSER_BODY_REQUIRED")
     demand(_closed_fields(witness, "courseId slug revision status readOnly") and witness["readOnly"] is True and
            type(witness["revision"]) is int and all(witness[key] == value for key, value in body.items()),
            "P2_INTERACTIVE_AUTHORING_COURSE_WITNESS_REQUIRED")
-    return {**selected, "actorId": action["actorId"], "courseId": body["courseId"], "gatewayPostRequestId": post_id,
-            "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
-            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
+    observed = ({"gatewayPatchRequestIds": mutations, "browserResponsesSha256": _receipt_sha(response)} if editing else
+                {"gatewayPostRequestId": mutations[0], "browserResponseSha256": _receipt_sha(browser)})
+    return {"operation": selected["operation"], "slug": selected["slug"], "actorId": action["actorId"],
+            "courseId": body["courseId"], "courseWitnessSha256": _receipt_sha(witness),
+            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"], **observed}
 
 
 def _lifecycle_case_evidence(action, evidence):
@@ -310,20 +340,30 @@ def validate_interactive_action(action):
         selected.add(identity)
     if authoring:
         selected_authoring = action["authoringAction"]
-        demand(_closed_fields(selected_authoring, "operation slug") and selected_authoring["operation"] == "create-draft" and
-               _matches(_SLUG, selected_authoring["slug"]) and len(selected_authoring["slug"]) <= 120 and
-               len(requests) == len(_AUTHORING_REQUESTS) and all(
-                   (row["method"], row["target"]) == (method, target) and row["uses"] == 1
-                   for row, (method, target, _) in zip(requests, _AUTHORING_REQUESTS)) and
-               _digest(requests[1]["bodySha256"]) and requests[1]["bodySha256"] != _EMPTY,
+        editing = type(selected_authoring) is dict and selected_authoring.get("operation") == _EDIT_DRAFT
+        fields = "operation slug courseId revision" if editing else "operation slug"
+        demand(_closed_fields(selected_authoring, fields) and selected_authoring["operation"] in (_CREATE_DRAFT, _EDIT_DRAFT) and
+               _matches(_SLUG, selected_authoring["slug"]) and len(selected_authoring["slug"]) <= 120,
+               "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
+        if editing:
+            demand(_matches(_UUID, selected_authoring["courseId"]) and type(selected_authoring["revision"]) is int and
+                   1 <= selected_authoring["revision"] <= 2_147_483_646, "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
+        expected = _authoring_requests(selected_authoring)
+        mutations = [row["bodySha256"] for row in requests[1:]]
+        demand(len(requests) == len(expected) and all(
+                   (row["method"], row["target"], row["uses"]) == (method, target, uses)
+                   for row, (method, target, uses, _) in zip(requests, expected)) and
+               all(_digest(digest) and digest != _EMPTY for digest in mutations) and len(set(mutations)) == len(mutations),
                "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
     return copy.deepcopy(action)
 
 
 def _selection_sha(action):
     if action["stage"] == "authoring":
-        # Hex for "p2q-authoring-v1", then the reviewed UUID.
-        return "7032712d617574686f72696e672d7631" + action["actorId"].replace("-", "")
+        # Hex domains "p2q-authoring-v1" and "p2q-auth-edit-v1" precede the reviewed UUID.
+        prefix = ("7032712d617574682d656469742d7631" if action["authoringAction"]["operation"] == _EDIT_DRAFT else
+                  "7032712d617574686f72696e672d7631")
+        return prefix + action["actorId"].replace("-", "")
     if action["stage"] == "identity":
         if "identityEnrollment" in action:
             enrollment = action["identityEnrollment"]
@@ -464,9 +504,11 @@ class P2InteractiveWindow:
         frontend = self.broker.observer.probe("observe")["admission"]
         demand(frontend == {"epoch": self.plan["initialEpoch"], "newWork": False, "recovery": False,
                             "active": 0, "uncertain": 0}, "P2_INTERACTIVE_FRONTEND_START_REQUIRED")
-        protect = ingress.observe_authoring_protection if self.action["stage"] == "authoring" else ingress.observe_browser_protection
+        authoring = self.action.get("authoringAction")
+        protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
+        paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] == _EDIT_DRAFT else {}
         proof = protect(self.broker._native_context(),
-            LockedClient(self.broker.vercel, self.broker.check), **self.broker.profile_arguments())
+            LockedClient(self.broker.vercel, self.broker.check), **self.broker.profile_arguments(), **paths)
         ordinary = self._gateway()
         self._original = self._read()
         demand(_closed(ordinary) and ordinary["sha256"] == _hash(self._original[0]) and
@@ -589,9 +631,11 @@ class P2InteractiveWindow:
     def observe_authoring_gateway(self):
         demand(self.action["stage"] == "authoring" and self._permit_issued, "P2_INTERACTIVE_AUTHORING_PERMIT_REQUIRED")
         rows = self.collect_gateway_effects()
+        if self.action["authoringAction"]["operation"] == _CREATE_DRAFT:
+            rows.sort(key=lambda row: row["requestIndex"])
         artifact = {**browser_receipt(self.plan, "GATEWAY_OBSERVED"), "epoch": str(int(self.plan["initialEpoch"]) + 1),
                     "gatewayStateSha256": self._scoped_sha, "gatewayActive": 0, "gatewayUncertain": 0,
-                    "gatewayAcknowledgements": sorted(rows, key=lambda row: row["requestIndex"])}
+                    "gatewayAcknowledgements": rows}
         receipt = authoring_gateway_receipt(self.plan, artifact)
         migrate.write_json(self.broker.directory, browser_artifact(self.plan, "gateway"), artifact)
         return receipt

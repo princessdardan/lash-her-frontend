@@ -266,6 +266,35 @@ test('fixed current certification plan joins the original release plan, terminal
       [{ ...selectedAuthoring.requests[0], target: '/course/v1/admin/courses?limit=99' }, selectedAuthoring.requests[1]],
       [selectedAuthoring.requests[0], { ...selectedAuthoring.requests[1], uses: 2 }]])
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedAuthoring, requests })));
+    const { status: _draftStatus, ...draftFields } = authoringDraft;
+    const authoringDraftEdits = {
+      winner: { ...draftFields, title: 'Owned winning edit', expectedRevision: 1 },
+      stale: { ...draftFields, title: 'Owned stale edit', expectedRevision: 1 },
+    };
+    const editPath = `/course/v1/admin/courses/${courseId}`;
+    const selectedEdit = { ...selectedAuthoring,
+      authoringAction: { operation: 'edit-and-stale-draft', courseId, slug: authoringDraft.slug, revision: 1 },
+      requests: [
+        { method: 'GET', target: editPath, bodySha256: rawHash(Buffer.alloc(0)), uses: 3 },
+        ...Object.values(authoringDraftEdits).map(body => ({ method: 'PATCH', target: editPath, bodySha256: rawHash(JSON.stringify(body)), uses: 1 })),
+      ] };
+    const editSettings = paired(selectedEdit), editPair = prepareP2ProfiledCertificationOperator(editSettings);
+    assert.equal(editPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+    assert.deepEqual(editPair.authoring.scopedAction, selectedEdit);
+    assert.deepEqual(editPair.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+    assert.equal(JSON.stringify(editPair).includes(authoringDraftEdits.stale.title), false);
+    const editHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(editPair.authoring), encoding: 'utf8' });
+    assert.equal(editHostPlan.status, 0, editHostPlan.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator({ ...editSettings, execution: { authoringDraftEdits } },
+      { confirmation: 'staging/owned-scoped-action' }), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...editSettings, execution: {
+      authoringDraftEdits: { ...authoringDraftEdits, stale: { ...authoringDraftEdits.stale, expectedRevision: 2 } },
+    } }, { confirmation: 'staging/owned-scoped-action' }), error => error.code !== 'ENOENT');
+    for (const requests of [selectedEdit.requests.toReversed(), selectedEdit.requests.slice(0, 2),
+      [{ ...selectedEdit.requests[0], uses: 2 }, ...selectedEdit.requests.slice(1)],
+      [selectedEdit.requests[0], selectedEdit.requests[1], { ...selectedEdit.requests[1] }]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedEdit, requests })));
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);
@@ -366,6 +395,7 @@ test('fixed current certification plan joins the original release plan, terminal
     for (const [selection, selector] of [
       [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
       [selectedAuthoring, '7032712d617574686f72696e672d7631' + selectedAuthoring.actorId.replaceAll('-', '')],
+      [selectedEdit, '7032712d617574682d656469742d7631' + selectedEdit.actorId.replaceAll('-', '')],
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },

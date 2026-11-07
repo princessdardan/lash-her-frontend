@@ -484,6 +484,80 @@ test("scoped authoring acknowledges the catalog page and draft create under thei
   assert.deepEqual(observed.interactiveEvidence, { admitted: 2, acknowledged: acknowledgements });
 });
 
+test("scoped authoring acknowledges the winning edit and stale conflict with exactly three draft reads", async t => {
+  const id = "20000000-0000-4000-8000-000000000002";
+  const foreignId = "30000000-0000-4000-8000-000000000003";
+  const path = `/v1/admin/courses/${id}`;
+  const target = `/course${path}`;
+  const fields = { title: "P2Q draft", slug: "p2q-draft", description: null, introduction: null, currency: "CAD", accessMode: "free",
+    priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null };
+  const baseline = { ...fields, id, status: "draft", revision: 1, modules: [] };
+  const winnerFields = { ...fields, title: "P2Q winning edit" };
+  const winnerBody = JSON.stringify({ ...winnerFields, expectedRevision: 1 });
+  const staleBody = JSON.stringify({ ...fields, title: "P2Q stale edit", expectedRevision: 1 });
+  const conflict = { error: { code: "CONFLICT", message: "Course revision is stale; reload before editing" } };
+  const requests = [
+    { method: "GET", target, bodySha256: certificationHash(""), uses: 3 },
+    { method: "PATCH", target, bodySha256: certificationHash(winnerBody), uses: 1 },
+    { method: "PATCH", target, bodySha256: certificationHash(staleBody), uses: 1 },
+  ];
+  const forwarded = [];
+  let course = baseline;
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString();
+    forwarded.push({ method: req.method, target: req.url, body,
+      requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    if (req.method === "PATCH") {
+      const { expectedRevision, ...edit } = JSON.parse(body);
+      if (expectedRevision !== course.revision) {
+        res.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify(conflict));
+        return;
+      }
+      course = { ...course, ...edit, revision: course.revision + 1 };
+    }
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ course }));
+  }, "authoring");
+
+  for (const denied of [f.signed({ path: `/course/v1/admin/courses/${foreignId}` }),
+    f.signed({ method: "PATCH", path: target, body: JSON.stringify({ ...winnerFields, expectedRevision: 2 }) })]) {
+    assert.equal((await f.send(denied)).status, 503);
+  }
+  const steps = [
+    { input: f.signed({ path: target }), requestIndex: 0, status: 200, value: { course: baseline } },
+    { input: f.signed({ path: target }), requestIndex: 0, status: 200, value: { course: baseline } },
+    { input: f.signed({ method: "PATCH", path: target, body: winnerBody }), requestIndex: 1, status: 200,
+      value: { course: { ...baseline, ...winnerFields, revision: 2 } } },
+    { input: f.signed({ path: target }), requestIndex: 0, status: 200, value: { course: { ...baseline, ...winnerFields, revision: 2 } } },
+    { input: f.signed({ method: "PATCH", path: target, body: staleBody }), requestIndex: 2, status: 409, value: conflict },
+  ];
+  const acknowledged = [];
+  for (const { input, requestIndex, status, value } of steps) {
+    const output = await f.send(input);
+    assert.equal(output.status, status);
+    assert.deepEqual(JSON.parse(output.body), value);
+    const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+    assert.match(requestId, /^[a-f0-9-]{36}$/u);
+    assert.notEqual(requestId, proofRequestId);
+    acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: status });
+  }
+  for (const denied of [f.signed({ path: target }), f.signed({ method: "PATCH", path: target, body: winnerBody }),
+    f.signed({ method: "PATCH", path: target, body: staleBody }), ...steps.map(({ input }) => input)]) {
+    assert.equal((await f.send(denied)).status, 503);
+  }
+  assert.equal(new Set(acknowledged.map(row => row.requestId)).size, 5);
+  assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: path, body: input.body ?? "",
+    requestId: acknowledged[index].requestId, proof: undefined })));
+  assert.deepEqual(course, { ...baseline, ...winnerFields, revision: 2 });
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.interactiveEvidence, { admitted: 5, acknowledged });
+});
+
 function mediaRefreshReceipt(lessonId, id) {
   return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };

@@ -11,7 +11,8 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { p2InteractiveBrowserPath, p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2AuthoringMutationReceipt, validateP2InteractiveBrowserInput,
+import { p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2InteractiveIdentityContext, p2LifecycleMutationTarget,
+  validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
@@ -207,8 +208,19 @@ async function reviewedInteractiveInput(plan, challenge) {
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
     && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const action = plan.scopedAction;
-  if (action.stage === "authoring") demand(action.authoringAction?.operation === "create-draft"
-    && action.requests[1]?.method === "POST" && action.requests[1]?.target === "/course/v1/admin/courses");
+  let authoring;
+  if (action.stage === "authoring") {
+    const selected = action.authoringAction, [, first, second] = action.requests;
+    if (selected?.operation === "edit-and-stale-draft") {
+      const path = "/course/v1/admin/courses/" + selected.courseId;
+      demand([first, second].every(request => request?.method === "PATCH" && request.target === path));
+      authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
+        revision: selected.revision, winnerBodySha256: first.bodySha256, staleBodySha256: second.bodySha256 };
+    } else {
+      demand(selected?.operation === "create-draft" && first?.method === "POST" && first.target === "/course/v1/admin/courses");
+      authoring = { actorId: action.actorId, slug: selected.slug, bodySha256: first.bodySha256 };
+    }
+  }
   return validateP2InteractiveBrowserInput({ version: 2, environment: "staging", actionId: plan.certificationActionId,
     challenge, bindingSha256: plan.planSha256, stage: action.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
@@ -216,7 +228,7 @@ async function reviewedInteractiveInput(plan, challenge) {
     ...(action.stage === "identity" ? Object.hasOwn(action, "identityEnrollment")
       ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
     ...(action.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(action.frontendAction) } : {}),
-    ...(action.stage === "authoring" ? { authoring: { actorId: action.actorId, slug: action.authoringAction.slug, bodySha256: action.requests[1].bodySha256 } } : {}) });
+    ...(authoring ? { authoring } : {}) });
 }
 
 // A dedicated stdin pipe carries one permit per reviewed phase. All IPC data
@@ -256,17 +268,21 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     try {
       const lifecycle = pending?.type === "interactive-lifecycle-captured";
       const authoring = pending?.type === "interactive-authoring-captured";
+      const edit = pending?.type === "interactive-authoring-edit-captured";
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
-        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []), ...(lifecycle || authoring ? ["response"] : identity ? ["identity"] : [])])
+        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []),
+        ...(lifecycle || authoring ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
-        demand(message.path === p2InteractiveBrowserPath(pending.binding.stage, pending.selection.context)
-          && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599);
+        demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
+          && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
+          && (input.authoring?.operation !== "edit-and-stale-draft" || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
+      if (edit) validateP2AuthoringEditResponses(message.responses, input.authoring);
       if (identity) validateP2InteractiveIdentityReceipt(message.identity, input);
       const waiter = pending;
       pending = undefined;
@@ -299,17 +315,19 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     demand(!failed && !ended && selected?.context === context);
     return selected;
   };
-  const captureMutation = async (context, stage, expectedContext) => {
+  const captureMutation = async (context, stage, expectedContext, edit = false) => {
     const selection = requireSelection(context);
     const remaining = selection.expires * 1000 - Date.now();
     demand(phase === "opened" && !closing && binding.stage === stage && context === expectedContext
+      && edit === (input.authoring?.operation === "edit-and-stale-draft")
       && remaining > 0 && remaining <= input.windowSeconds * 1000);
     phase = "capturing";
-    const receipt = await command("interactive-capture-" + stage, { ...binding, ...selection },
-      "interactive-" + stage + "-captured", selection, remaining + 5000);
+    const protocolStage = edit ? "authoring-edit" : stage;
+    const receipt = await command("interactive-capture-" + protocolStage, { ...binding, ...selection },
+      "interactive-" + protocolStage + "-captured", selection, remaining + 5000);
     phase = "cleared";
     clearTimeout(phaseTimer);
-    return receipt.response;
+    return edit ? receipt.responses : receipt.response;
   };
   const controller = Object.freeze({
     initialized: () => ready,
@@ -349,6 +367,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     },
     captureLifecycleResponse: context => captureMutation(context, "lifecycle", input.lifecycle?.context),
     captureAuthoringResponse: context => captureMutation(context, "authoring", "owner"),
+    captureAuthoringResponses: context => captureMutation(context, "authoring", "owner", true),
     async captureIdentity(context, ownerSubjectSha256) {
       const selection = requireSelection(context);
       const remaining = selection.expires * 1000 - Date.now();

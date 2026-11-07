@@ -66,9 +66,17 @@ function enrollmentSelector(enrollment) {
   return (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
 }
 
-function authoringSelector(actorId) {
-  demand(uuid(actorId));
-  return "7032712d617574686f72696e672d7631" + actorId.replaceAll("-", "");
+const authoringEdit = input => input.stage === "authoring" && input.authoring?.operation === "edit-and-stale-draft";
+
+function authoringSelector(input) {
+  demand(uuid(input.authoring.actorId));
+  const prefix = authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
+  return prefix + input.authoring.actorId.replaceAll("-", "");
+}
+
+export function p2InteractiveBrowserEntryPath(input, context) {
+  const path = p2InteractiveBrowserPath(input.stage, context);
+  return authoringEdit(input) ? path + "/" + input.authoring.courseId : path;
 }
 
 export function validateP2InteractiveBrowserInput(input) {
@@ -84,8 +92,14 @@ export function validateP2InteractiveBrowserInput(input) {
     && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
-  if (input.stage === "authoring") demand(closed(input.authoring, ["actorId", "slug", "bodySha256"]) && uuid(input.authoring.actorId)
-    && matches(input.authoring.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && input.authoring.slug.length <= 120 && sha(input.authoring.bodySha256));
+  if (input.stage === "authoring") {
+    const target = input.authoring, edit = authoringEdit(input);
+    demand(closed(target, ["actorId", "slug", ...(edit ? ["operation", "courseId", "revision", "winnerBodySha256", "staleBodySha256"] : ["bodySha256"])])
+      && uuid(target.actorId) && matches(target.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.slug.length <= 120);
+    if (edit) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision) && target.revision >= 1 && target.revision < Number.MAX_SAFE_INTEGER
+      && sha(target.winnerBodySha256) && sha(target.staleBodySha256) && target.winnerBodySha256 !== target.staleBodySha256);
+    else demand(sha(target.bodySha256));
+  }
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
   return input;
@@ -105,7 +119,7 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
     const enrollment = input.identityEnrollment;
     demand(enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
   }
-  if (stage === "authoring") demand(parts[6] === authoringSelector(input.authoring.actorId));
+  if (stage === "authoring") demand(parts[6] === authoringSelector(input));
   return permit;
 }
 
@@ -268,17 +282,33 @@ export function validateP2LifecycleMutationReceipt(receipt, target) {
   return receipt;
 }
 
-export function validateP2AuthoringMutationReceipt(receipt, target) {
-  demand(closed(receipt, ["method", "pathname", "status", "requestId", "body"]) && receipt.method === "POST"
-    && receipt.pathname === authoringPath && receipt.status === 200 && uuid(receipt.requestId)
+function validateAuthoringCourseReceipt(receipt, target, edit = false) {
+  demand(closed(receipt, ["method", "pathname", "status", "requestId", "body"]) && receipt.method === (edit ? "PATCH" : "POST")
+    && receipt.pathname === (edit ? authoringPath + "/" + target.courseId : authoringPath) && receipt.status === 200 && uuid(receipt.requestId)
     && closed(receipt.body, ["courseId", "slug", "revision", "status"]) && uuid(receipt.body.courseId)
-    && receipt.body.slug === target.slug && receipt.body.revision === 1 && receipt.body.status === "draft");
+    && receipt.body.slug === target.slug && receipt.body.status === "draft"
+    && (edit ? receipt.body.courseId === target.courseId && receipt.body.revision === target.revision + 1 : receipt.body.revision === 1));
   return receipt;
 }
 
-async function readMutationResponse(response, request, input, pathname) {
+export function validateP2AuthoringMutationReceipt(receipt, target) {
+  return validateAuthoringCourseReceipt(receipt, target);
+}
+
+export function validateP2AuthoringEditResponses(responses, target) {
+  demand(closed(responses, ["winner", "stale"]));
+  validateAuthoringCourseReceipt(responses.winner, target, true);
+  const stale = responses.stale;
+  demand(closed(stale, ["method", "pathname", "status", "requestId", "body", "dirtyInputPreserved"])
+    && stale.method === "PATCH" && stale.pathname === authoringPath + "/" + target.courseId && stale.status === 409
+    && uuid(stale.requestId) && stale.requestId !== responses.winner.requestId
+    && closed(stale.body, ["code"]) && stale.body.code === "conflict" && stale.dirtyInputPreserved === true);
+  return responses;
+}
+
+async function readMutationResponse(response, request, input, pathname, editRole) {
   const authoring = input.stage === "authoring", maximum = authoring ? maxAuthoringBody : maxLifecycleBody;
-  const status = authoring || preferences(input.lifecycle) ? 200 : 202;
+  const status = editRole === "stale" ? 409 : authoring || preferences(input.lifecycle) ? 200 : 202;
   demand(response.url() === input.browserOrigin + pathname && response.status() === status
     && !response.fromServiceWorker() && request.redirectedTo() === null);
   const [ids, contentTypes, cache, encodings, lengths, size] = await Promise.all([
@@ -295,20 +325,27 @@ async function readMutationResponse(response, request, input, pathname) {
   const bytes = await response.body();
   try {
     demand(declared === undefined || bytes.length === declared);
-    const body = exactBrowserJson(bytes, maximum), receipt = { method: "POST", pathname, status, requestId: ids[0] };
+    const body = exactBrowserJson(bytes, maximum), receipt = { method: editRole ? "PATCH" : "POST", pathname, status, requestId: ids[0] };
     if (!authoring) return validateP2LifecycleMutationReceipt({ ...receipt, body }, input.lifecycle);
+    if (editRole === "stale") {
+      demand(closed(body, ["error", "requestId"]) && body.requestId === receipt.requestId
+        && closed(body.error, ["code", "message"]) && body.error.code === "conflict"
+        && typeof body.error.message === "string" && body.error.message.length > 0);
+      return { ...receipt, body: { code: "conflict" } };
+    }
     demand(closed(body, ["course"]) && body.course && typeof body.course === "object" && !Array.isArray(body.course));
     const { id: courseId, slug, revision, status: courseStatus } = body.course;
-    return validateP2AuthoringMutationReceipt({ ...receipt, body: { courseId, slug, revision, status: courseStatus } }, input.authoring);
+    return validateAuthoringCourseReceipt({ ...receipt, body: { courseId, slug, revision, status: courseStatus } }, input.authoring, editRole === "winner");
   } finally { bytes.fill(0); }
 }
 
 // Attach before navigation. A second selected request, even one whose response
 // is lost while closing the page, invalidates the first accepted response.
-function watchMutation(context, page, input) {
+function watchMutation(context, page, input, edit) {
   validateP2InteractiveBrowserInput(input);
   const authoring = input.stage === "authoring", target = input.lifecycle;
-  const pathname = authoring ? authoringPath : target.pathname;
+  const pathname = edit ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : target.pathname;
+  const method = edit ? "PATCH" : "POST";
   const refusal = () => new Error(authoring ? "P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED" : "P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED");
   let selected, receipt, accept, reject, failed = false, responseStarted = false;
   const observed = new Promise((resolve, fail) => { accept = resolve; reject = fail; });
@@ -317,17 +354,23 @@ function watchMutation(context, page, input) {
   const onRequest = request => {
     const url = URL.parse(request.url());
     if (!url) return;
-    if (url.origin !== input.browserOrigin || url.pathname !== pathname || request.method() !== "POST") return;
+    if (url.origin !== input.browserOrigin || url.pathname !== pathname || request.method() !== method) return;
     try {
       const frame = request.frame();
+      if (edit && frame === edit.peer.mainFrame()) return;
       demand(!selected && !url.search && !url.hash && request.redirectedFrom() === null && frame === page.mainFrame());
       selected = request;
       const bytes = request.postDataBuffer(), posted = exactBrowserJson(bytes, authoring ? maxAuthoringBody : maxLifecycleBody);
       if (authoring) {
         const source = URL.parse(frame.url());
-        demand(source?.origin === input.browserOrigin && source.pathname === interactivePages.authoring.owner
-          && createHash("sha256").update(bytes).digest("hex") === input.authoring.bodySha256
-          && posted?.slug === input.authoring.slug && posted.status === "draft");
+        const digest = edit ? input.authoring[edit.role + "BodySha256"] : input.authoring.bodySha256;
+        demand(source?.origin === input.browserOrigin && source.pathname === p2InteractiveBrowserEntryPath(input, "owner")
+          && createHash("sha256").update(bytes).digest("hex") === digest && posted?.slug === input.authoring.slug);
+        if (edit) {
+          demand(posted.expectedRevision === input.authoring.revision && !Object.hasOwn(posted, "status")
+            && typeof posted.title === "string" && posted.title.length > 0 && posted.title.length <= 300);
+          edit.acceptTitle(posted.title);
+        } else demand(posted.status === "draft");
       } else if (preferences(target)) demand(closed(posted, ["learningUpdates"]) && posted.learningUpdates === (target.operation === "preferences-on"));
       else demand(closed(posted, ["action", "idempotencyKey"]) && posted.action === target.operation && uuid(posted.idempotencyKey));
     } catch { fail(); }
@@ -336,8 +379,8 @@ function watchMutation(context, page, input) {
     if (response.request() !== selected) return;
     if (failed || responseStarted) return fail();
     responseStarted = true;
-    void readMutationResponse(response, selected, input, pathname).then(value => {
-      if (!failed) { receipt = value; accept(value); }
+    void readMutationResponse(response, selected, input, pathname, edit?.role).then(value => {
+      if (!failed) { receipt = value; edit?.observeReceipt(); accept(value); }
     }, fail);
   };
   const onFailure = request => { if (request === selected) fail(); };
@@ -373,8 +416,63 @@ export function watchP2LifecycleMutation(context, page, input) {
 }
 
 export function watchP2AuthoringMutation(context, page, input) {
-  demand(input.stage === "authoring");
+  demand(input.stage === "authoring" && !authoringEdit(input));
   return watchMutation(context, page, input);
+}
+
+const titleField = page => page.getByRole("textbox", { name: "Course title", exact: true });
+const titleHash = value => createHash("sha256").update(value).digest("hex");
+
+export function watchP2AuthoringEdits(context, winnerPage, stalePage, input) {
+  demand(authoringEdit(input) && winnerPage !== stalePage && winnerPage.context() === context && stalePage.context() === context);
+  let ready = false, winnerAccepted = false, startingTitle, submittedTitle, dirtyInputPreserved = false;
+  const winner = watchMutation(context, winnerPage, input, {
+    role: "winner", peer: stalePage, acceptTitle: () => demand(ready), observeReceipt: () => { winnerAccepted = true; },
+  });
+  const stale = watchMutation(context, stalePage, input, {
+    role: "stale", peer: winnerPage, acceptTitle: title => {
+      demand(ready && winnerAccepted);
+      submittedTitle = titleHash(title);
+      demand(submittedTitle !== startingTitle);
+    }, observeReceipt: () => {},
+  });
+  const remaining = deadline => {
+    const timeout = deadline - Date.now();
+    demand(timeout > 0);
+    return timeout;
+  };
+  return {
+    async open(expires) {
+      demand(!ready);
+      const deadline = Math.min(Date.now() + 30_000, expires * 1000), url = input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner");
+      for (const page of [winnerPage, stalePage]) {
+        const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: remaining(deadline) });
+        demand(response?.status() === 200 && response.url() === url && page.url() === url);
+        const title = titleField(page), save = page.getByRole("button", { name: "Save course details", exact: true });
+        await Promise.all([title.waitFor({ state: "visible", timeout: remaining(deadline) }), save.waitFor({ state: "visible", timeout: remaining(deadline) })]);
+        demand(await title.isEditable({ timeout: remaining(deadline) }) && await save.isEnabled({ timeout: remaining(deadline) }));
+        const value = await title.inputValue({ timeout: remaining(deadline) });
+        demand(value.trim().length > 0 && (!startingTitle || startingTitle === titleHash(value)));
+        startingTitle = titleHash(value);
+      }
+      ready = true;
+      await winnerPage.bringToFront();
+    },
+    async wait(expires) {
+      demand(ready);
+      await Promise.all([winner.wait(expires), stale.wait(expires)]);
+      const { requestId } = stale.finish(), deadline = expires * 1000;
+      const text = "This course changed or is not ready for this operation. Reload before trying again. Reference: " + requestId;
+      await stalePage.getByRole("alert").getByText(text, { exact: true }).waitFor({ state: "visible", timeout: remaining(deadline) });
+      const title = await titleField(stalePage).inputValue({ timeout: remaining(deadline) });
+      demand(titleHash(title) === submittedTitle);
+      dirtyInputPreserved = true;
+    },
+    finish() {
+      return validateP2AuthoringEditResponses({ winner: winner.finish(), stale: { ...stale.finish(), dirtyInputPreserved } }, input.authoring);
+    },
+    close() { winner.close(); stale.close(); },
+  };
 }
 
 export function validateP2LifecycleBrowserInput(input) {
@@ -538,7 +636,7 @@ async function runInteractiveBrowser(first) {
       const ownerIdentity = captureIdentity && binding.stage === "identity" && p2InteractiveIdentityContext(input) === "owner";
       demand(closed(received, [...Object.keys(binding), "context", "expires", ...(ownerIdentity ? ["ownerSubjectSha256"] : [])])
         && Number.isSafeInteger(received.expires));
-      const path = p2InteractiveBrowserPath(binding.stage, received.context);
+      const path = p2InteractiveBrowserEntryPath(input, received.context);
       if (command.type === "interactive-install") {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input)));
@@ -566,14 +664,24 @@ async function runInteractiveBrowser(first) {
         opened = true;
         if (binding.stage === "identity") identityOpenedAt = Date.now();
         page = await context.newPage();
-        if (binding.stage === "lifecycle") mutationWatch = watchP2LifecycleMutation(context, page, input);
-        if (binding.stage === "authoring") mutationWatch = watchP2AuthoringMutation(context, page, input);
-        const response = await page.goto(input.browserOrigin + path, { waitUntil: "domcontentloaded", timeout: 30_000 });
-        demand(response && Number.isInteger(response.status()));
+        let httpStatus;
+        if (authoringEdit(input)) {
+          const stale = await context.newPage();
+          mutationWatch = watchP2AuthoringEdits(context, page, stale, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else {
+          if (binding.stage === "lifecycle") mutationWatch = watchP2LifecycleMutation(context, page, input);
+          if (binding.stage === "authoring") mutationWatch = watchP2AuthoringMutation(context, page, input);
+          const response = await page.goto(input.browserOrigin + path, { waitUntil: "domcontentloaded", timeout: 30_000 });
+          httpStatus = response?.status();
+          demand(Number.isInteger(httpStatus));
+        }
         pending = next();
-        await send("interactive-page-opened", { ...selection, path, httpStatus: response.status() });
+        await send("interactive-page-opened", { ...selection, path, httpStatus });
       } else {
-        const captureMutation = ["lifecycle", "authoring"].includes(binding.stage) && command.type === "interactive-capture-" + binding.stage;
+        const edit = authoringEdit(input), stage = edit ? "authoring-edit" : binding.stage;
+        const captureMutation = ["lifecycle", "authoring"].includes(binding.stage) && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
         if (captureMutation) await mutationWatch.wait(selection.expires);
@@ -588,7 +696,7 @@ async function runInteractiveBrowser(first) {
         mutationWatch?.close();
         mutationWatch = undefined;
         pending = next();
-        if (captureMutation) await send("interactive-" + binding.stage + "-captured", { ...selection, response });
+        if (captureMutation) await send("interactive-" + stage + "-captured", { ...selection, ...(edit ? { responses: response } : { response }) });
         else if (captureIdentity) await send("interactive-identity-captured", { ...selection, identity: verifiedIdentity });
         else await send("interactive-permit-cleared", selection);
       }

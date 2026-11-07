@@ -50,7 +50,13 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
               result = await course.createCourse(input);
               break;
             }
-            case "update-course": result = await course.updateCourse(params.courseId, body as Parameters<Client["updateCourse"]>[1]); break;
+            case "update-course": {
+              const input = body as Parameters<Client["updateCourse"]>[1];
+              if (currentWriterAuthoringActorId() && (!input || !Number.isSafeInteger(input.expectedRevision) ||
+                input.expectedRevision < 1 || Object.hasOwn(input, "status"))) throw new IntegrationServiceError("invalid_request", 400);
+              result = await course.updateCourse(params.courseId, input);
+              break;
+            }
             case "create-module": result = await course.createModule(params.courseId, body as Parameters<Client["createModule"]>[1]); break;
             case "update-module": result = await course.updateModule(params.moduleId, body as Parameters<Client["updateModule"]>[1]); break;
             case "reorder-modules": result = await course.reorderModules(params.courseId, body as Parameters<Client["reorderModules"]>[1]); break;

@@ -10,10 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2InteractiveBrowserEntryPath,
+  p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
-  validateP2AuthoringMutationReceipt, validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt,
-  watchP2AuthoringMutation, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput,
+  validateP2LifecycleMutationReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -205,8 +206,14 @@ const ownedDraft = { title: "Owned draft title", slug: "owned-draft", descriptio
   currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null, status: "draft" };
 const ownedAuthoring = { actorId: adminId, slug: ownedDraft.slug, bodySha256: identityHash(ownedDraft) };
 const authoringSelector = actorId => "7032712d617574686f72696e672d7631" + actorId.replaceAll("-", "");
+const authoringEditSelector = actorId => "7032712d617574682d656469742d7631" + actorId.replaceAll("-", "");
 const ownedCourseId = randomUUID();
 const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
+const { status: ownedDraftStatus, ...ownedEditFields } = ownedDraft;
+const ownedWinner = { ...ownedEditFields, title: "Owned winner title", expectedRevision: 4 };
+const ownedStale = { ...ownedEditFields, title: "Owned unsaved stale title", expectedRevision: 4 };
+const ownedAuthoringEdit = { actorId: adminId, operation: "edit-and-stale-draft", courseId: ownedCourseId, slug: ownedDraft.slug, revision: 4,
+  winnerBodySha256: identityHash(ownedWinner), staleBodySha256: identityHash(ownedStale) };
 const customerIdentitySelector = "7032712d637573746f6d65722d763100" + userId.replaceAll("-", "");
 const enrollmentEmail = "owned-new-customer@example.invalid", enrollmentId = randomUUID();
 function ownedEnrollment(provider) {
@@ -220,7 +227,8 @@ function interactivePermit(input) {
   if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
-  else if (input.stage === "authoring") selector = authoringSelector(input.authoring.actorId);
+  else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
+    ? authoringEditSelector(input.authoring.actorId) : authoringSelector(input.authoring.actorId);
   const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
@@ -313,6 +321,32 @@ test("authoring input and receipt bind the selected draft slug, revision and can
   for (const change of [{ slug: "foreign-draft" }, { revision: 2 }, { status: "published" }, { courseId: "wrong-id" }, { title: "Private" }]) {
     assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, body: { ...receipt.body, ...change } }, ownedAuthoring));
   }
+});
+
+test("edit authoring permit and paired receipt bind owner, course, revision and the distinct selected actions", () => {
+  const input = interactiveInput({ stage: "authoring", authoring: ownedAuthoringEdit });
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), "/admin/courses/" + ownedCourseId);
+  const permit = interactivePermit(input), parts = permit.cookie.split(".");
+  assert.equal(parts[6], authoringEditSelector(adminId));
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  for (const selector of [authoringSelector(adminId), authoringEditSelector(randomUUID())]) {
+    const altered = parts.slice(); altered[6] = selector;
+    assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: altered.join(".") }, input));
+  }
+  for (const change of [{ revision: 0 }, { courseId: "bad" }, { staleBodySha256: ownedAuthoringEdit.winnerBodySha256 },
+    { bodySha256: "a".repeat(64) }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...ownedAuthoringEdit, ...change } }));
+  }
+  const pathname = "/api/admin/courses/" + ownedCourseId;
+  const winner = { method: "PATCH", pathname, status: 200, requestId: randomUUID(),
+    body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 5, status: ownedDraftStatus } };
+  const stale = { method: "PATCH", pathname, status: 409, requestId: randomUUID(), body: { code: "conflict" }, dirtyInputPreserved: true };
+  assert.deepEqual(validateP2AuthoringEditResponses({ winner, stale }, ownedAuthoringEdit), { winner, stale });
+  for (const change of [{ requestId: winner.requestId }, { dirtyInputPreserved: false }, { body: { code: "conflict", title: "private" } }]) {
+    assert.throws(() => validateP2AuthoringEditResponses({ winner, stale: { ...stale, ...change } }, ownedAuthoringEdit));
+  }
+  assert.throws(() => validateP2AuthoringEditResponses({ winner: { ...winner, body: { ...winner.body, revision: 4 } }, stale }, ownedAuthoringEdit));
 });
 
 test("actual interactive child refuses secret-bearing IPC before browser launch and emits only a generic failure", async () => {
@@ -733,6 +767,90 @@ function ownedLifecyclePage(browser, lifecycle, response, document) {
   return ownedMutationPage(browser, interactiveInput({ stage: "lifecycle", lifecycle }), lifecycle.pathname, lifecycle.context,
     response, watchP2LifecycleMutation, document);
 }
+
+test("owned Chromium two-tab editing captures the winner and proves the stale title survives the conflict",
+  { skip: !ownedInteractiveBrowser, timeout: 15_000 }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const input = interactiveInput({ stage: "authoring", authoring: ownedAuthoringEdit });
+    const detail = p2InteractiveBrowserEntryPath(input, "owner"), pathname = "/api/admin/courses/" + ownedCourseId;
+    const winnerId = randomUUID(), staleId = randomUUID();
+    const winnerBody = { course: { ...ownedDraftResponse.course, title: ownedWinner.title, revision: 5 } };
+    const conflict = { error: { code: "conflict", message: "Owned fixture conflict." }, requestId: staleId };
+    const expected = { winner: { method: "PATCH", pathname, status: 200, requestId: winnerId,
+      body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 5, status: "draft" } },
+    stale: { method: "PATCH", pathname, status: 409, requestId: staleId, body: { code: "conflict" }, dirtyInputPreserved: true } };
+    const run = async (scenario) => {
+      const context = await browser.newContext(), effects = [];
+      await context.route("**/*", async route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (url.pathname === detail && request.method() === "GET") return route.fulfill({ status: 200, contentType: "text/html",
+          body: `<!doctype html><form><label>Course title <input name="title" value="Owned initial title"></label>
+            <button>Save course details</button></form><div id="feedback"></div><script>
+            document.querySelector("form").onsubmit = async event => {
+              event.preventDefault();
+              const title = new FormData(event.currentTarget).get("title"), fields = ${JSON.stringify(ownedEditFields)};
+              const response = await fetch(${JSON.stringify(pathname)}, { method: "PATCH", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ ...fields, title, expectedRevision: 4 }) });
+              await response.json();
+              const feedback = document.querySelector("#feedback");
+              if (response.ok) {
+                await (await fetch(${JSON.stringify(pathname)})).json();
+                feedback.setAttribute("role", "status");
+                feedback.textContent = "Course details saved.";
+              } else {
+                if (${scenario === "reset"}) document.querySelector("input[name=title]").value = "Owned initial title";
+                feedback.setAttribute("role", "alert");
+                feedback.textContent = "This course changed or is not ready for this operation. Reload before trying again. Reference: " + response.headers.get("x-request-id");
+              }
+            };</script>` });
+        if (url.pathname === pathname && request.method() === "GET") return route.fulfill({ status: 200, json: winnerBody });
+        if (url.pathname !== pathname || request.method() !== "PATCH") return route.abort();
+        const selected = request.postDataJSON().title === ownedWinner.title ? "winner" : "stale";
+        effects.push(selected);
+        return route.fulfill({ status: selected === "winner" ? 200 : 409, headers: { "content-type": "application/json",
+          "cache-control": "private, no-store", "x-request-id": selected === "winner" ? winnerId : staleId },
+        body: JSON.stringify(selected === "winner" ? winnerBody : conflict) });
+      });
+      const winner = await context.newPage(), stale = await context.newPage(), watch = watchP2AuthoringEdits(context, winner, stale, input);
+      try {
+        const expires = Math.floor(Date.now() / 1000) + 10;
+        await watch.open(expires);
+        const submit = async (page, title) => {
+          await page.getByRole("textbox", { name: "Course title" }).fill(title);
+          await page.getByRole("button", { name: "Save course details" }).click();
+        };
+        if (scenario !== "early") {
+          await submit(winner, ownedWinner.title);
+          await winner.getByRole("status").waitFor();
+        }
+        await submit(stale, ownedStale.title);
+        if (scenario === "early" || scenario === "reset") {
+          await assert.rejects(watch.wait(expires));
+          assert.throws(() => watch.finish());
+          return;
+        }
+        await watch.wait(expires);
+        const receipt = watch.finish();
+        assert.deepEqual(receipt, expected);
+        assert.equal(JSON.stringify(receipt).includes(ownedStale.title), false);
+        if (scenario === "duplicate") {
+          const reload = winner.waitForResponse(response => response.url() === input.browserOrigin + pathname && response.request().method() === "GET");
+          await submit(winner, ownedWinner.title);
+          await reload;
+          assert.throws(() => watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } else {
+          await Promise.all([winner.close(), stale.close()]);
+          assert.deepEqual(watch.finish(), expected);
+          assert.deepEqual(effects, ["winner", "stale"]);
+        }
+      } finally { watch.close(); await context.close(); }
+    };
+    try {
+      for (const scenario of ["success", "early", "reset", "duplicate"]) await run(scenario);
+    } finally { await browser.close(); }
+  });
 
 test("owned Chromium authoring watcher refuses digest changes, mismatched draft responses and duplicate success",
   { skip: !ownedInteractiveBrowser }, async () => {

@@ -17,7 +17,9 @@ type Stage = (typeof stages)[number];
 const adminIdentitySelector = createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
 const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
 const authoringActorPrefix = "7032712d617574686f72696e672d7631";
-type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment };
+const authoringEditActorPrefix = "7032712d617574682d656469742d7631";
+type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
+  authoringOperation?: "create-draft" | "edit-draft" };
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string; authoringActorId?: string };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
@@ -41,6 +43,10 @@ const staffAuth = {
   POST: at("/admin/sign-in|/api/auth/(?:signin/google|signout)"),
 };
 const authoringReads = at(`/admin/courses(?:/${uuid})?|/api/admin/courses(?:/${uuid}(?:/publication-readiness)?)?|/api/admin/lessons/${uuid}/quiz`);
+const authoringEdit = {
+  GET: at(`/(?:api/)?admin/courses/${uuid}`),
+  PATCH: at(`/api/admin/courses/${uuid}`),
+};
 const media = {
   GET: at(`/api/admin/lessons/${uuid}/video`),
   POST: at(`/api/admin/lessons/${uuid}/(?:video-upload|video/${uuid}/(?:refresh|captions))`),
@@ -70,12 +76,14 @@ function permitsCustomerAuth(method: string, path: string, provider?: WriterIden
   return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
 }
 
-function permits({ stage, identityActorKind, identityEnrollment }: BrowserScope, method: string, path: string): boolean {
+function permits({ stage, identityActorKind, identityEnrollment, authoringOperation }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
     case "identity":
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
-    case "authoring": return (method === "GET" && path === "/admin/courses") || (method === "POST" && path === "/api/admin/courses");
+    case "authoring":
+      return authoringOperation === "edit-draft" ? matches(authoringEdit, method, path)
+        : authoringOperation === "create-draft" && ((method === "GET" && path === "/admin/courses") || (method === "POST" && path === "/api/admin/courses"));
     case "media": return matches(media, method, path) || (method === "GET" && authoringReads.test(path));
     case "learning": return matches(learning, method, path) || (method === "GET" && path === "/api/customer-auth/session");
     case "paid-grant": return matches(paidGrant, method, path);
@@ -141,7 +149,9 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   }
   if (stage === "authoring") {
     const authoringActorId = decodeSelectedUuid(selection, authoringActorPrefix);
-    return authoringActorId ? { ...permit, authoringActorId } : null;
+    if (authoringActorId) return { ...permit, authoringActorId, authoringOperation: "create-draft" };
+    const editActorId = decodeSelectedUuid(selection, authoringEditActorPrefix);
+    return editActorId ? { ...permit, authoringActorId: editActorId, authoringOperation: "edit-draft" } : null;
   }
   return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }

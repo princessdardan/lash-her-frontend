@@ -167,12 +167,13 @@ class IndependentGuardTests(unittest.TestCase):
         for stage, actor_kind, provider in cases:
             with self.subTest(stage=stage, actor_kind=actor_kind, provider=provider):
                 self.check_profiled_interactive_terminal(stage, actor_kind, provider)
+        self.check_profiled_interactive_terminal('authoring', 'admin', None, editing=True)
 
-    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider):
+    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
-        initial, directory = self.profiled_certification(f'owned-{stage_name}-{provider or actor_kind}')
+        initial, directory = self.profiled_certification(f'owned-{stage_name}-{"edit" if editing else provider or actor_kind}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
         actor, user, request, command, *ledger_ids = ids
@@ -186,10 +187,16 @@ class IndependentGuardTests(unittest.TestCase):
         elif identity:
             action['identityActor'] = reviewed
         elif authoring:
-            action['authoringAction'] = {'operation': 'create-draft', 'slug': 'owned-draft'}
-            action['requests'] = [
-                {'method': 'GET', 'target': '/course/v1/admin/courses?limit=100', 'bodySha256': window._EMPTY, 'uses': 1},
-                {'method': 'POST', 'target': '/course/v1/admin/courses', 'bodySha256': '9' * 64, 'uses': 1}]
+            if editing:
+                action['authoringAction'] = {'operation': 'edit-and-stale-draft', 'slug': 'owned-draft', 'courseId': command, 'revision': 3}
+                action['requests'] = [{'method': method, 'target': f'/course/v1/admin/courses/{command}',
+                                       'bodySha256': digest, 'uses': uses}
+                                      for method, digest, uses in (('GET', window._EMPTY, 3), ('PATCH', '9' * 64, 1), ('PATCH', '8' * 64, 1))]
+            else:
+                action['authoringAction'] = {'operation': 'create-draft', 'slug': 'owned-draft'}
+                action['requests'] = [
+                    {'method': 'GET', 'target': '/course/v1/admin/courses?limit=100', 'bodySha256': window._EMPTY, 'uses': 1},
+                    {'method': 'POST', 'target': '/course/v1/admin/courses', 'bodySha256': '9' * 64, 'uses': 1}]
         else:
             action['frontendAction'] = selection
         plan.update(mode='interactive-browser', scopedAction=action, nativePlan={'producer': {'role': {'oid': '22222'}}})
@@ -219,14 +226,30 @@ class IndependentGuardTests(unittest.TestCase):
                 domain.update(provider=provider, providerLinkCount=1 if provider == 'google' else 0)
             browser_key, domain_key = 'browserIdentity', 'identityWitness'
         elif authoring:
-            draft = {'courseId': command, 'slug': 'owned-draft', 'revision': 1, 'status': 'draft'}
-            browser = {'method': 'POST', 'pathname': '/api/admin/courses', 'status': 200, 'requestId': request, 'body': draft}
+            draft = {'courseId': command, 'slug': 'owned-draft', 'revision': 4 if editing else 1, 'status': 'draft'}
             domain = {**draft, 'readOnly': True}
-            browser_key, domain_key = 'browserResponse', 'courseWitness'
+            domain_key = 'courseWitness'
+            if editing:
+                detail = f'/api/admin/courses/{command}'
+                browser = {
+                    'winner': {'method': 'PATCH', 'pathname': detail, 'status': 200, 'requestId': request, 'body': draft},
+                    'stale': {'method': 'PATCH', 'pathname': detail, 'status': 409, 'requestId': user,
+                              'body': {'code': 'conflict'}, 'dirtyInputPreserved': True}}
+                browser_key = 'browserResponses'
+                acknowledgement_ids = [f'20000000-0000-4000-8000-{index:012d}' for index in range(1, 9)]
+                acknowledgements = [
+                    {'requestId': identity, 'proofRequestId': proof, 'requestIndex': index, 'upstreamStatus': status}
+                    for identity, proof, index, status in zip(
+                        [*acknowledgement_ids[:2], request, acknowledgement_ids[2], user], acknowledgement_ids[3:],
+                        (0, 0, 1, 0, 2), (200, 200, 200, 200, 409))]
+            else:
+                browser = {'method': 'POST', 'pathname': '/api/admin/courses', 'status': 200, 'requestId': request, 'body': draft}
+                browser_key = 'browserResponse'
+                acknowledgements = [
+                    {'requestId': user, 'proofRequestId': actor, 'requestIndex': 0, 'upstreamStatus': 200},
+                    {'requestId': request, 'proofRequestId': ledger_ids[0], 'requestIndex': 1, 'upstreamStatus': 201}]
             gateway_artifact = {**window.browser_receipt(plan, 'GATEWAY_OBSERVED'), 'epoch': '2', 'gatewayActive': 0,
-                                'gatewayUncertain': 0, 'gatewayStateSha256': '7' * 64, 'gatewayAcknowledgements': [
-                {'requestId': user, 'proofRequestId': actor, 'requestIndex': 0, 'upstreamStatus': 200},
-                {'requestId': request, 'proofRequestId': ledger_ids[0], 'requestIndex': 1, 'upstreamStatus': 201}]}
+                                'gatewayUncertain': 0, 'gatewayStateSha256': '7' * 64, 'gatewayAcknowledgements': acknowledgements}
             migrate.write_json(directory, window.browser_artifact(plan, 'gateway'), gateway_artifact)
         else:
             browser_key, domain_key = 'browserResponse', 'lifecycleWitness'
@@ -277,9 +300,15 @@ class IndependentGuardTests(unittest.TestCase):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         if authoring:
+            wrong = {**browser, 'winner': {**browser['winner'], 'requestId': user}} if editing else {**browser, 'requestId': user}
             with self.assertRaisesRegex(ValueError, 'AUTHORING_BROWSER_RESPONSE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain',
-                                'caseEvidence': {**evidence, browser_key: {**browser, 'requestId': user}}})
+                                'caseEvidence': {**evidence, browser_key: wrong}})
+        if editing:
+            for change in ({'requestId': request}, {'dirtyInputPreserved': False}, {'body': {'code': 'other'}}):
+                with self.subTest(stale=change), self.assertRaisesRegex(ValueError, 'AUTHORING_STALE_RESPONSE_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, browser_key: {**browser, 'stale': {**browser['stale'], **change}}}})
         with patch.object(stage, 'verify_gateway_fenced', side_effect=ValueError('P2_INTERACTIVE_FENCE_REQUIRED')):
             with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -298,7 +327,11 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
             self.assertEqual(case['identityWitnessSha256'], supervisor._canonical_sha(domain))
         if authoring:
-            self.assertEqual(case['gatewayPostRequestId'], request)
+            if editing:
+                self.assertEqual(case['gatewayPatchRequestIds'], [request, user])
+                self.assertEqual(case['browserResponsesSha256'], supervisor._canonical_sha(browser))
+            else:
+                self.assertEqual(case['gatewayPostRequestId'], request)
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -330,7 +363,11 @@ class IndependentGuardTests(unittest.TestCase):
             guard({**terminal, 'witnessSha256': '0' * 64})
         if authoring:
             bad = copy.deepcopy(gateway_artifact)
-            bad['gatewayAcknowledgements'][1]['upstreamStatus'] = 200
+            if editing:
+                rows = bad['gatewayAcknowledgements']
+                rows[2], rows[4] = rows[4], rows[2]
+            else:
+                bad['gatewayAcknowledgements'][1]['upstreamStatus'] = 200
             (directory / window.browser_artifact(plan, 'gateway')).write_text(json.dumps(bad))
             with self.assertRaisesRegex(ValueError, 'AUTHORING_ACKNOWLEDGEMENTS_REQUIRED'):
                 guard(terminal)

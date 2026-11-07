@@ -106,6 +106,7 @@ const SQL = Object.freeze({
       current_user::regrole::oid::text AS role_oid,(pg_catalog.current_setting('server_version_num')::int/10000)::int AS major,
       pg_catalog.current_setting('transaction_read_only') AS read_only`,
     draftAbsent: "SELECT NOT EXISTS(SELECT 1 FROM public.courses WHERE slug=$1::text) AS absent",
+    draftCurrent: "SELECT id::text AS course_id,slug,revision,status,(title<>$2::text AND title<>$3::text) AS both_titles_change FROM public.courses WHERE slug=$1::text",
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -359,6 +360,8 @@ async function clientFromInput(input) {
 }
 
 const draftBaselines = new WeakMap();
+const draftEditBaselines = new WeakMap();
+const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
 const draftText = (value, maximum) => typeof value === "string" && value.length > 0 && value.length <= maximum && value === value.trim() && !value.includes("\0");
@@ -369,15 +372,13 @@ const draftCover = value => {
   catch { return false; }
 };
 
-export function validateP2InteractiveCourseDraft(selection, draft) {
-  demand(closed(selection, ["slug", "bodySha256"]) && draftSlug(selection.slug)
-    && typeof selection.bodySha256 === "string" && SHA.test(selection.bodySha256), "course-draft-selection");
+function reviewedCourseDraftBody(slug, bodySha256, draft, revision) {
   let raw;
   try { raw = JSON.stringify(draft); } catch { throw new P2LifecyclePersistenceError("course-draft-body"); }
-  demand(typeof raw === "string" && Buffer.byteLength(raw) <= 1_048_576 && sha(raw) === selection.bodySha256, "course-draft-body-hash");
+  demand(typeof raw === "string" && Buffer.byteLength(raw) <= 1_048_576 && sha(raw) === bodySha256, "course-draft-body-hash");
   const body = JSON.parse(raw);
-  demand(orderedDraftFields(body, ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification", "status"])
-    && body.slug === selection.slug && body.status === "draft" && draftText(body.title, 300)
+  demand(orderedDraftFields(body, [...draftFormFields, revision === undefined ? "status" : "expectedRevision"])
+    && body.slug === slug && (revision === undefined ? body.status === "draft" : body.expectedRevision === revision) && draftText(body.title, 300)
     && [body.description, body.introduction].every(value => value === null || draftText(value, 100_000))
     && body.currency === "CAD" && ["free", "paid"].includes(body.accessMode) && Number.isInteger(body.priceCents)
     && body.priceCents <= 2_147_483_647 && (body.accessMode === "free" ? body.priceCents === 0 : body.priceCents > 0)
@@ -388,6 +389,27 @@ export function validateP2InteractiveCourseDraft(selection, draft) {
     && (body.taxClassification === null || typeof body.taxClassification === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/u.test(body.taxClassification)),
   "course-draft-body");
   return body;
+}
+
+export function validateP2InteractiveCourseDraft(selection, draft) {
+  demand(closed(selection, ["slug", "bodySha256"]) && draftSlug(selection.slug)
+    && typeof selection.bodySha256 === "string" && SHA.test(selection.bodySha256), "course-draft-selection");
+  return reviewedCourseDraftBody(selection.slug, selection.bodySha256, draft);
+}
+
+const draftEditSelectionFields = ["courseId", "slug", "revision", "winnerBodySha256", "staleBodySha256"];
+
+export function validateP2InteractiveCourseDraftEdits(selection, edits) {
+  demand(closed(selection, draftEditSelectionFields) && typeof selection.courseId === "string" && UUID.test(selection.courseId)
+    && draftSlug(selection.slug) && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_646
+    && [selection.winnerBodySha256, selection.staleBodySha256].every(value => typeof value === "string" && SHA.test(value))
+    && selection.winnerBodySha256 !== selection.staleBodySha256, "course-draft-edit-selection");
+  demand(closed(edits, ["winner", "stale"]), "course-draft-edit-bodies");
+  const { slug, revision } = selection;
+  const winner = reviewedCourseDraftBody(slug, selection.winnerBodySha256, edits.winner, revision);
+  const stale = reviewedCourseDraftBody(slug, selection.staleBodySha256, edits.stale, revision);
+  demand(winner.title !== stale.title, "course-draft-edit-title");
+  return { winner, stale };
 }
 
 function selectedCourseDraftJob(job) {
@@ -461,19 +483,53 @@ export async function observeP2InteractiveCourseDraftCase(courseJob, selection, 
   demand(saved?.jobSha256 === jobSha256 && closed(selection, ["slug", "bodySha256"])
     && saved.verifyEnvironment === dependencies?.verifyEnvironment && saved.verifySession === dependencies?.verifySession
     && selection.slug === saved.selected.slug && selection.bodySha256 === saved.selected.bodySha256
-    && closed(browserDraft, ["courseId", "slug", "revision", "status"]) && typeof browserDraft.courseId === "string"
-    && UUID.test(browserDraft.courseId) && browserDraft.slug === selection.slug && browserDraft.revision === 1
-    && browserDraft.status === "draft", "course-draft-receipt");
+    && matchesDraftReceipt(browserDraft, selection.slug, 1), "course-draft-receipt");
   draftBaselines.delete(baseline);
-  const { slug, title, description, introduction, currency, accessMode, priceCents, cover, seo, taxClassification } = saved.expected;
-  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
-    const rows = await read(client, "course", "draft", [slug, title, description, introduction, currency, accessMode, priceCents,
-      cover, seo, taxClassification]);
-    const row = rows[0];
-    demand(rows.length === 1 && row.course_id === browserDraft.courseId && row.slug === slug && row.revision === 1
-      && row.status === "draft" && row.fields_match === true, "course-draft-persistence");
-    return { courseId: row.course_id, slug: row.slug, revision: 1, status: "draft", readOnly: true };
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
+    client => readMatchingDraft(client, saved.expected, browserDraft.courseId, 1));
+  return result;
+}
+
+function matchesDraftReceipt(browserDraft, slug, revision) {
+  return closed(browserDraft, ["courseId", "slug", "revision", "status"]) && typeof browserDraft.courseId === "string"
+    && UUID.test(browserDraft.courseId) && browserDraft.slug === slug && browserDraft.revision === revision && browserDraft.status === "draft";
+}
+
+function matchesDraftRow(row, courseId, slug, revision) {
+  return row?.course_id === courseId && row.slug === slug && row.revision === revision && row.status === "draft";
+}
+
+async function readMatchingDraft(client, expected, courseId, revision) {
+  const { slug, title, description, introduction, currency, accessMode, priceCents, cover, seo, taxClassification } = expected;
+  const rows = await read(client, "course", "draft", [slug, title, description, introduction, currency, accessMode, priceCents, cover, seo, taxClassification]);
+  demand(rows.length === 1 && matchesDraftRow(rows[0], courseId, slug, revision) && rows[0].fields_match === true, "course-draft-persistence");
+  return { courseId, slug, revision, status: "draft", readOnly: true };
+}
+
+export async function captureP2InteractiveCourseDraftEditsBaseline(courseJob, selection, edits, dependencies) {
+  const selected = Object.freeze({ ...selection }), { winner, stale } = validateP2InteractiveCourseDraftEdits(selected, edits);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const rows = await read(client, "course", "draftCurrent", [selected.slug, winner.title, stale.title]);
+    demand(rows.length === 1 && matchesDraftRow(rows[0], selected.courseId, selected.slug, selected.revision)
+      && rows[0].both_titles_change === true, "course-draft-edit-baseline");
   });
+  const baseline = Object.freeze({});
+  draftEditBaselines.set(baseline, { selected, winner, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveCourseDraftEditsCase(courseJob, selection, baseline, browserDraft, dependencies) {
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = draftEditBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && closed(selection, draftEditSelectionFields)
+    && saved.verifyEnvironment === dependencies?.verifyEnvironment && saved.verifySession === dependencies?.verifySession
+    && draftEditSelectionFields.every(key => selection[key] === saved.selected[key])
+    && matchesDraftReceipt(browserDraft, saved.selected.slug, saved.selected.revision + 1)
+    && browserDraft.courseId === saved.selected.courseId, "course-draft-edit-receipt");
+  draftEditBaselines.delete(baseline);
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
+    client => readMatchingDraft(client, saved.winner, saved.selected.courseId, saved.selected.revision + 1));
   return result;
 }
 

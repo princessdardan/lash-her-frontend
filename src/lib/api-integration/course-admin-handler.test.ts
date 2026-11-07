@@ -37,6 +37,26 @@ test("scoped authoring refuses non-drafts before invoking the authenticated Cour
   assert.deepEqual(statuses, ["draft", "published"]);
 });
 
+test("scoped draft edits require a positive revision and reject any publication status", async () => {
+  const path = `/api/admin/courses/${id}`, updates: unknown[] = [];
+  const makeHandler = (authoringActorId?: string) => createCourseAdminHandler("update-course", {
+    enabled: () => true, origin: () => origin,
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, authoringActorId),
+    client: () => ({ async updateCourse(courseId: string, input: unknown) { assert.equal(courseId, id); updates.push(input); return {}; } }) as never,
+  });
+  const scoped = makeHandler(id);
+  const details = { title: "Revised draft", expectedRevision: 3 };
+  for (const body of [null, {}, [], { expectedRevision: 0 }, { expectedRevision: 1.5 }, { expectedRevision: "3" },
+    { ...details, status: "draft" }, { ...details, status: "published" }, { ...details, status: "archived" }, { ...details, status: null }]) {
+    assert.equal((await scoped(req(path, "PATCH", body), { courseId: id })).status, 400);
+  }
+  assert.deepEqual(updates, []);
+  assert.equal((await scoped(req(path, "PATCH", details), { courseId: id })).status, 200);
+  const ordinaryStatusChange = { expectedRevision: 4, status: "published" };
+  assert.equal((await makeHandler()(req(path, "PATCH", ordinaryStatusChange), { courseId: id })).status, 200);
+  assert.deepEqual(updates, [details, ordinaryStatusChange]);
+});
+
 test("admin paginated reads are private, validated and authorized through the real named client", async () => {
   let calls = 0;
   const client = createCourseClient({ enabled: () => true, getAdmin: async permission => { assert.equal(permission, "courses:edit"); return actor; }, mintToken: () => "server.admin.jwt", getTransport: () => async input => {

@@ -170,7 +170,7 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
   assert.equal(JSON.stringify(f.calls).includes(selectedCustomerId), false);
 });
 
-test("authoring binds an exact owner UUID to the draft route and clears it after admission", async () => {
+test("authoring binds the exact owner UUID and disjoint draft routes, then clears its actor after admission", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
   const authoringActorId = "8e2280dc-0389-4248-b21c-f87427f9e85c";
@@ -182,6 +182,7 @@ test("authoring binds an exact owner UUID to the draft route and clears it after
     return `${body}.${mac}`;
   };
   const cookie = issue("authoring", prefix + authoringActorId.replaceAll("-", ""));
+  const editCookie = issue("authoring", "7032712d617574682d656469742d7631" + authoringActorId.replaceAll("-", ""));
   const attest = (method: string, path: string, permit = cookie) =>
     attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie: permit }, env, now);
   const proof = attest("POST", "/api/admin/courses")!;
@@ -194,8 +195,18 @@ test("authoring binds an exact owner UUID to the draft route and clears it after
     assert.equal(attest("POST", "/api/admin/courses", invalid), null);
   }
   const courseDetail = `/admin/courses/${authoringActorId}`;
+  const courseApi = "/api" + courseDetail;
   for (const [method, path] of [["GET", courseDetail], ["GET", "/api/admin/courses"], ["POST", "/admin/courses"], ["PATCH", "/api" + courseDetail]]) {
     assert.equal(attest(method, path), null);
+  }
+  for (const [method, path] of [["GET", courseDetail], ["GET", courseApi], ["PATCH", courseApi]]) {
+    const editProof = attest(method, path, editCookie)!;
+    assert.equal(readInteractiveRequest(editProof, editCookie, env, now)?.authoringActorId, authoringActorId);
+    assert.equal(readInteractiveRequest(editProof, cookie, env, now), null);
+  }
+  for (const [method, path] of [["GET", "/admin/courses"], ["POST", "/api/admin/courses"], ["GET", courseApi + "/publication-readiness"],
+    ["PATCH", courseDetail], ["POST", courseApi + "/modules"], ["GET", "/admin/courses/noncanonical-id"], ["PATCH", courseApi.toUpperCase()]]) {
+    assert.equal(attest(method, path, editCookie), null);
   }
   assert.ok(attest("GET", courseDetail, issue("media")));
   const wrongRoute = `${now}.${Buffer.from(`GET ${courseDetail}`).toString("base64url")}`;
@@ -203,23 +214,26 @@ test("authoring binds an exact owner UUID to the draft route and clears it after
     .update(`lash-her:p2q:interactive:request:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${cookie}\n${wrongRoute}`).digest("hex");
   assert.equal(readInteractiveRequest(`${wrongRoute}.${wrongMac}`, cookie, env, now), null);
 
-  const f = fixture();
-  f.state.epoch = "12";
-  const run = createWriterAdmissionRunner({
-    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
-    createClient: () => f.client,
-    getInteractiveWriter: async () => verified,
-  });
-  let observeAfterCompletion!: () => void;
-  let outsideSelection: Promise<string | undefined> | undefined;
-  await run("new-work", async () => {
-    assert.equal(currentWriterAuthoringActorId(), authoringActorId);
-    outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterAuthoringActorId);
-  });
-  observeAfterCompletion();
-  assert.equal(await outsideSelection, undefined);
-  assert.equal(currentWriterAuthoringActorId(), undefined);
-  assert.equal(JSON.stringify(f.calls).includes(authoringActorId), false);
+  const editVerified = readInteractiveRequest(attest("PATCH", courseApi, editCookie)!, editCookie, env, now);
+  for (const accepted of [verified, editVerified]) {
+    const f = fixture();
+    f.state.epoch = "12";
+    const run = createWriterAdmissionRunner({
+      getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+      createClient: () => f.client,
+      getInteractiveWriter: async () => accepted,
+    });
+    let observeAfterCompletion!: () => void;
+    let outsideSelection: Promise<string | undefined> | undefined;
+    await run("new-work", async () => {
+      assert.equal(currentWriterAuthoringActorId(), authoringActorId);
+      outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterAuthoringActorId);
+    });
+    observeAfterCompletion();
+    assert.equal(await outsideSelection, undefined);
+    assert.equal(currentWriterAuthoringActorId(), undefined);
+    assert.equal(JSON.stringify(f.calls).includes(authoringActorId), false);
+  }
 });
 
 test("interactive writer uses only its certified producer and refuses a changed ledger epoch before effects", async () => {

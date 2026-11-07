@@ -281,6 +281,23 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertFalse(receipt["interactiveNewWorkAuthorized"])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_authoring_edit_probes_exact_protected_course_detail_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        paths = (f"/admin/courses/{course}", f"/api/admin/courses/{course}")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "AUTHORING_COURSE_ID_REQUIRED"):
+                ingress.observe_authoring_protection(self.base.context, self.fixture.client,
+                                                      expected_profile=self.profile, course_id=course + "/quiz")
+            receipt = ingress.observe_authoring_protection(self.base.context, self.fixture.client,
+                                                            expected_profile=self.profile, course_id=course)
+        self.assertEqual(receipt["endpointDenials"], [
+            {"path": path, "aliasUnauthenticatedStatus": 401, "deploymentUnauthenticatedStatus": 403} for path in paths
+        ])
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -311,6 +328,25 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_authoring_edit_admits_only_reviewed_revision_routes_and_owner_selector(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        target = f"/course/v1/admin/courses/{course}"
+        requests = [{"method": method, "target": target, "bodySha256": digest, "uses": uses}
+                    for method, digest, uses in (("GET", window._EMPTY, 3), ("PATCH", "b" * 64, 1), ("PATCH", "c" * 64, 1))]
+        selection = {"operation": "edit-and-stale-draft", "slug": "owned-draft", "courseId": course, "revision": 2_147_483_646}
+        action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": requests, "authoringAction": selection}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        self.assertEqual(window._selection_sha(action), "7032712d617574682d656469742d7631" + owner.replace("-", ""))
+        for change in ({"revision": 0}, {"revision": True}, {"revision": 2_147_483_647}, {"courseId": owner}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, "authoringAction": {**selection, **change}})
+        for changed in ([{**requests[0], "uses": 2}, *requests[1:]],
+                        [*requests[:2], {**requests[2], "bodySha256": requests[1]["bodySha256"]}],
+                        [*requests[:2], {**requests[2], "target": f"/course/v1/admin/courses/{owner}"}]):
+            with self.subTest(requests=changed), self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, "requests": changed})
+
     def test_authoring_observation_refusal_preserves_fence_and_nonzero_drain(self):
         from p2_certification_parent import P2ProfiledCertificationBroker
 

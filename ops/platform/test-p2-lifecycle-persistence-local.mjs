@@ -11,8 +11,9 @@ import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
-import { captureP2InteractiveCourseDraftBaseline, observeP2InteractiveCourseDraftCase, p2LifecyclePersistenceTargetSha256,
-  validateP2InteractiveCourseDraft } from "./p2-lifecycle-persistence-probe.mjs";
+import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraftEditsBaseline,
+  observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, p2LifecyclePersistenceTargetSha256,
+  validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits } from "./p2-lifecycle-persistence-probe.mjs";
 import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -201,13 +202,82 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await assert.rejects(observe(revision, revisionBaseline), { check: "course-draft-persistence" });
     const missing = input("missing");
     await assert.rejects(observe(missing, await capture(missing)), { check: "course-draft-persistence" });
+    await runOwnedDraftEditWitness({ course, job, dependencies, input, create });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
-    return ["course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields", "course-draft-wrong-row-field-role-or-unheld-session-refused"];
+    return ["course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields", "course-draft-wrong-row-field-role-or-unheld-session-refused",
+      "course-draft-edit-held-winning-fields-single-revision-and-stale-unchanged", "course-draft-edit-wrong-baseline-winner-stale-and-replay-refused"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
+  }
+}
+
+async function runOwnedDraftEditWitness({ course, job, dependencies, input, create }) {
+  const reviewed = ({ courseId, draft }, revision = 1) => {
+    const { status: _status, ...fields } = draft;
+    const winner = { ...fields, title: "Winning draft", description: null, introduction: "Winning introduction", accessMode: "free",
+      priceCents: 0, cover: null, seo: { title: "Winning SEO", noIndex: false }, taxClassification: null, expectedRevision: revision };
+    const stale = { ...fields, title: "Stale draft", description: "Stale description", expectedRevision: revision };
+    return { selection: { courseId, slug: draft.slug, revision, winnerBodySha256: hash(JSON.stringify(winner)),
+      staleBodySha256: hash(JSON.stringify(stale)) }, edits: { winner, stale } };
+  };
+  const apply = (courseId, body) => course.query(`UPDATE public.courses SET title=$2,description=$3,introduction=$4,
+      currency=$5,access_mode=$6,price_cents=$7,cover=$8,seo=$9,tax_classification=$10,revision=revision+1
+    WHERE id=$1::uuid AND revision=$11::int AND status='draft'`,
+  [courseId, body.title, body.description, body.introduction, body.currency, body.accessMode, body.priceCents,
+    body.cover, body.seo, body.taxClassification, body.expectedRevision]);
+  const capture = ({ selection, edits }) => captureP2InteractiveCourseDraftEditsBaseline(job, selection, edits, dependencies);
+  const browser = ({ selection }) => ({ courseId: selection.courseId, slug: selection.slug, revision: selection.revision + 1, status: "draft" });
+  const observe = (test, baseline, result = browser(test)) =>
+    observeP2InteractiveCourseDraftEditsCase(job, test.selection, baseline, result, dependencies);
+  const fixture = input("edit-winning");
+  const selected = reviewed(fixture);
+  const { selection, edits } = selected;
+  assert.deepEqual(validateP2InteractiveCourseDraftEdits(selection, edits), edits);
+  assert.throws(() => validateP2InteractiveCourseDraftEdits({ ...selection, revision: 2_147_483_647 }, edits), { check: "course-draft-edit-selection" });
+  assert.throws(() => validateP2InteractiveCourseDraftEdits({ ...selection, winnerBodySha256: selection.staleBodySha256 }, edits),
+    { check: "course-draft-edit-selection" });
+  const withRehashedStale = stale => [{ ...selection, staleBodySha256: hash(JSON.stringify(stale)) }, { ...edits, stale }];
+  assert.throws(() => validateP2InteractiveCourseDraftEdits(...withRehashedStale({ ...edits.stale, title: edits.winner.title })),
+    { check: "course-draft-edit-title" });
+  assert.throws(() => validateP2InteractiveCourseDraftEdits(...withRehashedStale({ ...edits.stale, expectedRevision: 2 })),
+    { check: "course-draft-body" });
+  assert.throws(() => validateP2InteractiveCourseDraftEdits(...withRehashedStale({ ...edits.stale, status: "draft" })),
+    { check: "course-draft-body" });
+  const reverse = Object.fromEntries(Object.entries(edits.stale).reverse());
+  assert.throws(() => validateP2InteractiveCourseDraftEdits(...withRehashedStale(reverse)), { check: "course-draft-body" });
+  await assert.rejects(capture(selected), { check: "course-draft-edit-baseline" });
+  await create(fixture);
+  await assert.rejects(capture({ ...selected, selection: { ...selection, courseId: randomUUID() } }), { check: "course-draft-edit-baseline" });
+  await assert.rejects(capture(reviewed(fixture, 2)), { check: "course-draft-edit-baseline" });
+  const [sameTitleSelection, sameTitleEdits] = withRehashedStale({ ...edits.stale, title: fixture.draft.title });
+  await assert.rejects(capture({ selection: sameTitleSelection, edits: sameTitleEdits }), { check: "course-draft-edit-baseline" });
+  const before = await capture(selected);
+  assert.equal(JSON.stringify(before), "{}");
+  assert.equal((await apply(fixture.courseId, edits.winner)).rowCount, 1);
+  assert.equal((await apply(fixture.courseId, edits.stale)).rowCount, 0);
+  await assert.rejects(observe(selected, {}, browser(selected)), { check: "course-draft-edit-receipt" });
+  await assert.rejects(observe(selected, before, { ...browser(selected), courseId: randomUUID() }), { check: "course-draft-edit-receipt" });
+  await assert.rejects(observe(selected, before, { ...browser(selected), revision: 3 }), { check: "course-draft-edit-receipt" });
+  await assert.rejects(observeP2InteractiveCourseDraftEditsCase(job, selection, before, browser(selected),
+    { ...dependencies, verifySession: async () => {} }), { check: "course-draft-edit-receipt" });
+  assert.deepEqual(await observe(selected, before), { ...browser(selected), readOnly: true });
+  await assert.rejects(observe(selected, before), { check: "course-draft-edit-receipt" });
+
+  for (const drift of ["stale-fields", "double-revision", "archived", "no-change"]) {
+    const changed = input(`edit-${drift}`), test = reviewed(changed);
+    await create(changed);
+    const baseline = await capture(test);
+    if (drift === "stale-fields") assert.equal((await apply(changed.courseId, test.edits.stale)).rowCount, 1);
+    if (drift === "double-revision" || drift === "archived") {
+      assert.equal((await apply(changed.courseId, test.edits.winner)).rowCount, 1);
+      if (drift === "double-revision") await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", [changed.courseId]);
+      else await course.query("UPDATE public.courses SET status='archived' WHERE id=$1::uuid", [changed.courseId]);
+    }
+    await assert.rejects(observe(test, baseline), { check: "course-draft-persistence" });
+    await assert.rejects(observe(test, baseline), { check: "course-draft-edit-receipt" });
   }
 }
 

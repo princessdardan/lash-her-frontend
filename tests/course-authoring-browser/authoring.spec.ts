@@ -284,6 +284,56 @@ test("owner authors, grades publication readiness and publishes with actual Cour
     await context.close().catch(() => {});
   }
 });
+test("two owner tabs preserve the stale form after the winning draft edit", async ({ browser }) => {
+  if (!storagePath) throw new Error("Owned storage fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await ownedContext(browser, states.owner);
+  const database = new URL(process.env.COURSE_AUTHORING_GRANT_DATABASE_URL ?? "");
+  if (database.hostname !== "127.0.0.1" || database.pathname !== "/lash_authoring_course_integration") throw new Error("Owned Course DB required");
+  const db = new pg.Client({ connectionString: database.href });
+  try {
+    const winner = await context.newPage();
+    await winner.goto("/admin/courses");
+    await winner.getByLabel("Course title", { exact: true }).fill("Owned two-tab draft");
+    await winner.getByRole("textbox", { name: /^URL name/ }).fill("owned-two-tab-draft");
+    await winner.getByRole("button", { name: "Create draft", exact: true }).click();
+    await expect(winner).toHaveURL(/\/admin\/courses\/[a-f0-9-]{36}$/u);
+    const courseId = new URL(winner.url()).pathname.split("/").pop();
+    const stale = await context.newPage();
+    await stale.goto(winner.url());
+    const winningTitle = winner.getByLabel("Course title", { exact: true });
+    const staleTitle = stale.getByLabel("Course title", { exact: true });
+    await expect(winningTitle).toHaveValue("Owned two-tab draft");
+    await expect(staleTitle).toHaveValue("Owned two-tab draft");
+    await winningTitle.fill("Owned winning title");
+    await staleTitle.fill("Owned stale title");
+
+    const editPath = `/api/admin/courses/${courseId}`;
+    const save = async (tab: typeof winner) => {
+      const pending = tab.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === editPath);
+      await tab.getByRole("button", { name: "Save course details", exact: true }).click();
+      return pending;
+    };
+    const saved = await save(winner);
+    expect(saved.status()).toBe(200);
+    expect(saved.request().postDataJSON().expectedRevision).toBe(1);
+    await expect(winner.getByRole("status").getByText("Course details saved.")).toBeVisible();
+    const rejected = await save(stale);
+    expect(rejected.status()).toBe(409);
+    expect(rejected.request().postDataJSON().expectedRevision).toBe(1);
+    expect((await rejected.json()).error.code).toBe("conflict");
+    await expect(stale.getByRole("alert")).toContainText("This course changed or is not ready for this operation.");
+    await expect(staleTitle).toHaveValue("Owned stale title");
+
+    await db.connect();
+    const { rows } = await db.query("SELECT title, revision, status FROM courses WHERE id=$1", [courseId]);
+    expect(rows).toEqual([{ title: "Owned winning title", revision: 2, status: "draft" }]);
+  } finally {
+    await db.end().catch(() => {});
+    await context.close().catch(() => {});
+  }
+});
+
 test("customer-facing authoring routes isolate unauthenticated and non-editor staff", async ({
   browser,
   request,

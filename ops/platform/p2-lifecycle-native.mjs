@@ -100,6 +100,11 @@ const reviewedAuthoringDependencies = {
   "src/lib/admin/auth-service.ts": "9563bef87fe5eb0d7a9d4c329ed0ce5d2f748f617fbe5a423e3d79fca6f2661a",
   "src/lib/api-integration/course-admin-handler.ts": "1ef72cf36cd0ef5bdc18706af734b378feec4f50a55f31deb8bc41ec68d57a38"
 };
+const reviewedDraftEditDependencies = {
+  ...reviewedAuthoringDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "525003a288a7b7f8f78de56936931d79d47967bac0e71a28dd519ebae50a510b",
+  "src/lib/api-integration/course-admin-handler.ts": "f00f2791a4e13b0964a8d3ccec314cf1004162204e10e9359800b7194c8dcb78"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -121,13 +126,13 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
-  const browserPolicy = [[reviewedCustomerIdentitySource, reviewedCustomerIdentityDependencies],
-    [reviewedFirstIdentitySource, reviewedFirstIdentityDependencies],
-    [reviewedAuthoringSource, reviewedAuthoringDependencies]].find(([source]) => same(selected, source));
+  const browserPolicy = [[reviewedCustomerIdentitySource, [reviewedCustomerIdentityDependencies]],
+    [reviewedFirstIdentitySource, [reviewedFirstIdentityDependencies]],
+    [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies]]].find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
-    const dependencies = Object.fromEntries(Object.keys(expected).map(file => [file, readSourceHash(file)]));
-    demand(same(dependencies, expected));
+    const dependencies = Object.fromEntries(Object.keys(expected[0]).map(file => [file, readSourceHash(file)]));
+    demand(expected.some(variant => same(dependencies, variant)));
     return { ...selected, ...dependencies };
   }
   if (same(selected, reviewedLifecyclePermitSource)) {
