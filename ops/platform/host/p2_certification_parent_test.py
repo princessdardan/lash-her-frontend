@@ -650,6 +650,28 @@ class ProfiledCertificationInputTests(unittest.TestCase):
         self.assertEqual(result['status'], 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED')
         self.assertIs(result['executionEligible'], False)
 
+    def test_profiled_supervisor_dispatches_only_the_source_broker_and_containment_callbacks(self):
+        argv=['p2_certification_parent.py','--supervisor-profiled-current']
+        raw=json.dumps(self.initial).encode()+b'\n'
+        with patch.object(parent.sys,'argv',argv), \
+             patch.object(parent.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(raw))), \
+             patch.object(parent,'cache_certification_core') as cache, patch.object(supervisor,'supervise') as supervise:
+            parent.main()
+            self.assertEqual(cache.call_args.kwargs,{'expected_profile':self.profile})
+            self.assertEqual(supervise.call_args.kwargs,{
+                'broker_type':parent.P2ProfiledCertificationBroker,'observer_type':parent.P2CertificationPhysicalObserver,
+                'observer_source':parent.OBSERVER,'layout':supervisor.PROFILED_CERTIFICATION_LAYOUT,
+                'native_containment':parent.contain_profiled_certification_native,
+                'frontend_containment':parent.contain_profiled_certification_frontend,
+            })
+        for changed in ({'mode':'p2-bounded-certification'},{'_guardLockDescriptor':7}):
+            raw=json.dumps({**self.initial,**changed}).encode()+b'\n'
+            with patch.object(parent.sys,'argv',argv), \
+                 patch.object(parent.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(raw))), \
+                 patch.object(parent,'cache_certification_core',side_effect=AssertionError('unexpected source read')):
+                with self.assertRaisesRegex(ValueError,'FIXED_MODE_REQUIRED'):
+                    parent.main()
+
     def test_fixed_context_rejects_legacy_and_private_fields_before_source_io(self):
         changes = ({'version': 1}, {'qualificationTargetProfile': None}, {'credentials': {}}, {'mode': 'p2-bounded-certification'})
         with patch.object(parent, 'verify_profiled_current_source_closure', side_effect=AssertionError('source read')):

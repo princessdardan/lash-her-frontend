@@ -1311,8 +1311,13 @@ class P2CertificationBroker(Broker):
 
     def _require_worker_outcome(self,case):
         cert=self.initial['certificationPlan']
-        require(self.worker_stage is not None and self.worker_retained and set(case)=={'version','status','workerPlanSha256','workerSourceArtifactSha256','workerMachineArtifactSha256'} and
-            case['version']==1 and case['status']=='P2_CERTIFICATION_DIRECT_WORKER_JOINED' and case['workerPlanSha256']==cert['workerPlanSha256'] and
+        expected=self.certification_profile()
+        fields={'version','status','workerPlanSha256','workerSourceArtifactSha256','workerMachineArtifactSha256'}
+        if expected is not None:
+            fields.add('qualificationTargetProfile')
+            vercel.require_record_profile(expected,case)
+        require(self.worker_stage is not None and self.worker_retained and set(case)==fields and
+            case['version']==(2 if expected is not None else 1) and case['status']=='P2_CERTIFICATION_DIRECT_WORKER_JOINED' and case['workerPlanSha256']==cert['workerPlanSha256'] and
             case['workerMachineArtifactSha256']==self.worker_retained['privateRecordSha256'] and case['workerSourceArtifactSha256']==self.worker_source_sha256,
             'P2_CERTIFICATION_SOURCE_WORKER_JOIN_REQUIRED')
         self.worker_stage.final_closed_readback()
@@ -1470,6 +1475,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def initialize(self):
         self._initialize_certification_state()
         self.api_proof = None
+        self.authority_timing_sha256 = None
         self.guard_arm_verified = False
         self.fallback_complete = False
         self.failure_lock = threading.RLock()
@@ -1574,11 +1580,33 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 observe_frontend=lambda:self.observer.probe('witness'),bundle=self.bundle,database_proof=self.api_proof,
                 release_evidence=self._release_evidence(),**self.profile_arguments())
 
+    def _require_worker_outcome(self,case):
+        from p2_lifecycle_authority_timing import finalize_retained_authority_timing
+        expected = self.certification_profile()
+        super()._require_worker_outcome(case)
+        action = self.initial['certificationPlan']
+        try:
+            receipt = finalize_retained_authority_timing(self.scope,self.selected,self.jobs,self.configuration,self.source,
+                action['workerPlan'],self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],
+                self.worker_retained['privateRecordSha256'],expected_profile=expected,release_evidence=self._release_evidence(),
+                database_proof=self.api_proof)
+        except Exception:
+            # A timing witness is separate from the worker and the final
+            # containment result. Preserve its failure without losing either.
+            receipt = {'version': 2, 'qualificationTargetProfile': expected,
+                'status': 'P2_S13_AUTHORITY_TIMING_REQUIRES_REVIEW', 'certificationActionId': self.action_id(),
+                'workerPlanSha256': action['workerPlanSha256'], 'releaseAccepted': False}
+        name = 'p2-s13-authority-timing.json'
+        migrate.write_json(self.directory,name,receipt)
+        self.authority_timing_sha256 = _sha(migrate.read_input(self.directory,name))
+
     def _bind_terminal_profile(self):
         self.prepared_terminal.update(status='P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',
             qualificationTargetProfile=self.certification_profile(),frontendSqlApplied=False,
             releaseAccepted=False,releaseId=self.selected['releaseId'])
         self.prepared_terminal['configurationSha256'] = self.initial['configurationSha256']
+        if self.authority_timing_sha256 is not None:
+            self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
 
     def abort(self):
         # The independent guard owns provider and FE containment after reap.
@@ -1663,6 +1691,22 @@ def main():
         require(sys.platform == 'linux' and os.geteuid() == 0, 'P2_PROFILED_CERTIFICATION_LINUX_ROOT_REQUIRED')
         result = prepare_profiled_current_certification_input(initial, Path(__file__).resolve().parents[3])
         print(json.dumps(result, separators=(',', ':')), flush=True)
+        return
+    if sys.argv[1:] == ['--supervisor-profiled-current']:
+        from qualification_target_profile import decode_qualification_target_json
+        from p2_release_supervisor import supervise,PROFILED_CERTIFICATION_LAYOUT
+        raw = sys.stdin.buffer.readline(MAXIMUM + 1)
+        require(0 < len(raw) <= MAXIMUM and raw.endswith(b'\n'), 'P2_CERTIFICATION_PRIVATE_INPUT_REQUIRED')
+        initial = decode_qualification_target_json(raw, 'private-packet')
+        expected = _profiled_context()
+        vercel.require_record_profile(expected, initial)
+        require(initial.get('mode') == PROFILED_CERTIFICATION_MODE and
+                not any(key.startswith('_guard') for key in initial), 'P2_PROFILED_CERTIFICATION_FIXED_MODE_REQUIRED')
+        source = Path(__file__).resolve().parents[3]
+        cache_certification_core(initial,source,expected_profile=expected)
+        supervise(initial,broker_type=P2ProfiledCertificationBroker,observer_type=P2CertificationPhysicalObserver,
+            observer_source=OBSERVER,layout=PROFILED_CERTIFICATION_LAYOUT,
+            native_containment=contain_profiled_certification_native,frontend_containment=contain_profiled_certification_frontend)
         return
     require(sys.argv[1:]==['--supervisor'],'P2_CERTIFICATION_FIXED_ENTRY_REQUIRED')
     raw=sys.stdin.buffer.readline(MAXIMUM+1);require(0<len(raw)<=MAXIMUM and raw.endswith(b'\n'),'P2_CERTIFICATION_PRIVATE_INPUT_REQUIRED')
