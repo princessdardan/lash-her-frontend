@@ -776,5 +776,74 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerDraftAuthoring": {
+    "frontendSourceCommit": "b32a1b21b6560c68fa8846ed2c738df75578040f",
+    "frontendUnitNode24": {
+      "sourcePassed": 2535,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "f8a8f562927fc73bfa1c73daf815be9e15297c08f9b3294a6da90513b2cd5970"
+    },
+    "certificationPlatformNode24": {
+      "passed": 86,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 8,
+      "exactReviewedOwnerAndRawFormDigestVerified": true,
+      "logSha256": "8ac44c5e581d182ac3ea1ec076c7109426f9b9ef667752c46acb1daf75260d31"
+    },
+    "host": {
+      "passed": 118,
+      "failed": 0,
+      "ownedFixtures": true,
+      "exactAcknowledgementJoinAndClosedGatewayVerified": true,
+      "logSha256": "3929795a31332a0ef514053f62de03bc972d46a37f39acecd3d94890ea6cf99b"
+    },
+    "loopbackGateway": {
+      "passed": 67,
+      "failed": 0,
+      "exactList200Create201AndRequestIdsVerified": true,
+      "logSha256": "ec691cb5f6d82c3844e3a330b0453cd287ea1d649212d17ddaf41d013711992d"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {"frontend": 83, "course": 22, "community": 11},
+      "sourceCommits": {"course": "0bb054d5a04db71c481a8b3d182db6df19782cdc", "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"},
+      "heldLifecycleAndDraftWitnessChecks": 15,
+      "exactDraftFieldsAndPrivateReadOnlyProjectionVerified": true,
+      "logSha256": "f197b67221cc39a587470d26e22b67b32a191b1c884bee7e5ac16b3f1d79b455"
+    },
+    "normalAuthoringBrowser": {
+      "passed": 5,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "89ed99449e7835e9f673b2d7f72e2cb77ff6f2c8d46be68ca94cdfaa9283744a",
+      "logSha256": "cf7b9c23b8d923691265cf52628c4cfbe80a968a649e6196b1e1b7b6f940ad79"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42849692,
+      "expandedBytes": 57212463,
+      "wireBytes": 18622411,
+      "wireSha256": "2489655f3e47414dc5479fe4bb6dd2d902f2c77f74f55a19703cbab6689e806d",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyPinsVerified": 24,
+    "draftCreationOperatorActionImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
