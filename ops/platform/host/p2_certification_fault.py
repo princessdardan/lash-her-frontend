@@ -298,7 +298,10 @@ class P2CertificationFaultStage:
         lease.update(releaseId=self.selected["releaseId"], sourceWitnessSha256=self.plan["commandSha256"], issuedAt=self.issued_at, expiresAt=expires,
             maxMatches=1, record=copy.deepcopy(record))
         raw = _canonical(lease) + b"\n"; self.lease_sha256 = _hash(raw)
-        self._record("fault-arm-intent.json", {**self._receipt_fields(), "stageId": self.plan["stageId"], "leaseSha256": self.lease_sha256, "lease": lease})
+        intent = {**self._receipt_fields(), "stageId": self.plan["stageId"], "leaseSha256": self.lease_sha256, "lease": lease}
+        if self.expected_profile is not None:
+            intent.update(admissionDirectoryDevice=self.admission_identity.st_dev, admissionDirectoryInode=self.admission_identity.st_ino)
+        self._record("fault-arm-intent.json", intent)
         temporary = ".p2-fault-" + uuid.uuid4().hex
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640, dir_fd=self.admission_fd)
         try:

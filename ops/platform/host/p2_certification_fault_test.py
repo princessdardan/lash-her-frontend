@@ -71,6 +71,8 @@ class FaultStageTests(unittest.TestCase):
     def test_atomic_exclusive_arm_is_120_seconds_one_match_and_never_replayed(self):
         receipt = self.arm(); raw = (self.admission / fault.LEASE).read_bytes(); lease = json.loads(raw)
         self.assertEqual(receipt["leaseSha256"], fault._hash(raw)); self.assertEqual(lease["maxMatches"], 1)
+        self.assertEqual(json.loads((self.private / 'fault-arm-intent.json').read_bytes()), {
+            'version': 1, 'stageId': self.stage.plan['stageId'], 'leaseSha256': receipt['leaseSha256'], 'lease': lease})
         self.assertEqual((self.admission / fault.LEASE).stat().st_mode & 0o777, 0o640)
         issued = fault.datetime.datetime.fromisoformat(lease["issuedAt"].replace("Z", "+00:00"))
         expires = fault.datetime.datetime.fromisoformat(lease["expiresAt"].replace("Z", "+00:00"))
@@ -265,7 +267,12 @@ class ProfiledFaultStageTests(unittest.TestCase):
             intent = json.loads((directory / 'fault-arm-intent.json').read_bytes())
             self.assertEqual((receipt['version'], intent['version'], lease['version']), (2, 2, 1))
             self.assertEqual(receipt['qualificationTargetProfile'], owner.profile)
-            self.assertEqual(intent['lease'], lease)
+            self.assertEqual(intent, {'version': 2, 'qualificationTargetProfile': owner.profile, 'stageId': stage_plan['stageId'],
+                'leaseSha256': receipt['leaseSha256'], 'lease': lease, 'admissionDirectoryDevice': actual_admission.st_dev,
+                'admissionDirectoryInode': actual_admission.st_ino})
+            for key in ('admissionDirectoryDevice', 'admissionDirectoryInode'):
+                self.assertIs(type(intent[key]), int)
+                self.assertNotIn(key, lease)
             self.assertNotIn('qualificationTargetProfile', lease)
             self.assertEqual(receipt['leaseSha256'], fault._hash(raw))
             self.assertGreater(mount.call_count, 2)
