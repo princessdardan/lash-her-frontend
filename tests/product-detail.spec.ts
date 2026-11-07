@@ -410,9 +410,13 @@ test.describe("Product Detail Page", () => {
     const pay = page.getByRole("button", { name: /^Pay securely$/i });
     await expect(pay).toBeEnabled();
 
-    const checkoutRequest = page.waitForRequest("**/api/checkout");
+    const checkoutResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/checkout" &&
+        response.request().method() === "POST",
+    );
     await pay.click();
-    await checkoutRequest;
+    expect((await checkoutResponse).status()).toBe(200);
 
     expect(checkoutPayload).toBeDefined();
     const payload = checkoutPayload as {
