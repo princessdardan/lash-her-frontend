@@ -168,6 +168,32 @@ test("quiz PUT passes only validated aggregate revision/document and admits one 
   assert.equal(writes, 2); assert.equal(invalidated, 1);
 });
 
+test("scoped quiz saves require an explicit candidate quiz document and bounded course revision", async () => {
+  const path = `/api/admin/lessons/${id}/quiz`, calls: unknown[] = [];
+  const document = { version: 1, mode: "graded", passingPercent: 80,
+    questions: [{ id: "q1", prompt: "Choose", options: [{ id: "a", text: "A" }, { id: "b", text: "B" }], correctOptionId: "a", feedback: "Review." }] };
+  const body = { expectedCourseRevision: 3, document };
+  const makeHandler = (scope?: WriterAuthoringOperation) => createCourseAdminHandler("update-quiz", {
+    enabled: () => true, origin: () => origin,
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, scope ? id : undefined, scope),
+    client: () => ({ async updateQuiz(lessonId: string, input: unknown) { assert.equal(lessonId, id); calls.push(input); return {}; } }) as never,
+  });
+  const scoped = makeHandler("save-quiz-revision");
+  const withoutMode = { ...body, document: { ...document, mode: undefined } };
+  for (const invalid of [null, { document }, { ...body, expectedCourseRevision: 0 }, { ...body, expectedCourseRevision: 1.5 },
+    { ...body, expectedCourseRevision: 2_147_483_648 }, { ...body, expectedCourseRevision: "3" }, withoutMode,
+    { ...body, document: { ...document, passingPercent: undefined } }, { ...body, document: { ...document, passingPercent: 101 } },
+    { ...body, document: { ...document, mode: "unknown" } }, { ...body, document: { ...document, questions: [] } },
+    { ...body, document: { ...document, questions: [{ ...document.questions[0], feedback: "" }] } }, { ...body, userId: id }]) {
+    assert.equal((await scoped(req(path, "PUT", invalid), { lessonId: id })).status, 400);
+  }
+  assert.equal((await makeHandler("review-publication")(req(path, "PUT", body), { lessonId: id })).status, 400);
+  assert.deepEqual(calls, []);
+  assert.equal((await scoped(req(path, "PUT", body), { lessonId: id })).status, 200);
+  assert.equal((await makeHandler()(req(path, "PUT", withoutMode), { lessonId: id })).status, 200);
+  assert.deepEqual(calls, [body, JSON.parse(JSON.stringify(withoutMode))]);
+});
+
 test("media authoring requires the current aggregate revision before admission and forwards exact DELETE bodies", async () => {
   const calls: Array<{ method: string; body?: string }> = [];
   const state = { id, lessonId: id, status: "ready", generation: 1, isCurrent: true, lastErrorCode: null, captionTracks: [] };

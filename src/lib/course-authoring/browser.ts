@@ -17,6 +17,12 @@ export class AuthoringRequestError extends Error {
     this.name = "AuthoringRequestError";
   }
 }
+export function nextAuthoringKey(prefix: string, siblingKeys: readonly string[]): string {
+  const occupied = new Set(siblingKeys);
+  let index = 1;
+  while (occupied.has(`${prefix}-${index}`)) index++;
+  return `${prefix}-${index}`;
+}
 export async function authoringRequest<T>(
   path: string,
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE" = "GET",

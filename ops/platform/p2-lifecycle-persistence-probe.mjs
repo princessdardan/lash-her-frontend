@@ -130,6 +130,26 @@ const SQL = Object.freeze({
       )::text,'UTF8')),'hex') AS metadata_sha256
       FROM public.courses WHERE slug=$1::text`,
     publicationCatalog: "SELECT id::text AS course_id,slug FROM public.courses WHERE slug=$1::text AND status='published' LIMIT 1",
+    quizLesson: `SELECT c.id::text AS course_id,c.slug,c.revision,c.status,m.id::text AS module_id,
+      pg_catalog.clock_timestamp()::text AS observed_at
+      FROM public.lessons l JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
+      WHERE l.id=$1::uuid AND l.archived_at IS NULL AND m.archived_at IS NULL`,
+    quizLatest: `SELECT id::text AS quiz_id,revision FROM public.quiz_revisions
+      WHERE lesson_id=$1::uuid ORDER BY revision DESC LIMIT 1`,
+    quizHistory: `SELECT count(*)::text AS row_count,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coalesce(pg_catalog.string_agg(
+        pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.to_jsonb(q)::text,'UTF8')),'hex'),
+        '' ORDER BY q.revision),''),'UTF8')),'hex') AS digest
+      FROM public.quiz_revisions q WHERE q.lesson_id=$1::uuid AND q.revision<=$2::int`,
+    quizAttemptHistory: `SELECT count(*)::text AS row_count,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coalesce(pg_catalog.string_agg(
+        pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.to_jsonb(a)::text,'UTF8')),'hex'),
+        '' ORDER BY a.id),''),'UTF8')),'hex') AS digest
+      FROM public.quiz_attempts a WHERE a.lesson_id=$1::uuid`,
+    quizCreated: `SELECT id::text AS quiz_id,revision,
+      (created_by=$3::uuid AND document=$4::jsonb AND created_at>$5::timestamptz
+        AND created_at<=pg_catalog.statement_timestamp()) AS fields_match
+      FROM public.quiz_revisions WHERE lesson_id=$1::uuid AND revision=$2::int`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -387,6 +407,7 @@ const draftEditBaselines = new WeakMap();
 const courseReorderBaselines = new WeakMap();
 const curriculumCreateBaselines = new WeakMap();
 const publicationBaselines = new WeakMap();
+const quizSaveBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -658,31 +679,39 @@ const curriculumCreateSelectionFields = ["courseId", "slug", "revision", "kind",
 const curriculumCreateModuleFields = ["expectedCourseRevision", "title", "slug", "description", "position"];
 const curriculumCreateLessonFields = ["expectedCourseRevision", "title", "slug", "position", "contentDocument", "transcript", "isPreview", "captions"];
 
-let pinnedLessonContract;
-function curriculumLessonContract() {
-  if (pinnedLessonContract) return pinnedLessonContract;
+let pinnedCourseContracts;
+function courseMutationContract(path, method, property, check) {
   try {
     // The interactive operator has the reviewed frontend source and Ajv. The
     // private persistence child never invokes this path in its migration image.
-    const directory = new URL("../../contracts/api-integration/p2-candidate/", import.meta.url);
-    const manifestBytes = readFileSync(new URL("manifest.json", directory)), manifest = JSON.parse(manifestBytes);
-    const contractBytes = readFileSync(new URL("course-api.json", directory)), course = manifest.artifacts?.course;
-    demand(manifest.version === 1 && ["candidate", "released"].includes(manifest.status) && course?.repository === "lash-her-course-api"
-      && course.file === "course-api.json" && course.sourcePath === "openapi/course-api.json" && COMMIT.test(course.revision)
-      && sha(contractBytes) === course.sha256, "course-curriculum-create-contract");
-    const contract = JSON.parse(contractBytes);
-    const schema = contract.paths?.["/v1/admin/modules/{moduleId}/lessons"]?.post?.requestBody?.content?.["application/json"]?.schema;
-    demand(schema?.type === "object" && schema.additionalProperties === false && schema.properties?.contentDocument,
-      "course-curriculum-create-contract");
-    const { default: Ajv2020 } = createRequire(import.meta.url)("ajv/dist/2020");
-    const ajv = new Ajv2020({ strict: false, coerceTypes: false, removeAdditional: false, useDefaults: false });
-    pinnedLessonContract = { validate: ajv.compile({ ...schema, components: contract.components }),
-      courseRevision: course.revision, manifestSha256: `sha256:${sha(manifestBytes)}` };
-    return pinnedLessonContract;
+    if (!pinnedCourseContracts) {
+      const directory = new URL("../../contracts/api-integration/p2-candidate/", import.meta.url);
+      const manifestBytes = readFileSync(new URL("manifest.json", directory)), manifest = JSON.parse(manifestBytes);
+      const contractBytes = readFileSync(new URL("course-api.json", directory)), course = manifest.artifacts?.course;
+      demand(manifest.version === 1 && ["candidate", "released"].includes(manifest.status) && course?.repository === "lash-her-course-api"
+        && course.file === "course-api.json" && course.sourcePath === "openapi/course-api.json" && COMMIT.test(course.revision)
+        && sha(contractBytes) === course.sha256, check);
+      const { default: Ajv2020 } = createRequire(import.meta.url)("ajv/dist/2020");
+      const ajv = new Ajv2020({ strict: false, coerceTypes: false, removeAdditional: false, useDefaults: false });
+      pinnedCourseContracts = { contract: JSON.parse(contractBytes), ajv, validators: new Map(),
+        courseRevision: course.revision, manifestSha256: `sha256:${sha(manifestBytes)}` };
+    }
+    const { contract, ajv, validators, courseRevision, manifestSha256 } = pinnedCourseContracts;
+    const key = `${method} ${path}`;
+    if (!validators.has(key)) {
+      const schema = contract.paths?.[path]?.[method]?.requestBody?.content?.["application/json"]?.schema;
+      demand(schema?.type === "object" && schema.additionalProperties === false && schema.properties?.[property], check);
+      validators.set(key, ajv.compile({ ...schema, components: contract.components }));
+    }
+    return { validate: validators.get(key), courseRevision, manifestSha256 };
   } catch {
-    throw new P2LifecyclePersistenceError("course-curriculum-create-contract");
+    throw new P2LifecyclePersistenceError(check);
   }
 }
+
+const curriculumLessonContract = () => courseMutationContract("/v1/admin/modules/{moduleId}/lessons", "post", "contentDocument",
+  "course-curriculum-create-contract");
+const quizSaveContract = () => courseMutationContract("/v1/admin/lessons/{lessonId}/quiz", "put", "document", "course-quiz-save-contract");
 
 function safeCurriculumLink(href) {
   if (/[\u0000-\u0020\\]/u.test(href)) return false;
@@ -823,6 +852,90 @@ export async function observeP2InteractivePublicationCase(courseJob, selection, 
   demand(result.metadataSha256 === saved.result.metadataSha256 && (published || result.updatedAt === saved.result.updatedAt),
     "course-publication-metadata");
   return { courseId, slug, revision, status, issueCodes: [...issueCodes], readOnly: true };
+}
+
+const quizSaveSelectionFields = ["courseId", "slug", "revision", "lessonId", "quizRevision", "documentSha256", "bodySha256", "actorId"];
+const quizDocumentFields = ["version", "mode", "passingPercent", "questions"];
+const canonicalQuizDocument = document => JSON.stringify(document, (_key, value) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+
+export function validateP2InteractiveQuizSave(selection, input) {
+  demand(closed(selection, quizSaveSelectionFields) && [selection.courseId, selection.lessonId, selection.actorId].every(courseUuid)
+    && draftSlug(selection.slug) && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_646
+    && Number.isInteger(selection.quizRevision) && selection.quizRevision >= 0 && selection.quizRevision <= 2_147_483_646
+    && [selection.bodySha256, selection.documentSha256].every(value => typeof value === "string" && SHA.test(value)), "course-quiz-save-selection");
+  let raw;
+  try { raw = JSON.stringify(input); } catch { throw new P2LifecyclePersistenceError("course-quiz-save-body"); }
+  demand(typeof raw === "string" && Buffer.byteLength(raw) <= 1_048_576 && sha(raw) === selection.bodySha256, "course-quiz-save-body-hash");
+  const body = JSON.parse(raw);
+  demand(orderedDraftFields(body, ["expectedCourseRevision", "document"]) && body.expectedCourseRevision === selection.revision
+    && quizSaveContract().validate(body), "course-quiz-save-body");
+  const { document } = body;
+  demand(closed(document, quizDocumentFields) && document.version === 1 && ["practice", "graded"].includes(document.mode)
+    && Number.isInteger(document.passingPercent) && document.passingPercent >= 1 && document.passingPercent <= 100
+    && Buffer.byteLength(JSON.stringify(document)) <= 1_000_000, "course-quiz-save-document");
+  demand(new Set(document.questions.map(question => question.id)).size === document.questions.length && document.questions.every(question => {
+    const optionIds = new Set(question.options.map(option => option.id));
+    return optionIds.size === question.options.length && optionIds.has(question.correctOptionId);
+  }), "course-quiz-save-questions");
+  demand(sha(canonicalQuizDocument(document)) === selection.documentSha256, "course-quiz-save-document-hash");
+  return body;
+}
+
+async function readQuizSaveState(client, selection, courseRevision, quizRevision) {
+  const { courseId, slug, lessonId } = selection;
+  const lessons = await read(client, "course", "quizLesson", [lessonId]), lesson = lessons[0];
+  demand(lessons.length === 1 && matchesDraftRow(lesson, courseId, slug, courseRevision) && courseUuid(lesson.module_id)
+    && typeof lesson.observed_at === "string", "course-quiz-save-lesson");
+  const latest = await read(client, "course", "quizLatest", [lessonId]);
+  demand(quizRevision === 0 ? latest.length === 0
+    : latest.length === 1 && latest[0].revision === quizRevision && courseUuid(latest[0].quiz_id), "course-quiz-save-revision");
+  const [history] = await read(client, "course", "quizHistory", [lessonId, selection.quizRevision]);
+  const [attempts] = await read(client, "course", "quizAttemptHistory", [lessonId]);
+  demand(history?.row_count === String(selection.quizRevision) && typeof history.digest === "string" && SHA.test(history.digest)
+    && typeof attempts?.row_count === "string" && /^(0|[1-9][0-9]*)$/u.test(attempts.row_count)
+    && typeof attempts.digest === "string" && SHA.test(attempts.digest), "course-quiz-save-history");
+  return { moduleId: lesson.module_id, cutoff: lesson.observed_at, quizId: latest[0]?.quiz_id ?? null,
+    historyDigest: history.digest, attemptsCount: attempts.row_count, attemptsDigest: attempts.digest };
+}
+
+export async function captureP2InteractiveQuizSaveBaseline(courseJob, selection, input, dependencies) {
+  const selected = Object.freeze({ ...selection }), { document } = validateP2InteractiveQuizSave(selected, input);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { courseRevision, manifestSha256 } = quizSaveContract();
+  demand(courseJob.sourceCommit === courseRevision && courseJob.phase2ContractManifestSha256 === manifestSha256, "course-quiz-save-contract-target");
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined,
+    client => readQuizSaveState(client, selected, selected.revision, selected.quizRevision));
+  const baseline = Object.freeze({});
+  quizSaveBaselines.set(baseline, { selected, document, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveQuizSaveCase(courseJob, selection, baseline, browserBody, dependencies) {
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = quizSaveBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && closed(selection, quizSaveSelectionFields)
+    && saved.verifyEnvironment === dependencies?.verifyEnvironment && saved.verifySession === dependencies?.verifySession
+    && quizSaveSelectionFields.every(key => selection[key] === saved.selected[key]), "course-quiz-save-receipt");
+  const { courseId, slug, lessonId, documentSha256, actorId } = saved.selected;
+  const revision = saved.selected.revision + 1, quizRevision = saved.selected.quizRevision + 1;
+  demand(closed(browserBody, ["courseId", "slug", "lessonId", "quizId", "revision", "quizRevision", "documentSha256"])
+    && ["courseId", "slug", "lessonId", "documentSha256"].every(key => browserBody[key] === saved.selected[key])
+    && courseUuid(browserBody.quizId) && browserBody.quizId !== saved.result.quizId
+    && browserBody.revision === revision && browserBody.quizRevision === quizRevision, "course-quiz-save-receipt");
+  quizSaveBaselines.delete(baseline);
+  const { quizId } = browserBody;
+  await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const current = await readQuizSaveState(client, saved.selected, revision, quizRevision);
+    demand(current.quizId === quizId && current.moduleId === saved.result.moduleId, "course-quiz-save-persistence");
+    demand(current.historyDigest === saved.result.historyDigest && current.attemptsCount === saved.result.attemptsCount
+      && current.attemptsDigest === saved.result.attemptsDigest, "course-quiz-save-history-changed");
+    const rows = await read(client, "course", "quizCreated", [lessonId, quizRevision, actorId, saved.document, saved.result.cutoff]);
+    demand(rows.length === 1 && rows[0].quiz_id === quizId && rows[0].revision === quizRevision && rows[0].fields_match === true,
+      "course-quiz-save-persistence");
+  });
+  return { courseId, slug, lessonId, quizId, revision, quizRevision, documentSha256, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

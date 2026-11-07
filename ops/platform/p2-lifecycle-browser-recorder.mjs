@@ -70,8 +70,10 @@ const authoringEdit = input => input.stage === "authoring" && input.authoring?.o
 const authoringReorder = input => input.stage === "authoring" && input.authoring?.operation === "reorder-and-stale-curriculum";
 const authoringCreateCurriculum = input => input.stage === "authoring" && input.authoring?.operation === "create-curriculum";
 const authoringPublication = input => input.stage === "authoring" && input.authoring?.operation === "qualify-publication";
+const authoringQuiz = input => input.stage === "authoring" && input.authoring?.operation === "save-quiz-revision";
 export const isP2InteractiveAuthoringPair = input => authoringEdit(input) || authoringReorder(input);
-export const isP2InteractiveAuthoringDetail = input => isP2InteractiveAuthoringPair(input) || authoringCreateCurriculum(input) || authoringPublication(input);
+export const isP2InteractiveAuthoringDetail = input => isP2InteractiveAuthoringPair(input) || authoringCreateCurriculum(input)
+  || authoringPublication(input) || authoringQuiz(input);
 const publicationIssueCode = code => matches(code, /^[A-Z][A-Z0-9_]{0,63}$/u);
 const publishedOutcome = target => target.outcome === "published";
 
@@ -88,13 +90,21 @@ export function p2AuthoringReorderPath(target) {
   return p2AuthoringCurriculumPath(target) + "/reorder";
 }
 
+export function p2AuthoringQuizPath({ lessonId }) {
+  return "/api/admin/lessons/" + lessonId + "/quiz";
+}
+
 function authoringSelector(input) {
   demand(uuid(input.authoring.actorId));
+  const actor = input.authoring.actorId.replaceAll("-", "");
+  if (authoringQuiz(input)) return "7032712d617574682d7175697a2d7631" + actor;
+  if (authoringPublication(input)) {
+    return (publishedOutcome(input.authoring) ? "7032712d617574682d7075622d763100" : "7032712d617574682d7264792d763100") + actor;
+  }
   const prefix = authoringReorder(input) ? "7032712d617574682d736f72742d7631"
     : authoringCreateCurriculum(input) ? "7032712d617574682d6e65772d763100"
-      : authoringPublication(input) ? publishedOutcome(input.authoring) ? "7032712d617574682d7075622d763100" : "7032712d617574682d7264792d763100"
-        : authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
-  return prefix + input.authoring.actorId.replaceAll("-", "");
+      : authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
+  return prefix + actor;
 }
 
 export function p2InteractiveBrowserEntryPath(input, context) {
@@ -117,14 +127,14 @@ export function validateP2InteractiveBrowserInput(input) {
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
   if (input.stage === "authoring") {
     const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), create = authoringCreateCurriculum(input);
-    const curriculum = authoringReorder(input) || create, publication = authoringPublication(input);
+    const curriculum = authoringReorder(input) || create, publication = authoringPublication(input), quiz = authoringQuiz(input);
     demand(closed(target, ["actorId", "slug", ...(isP2InteractiveAuthoringDetail(input) ? ["operation", "courseId", "revision"] : []),
       ...(pair ? ["winnerBodySha256", "staleBodySha256"] : publication ? ["outcome", "issueCodes"] : ["bodySha256"]),
-      ...(curriculum ? ["kind", "parentId"] : []),
+      ...(curriculum ? ["kind", "parentId"] : []), ...(quiz ? ["lessonId", "quizRevision", "documentSha256"] : []),
       ...(create ? ["childSlug"] : [])])
       && uuid(target.actorId) && matches(target.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.slug.length <= 120);
     if (isP2InteractiveAuthoringDetail(input)) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision)
-      && target.revision >= 1 && target.revision < (publication ? 2_147_483_647 : Number.MAX_SAFE_INTEGER));
+      && target.revision >= 1 && target.revision < (publication || quiz ? 2_147_483_647 : Number.MAX_SAFE_INTEGER));
     if (pair) demand(sha(target.winnerBodySha256) && sha(target.staleBodySha256) && target.winnerBodySha256 !== target.staleBodySha256);
     else if (publication) demand(["published", "blocked"].includes(target.outcome) && Array.isArray(target.issueCodes)
       && target.issueCodes.length <= 16 && (publishedOutcome(target) ? target.issueCodes.length === 0 : target.issueCodes.length > 0)
@@ -133,6 +143,8 @@ export function validateP2InteractiveBrowserInput(input) {
     if (curriculum) demand(["module", "lesson"].includes(target.kind) && uuid(target.parentId)
       && (target.kind !== "module" || target.parentId === target.courseId));
     if (create) demand(matches(target.childSlug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.childSlug.length <= 120);
+    if (quiz) demand(uuid(target.lessonId) && Number.isSafeInteger(target.quizRevision)
+      && target.quizRevision >= 0 && target.quizRevision < 2_147_483_647 && sha(target.documentSha256));
   }
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
@@ -325,14 +337,26 @@ function validateAuthoringCourseReceipt(receipt, target, edit = false) {
   return receipt;
 }
 
+const matchesAuthoringStep = (step, method, pathname, status = 200) => closed(step, ["method", "pathname", "status", "requestId"])
+  && step.method === method && step.pathname === pathname && step.status === status && uuid(step.requestId);
+
 export function validateP2AuthoringMutationReceipt(receipt, target) {
+  if (target.operation === "save-quiz-revision") {
+    const pathname = p2AuthoringQuizPath(target);
+    demand(closed(receipt, ["prior", "save", "body"])
+      && matchesAuthoringStep(receipt.prior, "GET", pathname, target.quizRevision === 0 ? 404 : 200)
+      && matchesAuthoringStep(receipt.save, "PUT", pathname) && receipt.save.requestId !== receipt.prior.requestId
+      && closed(receipt.body, ["courseId", "slug", "lessonId", "quizId", "revision", "quizRevision", "documentSha256"])
+      && receipt.body.courseId === target.courseId && receipt.body.slug === target.slug && receipt.body.lessonId === target.lessonId
+      && uuid(receipt.body.quizId) && receipt.body.revision === target.revision + 1 && receipt.body.quizRevision === target.quizRevision + 1
+      && receipt.body.documentSha256 === target.documentSha256);
+    return receipt;
+  }
   if (target.operation === "qualify-publication") {
     const { detail, readiness } = p2AuthoringPublicationPaths(target), published = publishedOutcome(target);
-    const matchesStep = (step, method, pathname) => closed(step, ["method", "pathname", "status", "requestId"])
-      && step.method === method && step.pathname === pathname && step.status === 200 && uuid(step.requestId);
     demand(closed(receipt, ["readiness", "body", ...(published ? ["publication"] : [])])
-      && matchesStep(receipt.readiness, "GET", readiness)
-      && (!published || matchesStep(receipt.publication, "PATCH", detail) && receipt.publication.requestId !== receipt.readiness.requestId)
+      && matchesAuthoringStep(receipt.readiness, "GET", readiness)
+      && (!published || matchesAuthoringStep(receipt.publication, "PATCH", detail) && receipt.publication.requestId !== receipt.readiness.requestId)
       && closed(receipt.body, ["courseId", "slug", "revision", "status", "issueCodes"])
       && receipt.body.courseId === target.courseId && receipt.body.slug === target.slug
       && receipt.body.revision === target.revision + Number(published) && receipt.body.status === (published ? "published" : "draft")
@@ -559,13 +583,38 @@ export function watchP2LifecycleMutation(context, page, input) {
   return watchMutation(context, page, input);
 }
 
-function watchPublication(context, page, input) {
+function quizDocumentHash(document) {
+  demand(closed(document, ["version", "mode", "passingPercent", "questions"]) && document.version === 1
+    && ["graded", "practice"].includes(document.mode) && Number.isSafeInteger(document.passingPercent)
+    && document.passingPercent >= 1 && document.passingPercent <= 100 && Array.isArray(document.questions));
+  const canonical = JSON.stringify(document, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
+    ? Object.fromEntries(Object.keys(child).sort().map(key => [key, child[key]])) : child);
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function readQuizResult(body, target, saved) {
+  demand(closed(body, ["quiz"]));
+  const { quiz } = body;
+  demand(closed(quiz, ["id", "lessonId", "revision", "courseRevision", "document", "createdBy", "createdAt"])
+    && uuid(quiz.id) && quiz.lessonId === target.lessonId && quiz.revision === target.quizRevision + Number(saved)
+    && quiz.courseRevision === target.revision + Number(saved) && uuid(quiz.createdBy)
+    && typeof quiz.createdAt === "string" && Number.isFinite(Date.parse(quiz.createdAt)));
+  const documentSha256 = quizDocumentHash(quiz.document);
+  if (saved) demand(quiz.createdBy === target.actorId && documentSha256 === target.documentSha256);
+  return { courseId: target.courseId, slug: target.slug, lessonId: quiz.lessonId, quizId: quiz.id,
+    revision: quiz.courseRevision, quizRevision: quiz.revision, documentSha256 };
+}
+
+function watchAuthoringReadWrite(context, page, input) {
   validateP2InteractiveBrowserInput(input);
   const target = input.authoring, published = publishedOutcome(target), origin = input.browserOrigin;
+  const quiz = authoringQuiz(input), requiresWrite = quiz || published;
   const { detail, readiness } = p2AuthoringPublicationPaths(target);
   const source = origin + p2InteractiveBrowserEntryPath(input, "owner");
   const expectedPatch = Buffer.from(JSON.stringify({ expectedRevision: target.revision, status: "published" }));
-  const review = { method: "GET", pathname: readiness }, publish = { method: "PATCH", pathname: detail };
+  const quizPath = quiz ? p2AuthoringQuizPath(target) : undefined;
+  const prior = { method: "GET", pathname: quiz ? quizPath : readiness, status: quiz && target.quizRevision === 0 ? 404 : 200 };
+  const write = { method: quiz ? "PUT" : "PATCH", pathname: quiz ? quizPath : detail, status: 200 };
   const refusal = () => new Error("P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED");
   let failed = false, qualified = false, receipt, accept, reject;
   const observed = new Promise((resolve, refuse) => { accept = resolve; reject = refuse; });
@@ -574,25 +623,38 @@ function watchPublication(context, page, input) {
   const onRequest = request => {
     const url = URL.parse(request.url());
     if (url?.origin !== origin) return;
-    const step = url.pathname === readiness ? review : url.pathname === detail && request.method() !== "GET" ? publish : undefined;
+    const step = url.pathname === prior.pathname && (!quiz || request.method() === "GET") ? prior
+      : url.pathname === write.pathname && request.method() !== "GET" ? write : undefined;
     if (!step) return;
     try {
       const frame = request.frame();
       demand(!failed && !step.request && frame === page.mainFrame() && frame.url() === source && !url.search && !url.hash
         && request.method() === step.method && request.resourceType() === "fetch" && request.redirectedFrom() === null);
       const bytes = request.postDataBuffer();
-      demand(step === review ? bytes === null : published && review.response && Buffer.isBuffer(bytes) && bytes.equals(expectedPatch));
+      if (step === prior) demand(bytes === null);
+      else {
+        demand(requiresWrite && prior.response && Buffer.isBuffer(bytes));
+        if (quiz) {
+          const body = exactBrowserJson(bytes, maxAuthoringBody);
+          demand(createHash("sha256").update(bytes).digest("hex") === target.bodySha256
+            && closed(body, ["expectedCourseRevision", "document"]) && body.expectedCourseRevision === target.revision
+            && quizDocumentHash(body.document) === target.documentSha256);
+        } else demand(bytes.equals(expectedPatch));
+      }
       step.request = request;
     } catch { fail(); }
   };
   const onResponse = response => {
-    const request = response.request(), step = request === review.request ? review : request === publish.request ? publish : undefined;
+    const request = response.request(), step = request === prior.request ? prior : request === write.request ? write : undefined;
     if (!step) return;
     if (failed || step.response) return fail();
     step.response = (async () => {
-      const head = await readBrowserResponseHead(response, request, origin, step.pathname, step.method, 200);
+      const head = await readBrowserResponseHead(response, request, origin, step.pathname, step.method, step.status);
+      // The normal quiz editor handles the first GET's 404 without reading its body.
+      if (step.status === 404) return { head };
       const body = await readBrowserResponseJson(response, request, maxAuthoringBody);
-      if (step === review) {
+      if (quiz) return { head, result: readQuizResult(body, target, step === write) };
+      if (step === prior) {
         demand(closed(body, ["courseId", "courseRevision", "ready", "issues"]) && body.courseId === target.courseId
           && body.courseRevision === target.revision && body.ready === published && Array.isArray(body.issues)
           && body.issues.every(issue => publicationIssueCode(issue?.code)));
@@ -605,16 +667,21 @@ function watchPublication(context, page, input) {
       return { head, result };
     })();
     void step.response.then(async value => {
-      if (failed || published && step === review) return;
-      const reviewed = step === review ? value : await review.response;
+      if (failed || requiresWrite && step === prior) return;
+      const reviewed = step === prior ? value : await prior.response;
       if (failed) return;
-      receipt = validateP2AuthoringMutationReceipt({ readiness: reviewed.head,
-        ...(published ? { publication: value.head } : {}), body: { ...(published ? value.result
-          : { courseId: target.courseId, slug: target.slug, revision: target.revision, status: "draft" }), issueCodes: reviewed.codes } }, target);
+      if (quiz) {
+        demand(reviewed.result?.quizId !== value.result.quizId);
+        receipt = validateP2AuthoringMutationReceipt({ prior: reviewed.head, save: value.head, body: value.result }, target);
+      } else {
+        receipt = validateP2AuthoringMutationReceipt({ readiness: reviewed.head,
+          ...(published ? { publication: value.head } : {}), body: { ...(published ? value.result
+            : { courseId: target.courseId, slug: target.slug, revision: target.revision, status: "draft" }), issueCodes: reviewed.codes } }, target);
+      }
       accept(receipt);
     }).catch(fail);
   };
-  const onFailure = request => { if (request === review.request || request === publish.request) fail(); };
+  const onFailure = request => { if (request === prior.request || request === write.request) fail(); };
   context.on("request", onRequest);
   context.on("response", onResponse);
   context.on("requestfailed", onFailure);
@@ -627,12 +694,14 @@ function watchPublication(context, page, input) {
         await Promise.race([observed, new Promise((_, timeout) => { timer = setTimeout(() => timeout(refusal()), remaining); })]);
         const timeout = expires * 1000 - Date.now();
         if (failed || timeout <= 0) throw refusal();
-        const feedback = published ? "Course published." : "Resolve these items before publishing";
+        const feedback = quiz ? "Quiz revision saved. Previous attempts remain in history."
+          : published ? "Course published." : "Resolve these items before publishing";
+        const status = quiz ? "draft" : receipt.body.status;
         await Promise.all([
           page.getByRole("status").getByText(feedback, { exact: true }).waitFor({ state: "visible", timeout }),
-          page.getByText(receipt.body.status + " · Revision " + receipt.body.revision, { exact: true }).waitFor({ state: "visible", timeout }),
+          page.getByText(status + " · Revision " + receipt.body.revision, { exact: true }).waitFor({ state: "visible", timeout }),
         ]).catch(() => { throw refusal(); });
-        if (failed || !published && await page.getByRole("button", { name: "Publish course", exact: true })
+        if (failed || !requiresWrite && await page.getByRole("button", { name: "Publish course", exact: true })
           .and(page.locator("button:enabled")).count() !== 0) throw refusal();
         qualified = true;
       } finally { clearTimeout(timer); }
@@ -652,7 +721,7 @@ function watchPublication(context, page, input) {
 
 export function watchP2AuthoringMutation(context, page, input) {
   demand(input.stage === "authoring" && !isP2InteractiveAuthoringPair(input));
-  if (authoringPublication(input)) return watchPublication(context, page, input);
+  if (authoringPublication(input) || authoringQuiz(input)) return watchAuthoringReadWrite(context, page, input);
   return watchMutation(context, page, input);
 }
 
@@ -969,7 +1038,8 @@ async function runInteractiveBrowser(first) {
           if (isP2InteractiveAuthoringDetail(input)) {
             const timeout = selection.expires * 1000 - Date.now();
             demand(timeout > 0 && httpStatus === 200 && response.url() === url && page.url() === url);
-            const name = authoringPublication(input) ? "Review publication readiness" : input.authoring.kind === "module" ? "Add module" : "Add lesson";
+            const name = authoringQuiz(input) ? "Assessment" : authoringPublication(input) ? "Review publication readiness"
+              : input.authoring.kind === "module" ? "Add module" : "Add lesson";
             await Promise.all([
               page.getByRole("button", { name, exact: true }).and(page.locator("button:enabled")).first().waitFor({ state: "visible", timeout }),
               page.getByText("draft · Revision " + input.authoring.revision, { exact: true }).waitFor({ state: "visible", timeout }),

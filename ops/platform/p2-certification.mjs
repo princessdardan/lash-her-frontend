@@ -35,7 +35,8 @@ import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftC
   captureP2InteractiveCourseDraftEditsBaseline,observeP2InteractiveCourseDraftEditsCase,validateP2InteractiveCourseDraftEdits,
   captureP2InteractiveCourseReorderBaseline,observeP2InteractiveCourseReorderCase,validateP2InteractiveCourseReorder,
   captureP2InteractiveCurriculumCreateBaseline,observeP2InteractiveCurriculumCreateCase,validateP2InteractiveCurriculumCreate,
-  captureP2InteractivePublicationBaseline,observeP2InteractivePublicationCase,validateP2InteractivePublication} from './p2-lifecycle-persistence-probe.mjs';
+  captureP2InteractivePublicationBaseline,observeP2InteractivePublicationCase,validateP2InteractivePublication,
+  captureP2InteractiveQuizSaveBaseline,observeP2InteractiveQuizSaveCase,validateP2InteractiveQuizSave} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -69,13 +70,30 @@ const authoringCases=new Map([
     baseline:captureP2InteractiveCurriculumCreateBaseline,observe:observeP2InteractiveCurriculumCreateCase}],
   ['qualify-publication',{paired:false,validate:validateP2InteractivePublication,
     baseline:captureP2InteractivePublicationBaseline,observe:observeP2InteractivePublicationCase}],
+  ['save-quiz-revision',{field:'authoringQuiz',paired:false,validate:validateP2InteractiveQuizSave,
+    baseline:captureP2InteractiveQuizSaveBaseline,observe:observeP2InteractiveQuizSaveCase}],
 ]);
 const authoringSlug=value=>typeof value==='string'&&value.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
-function authoringSelection({authoringAction,requests}){
+function authoringSelection({actorId,authoringAction,requests}){
   const {operation,...selection}=authoringAction;
   if(operation==='qualify-publication')return selection;
+  if(operation==='save-quiz-revision')return {...selection,actorId,bodySha256:requests[2].bodySha256};
   return authoringCases.get(operation).paired?{...selection,winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256}:
     {...selection,bodySha256:requests[1].bodySha256};
+}
+function quizSaveActionValid(selected,requests){
+  if(!exactKeys(selected,['operation','courseId','slug','revision','lessonId','quizRevision','documentSha256'])||
+    !uuid(selected.courseId)||!uuid(selected.lessonId)||!authoringSlug(selected.slug)||
+    !Number.isInteger(selected.revision)||selected.revision<1||selected.revision>=2_147_483_647||
+    !Number.isInteger(selected.quizRevision)||selected.quizRevision<0||selected.quizRevision>=2_147_483_647||
+    !sha(selected.documentSha256)||selected.documentSha256===emptyRequestSha256||requests.length!==3)return false;
+  const detail=`/course/v1/admin/courses/${selected.courseId}`;
+  const quiz=`/course/v1/admin/lessons/${selected.lessonId}/quiz`;
+  const [read,prior,save]=requests;
+  return isDeepStrictEqual(read,{method:'GET',target:detail,bodySha256:emptyRequestSha256,uses:2})&&
+    isDeepStrictEqual(prior,{method:'GET',target:quiz,bodySha256:emptyRequestSha256,uses:1})&&
+    exactKeys(save,['method','target','bodySha256','uses'])&&save.method==='PUT'&&save.target===quiz&&save.uses===1&&
+    sha(save.bodySha256)&&save.bodySha256!==emptyRequestSha256;
 }
 function publicationActionValid(selected,requests){
   if(!exactKeys(selected,['operation','courseId','slug','revision','outcome','issueCodes'])||
@@ -129,6 +147,7 @@ function interactiveActionValid(value){
     const selected=value.authoringAction,configured=authoringCases.get(selected?.operation),[read,...mutations]=value.requests;
     if(!configured)return false;
     if(selected.operation==='qualify-publication')return publicationActionValid(selected,value.requests);
+    if(selected.operation==='save-quiz-revision')return quizSaveActionValid(selected,value.requests);
     const {paired}=configured,reorder=selected.operation==='reorder-and-stale-curriculum',create=selected.operation==='create-curriculum';
     const detailRead=paired||create,curriculum=reorder||create;
     if(!exactKeys(selected,['operation','slug',...(detailRead?['courseId','revision']:[]),

@@ -11,7 +11,7 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringReorderPath,
+import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath,
   p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt,
   validateP2AuthoringReorderResponses, validateP2InteractiveBrowserInput,
@@ -230,6 +230,12 @@ async function reviewedInteractiveInput(plan, challenge) {
         && (published ? second?.method === "PATCH" && second.target === "/course/v1" + detail.slice(4) : second === undefined));
       authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
         revision: selected.revision, outcome: selected.outcome, issueCodes: selected.issueCodes };
+    } else if (selected?.operation === "save-quiz-revision") {
+      const target = "/course/v1" + p2AuthoringQuizPath(selected).slice(4);
+      demand(first?.method === "GET" && first.target === target && second?.method === "PUT" && second.target === target);
+      authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
+        revision: selected.revision, lessonId: selected.lessonId, quizRevision: selected.quizRevision,
+        documentSha256: selected.documentSha256, bodySha256: second.bodySha256 };
     } else {
       demand(selected?.operation === "create-draft" && first?.method === "POST" && first.target === "/course/v1/admin/courses");
       authoring = { actorId: action.actorId, slug: selected.slug, bodySha256: first.bodySha256 };

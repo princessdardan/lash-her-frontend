@@ -12,10 +12,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
 import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraftEditsBaseline, captureP2InteractiveCourseReorderBaseline,
-  captureP2InteractiveCurriculumCreateBaseline, captureP2InteractivePublicationBaseline, observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase,
-  observeP2InteractiveCourseReorderCase, observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, p2LifecyclePersistenceTargetSha256,
+  captureP2InteractiveCurriculumCreateBaseline, captureP2InteractivePublicationBaseline, captureP2InteractiveQuizSaveBaseline,
+  observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
+  observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
-  validateP2InteractiveCurriculumCreate, validateP2InteractivePublication } from "./p2-lifecycle-persistence-probe.mjs";
+  validateP2InteractiveCurriculumCreate, validateP2InteractivePublication, validateP2InteractiveQuizSave } from "./p2-lifecycle-persistence-probe.mjs";
 import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -128,7 +129,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
   await control.query(`CREATE ROLE ${user} LOGIN NOINHERIT PASSWORD '${password}'`);
   await control.query(`GRANT CONNECT ON DATABASE ${database} TO ${user}`);
   await course.query(`GRANT USAGE ON SCHEMA public TO ${user}`);
-  await course.query(`GRANT SELECT ON public.courses, public.modules, public.lessons TO ${user}`);
+  await course.query(`GRANT SELECT ON public.courses, public.modules, public.lessons, public.quiz_revisions, public.quiz_attempts TO ${user}`);
   const job = { schemaVersion: 2, qualificationTargetProfile: profile, kind: "operator-migration", operator: "Dardan",
     environment: "staging", contractPhase: "p2", releaseId: "owned-draft-read", sourceCommit, runtimeRole: target.runtimeRole,
     phase2ContractManifestSha256: `sha256:${hash(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json")))}`,
@@ -209,6 +210,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedCourseReorderWitness({ course, job, dependencies, input, create });
     await runOwnedCurriculumCreateWitness({ course, job, dependencies, input, create });
     await runOwnedPublicationWitness({ course, job, dependencies, input, create });
+    await runOwnedQuizSaveWitness({ course, job, dependencies, input, create });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -220,7 +222,9 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift",
       "course-rich-lesson-pinned-post-structure-safe-links-and-exact-stored-portable-text",
       "course-publication-held-status-revision-metadata-and-public-catalog-predicate",
-      "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift"];
+      "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift",
+      "course-quiz-save-initial-and-revised-exact-document-editor-and-preserved-private-history",
+      "course-quiz-save-refuses-private-shape-scope-and-database-history-drift"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -596,6 +600,112 @@ async function runOwnedPublicationWitness({ course, job, dependencies, input, cr
     await assert.rejects(observe(selected, baseline), { check });
     await assert.rejects(observe(selected, baseline), { check: "course-publication-receipt" });
   }
+}
+
+async function runOwnedQuizSaveWitness({ course, job, dependencies, input, create }) {
+  const canonical = document => JSON.stringify(document, (_key, value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  const document = (mode, passingPercent, prompt = "Which shape is shown? é") => ({ version: 1, mode, passingPercent, questions: [{
+    id: "question-1", prompt, options: [{ id: "option-a", text: "Round" }, { id: "option-b", text: "Square" }],
+    correctOptionId: "option-b", feedback: "Review the example." }] });
+  const bind = (test, body) => ({ ...test, body, selection: { ...test.selection,
+    documentSha256: hash(canonical(body.document)), bodySha256: hash(JSON.stringify(body)) } });
+  const seed = async (name, prior = false) => {
+    const fixture = input(`quiz-save-${name}`), { courseId, draft: { slug } } = fixture;
+    await create(fixture);
+    const moduleId = randomUUID(), lessonId = randomUUID(), actorId = randomUUID(), quizId = randomUUID();
+    await course.query("INSERT INTO public.modules(id,course_id,slug,title,position) VALUES($1,$2,'quiz-module','Quiz module',1)", [moduleId, courseId]);
+    await course.query("INSERT INTO public.lessons(id,module_id,slug,title,position) VALUES($1,$2,'quiz-lesson','Quiz lesson',1)", [lessonId, moduleId]);
+    let priorId, attemptId;
+    if (prior) {
+      const userId = randomUUID(), enrollmentId = randomUUID();
+      priorId = randomUUID(); attemptId = randomUUID();
+      await course.query("INSERT INTO public.users(id,email) VALUES($1,$2)", [userId, `quiz-learner-${userId}@example.invalid`]);
+      await course.query("INSERT INTO public.enrollments(id,user_id,course_id,status,source,granted_at) VALUES($1,$2,$3,'active','free',pg_catalog.clock_timestamp())",
+        [enrollmentId, userId, courseId]);
+      await course.query("INSERT INTO public.quiz_revisions(id,lesson_id,revision,document,created_by) VALUES($1,$2,1,$3::jsonb,$4)",
+        [priorId, lessonId, document("practice", 80), randomUUID()]);
+      await course.query(`INSERT INTO public.quiz_attempts(id,user_id,lesson_id,quiz_revision_id,enrollment_id,request_id,request_hash,answers,
+        correct_count,total_count,passed,completed) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,1,1,true,true)`,
+      [attemptId, userId, lessonId, priorId, enrollmentId, randomUUID(), hash("owned-quiz-request"),
+        JSON.stringify([{ questionId: "question-1", optionId: "option-b" }])]);
+    }
+    return bind({ selection: { courseId, slug, revision: 1, lessonId, quizRevision: prior ? 1 : 0, actorId }, moduleId, quizId, priorId, attemptId },
+      { expectedCourseRevision: 1, document: prior ? document("graded", 90, "What is the revised technique?") : document("practice", 80) });
+  };
+  const capture = ({ selection, body }) => captureP2InteractiveQuizSaveBaseline(job, selection, body, dependencies);
+  const browser = ({ selection, quizId }) => ({ courseId: selection.courseId, slug: selection.slug, lessonId: selection.lessonId, quizId,
+    revision: selection.revision + 1, quizRevision: selection.quizRevision + 1, documentSha256: selection.documentSha256 });
+  const observe = (test, baseline, receipt = browser(test)) => observeP2InteractiveQuizSaveCase(job, test.selection, baseline, receipt, dependencies);
+  const write = async (test, { actorId = test.selection.actorId, stored = test.body.document, createdAgo = "0 seconds" } = {}) => {
+    const { selection, quizId } = test;
+    await course.query("BEGIN");
+    try {
+      assert.equal((await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid AND revision=$2::int AND status='draft'",
+        [selection.courseId, selection.revision])).rowCount, 1);
+      await course.query(`INSERT INTO public.quiz_revisions(id,lesson_id,revision,document,created_by,created_at)
+        VALUES($1,$2,$3,$4::jsonb,$5,pg_catalog.clock_timestamp()-$6::interval)`,
+      [quizId, selection.lessonId, selection.quizRevision + 1, stored, actorId, createdAgo]);
+      await course.query("COMMIT");
+    } catch (error) {
+      await course.query("ROLLBACK");
+      throw error;
+    }
+  };
+
+  for (const prior of [false, true]) {
+    const test = await seed(prior ? "revised" : "initial", prior);
+    assert.deepEqual(validateP2InteractiveQuizSave(test.selection, test.body), test.body);
+    await assert.rejects(capture({ ...test, selection: { ...test.selection, quizRevision: prior ? 0 : 1 } }), { check: "course-quiz-save-revision" });
+    const before = await capture(test);
+    assert.equal(JSON.stringify(before), "{}");
+    await write(test);
+    await assert.rejects(observe(test, {}, browser(test)), { check: "course-quiz-save-receipt" });
+    await assert.rejects(observe(test, before, { ...browser(test), quizRevision: test.selection.quizRevision }), { check: "course-quiz-save-receipt" });
+    await assert.rejects(observe(test, before, { ...browser(test), documentSha256: "a".repeat(64) }), { check: "course-quiz-save-receipt" });
+    assert.deepEqual(await observe(test, before), { ...browser(test), readOnly: true });
+    await assert.rejects(observe(test, before), { check: "course-quiz-save-receipt" });
+  }
+  const invalid = await seed("invalid");
+  const validate = (body, check) => assert.throws(() => validateP2InteractiveQuizSave(bind(invalid, body).selection, body), { check });
+  const { document: valid } = invalid.body;
+  validate({ document: valid, expectedCourseRevision: 1 }, "course-quiz-save-body");
+  validate({ ...invalid.body, document: { version: 1, questions: valid.questions } }, "course-quiz-save-document");
+  validate({ ...invalid.body, document: { ...valid, questions: [...valid.questions, ...valid.questions] } }, "course-quiz-save-questions");
+  for (const patch of [{ correctOptionId: "foreign" }, { options: [valid.questions[0].options[0], valid.questions[0].options[0]] }]) {
+    validate({ ...invalid.body, document: { ...valid, questions: [{ ...valid.questions[0], ...patch }] } }, "course-quiz-save-questions");
+  }
+  assert.throws(() => validateP2InteractiveQuizSave({ ...invalid.selection, bodySha256: "a".repeat(64) }, invalid.body), { check: "course-quiz-save-body-hash" });
+  assert.throws(() => validateP2InteractiveQuizSave({ ...invalid.selection, documentSha256: "a".repeat(64) }, invalid.body), { check: "course-quiz-save-document-hash" });
+  await assert.rejects(captureP2InteractiveQuizSaveBaseline({ ...job, sourceCommit: "a".repeat(40) }, invalid.selection, invalid.body, dependencies),
+    { check: "course-quiz-save-contract-target" });
+  await course.query("UPDATE public.modules SET archived_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid", [invalid.moduleId]);
+  await assert.rejects(capture(invalid), { check: "course-quiz-save-lesson" });
+
+  for (const [name, options] of [["actor", { actorId: randomUUID() }], ["document", { stored: document("graded", 99) }],
+    ["old-timestamp", { createdAgo: "1 hour" }]]) {
+    const changed = await seed(name), before = await capture(changed);
+    await write(changed, options);
+    await assert.rejects(observe(changed, before), { check: "course-quiz-save-persistence" });
+  }
+  const altered = await seed("history", true), previous = await capture(altered);
+  await write(altered);
+  await course.query("BEGIN");
+  try {
+    await course.query("ALTER TABLE public.quiz_revisions DISABLE TRIGGER quiz_revisions_immutable");
+    await course.query("UPDATE public.quiz_revisions SET document=$2::jsonb WHERE id=$1::uuid", [altered.priorId, document("practice", 95)]);
+    await course.query("ALTER TABLE public.quiz_revisions ENABLE TRIGGER quiz_revisions_immutable");
+    await course.query("COMMIT");
+  } catch (error) {
+    await course.query("ROLLBACK");
+    throw error;
+  }
+  await assert.rejects(observe(altered, previous), { check: "course-quiz-save-history-changed" });
+  const attempt = await seed("attempt", true), attemptBaseline = await capture(attempt);
+  await write(attempt);
+  await course.query(`UPDATE public.quiz_attempts SET user_id=NULL,enrollment_id=NULL,request_id=NULL,request_hash=NULL,
+    answers='[]'::jsonb,deidentified_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid`, [attempt.attemptId]);
+  await assert.rejects(observe(attempt, attemptBaseline), { check: "course-quiz-save-history-changed" });
 }
 
 try { await main(); }

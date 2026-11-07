@@ -314,6 +314,22 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_quiz_probes_reviewed_detail_and_lesson_quiz_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        lesson = "10000000-0000-4000-8000-000000000002"
+        paths = (f"/admin/courses/{course}", f"/api/admin/courses/{course}", f"/api/admin/lessons/{lesson}/quiz")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            for args in ({"quiz_lesson_id": lesson}, {"course_id": course, "quiz_lesson_id": lesson + "/attempts"}):
+                with self.assertRaisesRegex(ValueError, "QUIZ_LESSON_REQUIRED"):
+                    ingress.observe_authoring_protection(self.base.context, self.fixture.client, expected_profile=self.profile, **args)
+            receipt = ingress.observe_authoring_protection(self.base.context, self.fixture.client, course_id=course,
+                                                            expected_profile=self.profile, quiz_lesson_id=lesson)
+        self.assertEqual([row["path"] for row in receipt["endpointDenials"]], list(paths))
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -344,6 +360,34 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_quiz_plan_binds_revision_lesson_document_and_exact_routes(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        lesson = "10000000-0000-4000-8000-000000000003"
+        quiz = f"/course/v1/admin/lessons/{lesson}/quiz"
+        requests = [
+            {"method": "GET", "target": f"/course/v1/admin/courses/{course}", "bodySha256": window._EMPTY, "uses": 2},
+            {"method": "GET", "target": quiz, "bodySha256": window._EMPTY, "uses": 1},
+            {"method": "PUT", "target": quiz, "bodySha256": "b" * 64, "uses": 1}]
+        for revision in (0, 2_147_483_646):
+            selection = {"operation": "save-quiz-revision", "courseId": course, "slug": "owned-draft", "revision": 4,
+                         "lessonId": lesson, "quizRevision": revision, "documentSha256": "d" * 64}
+            action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": requests, "authoringAction": selection}
+            self.assertEqual(window.validate_interactive_action(action), action)
+            selector = window._selection_sha(action)
+            self.assertEqual(selector, "7032712d617574682d7175697a2d7631" + owner.replace("-", ""))
+            cookie, key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                 "8", "authoring", 1_794_009_600, 60, "c" * 32, selector)
+            self.assertEqual(cookie.split(".")[6], selector)
+            self.assertEqual(len(key), 64)
+            for change in ({"quizRevision": -1}, {"quizRevision": 2_147_483_647}, {"quizRevision": False},
+                           {"documentSha256": window._EMPTY}, {"documentSha256": "0" * 64}, {"lessonId": "wrong"}):
+                with self.subTest(revision=revision, change=change), self.assertRaisesRegex(ValueError, "QUIZ_SELECTION_REQUIRED"):
+                    window.validate_interactive_action({**action, "authoringAction": {**selection, **change}})
+            for change in ({"method": "POST"}, {"target": quiz + "/attempts"}, {"bodySha256": window._EMPTY}, {"uses": 2}):
+                with self.subTest(revision=revision, request=change), self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "requests": [*requests[:2], {**requests[2], **change}]})
+
     def test_publication_plan_binds_outcome_issue_codes_and_exact_patch_digest(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

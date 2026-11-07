@@ -38,6 +38,7 @@ _AUTHORING_PATHS = ("/admin/courses", "/api/admin/courses")
 _COURSE_ID = r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}"
 _AUTHORING_DETAIL_PATH = re.compile(rf"(?:/admin/courses|/api/admin/courses)/{_COURSE_ID}")
 _PUBLICATION_READINESS_PATH = re.compile(rf"/api/admin/courses/{_COURSE_ID}/publication-readiness")
+_QUIZ_PATH = re.compile(rf"/api/admin/lessons/{_COURSE_ID}/quiz")
 
 
 def _digest(value):
@@ -74,7 +75,7 @@ class UnauthenticatedIngressClient:
         demand(type(origin) is str and (origin == canonical.ORIGIN or _DIRECT_DEPLOYMENT.fullmatch(origin)),
                "P2_INTERACTIVE_INGRESS_ORIGIN_REFUSED")
         demand(type(path) is str and (path in _BROWSER_PATHS + _AUTHORING_PATHS or _AUTHORING_DETAIL_PATH.fullmatch(path) or
-                                     _PUBLICATION_READINESS_PATH.fullmatch(path)),
+                                     _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path)),
                "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
         request = urllib.request.Request(url, method="GET", headers={
@@ -163,15 +164,20 @@ def observe_browser_protection(context, client, *, expected_profile):
     return _observe_selected_protection(context, client, expected_profile, browser=True)
 
 
-def observe_authoring_protection(context, client, *, expected_profile, course_id=None, publication_readiness=False):
+def observe_authoring_protection(context, client, *, expected_profile, course_id=None, publication_readiness=False,
+                                 quiz_lesson_id=None):
     """Check the protected authoring page and its exact same-origin endpoint."""
     demand(course_id is None or type(course_id) is str and re.fullmatch(_COURSE_ID, course_id),
            "P2_INTERACTIVE_AUTHORING_COURSE_ID_REQUIRED")
     demand(publication_readiness is False or publication_readiness is True and course_id is not None,
            "P2_INTERACTIVE_AUTHORING_READINESS_COURSE_REQUIRED")
+    demand(quiz_lesson_id is None or course_id is not None and type(quiz_lesson_id) is str and
+           re.fullmatch(_COURSE_ID, quiz_lesson_id), "P2_INTERACTIVE_AUTHORING_QUIZ_LESSON_REQUIRED")
     paths = _AUTHORING_PATHS if course_id is None else tuple(f"{path}/{course_id}" for path in _AUTHORING_PATHS)
     if publication_readiness:
         paths += (f"/api/admin/courses/{course_id}/publication-readiness",)
+    if quiz_lesson_id is not None:
+        paths += (f"/api/admin/lessons/{quiz_lesson_id}/quiz",)
     return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
 
 

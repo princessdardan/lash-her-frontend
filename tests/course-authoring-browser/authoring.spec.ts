@@ -200,7 +200,29 @@ test("owner authors, grades publication readiness and publishes with actual Cour
     await expect(
       page.getByRole("status").getByText("Lesson saved."),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Assessment", exact: true }).click();
+    const { course: beforeQuiz } = await (await page.request.get(detail)).json();
+    const lessonId = beforeQuiz.modules[0].lessons[0].id;
+    const quizPath = `/api/admin/lessons/${lessonId}/quiz`;
+    const openAssessment = async (priorStatus: 200 | 404) => {
+      const pending = page.waitForResponse(response => response.request().method() === "GET" &&
+        new URL(response.url()).pathname === quizPath);
+      await page.getByRole("button", { name: "Assessment", exact: true }).click();
+      const response = await pending;
+      expect(response.status()).toBe(priorStatus);
+      expect(await response.headerValue("cache-control")).toBe("private, no-store");
+      return response;
+    };
+    const saveAssessment = async (expectedCourseRevision: number, document: object) => {
+      const pending = page.waitForResponse(response => response.request().method() === "PUT" &&
+        new URL(response.url()).pathname === quizPath);
+      await editor.getByRole("button", { name: "Save new quiz revision" }).click();
+      const response = await pending;
+      expect(response.status()).toBe(200);
+      expect(response.request().postData()).toBe(JSON.stringify({ expectedCourseRevision, document }));
+      await expect(page.getByRole("status").getByText("Quiz revision saved. Previous attempts remain in history.")).toBeVisible();
+      return (await response.json()).quiz;
+    };
+    await openAssessment(404);
     await editor
       .getByRole("button", { name: "Add question", exact: true })
       .click();
@@ -216,14 +238,30 @@ test("owner authors, grades publication readiness and publishes with actual Cour
     await editor
       .getByLabel("Feedback after answering", { exact: true })
       .fill("Follow the reviewed technique.");
-    await editor
-      .getByRole("button", { name: "Save new quiz revision" })
-      .click();
-    await expect(
-      page.getByText(
-        "Quiz revision saved. Previous attempts remain in history.",
-      ),
-    ).toBeVisible();
+    const firstOption = `option-${beforeQuiz.revision}-1`;
+    const firstDocument = { version: 1, mode: "graded", passingPercent: 80, questions: [
+      { id: `question-${beforeQuiz.revision}-1`, prompt: "Which technique is safe?",
+        options: [{ id: firstOption, text: "The reviewed technique" }, { id: `option-${beforeQuiz.revision}-2`, text: "Skip the review" }],
+        correctOptionId: firstOption, feedback: "Follow the reviewed technique." },
+    ] };
+    const originalQuiz = await saveAssessment(beforeQuiz.revision, firstDocument);
+    expect(originalQuiz).toMatchObject({ lessonId, revision: 1, courseRevision: beforeQuiz.revision + 1, document: firstDocument });
+    await expect(editor.getByText(/^Revision 1\./u)).toBeVisible();
+
+    await page.getByRole("button", { name: "Course details", exact: true }).click();
+    const prior = await openAssessment(200);
+    expect((await prior.json()).quiz).toMatchObject({ id: originalQuiz.id, revision: 1, document: firstDocument });
+    await editor.getByRole("combobox", { name: /^Assessment mode/u }).selectOption("practice", { timeout: 5_000 });
+    await editor.getByRole("button", { name: "Add option", exact: true }).click();
+    await editor.getByLabel("Question 1 option 3", { exact: true }).fill("Check the guide first");
+    const revisedQuestion = firstDocument.questions[0];
+    const revisedDocument = { ...firstDocument, mode: "practice", questions: [
+      { ...revisedQuestion, options: [...revisedQuestion.options, { id: `option-${beforeQuiz.revision + 1}-1`, text: "Check the guide first" }] },
+    ] };
+    const revisedQuiz = await saveAssessment(beforeQuiz.revision + 1, revisedDocument);
+    expect(revisedQuiz).toMatchObject({ lessonId, revision: 2, courseRevision: beforeQuiz.revision + 2, document: revisedDocument });
+    expect(revisedQuiz.id).not.toBe(originalQuiz.id);
+    await expect(editor.getByText(/^Revision 2\./u)).toBeVisible();
     const { course: draft } = await (await page.request.get(detail)).json();
     expect(await review()).toEqual({ courseId, courseRevision: draft.revision, ready: true, issues: [] });
     await expect(

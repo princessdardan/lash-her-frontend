@@ -683,6 +683,7 @@ export function CourseWorkspace({
             />
           ) : (
             <QuizEditor
+              key={view.lessonId}
               lessonId={view.lessonId}
               revision={course.revision}
               pending={pending}

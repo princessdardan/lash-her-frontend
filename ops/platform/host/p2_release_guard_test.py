@@ -171,6 +171,9 @@ class IndependentGuardTests(unittest.TestCase):
         for outcome in ('published', 'blocked'):
             with self.subTest(publication_outcome=outcome):
                 self.check_profiled_interactive_terminal('authoring', 'admin', None, publication_outcome=outcome)
+        for revision in (0, 7):
+            with self.subTest(quiz_revision=revision):
+                self.check_profiled_interactive_terminal('authoring', 'admin', None, quiz_revision=revision)
         for kind in ('module', 'lesson'):
             with self.subTest(reorder_kind=kind):
                 self.check_profiled_interactive_terminal('authoring', 'admin', None, reorder_kind=kind)
@@ -178,12 +181,14 @@ class IndependentGuardTests(unittest.TestCase):
                 self.check_profiled_interactive_terminal('authoring', 'admin', None, create_kind=kind)
 
     def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None,
-                                            create_kind=None, publication_outcome=None):
+                                            create_kind=None, publication_outcome=None, quiz_revision=None):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
         variant = (f'create-{create_kind}' if create_kind is not None else 'edit' if editing else
                    publication_outcome or reorder_kind or provider or actor_kind)
+        if quiz_revision is not None:
+            variant = f'quiz-{quiz_revision}'
         initial, directory = self.profiled_certification(f'owned-{stage_name}-{variant}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
@@ -200,7 +205,19 @@ class IndependentGuardTests(unittest.TestCase):
         elif identity:
             action['identityActor'] = reviewed
         elif authoring:
-            if publication_outcome is not None:
+            if quiz_revision is not None:
+                document_sha = supervisor._canonical_sha({'questions': [{'id': 'reviewed', 'answers': ['yes', 'no']}]})
+                lesson = ledger_ids[0]
+                action['authoringAction'] = {'operation': 'save-quiz-revision', 'courseId': command, 'slug': 'owned-draft',
+                                             'revision': 3, 'lessonId': lesson, 'quizRevision': quiz_revision,
+                                             'documentSha256': document_sha}
+                detail = f'/course/v1/admin/courses/{command}'
+                quiz = f'/course/v1/admin/lessons/{lesson}/quiz'
+                action['requests'] = [
+                    {'method': 'GET', 'target': detail, 'bodySha256': window._EMPTY, 'uses': 2},
+                    {'method': 'GET', 'target': quiz, 'bodySha256': window._EMPTY, 'uses': 1},
+                    {'method': 'PUT', 'target': quiz, 'bodySha256': '9' * 64, 'uses': 1}]
+            elif publication_outcome is not None:
                 issue_codes = [] if published else ['MISSING_COVER', 'NO_LESSONS']
                 action['authoringAction'] = {'operation': 'qualify-publication', 'courseId': command, 'slug': 'owned-draft',
                                              'revision': 3, 'outcome': publication_outcome, 'issueCodes': issue_codes}
@@ -278,9 +295,24 @@ class IndependentGuardTests(unittest.TestCase):
             if publication_outcome is not None:
                 draft = {'courseId': command, 'slug': 'owned-draft', 'revision': 4 if published else 3,
                          'status': 'published' if published else 'draft', 'issueCodes': issue_codes}
+            if quiz_revision is not None:
+                draft = {'courseId': command, 'slug': 'owned-draft', 'lessonId': lesson, 'quizId': ledger_ids[1],
+                         'revision': 4, 'quizRevision': quiz_revision + 1, 'documentSha256': document_sha}
             domain = {**draft, 'readOnly': True}
             domain_key = 'courseWitness'
-            if publication_outcome is not None:
+            if quiz_revision is not None:
+                path = f'/api/admin/lessons/{lesson}/quiz'
+                prior_status = 404 if quiz_revision == 0 else 200
+                browser_key = 'browserResponse'
+                browser = {
+                    'prior': {'method': 'GET', 'pathname': path, 'status': prior_status, 'requestId': user},
+                    'save': {'method': 'PUT', 'pathname': path, 'status': 200, 'requestId': request}, 'body': draft}
+                acknowledgements = [
+                    {'requestId': ledger_ids[0], 'proofRequestId': actor, 'requestIndex': 0, 'upstreamStatus': 200},
+                    {'requestId': user, 'proofRequestId': ledger_ids[1], 'requestIndex': 1, 'upstreamStatus': prior_status},
+                    {'requestId': request, 'proofRequestId': command, 'requestIndex': 2, 'upstreamStatus': 200},
+                    {'requestId': ledger_ids[2], 'proofRequestId': ledger_ids[0], 'requestIndex': 0, 'upstreamStatus': 200}]
+            elif publication_outcome is not None:
                 detail = f'/api/admin/courses/{command}'
                 browser_key = 'browserResponse'
                 browser = {'readiness': {'method': 'GET', 'pathname': f'{detail}/publication-readiness',
@@ -368,7 +400,7 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'IDENTITY_ENROLLMENT_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
-        if authoring and publication_outcome is None:
+        if authoring and publication_outcome is None and quiz_revision is None:
             wrong = {**browser, 'winner': {**browser['winner'], 'requestId': user}} if paired else {**browser, 'requestId': user}
             response_error = ('AUTHORING_CURRICULUM_RESPONSE_REQUIRED' if create_kind is not None else
                               'AUTHORING_REORDER_RESPONSES_REQUIRED' if reorder_kind is not None else 'AUTHORING_BROWSER_RESPONSE_REQUIRED')
@@ -386,6 +418,19 @@ class IndependentGuardTests(unittest.TestCase):
                 wrong = {**browser, 'body': {**draft, **change}}
                 with self.subTest(body=tuple(change)), self.assertRaisesRegex(ValueError, 'AUTHORING_PUBLICATION_BODY_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+        if quiz_revision is not None:
+            for key, change in (('prior', {'status': 200 if prior_status == 404 else 404}), ('save', {'requestId': user}),
+                                ('save', {'method': 'PATCH'})):
+                wrong = {**browser, key: {**browser[key], **change}}
+                with self.subTest(receipt=key, change=change), self.assertRaisesRegex(ValueError, 'AUTHORING_QUIZ_RESPONSE_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'documentSha256': '6' * 64}, {'revision': 3}, {'quizRevision': quiz_revision}, {'lessonId': user}):
+                wrong = {**browser, 'body': {**draft, **change}}
+                with self.subTest(body=tuple(change)), self.assertRaisesRegex(ValueError, 'AUTHORING_QUIZ_BODY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            with self.assertRaisesRegex(ValueError, 'AUTHORING_COURSE_WITNESS_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain',
+                                'caseEvidence': {**evidence, domain_key: {**domain, 'quizId': user}}})
         if create_kind is not None:
             for change in ({'itemId': 'invalid-uuid'}, {'parentId': user}, {'slug': 'owned-draft'}, {'revision': 3}):
                 wrong = {**browser, 'body': {**draft, **change}}
@@ -428,7 +473,11 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
             self.assertEqual(case['identityWitnessSha256'], supervisor._canonical_sha(domain))
         if authoring:
-            if publication_outcome is not None:
+            if quiz_revision is not None:
+                self.assertEqual(case['priorGatewayRequestId'], user)
+                self.assertEqual(case['gatewayPutRequestId'], request)
+                self.assertEqual({key: case[key] for key in draft}, draft)
+            elif publication_outcome is not None:
                 self.assertEqual(case['readinessGatewayRequestId'], user)
                 self.assertEqual(case['issueCodes'], issue_codes)
                 self.assertEqual(case['revision'], draft['revision'])
@@ -473,7 +522,9 @@ class IndependentGuardTests(unittest.TestCase):
             guard({**terminal, 'witnessSha256': '0' * 64})
         if authoring:
             bad = copy.deepcopy(gateway_artifact)
-            if publication_outcome is not None:
+            if quiz_revision is not None:
+                bad['gatewayAcknowledgements'][1]['upstreamStatus'] = 200 if prior_status == 404 else 404
+            elif publication_outcome is not None:
                 rows = bad['gatewayAcknowledgements']
                 rows[0], rows[1] = rows[1], rows[0]
             elif paired:

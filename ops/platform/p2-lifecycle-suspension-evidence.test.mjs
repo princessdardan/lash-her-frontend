@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession,
-  p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringReorderPath,
+  p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
@@ -213,6 +213,7 @@ const authoringReorderSelector = actorId => "7032712d617574682d736f72742d7631" +
 const authoringCurriculumSelector = actorId => "7032712d617574682d6e65772d763100" + actorId.replaceAll("-", "");
 const authoringPublicationSelector = (actorId, outcome) => (outcome === "published" ? "7032712d617574682d7075622d763100"
   : "7032712d617574682d7264792d763100") + actorId.replaceAll("-", "");
+const authoringQuizSelector = actorId => "7032712d617574682d7175697a2d7631" + actorId.replaceAll("-", "");
 const ownedCourseId = randomUUID();
 const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
 const { status: ownedDraftStatus, ...ownedEditFields } = ownedDraft;
@@ -233,6 +234,7 @@ function interactivePermit(input) {
   if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
+  else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
       ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
@@ -440,6 +442,51 @@ function ownedPublication(outcome) {
     ...(published ? { publication: { method: "PATCH", pathname: detail, status: 200, requestId: randomUUID() } } : {}), body };
   return { input: interactiveInput({ stage: "authoring", authoring: target }), target, detail, readiness, response, receipt };
 }
+
+function ownedQuiz(quizRevision) {
+  const revision = 4, lessonId = randomUUID(), quizId = randomUUID();
+  const options = [{ id: "option-4-1", text: "First private option" }, { id: "option-4-2", text: "Second private option" }];
+  const question = { id: "question-4-1", prompt: "Private prompt", options, correctOptionId: options[0].id, feedback: "Private feedback" };
+  const document = { version: 1, mode: "graded", passingPercent: 80, questions: [question] };
+  const canonicalDocument = { mode: "graded", passingPercent: 80, questions: [{ correctOptionId: question.correctOptionId,
+    feedback: question.feedback, id: question.id, options, prompt: question.prompt }], version: 1 };
+  const posted = { expectedCourseRevision: revision, document };
+  const target = { actorId: adminId, operation: "save-quiz-revision", courseId: ownedCourseId, slug: ownedDraft.slug,
+    revision, lessonId, quizRevision, documentSha256: identityHash(canonicalDocument), bodySha256: identityHash(posted) };
+  const saved = { id: quizId, lessonId, revision: quizRevision + 1, courseRevision: revision + 1,
+    document: canonicalDocument, createdBy: adminId, createdAt: at };
+  const prior = { ...saved, id: randomUUID(), revision: quizRevision, courseRevision: revision, createdBy: randomUUID() };
+  const pathname = p2AuthoringQuizPath(target), input = interactiveInput({ stage: "authoring", authoring: target });
+  const receipt = { prior: { method: "GET", pathname, status: quizRevision === 0 ? 404 : 200, requestId: randomUUID() },
+    save: { method: "PUT", pathname, status: 200, requestId: randomUUID() },
+    body: { courseId: target.courseId, slug: target.slug, lessonId, quizId, revision: revision + 1, quizRevision: quizRevision + 1,
+      documentSha256: target.documentSha256 } };
+  return { target, input, pathname, posted, prior, saved, receipt };
+}
+
+test("quiz save permit and compact receipt bind owner, lesson and both revisions", () => {
+  for (const quizRevision of [0, 3]) {
+    const { input, target, receipt } = ownedQuiz(quizRevision), permit = interactivePermit(input);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(permit.cookie.split(".")[6], authoringQuizSelector(adminId));
+    assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), `/admin/courses/${ownedCourseId}`);
+    const parts = permit.cookie.split(".");
+    for (const selector of [authoringQuizSelector(randomUUID()), authoringPublicationSelector(adminId, "published"), authoringSelector(adminId)]) {
+      parts[6] = selector;
+      assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+    }
+    for (const variant of [{ quizRevision: -1 }, { revision: 0 }, { lessonId: "invalid" }, { documentSha256: "invalid" }]) {
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, ...variant } }));
+    }
+    assert.deepEqual(validateP2AuthoringMutationReceipt(receipt, target), receipt);
+    for (const body of [{ ...receipt.body, documentSha256: "f".repeat(64) }, { ...receipt.body, quizRevision },
+      { ...receipt.body, lessonId: randomUUID() }, { ...receipt.body, quizDocument: { private: true } }]) {
+      assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, body }, target));
+    }
+    assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, prior: { ...receipt.prior, status: 403 } }, target));
+  }
+});
 
 test("publication permit and receipt distinguish blocked and published outcomes", () => {
   for (const outcome of ["blocked", "published"]) {
@@ -1322,6 +1369,103 @@ test("owned Chromium publication checks the normal blocked UI or successful publ
             if (outcome === "published") await rejected.publish.click();
           }
           await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium quiz save captures first and later revisions and refuses tampered observations",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const open = async (quizRevision, scenario) => {
+      const fixture = ownedQuiz(quizRevision), { input, target, pathname, posted, prior, saved, receipt } = fixture;
+      const detail = "/api" + p2InteractiveBrowserEntryPath(input, "owner"), context = await browser.newContext(), effects = [];
+      const submitted = scenario === "raw-drift" ? { document: posted.document, expectedCourseRevision: target.revision } : posted;
+      const document = `<!doctype html><meta charset="utf-8"><p id="revision">draft · Revision ${target.revision}</p>
+        <button id="open">Assessment</button><button id="save" hidden>Save new quiz revision</button><button id="reload" hidden>Complete readback</button>
+        <div role="status"><p></p></div><script>
+        const quizPath = ${JSON.stringify(pathname)}, detail = ${JSON.stringify(detail)}, save = document.querySelector('#save'), reload = document.querySelector('#reload');
+        document.querySelector('#open').onclick = async () => {
+          const result = await fetch(quizPath);
+          if (result.ok) await result.json();
+          save.hidden = false;
+        };
+        save.onclick = async () => {
+          const result = await fetch(${JSON.stringify(scenario === "wrong-path" ? pathname + "/other" : pathname)},
+            {method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(${JSON.stringify(submitted)})});
+          await result.json();
+          reload.hidden = false;
+        };
+        reload.onclick = async () => {
+          const result = await (await fetch(detail)).json();
+          document.querySelector('#revision').textContent = 'draft · Revision ' + result.course.revision;
+          document.querySelector('[role="status"] p').textContent = 'Quiz revision saved. Previous attempts remain in history.';
+        };
+        </script>`;
+      const send = (route, payload, requestId, status = 200) => route.fulfill({ status, body: JSON.stringify(payload),
+        headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId } });
+      await context.route("**/*", route => {
+        const request = route.request(), url = new URL(request.url());
+        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
+        effects.push(request.method() + " " + url.pathname);
+        if (url.pathname === pathname && request.method() === "GET") {
+          const payload = quizRevision === 0 ? { error: { code: "not_found", message: "not found" }, requestId: receipt.prior.requestId }
+            : { quiz: { ...prior, ...(scenario === "wrong-prior" ? { courseRevision: prior.courseRevision - 1 } : {}) } };
+          return send(route, payload, receipt.prior.requestId, receipt.prior.status);
+        }
+        if (request.method() === "PUT") {
+          const changed = scenario === "wrong-actor" ? { createdBy: randomUUID() } : scenario === "wrong-document"
+            ? { document: { ...saved.document, questions: saved.document.questions.map(question => ({ ...question, feedback: "Tampered feedback" })) } }
+            : scenario === "wrong-next" ? { revision: saved.revision + 1 } : scenario === "reused-id" ? { id: prior.id } : {};
+          return send(route, { quiz: { ...saved, ...changed } }, receipt.save.requestId);
+        }
+        return send(route, { course: { revision: target.revision + 1 } }, randomUUID());
+      });
+      const page = await context.newPage();
+      const selected = scenario === "wrong-reviewed-document" ? { ...input, authoring: { ...target, documentSha256: "1".repeat(64) } } : input;
+      const watch = watchP2AuthoringMutation(context, page, selected);
+      await page.goto(input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner"));
+      return { ...fixture, detail, effects, page, watch, expires: Math.floor(Date.now() / 1000) + 60,
+        assessment: page.getByRole("button", { name: "Assessment", exact: true }),
+        save: page.getByRole("button", { name: "Save new quiz revision", exact: true }),
+        readback: page.getByRole("button", { name: "Complete readback", exact: true }),
+        close: async () => { watch.close(); await context.close(); } };
+    };
+    try {
+      for (const revision of [0, 3]) {
+        const owner = await open(revision);
+        try {
+          await owner.assessment.click();
+          await owner.save.click();
+          await owner.readback.waitFor({ state: "visible" });
+          assert.throws(() => owner.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+          await owner.readback.click();
+          await owner.watch.wait(owner.expires);
+          const result = owner.watch.finish();
+          assert.deepEqual(result, owner.receipt);
+          assert.equal(JSON.stringify(result).includes("Private"), false);
+          assert.deepEqual(owner.effects, ["GET " + owner.pathname, "PUT " + owner.pathname, "GET " + owner.detail]);
+          await Promise.all([owner.page.waitForResponse(response => response.url().endsWith(owner.pathname) && response.request().method() === "PUT"),
+            owner.save.click()]);
+          assert.throws(() => owner.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await owner.close(); }
+      }
+      for (const scenario of ["wrong-prior", "wrong-actor", "wrong-document", "wrong-next", "reused-id", "raw-drift",
+        "wrong-reviewed-document", "wrong-source", "wrong-path", "early-put"]) {
+        const rejected = await open(3, scenario);
+        try {
+          if (scenario === "early-put") await rejected.page.evaluate(async ({ path, body }) => {
+            await (await fetch(path, { method: "PUT", body: JSON.stringify(body) })).json();
+          }, { path: rejected.pathname, body: rejected.posted });
+          else {
+            if (scenario === "wrong-source") await rejected.page.goto(rejected.input.browserOrigin + "/admin/courses/" + randomUUID());
+            await rejected.assessment.click();
+            await rejected.save.click();
+          }
+          const expires = scenario === "wrong-path" ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
+          await assert.rejects(rejected.watch.wait(expires), /AUTHORING_RESPONSE_REFUSED/u);
           assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }

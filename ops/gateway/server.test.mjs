@@ -828,6 +828,92 @@ for (const ready of [true, false]) {
   });
 }
 
+for (const priorQuizRevision of [0, 2]) {
+  test(`scoped authoring acknowledges ${priorQuizRevision ? "a revised" : "the first"} quiz and course readback`, async t => {
+    const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+    const [courseId, moduleId, lessonId, foreignLessonId, priorQuizId, newQuizId] = [1, 2, 3, 4, 5, 6].map(fixtureId);
+    const actorId = "10000000-0000-4000-8000-000000000001";
+    const courseTarget = `/course/v1/admin/courses/${courseId}`;
+    const quizPath = id => `/course/v1/admin/lessons/${id}/quiz`;
+    const quizTarget = quizPath(lessonId);
+    const revision = 7;
+    const questionRevision = priorQuizRevision ? revision - 1 : revision;
+    const correctOptionId = `option-${questionRevision}-1`, otherOptionId = `option-${questionRevision}-2`;
+    const question = { id: `question-${questionRevision}-1`, prompt: "What should you check first?", options: [
+      { id: correctOptionId, text: "The workspace" }, { id: otherOptionId, text: "The final result" },
+    ], correctOptionId, feedback: "Check the workspace before beginning." };
+    const document = { version: 1, mode: "graded", passingPercent: 80, questions: [question] };
+    const body = JSON.stringify({ expectedCourseRevision: revision, document });
+    const requests = [
+      { method: "GET", target: courseTarget, bodySha256: certificationHash(""), uses: 2 },
+      { method: "GET", target: quizTarget, bodySha256: certificationHash(""), uses: 1 },
+      { method: "PUT", target: quizTarget, bodySha256: certificationHash(body), uses: 1 },
+    ];
+    const courseResponse = courseRevision => ({ course: { id: courseId, title: "P2Q assessment draft", slug: "p2q-assessment-draft", description: null,
+      introduction: null, currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null,
+      status: "draft", revision: courseRevision, modules: [{ id: moduleId, courseId, title: "Assessment module", slug: "assessment-module",
+        description: null, position: 1, archivedAt: null, courseRevision, lessons: [{ id: lessonId, moduleId, title: "Assessment lesson",
+          slug: "assessment-lesson", content: null, contentDocument: { version: 1, blocks: [] }, transcript: null, captions: [], isPreview: false,
+          position: 1, archivedAt: null, courseRevision }] }],
+    } });
+    const before = courseResponse(revision), after = courseResponse(revision + 1);
+    const quizResponse = (id, quizRevision, courseRevision, savedDocument) => ({ quiz: { id, lessonId, revision: quizRevision,
+      courseRevision, document: savedDocument, createdBy: actorId, createdAt: "2026-11-07T16:00:00.000Z" } });
+    const priorStatus = priorQuizRevision ? 200 : 404;
+    const prior = priorQuizRevision ? quizResponse(priorQuizId, priorQuizRevision, revision,
+      { ...document, questions: [{ ...question, feedback: "Prior feedback remains in quiz history." }] }) : { error: { code: "NOT_FOUND", message: "Quiz not found" } };
+    const saved = quizResponse(newQuizId, priorQuizRevision + 1, revision + 1, document);
+    const forwarded = [];
+    let current = before;
+    const f = await interactiveFixture(t, requests, async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      forwarded.push({ method: req.method, target: req.url, body: Buffer.concat(chunks).toString(),
+        requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+      if (req.method === "PUT") current = after;
+      const quizRead = req.method === "GET" && req.url === quizTarget.slice("/course".length);
+      res.writeHead(quizRead ? priorStatus : 200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(quizRead ? prior : req.method === "PUT" ? saved : current));
+    }, "authoring");
+
+    const put = (payload = body, path = quizTarget) => f.signed({ method: "PUT", path, body: payload });
+    const unreviewed = { ...document, questions: [{ ...question, correctOptionId: otherOptionId }] };
+    for (const input of [f.signed({ path: quizPath(foreignLessonId) }), put(body, quizPath(foreignLessonId)),
+      put(JSON.stringify({ expectedCourseRevision: revision, document: unreviewed })),
+      put(JSON.stringify({ expectedCourseRevision: revision + 1, document }))]) {
+      assert.equal((await f.send(input)).status, 503);
+    }
+    const steps = [
+      { input: f.signed({ path: courseTarget }), requestIndex: 0, status: 200, value: before },
+      { input: f.signed({ path: quizTarget }), requestIndex: 1, status: priorStatus, value: prior },
+      { input: put(), requestIndex: 2, status: 200, value: saved },
+      { input: f.signed({ path: courseTarget }), requestIndex: 0, status: 200, value: after },
+    ];
+    const acknowledged = [];
+    for (const { input, requestIndex, status, value } of steps) {
+      const output = await f.send(input);
+      assert.equal(output.status, status);
+      assert.deepEqual(JSON.parse(output.body), value);
+      const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+      assert.match(requestId, /^[a-f0-9-]{36}$/u);
+      assert.notEqual(requestId, proofRequestId);
+      acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: status });
+      assert.equal((await f.send(input)).status, 503);
+    }
+    for (const input of [f.signed({ path: courseTarget }), f.signed({ path: quizTarget }), put()]) {
+      assert.equal((await f.send(input)).status, 503);
+    }
+    assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
+    assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
+    assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+      body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined })));
+    const observed = f.admissionState();
+    assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.interactiveEvidence, { admitted: steps.length, acknowledged });
+  });
+}
+
 function mediaRefreshReceipt(lessonId, id) {
   return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };

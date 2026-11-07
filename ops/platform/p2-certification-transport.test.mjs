@@ -87,6 +87,8 @@ reorder=authoring_action.get('operation')=='reorder-and-stale-curriculum'
 create_curriculum=authoring_action.get('operation')=='create-curriculum'
 publication=authoring_action.get('operation')=='qualify-publication'
 published=publication and authoring_action['outcome']=='published'
+quiz=authoring_action.get('operation')=='save-quiz-revision'
+prior_status=404 if quiz and authoring_action['quizRevision']==0 else 200
 changes_existing=editing or reorder
 def fixture_id(suffix):return f'12345678-1234-4123-8123-{suffix:012d}'
 post_request=fixture_id(4);stale_request=fixture_id(6)
@@ -124,6 +126,7 @@ for raw in sys.stdin:
      if reorder:prefix='7032712d617574682d736f72742d7631'
      elif editing:prefix='7032712d617574682d656469742d7631'
      elif create_curriculum:prefix='7032712d617574682d6e65772d763100'
+     elif quiz:prefix='7032712d617574682d7175697a2d7631'
      elif publication:
       publish_selector=published if behavior!='wrong-outcome-permit' else not published
       prefix='7032712d617574682d7075622d763100' if publish_selector else '7032712d617574682d7264792d763100'
@@ -156,6 +159,9 @@ for raw in sys.stdin:
      selected=[(11,13,0,200),(4,12,1,200)]
      if published:selected.extend([(6,18,2,200),(16,17,0,200)])
      if behavior=='unexpected-patch-ack':selected.append((6,18,2,200))
+    if quiz:
+     observed_prior=(200 if prior_status==404 else 404) if behavior=='wrong-prior-status' else prior_status
+     selected=[(11,13,0,200),(4,12,1,observed_prior),(6,18,2,200),(16,17,0,200)]
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[-1 if changes_existing else 1]['upstreamStatus']=201 if publication else 200
@@ -188,6 +194,20 @@ for raw in sys.stdin:
      assert responses['winner']['keyboardActivated'] is True
      joined.update(kind=authoring_action['kind'],parentId=authoring_action['parentId'],gatewayPostRequestIds=request_ids)
     else:joined['gatewayPatchRequestIds']=request_ids
+   elif quiz:
+    assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
+    response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
+    assert set(response)=={'prior','save','body'}
+    pathname='/api/admin/lessons/'+authoring_action['lessonId']+'/quiz'
+    assert response['prior']=={'method':'GET','pathname':pathname,'status':prior_status,'requestId':post_request}
+    assert response['save']=={'method':'PUT','pathname':pathname,'status':200,'requestId':stale_request}
+    assert body=={**{key:authoring_action[key] for key in ('courseId','slug','lessonId','documentSha256')},
+     'quizId':fixture_id(10),'revision':authoring_action['revision']+1,'quizRevision':authoring_action['quizRevision']+1}
+    assert witness=={**body,'readOnly':True}
+    joined={'actorId':action['actorId'],'operation':'save-quiz-revision',**body,'browserResponseSha256':digest(response),
+     'courseWitnessSha256':digest(witness),'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256'],
+     'priorGatewayRequestId':post_request,'gatewayPutRequestId':stale_request}
+    if behavior=='wrong-join':joined['gatewayPutRequestId']=fixture_id(2)
    elif publication:
     assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
     response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
@@ -271,12 +291,15 @@ const provider=identity?variant:undefined,editing=authoring&&variant==='edit-and
 const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const createCurriculum=authoring&&['create-module','create-lesson'].includes(variant);
 const publication=authoring&&['publication-published','publication-blocked'].includes(variant),published=variant==='publication-published';
+const quiz=authoring&&['quiz-create','quiz-revise'].includes(variant),quizRevision=variant==='quiz-create'?0:3;
+const priorStatus=quizRevision===0?404:200;
 const context=actorKind==='admin'?'owner':'learner';
 const status=disposition=>'P2_INTERACTIVE_'+certificationStage.toUpperCase()+'_'+disposition;
 const refusedPermit=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider','wrong-email','wrong-owner','legacy-permit','wrong-operation-permit',
  'wrong-outcome-permit'].includes(behavior);
 const installFailure=behavior==='install-failure'||refusedPermit;
-const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack','wrong-observe-order','unexpected-patch-ack'].includes(behavior);
+const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack','wrong-observe-order','unexpected-patch-ack',
+ 'wrong-prior-status'].includes(behavior);
 const skipObserve=behavior==='fence-without-observe';
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor};
@@ -288,16 +311,28 @@ const curriculumPath=kind==='module'?'/courses/'+parentId+'/modules':'/modules/'
 const reorderPath=curriculumPath+'/reorder',childSlug='p2q-new-child',itemId='12345678-1234-4123-8123-000000000010';
 const ids=['12345678-1234-4123-8123-000000000009','12345678-1234-4123-8123-000000000007','12345678-1234-4123-8123-000000000008'];
 const outcomeKind=published?'published':'blocked',issueCodes=published?[]:['MISSING_LESSONS','MISSING_TITLE'];
+const lessonId=target,quizId=itemId,quizPath='/admin/lessons/'+lessonId+'/quiz';
+const quizDocument={version:1,mode:'graded',passingPercent:80,questions:[{
+ id:ids[0],prompt:'Which choice applies?',options:[{id:ids[1],text:'First'},{id:ids[2],text:'Second'}],correctOptionId:ids[1],feedback:'Review the lesson.',
+}]};
+const rawHash=body=>createHash('sha256').update(body).digest('hex'),emptyBodySha256=rawHash('');
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'
+ ?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+const documentSha256=rawHash(JSON.stringify(canonical(quizDocument)));
 const authoringAction=reorder?{operation:'reorder-and-stale-curriculum',courseId:commandId,slug,revision:7,kind,parentId}:
  editing?{operation:'edit-and-stale-draft',courseId:commandId,slug,revision:7}:
+ quiz?{operation:'save-quiz-revision',courseId:commandId,slug,revision:7,lessonId,quizRevision,documentSha256}:
  publication?{operation:'qualify-publication',courseId:commandId,slug,revision:7,outcome:outcomeKind,issueCodes}:
  createCurriculum?{operation:'create-curriculum',courseId:commandId,slug,revision:7,kind,parentId,childSlug}:{operation:'create-draft',slug};
-const rawHash=body=>createHash('sha256').update(body).digest('hex'),emptyBodySha256=rawHash('');
 const reorderHash=ids=>rawHash(JSON.stringify({expectedCourseRevision:authoringAction.revision,ids}));
 const writeMethod=reorder?'POST':'PATCH',writeTarget=reorder?'/course/v1/admin'+reorderPath:courseTarget;
 const publicationRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision,status:'published'})),uses:1};
-const requests=publication?[
+const requests=quiz?[
+  {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:2},
+  {method:'GET',target:'/course/v1'+quizPath,bodySha256:emptyBodySha256,uses:1},
+  {method:'PUT',target:'/course/v1'+quizPath,bodySha256:rawHash(JSON.stringify({expectedCourseRevision:authoringAction.revision,document:quizDocument})),uses:1},
+]:publication?[
   {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:published?2:1},
   {method:'GET',target:courseTarget+'/publication-readiness',bodySha256:emptyBodySha256,uses:1},
   ...(published?[publicationRequest]:[]),
@@ -370,7 +405,7 @@ for(const changed of [
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[...requests].reverse()}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],{...requests[1],uses:2},...requests.slice(2)]}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[
-   requests[0],{...requests[1],bodySha256:publication?'1'.repeat(64):emptyBodySha256},...requests.slice(2),
+   requests[0],{...requests[1],bodySha256:publication||quiz?'1'.repeat(64):emptyBodySha256},...requests.slice(2),
   ]}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,slug:'invalid/slug'}}}},
  ]:[]),
@@ -403,6 +438,15 @@ for(const changed of [
     .map(issueCodes=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,issueCodes}}}})),
   ]),
  ]:[]),
+ ...(quiz?[
+  ...[{lessonId:'invalid'}, {quizRevision:-1}, {quizRevision:2_147_483_647}, {quizRevision:1.5},
+   {documentSha256:'0'.repeat(64)}, {documentSha256:emptyBodySha256}, {documentSha256:'f'.repeat(63)}]
+   .map(selected=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,...selected}}}})),
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[{...requests[0],uses:1},...requests.slice(1)]}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],method:'PATCH'}]}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],target:courseTarget}]}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],bodySha256:emptyBodySha256}]}}},
+ ]:[]),
 ]) assert.throws(()=>start(changed),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
 assert.equal(starts,0);
 writeFileSync(join(directory,'p2-certification-current-database.json'),JSON.stringify(receipt),{mode:0o600});
@@ -418,7 +462,12 @@ const draft={courseId:commandId,revision:changesExisting||createCurriculum?autho
 const changePath=reorder?'/api/admin'+reorderPath:coursePath,staleProof=reorder?'keyboardActivated':'dirtyInputPreserved';
 const publicationStep={method:'PATCH',pathname:coursePath,status:200,requestId:staleRequestId};
 const publicationBody={courseId:commandId,slug,revision:authoringAction.revision+(published?1:0),status:published?'published':'draft',issueCodes};
-const evidence=publication?{browserResponse:{
+const quizBody={courseId:commandId,slug,lessonId,quizId,revision:authoringAction.revision+1,quizRevision:quizRevision+1,documentSha256};
+const evidence=quiz?{browserResponse:{
+ prior:{method:'GET',pathname:'/api'+quizPath,status:priorStatus,requestId},
+ save:{method:'PUT',pathname:'/api'+quizPath,status:200,requestId:staleRequestId},body:quizBody,
+},courseWitness:{...quizBody,readOnly:true}}
+ :publication?{browserResponse:{
  readiness:{method:'GET',pathname:coursePath+'/publication-readiness',status:200,requestId},
  ...(published?{publication:publicationStep}:{}),body:publicationBody,
 },courseWitness:{...publicationBody,readOnly:true}}
@@ -432,7 +481,8 @@ const evidence=publication?{browserResponse:{
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
   ...(identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
-const invalidEvidence=publication?{...evidence,browserResponse:{...evidence.browserResponse,readiness:{...evidence.browserResponse.readiness,requestId:target}}}
+const invalidEvidence=quiz?{...evidence,browserResponse:{...evidence.browserResponse,prior:{...evidence.browserResponse.prior,requestId:target}}}
+ :publication?{...evidence,browserResponse:{...evidence.browserResponse,readiness:{...evidence.browserResponse.readiness,requestId:target}}}
  :changesExisting?{...evidence,browserResponses:{...evidence.browserResponses,winner:{...evidence.browserResponses.winner,requestId:target}}}
  :authoring?{...evidence,browserResponse:{...evidence.browserResponse,requestId:target}}
  :identity?{...evidence,identityWitness:{...evidence.identityWitness,actorId:target}}
@@ -475,7 +525,7 @@ const result=start()(async(_verify,_signal,host)=>{
    const mutation=observed.gatewayAcknowledgements.find(row=>row.requestIndex===1);
    assert.equal(mutation.requestId,requestId);
    if(changesExisting) assert.equal(observed.gatewayAcknowledgements.at(-1).requestId,staleRequestId);
-   if(published) assert.equal(observed.gatewayAcknowledgements[2].requestId,staleRequestId);
+   if(published||quiz) assert.equal(observed.gatewayAcknowledgements[2].requestId,staleRequestId);
    mutation.requestId=target;
   }
   await assert.rejects(stage.observe());
@@ -498,6 +548,17 @@ const result=start()(async(_verify,_signal,host)=>{
   }
   const publication=published?{...publicationStep,requestId:target}:publicationStep;
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,publication}}));
+ }
+ if(quiz){
+  const {prior,save}=evidence.browserResponse;
+  for(const changed of [{documentSha256:'f'.repeat(64)},{lessonId:commandId},{quizId:'invalid'},{quizRevision},{revision:authoringAction.revision}]){
+   const body={...quizBody,...changed};
+   await assert.rejects(stage.retain({browserResponse:{...evidence.browserResponse,body},courseWitness:{...body,readOnly:true}}));
+  }
+  for(const changed of [{prior:{...prior,status:priorStatus===404?200:404}},{save:{...save,requestId:target}},{save:{...save,pathname:coursePath}}]){
+   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,...changed}}));
+  }
+  await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,documentSha256:'f'.repeat(64)}}));
  }
  if(createCurriculum){
   for(const changed of [
@@ -542,7 +603,15 @@ const result=start()(async(_verify,_signal,host)=>{
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
  if(authoring){
-  if(publication){
+  if(quiz){
+   assert.equal(retained.priorGatewayRequestId,requestId);
+   assert.equal(retained.gatewayPutRequestId,staleRequestId);
+   assert.equal(retained.lessonId,lessonId);
+   assert.equal(retained.quizId,quizId);
+   assert.equal(retained.quizRevision,quizBody.quizRevision);
+   assert.equal(retained.revision,quizBody.revision);
+   assert.equal(retained.documentSha256,documentSha256);
+  }else if(publication){
    assert.equal(retained.readinessGatewayRequestId,requestId);
    assert.equal(retained.outcome,outcomeKind);
    assert.equal(retained.revision,publicationBody.revision);
@@ -637,6 +706,14 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['authoring','admin','wrong-observe-ack','publication-blocked'],
  ['authoring','admin','unexpected-patch-ack','publication-blocked'],
  ['authoring','admin','wrong-join','publication-published'],
+ ['authoring','admin','joined','quiz-create'],
+ ['authoring','admin','joined','quiz-revise'],
+ ['authoring','admin','wrong-owner','quiz-create'],
+ ['authoring','admin','wrong-operation-permit','quiz-revise'],
+ ['authoring','admin','wrong-observe-order','quiz-create'],
+ ['authoring','admin','wrong-prior-status','quiz-create'],
+ ['authoring','admin','wrong-prior-status','quiz-revise'],
+ ['authoring','admin','wrong-join','quiz-revise'],
 ]){
  test(`fixed interactive transport handles ${certificationStage} ${variant??actorKind} ${behavior} over the guarded pipe`,()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-interactive-wire-')));chmodSync(directory,0o700);

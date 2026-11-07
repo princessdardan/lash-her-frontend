@@ -112,7 +112,18 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
             }
             case "create-video-upload": result = await course.createVideoUpload(params.lessonId, body as Parameters<Client["createVideoUpload"]>[1]); break;
             case "get-quiz": result = await course.getAdminQuiz(params.lessonId); break;
-            case "update-quiz": result = await course.updateQuiz(params.lessonId, body as Parameters<Client["updateQuiz"]>[1]); break;
+            case "update-quiz": {
+              const input = body as Parameters<Client["updateQuiz"]>[1];
+              if (currentWriterAuthoringActorId()) {
+                validateCandidateRequest("course", "/v1/admin/lessons/{lessonId}/quiz", "put", { params, body: input });
+                if (currentWriterAuthoringOperation() !== "save-quiz-revision" ||
+                  !Object.hasOwn(input.document, "mode") || !Object.hasOwn(input.document, "passingPercent")) {
+                  throw new IntegrationServiceError("invalid_request", 400);
+                }
+              }
+              result = await course.updateQuiz(params.lessonId, input);
+              break;
+            }
             case "video-status": result = await course.getVideoStatus(params.lessonId); break;
             case "add-caption": result = await course.addVideoCaption(params.lessonId, params.videoAssetId, body as Parameters<Client["addVideoCaption"]>[2]); break;
             case "delete-caption": result = await course.deleteVideoCaption(params.lessonId, params.videoAssetId, params.trackId, body as Parameters<Client["deleteVideoCaption"]>[3]); break;

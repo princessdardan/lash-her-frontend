@@ -22,6 +22,7 @@ const authoringReorderActorPrefix = "7032712d617574682d736f72742d7631";
 const authoringCreateCurriculumActorPrefix = "7032712d617574682d6e65772d763100";
 const authoringPublishActorPrefix = "7032712d617574682d7075622d763100";
 const authoringReviewPublicationActorPrefix = "7032712d617574682d7264792d763100";
+const authoringSaveQuizActorPrefix = "7032712d617574682d7175697a2d7631";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
   authoringOperation?: WriterAuthoringOperation };
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string; authoringActorId?: string };
@@ -63,6 +64,10 @@ const authoringReviewPublication = {
   GET: at(`/admin/courses/${uuid}|/api/admin/courses/${uuid}(?:/publication-readiness)?`),
 };
 const authoringPublish = { ...authoringReviewPublication, PATCH: authoringEdit.PATCH };
+const authoringSaveQuiz = {
+  GET: at(`/(?:api/)?admin/courses/${uuid}|/api/admin/lessons/${uuid}/quiz`),
+  PUT: at(`/api/admin/lessons/${uuid}/quiz`),
+};
 const media = {
   GET: at(`/api/admin/lessons/${uuid}/video`),
   POST: at(`/api/admin/lessons/${uuid}/(?:video-upload|video/${uuid}/(?:refresh|captions))`),
@@ -98,6 +103,7 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
     case "authoring":
+      if (authoringOperation === "save-quiz-revision") return matches(authoringSaveQuiz, method, path);
       if (authoringOperation === "publish-course") return matches(authoringPublish, method, path);
       if (authoringOperation === "review-publication") return matches(authoringReviewPublication, method, path);
       if (authoringOperation === "create-curriculum") return matches(authoringCreateCurriculum, method, path);
@@ -179,7 +185,9 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const publishActorId = decodeSelectedUuid(selection, authoringPublishActorPrefix);
     if (publishActorId) return { ...permit, authoringActorId: publishActorId, authoringOperation: "publish-course" };
     const reviewActorId = decodeSelectedUuid(selection, authoringReviewPublicationActorPrefix);
-    return reviewActorId ? { ...permit, authoringActorId: reviewActorId, authoringOperation: "review-publication" } : null;
+    if (reviewActorId) return { ...permit, authoringActorId: reviewActorId, authoringOperation: "review-publication" };
+    const quizActorId = decodeSelectedUuid(selection, authoringSaveQuizActorPrefix);
+    return quizActorId ? { ...permit, authoringActorId: quizActorId, authoringOperation: "save-quiz-revision" } : null;
   }
   return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }

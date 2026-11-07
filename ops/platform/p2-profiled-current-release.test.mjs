@@ -400,6 +400,42 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...positivePublication, requests: [
       ...positivePublication.requests.slice(0, 2), { ...positivePublication.requests[2], bodySha256: rawHash('{"status":"published","expectedRevision":1}') },
     ] })));
+    const quizDocument = { version: 1, mode: 'graded', passingPercent: 80, questions: [
+      { id: 'question-1-1', prompt: 'Private quiz prompt',
+        options: [{ id: 'option-1-1', text: 'First' }, { id: 'option-1-2', text: 'Second' }],
+        correctOptionId: 'option-1-1', feedback: 'Private feedback' },
+    ] };
+    const authoringQuiz = { expectedCourseRevision: 1, document: quizDocument };
+    const quizPath = `/course/v1/admin/lessons/${lessonParent}/quiz`;
+    const selectedQuizzes = [0, 1].map(quizRevision => ({
+      ...selectedEdit, authoringAction: { ...selectedEdit.authoringAction, operation: 'save-quiz-revision',
+        lessonId: lessonParent, quizRevision, documentSha256: p2NativeHash(quizDocument) },
+      requests: [
+        { ...selectedEdit.requests[0], uses: 2 },
+        { method: 'GET', target: quizPath, uses: 1, bodySha256: rawHash(Buffer.alloc(0)) },
+        { method: 'PUT', target: quizPath, uses: 1, bodySha256: rawHash(JSON.stringify(authoringQuiz)) },
+      ],
+    }));
+    for (const selected of selectedQuizzes) {
+      const settings = paired(selected), planned = prepareP2ProfiledCertificationOperator(settings);
+      assert.deepEqual(planned.authoring.scopedAction, selected);
+      assert.deepEqual(planned.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+      assert.equal(JSON.stringify(planned).includes(quizDocument.questions[0].prompt), false);
+      const hostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(planned.authoring), encoding: 'utf8' });
+      assert.equal(hostPlan.status, 0, hostPlan.stderr);
+      const confirmation = { confirmation: 'staging/owned-scoped-action' };
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: { authoringQuiz } }, confirmation), { code: 'ENOENT' });
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: {
+        authoringQuiz: { ...authoringQuiz, document: { ...quizDocument, mode: 'practice' } },
+      } }, confirmation), error => error.code !== 'ENOENT');
+      const [read, prior, write] = selected.requests;
+      for (const requests of [[read, write], [read, write, prior], [read, prior, { ...write, uses: 2 }],
+        [read, prior, { ...write, target: editPath }], [{ ...read, uses: 1 }, prior, write]])
+        assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected, requests })));
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected,
+        authoringAction: { ...selected.authoringAction, quizRevision: -1 } })));
+    }
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);
@@ -505,6 +541,7 @@ test('fixed current certification plan joins the original release plan, terminal
       ...selectedCurriculum.map(([selection]) => [selection, '7032712d617574682d6e65772d763100' + selection.actorId.replaceAll('-', '')]),
       ...selectedPublications.map(selection => [selection, (selection.authoringAction.outcome === 'published'
         ? '7032712d617574682d7075622d763100' : '7032712d617574682d7264792d763100') + selection.actorId.replaceAll('-', '')]),
+      ...selectedQuizzes.map(selection => [selection, '7032712d617574682d7175697a2d7631' + selection.actorId.replaceAll('-', '')]),
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },

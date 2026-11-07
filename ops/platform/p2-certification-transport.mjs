@@ -30,6 +30,7 @@ const authoringCourseTarget='/course/v1/admin/courses';
 const authoringReorderOperation='reorder-and-stale-curriculum';
 const authoringCreateCurriculumOperation='create-curriculum';
 const authoringPublicationOperation='qualify-publication';
+const authoringQuizOperation='save-quiz-revision';
 const authoringPairedOperation=operation=>operation==='edit-and-stale-draft'||operation===authoringReorderOperation;
 const emptyBodySha256=p2NativeHash(Buffer.alloc(0));
 const authoringGatewayKeys=['epoch','gatewayStateSha256','gatewayAcknowledgements','gatewayActive','gatewayUncertain','gatewayEvidenceSha256'];
@@ -58,21 +59,33 @@ function authoringCurriculumPath(kind,parentId){
   return kind==='module'?'/courses/'+parentId+'/modules':'/modules/'+parentId+'/lessons';
 }
 
+const authoringQuizPath=lessonId=>'/admin/lessons/'+lessonId+'/quiz';
 const authoringSlug=value=>typeof value==='string'&&value.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
 
 function reviewedAuthoringAction(action){
-  const selected=action.authoringAction,[read,write,stale]=action.requests;
+  const selected=action.authoringAction,[read,second,third]=action.requests;
   const reorder=selected?.operation===authoringReorderOperation;
   const createCurriculum=selected?.operation===authoringCreateCurriculumOperation;
   const publication=selected?.operation===authoringPublicationOperation,published=publication&&selected.outcome==='published';
+  const quiz=selected?.operation===authoringQuizOperation;
   const paired=authoringPairedOperation(selected?.operation);
   const curriculum=reorder||createCurriculum;
-  const hasCourse=paired||createCurriculum||publication;
+  const hasCourse=paired||createCurriculum||publication||quiz;
   demand(canonicalUuid(action.actorId)&&exact(selected,['operation','slug',...(hasCourse?['courseId','revision']:[]),
-    ...(curriculum?['kind','parentId']:[]),...(createCurriculum?['childSlug']:[]),...(publication?['outcome','issueCodes']:[])])&&
-    authoringSlug(selected.slug)&&action.requests.length===(paired||published?3:2));
+    ...(curriculum?['kind','parentId']:[]),...(createCurriculum?['childSlug']:[]),...(publication?['outcome','issueCodes']:[]),
+    ...(quiz?['lessonId','quizRevision','documentSha256']:[])])&&
+    authoringSlug(selected.slug)&&action.requests.length===(paired||published||quiz?3:2));
   const selection={...selected,actorKind:'admin',actorId:action.actorId};
   if(hasCourse)demand(canonicalUuid(selected.courseId)&&Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_646);
+  if(quiz){
+    const {courseId,lessonId,quizRevision,documentSha256}=selected;
+    const target='/course/v1'+authoringQuizPath(lessonId);
+    demand(canonicalUuid(lessonId)&&Number.isInteger(quizRevision)&&quizRevision>=0&&quizRevision<=2_147_483_646&&
+      nonzeroSha256(documentSha256)&&documentSha256!==emptyBodySha256&&
+      isDeepStrictEqual(read,{method:'GET',target:authoringCourseTarget+'/'+courseId,bodySha256:emptyBodySha256,uses:2})&&
+      isDeepStrictEqual(second,{method:'GET',target,bodySha256:emptyBodySha256,uses:1})&&authoringWriteRequest(third,'PUT',target));
+    return {selection,authoring:{actorId:action.actorId,...selected,bodySha256:third.bodySha256}};
+  }
   if(publication){
     const {outcome,issueCodes,courseId,revision}=selected,target=authoringCourseTarget+'/'+courseId;
     demand(['published','blocked'].includes(outcome)&&Array.isArray(issueCodes)&&
@@ -80,8 +93,8 @@ function reviewedAuthoringAction(action){
       Array.from(issueCodes).every((code,index)=>typeof code==='string'&&/^[A-Z][A-Z0-9_]{0,63}$/u.test(code)&&
         (index===0||issueCodes[index-1]<code))&&
       isDeepStrictEqual(read,{method:'GET',target,bodySha256:emptyBodySha256,uses:published?2:1})&&
-      isDeepStrictEqual(write,{method:'GET',target:target+'/publication-readiness',bodySha256:emptyBodySha256,uses:1})&&
-      (!published||authoringWriteRequest(stale,'PATCH',target)&&stale.bodySha256===
+      isDeepStrictEqual(second,{method:'GET',target:target+'/publication-readiness',bodySha256:emptyBodySha256,uses:1})&&
+      (!published||authoringWriteRequest(third,'PATCH',target)&&third.bodySha256===
         p2NativeHash(JSON.stringify({expectedRevision:revision,status:'published'}))));
     const reviewedCodes=[...issueCodes];
     return {selection:{...selection,issueCodes:reviewedCodes},authoring:{actorId:action.actorId,...selected,issueCodes:reviewedCodes}};
@@ -93,18 +106,18 @@ function reviewedAuthoringAction(action){
     const writeTarget=curriculum?'/course/v1/admin'+authoringCurriculumPath(selected.kind,selected.parentId)+(reorder?'/reorder':''):readTarget;
     const method=curriculum?'POST':'PATCH';
     demand(isDeepStrictEqual(read,{method:'GET',target:readTarget,bodySha256:emptyBodySha256,uses:createCurriculum?2:3})&&
-      authoringWriteRequest(write,method,writeTarget));
+      authoringWriteRequest(second,method,writeTarget));
     if(createCurriculum){
       demand(authoringSlug(selected.childSlug));
-      return {selection,authoring:{actorId:action.actorId,...selected,bodySha256:write.bodySha256}};
+      return {selection,authoring:{actorId:action.actorId,...selected,bodySha256:second.bodySha256}};
     }
-    demand(authoringWriteRequest(stale,method,writeTarget)&&write.bodySha256!==stale.bodySha256);
-    return {selection,authoring:{actorId:action.actorId,...selected,winnerBodySha256:write.bodySha256,staleBodySha256:stale.bodySha256}};
+    demand(authoringWriteRequest(third,method,writeTarget)&&second.bodySha256!==third.bodySha256);
+    return {selection,authoring:{actorId:action.actorId,...selected,winnerBodySha256:second.bodySha256,staleBodySha256:third.bodySha256}};
   }
   demand(selected.operation==='create-draft'&&
     isDeepStrictEqual(read,{method:'GET',target:authoringCourseTarget+'?limit=100',bodySha256:emptyBodySha256,uses:1})&&
-    authoringWriteRequest(write,'POST',authoringCourseTarget));
-  return {selection,authoring:{actorId:action.actorId,slug:selected.slug,bodySha256:write.bodySha256}};
+    authoringWriteRequest(second,'POST',authoringCourseTarget));
+  return {selection,authoring:{actorId:action.actorId,slug:selected.slug,bodySha256:second.bodySha256}};
 }
 
 function reviewedInteractivePlan(plan,initial){
@@ -184,13 +197,14 @@ function identityJoinedEvidence(evidence,selected,context,enrollment){
   return {...actor,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
 }
 
-function requireAuthoringGatewayObservation(receipt,epoch,{operation,outcome}){
+function requireAuthoringGatewayObservation(receipt,epoch,{operation,outcome,quizRevision}){
   const {gatewayEvidenceSha256,...observed}=receipt;
   const acks=receipt.gatewayAcknowledgements;
   const createCurriculum=operation===authoringCreateCurriculumOperation;
   const publication=operation===authoringPublicationOperation,paired=authoringPairedOperation(operation);
-  const statuses=publication?[200,200,200]:paired?[200,200,409]:[200,201];
-  const indices=publication&&outcome==='published'?[0,1,2,0]:paired?[0,0,1,0,2]:createCurriculum?[0,1,0]:[0,1];
+  const quiz=operation===authoringQuizOperation;
+  const statuses=quiz?[200,quizRevision===0?404:200,200]:publication?[200,200,200]:paired?[200,200,409]:[200,201];
+  const indices=quiz||publication&&outcome==='published'?[0,1,2,0]:paired?[0,0,1,0,2]:createCurriculum?[0,1,0]:[0,1];
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
     Array.isArray(acks)&&acks.length===indices.length&&acks.every((row,index)=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
       canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId)&&row.requestIndex===indices[index]&&
@@ -239,6 +253,23 @@ function authoringPublicationJoinedEvidence(evidence,selected,observed){
     isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,readOnly:true}));
   return {actorId,operation,courseId,slug,outcome,revision,issueCodes,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256,readinessGatewayRequestId,...(published?{gatewayPatchRequestId}:{})};
+}
+
+function authoringQuizJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const {actorId,operation,courseId,slug,lessonId,documentSha256}=selected;
+  const revision=selected.revision+1,quizRevision=selected.quizRevision+1,quizId=response?.body?.quizId;
+  const pathname='/api'+authoringQuizPath(lessonId),priorStatus=selected.quizRevision===0?404:200;
+  const {gatewayAcknowledgements:acks,gatewayEvidenceSha256}=observed;
+  const priorGatewayRequestId=acks[1].requestId,gatewayPutRequestId=acks[2].requestId;
+  const body={courseId,slug,lessonId,quizId,revision,quizRevision,documentSha256};
+  demand(exact(response,['prior','save','body'])&&canonicalUuid(quizId)&&
+    isDeepStrictEqual(response.prior,{method:'GET',pathname,status:priorStatus,requestId:priorGatewayRequestId})&&
+    isDeepStrictEqual(response.save,{method:'PUT',pathname,status:200,requestId:gatewayPutRequestId})&&
+    isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,readOnly:true}));
+  return {actorId,operation,...body,browserResponseSha256:p2NativeHash(response),courseWitnessSha256:p2NativeHash(witness),
+    gatewayEvidenceSha256,priorGatewayRequestId,gatewayPutRequestId};
 }
 
 function authoringChangeJoinedEvidence(evidence,selected,observed,winnerBodySha256){
@@ -411,6 +442,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               demand(phase==='fenced'&&installed&&(!authoring||gatewayObservation));requireRecorder();
               const evidence=structuredClone(caseEvidence);
               const expected=paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
+                selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringPublicationOperation?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):
                 authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
                 identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);

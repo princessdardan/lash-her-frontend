@@ -1,19 +1,13 @@
 "use client";
 import type { ContentDocument } from "@/lib/course-authoring/types";
+import { nextAuthoringKey } from "@/lib/course-authoring/browser";
 import { fieldClass, secondaryClass } from "./course-fields";
 type Block = ContentDocument["blocks"][number];
-
-function nextKey(prefix: string, siblings: readonly { _key: string }[]): string {
-  const occupied = new Set(siblings.map((item) => item._key));
-  let index = 1;
-  while (occupied.has(`${prefix}-${index}`)) index++;
-  return `${prefix}-${index}`;
-}
 
 function newTextBlock(revision: number, blocks: readonly Block[]): Block {
   return {
     _type: "block",
-    _key: nextKey(`block-${revision}`, blocks),
+    _key: nextAuthoringKey(`block-${revision}`, blocks.map((block) => block._key)),
     style: "normal",
     children: [{ _type: "span", _key: `span-${revision}-1`, text: "", marks: [] }],
     markDefs: [],
@@ -184,7 +178,10 @@ export function ContentEditor({
                     ...block.children,
                     {
                       _type: "span",
-                      _key: nextKey(`span-${revision}`, block.children),
+                      _key: nextAuthoringKey(
+                        `span-${revision}`,
+                        block.children.map((span) => span._key),
+                      ),
                       text: "",
                       marks: [],
                     },
@@ -249,7 +246,10 @@ export function ContentEditor({
             type="button"
             className={secondaryClass}
             onClick={() => {
-              const id = nextKey(`link-${revision}`, block.markDefs ?? []);
+              const id = nextAuthoringKey(
+                `link-${revision}`,
+                (block.markDefs ?? []).map((link) => link._key),
+              );
               update(index, {
                 ...block,
                 markDefs: [

@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   authoringRequest,
   AuthoringRequestError,
+  nextAuthoringKey,
 } from "@/lib/course-authoring/browser";
 import { buttonClass, fieldClass, secondaryClass } from "./course-fields";
 import type { SaveAuthoring } from "./curriculum-forms";
@@ -87,12 +88,26 @@ export function QuizEditor({
       return;
     }
     setValidationMessage(null);
-    await save(
+    // Stored JSONB field order can differ from a document built in the editor.
+    const serialized: QuizDocument = {
+      version: document.version,
+      mode: document.mode,
+      passingPercent: document.passingPercent,
+      questions: document.questions.map(({ id, prompt, options, correctOptionId, feedback }) => ({
+        id,
+        prompt,
+        options: options.map(({ id, text }) => ({ id, text })),
+        correctOptionId,
+        feedback,
+      })),
+    };
+    const saved = await save(
       `/api/admin/lessons/${lessonId}/quiz`,
       "PUT",
-      { expectedCourseRevision: revision, document },
+      { expectedCourseRevision: revision, document: serialized },
       "Quiz revision saved. Previous attempts remain in history.",
     );
+    if (saved) setQuizRevision((previous) => (previous ?? 0) + 1);
   }
   if (loading) return <p role="status">Loading assessment…</p>;
   if (loadError)
@@ -250,7 +265,13 @@ export function QuizEditor({
                   ...question,
                   options: [
                     ...question.options,
-                    { id: crypto.randomUUID(), text: "" },
+                    {
+                      id: nextAuthoringKey(
+                        `option-${revision}`,
+                        question.options.map((option) => option.id),
+                      ),
+                      text: "",
+                    },
                   ],
                 })
               }
@@ -294,17 +315,20 @@ export function QuizEditor({
           className={secondaryClass}
           disabled={document.questions.length >= 100}
           onClick={() => {
-            const first = crypto.randomUUID();
+            const first = `option-${revision}-1`;
             setDocument({
               ...document,
               questions: [
                 ...document.questions,
                 {
-                  id: crypto.randomUUID(),
+                  id: nextAuthoringKey(
+                    `question-${revision}`,
+                    document.questions.map((question) => question.id),
+                  ),
                   prompt: "",
                   options: [
                     { id: first, text: "" },
-                    { id: crypto.randomUUID(), text: "" },
+                    { id: `option-${revision}-2`, text: "" },
                   ],
                   correctOptionId: first,
                   feedback: "",
