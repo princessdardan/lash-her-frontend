@@ -89,7 +89,7 @@ class InteractiveIngressTests(unittest.TestCase):
                                            {"Content-Type": "text/html"}))
         self.fixture.enqueue(after or project, final_alias or self.alias(), self.fixture.deployment(), after or project)
 
-    def owned_unauthenticated_requester(self, *, progress_lesson_id=None):
+    def owned_unauthenticated_requester(self, *, progress_lesson_id=None, flight_path=None):
         ca = ssl.create_default_context(cafile=str(self.fixture.cert))
         with patch.object(ingress.ssl, "create_default_context", return_value=ca):
             requester = ingress.UnauthenticatedIngressClient()
@@ -101,12 +101,18 @@ class InteractiveIngressTests(unittest.TestCase):
                 url = urllib.parse.urlsplit(request.full_url)
                 self.assertIn(url.netloc, (canonical.HOST, "owned-fixture.vercel.app"))
                 self.assertEqual(url.scheme, "https")
+                flight = url.path == flight_path and url.query == "_rsc"
                 expected_query = f"lessonId={progress_lesson_id}" if progress_lesson_id and url.path == "/api/academy/progress" else ""
-                self.assertEqual(url.query, expected_query)
+                self.assertEqual(url.query, "_rsc" if flight else expected_query)
                 self.assertEqual(url.fragment, "")
                 self.assertEqual(request.method, "GET")
                 self.assertIsNone(request.data)
-                self.assertEqual({name.lower() for name, _ in request.header_items()}, {"accept", "cache-control"})
+                expected_headers = {"accept", "cache-control"}
+                if flight:
+                    expected_headers.add("rsc")
+                    self.assertEqual(request.get_header("Rsc"), "1")
+                    self.assertEqual(request.get_header("Accept"), "text/x-component")
+                self.assertEqual({name.lower() for name, _ in request.header_items()}, expected_headers)
                 urls.append(request.full_url)
                 target = url.path + (f"?{url.query}" if url.query else "")
                 mapped = urllib.request.Request(self.fixture.origin + target, headers=dict(request.header_items()), method="GET")
@@ -380,6 +386,31 @@ class InteractiveIngressTests(unittest.TestCase):
                                                                 lesson_id=lesson, expected_profile=self.profile)
         self.assertEqual([row["path"] for row in receipt["endpointDenials"]], list(paths))
         self.assertEqual(urls, [origin + target for target in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
+    def test_lesson_denial_probes_exact_document_flight_and_api_paths_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        lesson = "10000000-0000-4000-8000-000000000002"
+        document = f"/academy/courses/{course}/lessons/{lesson}"
+        api_lesson = f"/api/academy/lessons/{lesson}"
+        progress = f"/api/academy/progress?lessonId={lesson}"
+        paths = (document, f"{document}?_rsc", api_lesson, f"{api_lesson}/playback", progress,
+                 f"{api_lesson}/quiz", f"{api_lesson}/quiz/attempts")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester(progress_lesson_id=lesson, flight_path=document)
+        for path in (f"{document}?_rsc=unused", f"{document}?_rsc&other=1", f"{api_lesson}?_rsc", f"{progress}&_rsc"):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "INGRESS_PATH_REFUSED"):
+                requester.request(canonical.ORIGIN, path)
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "LESSON_DENIAL_TARGET_REQUIRED"):
+                ingress.observe_lesson_denial_protection(self.base.context, self.fixture.client, course_id=course,
+                                                         lesson_id=f"{lesson}?_rsc", expected_profile=self.profile)
+            receipt = ingress.observe_lesson_denial_protection(self.base.context, self.fixture.client, course_id=course,
+                                                                 lesson_id=lesson, expected_profile=self.profile)
+        self.assertEqual(receipt["endpointDenials"], [
+            {"path": path, "aliasUnauthenticatedStatus": 401, "deploymentUnauthenticatedStatus": 403} for path in paths
+        ])
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
     def test_browser_matrix_refuses_alias_drift_after_denials(self):

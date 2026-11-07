@@ -437,6 +437,31 @@ test('fixed current certification plan joins the original release plan, terminal
       [...lessonReadRows, { ...lessonWrite, target: student + '/lessons/' + courseId + '/progress' }]]) {
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedLessonEntry, requests })));
     }
+    const selectedLessonDenial = {
+      stage: 'lesson-denial', actorId: userId, windowSeconds: 90,
+      lessonDenialAction: { operation: 'deny-cross-account', courseId, lessonId: accessLessonId,
+        enrolledActorId: '10000000-0000-4000-8000-000000000015', grantId: accessGrantId },
+      requests: [student + '/courses/' + courseId, lesson, student + '/progress?lessonId=' + accessLessonId,
+        lesson + '/quiz', lesson + '/quiz/attempts', lesson + '/playback']
+        .map((target, index) => ({ method: 'GET', target, bodySha256: emptyBodySha256, uses: [2, 3, 3, 3, 3, 1][index] })),
+    };
+    const denialSettings = paired(selectedLessonDenial), denialPair = prepareP2ProfiledCertificationOperator(denialSettings);
+    assert.equal(denialPair.status, 'P2_INTERACTIVE_LESSON_DENIAL_ACTIONS_PLANNED');
+    assert.deepEqual(denialPair['lesson-denial'].scopedAction, selectedLessonDenial);
+    assert.deepEqual(denialPair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    assert.equal(BigInt(denialPair['lesson-denial'].initialEpoch) - BigInt(denialPair.identity.initialEpoch), 2n);
+    const denialHost = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(denialPair['lesson-denial']), encoding: 'utf8' });
+    assert.equal(denialHost.status, 0, denialHost.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator(denialSettings, accessConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...denialSettings, execution: {} }, accessConfirmation), error => error.code !== 'ENOENT');
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedLessonDenial,
+      lessonDenialAction: { ...selectedLessonDenial.lessonDenialAction, enrolledActorId: userId } })));
+    const denialReadRows = selectedLessonDenial.requests;
+    for (const requests of [denialReadRows.toReversed(), [...denialReadRows, lessonWrite],
+      denialReadRows.map((row, index) => index === 2 ? { ...row, target: row.target + '&limit=1' } : row)]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedLessonDenial, requests })));
+    }
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -782,6 +807,7 @@ test('fixed current certification plan joins the original release plan, terminal
       ...selectedQuizzes.map(selection => [selection, '7032712d617574682d7175697a2d7631' + selection.actorId.replaceAll('-', '')]),
       [selectedFree, (selectedFree.actorId + selectedFree.learningAction.idempotencyKey).replaceAll('-', '')],
       [selectedLessonEntry, (userId + courseId + accessLessonId).replaceAll('-', '')],
+      [selectedLessonDenial, (userId + courseId + accessLessonId).replaceAll('-', '')],
       [selectedInteractive, (selectedInteractive.actorId + paidKey).replaceAll('-', '')],
       [selectedAccess, (selectedAccess.actorId + accessLessonId).replaceAll('-', '')],
       [selectedRevoke, (selectedRevoke.actorId + revokeKey).replaceAll('-', '')],
@@ -799,7 +825,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

@@ -264,6 +264,26 @@ const SQL = Object.freeze({
     lessonEntryMediaHistory: paidArchiveDigest(`FROM public.video_assets r JOIN public.lessons l ON l.id=r.lesson_id
       JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`, "r.id",
     "CASE WHEN r.id=$2::uuid THEN pg_catalog.to_jsonb(r)-'last_token_expires_at' ELSE pg_catalog.to_jsonb(r) END"),
+    lessonDenialActiveAccounts: `SELECT NOT EXISTS(SELECT 1 FROM public.account_lifecycle_states
+      WHERE user_id=ANY($1::uuid[]) AND status<>'active') AS active`,
+    lessonDenialCanaries: `SELECT pg_catalog.jsonb_path_exists(l.content_document,
+      '$.blocks[*].children[*] ? (@._type == "span" && @.text like_regex "p2q-s07-private-content")')
+      AND pg_catalog.strpos(l.transcript,'p2q-s07-private-transcript')>0
+      AND pg_catalog.jsonb_path_exists(quiz.document,
+        '$.questions[*] ? (@.prompt like_regex "p2q-s07-private-quiz")') AS canaries
+      FROM public.lessons l JOIN LATERAL (
+        SELECT q.document FROM public.quiz_revisions q WHERE q.lesson_id=l.id ORDER BY q.revision DESC LIMIT 1
+      ) quiz ON true WHERE l.id=$1::uuid`,
+    lessonDenialPristine: `SELECT NOT EXISTS(SELECT 1 FROM public.enrollments WHERE course_id=$1::uuid AND user_id=$2::uuid)
+      AND NOT EXISTS(SELECT 1 FROM public.entitlement_grants WHERE course_id=$1::uuid AND user_id=$2::uuid)
+      AND NOT EXISTS(SELECT 1 FROM public.lesson_progress p JOIN public.lessons l ON l.id=p.lesson_id
+        JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid AND p.user_id=$2::uuid)
+      AND NOT EXISTS(SELECT 1 FROM public.quiz_attempts a JOIN public.lessons l ON l.id=a.lesson_id
+        JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid AND a.user_id=$2::uuid) AS pristine`,
+    lessonDenialMediaHistory: paidArchiveDigest(`FROM public.video_assets r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`),
+    lessonDenialIdentity: paidArchiveDigest("FROM public.users r WHERE r.id=ANY($1::uuid[])"),
+    lessonDenialCommands: paidArchiveDigest("FROM public.account_lifecycle_commands r WHERE r.user_id=ANY($1::uuid[])", "r.command_id"),
     paidArchiveModules: paidArchiveDigest("FROM public.modules r WHERE r.course_id=$1::uuid"),
     paidArchiveLessons: paidArchiveDigest(`FROM public.lessons r JOIN public.modules m ON m.id=r.module_id
       WHERE m.course_id=$1::uuid`),
@@ -599,6 +619,7 @@ const paidArchiveBaselines = new WeakMap();
 const paidRepublishBaselines = new WeakMap();
 const paidLearnerAccessBaselines = new WeakMap();
 const lessonEntryBaselines = new WeakMap();
+const lessonDenialBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
@@ -1649,6 +1670,83 @@ export async function observeP2InteractiveLessonEntryCase(courseJob, selection, 
   demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
     && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-entry-media");
   return { courseId, lessonId, grantId, actorId, enrollmentId, progressId, revision: 1, playbackExpiresAt: date(playbackExpiry), readOnly: true };
+}
+
+const lessonDenialSelectionFields = [...lessonEntrySelectionFields, "enrolledActorId"];
+
+function validateLessonDenialSelection(selection) {
+  demand(closed(selection, lessonDenialSelectionFields) && lessonDenialSelectionFields.every(key => courseUuid(selection[key]))
+    && selection.actorId !== selection.enrolledActorId, "course-lesson-denial-selection");
+}
+
+async function readLessonDenial(client, { actorId, courseId, lessonId, enrolledActorId, grantId }) {
+  const lessons = await read(client, "course", "lessonEntryLesson", [courseId, lessonId]), lesson = lessons[0];
+  demand(lessons.length === 1 && courseUuid(lesson.asset_id) && SHA.test(lesson.course_fingerprint)
+    && lesson.last_token_expires_at !== null && Number.isFinite(Date.parse(lesson.last_token_expires_at)), "course-lesson-denial-lesson");
+  const canaries = await read(client, "course", "lessonDenialCanaries", [lessonId]);
+  demand(canaries.length === 1 && canaries[0].canaries === true, "course-lesson-denial-canaries");
+  const actors = [actorId, enrolledActorId];
+  const accounts = await read(client, "course", "lessonDenialActiveAccounts", [actors]);
+  demand(accounts.length === 1 && accounts[0].active === true, "course-lesson-denial-account");
+  const requestHash = sha(JSON.stringify({ command: "free_grant", userId: enrolledActorId, courseId }));
+  const grants = await read(client, "course", "lessonEntryFreeGrant", [grantId, enrolledActorId, courseId, requestHash]), grant = grants[0];
+  demand(grants.length === 1 && courseUuid(grant.enrollment_id) && SHA.test(grant.key_fingerprint), "course-lesson-denial-grant");
+  const enrolled = await read(client, "course", "paidCourseAccess", [courseId, enrolledActorId]);
+  const denied = await read(client, "course", "paidCourseAccess", [courseId, actorId]);
+  demand(enrolled.length === 1 && enrolled[0].eligible === true && denied.length === 1 && denied[0].eligible === false, "course-lesson-denial-access");
+  const progress = await read(client, "course", "lessonEntryProgress", [enrolledActorId, lessonId]);
+  demand(progress.length === 1 && courseUuid(progress[0].progress_id) && progress[0].started === true
+    && progress[0].enrollment_id === grant.enrollment_id, "course-lesson-denial-progress");
+  const pristine = await read(client, "course", "lessonDenialPristine", [courseId, actorId]);
+  demand(pristine.length === 1 && pristine[0].pristine === true, "course-lesson-denial-pristine");
+  return {
+    history: [lesson.course_fingerprint, grant.key_fingerprint,
+      ...await readPaidArchiveDigests(client, [courseId], [...paidArchiveHistory, ...paidArchiveProjection]),
+      ...await readPaidArchiveDigests(client, [actorId], ["paidCourseAccount"]),
+      ...await readPaidArchiveDigests(client, [enrolledActorId], ["paidCourseAccount"]),
+      ...await readPaidArchiveDigests(client, [actors], ["lessonDenialIdentity", "lessonDenialCommands"]),
+    ],
+    media: await readPaidArchiveDigests(client, [courseId], ["lessonDenialMediaHistory"]),
+  };
+}
+
+function validateLessonDenialReceipt(receipt, { courseId, lessonId }) {
+  const check = "course-lesson-denial-receipt";
+  demand(closed(receipt, ["page", "reads"]), check);
+  const { page, reads } = receipt, lesson = `/api/academy/lessons/${lessonId}`;
+  const targets = [lesson, `${lesson}/playback`, `/api/academy/progress?lessonId=${lessonId}`, `${lesson}/quiz`, `${lesson}/quiz/attempts`];
+  demand(closed(page, ["pathname", "documentStatus", "flightStatus", "documentRequestId", "flightRequestId"])
+    && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.documentStatus === 200 && page.flightStatus === 200
+    && courseUuid(page.documentRequestId) && courseUuid(page.flightRequestId)
+    && Array.isArray(reads) && reads.length === targets.length && targets.every((target, index) => {
+      const read = reads[index];
+      return closed(read, ["target", "status", "requestId", "code"]) && read.target === target && read.status === 403
+        && courseUuid(read.requestId) && read.code === "access_required";
+    }) && new Set([page.documentRequestId, page.flightRequestId, ...reads.map(read => read.requestId)]).size === targets.length + 2, check);
+}
+
+export async function captureP2InteractiveLessonDenialBaseline(courseJob, selection, dependencies) {
+  validateLessonDenialSelection(selection);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, client => readLessonDenial(client, selected));
+  const baseline = Object.freeze({});
+  lessonDenialBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveLessonDenialCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonDenialSelection(selection);
+  validateLessonDenialReceipt(browserReceipt, selection);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonDenialBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && lessonDenialSelectionFields.every(key => selection[key] === saved.selected[key]),
+  "course-lesson-denial-receipt");
+  lessonDenialBaselines.delete(baseline);
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid, client => readLessonDenial(client, saved.selected));
+  demand(sameIds(result.history, saved.result.history), "course-lesson-denial-history");
+  demand(sameIds(result.media, saved.result.media), "course-lesson-denial-media");
+  return { ...saved.selected, effectiveAccess: false, readOnly: true };
 }
 
 const paidRevokeSelectionFields = ["courseId", "userId", "grantId", "actorId", "revision", "idempotencyKey", "reason", "remainingAccess"];

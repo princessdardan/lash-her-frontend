@@ -20,6 +20,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidRepublishBaseline, observeP2InteractivePaidRepublishCase, validateP2InteractivePaidRepublish,
   captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
   captureP2InteractiveLessonEntryBaseline, observeP2InteractiveLessonEntryCase,
+  captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
@@ -158,7 +159,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
   await course.query(`GRANT SELECT ON public.courses, public.modules, public.lessons, public.quiz_revisions, public.quiz_attempts,
     public.entitlement_grants, public.enrollments, public.entitlement_idempotency_keys, public.community_enrollment_streams,
     public.community_enrollment_outbox, public.lesson_progress, public.admin_entitlement_commands,
-    public.admin_entitlement_command_effects, public.entitlement_revocations, public.account_lifecycle_states, public.video_assets TO ${user}`);
+    public.admin_entitlement_command_effects, public.entitlement_revocations, public.account_lifecycle_states,
+    public.account_lifecycle_commands, public.users, public.video_assets TO ${user}`);
   const job = { schemaVersion: 2, qualificationTargetProfile: profile, kind: "operator-migration", operator: "Dardan",
     environment: "staging", contractPhase: "p2", releaseId: "owned-draft-read", sourceCommit, runtimeRole: target.runtimeRole,
     phase2ContractManifestSha256: `sha256:${hash(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json")))}`,
@@ -258,7 +260,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidLearnerAccessWitness({ course, job, dependencies, input, create, courseSource });
-    await runOwnedLessonEntryWitness({ course, job, dependencies, input, create, courseSource });
+    await runOwnedLessonEntryWitness({ course, job: revokeSource ? { ...job, sourceCommit: revokeSource.revision } : job,
+      dependencies, input, create, courseSource: revokeSource?.root ?? courseSource });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -287,6 +290,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
       "course-lesson-entry-exact-first-start-and-monotonic-playback-expiry-with-pinned-repositories",
       "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
+      "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
+      "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
       "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
       "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
       "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
@@ -1427,21 +1432,29 @@ async function runOwnedPaidLearnerAccessWitness({ course, job, dependencies, inp
 
 async function runOwnedLessonEntryWitness({ course, job, dependencies, input, create, courseSource }) {
   const { db, importSource } = await ownedCourseRepository(course, courseSource);
-  const [{ createDrizzleFreeEnrollmentRepository }, { createDrizzleLessonProgressRepository }, { createDrizzleVideoRepository },
-    { createDrizzleQuizRepository }] = await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/free-enrollment.repository.ts",
-    "src/progress/lesson-progress.repository.ts", "src/video/video.repository.ts", "src/quizzes/drizzle-quiz.repository.ts");
+  const [{ createDrizzleFreeEnrollmentRepository }, { createDrizzleLessonProgressRepository }, { createDrizzleVideoRepository, createDrizzleEntitlementRepository },
+    { createDrizzleQuizRepository }, { createDrizzleAdminEntitlementCommandRepository }] = await importOwnedAccountAwareCourseSource(importSource,
+    "src/entitlements/free-enrollment.repository.ts", "src/progress/lesson-progress.repository.ts", "src/video/video.repository.ts",
+    "src/quizzes/drizzle-quiz.repository.ts", "src/entitlements/admin-entitlement-command.repository.ts");
   const enrollment = createDrizzleFreeEnrollmentRepository(db), progress = createDrizzleLessonProgressRepository(db);
   const video = createDrizzleVideoRepository(db), quiz = createDrizzleQuizRepository(db);
   const quizDocument = { version: 1, mode: "graded", passingPercent: 80, questions: [{ id: "question", prompt: "Which answer matches?",
     options: [{ id: "a", text: "First" }, { id: "b", text: "Second" }], correctOptionId: "b", feedback: "Review the material." }] };
-  const seed = async (name, { priorExpiry = null, preview = false, managed = true, withQuiz = true } = {}) => {
+  const seed = async (name, { priorExpiry = null, preview = false, managed = true, withQuiz = true, withCanaries = false } = {}) => {
     const fixture = input(`entry-${name}`, { status: "published", accessMode: "free", priceCents: 0 });
     await create(fixture);
     const { courseId } = fixture, actorId = randomUUID(), lessonId = randomUUID(), moduleId = randomUUID(), assetId = randomUUID();
+    const contentDocument = withCanaries ? { version: 1, blocks: [{ _type: "block", _key: "private-block", style: "normal",
+      children: [{ _type: "span", _key: "private-span", text: "p2q-s07-private-content", marks: [] }] }] } : null;
+    const transcript = withCanaries ? "p2q-s07-private-transcript" : null;
+    const quizSeed = withCanaries
+      ? { ...quizDocument, questions: quizDocument.questions.map(question => ({ ...question, prompt: "p2q-s07-private-quiz" })) }
+      : quizDocument;
     await course.query("INSERT INTO public.modules(id,course_id,slug,title,position) VALUES($1,$2,'module','Module',1)", [moduleId, courseId]);
-    await course.query("INSERT INTO public.lessons(id,module_id,slug,title,position,is_preview) VALUES($1,$2,'lesson','Lesson',1,$3)", [lessonId, moduleId, preview]);
+    await course.query("INSERT INTO public.lessons(id,module_id,slug,title,position,is_preview,content_document,transcript) VALUES($1,$2,'lesson','Lesson',1,$3,$4,$5)",
+      [lessonId, moduleId, preview, contentDocument, transcript]);
     if (withQuiz) await course.query("INSERT INTO public.quiz_revisions(lesson_id,revision,document,created_by) VALUES($1,1,$2::jsonb,$3)",
-      [lessonId, quizDocument, randomUUID()]);
+      [lessonId, quizSeed, randomUUID()]);
     await course.query(`INSERT INTO public.video_assets(id,lesson_id,mux_asset_id,mux_playback_id,status,managed_by_course,provider_environment_id,
       is_current,last_token_expires_at) VALUES($1,$2,$3,$4,'ready',$5,'owned-mux',true,$6)`,
     [assetId, lessonId, `owned-asset-${assetId}`, `owned-playback-${assetId}`, managed, priorExpiry]);
@@ -1504,6 +1517,104 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
     if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [test.selection.courseId]);
     await assert.rejects(observe(test, baseline, receipt), { check });
     await assert.rejects(observe(test, baseline, receipt), { check: "course-lesson-entry-receipt" });
+  }
+
+  await runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz,
+    entitlement: createDrizzleEntitlementRepository(db), admin: createDrizzleAdminEntitlementCommandRepository(db) });
+}
+
+async function runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz, entitlement, admin }) {
+  const selected = async (name, options) => {
+    const test = await seed(`denial-${name}`, { withCanaries: true, ...options });
+    return { test, selection: { ...test.selection, enrolledActorId: test.selection.actorId, actorId: randomUUID() } };
+  };
+  const receiptFor = ({ courseId, lessonId }) => {
+    const lesson = `/api/academy/lessons/${lessonId}`;
+    const targets = [lesson, `${lesson}/playback`, `/api/academy/progress?lessonId=${lessonId}`, `${lesson}/quiz`, `${lesson}/quiz/attempts`];
+    return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, documentStatus: 200, flightStatus: 200,
+      documentRequestId: randomUUID(), flightRequestId: randomUUID() },
+      reads: targets.map(target => ({ target, status: 403, requestId: randomUUID(), code: "access_required" })) };
+  };
+  const capture = selection => captureP2InteractiveLessonDenialBaseline(job, selection, dependencies);
+  const observe = (selection, baseline, receipt = receiptFor(selection)) =>
+    observeP2InteractiveLessonDenialCase(job, selection, baseline, receipt, dependencies);
+  const prepared = async name => {
+    const result = await selected(name);
+    await enter(result.test);
+    return result;
+  };
+  const { test, selection } = await prepared("positive");
+  const { actorId: userId, courseId, lessonId } = selection;
+  const unrelated = await seed("denial-unrelated");
+  await enrollment.enrollFree({ userId, courseId: unrelated.selection.courseId, idempotencyKey: randomUUID() });
+  await course.query("INSERT INTO public.account_lifecycle_states(user_id,account_version,status,updated_at) VALUES($1,1,'active',pg_catalog.clock_timestamp())",
+    [userId]);
+
+  const baseline = await capture(selection);
+  assert.equal(JSON.stringify(baseline), "{}");
+  assert.equal(await entitlement.findActiveEnrollment({ userId, courseId }), null);
+  assert.equal(await entitlement.hasActiveEnrollment({ userId, courseId: unrelated.selection.courseId }), true);
+  await assert.rejects(video.withPlaybackAuthorization({ userId, lessonId }, async () => assert.fail("Denied learner reached the signer")),
+    { statusCode: 403, code: "ACTIVE_ENROLLMENT_REQUIRED" });
+  await assert.rejects(progress.recordProgress({ userId, courseId, lessonId, enrollmentId: test.enrollmentId, expectedProgressRevision: 0,
+    markStarted: true }), { name: "ProgressEnrollmentNotActiveError" });
+  assert.deepEqual(await progress.listProgress({ userId, lessonId }), []);
+  await assert.rejects(quiz.readStudentQuiz({ userId, lessonId }), { name: "QuizAccessDeniedError" });
+  await assert.rejects(quiz.listAttempts({ userId, lessonId }), { name: "QuizAccessDeniedError" });
+  await assert.rejects(quiz.submitAttempt({ userId, lessonId, quizRevision: 1, requestId: randomUUID(),
+    answers: [{ questionId: "question", optionId: "b" }] }), { name: "QuizAccessDeniedError" });
+
+  const receipt = receiptFor(selection);
+  await assert.rejects(observe(selection, {}, receipt), { check: "course-lesson-denial-receipt" });
+  await assert.rejects(observe({ ...selection, actorId: randomUUID() }, baseline, receipt), { check: "course-lesson-denial-receipt" });
+  await assert.rejects(observe(selection, baseline, { ...receipt, page: { ...receipt.page, flightStatus: 404 } }),
+    { check: "course-lesson-denial-receipt" });
+  for (const flightRequestId of [receipt.page.documentRequestId, receipt.reads[0].requestId]) {
+    await assert.rejects(observe(selection, baseline, { ...receipt, page: { ...receipt.page, flightRequestId } }),
+      { check: "course-lesson-denial-receipt" });
+  }
+  for (const patch of [{ status: 200 }, { code: "access_revoked" }, { target: receipt.reads[1].target }, { requestId: receipt.reads[1].requestId }]) {
+    await assert.rejects(observe(selection, baseline, { ...receipt, reads: [{ ...receipt.reads[0], ...patch }, ...receipt.reads.slice(1)] }),
+      { check: "course-lesson-denial-receipt" });
+  }
+  await assert.rejects(observeP2InteractiveLessonDenialCase(job, selection, baseline, receipt,
+    { ...dependencies, verifySession: async () => {} }), { check: "course-lesson-denial-receipt" });
+  assert.deepEqual(await observe(selection, baseline, receipt), { ...selection, effectiveAccess: false, readOnly: true });
+  await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-denial-receipt" });
+
+  await assert.rejects(capture({ ...selection, actorId: selection.enrolledActorId }), { check: "course-lesson-denial-selection" });
+  await assert.rejects(capture({ ...selection, grantId: randomUUID() }), { check: "course-lesson-denial-grant" });
+  await assert.rejects(capture({ ...selection, courseId: unrelated.selection.courseId }), { check: "course-lesson-denial-lesson" });
+  for (const [name, options] of [["preview", { preview: true }], ["unmanaged", { managed: false }], ["no-quiz", { withQuiz: false }]]) {
+    const { selection: invalid } = await selected(name, { ...options, priorExpiry: new Date() });
+    await assert.rejects(capture(invalid), { check: "course-lesson-denial-lesson" });
+  }
+  const { selection: unstarted } = await selected("unstarted", { priorExpiry: new Date() });
+  await assert.rejects(capture(unstarted), { check: "course-lesson-denial-progress" });
+  const missingCanaries = await selected("missing-canaries", { withCanaries: false });
+  await enter(missingCanaries.test);
+  await assert.rejects(capture(missingCanaries.selection), { check: "course-lesson-denial-canaries" });
+  const former = await prepared("former");
+  const oldGrant = await enrollment.enrollFree({ userId: former.selection.actorId, courseId: former.selection.courseId, idempotencyKey: randomUUID() });
+  await assert.rejects(capture(former.selection), { check: "course-lesson-denial-access" });
+  await admin.revoke({ scope: "grantId", grantId: oldGrant.record.id, actorUserId: randomUUID(), reason: "Owned historical access fixture",
+    idempotencyKey: randomUUID() });
+  await assert.rejects(capture(former.selection), { check: "course-lesson-denial-pristine" });
+
+  for (const [name, check, change] of [
+    ["media", "course-lesson-denial-media", ({ test }) => course.query(
+      "UPDATE public.video_assets SET last_token_expires_at=last_token_expires_at+interval '1 second' WHERE id=$1", [test.assetId])],
+    ["quiz", "course-lesson-denial-history", ({ selection }) => course.query(
+      "INSERT INTO public.quiz_revisions(lesson_id,revision,document,created_by) SELECT lesson_id,2,document,$2 FROM public.quiz_revisions WHERE lesson_id=$1 AND revision=1",
+      [selection.lessonId, randomUUID()])],
+    ["account", "course-lesson-denial-account", ({ selection }) => course.query(
+      "INSERT INTO public.account_lifecycle_states(user_id,account_version,status,updated_at) VALUES($1,1,'deleted',pg_catalog.clock_timestamp())",
+      [selection.actorId])],
+  ]) {
+    const fixture = await prepared(name), before = await capture(fixture.selection);
+    await change(fixture);
+    await assert.rejects(observe(fixture.selection, before), { check });
+    await assert.rejects(observe(fixture.selection, before), { check: "course-lesson-denial-receipt" });
   }
 }
 

@@ -43,6 +43,7 @@ _COURSE_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _PUBLIC_COURSE_PATH = re.compile(rf"/courses/{_COURSE_SLUG}")
 _LEARNER_COURSE_PATH = re.compile(rf"/academy/courses/{_COURSE_ID}")
 _LEARNER_LESSON_PATH = re.compile(rf"/academy/courses/{_COURSE_ID}/lessons/{_COURSE_ID}")
+_LEARNER_LESSON_FLIGHT_PATH = re.compile(_LEARNER_LESSON_PATH.pattern + r"\?_rsc")
 _LEARNER_COURSE_API_PATH = re.compile(rf"/api/academy/courses/{_COURSE_ID}")
 _LEARNER_LESSON_API_PATH = re.compile(rf"/api/academy/lessons/{_COURSE_ID}(?:/playback|/progress|/quiz(?:/attempts)?)?")
 _LEARNER_PROGRESS_API_PATH = re.compile(rf"/api/academy/progress\?(?:courseId|lessonId)={_COURSE_ID}")
@@ -86,12 +87,16 @@ class UnauthenticatedIngressClient:
                                      _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path) or
                                      len(path) <= 129 and _PUBLIC_COURSE_PATH.fullmatch(path) or _LEARNER_COURSE_PATH.fullmatch(path) or
                                      _LEARNER_COURSE_API_PATH.fullmatch(path) or _LEARNER_LESSON_API_PATH.fullmatch(path) or
-                                     _LEARNER_LESSON_PATH.fullmatch(path) or _LEARNER_PROGRESS_API_PATH.fullmatch(path) or
-                                     _PAID_GRANT_PATH.fullmatch(path)),
+                                     _LEARNER_LESSON_PATH.fullmatch(path) or _LEARNER_LESSON_FLIGHT_PATH.fullmatch(path) or
+                                     _LEARNER_PROGRESS_API_PATH.fullmatch(path) or _PAID_GRANT_PATH.fullmatch(path)),
                "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
-        request = urllib.request.Request(url, method="GET", headers={
-            "accept": "text/html,application/xhtml+xml", "cache-control": "no-cache"})
+        flight = _LEARNER_LESSON_FLIGHT_PATH.fullmatch(path) is not None
+        headers = {"accept": "text/x-component" if flight else "text/html,application/xhtml+xml",
+                   "cache-control": "no-cache"}
+        if flight:
+            headers["RSC"] = "1"
+        request = urllib.request.Request(url, method="GET", headers=headers)
         try:
             with self._opener.open(request, timeout=20 if path == "/" else 5) as response:
                 response.read(_MAX_DENIAL_BODY + 1)
@@ -223,6 +228,16 @@ def observe_lesson_entry_protection(context, client, *, expected_profile, course
     paths = (course, f"{course}/lessons/{lesson_id}", f"/api{course}", f"/api/academy/progress?courseId={course_id}",
              lesson, f"/api/academy/progress?lessonId={lesson_id}", f"{lesson}/quiz", f"{lesson}/quiz/attempts",
              f"{lesson}/playback", f"{lesson}/progress")
+    return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
+
+
+def observe_lesson_denial_protection(context, client, *, expected_profile, course_id, lesson_id):
+    demand(all(type(value) is str and re.fullmatch(_COURSE_ID, value) for value in (course_id, lesson_id)),
+           "P2_INTERACTIVE_LESSON_DENIAL_TARGET_REQUIRED")
+    document = f"/academy/courses/{course_id}/lessons/{lesson_id}"
+    lesson = f"/api/academy/lessons/{lesson_id}"
+    paths = (document, f"{document}?_rsc", lesson, f"{lesson}/playback",
+             f"/api/academy/progress?lessonId={lesson_id}", f"{lesson}/quiz", f"{lesson}/quiz/attempts")
     return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
 
 

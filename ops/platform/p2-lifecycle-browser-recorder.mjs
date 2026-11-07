@@ -24,6 +24,7 @@ const interactivePages = {
   learning: { learner: "/academy" },
   "learner-access": { learner: "/academy/courses" },
   "lesson-entry": { learner: "/academy/courses" },
+  "lesson-denial": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -124,6 +125,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   }
   if (input.stage === "learner-access") return p2PaidLearnerAccessPaths(input.learnerAccess).pagePath;
   if (input.stage === "lesson-entry") return p2LessonEntryPaths(input.lessonEntry).academyPath;
+  if (input.stage === "lesson-denial") return p2LessonDenialPaths(input.lessonDenial).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -148,6 +150,12 @@ export function p2LessonEntryPaths({ courseId, lessonId }) {
   return { academyPath, lessonPath: `${academyPath}/lessons/${lessonId}`, playbackPath: `${api}/playback`, progressPath: `${api}/progress` };
 }
 
+export function p2LessonDenialPaths({ courseId, lessonId }) {
+  const { lessonPath, targets } = p2PaidLearnerAccessPaths({ courseId, lessonId });
+  // Next's cache-buster is the bare parameter when only RSC is present.
+  return { lessonPath, flightPath: lessonPath + "?_rsc", targets: targets.slice(1) };
+}
+
 export function p2PaidGrantPaths({ courseId }) {
   const pagePath = "/admin/courses/" + courseId + "/manual-grants";
   return { pagePath, pathname: "/api" + pagePath };
@@ -170,6 +178,7 @@ export function validateP2InteractiveBrowserInput(input) {
     ...(["lifecycle", "authoring", "learning"].includes(input?.stage) ? [input.stage]
       : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
+          : input?.stage === "lesson-denial" ? ["lessonDenial"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -198,6 +207,12 @@ export function validateP2InteractiveBrowserInput(input) {
     const selected = input.lessonEntry;
     demand(closed(selected, ["actorId", "operation", "courseId", "lessonId", "grantId"]) && selected.operation === "open-lesson"
       && [selected.actorId, selected.courseId, selected.lessonId, selected.grantId].every(uuid));
+  }
+  if (input.stage === "lesson-denial") {
+    const selected = input.lessonDenial;
+    demand(closed(selected, ["actorId", "operation", "courseId", "lessonId", "enrolledActorId", "grantId"])
+      && selected.operation === "deny-cross-account" && selected.actorId !== selected.enrolledActorId
+      && [selected.actorId, selected.courseId, selected.lessonId, selected.enrolledActorId, selected.grantId].every(uuid));
   }
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
@@ -245,8 +260,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
     && Number(issued) <= now && Number(expires) === permit.expires && permit.expires - Number(issued) <= input.windowSeconds
     && /^[a-f0-9]{32}$/u.test(nonce ?? "")
-    && (["lifecycle", "identity", "authoring", "learning", "learner-access", "lesson-entry", "paid-grant", "paid-revoke"].includes(stage)
-      ? version === "v2" && parts.length === 8 && (stage === "lesson-entry" ? matches(parts[6], /^[a-f0-9]{96}$/u) : sha(parts[6])) && sha(parts[7])
+    && (["lifecycle", "identity", "authoring", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"].includes(stage)
+      ? version === "v2" && parts.length === 8 && (["lesson-entry", "lesson-denial"].includes(stage) ? matches(parts[6], /^[a-f0-9]{96}$/u) : sha(parts[6])) && sha(parts[7])
       : version === "v1" && parts.length === 7 && sha(parts[6])));
   if (stage === "identity") {
     const enrollment = input.identityEnrollment;
@@ -255,8 +270,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (stage === "authoring") demand(parts[6] === authoringSelector(input));
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
-  if (stage === "lesson-entry") {
-    const { actorId, courseId, lessonId } = input.lessonEntry;
+  if (stage === "lesson-entry" || stage === "lesson-denial") {
+    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -453,6 +468,19 @@ export function validateP2LessonEntryReceipt(receipt, target) {
     && playback.lifetimeMs >= 590_000 && playback.lifetimeMs <= 601_000
     && closed(progress, ["requestId", "progressId", "enrollmentId", "revision"]) && uuid(progress.requestId)
     && progress.requestId !== playback.requestId && uuid(progress.progressId) && uuid(progress.enrollmentId) && progress.revision === 1);
+  return receipt;
+}
+
+export function validateP2LessonDenialReceipt(receipt, target) {
+  const { lessonPath, targets } = p2LessonDenialPaths(target);
+  demand(closed(receipt, ["page", "reads"])
+    && closed(receipt.page, ["pathname", "documentStatus", "flightStatus", "documentRequestId", "flightRequestId"])
+    && receipt.page.pathname === lessonPath && receipt.page.documentStatus === 200 && receipt.page.flightStatus === 200
+    && uuid(receipt.page.documentRequestId) && uuid(receipt.page.flightRequestId)
+    && Array.isArray(receipt.reads) && receipt.reads.length === targets.length && receipt.reads.every((read, index) =>
+      closed(read, ["target", "status", "requestId", "code"]) && read.target === targets[index] && read.status === 403
+      && uuid(read.requestId) && read.code === "access_required")
+    && new Set([receipt.page.documentRequestId, receipt.page.flightRequestId, ...receipt.reads.map(read => read.requestId)]).size === targets.length + 2);
   return receipt;
 }
 
@@ -950,9 +978,9 @@ function validatePaidLearnerQuiz(body, lessonId) {
 }
 
 // Executed only in a Chromium isolated world for the selected main frame.
-async function captureInteractiveFetch({ source, target, timeout, maximum, idempotencyKey }) {
+async function captureInteractiveFetch({ source, target, timeout, maximum, idempotencyKey, flight }) {
   if (location.href !== source) throw new Error("P2_INTERACTIVE_FETCH_FRAME_CHANGED");
-  const headers = { accept: "application/json" };
+  const headers = flight ? { accept: "text/x-component", RSC: "1" } : { accept: "application/json" };
   const post = idempotencyKey !== undefined;
   if (post) Object.assign(headers, { "content-type": "application/json", "x-lash-csrf": "1" });
   const response = await fetch(target, { method: post ? "POST" : "GET", mode: "same-origin", credentials: "same-origin", redirect: "error",
@@ -1233,6 +1261,238 @@ export function watchP2PaidLearnerAccess(context, page, input) {
         fail();
         throw refusal();
       } finally { await session?.detach().catch(() => {}); }
+    },
+    finish() {
+      if (failed || !receipt || context.serviceWorkers().length) throw refusal();
+      return receipt;
+    },
+    close() {
+      context.off("request", onRequest);
+      context.off("requestfailed", onFailure);
+      page.off("framenavigated", onNavigation);
+      fail();
+    },
+  };
+}
+
+const deniedLessonHeading = "Enrollment required";
+const deniedLessonDescription = "Open the course page to enroll or check your access.";
+const privateLessonMarkup = /\b(?:mux-player|stream\.mux\.com|image\.mux\.com|lesson-outline-title|initialProgress|quizState|contentDocument|playbackToken|thumbnailToken|completedQuizRevision|resumePositionSeconds|maxPositionSeconds|correctOptionId)\b|p2q-s07-private-(?:content|transcript|quiz)/iu;
+
+function uniqueDenialReference(markup, pattern) {
+  const references = Array.from(markup.matchAll(pattern));
+  demand(references.length === 1 && uuid(references[0][1]));
+  return references[0][1];
+}
+
+function deniedLessonDocumentReference(markup) {
+  const sections = Array.from(markup.matchAll(/<section\b[^>]*\baria-labelledby="learning-unavailable-title"[^>]*>([\s\S]*?)<\/section>/gu));
+  demand(sections.length === 1 && !privateLessonMarkup.test(markup));
+  const section = sections[0][1];
+  demand(/<h1\b[^>]*\bid="learning-unavailable-title"[^>]*>Enrollment required<\/h1>/u.test(section)
+    && section.includes(deniedLessonDescription));
+  return uniqueDenialReference(section, /<p\b[^>]*>Reference: (?:<!-- -->)?([^<\s]+)<\/p>/gu);
+}
+
+function deniedLessonFlightReference(markup) {
+  const models = markup.split("\n").filter(row => /^[a-f0-9]+:/u.test(row) && row.includes('"aria-labelledby":"learning-unavailable-title"'));
+  demand(models.length === 1 && !privateLessonMarkup.test(markup));
+  const model = models[0], nodes = [JSON.parse(model.slice(model.indexOf(":") + 1))], sections = [];
+  const props = (node, tag) => Array.isArray(node) && node[0] === "$" && node[1] === tag ? node[3] : undefined;
+  while (nodes.length) {
+    const node = nodes.pop();
+    if (props(node, "section")?.["aria-labelledby"] === "learning-unavailable-title") sections.push(node[3]);
+    if (node && typeof node === "object") for (const child of Object.values(node)) nodes.push(child);
+  }
+  const children = sections[0]?.children;
+  demand(sections.length === 1 && Array.isArray(children));
+  const headings = children.map(node => props(node, "h1")).filter(Boolean);
+  const paragraphs = children.map(node => props(node, "p")?.children);
+  const references = paragraphs.filter(text => Array.isArray(text) && text[0] === "Reference: ");
+  demand(headings.length === 1 && headings[0].id === "learning-unavailable-title" && headings[0].children === deniedLessonHeading
+    && paragraphs.includes(deniedLessonDescription) && references.length === 1 && references[0].length === 2 && uuid(references[0][1]));
+  return references[0][1];
+}
+
+function watchDeniedLessonDocument(session, frameId, source, timeout) {
+  const maximum = maxAuthoringBody;
+  let requestId, settle, reject;
+  const result = new Promise((resolve, fail) => { settle = resolve; reject = fail; });
+  result.catch(() => {});
+  const refuse = () => reject(new Error("P2_INTERACTIVE_LESSON_DOCUMENT_REFUSED"));
+  const timer = setTimeout(refuse, timeout);
+  const onResponse = ({ requestId: id, frameId: frame, type, response }) => {
+    if (frame !== frameId || type !== "Document") return;
+    if (requestId || response.url !== source || response.status !== 200
+      || response.fromServiceWorker || response.fromDiskCache || response.fromPrefetchCache) return refuse();
+    requestId = id;
+  };
+  const onFinished = ({ requestId: id }) => {
+    if (id !== requestId) return;
+    void session.send("Network.getResponseBody", { requestId }).then(payload => {
+      const { body, base64Encoded } = payload;
+      payload.body = "";
+      demand(typeof body === "string" && body.length <= (base64Encoded ? 4 * Math.ceil(maximum / 3) : maximum));
+      const bytes = Buffer.from(body, base64Encoded ? "base64" : "utf8");
+      try {
+        demand(bytes.length > 0 && bytes.length <= maximum);
+        settle(deniedLessonDocumentReference(bytes.toString("utf8")));
+      } finally { bytes.fill(0); }
+    }).catch(refuse);
+  };
+  const onFailed = ({ requestId: id }) => { if (id === requestId) refuse(); };
+  session.on("Network.responseReceived", onResponse);
+  session.on("Network.loadingFinished", onFinished);
+  session.on("Network.loadingFailed", onFailed);
+  return { result, close() {
+    clearTimeout(timer);
+    session.off("Network.responseReceived", onResponse);
+    session.off("Network.loadingFinished", onFinished);
+    session.off("Network.loadingFailed", onFailed);
+  } };
+}
+
+async function readDeniedLessonFlight({ session, executionContextId, page, slot, source, timeout }) {
+  const observed = page.waitForResponse(candidate => candidate.request() === slot.request, { timeout });
+  const maximum = maxAuthoringBody;
+  const captured = session.send("Runtime.callFunctionOn", { executionContextId, functionDeclaration: captureInteractiveFetch.toString(),
+    arguments: [{ value: { source, target: slot.target, timeout, maximum, flight: true } }], awaitPromise: true, returnByValue: true, silent: true })
+    .then(({ result, exceptionDetails }) => { demand(!exceptionDetails); return result.value; });
+  try {
+    const [response, payload] = await Promise.all([observed, captured]);
+    const [types, cache, vary] = await Promise.all(["content-type", "cache-control", "vary"].map(name => response.headerValues(name)));
+    demand(response.url() === new URL(slot.target, source).href && response.status() === 200 && !response.fromServiceWorker()
+      && slot.request.redirectedTo() === null && types.length === 1 && /^text\/x-component(?:;.*)?$/iu.test(types[0])
+      && cache.length === 1 && privateNoStore({ "cache-control": cache[0] })
+      && vary.some(value => /(?:^|,)\s*rsc\s*(?:,|$)/iu.test(value))
+      && payload?.url === response.url() && payload.status === 200 && payload.redirected === false
+      && payload.contentType === types[0] && payload.cacheControl === cache[0]
+      && Number.isSafeInteger(payload.size) && payload.size > 0 && payload.size <= maximum
+      && typeof payload.body === "string" && payload.body.length === 4 * Math.ceil(payload.size / 3));
+    const bytes = Buffer.from(payload.body, "base64");
+    try {
+      demand(bytes.byteLength === payload.size);
+      return deniedLessonFlightReference(bytes.toString("utf8"));
+    } finally { bytes.fill(0); }
+  } finally {
+    const payload = await captured.catch(() => undefined);
+    if (payload && typeof payload === "object") payload.body = "";
+  }
+}
+
+export function watchP2LessonDenial(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "lesson-denial" && page.context() === context);
+  const target = input.lessonDenial, { lessonPath, flightPath, targets } = p2LessonDenialPaths(target);
+  const origin = input.browserOrigin, source = origin + lessonPath;
+  const refusal = () => new Error("P2_INTERACTIVE_LESSON_DENIAL_RESPONSE_REFUSED");
+  let navigation, documentRequestId, activeRead, receipt, opened = false, capturing = false, failed = false;
+  const fail = () => { failed = true; };
+  const remaining = expires => {
+    const timeout = expires * 1000 - Date.now();
+    if (failed || timeout <= 0 || timeout > input.windowSeconds * 1000) throw refusal();
+    return timeout;
+  };
+  const onRequest = request => {
+    const url = URL.parse(request.url()), method = request.method(), headers = request.headers();
+    try {
+      demand(["GET", "HEAD", "OPTIONS"].includes(method) && request.resourceType() !== "media"
+        && !/(?:^|\.)mux\.com$/iu.test(url?.hostname ?? ""));
+      if (request.isNavigationRequest()) {
+        demand(opened && !navigation && request.url() === source && method === "GET" && headers.rsc === undefined
+          && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+        navigation = request;
+      } else if (url?.origin === origin) {
+        const selectedSurface = url.pathname.startsWith("/api/")
+          || url.pathname.startsWith("/academy/courses/") && url.pathname.includes("/lessons/");
+        if (!selectedSurface) return;
+        const flight = activeRead?.target === flightPath;
+        demand(activeRead && !activeRead.request && request.url() === origin + activeRead.target && method === "GET"
+          && request.frame() === page.mainFrame() && request.frame().url() === source && request.resourceType() === "fetch"
+          && request.redirectedFrom() === null && request.postDataBuffer() === null
+          && headers.rsc === (flight ? "1" : undefined)
+          && ["next-router-prefetch", "next-router-segment-prefetch", "next-router-state-tree", "next-url"].every(name => headers[name] === undefined));
+        activeRead.request = request;
+      }
+    } catch { fail(); }
+  };
+  const onFailure = request => {
+    if (request === navigation || request === activeRead?.request && request.failure()?.errorText !== "net::ERR_ABORTED") fail();
+  };
+  const onNavigation = frame => { if (frame === page.mainFrame() && navigation && frame.url() !== source) fail(); };
+  context.on("request", onRequest);
+  context.on("requestfailed", onFailure);
+  page.on("framenavigated", onNavigation);
+
+  const verifyPage = async expires => {
+    const main = page.locator("main");
+    const denial = main.locator('section[aria-labelledby="learning-unavailable-title"]');
+    await denial.getByRole("heading", { level: 1, name: deniedLessonHeading, exact: true })
+      .waitFor({ state: "visible", timeout: remaining(expires) });
+    demand(page.url() === source && await main.getByRole("heading", { level: 1 }).count() === 1
+      && await denial.getByText(deniedLessonDescription, { exact: true }).isVisible()
+      && await denial.getByText("Reference: " + documentRequestId, { exact: true }).isVisible()
+      && (await denial.locator("p").allTextContents()).filter(text => text.startsWith("Reference: ")).length === 1
+      && await main.locator('article, video, audio, mux-player, form, [aria-label="Lesson navigation"], [aria-label="Course lessons"]').count() === 0
+      && await page.locator("main, script:not([src])").evaluateAll((nodes, source) => {
+        const privateMarkup = new RegExp(source, "iu");
+        return nodes.every(node => !privateMarkup.test(node.innerHTML));
+      }, privateLessonMarkup.source));
+    remaining(expires);
+  };
+
+  return {
+    async open(expires) {
+      let session, document;
+      try {
+        demand(!opened);
+        opened = true;
+        session = await context.newCDPSession(page);
+        const { frameTree: { frame } } = await session.send("Page.getFrameTree");
+        demand(!frame.parentId);
+        const buffers = { maxTotalBufferSize: 4 * maxAuthoringBody, maxResourceBufferSize: maxAuthoringBody };
+        await session.send("Network.configureDurableMessages", buffers);
+        await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
+        const timeout = Math.min(30_000, remaining(expires));
+        document = watchDeniedLessonDocument(session, frame.id, source, timeout);
+        const [response, rawReference] = await Promise.all([page.goto(source, { waitUntil: "domcontentloaded", timeout }), document.result]);
+        demand(navigation && response?.request() === navigation && response.url() === source && response.status() === 200
+          && !response.fromServiceWorker() && navigation.redirectedTo() === null);
+        const [types, cache] = await Promise.all(["content-type", "cache-control"].map(name => response.headerValues(name)));
+        demand(types.length === 1 && /^text\/html(?:;.*)?$/iu.test(types[0]) && cache.length === 1
+          && privateNoStore({ "cache-control": cache[0] }));
+        documentRequestId = rawReference;
+        await verifyPage(expires);
+      } catch { fail(); throw refusal(); }
+      finally { document?.close(); await session?.detach().catch(() => {}); }
+    },
+    async wait(expires) {
+      let session;
+      try {
+        demand(documentRequestId && !capturing);
+        capturing = true;
+        session = await context.newCDPSession(page);
+        const executionContextId = await isolatedMainFrame(session, source);
+        activeRead = { target: flightPath };
+        const flightRequestId = await readDeniedLessonFlight({ session, executionContextId, page, slot: activeRead, source,
+          timeout: Math.min(8000, remaining(expires)) });
+        demand(flightRequestId !== documentRequestId);
+        const reads = [];
+        for (const path of targets) {
+          activeRead = { target: path };
+          const { head, body } = await readIsolatedFetch({ session, executionContextId, page, slot: activeRead, source,
+            status: 403, maximum: maxLifecycleBody, timeout: Math.min(8000, remaining(expires)) });
+          const failure = activeRead.request.failure();
+          demand((!failure || failure.errorText === "net::ERR_ABORTED")
+            && closed(body, ["error", "requestId"]) && body.requestId === head.requestId && closed(body.error, ["code", "message"])
+            && body.error.code === "access_required" && body.error.message === paidLearnerDenials.access_required.message);
+          reads.push({ target: path, status: head.status, requestId: head.requestId, code: body.error.code });
+        }
+        await verifyPage(expires);
+        receipt = validateP2LessonDenialReceipt({ page: { pathname: lessonPath, documentStatus: 200, flightStatus: 200,
+          documentRequestId, flightRequestId }, reads }, target);
+      } catch { fail(); throw refusal(); }
+      finally { activeRead = undefined; await session?.detach().catch(() => {}); }
     },
     finish() {
       if (failed || !receipt || context.serviceWorkers().length) throw refusal();
@@ -1905,7 +2165,8 @@ async function runInteractiveBrowser(first) {
         break;
       }
       if (command.type === "interactive-select") {
-        demand(cleared && !input.identityEnrollment && input.stage !== "lesson-entry" && closed(received, [...Object.keys(binding), "next"]));
+        demand(cleared && !input.identityEnrollment && !["lesson-entry", "lesson-denial"].includes(input.stage)
+          && closed(received, [...Object.keys(binding), "next"]));
         const selectedInput = validateP2InteractiveBrowserInput(received.next);
         demand(!selectedInput.identityEnrollment && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
           && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
@@ -1913,8 +2174,8 @@ async function runInteractiveBrowser(first) {
         if (["authoring", "paid-grant", "paid-revoke"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
           && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
-        if (["learning", "learner-access", "lesson-entry"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
-          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry).actorId
+        if (["learning", "learner-access", "lesson-entry", "lesson-denial"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
+          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
@@ -1933,7 +2194,7 @@ async function runInteractiveBrowser(first) {
       if (command.type === "interactive-install") {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input))
-          && (!["learning", "learner-access", "lesson-entry"].includes(binding.stage) || contexts.has("learner"))
+          && (!["learning", "learner-access", "lesson-entry", "lesson-denial"].includes(binding.stage) || contexts.has("learner"))
           && (!["paid-grant", "paid-revoke"].includes(binding.stage) || contexts.has("owner")));
         selection = { context: received.context, expires: received.expires };
         const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
@@ -1971,6 +2232,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "lesson-entry") {
           mutationWatch = watchP2LessonEntry(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "lesson-denial") {
+          mutationWatch = watchP2LessonDenial(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {
@@ -2038,7 +2303,7 @@ async function runInteractiveBrowser(first) {
         await send("interactive-page-opened", { ...selection, path, httpStatus });
       } else {
         const edit = isP2InteractiveAuthoringPair(input), stage = edit ? "authoring-edit" : binding.stage;
-        const captureMutation = ["lifecycle", "authoring", "learning", "learner-access", "lesson-entry", "paid-grant", "paid-revoke"].includes(binding.stage)
+        const captureMutation = ["lifecycle", "authoring", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"].includes(binding.stage)
           && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
@@ -2046,9 +2311,11 @@ async function runInteractiveBrowser(first) {
         if (captureIdentity) verifiedIdentity = await waitForInteractiveIdentity(page, input,
           { ...selection, openedAt: identityOpenedAt, ownerSubjectSha256: received.ownerSubjectSha256 });
         await expireP2InteractiveBrowserCookie(context);
-        // Lesson teardown can queue progress. Hold the page until the parent
-        // closes the browser after fencing, with the permit already expired.
-        if (!captureMutation || binding.stage !== "lesson-entry") await Promise.all(context.pages().map(page => page.close()));
+        // Teardown can queue progress or telemetry. Hold the selected page until
+        // the parent closes the browser after fencing, with the permit expired.
+        if (!captureMutation || !["lesson-entry", "lesson-denial"].includes(binding.stage)) {
+          await Promise.all(context.pages().map(page => page.close()));
+        }
         cleared = true;
         if (input.identityEnrollment) await context.close();
         if (captureMutation || captureIdentity) demand(Date.now() < selection.expires * 1000);

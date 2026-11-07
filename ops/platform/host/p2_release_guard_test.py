@@ -184,6 +184,8 @@ class IndependentGuardTests(unittest.TestCase):
         for progress_first in (False, True):
             with self.subTest(lesson_entry_progress_first=progress_first):
                 self.check_profiled_interactive_terminal('lesson-entry', 'customer', None, progress_first=progress_first)
+            with self.subTest(lesson_denial_parallel_order=progress_first):
+                self.check_profiled_interactive_terminal('lesson-denial', 'customer', None, progress_first=progress_first)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, editing=True)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, archiving=True)
         for outcome, access in (('published', True), ('published', False), ('blocked', True)):
@@ -221,7 +223,7 @@ class IndependentGuardTests(unittest.TestCase):
             variant = 'progress-first' if progress_first else 'course-first'
             if replay:
                 variant = 'replay-' + variant
-        if stage_name == 'lesson-entry':
+        if stage_name in ('lesson-entry', 'lesson-denial'):
             variant = 'progress-first' if progress_first else 'playback-first'
         if learner_outcome is not None:
             variant = learner_outcome
@@ -240,6 +242,8 @@ class IndependentGuardTests(unittest.TestCase):
         paid_revoke = stage_name == 'paid-revoke'
         learner_access = stage_name == 'learner-access'
         lesson_entry = stage_name == 'lesson-entry'
+        lesson_denial = stage_name == 'lesson-denial'
+        read_only = learner_access or lesson_denial
         gateway_scoped = stage_name in window.SCOPED_GATEWAY_BROWSER_STAGES
         stage_status = stage_name.upper().replace('-', '_')
         paired = editing or reorder_kind is not None
@@ -265,6 +269,16 @@ class IndependentGuardTests(unittest.TestCase):
                                   for index, target in enumerate(targets)]
             action['requests'].append({'method': 'POST', 'target': f'{lesson_path}/progress',
                                        'bodySha256': window._hash(b'{"event":"lesson_started","expectedProgressRevision":0}'), 'uses': 1})
+        elif lesson_denial:
+            lesson = ledger_ids[0]
+            action['lessonDenialAction'] = {'operation': 'deny-cross-account', 'courseId': command, 'lessonId': lesson,
+                                            'enrolledActorId': user, 'grantId': ledger_ids[1]}
+            student = '/course/v1/student'
+            lesson_path = f'{student}/lessons/{lesson}'
+            targets = (f'{student}/courses/{command}', lesson_path, f'{student}/progress?lessonId={lesson}',
+                       f'{lesson_path}/quiz', f'{lesson_path}/quiz/attempts', f'{lesson_path}/playback')
+            action['requests'] = [{'method': 'GET', 'target': target, 'bodySha256': window._EMPTY, 'uses': uses}
+                                  for target, uses in zip(targets, (2, 3, 3, 3, 3, 1))]
         elif learner_access:
             lesson = ledger_ids[0]
             action['learnerAccessAction'] = {'operation': 'observe-paid-access', 'courseId': command, 'lessonId': lesson,
@@ -407,7 +421,7 @@ class IndependentGuardTests(unittest.TestCase):
              'source_sha': plan['sourceCommit'], 'role_oid': '22222', 'completed_at': '2026-11-07T00:00:02.000Z',
              'reconciliation_sha256': None}
             for identity, kind in zip(ledger_ids, ('new-work', 'new-work', 'recovery'))]}
-        if learner_access:
+        if read_only:
             unexpected_operation = ledger['operations'][0]
             ledger['operations'] = []
         if lesson_entry:
@@ -443,6 +457,23 @@ class IndependentGuardTests(unittest.TestCase):
             domain = {'courseId': command, 'lessonId': lesson, 'grantId': ledger_ids[1], 'actorId': actor,
                       'enrollmentId': user, 'progressId': ledger_ids[2], 'revision': 1,
                       'playbackExpiresAt': thumbnail_expiry, 'readOnly': True}
+            browser_key, domain_key = 'browserResponse', 'courseWitness'
+        elif lesson_denial:
+            render_indices = (4, 3, 2, 1, 0) if progress_first else (0, 1, 2, 3, 4)
+            indices = render_indices * 2 + (1, 5, 2, 3, 4)
+            acknowledgements = [
+                {'requestId': f'70000000-0000-4000-8000-{position:012d}', 'proofRequestId': f'80000000-0000-4000-8000-{position:012d}',
+                 'requestIndex': index, 'upstreamStatus': 403}
+                for position, index in enumerate(indices, 1)]
+            paths = [targets[index].replace('/course/v1/student', '/api/academy') for index in (1, 5, 2, 3, 4)]
+            document_id = next(row['requestId'] for row in acknowledgements[:5] if row['requestIndex'] == 0)
+            flight_id = next(row['requestId'] for row in acknowledgements[5:10] if row['requestIndex'] == 0)
+            browser = {'page': {'pathname': f'/academy/courses/{command}/lessons/{lesson}', 'documentStatus': 200,
+                                'flightStatus': 200, 'documentRequestId': document_id, 'flightRequestId': flight_id},
+                       'reads': [{'target': path, 'status': 403, 'requestId': ack['requestId'], 'code': 'access_required'}
+                                 for path, ack in zip(paths, acknowledgements[10:])]}
+            domain = {'courseId': command, 'lessonId': lesson, 'actorId': actor, 'enrolledActorId': user,
+                      'grantId': ledger_ids[1], 'effectiveAccess': False, 'readOnly': True}
             browser_key, domain_key = 'browserResponse', 'courseWitness'
         elif learner_access:
             allowed = learner_outcome == 'allowed'
@@ -663,6 +694,20 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'LESSON_ENTRY_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+        if lesson_denial:
+            for change in ({'flightStatus': 403}, {'documentRequestId': flight_id, 'flightRequestId': document_id},
+                           {'documentRequestId': browser['reads'][0]['requestId']}):
+                wrong = {**browser, 'page': {**browser['page'], **change}}
+                with self.subTest(page=change), self.assertRaisesRegex(ValueError, 'LESSON_DENIAL_PAGE_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'code': 'access_revoked'}, {'status': 200}, {'requestId': browser['reads'][1]['requestId']}):
+                wrong = {**browser, 'reads': [{**browser['reads'][0], **change}, *browser['reads'][1:]]}
+                with self.subTest(read=change), self.assertRaisesRegex(ValueError, 'LESSON_DENIAL_READS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'enrolledActorId': actor}, {'grantId': user}, {'effectiveAccess': 0}):
+                with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'LESSON_DENIAL_COURSE_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         if learner_access:
             with self.assertRaisesRegex(ValueError, 'LEARNER_ACCESS_PAGE_REQUIRED'):
                 wrong = {**browser, 'page': {**browser['page'], 'lessonLink': not allowed}}
@@ -866,13 +911,13 @@ class IndependentGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         changed_ledger = copy.deepcopy(ledger)
-        if learner_access:
+        if read_only:
             changed_ledger['operations'] = [unexpected_operation]
         else:
             for operation in changed_ledger['operations']:
                 operation['kind'] = 'recovery'
         with patch.object(broker.observer, 'probe', return_value={'admission': closed, 'witness': changed_ledger}):
-            with self.assertRaisesRegex(ValueError, 'READ_ONLY_LEDGER_REQUIRED' if learner_access else 'COMPLETED_NEW_WORK_REQUIRED'):
+            with self.assertRaisesRegex(ValueError, 'READ_ONLY_LEDGER_REQUIRED' if read_only else 'COMPLETED_NEW_WORK_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         if lesson_entry:
             changed_ledger = {**ledger, 'operations': [*ledger['operations'], unexpected_operation]}
@@ -882,7 +927,7 @@ class IndependentGuardTests(unittest.TestCase):
         broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         case = broker.scoped_case
         self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_OBSERVED', 'receipt': case})
-        self.assertEqual(case['frontendOperationCount'], 0 if learner_access else 1 if lesson_entry else 3)
+        self.assertEqual(case['frontendOperationCount'], 0 if read_only else 1 if lesson_entry else 3)
         if identity:
             self.assertEqual(case['context'], 'owner' if actor_kind == 'admin' else 'learner')
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
@@ -903,6 +948,11 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['operation'], 'open-lesson')
             self.assertEqual(case['playbackGatewayRequestId'], requests_by_index[6])
             self.assertEqual(case['progressGatewayRequestId'], requests_by_index[7])
+            self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
+        if lesson_denial:
+            self.assertEqual({key: case[key] for key in domain if key != 'readOnly'},
+                             {key: value for key, value in domain.items() if key != 'readOnly'})
+            self.assertEqual(case['operation'], 'deny-cross-account')
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         if learner_access:
             self.assertEqual({key: case[key] for key in observed}, observed)
@@ -1004,6 +1054,9 @@ class IndependentGuardTests(unittest.TestCase):
             elif lesson_entry:
                 rows = bad['gatewayAcknowledgements']
                 rows[0], rows[-1] = rows[-1], rows[0]
+            elif lesson_denial:
+                rows = bad['gatewayAcknowledgements']
+                rows[10], rows[11] = rows[11], rows[10]
             elif learner_access:
                 bad['gatewayAcknowledgements'][0]['upstreamStatus'] = 418
             elif learning:
