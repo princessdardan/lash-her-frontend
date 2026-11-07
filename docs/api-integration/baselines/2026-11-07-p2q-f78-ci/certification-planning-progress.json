@@ -1361,5 +1361,113 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerQuizSave": {
+    "frontendSourceCommit": "ebc6401e7316082c4145fd34c08f236583c5c8b8",
+    "normalAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "firstGradedAndRevisedPracticeQuizVerified": true,
+      "exactRequestBytesStableQuestionAndOptionIdsAndBothRevisionsVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "826338623585a7ecf510fb9ab571a7db7a015e4b875566627e1364451cdc8a41",
+      "logSha256": "a46e9be92be086a7ae08084b812aac38ab48ece52459f7bbda260fe326e41863"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2540,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "470be0ac19328cde3be4d92a38eb10a87b6e2d0830b1adef4de2a008514ed4db"
+    },
+    "certificationPlatformNode24": {
+      "passed": 132,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "03d976fc9f8a363450753233626e1bbdc1e1e865232c4612463dff10fc9101cd",
+      "ownedChromiumCases": 14,
+      "first404AndLater200ExactDigestAndReadbackVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "host": {
+      "passed": 126,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "0f5a7180fb9995377eea09b2d62168105b369b2caa1db3cf84da4db995c3ef6e"
+    },
+    "loopbackGateway": {
+      "passed": 77,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "3eac8f542a216dea703e62b3be2815a583dbf9d4bcab49d3995655c0f7c645f6",
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        2,
+        0
+      ],
+      "firstQuizUpstreamStatuses": [
+        200,
+        404,
+        200,
+        200
+      ],
+      "existingQuizUpstreamStatuses": [
+        200,
+        200,
+        200,
+        200
+      ]
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "ebc6401e7316082c4145fd34c08f236583c5c8b8",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 26,
+      "newDocumentAndAuthorAndPriorRevisionAndAttemptDigestsVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "5508be84988ff9f6179cfa96c2973c0b80cb9e7a7385b46bcade895119cc9f4c",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "9b3ecc75d28c99cb93f3a4c93ff5f1e1b5fcf4835ce148af4acc5509a2161bb4"
+      },
+      "logSha256": "654a442eb2182b7d04fc2b0621993fde1d16d55a95597d4a6f26a3f45f1ef6ca"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43141420,
+      "expandedBytes": 57601431,
+      "wireBytes": 18746327,
+      "wireSha256": "cfe7fa632df5af3eb3410c51c074ef69196948a44b63f353d64e2ce6e3760380",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "2412d5ba24d75871cf81ba3a44969c764180008caee0cc3d8f3bd5ee05f6213f"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "f98d9f1a7e9423a3f22ffd65fd9f9813dc1bba02b5e0fd188536ae1d41195f98",
+    "firstAndSubsequentQuizSaveActionsImplemented": true,
+    "deployedPostReadinessInvalidationVerified": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
