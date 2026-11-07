@@ -89,7 +89,7 @@ def _requested_frontier(selection, results):
     reference = selection['priorGatewayReference']
     guard = Path(results) / ('p2-profiled-current-certification-' + selection['originalCertificationActionId'])
     earlier = certification.PROFILED_RELEASE_ROOT / ('p2-profiled-known-ack-' + selection['originalRecoveryActionId'])
-    permitted = {str(guard), *(str(guard / label) for label in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback','prior-gateway-api-suspension'))}
+    permitted = {str(guard), *(str(guard / label) for label in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback'))}
     if completed < 5:
         permitted.add(str(earlier))
     require(type(reference) is dict and set(reference) == {'kind','stopReceiptDirectory','stopReceiptSha256'} and

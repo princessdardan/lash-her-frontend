@@ -105,7 +105,7 @@ function profiledFrontier(selection, host){
   const reference=validateP2PriorGatewayReference(selection.priorGatewayReference);
   const replacement=join(stagingRoot,'p2-profiled-known-ack-'+selection.originalRecoveryActionId);
   const certification=join(host.results,'p2-profiled-current-certification-'+selection.originalCertificationActionId);
-  const guarded=['prior-gateway-after-quiescence','prior-gateway-broker-fallback','prior-gateway-api-suspension'].map(name=>join(certification,name));
+  const guarded=['prior-gateway-after-quiescence','prior-gateway-broker-fallback'].map(name=>join(certification,name));
   const stops=completed===5?[certification,...guarded]:[replacement,certification,...guarded];
   demand(reference.kind==='stopped-current-candidate'&&stops.includes(reference.stopReceiptDirectory));
   return completed===5?'replacement-stopped-zero':'original-stopped-one';

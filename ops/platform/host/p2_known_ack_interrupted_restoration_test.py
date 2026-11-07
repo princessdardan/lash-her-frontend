@@ -320,6 +320,7 @@ class ProfiledRetainedChainTests(unittest.TestCase):
         release = self.root / self.selected['releaseId']; release.mkdir(mode=0o700)
         c.migrate.write_exact_bytes(release, 'candidate.json', fixture.candidate_raw)
         actual_capture, actual_stopped = c.prior.capture_before_stop, c.prior.observe_stopped_prior_gateway
+        actual_reference = c.prior._reference
         source_commit = self.selected['sources']['frontend']['commit']
         operators = self.root / 'operators'; installed = operators / source_commit
         names = REQUIRED | PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | {c.known.HOST_MODULE, c.known.MODULE,
@@ -388,6 +389,7 @@ class ProfiledRetainedChainTests(unittest.TestCase):
         self.stop_dir.mkdir(mode=0o700)
         patches = (patch.object(c, 'ROOT', self.root), patch.object(c, 'OPERATORS', operators),
             patch.object(c.prior, 'capture_before_stop', actual_capture), patch.object(c.prior, 'observe_stopped_prior_gateway', actual_stopped),
+            patch.object(c.prior, '_reference', actual_reference),
             patch.object(c.prior, '_inventory', side_effect=lambda *_: [fixture.model['gateway'][0]['Id']]),
             patch.object(c.prior, '_mounted_configuration', side_effect=lambda *_: Path(next(row['Source'] for row in
                 fixture.model['gateway'][0]['Mounts'] if row['Destination'] == '/admission')).parent),
