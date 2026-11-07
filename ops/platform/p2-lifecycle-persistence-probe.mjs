@@ -294,7 +294,8 @@ export function qualifyPersistenceStage(input, observations, witness, priorWitne
     validatePrivateStageEvidence(priorEvidence, "capture-export-ready");
     demand(fexp?.status === "expired" && fexp.data_present === false && fexp.frontend_data_present === false && !cexp && !mexp
       && date(fexp.ready_at) === priorEvidence.export.frontend.readyAt && date(fexp.expires_at) === priorEvidence.export.frontend.expiresAt
-      && new Date(observations.frontend.now).getTime() >= new Date(priorEvidence.export.frontend.expiresAt).getTime(), "export-scrubbed");
+      && ["frontend", "course", "community"].every(service =>
+        new Date(observations[service].now).getTime() >= new Date(priorEvidence.export[service].expiresAt).getTime()), "export-scrubbed");
     exactAccountAttemptSet(input, observations.course);
     demand(observations.frontend.originalEmailMatchesAccount && observations.frontend.sessions >= 1 && observations.frontend.links >= 1 && observations.frontend.proofs >= 1 && observations.frontend.preferences === 1
       && observations.course.user.length === 1 && observations.course.user[0].email_present === true && observations.course.progress.length >= 1
