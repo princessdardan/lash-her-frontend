@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import test from "node:test";
+import { Client } from "pg";
 import { validateP2ReceiverDenialInput, observeCourseSuspensionDenial, observeCommunitySuspensionDenial } from "./p2-lifecycle-receiver-denial.mjs";
 import { createP2LifecycleWorkerPrivateResolvers, prepareP2LifecycleWorkerEvidencePlan, preflightP2DirectLifecycleWorker,
   readP2LifecycleWorkerCronSecret, readP2LifecycleWorkerRuntimeUrl, readP2DirectWorkerSourceArtifact } from "./p2-lifecycle-worker-evidence.mjs";
@@ -34,7 +35,7 @@ test("profiled direct-worker plan joins the original current native and suspensi
   const command = { commandId: randomUUID(), accountVersion: "1", action: "suspend" };
   const nativePlan = { version: 2, qualificationTargetProfile: current, environment: "staging", actionId: "owned-release", planSha256: "d".repeat(64),
     sourceCommit, candidateSha256: candidateObjectSha256, targetSha256, configurationRecordSha256,
-    target: { qualificationTargetProfile: current }, commandWitnesses: [command] };
+    target: { qualificationTargetProfile: current, host: "localhost", port: 5432, database: "owned_frontend", user: "owned_runtime", serverMajor: 18 }, commandWitnesses: [command] };
   const suspensionPlan = { version: 2, qualificationTargetProfile: current, environment: "staging", profile: "normal-ui-suspension-pending-v1",
     releaseId: nativePlan.actionId, sourceCommit, candidateSha256: "e".repeat(64), candidateObjectSha256, targetSha256,
     configurationRecordSha256, configurationSha256: "f".repeat(64) };
@@ -44,7 +45,14 @@ test("profiled direct-worker plan joins the original current native and suspensi
   const plan = prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, selected, current);
   assert.equal(plan.version, 2); assert.deepEqual(plan.qualificationTargetProfile, current);
   assert.equal(plan.profile, "direct-known-suspension-v1"); assert.equal(plan.candidateObjectSha256, candidateObjectSha256);
-  await assert.rejects(preflightP2DirectLifecycleWorker(plan, {}, {}, {}, {}));
+  const resolvers = createP2LifecycleWorkerPrivateResolvers(async () => ({ frontendRuntimeDatabaseUrl: "owned" }));
+  const client = new Client({ host: nativePlan.target.host, port: nativePlan.target.port });
+  client.connection.stream = { encrypted: true, authorized: true };
+  let verified = false;
+  await assert.rejects(preflightP2DirectLifecycleWorker(plan, {}, resolvers, client,
+    { verifyEnvironment: async () => { verified = true; throw new Error("OWNED_PROFILED_PLAN_REGISTERED"); }, verifySession: async () => {} }),
+    /OWNED_PROFILED_PLAN_REGISTERED/u);
+  assert.equal(verified, true);
   for (const mutate of [value => { delete value.nativePlan.target.qualificationTargetProfile; },
     value => { value.nativePlan.actionId = "different-release"; }, value => { delete value.suspensionPlan.qualificationTargetProfile; },
     value => { value.input.version = 1; }]) {

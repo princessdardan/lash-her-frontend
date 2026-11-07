@@ -90,7 +90,7 @@ class PersistenceProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, 'FRONTEND_PROMOTION_RECEIPT_REQUIRED'):
             probe._release_evidence(semantic, changed, ref)
 
-    def test_profiled_private_program_source_selects_current_without_changing_legacy_bytes(self):
+    def test_current_source_programs_embed_the_fixed_profile_dependency_with_lane_specific_arguments(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
         legacy = probe.private_program(self.source)
@@ -100,19 +100,21 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertIn(ref['id'].encode(), current)
         self.assertEqual(current, probe.private_program(self.source, ref))
 
-    def test_profiled_private_program_is_a_self_contained_import_and_runs_the_actual_stdin_entry(self):
+    def test_v1_and_v2_private_programs_are_self_contained_and_run_the_actual_stdin_entry(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
-        program = probe.private_program(self.source, ref)
-        encoded = program.split(b'import("data:text/javascript;base64,', 1)[1].split(b'")', 1)[0]
-        url = 'data:text/javascript;base64,' + encoded.decode()
-        imported = subprocess.run(['node', '--input-type=module', '--eval',
-            'import(process.argv[1]).then(m=>process.stdout.write(typeof m.runPrivatePersistenceProbeFromStdin)).catch(()=>process.exitCode=1)', url],
-            capture_output=True, timeout=10)
-        self.assertEqual(imported.returncode, 0, imported.stderr); self.assertEqual(imported.stdout, b'function')
-        invoked = subprocess.run(['node', '--input-type=module', '--eval', program.decode()], input=b'{}', capture_output=True, timeout=10)
-        self.assertEqual(invoked.returncode, 1, invoked.stderr)
-        self.assertEqual(json.loads(invoked.stdout)['status'], 'P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED')
+        for expected in (None, ref):
+            program = probe.private_program(self.source, expected)
+            encoded = program.split(b'import("data:text/javascript;base64,', 1)[1].split(b'")', 1)[0]
+            url = 'data:text/javascript;base64,' + encoded.decode()
+            imported = subprocess.run(['node', '--input-type=module', '--eval',
+                'import(process.argv[1]).then(m=>process.stdout.write(typeof m.runPrivatePersistenceProbeFromStdin)).catch(()=>process.exitCode=1)', url],
+                capture_output=True, timeout=10)
+            self.assertEqual(imported.returncode, 0, imported.stderr); self.assertEqual(imported.stdout, b'function')
+            invoked = subprocess.run(['node', '--input-type=module', '--eval', program.decode()], input=b'{}', capture_output=True, timeout=10)
+            self.assertEqual(invoked.returncode, 1, invoked.stderr)
+            result = json.loads(invoked.stdout)
+            self.assertEqual(result['version'], 1); self.assertEqual(result['status'], 'P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED')
 
     def test_profiled_reviewed_source_accepts_544_while_legacy_stays_at_512(self):
         ref, reviewed = self.profiled_reviewed()

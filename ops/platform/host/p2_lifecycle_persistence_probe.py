@@ -58,15 +58,14 @@ def private_program(source, expected_profile=None):
     expected = migrate.profile_context(expected_profile)
     witness = base64.b64encode(_read(source, PROGRAM_FILES[0])).decode()
     probe = _read(source, PROGRAM_FILES[1]).decode().replace("./p2-lifecycle-state-witness.mjs", "data:text/javascript;base64," + witness)
-    if expected is not None:
-        profile = _read(source, "ops/platform/qualification-target-profile.mjs").decode()
-        registry = "const registry = loadSourceRegistry();"
-        demand(profile.count(registry) == 1 and probe.count('"./qualification-target-profile.mjs"') == 1,
-            "P2_PERSISTENCE_PRIVATE_PROFILE_SOURCE_REQUIRED")
-        profile = profile.replace(registry,
-            'const registry = new Map([["staging-current",Object.freeze({body:CURRENT_CANONICAL_BODY,sha256:CURRENT_SHA256})]]);')
-        profile_module = base64.b64encode(profile.encode()).decode()
-        probe = probe.replace('"./qualification-target-profile.mjs"', '"data:text/javascript;base64,' + profile_module + '"')
+    profile = _read(source, "ops/platform/qualification-target-profile.mjs").decode()
+    registry = "const registry = loadSourceRegistry();"
+    demand(profile.count(registry) == 1 and probe.count('"./qualification-target-profile.mjs"') == 1,
+        "P2_PERSISTENCE_PRIVATE_PROFILE_SOURCE_REQUIRED")
+    profile = profile.replace(registry,
+        'const registry = new Map([["staging-current",Object.freeze({body:CURRENT_CANONICAL_BODY,sha256:CURRENT_SHA256})]]);')
+    profile_module = base64.b64encode(profile.encode()).decode()
+    probe = probe.replace('"./qualification-target-profile.mjs"', '"data:text/javascript;base64,' + profile_module + '"')
     module = base64.b64encode(probe.encode()).decode()
     argument = "" if expected is None else json.dumps(expected, sort_keys=True, separators=(",", ":"))
     return (f'import("data:text/javascript;base64,{module}")'
