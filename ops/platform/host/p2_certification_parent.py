@@ -89,11 +89,10 @@ PROFILED_PLAN_FIELDS = frozenset((
 BROWSER_MODES = frozenset(('auth-preparation', 'browser-pending'))
 SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
 PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
-SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery'}
-SCOPED_PLAN_MODES = SCOPED_MODES | {'interactive-browser'}
+SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'interactive-browser'}
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
-PROFILED_MODES = SUSPENSION_MODES | SCOPED_PLAN_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
+PROFILED_MODES = SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
                                     'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
     'version', 'qualificationTargetProfile', 'environment', 'actionId', 'projectId', 'sourceCommit',
@@ -222,7 +221,7 @@ def _profiled_initial(initial, expected):
     extra = set()
     if mode == 'known-ack-recovery':
         extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
-    if mode in SCOPED_PLAN_MODES:
+    if mode in SCOPED_MODES:
         extra = {'scopedAction'}
         _require_profiled_scoped_action(mode, plan.get('scopedAction'))
     if mode in PERSISTENCE_MODES:
@@ -240,7 +239,7 @@ def _profiled_initial(initial, expected):
             all(_profiled_digest(plan[key]) for key in ('candidateObjectSha256', 'runtimeInventorySha256', 'gatewayProcessSha256',
                 'originalReleasePlanSha256', 'originalReleaseReceiptSha256')) and
             type(plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', plan['initialEpoch']) and
-            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' or mode in SCOPED_PLAN_MODES else 900) and
+            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' or mode in SCOPED_MODES else 900) and
             (_profiled_digest(plan['browserPlanSha256']) if mode in BROWSER_MODES else plan['browserPlanSha256'] is None) and
             (type(plan['workerPlan']) is dict and _profiled_digest(plan['workerPlanSha256'])
              if mode == 'direct-worker' else plan['workerPlan'] is None and plan['workerPlanSha256'] is None) and
@@ -253,7 +252,7 @@ def _profiled_initial(initial, expected):
     native_plan = plan['nativePlan']
     vercel.require_record_profile(expected, plan, native_plan)
     migrate.require_profile(expected, native_plan.get('target'))
-    control_only = mode in BROWSER_MODES or mode in SCOPED_PLAN_MODES
+    control_only = mode in BROWSER_MODES or mode in SCOPED_MODES
     require(set(native_plan) == (BROWSER_CONTROL_FIELDS if control_only else NATIVE_PLAN_FIELDS) and
             set(native_plan['target']) == NATIVE_TARGET_FIELDS and
             native_plan['planSha256'] == _profiled_plan_hash(native_plan) and
@@ -263,7 +262,7 @@ def _profiled_initial(initial, expected):
             type(native_plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']),
             'P2_PROFILED_CERTIFICATION_NATIVE_PLAN_REQUIRED')
     if control_only:
-        purpose = 'scoped-certification-control-only' if mode in SCOPED_PLAN_MODES else 'browser-authentication-control-only'
+        purpose = 'scoped-certification-control-only' if mode in SCOPED_MODES else 'browser-authentication-control-only'
         require(native_plan['purpose'] == purpose and native_plan['commandWitnesses'] == [] and
                 native_plan['initialEpoch'] == plan['initialEpoch'], 'P2_PROFILED_CERTIFICATION_BROWSER_CONTROL_REQUIRED')
     else:
@@ -1111,10 +1110,10 @@ class P2CertificationBroker(Broker):
         require(actual.get('newWork') is expected and actual.get('recovery') is expected and
             all(actual.get('uncertain',{}).get(key)==0 for key in ('newWork','recovery')) and
             (expected or all(actual.get('active',{}).get(key)==0 for key in ('newWork','recovery'))),'P2_CERTIFICATION_REVIEWED_GATEWAY_STATE_REQUIRED')
+        self.last_boundary=time.monotonic();self.external_armed=True
         self._prepare_lifecycle_stages(cert['mode'])
         if cert['mode'] in ('auth-preparation','browser-pending'):
             self.browser_origin=self._retain_browser_observation('arm')['canonicalBrowserObservation']
-        self.last_boundary=time.monotonic();self.external_armed=True
         self.ready={'status':'P2_CERTIFICATION_CURRENT_READY','apiDatabases':api,'containers':self.runtime_current,'sqlReplayed':False,'runtimeReplaced':False,
             **({'browserOrigin':self.browser_origin} if self.browser_origin else {})}
         self.worker_done.set();migrate.write_json(self.directory,'p2-certification-current-ready.json',self.ready)
@@ -1523,9 +1522,14 @@ class P2CertificationBroker(Broker):
         if cert['mode']=='direct-worker':
             self._require_worker_outcome(case)
         if cert['mode'] in SCOPED_MODES:
-            expected_epoch = int(cert['initialEpoch']) + (2 if cert['mode'] == 'export-cleanup' else 0)
+            expected_epoch = int(cert['initialEpoch']) + (2 if cert['mode'] in ('export-cleanup', 'interactive-browser') else 0)
             require(case == self.scoped_case and admission['epoch'] == str(expected_epoch) and admission['uncertain'] == 0,
                     'P2_CERTIFICATION_SCOPED_CASE_OUTCOME_REQUIRED')
+        if cert['mode'] == 'interactive-browser':
+            from p2_interactive_window import LIFECYCLE_LEDGER
+            retained = json.loads(migrate.read_input(self.directory, LIFECYCLE_LEDGER))
+            require(case['frontendAdmission'] == admission and _sha(_profiled_compact(retained)) == physical['witnessSha256'],
+                    'P2_INTERACTIVE_LIFECYCLE_TERMINAL_WITNESS_CHANGED')
         if cert['mode']=='fault-before-upstream' and self.certification_profile() is not None:
             self._require_profiled_before_upstream(case,evidence)
         if cert['mode']=='known-ack-recovery':
@@ -1604,6 +1608,14 @@ class P2CertificationBroker(Broker):
         if operation.startswith('scoped-'):
             require(type(self) is P2ProfiledCertificationBroker, 'P2_CERTIFICATION_PROFILED_SCOPED_SOURCE_REQUIRED')
             self.send(identity, 'CERTIFICATION_SCOPED_OBSERVED', receipt=self.scoped_operation(operation, value));return
+        if operation.startswith('interactive-'):
+            require(type(self) is P2ProfiledCertificationBroker, 'P2_INTERACTIVE_PROFILED_SOURCE_REQUIRED')
+            result = self.interactive_operation(operation, value)
+            if operation == 'interactive-permit':
+                self.send(identity, 'CERTIFICATION_INTERACTIVE_PRIVATE', permit=result)
+            else:
+                self.send(identity, 'CERTIFICATION_INTERACTIVE_OBSERVED', receipt=result)
+            return
         if operation.startswith('native-'):
             self.send(identity,'CERTIFICATION_NATIVE_OBSERVED',receipt=self.native_operation(operation,value));return
         if operation=='certification-gateway-stage':self.send(identity,'CERTIFICATION_GATEWAY_OBSERVED',receipt=self.gateway_stage(value.get('stage')));return
@@ -1660,6 +1672,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         mode = plan['mode']
         require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
                 'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
+        if mode == 'interactive-browser':
+            require(plan.get('scopedAction', {}).get('stage') == 'lifecycle',
+                    'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
         review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
         if mode in SCOPED_MODES:
@@ -1668,6 +1683,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             private_fields.add('privateProbe')
         if mode in BROWSER_MODES:
             private_fields.add('sourceParentChallenge')
+        if mode == 'interactive-browser':
+            private_fields.add('interactiveController')
         if mode == 'browser-pending':
             private_fields.update(('persistenceReviewed', 'browserResources'))
         if mode == 'direct-worker':
@@ -1689,8 +1706,12 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         require(verified['originalReleasePlanHashHostVerified'] is True, 'P2_PROFILED_CERTIFICATION_ORIGINAL_PLAN_PROOF_REQUIRED')
         if mode in SCOPED_MODES:
             secret = initial['scopedCronSecret']
-            require(type(secret) is str and 0 < len(secret) <= 8192 and re.fullmatch(r'[!-~]+', secret) is not None,
+            require(type(secret) is str and (32 if mode == 'interactive-browser' else 1) <= len(secret) <= 8192 and
+                    re.fullmatch(r'[!-~]+', secret) is not None,
                     'P2_CERTIFICATION_SCOPED_CRON_CREDENTIAL_REQUIRED')
+        if mode == 'interactive-browser':
+            from p2_interactive_window import verify_lifecycle_controller
+            verify_lifecycle_controller(initial, self.source)
         if mode in PERSISTENCE_MODES:
             require(_sha(_canonical(initial['persistenceReviewed'])) == plan['persistenceReviewedSha256'],
                     'P2_PROFILED_PERSISTENCE_REVIEW_CHANGED')
@@ -1774,7 +1795,10 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                        **self.profile_arguments())
 
     def _verify_gateway_boundary(self):
-        if self.initial['certificationPlan']['mode'] != 'mux-callback-recovery':
+        mode = self.initial['certificationPlan']['mode']
+        if mode == 'interactive-browser':
+            return self.scoped_stage.verify_ordinary_gateway()
+        if mode != 'mux-callback-recovery':
             return super()._verify_gateway_boundary()
         with self.scoped_gate_lock:
             if self.scoped_mux_sha256 is None:
@@ -1787,6 +1811,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             return observed
 
     def _prepare_lifecycle_stages(self,mode):
+        if mode == 'interactive-browser':
+            from p2_interactive_window import P2InteractiveWindow
+            self.scoped_stage = P2InteractiveWindow(self)
         if mode == 'export-cleanup':
             from p2_scoped_export_cleanup import P2ScopedExportCleanupStage
             self.scoped_stage = P2ScopedExportCleanupStage(self)
@@ -1807,6 +1834,41 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
                 observe_frontend=lambda:self.observer.probe('witness'),bundle=self.bundle,database_proof=self.api_proof,
                 release_evidence=self._release_evidence(),**self.profile_arguments())
+
+    def interactive_operation(self, operation, value):
+        from p2_interactive_window import LIFECYCLE_EVIDENCE, LIFECYCLE_JOINED, P2InteractiveWindow, lifecycle_case_evidence, lifecycle_receipt
+        self.check()
+        plan, stage = self.initial['certificationPlan'], self.scoped_stage
+        fields = {'id', 'operation', 'controllerChallenge'}
+        if operation == 'interactive-retain':
+            fields.add('caseEvidence')
+        require(plan['mode'] == 'interactive-browser' and type(stage) is P2InteractiveWindow and
+                stage.action['stage'] == 'lifecycle' and self.external_armed and self.guard_arm_verified and
+                self.scoped_case is None and self.closing_at is None and set(value) == fields and
+                value['controllerChallenge'] == self.initial['interactiveController']['challenge'],
+                'P2_INTERACTIVE_FIXED_CONTROLLER_OPERATION_REQUIRED')
+        if operation == 'interactive-prepare':
+            ingress = stage.prepare()
+            migrate.write_json(self.directory, 'p2-interactive-lifecycle-ingress.json', ingress)
+            return {**lifecycle_receipt(plan, 'P2_INTERACTIVE_LIFECYCLE_PREPARED'), 'ingressSha256': _sha(_canonical(ingress))}
+        if operation == 'interactive-open':
+            opened = stage.open_gateway()
+            return {**lifecycle_receipt(plan, 'P2_INTERACTIVE_LIFECYCLE_OPENED'), **opened}
+        if operation == 'interactive-permit':
+            return stage.take_private_browser_permit()
+        if operation == 'interactive-fence':
+            stage.fence_gateway()
+            return {**lifecycle_receipt(plan, 'P2_INTERACTIVE_LIFECYCLE_FENCED'), **stage.verify_gateway_fenced()}
+        require(operation == 'interactive-retain', 'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
+        evidence = value['caseEvidence']
+        bindings = lifecycle_case_evidence(plan['scopedAction'], evidence)
+        fenced = stage.verify_fenced(lifecycle=True)
+        result = {**lifecycle_receipt(plan, LIFECYCLE_JOINED), **bindings, **fenced,
+                  'browserProgramSha256': self.initial['interactiveController']['browserProgramSha256']}
+        migrate.write_json(self.directory, LIFECYCLE_EVIDENCE, evidence)
+        migrate.write_json(self.directory, 'p2-scoped-case-joined.json', result)
+        self.scoped_case = copy.deepcopy(result)
+        return result
 
     def scoped_operation(self, operation, value):
         self.check()

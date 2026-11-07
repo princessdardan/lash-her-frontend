@@ -1,4 +1,6 @@
 import fcntl
+import base64
+import copy
 import json
 import os
 import re
@@ -8,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 
 import migrate
@@ -157,6 +160,170 @@ class IndependentGuardTests(unittest.TestCase):
             (directory / 'known-ack-replacement-joined.json').write_bytes(retained + b'\n')
             with self.assertRaisesRegex(ValueError, 'KNOWN_ACK_TERMINAL_REFUSED'):
                 supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw))
+
+    def test_profiled_interactive_terminal_joins_private_dispatch_and_physical_ledger(self):
+        import p2_interactive_window as window
+        from p2_certification_parent import P2ProfiledCertificationBroker
+
+        initial, directory = self.profiled_certification()
+        plan = initial['certificationPlan']
+        ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
+        actor, user, request, command, *ledger_ids = ids
+        selection = {'actorKind': 'admin', 'userId': user, 'operation': 'delete'}
+        plan.update(mode='interactive-browser', scopedAction={'stage': 'lifecycle', 'actorId': actor, 'requests': [],
+                    'windowSeconds': 60, 'frontendAction': selection}, nativePlan={'producer': {'role': {'oid': '22222'}}})
+        source = Path(__file__).resolve().parents[3]
+        recorder = migrate.read_input(source, window._BROWSER_SOURCE)
+        initial.update(sourceSha256={window._BROWSER_SOURCE: migrate.file_hash(recorder)}, interactiveController={
+            'challenge': '1' * 64, 'bindingSha256': plan['planSha256'],
+            'browserProgramSha256': migrate.file_hash(recorder + window._BROWSER_LAUNCHER)})
+        producer = migrate.file_hash(f'lash-her:p2q:interactive-producer:v1\n{plan["sourceCommit"]}\n{plan["targetSha256"]}'.encode())
+        ledger = {'commands': [], 'deliveries': [], 'orderViolations': [], 'operations': [
+            {'id': identity, 'epoch': '2', 'kind': kind, 'state': 'completed', 'producer_sha256': producer,
+             'source_sha': plan['sourceCommit'], 'role_oid': '22222', 'completed_at': '2026-11-07T00:00:02.000Z',
+             'reconciliation_sha256': None}
+            for identity, kind in zip(ledger_ids, ('new-work', 'new-work', 'recovery'))]}
+        browser = {'method': 'POST', 'pathname': f'/api/admin/customer-accounts/{user}/commands', 'status': 202,
+                   'requestId': request, 'body': {'commandId': command, 'action': 'delete', 'accountVersion': 2, 'status': 'pending'}}
+        domain = {'version': 1, 'status': 'P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED', **selection, 'actorId': actor,
+                  'requestId': request, 'httpStatus': 202, 'baselineSha256': '2' * 64, 'frontendStatus': 'deleted',
+                  'accountVersion': 2, 'sessionsBefore': 1, 'sessionsAfter': 0, 'learningUpdates': False, 'commandId': command,
+                  'deliveries': [{'receiver': receiver, 'status': 'pending', 'attempts': 0} for receiver in ('course', 'community')],
+                  'pendingOrDeliveringCount': 2, 'observedAt': '2026-11-07T00:00:02.000Z', 'readOnly': True}
+        evidence = {'browserResponse': browser, 'lifecycleWitness': domain}
+        closed = {'epoch': '3', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+        gateway_fence = {'gatewayAdmissionClosed': True, 'gatewayActive': 0, 'gatewayUncertain': 0}
+        broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
+        stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
+        stage.plan, stage.action, stage.broker, stage._permit_issued = plan, plan['scopedAction'], broker, False
+        stage.verify_gateway_fenced = lambda: gateway_fence
+        broker.initial, broker.scoped_stage, broker.directory = initial, stage, directory
+        broker.scoped_case = broker.closing_at = None
+        broker.external_armed = broker.guard_arm_verified = True
+        broker.check = lambda: None
+        broker.observer = SimpleNamespace(probe=lambda _: {'admission': closed, 'witness': ledger})
+        calls = []
+        broker.send = lambda identity, status, **data: calls.append({'id': identity, 'status': status, **data})
+        permit = {'stage': 'lifecycle', 'epoch': '2', 'expires': 1794009630, 'cookie': 'private-fixture-only'}
+        stage.take_private_browser_permit = lambda: permit
+        envelope = {'id': 1, 'controllerChallenge': initial['interactiveController']['challenge']}
+        with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
+            broker.command({**envelope, 'operation': 'interactive-permit', 'callerTask': 'refused'})
+        with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
+            broker.command({**envelope, 'operation': 'interactive-permit', 'controllerChallenge': 'wrong'})
+        broker.command({**envelope, 'operation': 'interactive-permit'})
+        self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_PRIVATE', 'permit': permit})
+        with self.assertRaisesRegex(ValueError, 'LIFECYCLE_PERMIT_REQUIRED'):
+            broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        stage._permit_issued = True
+        with self.assertRaisesRegex(ValueError, 'LIFECYCLE_WITNESS_REQUIRED'):
+            broker.command({**envelope, 'operation': 'interactive-retain',
+                            'caseEvidence': {**evidence, 'lifecycleWitness': {**domain, 'actorId': user}}})
+        with patch.object(stage, 'verify_gateway_fenced', side_effect=ValueError('P2_INTERACTIVE_FENCE_REQUIRED')):
+            with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        changed_ledger = copy.deepcopy(ledger)
+        for operation in changed_ledger['operations']:
+            operation['kind'] = 'recovery'
+        with patch.object(broker.observer, 'probe', return_value={'admission': closed, 'witness': changed_ledger}):
+            with self.assertRaisesRegex(ValueError, 'COMPLETED_NEW_WORK_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        case = broker.scoped_case
+        self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_OBSERVED', 'receipt': case})
+        self.assertEqual(case['frontendOperationCount'], 3)
+        with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
+            broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        for retained in directory.iterdir():
+            self.assertNotIn(permit['cookie'], retained.read_text())
+            self.assertNotIn(envelope['controllerChallenge'], retained.read_text())
+        terminal = {**plan, 'status': supervisor.PROFILED_CERTIFICATION_LAYOUT['terminalStatus'], 'releaseId': 'original',
+                    'configurationSha256': initial['configurationSha256'], 'caseStatus': window.LIFECYCLE_JOINED,
+                    'caseOutcomeSha256': supervisor._canonical_sha(case), 'frontendAdmission': closed,
+                    'witnessSha256': migrate.file_hash(json.dumps(ledger, separators=(',', ':')).encode()),
+                    'gatewayAdmission': {'version': 1, 'valid': True, 'releaseId': 'original', 'candidateSha256': initial['candidateSha256'],
+                        'newWork': False, 'recovery': False, 'active': window._ZERO, 'uncertain': window._ZERO},
+                    'nativeDisabled': True, **dict.fromkeys(('frontendSqlApplied', 'trafficAuthorized', 'releaseAccepted',
+                        'sqlReplayed', 'nativeInvocationQualified', 'persistenceAuthorityJoined', 'deployedCertificationComplete',
+                        'directWorkerSourceJoined', 'runtimeReplaced', 'wholeReleaseAccepted'), False)}
+
+        def guard(record):
+            raw = json.dumps(record).encode()
+            return supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw), source=source)
+
+        self.assertEqual(guard(terminal), terminal)
+        with self.assertRaisesRegex(ValueError, 'SCOPED_CASE_REFUSED'):
+            guard({**terminal, 'frontendAdmission': {**closed, 'epoch': '2'}})
+        with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):
+            guard({**terminal, 'witnessSha256': '0' * 64})
+        (directory / window.LIFECYCLE_EVIDENCE).write_text(json.dumps({**evidence, 'lifecycleWitness': {
+            **domain, 'baselineSha256': '3' * 64}}))
+        with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):
+            guard(terminal)
+
+    def test_profiled_arm_constructs_interactive_leaf_after_guard_and_current_checks(self):
+        import p2_certification_parent as parent
+        import p2_interactive_window as window
+
+        initial, directory = self.profiled_certification()
+        plan = initial['certificationPlan']
+        actor = '10000000-0000-4000-8000-000000000001'
+        containers = [{'service': f'owned-{index}'} for index in range(10)]
+        plan.update(mode='interactive-browser', startState='already-closed', maximumSeconds=300,
+                    runtimeInventorySha256=supervisor._canonical_sha(containers),
+                    scopedAction={'stage': 'lifecycle', 'actorId': actor, 'requests': [], 'windowSeconds': 60,
+                                  'frontendAction': {'actorKind': 'customer', 'userId': actor, 'operation': 'preferences-on'}})
+        initial.update(owner={}, producers=[], historicalLogins={}, credentials={'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'fixture'},
+                       sourceSha256={parent.OBSERVER: '1' * 64, window._SOURCE_KEY: migrate.file_hash(window._SOURCE.read_bytes())})
+        receipt = {'frontend': 'owned-fixture'}
+        probe = {'job': {}, 'baseline': {}, 'receipt': receipt, 'plan': plan, 'owner': {},
+                 'producers': [], 'historicalLogins': {}}
+        request = {'probe': probe, 'receipt': base64.b64encode(json.dumps(receipt).encode()).decode()}
+        broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
+        broker._initialize_certification_state()
+        broker.initial, broker.directory, broker.source = initial, directory, directory
+        broker.configuration = directory / 'configuration'
+        (broker.configuration / 'admission').mkdir(parents=True)
+        broker.selected, broker.jobs, broker.lock_fd = initial['candidate'], {'frontend': {'job': {}, 'schema': '{}'}}, self.fd
+        broker.scope = broker.observer = broker.scoped_stage = broker.observer_program = None
+        broker.guard_arm_verified = False
+        broker.worker_done = threading.Event()
+        broker.check = lambda: None
+        broker._start_boundary_watch = lambda: None
+        broker.observer_type = lambda *_args, **_kwargs: SimpleNamespace(start=lambda _: None)
+        broker._runtime_processes = lambda: []
+        events = []
+
+        def guard(_):
+            self.assertFalse(broker.external_armed)
+            broker.guard_arm_verified = True
+            events.append('guard')
+
+        def gateway():
+            self.assertEqual(events, ['guard', 'api-current'])
+            self.assertFalse(broker.external_armed)
+            events.append('gateway-current')
+            return {'admission': {'newWork': False, 'recovery': False, 'active': window._ZERO, 'uncertain': window._ZERO}}
+
+        def observe_api(_):
+            self.assertEqual(events, ['guard'])
+            events.append('api-current')
+            return {}
+
+        broker._accept_guard_arm, broker._read_api_current, broker._gateway_current = guard, observe_api, gateway
+        broker._native_observe = lambda: {'nativeEnabled': False}
+        try:
+            with patch.object(parent.P2CertificationScope, '__init__', return_value=None), \
+                 patch.object(parent.runtime, 'check_containers', return_value=containers), \
+                 patch.object(window.os, 'geteuid', return_value=0):
+                self.assertEqual(broker.arm(request)['status'], 'P2_CERTIFICATION_CURRENT_READY')
+            self.assertEqual(events, ['guard', 'api-current', 'gateway-current'])
+            self.assertIs(type(broker.scoped_stage), window.P2InteractiveWindow)
+            self.assertIsNotNone(broker.last_boundary)
+            self.assertTrue(broker.external_armed)
+        finally:
+            if broker.admission_fd is not None:
+                os.close(broker.admission_fd)
 
     def test_profiled_cleanup_waits_for_actual_reap_and_keeps_failed_frontend_proof_unknown(self):
         initial, directory = self.profiled_certification()

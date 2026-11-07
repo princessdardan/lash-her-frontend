@@ -1129,7 +1129,7 @@ def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None,
     return failed
 
 
-def _require_profiled_certification_terminal(initial, raw, committed):
+def _require_profiled_certification_terminal(initial, raw, committed, *, source=None):
     from qualification_target_profile import decode_qualification_target_json
     expected = _guard_profile(initial)
     terminal = decode_qualification_target_json(raw, 'carrier')
@@ -1155,6 +1155,7 @@ def _require_profiled_certification_terminal(initial, raw, committed):
     scoped_status = {
         'export-cleanup': 'P2_SCOPED_EXPORT_CLEANUP_JOINED',
         'mux-callback-recovery': 'P2_SCOPED_MUX_CLOSED',
+        'interactive-browser': 'P2_INTERACTIVE_LIFECYCLE_JOINED',
         'lifecycle-persistence': {
             'capture-export-ready': 'P2_LIFECYCLE_EXPORT_READY_CAPTURED',
             'capture-delete-baseline': 'P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED',
@@ -1162,16 +1163,36 @@ def _require_profiled_certification_terminal(initial, raw, committed):
         }.get(plan.get('scopedAction', {}).get('stage')),
     }.get(plan['mode'])
     if scoped_status is not None:
-        retained = migrate.read_input(_profiled_certification_directory(initial), 'p2-scoped-case-joined.json')
+        directory = _profiled_certification_directory(initial)
+        retained = migrate.read_input(directory, 'p2-scoped-case-joined.json')
         case = decode_qualification_target_json(retained, 'carrier')
         migrate.require_profile(expected, case)
-        epoch = int(plan['initialEpoch']) + (2 if plan['mode'] == 'export-cleanup' else 0)
+        epoch = int(plan['initialEpoch']) + (2 if plan['mode'] in ('export-cleanup', 'interactive-browser') else 0)
         require(type(case.get('version')) is int and case['version'] == 2 and
                 case.get('status') == terminal.get('caseStatus') == scoped_status and
                 terminal.get('caseOutcomeSha256') == _canonical_sha(case) and
                 gateway.get('valid') is True and gateway.get('version') == 1 and
                 frontend['epoch'] == str(epoch),
                 'P2_PROFILED_CERTIFICATION_GUARD_SCOPED_CASE_REFUSED')
+        if plan['mode'] == 'interactive-browser':
+            from p2_interactive_window import (LIFECYCLE_EVIDENCE, LIFECYCLE_LEDGER, lifecycle_case_evidence,
+                                                lifecycle_receipt, require_lifecycle_ledger, verify_lifecycle_controller)
+            program_sha = verify_lifecycle_controller(initial, source or Path(__file__).resolve().parents[3])
+            evidence = decode_qualification_target_json(migrate.read_input(directory, LIFECYCLE_EVIDENCE, 8192), 'carrier')
+            witness = decode_qualification_target_json(migrate.read_input(directory, LIFECYCLE_LEDGER), 'carrier')
+            operation_count = require_lifecycle_ledger(plan, witness)
+            expected_case = {**lifecycle_receipt(plan, scoped_status), **lifecycle_case_evidence(plan['scopedAction'], evidence),
+                             'browserProgramSha256': program_sha, 'frontendAdmission': frontend,
+                             'frontendOperationCount': operation_count, 'gatewayAdmissionClosed': True,
+                             'gatewayActive': 0, 'gatewayUncertain': 0}
+            require(_canonical_sha(case) == _canonical_sha(expected_case) and type(gateway.get('version')) is int and
+                    gateway.get('releaseId') == initial['candidate']['releaseId'] and
+                    gateway.get('candidateSha256') == initial['candidateSha256'] and
+                    terminal.get('witnessSha256') == migrate.file_hash(
+                        json.dumps(witness, separators=(',', ':'), ensure_ascii=False).encode()) and
+                    all(terminal.get(key) is False for key in ('nativeInvocationQualified', 'persistenceAuthorityJoined',
+                        'deployedCertificationComplete', 'directWorkerSourceJoined', 'runtimeReplaced', 'wholeReleaseAccepted')),
+                    'P2_PROFILED_CERTIFICATION_GUARD_INTERACTIVE_CASE_REFUSED')
     if plan['mode'] == 'known-ack-recovery':
         joined = migrate.read_input(_profiled_certification_directory(initial), 'known-ack-replacement-joined.json')
         retained = migrate.read_input(_profiled_known_ack_runtime_directory(initial), 'known-ack-runtime-outcome.json')
@@ -1445,7 +1466,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             verify_guard_boundary(initial, source)
             require_profiled_certification_guard_arm(initial, armed)
             _profiled_certification_containers(remove=False)
-            _require_profiled_certification_terminal(initial, result, committed)
+            _require_profiled_certification_terminal(initial, result, committed, source=source)
             verify_guard_boundary(initial, source)
             return
         if profiled_interrupted:

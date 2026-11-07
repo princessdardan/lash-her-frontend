@@ -5,9 +5,9 @@ import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, p2InteractiveBrowserPath, parseP2OwnerSuspensionResponse,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
-  validateP2LifecycleBrowserInput } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -183,9 +183,13 @@ test("actual immutable-bytes NodeIPC launcher refuses malformed input without br
 });
 
 function interactiveInput(overrides = {}) {
-  return { version: 2, environment: "staging", actionId: "owned-interactive", challenge: "b".repeat(64), bindingSha256: "c".repeat(64),
+  const value = { version: 2, environment: "staging", actionId: "owned-interactive", challenge: "b".repeat(64), bindingSha256: "c".repeat(64),
     sourceCommit: "1".repeat(40), deploymentId: "dpl_ownedBrowser", deploymentUrl: "https://owned-browser.vercel.app",
     browserOrigin: "https://staging.lashher.com", stage: "identity", epoch: "9", windowSeconds: 120, ...overrides };
+  if (value.stage === "lifecycle" && !Object.hasOwn(value, "lifecycle")) {
+    value.lifecycle = p2LifecycleMutationTarget({ actorKind: "admin", userId, operation: "suspend" });
+  }
+  return value;
 }
 function interactivePermit(input) {
   const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
@@ -316,4 +320,110 @@ test("owned Chromium child rotates the stage only after clearing and retains onl
       assert.deepEqual(runner.output, []);
       for (const permit of [firstPermit, nextPermit]) assert.equal(JSON.stringify(runner.records).includes(permit.cookie), false);
     } finally { await runner.close(); }
+  });
+
+test("lifecycle response requires the reviewed path, method, action and exact status-specific body", () => {
+  const { lifecycle } = interactiveInput({ stage: "lifecycle" });
+  const receipt = { method: "POST", pathname: lifecycle.pathname, status: 202, requestId: randomUUID(),
+    body: { commandId, action: "suspend", accountVersion: 1, status: "pending" } };
+  assert.deepEqual(validateP2LifecycleMutationReceipt(receipt, lifecycle), receipt);
+  for (const change of [{ method: "GET" }, { pathname: lifecycle.pathname + "?token=private" }, { status: 200 }, { requestId: "private" },
+    { body: { ...receipt.body, action: "delete" } }, { body: { ...receipt.body, raw: "private" } }]) {
+    assert.throws(() => validateP2LifecycleMutationReceipt({ ...receipt, ...change }, lifecycle));
+  }
+  const selection = p2LifecycleMutationTarget({ actorKind: "customer", userId, operation: "preferences-on" });
+  assert.deepEqual(selection, { context: "learner", pathname: "/api/account/preferences", operation: "preferences-on" });
+  assert.deepEqual(validateP2LifecycleMutationReceipt({ ...receipt, pathname: selection.pathname, status: 200, body: { saved: true } }, selection).body, { saved: true });
+  for (const target of [{ ...selection, context: "owner" }, { ...selection, pathname: lifecycle.pathname }, { ...selection, operation: "restore" }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput(interactiveInput({ stage: "lifecycle", lifecycle: target })));
+  }
+});
+
+async function ownedLifecyclePage(browser, lifecycle, response, document = "<!doctype html><main>Owned fixture</main>") {
+  const input = interactiveInput({ stage: "lifecycle", lifecycle }), context = await browser.newContext();
+  await context.route("**/*", async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (request.method() === "GET") return route.fulfill({ status: 200, contentType: "text/html", body: document });
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*",
+      "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type" } });
+    if (url.origin !== input.browserOrigin || url.pathname !== lifecycle.pathname) return route.fulfill({
+      status: 200, headers: { "access-control-allow-origin": "*" }, body: "owned unrelated response",
+    });
+    return route.fulfill(response);
+  });
+  const page = await context.newPage(), watch = watchP2LifecycleMutation(context, page, input);
+  await page.goto(input.browserOrigin + p2InteractiveBrowserPath(input.stage, lifecycle.context));
+  const post = (target, body) => page.evaluate(async ({ target, body }) => {
+    const result = await fetch(target, { method: "POST", redirect: "manual", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    await result.arrayBuffer();
+  }, { target, body });
+  const close = async () => { watch.close(); await context.close(); };
+  return { input, page, watch, post, close, expires: Math.floor(Date.now() / 1000) + 60 };
+}
+
+test("owned Chromium lifecycle watcher captures only selected command and preference responses",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const requestId = randomUUID(), responseHeaders = { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId };
+    try {
+      const command = p2LifecycleMutationTarget({ actorKind: "admin", userId, operation: "suspend" });
+      const commandBody = { commandId, action: "suspend", accountVersion: 2, status: "pending" };
+      const owner = await ownedLifecyclePage(browser, command, { status: 202, headers: responseHeaders, body: JSON.stringify(commandBody) });
+      const posted = { action: "suspend", idempotencyKey: randomUUID() };
+      try {
+        await owner.post("https://owned-foreign.invalid" + command.pathname, posted);
+        await owner.post("/api/account/preferences", { learningUpdates: true });
+        await owner.post(command.pathname, posted);
+        await owner.watch.wait(owner.expires);
+        await owner.page.close();
+        const result = owner.watch.finish();
+        assert.deepEqual(result, { method: "POST", pathname: command.pathname, status: 202, requestId, body: commandBody });
+        assert.equal(JSON.stringify(result).includes(posted.idempotencyKey), false);
+      } finally { await owner.close(); }
+      const preference = p2LifecycleMutationTarget({ actorKind: "customer", userId, operation: "preferences-off" });
+      const learner = await ownedLifecyclePage(browser, preference, { status: 200, headers: responseHeaders, body: '{"saved":true}' },
+        `<!doctype html><script>window.ownedEarly = fetch(${JSON.stringify(preference.pathname)}, {
+          method: "POST", headers: { "content-type": "application/json" }, body: '{"learningUpdates":false}'
+        }).then(response => response.text());</script>`);
+      try {
+        await learner.page.evaluate(() => window.ownedEarly);
+        await learner.watch.wait(learner.expires);
+        await learner.page.close();
+        assert.deepEqual(learner.watch.finish(), { method: "POST", pathname: preference.pathname, status: 200, requestId, body: { saved: true } });
+      } finally { await learner.close(); }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium lifecycle watcher refuses a second selected success and ambiguous selected responses",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const selection = p2LifecycleMutationTarget({ actorKind: "customer", userId, operation: "preferences-on" });
+    const responseHeaders = { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": randomUUID() };
+    const success = { status: 200, headers: responseHeaders, body: '{"saved":true}' };
+    try {
+      const duplicate = await ownedLifecyclePage(browser, selection, success);
+      try {
+        await duplicate.post(selection.pathname, { learningUpdates: true });
+        await duplicate.watch.wait(duplicate.expires);
+        await duplicate.post(selection.pathname, { learningUpdates: true });
+        assert.throws(() => duplicate.watch.finish(), { message: "P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED" });
+      } finally { await duplicate.close(); }
+      for (const [response, suffix, posted] of [
+        [{ ...success, status: 503 }, "", { learningUpdates: true }],
+        [{ status: 302, headers: { location: "/sign-in" }, body: "" }, "", { learningUpdates: true }],
+        [success, "?unexpected=owned", { learningUpdates: true }],
+        [success, "", { learningUpdates: false }],
+        [{ ...success, body: '{"saved":true,"saved":true}' }, "", { learningUpdates: true }],
+        [{ ...success, body: JSON.stringify({ saved: true, raw: "a".repeat(4096) }) }, "", { learningUpdates: true }],
+      ]) {
+        const browserCase = await ownedLifecyclePage(browser, selection, response);
+        try {
+          await browserCase.post(selection.pathname + suffix, posted);
+          await assert.rejects(browserCase.watch.wait(browserCase.expires), { message: "P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED" });
+          assert.throws(() => browserCase.watch.finish());
+        } finally { await browserCase.close(); }
+      }
+    } finally { await browser.close(); }
   });

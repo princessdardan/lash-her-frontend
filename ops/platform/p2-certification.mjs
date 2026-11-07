@@ -8,7 +8,8 @@ import {mkdirSync,existsSync,lstatSync,realpathSync,openSync,closeSync,fstatSync
 import {join,dirname,resolve} from 'node:path';
 import {setTimeout as pause} from 'node:timers/promises';
 import {frontendReleaseReceiptStore,frontendPrivateReceiptDirectory} from './frontend-release-receipts.mjs';
-import {changeFrontendAdmission,observeFrontendDrain,reconcileFrontendOperation} from './frontend-admission.mjs';
+import {changeFrontendAdmission,closeFrontendInteractiveAdmission,observeFrontendDrain,openFrontendInteractiveAdmission,
+  prepareFrontendInteractiveProducer,reconcileFrontendOperation} from './frontend-admission.mjs';
 import {qualifyP2LifecycleNative,containP2LifecycleNative} from './p2-lifecycle-native.mjs';
 import {prepareP2LifecycleTransportFaultPlan,runP2LifecycleTransportFault} from './p2-lifecycle-transport-fault.mjs';
 import {withP2CertificationFrontendSession,readP2CertificationCurrent} from './p2-certification-current-probe.mjs';
@@ -21,11 +22,12 @@ import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_
 import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
-import {p2CertificationEnvironmentLock,readP2CertificationKnownAckStage} from './p2-certification-transport.mjs';
+import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage} from './p2-certification-transport.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {interactiveCourseStagePermits} from '../gateway/operations.mjs';
+import {captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -348,6 +350,79 @@ async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,cl
   return closed;
 }
 
+export async function runP2InteractiveLifecycleCase(plan,{stage,controller,client,withOwner,verifySession,verifyEnvironment,
+  target,ordinaryProducers,signal,record=()=>{}}){
+  const action=plan.scopedAction;
+  demand(plan.mode==='interactive-browser'&&action?.stage==='lifecycle'&&interactiveActionValid(action)&&
+    plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
+    /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
+  const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
+  const selection={...action.frontendAction,actorId:action.actorId},context=selection.actorKind==='admin'?'owner':'learner';
+  const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
+  const runtimeProducer=plan.nativePlan.producer;
+  const producerSha256=rawHash(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`);
+  const reviewed={sourceCommit:plan.sourceCommit,ordinaryProducers,runtimeProducer,
+    interactiveProducer:{producerSha256,role:runtimeProducer.role}};
+  const observations={verifySession,verifyEnvironment};
+  const cancelBrowser=()=>{void Promise.resolve().then(()=>controller.close()).catch(()=>{});};
+  signal?.addEventListener('abort',cancelBrowser,{once:true});
+  try{
+    signal?.throwIfAborted();
+    const prepared=await stage.prepare();
+    demand(prepared.status==='P2_INTERACTIVE_LIFECYCLE_PREPARED');
+    const baseline=await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
+    record('p2-interactive-lifecycle-baseline.json',baseline);
+    const registered=await withOwner(()=>prepareFrontendInteractiveProducer(client,policy,plan.initialEpoch,reviewed));
+    demand(registered.epoch===plan.initialEpoch&&registered.producerSha256===producerSha256&&
+      registered.newWork===false&&registered.recovery===false);
+    let gatewayOpened=false,frontendOpened,browserResponse,closureFailed=false;
+    try{
+      const opened=await stage.open();
+      gatewayOpened=true;
+      demand(opened.status==='P2_INTERACTIVE_LIFECYCLE_OPENED');
+      frontendOpened=await withOwner(()=>openFrontendInteractiveAdmission(client,policy,plan.initialEpoch,reviewed));
+      demand(frontendOpened.epoch===expectedOpen&&frontendOpened.newWork===true&&frontendOpened.recovery===true);
+      const installed=await stage.installPermit();
+      demand(installed.context===context&&installed.epoch===expectedOpen&&installed.stage==='lifecycle');
+      await controller.open(context);
+      browserResponse=await controller.captureLifecycleResponse(context);
+      record('p2-interactive-lifecycle-browser.json',browserResponse);
+    }finally{
+      if(gatewayOpened)try{
+        const fenced=await stage.fence();
+        demand(fenced.status==='P2_INTERACTIVE_LIFECYCLE_FENCED');
+      }catch{closureFailed=true;}
+      if(frontendOpened)try{
+        const closed=await withOwner(()=>closeFrontendInteractiveAdmission(client,policy,expectedOpen,reviewed));
+        record('p2-interactive-lifecycle-frontend-closed.json',closed);
+        let drained=closed;
+        const deadline=performance.now()+10_000;
+        while(drained.active>0&&drained.uncertain===0&&performance.now()<deadline){
+          await pause(250);
+          drained=await withOwner(()=>observeFrontendDrain(client,policy,expectedClosed));
+        }
+        if(drained!==closed)record('p2-interactive-lifecycle-frontend-drained.json',drained);
+        demand(drained.epoch===expectedClosed&&drained.newWork===false&&drained.recovery===false&&
+          drained.active===0&&drained.uncertain===0&&drained.ledgerDrained===true);
+      }catch{closureFailed=true;}
+      if(closureFailed)throw new Error('P2_INTERACTIVE_LIFECYCLE_CLOSURE_REQUIRES_REVIEW');
+    }
+    signal?.throwIfAborted();
+    const lifecycleWitness=await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserResponse,observations);
+    record('p2-interactive-lifecycle-witness.json',lifecycleWitness);
+    const joined=await stage.retain({browserResponse,lifecycleWitness});
+    demand(joined.status==='P2_INTERACTIVE_LIFECYCLE_JOINED');
+    return joined;
+  }catch(error){
+    // Keep the original domain/fence failure. A dying child may separately
+    // fail to acknowledge cookie cleanup, so the host guard owns physical closure.
+    await Promise.resolve().then(()=>controller.close()).catch(()=>{});
+    throw error;
+  }finally{
+    signal?.removeEventListener('abort',cancelBrowser);
+  }
+}
+
 async function runBoundedCertification(plan,dependencies,profile){
   const mode=profile?'p2-bounded-certification-profiled-current':'p2-bounded-certification';
   const terminalStatus=profile?'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED':'P2_BOUNDED_CERTIFICATION_CONTAINED';
@@ -355,6 +430,7 @@ async function runBoundedCertification(plan,dependencies,profile){
   if(profile)requireQualificationTargetProfile(currentProfile,plan);
   const context=p2CertificationParentContext(plan),{prepared}=context;
   demand(dependencies.confirmation==='staging/'+plan.certificationActionId&&typeof dependencies.withEnvironmentLock==='function'&&typeof dependencies.getUrl==='function');
+  if(plan.mode==='interactive-browser')demand(profile&&plan.scopedAction.stage==='lifecycle'&&dependencies.interactiveController);
   const store=frontendReleaseReceiptStore(dependencies.directory);store.record('p2-certification-started.json',plan);
   if(dependencies.sourceCi)store.record('operator-source-ci.json',dependencies.sourceCi);
   bindP2CertificationReadyReceipts(context.frontendReceipts,plan);
@@ -370,6 +446,20 @@ async function runBoundedCertification(plan,dependencies,profile){
       store.record('p2-certification-current-database.json',receipt);phase='all-three-current-and-existing-runtime';
       const current=await host.arm({receipt,probe});demand(current.status==='P2_CERTIFICATION_CURRENT_READY'&&current.runtimeReplaced===false&&current.sqlReplayed===false&&current.containers?.length===10);
       store.record('p2-certification-host-current.json',current);
+      if(plan.mode==='interactive-browser'){
+        phase='interactive-lifecycle-held-browser-and-database';
+        const controller=dependencies.interactiveController;
+        const stage=readP2CertificationInteractiveStage(await host.interactiveStage(controller),plan);
+        const joined=await runP2InteractiveLifecycleCase(plan,{stage,controller,client,withOwner,
+          verifySession:verify,verifyEnvironment:environment,target:prepared.migration.job.target,
+          ordinaryProducers:prepared.plan.producers,signal,record:(name,receipt)=>store.record(name,receipt)});
+        requireQualificationTargetProfile(currentProfile,joined);
+        terminal=await host.prepareClose(joined);
+        demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256&&
+          terminal.caseStatus===joined.status&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false);
+        store.record('p2-certification-close-prepared.json',terminal);
+        return;
+      }
       if(scopedModes.has(plan.mode)){
         phase='fixed-scoped-stage';
         const scopedOutcome=await runScopedCertificationCase(plan,{host,withOwner,verify,observe,client,policy});

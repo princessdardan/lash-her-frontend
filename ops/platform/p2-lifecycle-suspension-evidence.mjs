@@ -11,7 +11,8 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { p2InteractiveBrowserPath, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit } from "./p2-lifecycle-browser-recorder.mjs";
+import { p2InteractiveBrowserPath, p2LifecycleMutationTarget, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
+  validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
@@ -208,7 +209,8 @@ async function reviewedInteractiveInput(plan, challenge) {
   return validateP2InteractiveBrowserInput({ version: 2, environment: "staging", actionId: plan.certificationActionId,
     challenge, bindingSha256: plan.planSha256, stage: plan.scopedAction.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
-    browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: plan.scopedAction.windowSeconds });
+    browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: plan.scopedAction.windowSeconds,
+    ...(plan.scopedAction.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(plan.scopedAction.frontendAction) } : {}) });
 }
 
 // A dedicated stdin pipe carries one permit per reviewed phase. All IPC data
@@ -246,14 +248,16 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
   child.stdin.on("error", fail);
   child.on("message", message => {
     try {
+      const capture = pending?.type === "interactive-lifecycle-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
-        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : [])])
+        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []), ...(capture ? ["response"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserPath(pending.binding.stage, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599);
       }
+      if (capture) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       const waiter = pending;
       pending = undefined;
       clearTimeout(waiter.timer);
@@ -319,6 +323,17 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const receipt = await command("interactive-open", { ...binding, ...selection }, "interactive-page-opened", selection, 40_000);
       phase = "opened";
       return receipt;
+    },
+    async captureLifecycleResponse(context) {
+      const selection = requireSelection(context);
+      const remaining = selection.expires * 1000 - Date.now();
+      demand(phase === "opened" && !closing && binding.stage === "lifecycle" && input.lifecycle.context === context
+        && remaining > 0 && remaining <= input.windowSeconds * 1000);
+      phase = "capturing";
+      const receipt = await command("interactive-capture-lifecycle", { ...binding, ...selection }, "interactive-lifecycle-captured", selection, remaining + 5000);
+      phase = "cleared";
+      clearTimeout(phaseTimer);
+      return receipt.response;
     },
     async clearPermit(context) {
       const selection = requireSelection(context);

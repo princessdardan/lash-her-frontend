@@ -9,6 +9,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {Client} from 'pg';
 import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
+import {runP2InteractiveLifecycleCase} from './p2-certification.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
 import {changeFrontendAdmission,closeFrontendInteractiveAdmission,openFrontendInteractiveAdmission,prepareFrontendInteractiveProducer,reconcileFrontendOperation,
   restoreFencedFrontendInteractiveProducers,runFrontendWriterOperation} from './frontend-admission.mjs';
@@ -239,6 +240,7 @@ async function child(){
     await proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targetSha256,sourceCommit,producerSha256,roleOid:roles.cert_runtime});
     checks.push('actual-interactive-producer-swap-same-role-denial-drain-and-independent-fence-recovery');
     checks.push('actual-interactive-physical-window-witness-and-independent-closure');
+    checks.push('actual-composed-lifecycle-preference-and-clean-fences','actual-composed-browser-loss-and-ledger-uncertainty');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
@@ -419,6 +421,78 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
       });
     }finally{await admin.query('SELECT pg_catalog.pg_advisory_unlock_all()');}
     assert.deepEqual(await actual(),{control:{epoch:'14',new_work:false,recovery:false},enabled:ordinaryProducers.map(row=>row.producerSha256)});
+
+    const customerId=randomUUID();
+    await admin.query("INSERT INTO public.customer_users(id,email) VALUES($1,'owned-interactive-coordinator@example.invalid')",[customerId]);
+    await admin.query("INSERT INTO public.customer_sessions(token_hash,user_id,expires) VALUES($1,$2,pg_catalog.clock_timestamp()+interval '1 hour')",
+      [randomUUID(),customerId]);
+    for(const [epoch,operation,scenario] of [
+      ['14','preferences-on','success'],['16','preferences-off','browser-loss'],['18','preferences-on','uncertain-write'],
+    ]){
+      const plan={...actionPlan(epoch,'owned-composed-'+scenario),maximumSeconds:300,scopedAction:{
+        stage:'lifecycle',actorId:customerId,requests:[],windowSeconds:60,frontendAction:{actorKind:'customer',userId:customerId,operation}}};
+      const opened=(BigInt(epoch)+1n).toString(),closed=(BigInt(epoch)+2n).toString(),events=[],records={};
+      const completedProbe=await withP2CertificationFrontendSession(current,plan,deps,async({client,verify,probe})=>{
+        let recovery,releaseRecovery;
+        const stage={
+          async prepare(){events.push('prepare');return{status:'P2_INTERACTIVE_LIFECYCLE_PREPARED'};},
+          async open(){events.push('gateway-open');assert.equal((await witness(probe)).admission.epoch,epoch);return{status:'P2_INTERACTIVE_LIFECYCLE_OPENED'};},
+          async installPermit(){events.push('permit');assert.equal((await witness(probe)).admission.epoch,opened);
+            return{context:'learner',epoch:opened,stage:'lifecycle'};},
+          async fence(){events.push('gateway-fence');assert.equal((await witness(probe)).admission.epoch,opened);
+            return{status:'P2_INTERACTIVE_LIFECYCLE_FENCED'};},
+          async retain({browserResponse,lifecycleWitness}){
+            events.push('retain');assert.equal((await witness(probe)).admission.epoch,closed);
+            assert.equal(browserResponse.requestId,lifecycleWitness.requestId);
+            assert.equal(lifecycleWitness.learningUpdates,true);
+            return{status:'P2_INTERACTIVE_LIFECYCLE_JOINED'};
+          },
+        };
+        const controller={
+          async open(context){events.push('browser-open');assert.equal(context,'learner');},
+          async captureLifecycleResponse(context){
+            events.push('browser-capture');assert.equal(context,'learner');
+            if(scenario==='success'){
+              let admitted;
+              const started=new Promise(resolve=>{admitted=resolve;});
+              const stopped=new Promise(resolve=>{releaseRecovery=resolve;});
+              recovery=run(peer,interactiveSha256,'recovery',opened,randomUUID(),async()=>{admitted();await stopped;});
+              await Promise.race([started,recovery]);
+            }
+            await run(runtime,interactiveSha256,'new-work',opened,randomUUID(),async()=>{
+              await runtime.query(`INSERT INTO public.customer_account_preferences(user_id,learning_updates) VALUES($1,$2)
+                ON CONFLICT(user_id) DO UPDATE SET learning_updates=excluded.learning_updates`,[customerId,operation==='preferences-on']);
+              if(scenario==='uncertain-write')throw new Error('owned uncertain result after commit');
+            });
+            if(scenario==='browser-loss')throw new Error('OWNED_BROWSER_RESPONSE_LOST');
+            return{method:'POST',pathname:'/api/account/preferences',status:200,requestId:randomUUID(),body:{saved:true}};
+          },
+          async close(){events.push('browser-close');},
+        };
+        const execution=runP2InteractiveLifecycleCase(plan,{stage,controller,client,
+          withOwner:work=>withOwner(client,work),verifyEnvironment:deps.verifyEnvironment,verifySession:verify,
+          target:current.migration.job.target,ordinaryProducers,record:(name,receipt)=>{
+            records[name]=receipt;
+            if(name==='p2-interactive-lifecycle-frontend-closed.json')releaseRecovery?.();
+          }});
+        try{
+          if(scenario==='success')assert.equal((await execution).status,'P2_INTERACTIVE_LIFECYCLE_JOINED');
+          else await assert.rejects(execution,{message:scenario==='browser-loss'?'OWNED_BROWSER_RESPONSE_LOST':'P2_INTERACTIVE_LIFECYCLE_CLOSURE_REQUIRES_REVIEW'});
+        }finally{releaseRecovery?.();await recovery;}
+        const actualClosed=await witness(probe);
+        assert.deepEqual(actualClosed.admission,{epoch:closed,newWork:false,recovery:false,active:0,uncertain:scenario==='uncertain-write'?1:0});
+        assert.equal(actualClosed.witness.operations.length,scenario==='success'?2:1);
+        assert.ok(actualClosed.witness.operations.every(row=>row.state===(scenario==='uncertain-write'?'uncertain':'completed')));
+        assert.equal((await admin.query('SELECT learning_updates FROM public.customer_account_preferences WHERE user_id=$1',[customerId])).rows[0].learning_updates,operation==='preferences-on');
+        assert.equal(records['p2-interactive-lifecycle-frontend-closed.json'].ledgerDrained,scenario==='browser-loss');
+        if(scenario==='success')assert.equal(records['p2-interactive-lifecycle-frontend-drained.json'].ledgerDrained,true);
+        assert.deepEqual(events,['prepare','gateway-open','permit','browser-open','browser-capture','gateway-fence',
+          scenario==='success'?'retain':'browser-close']);
+        return probe;
+      },profile);
+      if(scenario==='uncertain-write')await assert.rejects(verifyClosed(completedProbe),{checkpoint:'current-admission-closure'});
+      else assert.equal((await verifyClosed(completedProbe)).admission.epoch,closed);
+    }
   }finally{await Promise.all([runtime.end(),peer.end()]);}
 }
 

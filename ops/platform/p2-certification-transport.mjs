@@ -15,6 +15,15 @@ const suspensionStages=new WeakMap();
 const authenticationStages=new WeakMap();
 const workerStages=new WeakMap();
 const knownAckStages=new WeakMap();
+const interactiveStages=new WeakMap();
+const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
+const sha256=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value);
+const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
+const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
+const utc=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
+const interactiveReceiptKeys=['version','qualificationTargetProfile','status','certificationActionId','planSha256','stage'];
+const gatewayFenceKeys=['gatewayAdmissionClosed','gatewayActive','gatewayUncertain'];
+const closedGateway=value=>value.gatewayAdmissionClosed===true&&value.gatewayActive===0&&value.gatewayUncertain===0;
 const scopedOperations={
   'export-cleanup':['scoped-export-preflight','scoped-export-invoke','scoped-export-join'],
   'mux-callback-recovery':['scoped-mux-open','scoped-mux-observe','scoped-mux-close'],
@@ -24,6 +33,50 @@ const scopedOperations={
 export function readP2CertificationKnownAckStage(handle,plan){
   const selected=knownAckStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
   return selected.methods;
+}
+
+export function readP2CertificationInteractiveStage(handle,plan){
+  const selected=interactiveStages.get(handle);demand(selected&&selected.plan===plan&&selected.active());
+  return selected.methods;
+}
+
+function reviewedLifecyclePlan(plan,initial){
+  const action=plan.scopedAction,selected=action?.frontendAction,binding=initial.interactiveController;
+  demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
+    plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
+    (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&action?.stage==='lifecycle'&&uuid(action.actorId)&&
+    Array.isArray(action.requests)&&action.requests.length===0&&Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
+    exact(selected,['actorKind','userId','operation'])&&uuid(selected.userId)&&
+    (selected.actorKind==='admin'?['suspend','restore','export','delete'].includes(selected.operation):
+      selected.actorKind==='customer'&&action.actorId===selected.userId&&['export','delete','preferences-on','preferences-off'].includes(selected.operation))&&
+    exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
+    binding.bindingSha256===plan.planSha256&&sha256(binding.browserProgramSha256));
+  return {...selected,actorId:action.actorId};
+}
+
+function requireLifecycleEvidence(evidence,selected){
+  demand(exact(evidence,['browserResponse','lifecycleWitness']));
+  const {browserResponse:response,lifecycleWitness:witness}=evidence;
+  const preferences=selected.operation.startsWith('preferences-'),status=preferences?200:202;
+  const pathname=selected.actorKind==='admin'?'/api/admin/customer-accounts/'+selected.userId+'/commands':
+    preferences?'/api/account/preferences':'/api/account/commands';
+  demand(exact(response,['method','pathname','status','requestId','body'])&&response.method==='POST'&&response.pathname===pathname&&
+    response.status===status&&uuid(response.requestId)&&
+    (preferences?exact(response.body,['saved'])&&response.body.saved===true:
+      exact(response.body,['commandId','action','accountVersion','status'])&&uuid(response.body.commandId)&&
+      response.body.action===selected.operation&&Number.isSafeInteger(response.body.accountVersion)&&response.body.accountVersion>0&&
+      response.body.status==='pending'));
+  demand(exact(witness,['version','status','actorKind','actorId','userId','operation','requestId','httpStatus','baselineSha256','frontendStatus',
+    'accountVersion','sessionsBefore','sessionsAfter','learningUpdates','commandId','deliveries','pendingOrDeliveringCount','observedAt','readOnly'])&&
+    witness.version===1&&witness.status==='P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED'&&
+    Object.entries(selected).every(([key,value])=>witness[key]===value)&&witness.requestId===response.requestId&&witness.httpStatus===status&&
+    sha256(witness.baselineSha256)&&['active','suspended','deleted'].includes(witness.frontendStatus)&&
+    [witness.accountVersion,witness.sessionsBefore,witness.sessionsAfter,witness.pendingOrDeliveringCount].every(nonnegative)&&
+    typeof witness.learningUpdates==='boolean'&&utc(witness.observedAt)&&witness.readOnly===true&&Array.isArray(witness.deliveries)&&
+    (preferences?witness.commandId===null&&witness.deliveries.length===0&&witness.learningUpdates===(selected.operation==='preferences-on'):
+      witness.commandId===response.body.commandId&&witness.accountVersion===response.body.accountVersion&&
+      witness.deliveries.length===2&&witness.deliveries.every((row,index)=>exact(row,['receiver','status','attempts'])&&
+        row.receiver===['course','community'][index]&&row.status==='pending'&&row.attempts===0)));
 }
 
 export function readP2CertificationWorkerStage(handle,plan){
@@ -51,6 +104,9 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
     demand(initial.version===2&&initial.certificationPlan.version===2&&initial.certificationPlan.nativePlan.version===2&&
       initial.certificationPlan.certificationActionId===initial.certificationActionId);
   }else demand(!Object.hasOwn(initial,'qualificationTargetProfile'));
+  const interactivePlan=profiled&&initial.certificationPlan.mode==='interactive-browser'?initial.certificationPlan:null;
+  const selectedLifecycle=interactivePlan?reviewedLifecyclePlan(interactivePlan,initial):null;
+  if(!interactivePlan)demand(!Object.hasOwn(initial,'interactiveController')&&initial.certificationPlan?.mode!=='interactive-browser');
   const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,
     profiled?'--supervisor-profiled-current':'--supervisor'];
   return async task=>{
@@ -78,6 +134,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
         if(profiled)demand(observation.phase2ContractManifestSha256===initial.certificationPlan.phase2ContractManifestSha256);
       };
       const match=plan=>demand(plan?.planSha256===nativePlan.planSha256);
+      let interactiveCreated=false,interactiveRetained;
       const host={mode,certificationActionId:initial.certificationActionId,
         async arm({receipt,probe}){demand(!armed);const bytes=readFrontendReleaseEvidence(directory,'p2-certification-current-database.json');demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(receipt));
           const value=await request('arm-certification','CERTIFICATION_ARMED',{receipt:bytes.toString('base64'),probe},240_000);armed=true;return value.receipt;},
@@ -88,12 +145,89 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           demand(receipt.version===2&&typeof receipt.status==='string');
           return receipt;
         },
+        async interactiveStage(browserController){
+          demand(launch===spawn&&interactivePlan&&armed&&!prepared&&!interactiveCreated&&active&&!failed);
+          interactiveCreated=true;
+          const {readP2InteractiveBrowserControllerBinding}=await import('./p2-lifecycle-suspension-evidence.mjs');
+          const {validateP2InteractiveBrowserPermit}=await import('./p2-lifecycle-browser-recorder.mjs');
+          const binding=structuredClone(initial.interactiveController),snapshot=structuredClone(interactivePlan);
+          const alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&
+            isDeepStrictEqual(interactivePlan,snapshot)&&isDeepStrictEqual(initial.interactiveController,binding);
+          const requireRecorder=()=>demand(alive()&&isDeepStrictEqual(readP2InteractiveBrowserControllerBinding(interactivePlan,browserController),binding));
+          requireRecorder();
+          const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
+          const context=selectedLifecycle.actorKind==='admin'?'owner':'learner';
+          let phase='new',expiresAt,installed=false;
+          const call=async(operation,status,extraKeys,data={},timeout=120_000)=>{
+            demand(alive());
+            const packet=await request(operation,'CERTIFICATION_INTERACTIVE_OBSERVED',{controllerChallenge,...data},timeout);
+            const receipt=packet.receipt;
+            demand(exact(packet,['id','status','receipt'])&&exact(receipt,[...interactiveReceiptKeys,...extraKeys]));
+            requireQualificationTargetProfile(currentProfile,receipt);
+            demand(receipt.version===2&&receipt.status===status&&receipt.certificationActionId===initial.certificationActionId&&
+              receipt.planSha256===snapshot.planSha256&&receipt.stage==='lifecycle');
+            return receipt;
+          };
+          const methods=Object.freeze({
+            async prepare(){
+              demand(phase==='new');requireRecorder();phase='preparing';
+              const receipt=await call('interactive-prepare','P2_INTERACTIVE_LIFECYCLE_PREPARED',['ingressSha256'],{},240_000);
+              demand(sha256(receipt.ingressSha256));phase='prepared';return receipt;
+            },
+            async open(){
+              demand(phase==='prepared');requireRecorder();phase='opening';
+              const receipt=await call('interactive-open','P2_INTERACTIVE_LIFECYCLE_OPENED',['epoch','expiresAt','gatewayScoped']);
+              demand(receipt.epoch===epoch&&utc(receipt.expiresAt)&&receipt.gatewayScoped===false);
+              expiresAt=Date.parse(receipt.expiresAt);phase='opened';return receipt;
+            },
+            async installPermit(){
+              demand(phase==='opened');requireRecorder();phase='installing';
+              let packet;
+              try{
+                packet=await request('interactive-permit','CERTIFICATION_INTERACTIVE_PRIVATE',{controllerChallenge});
+                demand(exact(packet,['id','status','permit']));
+                const permit=validateP2InteractiveBrowserPermit(packet.permit,{stage:'lifecycle',epoch,windowSeconds:snapshot.scopedAction.windowSeconds});
+                demand(permit.expires*1000===expiresAt);
+                requireRecorder();
+                const ack=await browserController.installPermit(permit,context);
+                requireRecorder();
+                const expected={type:'interactive-permit-installed',challenge:controllerChallenge,bindingSha256:binding.bindingSha256,
+                  stage:'lifecycle',epoch,context,expires:expiresAt/1000};
+                demand(isDeepStrictEqual(ack,expected));
+                installed=true;phase='installed';return Object.freeze(expected);
+              }catch{phase='install-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_PERMIT_INSTALL_FAILED');}
+              finally{if(packet){if(packet.permit&&typeof packet.permit==='object')delete packet.permit.cookie;delete packet.permit;}}
+            },
+            async fence(){
+              // The gateway fence must remain available when the recorder dies
+              // or refuses the permit after the host has opened the stage.
+              demand(['opened','installed','install-failed'].includes(phase));phase='fencing';
+              const receipt=await call('interactive-fence','P2_INTERACTIVE_LIFECYCLE_FENCED',gatewayFenceKeys);
+              demand(closedGateway(receipt));phase='fenced';return receipt;
+            },
+            async retain(caseEvidence){
+              demand(phase==='fenced'&&installed);requireRecorder();
+              requireLifecycleEvidence(caseEvidence,selectedLifecycle);
+              const evidence=structuredClone(caseEvidence);phase='retaining';
+              const receipt=await call('interactive-retain','P2_INTERACTIVE_LIFECYCLE_JOINED',
+                ['browserResponseSha256','lifecycleWitnessSha256','browserProgramSha256',...Object.keys(selectedLifecycle),
+                  'frontendAdmission','frontendOperationCount',...gatewayFenceKeys],{caseEvidence:evidence});
+              demand(receipt.browserResponseSha256===p2NativeHash(evidence.browserResponse)&&
+                receipt.lifecycleWitnessSha256===p2NativeHash(evidence.lifecycleWitness)&&receipt.browserProgramSha256===binding.browserProgramSha256&&
+                Object.entries(selectedLifecycle).every(([key,value])=>receipt[key]===value)&&
+                isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0})&&
+                Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0&&closedGateway(receipt));
+              interactiveRetained=structuredClone(receipt);phase='retained';return receipt;
+            },
+          });
+          const handle=Object.freeze({});interactiveStages.set(handle,{plan:interactivePlan,active:alive,methods});return handle;
+        },
         nativeControl:{
           async observe(plan){match(plan);demand(armed&&!prepared);return(await request('native-observe','CERTIFICATION_NATIVE_OBSERVED')).receipt;},
           async observeMetadata(plan){match(plan);demand(armed&&!prepared);return(await request('native-metadata','CERTIFICATION_NATIVE_OBSERVED')).receipt;},
-          async setEnabled(plan,enabled){match(plan);demand(armed&&!prepared&&typeof enabled==='boolean');return(await request('native-toggle','CERTIFICATION_NATIVE_OBSERVED',{enabled},120_000)).receipt;},
+          async setEnabled(plan,enabled){match(plan);demand(!interactivePlan&&armed&&!prepared&&typeof enabled==='boolean');return(await request('native-toggle','CERTIFICATION_NATIVE_OBSERVED',{enabled},120_000)).receipt;},
         },
-        async gatewayStage(stage){demand(armed&&!prepared&&['closed','recovery','browser'].includes(stage));const receipt=(await request('certification-gateway-stage','CERTIFICATION_GATEWAY_OBSERVED',{stage})).receipt;
+        async gatewayStage(stage){demand(!interactivePlan&&armed&&!prepared&&['closed','recovery','browser'].includes(stage));const receipt=(await request('certification-gateway-stage','CERTIFICATION_GATEWAY_OBSERVED',{stage})).receipt;
           browserOpened=stage==='browser'&&receipt?.gateway?.newWork===true&&receipt?.gateway?.recovery===false;return receipt;},
         async observeGateway(){demand(armed&&!prepared);return(await request('certification-gateway-observe','CERTIFICATION_GATEWAY_OBSERVED')).receipt;},
         async authenticationStage(plan,browserController){
@@ -167,11 +301,13 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             replace:()=>{demand(!replacementAttempted&&(!profiled||settlementConfirmed));replacementAttempted=true;return call('known-replace',{},800_000);}});
           const handle=Object.freeze({});knownAckStages.set(handle,{plan,snapshot,active:alive,methods});return handle;
         },
-        async prepareFault(plan){demand(armed&&!prepared);await request('fault-initialize','CERTIFICATION_FAULT_READY',{plan});
+        async prepareFault(plan){demand(!interactivePlan&&armed&&!prepared);await request('fault-initialize','CERTIFICATION_FAULT_READY',{plan});
           const call=async(operation,data={})=>(await request(operation,'CERTIFICATION_FAULT_OBSERVED',{plan,...data})).receipt;
           return{verify:async()=>{await call('fault-verify');},observe:()=>call('fault-observe'),arm:(_plan,record)=>call('fault-arm',{record}),effects:()=>call('fault-effects'),
             disarm:()=>call('fault-disarm'),closeGateway:()=>call('fault-close-gateway')};},
-        async prepareClose(caseOutcome,requestEvidence){demand(armed&&!prepared);const value=await request('certification-prepare-close','CERTIFICATION_CLOSE_PREPARED',{caseOutcome,requestEvidence},240_000);prepared=true;return value.receipt;},
+        async prepareClose(caseOutcome,requestEvidence){demand(armed&&!prepared&&(!interactivePlan||
+          interactiveRetained&&isDeepStrictEqual(caseOutcome,interactiveRetained)&&requestEvidence===undefined));
+          const value=await request('certification-prepare-close','CERTIFICATION_CLOSE_PREPARED',{caseOutcome,requestEvidence},240_000);prepared=true;return value.receipt;},
         async finish(outcome){demand(prepared);const name=profiled?'p2-certification-close-prepared.json':'p2-certification-outcome.json';
           const bytes=readFrontendReleaseEvidence(directory,name);demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(outcome));
           joined=await request('finish','P2_CERTIFICATION_JOINED',{certification:bytes.toString('base64')});return joined.receipt;},

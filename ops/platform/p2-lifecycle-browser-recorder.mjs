@@ -30,15 +30,33 @@ export function p2InteractiveBrowserPath(stage, context) {
   return pages[context];
 }
 
+export function p2LifecycleMutationTarget({ actorKind, userId, operation }) {
+  if (actorKind === "admin") {
+    demand(uuid(userId) && ["suspend", "restore", "export", "delete"].includes(operation));
+    return { context: "owner", pathname: `/api/admin/customer-accounts/${userId}/commands`, operation };
+  }
+  demand(actorKind === "customer" && ["export", "delete", "preferences-on", "preferences-off"].includes(operation));
+  return { context: "learner", pathname: operation.startsWith("preferences-") ? "/api/account/preferences" : "/api/account/commands", operation };
+}
+
+function validateLifecycleTarget(target) {
+  demand(closed(target, ["context", "pathname", "operation"]) && typeof target.pathname === "string");
+  const admin = target.context === "owner";
+  const userId = admin ? /^\/api\/admin\/customer-accounts\/([^/]+)\/commands$/u.exec(target.pathname)?.[1] : undefined;
+  const selected = p2LifecycleMutationTarget({ actorKind: admin ? "admin" : "customer", userId, operation: target.operation });
+  demand(Object.entries(selected).every(([key, value]) => target[key] === value));
+}
+
 export function validateP2InteractiveBrowserInput(input) {
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",
-    "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds"])
+    "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds", ...(input?.stage === "lifecycle" ? ["lifecycle"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
     && matches(input.deploymentId, /^dpl_[A-Za-z0-9]+$/u) && matches(input.deploymentUrl, /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u)
     && input.browserOrigin === interactiveOrigin && typeof input.stage === "string" && Object.hasOwn(interactivePages, input.stage)
     && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
+  if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
   return input;
 }
 
@@ -106,6 +124,107 @@ export async function installP2InteractiveBrowserCookie(context, permit, input) 
 
 export async function expireP2InteractiveBrowserCookie(context) {
   await context.addCookies([scopedCookie("", 1)]);
+}
+
+const maxLifecycleBody = 4096;
+const preferences = target => target.pathname === "/api/account/preferences";
+
+function exactLifecycleJson(bytes) {
+  demand(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= maxLifecycleBody);
+  const text = bytes.toString("utf8"), value = JSON.parse(text);
+  demand(JSON.stringify(value) === text);
+  return value;
+}
+
+export function validateP2LifecycleMutationReceipt(receipt, target) {
+  demand(closed(receipt, ["method", "pathname", "status", "requestId", "body"]) && receipt.method === "POST"
+    && receipt.pathname === target.pathname && uuid(receipt.requestId));
+  const body = receipt.body;
+  if (preferences(target)) demand(receipt.status === 200 && closed(body, ["saved"]) && body.saved === true);
+  else demand(receipt.status === 202 && closed(body, ["commandId", "action", "accountVersion", "status"])
+    && uuid(body.commandId) && body.action === target.operation && body.status === "pending"
+    && Number.isSafeInteger(body.accountVersion) && body.accountVersion >= 1);
+  return receipt;
+}
+
+async function readLifecycleResponse(response, request, input) {
+  const target = input.lifecycle;
+  demand(response.url() === input.browserOrigin + target.pathname && response.status() === (preferences(target) ? 200 : 202)
+    && !response.fromServiceWorker() && request.redirectedTo() === null);
+  const [ids, contentTypes, cache, encodings, lengths, size] = await Promise.all([
+    response.headerValues("x-request-id"), response.headerValues("content-type"), response.headerValues("cache-control"),
+    response.headerValues("content-encoding"), response.headerValues("content-length"), request.sizes(),
+  ]);
+  demand(ids.length === 1 && uuid(ids[0]) && contentTypes.length === 1 && /^application\/json(?:;\s*charset=utf-8)?$/iu.test(contentTypes[0])
+    && cache.length === 1 && privateNoStore({ "cache-control": cache[0] })
+    && (encodings.length === 0 || encodings.length === 1 && encodings[0].toLowerCase() === "identity")
+    && lengths.length <= 1 && (lengths.length === 0 || /^[1-9][0-9]{0,3}$/u.test(lengths[0]))
+    && Number.isSafeInteger(size.responseBodySize) && size.responseBodySize <= maxLifecycleBody);
+  const declared = lengths.length === 1 ? Number(lengths[0]) : undefined;
+  demand(declared === undefined ? size.responseBodySize > 0 : declared <= maxLifecycleBody);
+  const bytes = await response.body();
+  try {
+    demand(declared === undefined || bytes.length === declared);
+    const body = exactLifecycleJson(bytes);
+    return validateP2LifecycleMutationReceipt({ method: "POST", pathname: target.pathname, status: response.status(), requestId: ids[0], body }, target);
+  } finally { bytes.fill(0); }
+}
+
+// Attach before navigation. A second selected request, even one whose response
+// is lost while closing the page, invalidates the first accepted response.
+export function watchP2LifecycleMutation(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "lifecycle");
+  const target = input.lifecycle, refusal = () => new Error("P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED");
+  let selected, receipt, accept, reject, failed = false, responseStarted = false;
+  const observed = new Promise((resolve, fail) => { accept = resolve; reject = fail; });
+  observed.catch(() => {});
+  const fail = () => { failed = true; reject(refusal()); };
+  const onRequest = request => {
+    const url = URL.parse(request.url());
+    if (!url) return;
+    if (url.origin !== input.browserOrigin || url.pathname !== target.pathname || request.method() !== "POST") return;
+    try {
+      demand(!selected && !url.search && !url.hash && request.redirectedFrom() === null && request.frame() === page.mainFrame());
+      selected = request;
+      const posted = exactLifecycleJson(request.postDataBuffer());
+      if (preferences(target)) demand(closed(posted, ["learningUpdates"]) && posted.learningUpdates === (target.operation === "preferences-on"));
+      else demand(closed(posted, ["action", "idempotencyKey"]) && posted.action === target.operation && uuid(posted.idempotencyKey));
+    } catch { fail(); }
+  };
+  const onResponse = response => {
+    if (response.request() !== selected) return;
+    if (failed || responseStarted) return fail();
+    responseStarted = true;
+    void readLifecycleResponse(response, selected, input).then(value => {
+      if (!failed) { receipt = value; accept(value); }
+    }, fail);
+  };
+  const onFailure = request => { if (request === selected) fail(); };
+  context.on("request", onRequest);
+  context.on("response", onResponse);
+  context.on("requestfailed", onFailure);
+  return {
+    async wait(expires) {
+      const remaining = expires * 1000 - Date.now();
+      if (failed || remaining <= 0 || remaining > input.windowSeconds * 1000) throw refusal();
+      let timer;
+      try {
+        await Promise.race([observed, new Promise((_, timeout) => { timer = setTimeout(() => timeout(refusal()), remaining); })]);
+        if (failed) throw refusal();
+      } finally { clearTimeout(timer); }
+    },
+    finish() {
+      if (failed || !receipt || context.serviceWorkers().length) throw refusal();
+      return receipt;
+    },
+    close() {
+      context.off("request", onRequest);
+      context.off("response", onResponse);
+      context.off("requestfailed", onFailure);
+      fail();
+    },
+  };
 }
 
 export function validateP2LifecycleBrowserInput(input) {
@@ -229,7 +348,7 @@ async function runInteractiveBrowser(first) {
     pending.catch(() => {}); // An IPC send can fail before the caller awaits this receive.
     return pending;
   };
-  let browser, context, selection, opened = false, cleared = false;
+  let browser, context, selection, lifecycleWatch, opened = false, cleared = false;
   const contexts = new Map(), actions = new Set([input.actionId]);
   const lost = () => { if (browser) void browser.close().catch(() => {}); };
   const terminate = () => { if (process.connected) process.disconnect(); else lost(); };
@@ -265,7 +384,7 @@ async function runInteractiveBrowser(first) {
       demand(closed(received, [...Object.keys(binding), "context", "expires"]) && Number.isSafeInteger(received.expires));
       const path = p2InteractiveBrowserPath(binding.stage, received.context);
       if (command.type === "interactive-install") {
-        demand(selection === undefined);
+        demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context));
         selection = { context: received.context, expires: received.expires };
         const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
         try {
@@ -289,23 +408,32 @@ async function runInteractiveBrowser(first) {
         demand(!opened && Date.now() < selection.expires * 1000);
         opened = true;
         const page = await context.newPage();
+        if (binding.stage === "lifecycle") lifecycleWatch = watchP2LifecycleMutation(context, page, input);
         const response = await page.goto(input.browserOrigin + path, { waitUntil: "domcontentloaded", timeout: 30_000 });
         demand(response && Number.isInteger(response.status()));
         pending = next();
         await send("interactive-page-opened", { ...selection, path, httpStatus: response.status() });
       } else {
-        demand(command.type === "interactive-clear");
+        const capture = command.type === "interactive-capture-lifecycle";
+        demand(command.type === "interactive-clear" || capture && opened && lifecycleWatch);
+        if (capture) await lifecycleWatch.wait(selection.expires);
         await expireP2InteractiveBrowserCookie(context);
         await Promise.all(context.pages().map(page => page.close()));
         cleared = true;
+        if (capture) demand(Date.now() < selection.expires * 1000);
+        const response = capture ? lifecycleWatch.finish() : undefined;
+        lifecycleWatch?.close();
+        lifecycleWatch = undefined;
         pending = next();
-        await send("interactive-permit-cleared", selection);
+        if (capture) await send("interactive-lifecycle-captured", { ...selection, response });
+        else await send("interactive-permit-cleared", selection);
       }
     }
   } finally {
     process.off("disconnect", lost);
     process.off("SIGTERM", terminate);
     process.stdin.destroy();
+    lifecycleWatch?.close();
     try { if (context && !cleared) await expireP2InteractiveBrowserCookie(context); }
     finally { await browser?.close(); }
   }
