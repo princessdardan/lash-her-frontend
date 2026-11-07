@@ -30,6 +30,7 @@ PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 CERTIFICATION_OBSERVER = 'ops/platform/p2-certification-current-probe.mjs'
 PROFILED_CERTIFICATION_REQUIRED = {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
                                    CERTIFICATION_OBSERVER, 'ops/platform/p2-lifecycle-native.mjs',
+                                   'ops/platform/p2-lesson-restore-prior.mjs',
                                    'ops/platform/qualification-target-profile.mjs',
                                    'ops/platform/qualification-target-profiles.json',
                                    'ops/platform/host/qualification_target_profile.py'}

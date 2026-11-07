@@ -1488,8 +1488,11 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             verify_guard_boundary(initial, source)
             require_profiled_certification_guard_arm(initial, armed)
             _profiled_certification_containers(remove=False)
-            _require_profiled_certification_terminal(initial, result, committed, source=source)
+            terminal = _require_profiled_certification_terminal(initial, result, committed, source=source)
             verify_guard_boundary(initial, source)
+            if initial['certificationPlan'].get('scopedAction', {}).get('stage') == 'lesson-resume':
+                from p2_certification_parent import retain_profiled_resume_guard
+                retain_profiled_resume_guard(initial, terminal, committed)
             return
         if profiled_interrupted:
             require(not members(child), 'P2_PROFILED_INTERRUPTED_TERMINAL_CHILD_REMAINS')

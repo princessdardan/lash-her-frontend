@@ -140,6 +140,8 @@ export const P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS = Object.freeze([
   "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
   "course-lesson-resume-pinned-playback-heartbeat-pause-rewind-and-monotonic-maximum",
   "course-lesson-resume-refuses-stale-cas-foreign-receipts-and-persistence-drift",
+  "course-lesson-restore-pinned-revision-four-to-six-with-unchanged-positions-and-managed-playback",
+  "course-lesson-restore-refuses-ineligible-prior-receipts-and-persistence-drift",
   "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
   "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
   "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",

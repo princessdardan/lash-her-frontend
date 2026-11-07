@@ -17,7 +17,7 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
 const authoringPath = "/api/admin/courses";
-const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume"];
+const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore"];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
@@ -29,6 +29,7 @@ const interactivePages = {
   "lesson-denial": { learner: "/academy/courses" },
   "lesson-assessment": { learner: "/academy/courses" },
   "lesson-resume": { learner: "/academy/courses" },
+  "lesson-restore": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -132,6 +133,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "lesson-denial") return p2LessonDenialPaths(input.lessonDenial).lessonPath;
   if (input.stage === "lesson-assessment") return p2LessonAssessmentPaths(input.assessment).lessonPath;
   if (input.stage === "lesson-resume") return p2LessonResumePaths(input.resume).lessonPath;
+  if (input.stage === "lesson-restore") return p2LessonResumePaths(input.restore).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -205,7 +207,7 @@ export function validateP2InteractiveBrowserInput(input) {
       : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
-          : input?.stage === "lesson-resume" ? ["resume"]
+          : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -254,6 +256,10 @@ export function validateP2InteractiveBrowserInput(input) {
     const selected = input.resume;
     demand(closed(selected, ["actorId", "operation", "courseId", "lessonId", "grantId"]) && selected.operation === "play-and-rewind"
       && [selected.actorId, selected.courseId, selected.lessonId, selected.grantId].every(uuid));
+  }
+  if (input.stage === "lesson-restore") {
+    validateLessonRestoreTarget(input.restore);
+    demand(input.restore.prior.actionId !== input.actionId);
   }
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
@@ -312,7 +318,7 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
-    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume;
+    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -536,15 +542,32 @@ const validResumePosition = (index, resume, submittedMax, priorMax) => {
   return integerBetween(resume, 3, 6) && resume === priorMax - 10 && submittedMax === priorMax;
 };
 
+function validateLessonRestoreTarget(target) {
+  demand(closed(target, ["actorId", "operation", "courseId", "lessonId", "grantId", "prior"]) && target.operation === "restore-resume"
+    && [target.actorId, target.courseId, target.lessonId, target.grantId].every(uuid));
+  const prior = target.prior;
+  demand(closed(prior, ["actionId", "outcomeSha256", "progressId", "enrollmentId", "resumePositionSeconds", "maxPositionSeconds",
+    "playbackIdSha256", "playbackExpiresAt"])
+    && matches(prior.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
+    && [prior.outcomeSha256, prior.playbackIdSha256].every(value => sha(value) && !/^0+$/u.test(value))
+    && uuid(prior.progressId) && uuid(prior.enrollmentId) && assessmentInstant(prior.playbackExpiresAt)
+    && prior.playbackExpiresAt.length === 24 && !prior.playbackExpiresAt.startsWith("0000")
+    && integerBetween(prior.resumePositionSeconds, 3, 6) && prior.maxPositionSeconds === prior.resumePositionSeconds + 10);
+}
+
+function validResumePlayback(playback) {
+  return closed(playback, ["requestId", "expiresAt", "thumbnailExpiresAt", "lifetimeMs", "playbackIdSha256"])
+    && uuid(playback.requestId) && sha(playback.playbackIdSha256) && !/^0+$/u.test(playback.playbackIdSha256)
+    && assessmentInstant(playback.expiresAt) && assessmentInstant(playback.thumbnailExpiresAt)
+    && integerBetween(playback.lifetimeMs, 590_000, 601_000)
+    && Math.abs(Date.parse(playback.expiresAt) - Date.parse(playback.thumbnailExpiresAt)) + playback.lifetimeMs <= 601_000;
+}
+
 export function validateP2LessonResumeReceipt(receipt, target) {
   const { lessonPath } = p2LessonResumePaths(target), { page, playback, started, writes, media } = receipt ?? {};
   demand(closed(receipt, ["page", "playback", "started", "writes", "media"])
     && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
-    && closed(playback, ["requestId", "expiresAt", "thumbnailExpiresAt", "lifetimeMs", "playbackIdSha256"])
-    && uuid(playback.requestId) && sha(playback.playbackIdSha256) && !/^0+$/u.test(playback.playbackIdSha256)
-    && assessmentInstant(playback.expiresAt) && assessmentInstant(playback.thumbnailExpiresAt)
-    && integerBetween(playback.lifetimeMs, 590_000, 601_000)
-    && Math.abs(Date.parse(playback.expiresAt) - Date.parse(playback.thumbnailExpiresAt)) + playback.lifetimeMs <= 601_000
+    && validResumePlayback(playback)
     && closed(started, ["requestId", "progressId", "enrollmentId", "revision"])
     && [started.requestId, started.progressId, started.enrollmentId].every(uuid) && started.revision === 1
     && Array.isArray(writes) && writes.length === 3);
@@ -562,6 +585,25 @@ export function validateP2LessonResumeReceipt(receipt, target) {
     && integerBetween(media.heartbeatSeconds, writes[0].resumePositionSeconds, writes[0].resumePositionSeconds + 1)
     && media.pausedSeconds === writes[1].resumePositionSeconds && media.rewoundSeconds === writes[2].resumePositionSeconds
     && media.manifestObserved === true && media.segmentObserved === true);
+  return receipt;
+}
+
+export function validateP2LessonRestoreReceipt(receipt, target) {
+  validateLessonRestoreTarget(target);
+  const { lessonPath } = p2LessonResumePaths(target), { prior } = target;
+  const { page, playback, started, restored, media } = receipt ?? {};
+  demand(closed(receipt, ["page", "playback", "started", "restored", "media"])
+    && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
+    && validResumePlayback(playback) && playback.playbackIdSha256 === prior.playbackIdSha256
+    && closed(started, ["requestId", "progressId", "enrollmentId", "revision"])
+    && uuid(started.requestId) && started.progressId === prior.progressId && started.enrollmentId === prior.enrollmentId && started.revision === 5
+    && closed(restored, ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"])
+    && uuid(restored.requestId) && restored.progressId === prior.progressId && restored.enrollmentId === prior.enrollmentId && restored.revision === 6
+    && restored.resumePositionSeconds === prior.resumePositionSeconds && restored.maxPositionSeconds === prior.maxPositionSeconds
+    && new Set([playback.requestId, started.requestId, restored.requestId]).size === 3
+    && closed(media, ["durationSeconds", "videoWidth", "restoredSeconds", "paused", "manifestObserved", "segmentObserved"])
+    && integerBetween(media.durationSeconds, 22, Number.MAX_SAFE_INTEGER) && integerBetween(media.videoWidth, 1, Number.MAX_SAFE_INTEGER)
+    && media.restoredSeconds === prior.resumePositionSeconds && media.paused === true && media.manifestObserved === true && media.segmentObserved === true);
   return receipt;
 }
 
@@ -2184,16 +2226,26 @@ async function sampleNativeResumeMedia({ source, playbackIdSha256 }) {
 }
 
 export function watchP2LessonResume(context, page, input) {
+  return watchLessonPosition(context, page, input, "lesson-resume");
+}
+
+export function watchP2LessonRestore(context, page, input) {
+  return watchLessonPosition(context, page, input, "lesson-restore");
+}
+
+function watchLessonPosition(context, page, input, stage) {
   validateP2InteractiveBrowserInput(input);
-  demand(input.stage === "lesson-resume" && page.context() === context);
-  const target = input.resume, { lessonPath, playbackPath, progressPath } = p2LessonResumePaths(target);
+  demand(input.stage === stage && page.context() === context);
+  const target = input.restore ?? input.resume, { prior } = target;
+  const { lessonPath, playbackPath, progressPath } = p2LessonResumePaths(target);
   const origin = input.browserOrigin, source = origin + lessonPath;
   const player = page.getByRole("main").locator("mux-player");
   const playback = { path: playbackPath, method: "GET" }, started = { path: progressPath, method: "POST" };
-  const writes = [1, 2, 3].map(revision => ({ path: progressPath, method: "POST", revision }));
+  const writes = (prior ? [5] : [1, 2, 3]).map(revision => ({ path: progressPath, method: "POST", revision }));
+  const restored = prior ? writes[0] : null;
   const slots = new Map([[playbackPath, playback], [progressPath, [started, ...writes]]]);
-  const refusal = () => new Error("P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED");
-  let navigation, opened = false, failed = false, initialized, completed, active, session, executionContextId, stopNetwork, permit, previousMax = 0;
+  const refusal = () => new Error(prior ? "P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED" : "P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED");
+  let navigation, opened = false, failed = false, initialized, restoredProgress, completed, active, session, executionContextId, stopNetwork, permit, previousMax = 0;
   let rejectFailure;
   const failure = new Promise((_, reject) => { rejectFailure = reject; });
   failure.catch(() => {});
@@ -2215,8 +2267,8 @@ export function watchP2LessonResume(context, page, input) {
       }
       if (request.resourceType() === "media") demand(muxHttps(url) || url?.protocol === "blob:" && url.origin === origin);
       if (url?.origin === origin && url.pathname.startsWith("/api/")) {
-        const slot = active?.find(candidate => candidate.path === url.pathname);
-        demand(slot && !slot.request && !url.search && !url.hash && method === slot.method
+        const slot = active?.find(candidate => candidate.path === url.pathname && !candidate.request);
+        demand(slot && !url.search && !url.hash && method === slot.method
           && request.frame() === page.mainFrame() && request.frame().url() === source && request.resourceType() === "fetch"
           && request.redirectedFrom() === null && headers.rsc === undefined);
         const recorded = request.postDataBuffer();
@@ -2225,7 +2277,13 @@ export function watchP2LessonResume(context, page, input) {
           const bytes = recorded && Buffer.from(recorded);
           try {
             const posted = exactBrowserJson(bytes);
-            if (slot === started) demand(bytes.toString("utf8") === '{"event":"lesson_started","expectedProgressRevision":0}');
+            if (slot === started) demand(bytes.toString("utf8") === JSON.stringify({ event: "lesson_started", expectedProgressRevision: prior ? 4 : 0 }));
+            else if (slot === restored) {
+              const { resumePositionSeconds, maxPositionSeconds } = prior;
+              demand(started.gatewayId && playback.gatewayId && bytes.toString("utf8") === JSON.stringify({
+                resumePositionSeconds, maxPositionSeconds, expectedProgressRevision: 5,
+              }));
+            }
             else {
               const { resumePositionSeconds, maxPositionSeconds, expectedProgressRevision } = posted;
               demand(expectedProgressRevision === slot.revision && validResumePosition(slot.revision - 1, resumePositionSeconds, maxPositionSeconds, previousMax)
@@ -2312,9 +2370,9 @@ export function watchP2LessonResume(context, page, input) {
         await session.send("Network.configureDurableMessages", buffers);
         await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
         stopNetwork = watchLessonNetworkBodies(session, frame.id, slots, origin, fail);
-        active = [playback, started];
-        const [mediaResult, saved, response] = await bounded(Promise.all([
-          observe(playback, expires), observe(started, expires),
+        active = restored ? [playback, started, restored] : [playback, started];
+        const [mediaResult, saved, restoredResult, response] = await bounded(Promise.all([
+          observe(playback, expires), observe(started, expires), restored ? observe(restored, expires) : null,
           page.goto(source, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) }),
         ]), expires);
         demand(navigation && response?.request() === navigation && response.status() === 200 && response.url() === source
@@ -2323,14 +2381,21 @@ export function watchP2LessonResume(context, page, input) {
           mediaResult.response.headerValues("date")]);
         demand(types.length === 1 && /^text\/html(?:;.*)?$/iu.test(types[0]) && cache.length === 1
           && privateNoStore({ "cache-control": cache[0] }) && dates.length === 1);
-        const row = resumeProgress(saved.body, target, 1, 0, 0);
         try {
+          const row = resumeProgress(saved.body, target, prior ? 5 : 1, prior?.resumePositionSeconds ?? 0, prior?.maxPositionSeconds ?? 0);
           const { expiresAt, thumbnailExpiresAt, lifetimeMs } = parseP2PlaybackObservation(200,
             { "cache-control": "private, no-store", date: dates[0] }, mediaResult.body, true);
           demand(matches(mediaResult.body.playbackId, /^[A-Za-z0-9_-]{1,255}$/u) && mediaResult.body.thumbnailToken.length > 20);
           permit = { playbackIdSha256: resumeDigest(mediaResult.body.playbackId), tokenSha256: resumeDigest(mediaResult.body.playbackToken) };
           initialized = { playback: { requestId: mediaResult.requestId, expiresAt, thumbnailExpiresAt, lifetimeMs, playbackIdSha256: permit.playbackIdSha256 },
-            started: { requestId: saved.requestId, progressId: row.id, enrollmentId: row.enrollmentId, revision: 1 } };
+            started: { requestId: saved.requestId, progressId: row.id, enrollmentId: row.enrollmentId, revision: row.revision } };
+          if (prior) {
+            demand(row.id === prior.progressId && row.enrollmentId === prior.enrollmentId && permit.playbackIdSha256 === prior.playbackIdSha256);
+            const { resumePositionSeconds, maxPositionSeconds } = prior;
+            const result = resumeProgress(restoredResult.body, target, 6, resumePositionSeconds, maxPositionSeconds);
+            restoredProgress = { requestId: restoredResult.requestId, progressId: result.id, enrollmentId: result.enrollmentId,
+              revision: result.revision, resumePositionSeconds: result.resumePositionSeconds, maxPositionSeconds: result.maxPositionSeconds };
+          }
         } finally {
           mediaResult.body.playbackId = mediaResult.body.playbackToken = mediaResult.body.thumbnailToken = "";
         }
@@ -2344,6 +2409,15 @@ export function watchP2LessonResume(context, page, input) {
     async wait(expires) {
       try {
         demand(initialized && !completed && !active && page.url() === source);
+        if (prior) {
+          await bounded(until(() => media.verified(permit), performance.now() + remaining(expires)), expires);
+          const native = await sample(value => value.paused && value.ready >= 2 && Math.floor(value.position) === prior.resumePositionSeconds, expires);
+          demand(page.url() === source && remaining(expires) > 0);
+          completed = validateP2LessonRestoreReceipt({ page: { pathname: lessonPath, status: 200 }, ...initialized, restored: restoredProgress,
+            media: { durationSeconds: Math.floor(native.duration), videoWidth: native.width, restoredSeconds: Math.floor(native.position),
+              paused: native.paused, manifestObserved: true, segmentObserved: true } }, target);
+          return;
+        }
         await sample(value => value.paused && value.ready >= 1 && value.position < 1, expires);
         const [heartbeat, paused, rewind] = writes;
         active = [heartbeat];
@@ -2856,7 +2930,7 @@ async function runInteractiveBrowser(first) {
           && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
-          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment ?? selectedInput.resume).actorId
+          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
@@ -2925,6 +2999,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "lesson-resume") {
           mutationWatch = watchP2LessonResume(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "lesson-restore") {
+          mutationWatch = watchP2LessonRestore(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {

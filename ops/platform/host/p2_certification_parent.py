@@ -224,7 +224,7 @@ def _profiled_initial(initial, expected):
         extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
     if mode in SCOPED_MODES:
         extra = {'scopedAction'}
-        _require_profiled_scoped_action(mode, plan.get('scopedAction'))
+        _require_profiled_scoped_action(mode, plan)
     if mode in PERSISTENCE_MODES:
         extra.add('persistenceReviewedSha256')
         require(_profiled_digest(plan.get('persistenceReviewedSha256')), 'P2_PROFILED_PERSISTENCE_REVIEW_REQUIRED')
@@ -288,14 +288,15 @@ def _profiled_initial(initial, expected):
     return plan
 
 
-def _require_profiled_scoped_action(mode, value):
+def _require_profiled_scoped_action(mode, plan):
+    value = plan.get("scopedAction")
     uuid_pattern = r'[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
     def matches(pattern, text):
         return type(text) is str and re.fullmatch(pattern, text) is not None
 
     if mode == 'interactive-browser':
-        from p2_interactive_window import validate_interactive_action
-        validate_interactive_action(value)
+        from p2_interactive_window import validate_interactive_plan_action
+        validate_interactive_plan_action(plan)
         return
 
     if mode == 'export-cleanup':
@@ -463,6 +464,71 @@ def _profiled_original_terminal(initial, plan, selected, results, expected):
     return terminal_sha, plan_hash_verified
 
 
+_RESUME_SOURCE_TERMINAL = 'p2-interactive-lesson-resume-source-terminal.json'
+_RESUME_GUARD_RECEIPT = 'p2-interactive-lesson-resume-guard.json'
+_RESUME_RELEASE_PINS = ('environment', 'originalReleaseId', 'sourceCommit', 'operatorSourceCommit', 'candidateSha256',
+    'candidateObjectSha256', 'inventorySha256', 'targetSha256', 'contractPhase', 'phase2ContractManifestSha256',
+    'originalReleaseReceiptSha256', 'originalReleasePlanSha256', 'configurationCanonicalSha256', 'runtimeInventorySha256',
+    'gatewayProcessSha256', 'gatewayConfigurationSha256', 'operatorSourceClosureSha256', 'apiJobSha256', 'readyReceiptSha256')
+_RESUME_DEPLOYMENT_PINS = ('projectId', 'deploymentId', 'deploymentUrl', 'configurationRecordSha256')
+
+
+def _profiled_resume_binding(plan):
+    return {**{key: plan[key] for key in _RESUME_RELEASE_PINS},
+            'deployment': {key: plan['nativePlan'][key] for key in _RESUME_DEPLOYMENT_PINS}}
+
+
+def retain_profiled_resume_guard(initial, terminal, committed):
+    # The fixed supervisor calls this only after reaping the broker and
+    # independently validating the physical ledger, Course and gateway joins.
+    from p2_release_supervisor import _profiled_certification_directory
+    plan = initial['certificationPlan']
+    directory = _profiled_certification_directory(initial)
+    source_terminal, source_sha = _profiled_host_receipt(directory, _RESUME_SOURCE_TERMINAL, _profiled_context())
+    require(_canonical(source_terminal) == _canonical(terminal), 'P2_INTERACTIVE_LESSON_RESUME_GUARD_SOURCE_REQUIRED')
+    migrate.write_json(directory, _RESUME_GUARD_RECEIPT, {
+        'version': 2, 'qualificationTargetProfile': terminal['qualificationTargetProfile'],
+        'status': 'P2_INTERACTIVE_LESSON_RESUME_GUARD_VERIFIED', 'certificationActionId': plan['certificationActionId'],
+        'planSha256': plan['planSha256'], 'hostTerminalSha256': committed, 'operatorTerminalSha256': source_sha,
+        'releaseBinding': _profiled_resume_binding(plan)})
+
+
+def _require_profiled_restore_prior(plan, results, expected):
+    from p2_release_supervisor import PROFILED_CERTIFICATION_LAYOUT
+    action = plan['scopedAction']
+    selected = action['restoreAction']
+    prior = selected['prior']
+    require(prior['actionId'] not in (plan['originalReleaseId'], plan['certificationActionId']),
+            'P2_INTERACTIVE_LESSON_RESTORE_PRIOR_BINDING_REQUIRED')
+    directory = results / (PROFILED_CERTIFICATION_LAYOUT['receiptPrefix'] + prior['actionId'])
+    receipt, _ = _profiled_host_receipt(directory, _RESUME_GUARD_RECEIPT, expected)
+    terminal, terminal_sha = _profiled_host_receipt(directory, PROFILED_CERTIFICATION_LAYOUT['terminalName'], expected)
+    joined, _ = _profiled_host_receipt(directory, 'p2-scoped-case-joined.json', expected)
+    require(_canonical(receipt) == _canonical({
+        'version': 2, 'qualificationTargetProfile': terminal['qualificationTargetProfile'],
+        'status': 'P2_INTERACTIVE_LESSON_RESUME_GUARD_VERIFIED', 'certificationActionId': prior['actionId'],
+        'planSha256': terminal.get('planSha256'), 'hostTerminalSha256': terminal_sha,
+        'operatorTerminalSha256': prior['outcomeSha256'], 'releaseBinding': _profiled_resume_binding(plan)}),
+        'P2_INTERACTIVE_LESSON_RESTORE_PRIOR_GUARD_REQUIRED')
+    closed_epoch = int(plan['initialEpoch']) - 2
+    closed = {'epoch': str(closed_epoch), 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+    saved = {**{key: selected[key] for key in ('courseId', 'lessonId', 'grantId')},
+             **{key: prior[key] for key in ('progressId', 'enrollmentId', 'resumePositionSeconds', 'maxPositionSeconds',
+                                            'playbackIdSha256', 'playbackExpiresAt')}}
+    require(closed_epoch >= 3 and terminal.get('status') == PROFILED_CERTIFICATION_LAYOUT['terminalStatus'] and
+            terminal.get('certificationActionId') == joined.get('certificationActionId') == prior['actionId'] and
+            terminal.get('mode') == 'interactive-browser' and _profiled_digest(terminal.get('planSha256')) and
+            terminal['planSha256'] == joined.get('planSha256') and
+            terminal.get('caseStatus') == joined.get('status') == 'P2_INTERACTIVE_LESSON_RESUME_JOINED' and
+            terminal.get('caseOutcomeSha256') == _sha(_canonical(joined)) and
+            _canonical(terminal.get('frontendAdmission')) == _canonical(joined.get('frontendAdmission')) == _canonical(closed) and
+            joined.get('stage') == 'lesson-resume' and joined.get('operation') == 'play-and-rewind' and
+            joined.get('frontendOperationCount') == 4 and joined.get('gatewayAdmissionClosed') is True and
+            joined.get('gatewayActive') == joined.get('gatewayUncertain') == 0 and joined.get('actorId') == action['actorId'] and
+            joined.get('revision') == 4 and all(_canonical(joined.get(key)) == _canonical(value) for key, value in saved.items()),
+            'P2_INTERACTIVE_LESSON_RESTORE_PRIOR_EVIDENCE_REQUIRED')
+
+
 def prepare_profiled_current_certification_input(initial, source):
     """Fixed current-profile host input check without execution authority."""
     from qualification_target_profile import decode_qualification_target_json
@@ -535,6 +601,8 @@ def prepare_profiled_current_certification_input(initial, source):
         validate_known_configuration_input(plan['knownAckConfigurationInputDirectory'], configuration, selected, jobs,
                                            initial['configurationSha256'], expected_profile=expected)
     terminal_sha, plan_hash_verified = _profiled_original_terminal(initial, plan, selected, results, expected)
+    if plan['mode'] == 'interactive-browser' and plan['scopedAction']['stage'] == 'lesson-restore':
+        _require_profiled_restore_prior(plan, results, expected)
     return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
             'environment': 'staging', 'releaseId': selected['releaseId'], 'certificationActionId': initial['certificationActionId'],
             'sourceCommit': initial['sourceCommit'], 'candidateSha256': initial['candidateSha256'], 'targetSha256': initial['targetSha256'],
@@ -1569,6 +1637,8 @@ class P2CertificationBroker(Broker):
     def finish_certification(self,value):
         self.check();raw,outcome=decode(value['certification']);migrate.require_contract_identity(self.selected,outcome)
         require(self.closing_at is not None and not self.finished and outcome==self.prepared_terminal,'P2_CERTIFICATION_TERMINAL_BINDING_REQUIRED')
+        if self.initial['certificationPlan'].get('scopedAction', {}).get('stage') == 'lesson-resume':
+            migrate.write_exact_bytes(self.directory, _RESUME_SOURCE_TERMINAL, raw)
         migrate.write_json(self.directory,'p2-certification-verification.json',outcome);self.outcome=copy.deepcopy(outcome)
         self.finished=True;self.released.set();return self.outcome
 

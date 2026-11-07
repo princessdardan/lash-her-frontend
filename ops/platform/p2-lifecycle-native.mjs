@@ -249,6 +249,17 @@ const reviewedLessonResumeDependencies = {
   "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "335229bbad3facdcb7b4331e38cb8ac93b3deb4c39d0b5c45afc92f4a4d61e5e",
   "ops/gateway/lesson-resume-position.mjs": "8ce4ee36a31b5a8efbff60e51251103bb9376ef1a40cac0a28560f55fc2d1ce0"
 };
+const reviewedLessonRestoreSource = {
+  ...reviewedLessonResumeSource,
+  "src/lib/writer-admission/runtime.ts": "d6815ba8ece782cbee07b155d9f3de1a0826a44d6ce4b151077ae023178b9579"
+};
+const reviewedLessonRestoreDependencies = {
+  ...reviewedLessonResumeDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "11a35374c99b804e3a7a89d3a4c354ef4f65db4267006487efb5602994dfbfe2",
+  "src/lib/api-integration/course-client.ts": "f31d43fda9b49b7e0c975de045403dbb127efb54014b9593d3af311034747763",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "d67057267b8ab62309d141af0a7ff7788bd6ab57166f1ee5ad2122543a5b7076",
+  "ops/gateway/lesson-resume-position.mjs": "18f0d916229f4ba401d0437d3cc957214fe8bb46584b492d21b4fc31ee6227fd"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -282,7 +293,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies]],
     [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]],
     [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]],
-    [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]]]
+    [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]],
+    [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

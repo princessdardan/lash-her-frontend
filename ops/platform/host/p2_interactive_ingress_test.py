@@ -434,6 +434,27 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + target for target in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_restore_probes_the_selected_document_flight_and_api_routes_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        lesson = "10000000-0000-4000-8000-000000000002"
+        document = f"/academy/courses/{course}/lessons/{lesson}"
+        api = f"/api/academy/lessons/{lesson}"
+        paths = (document, f"{document}?_rsc", api, f"{api}/playback", f"/api/academy/progress?lessonId={lesson}",
+                 f"{api}/progress", f"{api}/quiz", f"{api}/quiz/attempts")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester(progress_lesson_id=lesson, flight_path=document)
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "LESSON_RESTORE_TARGET_REQUIRED"):
+                ingress.observe_lesson_restore_protection(self.base.context, self.fixture.client, course_id=course,
+                                                           lesson_id=f"{lesson}?other=1", expected_profile=self.profile)
+            receipt = ingress.observe_lesson_restore_protection(self.base.context, self.fixture.client, course_id=course,
+                                                                 lesson_id=lesson, expected_profile=self.profile)
+        self.assertEqual(receipt["endpointDenials"], [
+            {"path": path, "aliasUnauthenticatedStatus": 401, "deploymentUnauthenticatedStatus": 403} for path in paths
+        ])
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_resume_probes_only_selected_document_playback_and_progress_on_both_origins(self):
         course = "10000000-0000-4000-8000-000000000001"
         lesson = "10000000-0000-4000-8000-000000000002"

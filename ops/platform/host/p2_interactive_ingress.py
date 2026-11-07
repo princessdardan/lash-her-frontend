@@ -259,6 +259,16 @@ def observe_lesson_resume_protection(context, client, *, expected_profile, cours
                                        paths=(document, f"{lesson}/playback", f"{lesson}/progress"))
 
 
+def observe_lesson_restore_protection(context, client, *, expected_profile, course_id, lesson_id):
+    demand(all(type(value) is str and re.fullmatch(_COURSE_ID, value) for value in (course_id, lesson_id)),
+           "P2_INTERACTIVE_LESSON_RESTORE_TARGET_REQUIRED")
+    document = f"/academy/courses/{course_id}/lessons/{lesson_id}"
+    lesson = f"/api/academy/lessons/{lesson_id}"
+    paths = (document, f"{document}?_rsc", lesson, f"{lesson}/playback", f"/api/academy/progress?lessonId={lesson_id}",
+             f"{lesson}/progress", f"{lesson}/quiz", f"{lesson}/quiz/attempts")
+    return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
+
+
 def _observe_selected_protection(context, client, expected_profile, *, browser, paths=None):
     expected = migrate.profile_context(expected_profile)
     demand(expected is not None, "QUALIFICATION_TARGET_PROFILE_REQUIRED")

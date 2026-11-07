@@ -662,6 +662,7 @@ const paidRepublishBaselines = new WeakMap();
 const paidLearnerAccessBaselines = new WeakMap();
 const lessonEntryBaselines = new WeakMap();
 const lessonResumeBaselines = new WeakMap();
+const lessonRestoreBaselines = new WeakMap();
 const lessonDenialBaselines = new WeakMap();
 const assessmentBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
@@ -1730,13 +1731,13 @@ function validateLessonResumeSelection(selection) {
     "course-lesson-resume-selection");
 }
 
-async function readLessonResume(client, selection) {
+async function readLessonResume(client, selection, check = "course-lesson-resume") {
   const { actorId } = selection;
-  const result = await readLessonEntry(client, selection, { check: "course-lesson-resume", historyQueries: lessonResumeHistoryQueries });
-  demand(Number.isInteger(result.lesson.duration_seconds) && result.lesson.duration_seconds >= 22, "course-lesson-resume-lesson");
+  const result = await readLessonEntry(client, selection, { check, historyQueries: lessonResumeHistoryQueries });
+  demand(Number.isInteger(result.lesson.duration_seconds) && result.lesson.duration_seconds >= 22, `${check}-lesson`);
   const account = await read(client, "course", "paidLearnerActiveAccount", [actorId]);
-  demand(account.length === 1 && account[0].active === true, "course-lesson-resume-access");
-  demand(typeof result.lesson.playback_id_sha256 === "string" && SHA.test(result.lesson.playback_id_sha256), "course-lesson-resume-media");
+  demand(account.length === 1 && account[0].active === true, `${check}-access`);
+  demand(typeof result.lesson.playback_id_sha256 === "string" && SHA.test(result.lesson.playback_id_sha256), `${check}-media`);
   return { ...result, history: [...result.history,
     ...await readPaidArchiveDigests(client, [[actorId]], ["lessonDenialIdentity", "lessonDenialCommands"]),
   ] };
@@ -1814,6 +1815,91 @@ export async function observeP2InteractiveResumeCase(courseJob, selection, basel
     && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-resume-media");
   return { ...saved.selected, enrollmentId, progressId, revision, resumePositionSeconds, maxPositionSeconds,
     playbackExpiresAt: date(playbackExpiry), playbackIdSha256: after.lesson.playback_id_sha256, readOnly: true };
+}
+
+const lessonRestorePriorFields = ["actionId", "outcomeSha256", "progressId", "enrollmentId",
+  "resumePositionSeconds", "maxPositionSeconds", "playbackIdSha256", "playbackExpiresAt"];
+
+function validateLessonRestoreSelection(selection) {
+  const check = "course-lesson-restore-selection";
+  demand(closed(selection, [...lessonEntrySelectionFields, "prior"])
+    && lessonEntrySelectionFields.every(key => courseUuid(selection[key])) && closed(selection.prior, lessonRestorePriorFields), check);
+  const { prior } = selection, expiry = typeof prior.playbackExpiresAt === "string" ? Date.parse(prior.playbackExpiresAt) : NaN;
+  demand(typeof prior.actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(prior.actionId)
+    && [prior.outcomeSha256, prior.playbackIdSha256].every(value => typeof value === "string" && SHA.test(value) && !/^0{64}$/u.test(value))
+    && courseUuid(prior.progressId) && courseUuid(prior.enrollmentId)
+    && Number.isSafeInteger(prior.resumePositionSeconds) && prior.resumePositionSeconds >= 3 && prior.resumePositionSeconds <= 6
+    && prior.maxPositionSeconds === prior.resumePositionSeconds + 10
+    && Number.isFinite(expiry) && prior.playbackExpiresAt.length === 24 && prior.playbackExpiresAt.slice(0, 4) !== "0000"
+    && date(expiry) === prior.playbackExpiresAt, check);
+}
+
+async function readLessonRestore(client, selection, revision) {
+  const { prior } = selection;
+  const result = await readLessonResume(client, selection, "course-lesson-restore"), progress = result.progress[0];
+  const createdAt = Date.parse(progress?.created_at), updatedAt = Date.parse(progress?.updated_at);
+  demand(result.enrollmentId === prior.enrollmentId && result.progress.length === 1
+    && progress.progress_id === prior.progressId && progress.enrollment_id === prior.enrollmentId
+    && progress.revision === revision && progress.resume_position_seconds === prior.resumePositionSeconds
+    && progress.max_position_seconds === prior.maxPositionSeconds && progress.incomplete === true
+    && createdAt <= updatedAt && updatedAt <= Date.parse(result.lesson.observed_at), "course-lesson-restore-progress");
+  demand(result.lesson.playback_id_sha256 === prior.playbackIdSha256
+    && Date.parse(result.lesson.last_token_expires_at) >= Date.parse(prior.playbackExpiresAt), "course-lesson-restore-media");
+  return result;
+}
+
+function validateLessonRestoreReceipt(receipt, { courseId, lessonId, prior }, before) {
+  const check = "course-lesson-restore-receipt";
+  demand(closed(receipt, ["page", "playback", "started", "restored", "media"]), check);
+  const { page, playback, started, restored, media } = receipt;
+  const expiry = reviewedPlaybackExpiry(playback, check, true);
+  demand(closed(page, ["pathname", "status"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.status === 200
+    && playback.playbackIdSha256 === prior.playbackIdSha256 && expiry > Date.parse(prior.playbackExpiresAt)
+    && expiry > Date.parse(before.lesson.observed_at)
+    && closed(started, ["requestId", "progressId", "enrollmentId", "revision"])
+    && closed(restored, ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"])
+    && [started, restored].every(write => courseUuid(write.requestId)
+      && write.progressId === prior.progressId && write.enrollmentId === prior.enrollmentId)
+    && new Set([playback.requestId, started.requestId, restored.requestId]).size === 3
+    && started.revision === 5 && restored.revision === 6
+    && restored.resumePositionSeconds === prior.resumePositionSeconds && restored.maxPositionSeconds === prior.maxPositionSeconds
+    && closed(media, ["durationSeconds", "videoWidth", "restoredSeconds", "paused", "manifestObserved", "segmentObserved"])
+    && Number.isSafeInteger(media.durationSeconds) && media.durationSeconds >= 22 && Number.isSafeInteger(media.videoWidth) && media.videoWidth > 0
+    && media.restoredSeconds === prior.resumePositionSeconds && media.paused === true && media.manifestObserved === true
+    && media.segmentObserved === true, check);
+  return expiry;
+}
+
+export async function captureP2InteractiveRestoreBaseline(courseJob, selection, dependencies) {
+  validateLessonRestoreSelection(selection);
+  const selected = Object.freeze({ ...selection, prior: Object.freeze({ ...selection.prior }) });
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, client => readLessonRestore(client, selected, 4));
+  const baseline = Object.freeze({});
+  lessonRestoreBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveRestoreCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonRestoreSelection(selection);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonRestoreBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && lessonEntrySelectionFields.every(key => selection[key] === saved.selected[key])
+    && lessonRestorePriorFields.every(key => selection.prior[key] === saved.selected.prior[key]), "course-lesson-restore-receipt");
+  const before = saved.result, playbackExpiry = validateLessonRestoreReceipt(browserReceipt, saved.selected, before);
+  lessonRestoreBaselines.delete(baseline);
+  const { result: after } = await readHeldCourseDraft(target, dependencies, saved.roleOid, client => readLessonRestore(client, saved.selected, 6));
+  demand(after.progress[0].created_at === before.progress[0].created_at
+    && Date.parse(after.progress[0].updated_at) >= Date.parse(before.lesson.observed_at), "course-lesson-restore-progress");
+  demand(sameIds(after.history, before.history), "course-lesson-restore-history");
+  demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
+    && Date.parse(after.lesson.last_token_expires_at) === Math.max(Date.parse(before.lesson.last_token_expires_at), playbackExpiry),
+  "course-lesson-restore-media");
+  const { actorId, courseId, lessonId, grantId, prior } = saved.selected;
+  return { actorId, courseId, lessonId, grantId, enrollmentId: prior.enrollmentId, progressId: prior.progressId, revision: 6,
+    resumePositionSeconds: prior.resumePositionSeconds, maxPositionSeconds: prior.maxPositionSeconds, playbackExpiresAt: date(playbackExpiry),
+    playbackIdSha256: prior.playbackIdSha256, readOnly: true };
 }
 
 const lessonDenialSelectionFields = [...lessonEntrySelectionFields, "enrolledActorId"];

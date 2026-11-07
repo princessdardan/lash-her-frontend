@@ -1055,6 +1055,147 @@ test("scoped lesson resume binds native position bytes and waits for each Course
   assert.ok(forwarded.every(row => row.proof === undefined));
 });
 
+function lessonRestoreFixture() {
+  const { courseId, lessonId, actorId, write, targets, requests, reads } = lessonResumeFixtureRequests();
+  const started = '{"event":"lesson_started","expectedProgressRevision":4}';
+  const position = '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":5}';
+  const date = "2026-11-07T15:00:00.000Z";
+  const prior = { id: "30000000-0000-4000-8000-000000000001", userId: actorId, lessonId,
+    enrollmentId: "40000000-0000-4000-8000-000000000001", resumePositionSeconds: 4, maxPositionSeconds: 14, revision: 4,
+    completedQuizRevision: null, completedAt: null, lastWatchedAt: date, createdAt: date, updatedAt: date };
+  reads[2].progress.push(prior);
+  return { courseId, lessonId, actorId, write, targets, reads, prior, started, position,
+    requests: [...requests.slice(0, 6), ...[started, position].map(body => ({ method: "POST", target: write, bodySha256: certificationHash(body), uses: 1 }))] };
+}
+
+test("scoped lesson restore admits exact saved position bytes after the staged acknowledgements", async t => {
+  const { courseId, lessonId, write, targets, requests, reads, prior, started, position } = lessonRestoreFixture();
+  const forwarded = [];
+  const startEntered = Promise.withResolvers(), startAck = Promise.withResolvers();
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString();
+    const target = `/course${req.url}`;
+    forwarded.push({ target, body, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    let response;
+    if (req.method === "POST") {
+      if (body === started) {
+        startEntered.resolve();
+        await startAck.promise;
+      }
+      response = { progress: { ...prior, revision: body === started ? 5 : 6 } };
+    } else {
+      const index = targets.indexOf(target);
+      response = index === 5 ? resumeFixturePlayback(f.start) : reads[index];
+    }
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "public", "retry-after": "11" });
+    res.end(JSON.stringify(response));
+  }, "lesson-restore");
+  t.after(startAck.resolve);
+  for (const changed of [
+    requests.slice(0, -1), requests.map((row, index) => index === 2 ? { ...row, uses: 2 } : row),
+    requests.map((row, index) => index === 7 ? { ...row, bodySha256: certificationHash('{"expectedProgressRevision":5}') } : row),
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: changed } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const send = body => f.signed({ method: "POST", path: write, body });
+  const refused = async input => assert.equal((await f.send(input)).status, 503);
+  const acknowledged = async input => {
+    const result = await f.send(input);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers["cache-control"], "private, no-store");
+    assert.equal(result.headers["retry-after"], undefined);
+    return JSON.parse(result.body);
+  };
+  await refused(send(started));
+  await refused(f.signed({ path: targets[5] }));
+  await refused(f.signed({ path: targets[0], actor: courseId }));
+  await refused(f.signed({ path: targets[2].replace(lessonId, courseId) }));
+  await Promise.all([4, 3, 2, 1, 0].map(index => acknowledged(f.signed({ path: targets[index] }))));
+  await refused(send(position));
+  await refused(send(started.replace(":4", ":0")));
+  const start = acknowledged(send(started));
+  await startEntered.promise;
+  try {
+    await acknowledged(f.signed({ path: targets[5] }));
+    await refused(send(position));
+  } finally {
+    startAck.resolve();
+  }
+  assert.deepEqual((await start).progress, { ...prior, revision: 5 });
+  for (const body of [
+    '{"resumePositionSeconds":3,"maxPositionSeconds":13,"expectedProgressRevision":5}',
+    '{"resumePositionSeconds":4,"maxPositionSeconds":13,"expectedProgressRevision":5}',
+    '{"maxPositionSeconds":14,"resumePositionSeconds":4,"expectedProgressRevision":5}',
+    '{"resumePositionSeconds":4,"maxPositionSeconds":13,"maxPositionSeconds":14,"expectedProgressRevision":5}',
+    position.replace(":5", ":4"),
+  ]) await refused(send(body));
+  await refused({ ...send(position.replaceAll("4", "3")), body: position });
+  await refused(f.signed({ method: "POST", path: write, body: position, actor: courseId }));
+  await refused(f.signed({ method: "POST", path: write, body: position, idempotency: "owned" }));
+  assert.deepEqual((await acknowledged(send(position))).progress, { ...prior, revision: 6 });
+  await refused(send(position));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 8);
+  const indices = observed.interactiveEvidence.acknowledged.map(row => row.requestIndex);
+  assert.deepEqual(indices.slice(0, 5).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual(indices.slice(5, 7).sort(), [5, 6]);
+  assert.deepEqual(indices.slice(7), [7]);
+  assert.deepEqual(forwarded.filter(row => row.target === write).map(row => row.body), [started, position]);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+});
+
+for (const failure of ["prior-position", "prior-actor", "start-enrollment", "position-completion"]) {
+  test(`scoped lesson restore withholds a mismatched ${failure} response`, async t => {
+    const { courseId, write, targets, requests, reads, prior, started, position } = lessonRestoreFixture();
+    const f = await interactiveFixture(t, requests, async (req, res) => {
+      const target = `/course${req.url}`, index = targets.indexOf(target);
+      let response = index === 5 ? resumeFixturePlayback(f.start) : reads[index];
+      if (index === 2 && failure === "prior-position") response = { progress: [{ ...prior, resumePositionSeconds: 5, maxPositionSeconds: 15 }] };
+      if (index === 2 && failure === "prior-actor") response = { progress: [{ ...prior, userId: courseId }] };
+      if (req.method === "POST") {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const isStart = Buffer.concat(chunks).toString() === started;
+        response = { progress: { ...prior, revision: isStart ? 5 : 6,
+          ...(failure === "start-enrollment" && isStart ? { enrollmentId: courseId } : {}),
+          ...(failure === "position-completion" && !isStart ? { completedAt: prior.updatedAt } : {}) } };
+      }
+      res.writeHead(200, { "content-type": "application/json", "x-private-upstream-value": "sensitive" });
+      res.end(JSON.stringify(response));
+    }, "lesson-restore");
+    const send = (path, body) => f.send(f.signed(body === undefined ? { path } : { method: "POST", path, body }));
+    const sanitized = result => {
+      assert.equal(result.status, 502);
+      assert.equal(result.headers["x-private-upstream-value"], undefined);
+      assert.ok(!result.body.includes(prior.id));
+    };
+    await Promise.all([0, 1, 3, 4].map(async index => assert.equal((await send(targets[index])).status, 200)));
+    const priorResult = await send(targets[2]);
+    if (failure.startsWith("prior-")) {
+      sanitized(priorResult);
+      assert.equal((await send(write, started)).status, 503);
+    } else {
+      assert.equal(priorResult.status, 200);
+      assert.equal((await send(targets[5])).status, 200);
+      const startResult = await send(write, started);
+      if (failure === "start-enrollment") {
+        sanitized(startResult);
+        assert.equal((await send(write, position)).status, 503);
+      } else {
+        assert.equal(startResult.status, 200);
+        sanitized(await send(write, position));
+      }
+    }
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+  });
+}
+
 test("scoped lesson resume withholds playback data when the thumbnail names another asset", async t => {
   const { targets, requests, reads } = lessonResumeFixtureRequests();
   const f = await interactiveFixture(t, requests, (req, res) => {

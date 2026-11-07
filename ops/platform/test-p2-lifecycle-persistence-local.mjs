@@ -21,6 +21,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
   captureP2InteractiveLessonEntryBaseline, observeP2InteractiveLessonEntryCase,
   captureP2InteractiveResumeBaseline, observeP2InteractiveResumeCase,
+  captureP2InteractiveRestoreBaseline, observeP2InteractiveRestoreCase,
   captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
   captureP2InteractiveAssessmentBaseline, observeP2InteractiveAssessmentCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
@@ -294,6 +295,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
       "course-lesson-resume-pinned-playback-heartbeat-pause-rewind-and-monotonic-maximum",
       "course-lesson-resume-refuses-stale-cas-foreign-receipts-and-persistence-drift",
+      "course-lesson-restore-pinned-revision-four-to-six-with-unchanged-positions-and-managed-playback",
+      "course-lesson-restore-refuses-ineligible-prior-receipts-and-persistence-drift",
       "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
       "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
       "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
@@ -1471,16 +1474,21 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
   const begin = ({ selection: { actorId: userId, courseId, lessonId }, enrollmentId }, patch) => progress.recordProgress({
     userId, courseId, lessonId, enrollmentId, expectedProgressRevision: 0, markStarted: true, ...patch,
   });
-  const enter = async (test, progressPatch) => {
-    const { selection: { actorId: userId, courseId, lessonId }, assetId } = test, at = Date.now();
+  const authorize = async (test) => {
+    const { selection: { actorId: userId, lessonId }, assetId } = test, at = Date.now();
     const expiresAt = new Date(at + 599_500).toISOString(), thumbnailExpiresAt = new Date(at + 600_000).toISOString();
     await video.withPlaybackAuthorization({ userId, lessonId }, async media => {
       assert.equal(media.id, assetId);
       return { playbackId: media.muxPlaybackId, token: "owned-fixture-token", expiresAt, thumbnailExpiresAt };
     });
+    return { requestId: randomUUID(), expiresAt, thumbnailExpiresAt, lifetimeMs: 599_500 };
+  };
+  const enter = async (test, progressPatch) => {
+    const { selection: { courseId, lessonId } } = test;
+    const playback = await authorize(test);
     const started = await begin(test, progressPatch);
     return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, flight: true },
-      playback: { requestId: randomUUID(), expiresAt, thumbnailExpiresAt, lifetimeMs: 599_500 },
+      playback,
       progress: { requestId: randomUUID(), progressId: started.id, enrollmentId: started.enrollmentId, revision: started.revision } };
   };
   const capture = ({ selection }) => captureP2InteractiveLessonEntryBaseline(job, selection, dependencies);
@@ -1528,10 +1536,10 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
   await runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz,
     entitlement: createDrizzleEntitlementRepository(db), admin: createDrizzleAdminEntitlementCommandRepository(db) });
   await runOwnedAssessmentWitness({ course, job, dependencies, input, create, enrollment, progress, video, quiz });
-  await runOwnedLessonResumeWitness({ course, job, dependencies, seed, enter, progress, quiz });
+  await runOwnedLessonResumeWitness({ course, job, dependencies, seed, enter, authorize, progress, quiz });
 }
 
-async function runOwnedLessonResumeWitness({ course, job, dependencies, seed, enter, progress, quiz }) {
+async function runOwnedLessonResumeWitness({ course, job, dependencies, seed, enter, authorize, progress, quiz }) {
   const capture = ({ selection }) => captureP2InteractiveResumeBaseline(job, selection, dependencies);
   const observe = ({ selection }, baseline, receipt) => observeP2InteractiveResumeCase(job, selection, baseline, receipt, dependencies);
   const write = (test, expectedProgressRevision, resumePositionSeconds, maxPositionSeconds) => progress.recordProgress({
@@ -1625,6 +1633,99 @@ async function runOwnedLessonResumeWitness({ course, job, dependencies, seed, en
     }
     await assert.rejects(observe(test, baseline, receipt), { check });
     await assert.rejects(observe(test, baseline, receipt), { check: "course-lesson-resume-receipt" });
+  }
+
+  const rewind = async test => {
+    const baseline = await capture(test), receipt = await play(test);
+    return observe(test, baseline, receipt);
+  };
+  await runOwnedLessonRestoreWitness({ course, job, dependencies, seed, rewind, authorize, progress, write });
+}
+
+async function runOwnedLessonRestoreWitness({ course, job, dependencies, seed, rewind, authorize, progress, write }) {
+  const prepare = async (name, options) => {
+    const test = await seed(`restore-${name}`, options);
+    const prior = await rewind(test);
+    const { progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256, playbackExpiresAt } = prior;
+    return { ...test, selection: { ...test.selection, prior: { actionId: `owned-restore-${name}`, outcomeSha256: hash(JSON.stringify(prior)),
+      progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256, playbackExpiresAt } } };
+  };
+  const capture = selection => captureP2InteractiveRestoreBaseline(job, selection, dependencies);
+  const observe = (selection, baseline, receipt) => observeP2InteractiveRestoreCase(job, selection, baseline, receipt, dependencies);
+  const restore = async test => {
+    const { actorId: userId, courseId, lessonId, prior } = test.selection;
+    const playback = { ...await authorize(test), playbackIdSha256: prior.playbackIdSha256 };
+    const started = await progress.recordProgress({ userId, courseId, lessonId, enrollmentId: prior.enrollmentId, expectedProgressRevision: 4, markStarted: true });
+    const restored = await write(test, 5, prior.resumePositionSeconds, prior.maxPositionSeconds);
+    for (const [index, result] of [started, restored].entries()) {
+      assert.deepEqual({
+        id: result.id, enrollmentId: result.enrollmentId, revision: result.revision, resumePositionSeconds: result.resumePositionSeconds,
+        maxPositionSeconds: result.maxPositionSeconds, completedAt: result.completedAt, completedQuizRevision: result.completedQuizRevision,
+      }, { id: prior.progressId, enrollmentId: prior.enrollmentId, revision: 5 + index, resumePositionSeconds: prior.resumePositionSeconds,
+        maxPositionSeconds: prior.maxPositionSeconds, completedAt: null, completedQuizRevision: null });
+    }
+    return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, status: 200 }, playback,
+      started: { requestId: randomUUID(), progressId: started.id, enrollmentId: started.enrollmentId, revision: started.revision },
+      restored: { requestId: randomUUID(), progressId: restored.id, enrollmentId: restored.enrollmentId, revision: restored.revision,
+        resumePositionSeconds: restored.resumePositionSeconds, maxPositionSeconds: restored.maxPositionSeconds },
+      media: { durationSeconds: 32, videoWidth: 320, restoredSeconds: restored.resumePositionSeconds, paused: true,
+        manifestObserved: true, segmentObserved: true } };
+  };
+  for (const name of ["fresh-expiry", "prior-longer-expiry"]) {
+    const priorExpiry = name === "prior-longer-expiry" ? new Date(Date.now() + 900_000).toISOString() : null;
+    const test = await prepare(name, { priorExpiry });
+    const { selection } = test, { prior, ...selected } = selection;
+    for (const patch of [{ progressId: randomUUID() }, { enrollmentId: randomUUID() }, { resumePositionSeconds: 5, maxPositionSeconds: 15 }]) {
+      await assert.rejects(capture({ ...selection, prior: { ...prior, ...patch } }), { check: "course-lesson-restore-progress" });
+    }
+    for (const patch of [{ playbackIdSha256: hash("foreign-playback") }, { playbackExpiresAt: new Date(Date.now() + 1_000_000).toISOString() }]) {
+      await assert.rejects(capture({ ...selection, prior: { ...prior, ...patch } }), { check: "course-lesson-restore-media" });
+    }
+    for (const patch of [{ actionId: "../different" }, { outcomeSha256: "0".repeat(64) }, { maxPositionSeconds: 15 }, { revision: 4 },
+      { playbackExpiresAt: "0000-01-01T00:00:00.000Z" }]) {
+      await assert.rejects(capture({ ...selection, prior: { ...prior, ...patch } }), { check: "course-lesson-restore-selection" });
+    }
+    const baseline = await capture(selection);
+    assert.equal(JSON.stringify(baseline), "{}");
+    const receipt = await restore(test);
+    await assert.rejects(write(test, 5, 4, 14), { name: "ProgressRevisionConflictError" });
+    await assert.rejects(observe({ ...selection, prior: { ...prior, outcomeSha256: hash("different receipt") } }, baseline, receipt),
+      { check: "course-lesson-restore-receipt" });
+    await assert.rejects(observe(selection, {}, receipt), { check: "course-lesson-restore-receipt" });
+    for (const mutate of [
+      value => { value.page.status = 204; },
+      ({ playback }) => { playback.playbackIdSha256 = hash("foreign-playback"); },
+      ({ playback }) => { playback.token = "owned-private-value"; },
+      ({ playback }) => { playback.expiresAt = new Date(Date.parse(prior.playbackExpiresAt) - 1500).toISOString();
+        playback.thumbnailExpiresAt = new Date(Date.parse(prior.playbackExpiresAt) - 1000).toISOString(); },
+      ({ playback }) => { playback.expiresAt = prior.playbackExpiresAt; playback.thumbnailExpiresAt = prior.playbackExpiresAt; },
+      ({ started }) => { started.revision = 4; },
+      ({ started, restored }) => { restored.requestId = started.requestId; },
+      ({ restored }) => { restored.progressId = randomUUID(); },
+      ({ restored }) => { restored.maxPositionSeconds = 4; },
+      ({ media }) => { media.restoredSeconds = 5; },
+      ({ media }) => { media.paused = false; },
+      ({ media }) => { media.segmentObserved = false; },
+    ]) {
+      const malformed = structuredClone(receipt);
+      mutate(malformed);
+      await assert.rejects(observe(selection, baseline, malformed), { check: "course-lesson-restore-receipt" });
+    }
+    assert.deepEqual(await observe(selection, baseline, receipt), { ...selected, enrollmentId: prior.enrollmentId, progressId: prior.progressId,
+      revision: 6, resumePositionSeconds: 4, maxPositionSeconds: 14, playbackIdSha256: prior.playbackIdSha256,
+      playbackExpiresAt: receipt.playback.thumbnailExpiresAt, readOnly: true });
+    await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-restore-receipt" });
+    await assert.rejects(capture(selection), { check: "course-lesson-restore-progress" });
+  }
+  for (const [name, check] of [["position", "course-lesson-restore-progress"], ["duration", "course-lesson-restore-media"],
+    ["expiry", "course-lesson-restore-media"], ["metadata", "course-lesson-restore-history"]]) {
+    const test = await prepare(name), { selection } = test, baseline = await capture(selection), receipt = await restore(test);
+    if (name === "position") await write(test, 6, 5, 14);
+    if (name === "duration") await course.query("UPDATE public.video_assets SET duration_seconds=31 WHERE id=$1::uuid", [test.assetId]);
+    if (name === "expiry") receipt.playback.thumbnailExpiresAt = new Date(Date.parse(receipt.playback.thumbnailExpiresAt) + 500).toISOString();
+    if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
+    await assert.rejects(observe(selection, baseline, receipt), { check });
+    await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-restore-receipt" });
   }
 }
 

@@ -14,6 +14,7 @@ import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
 import { prepareP2ProfiledCurrentRelease, runP2ProfiledCurrentRelease, p2ProfiledCurrentReleaseOperator,
   openP2ProfiledCurrentSource, readP2ProfiledCurrentSource, P2_PROFILED_CURRENT_CONFIGURATION_FILES } from './p2-profiled-current-release.mjs';
 import { p2ProfiledCertificationOperator, prepareP2ProfiledCertificationOperator, runP2BoundedCertification } from './p2-certification.mjs';
+import { writeP2LessonRestorePriorFixture } from '../../tests/support/p2-lesson-restore-prior-fixture.mjs';
 import { nativeSourceCommit } from './harness/p2-native-unit-fixture.mjs';
 import { p2NativeHash } from './p2-lifecycle-native.mjs';
 import { p2LifecyclePersistenceTargetSha256, prepareP2LifecyclePersistencePlan } from './p2-lifecycle-persistence-probe.mjs';
@@ -255,7 +256,7 @@ test('fixed current certification plan joins the original release plan, terminal
       return { ...selected, interactiveIdentity: identity, certification: { ...selected.certification, initialEpoch: '9' } };
     };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
-      'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
+      'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet)';
     const paidSettings = paired(selectedInteractive), paidPair = prepareP2ProfiledCertificationOperator(paidSettings);
     assert.equal(paidPair.status, 'P2_INTERACTIVE_PAID_GRANT_ACTIONS_PLANNED');
     assert.deepEqual(paidPair['paid-grant'].scopedAction, selectedInteractive);
@@ -511,6 +512,44 @@ test('fixed current certification plan joins the original release plan, terminal
       resumeAction: { ...resumeAction, operation: 'restore-resume' } })));
     assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...resumeScope,
       requests: resumeRows.map((row, index) => index === 7 ? { ...row, bodySha256: resumeRows[8].bodySha256 } : row) })));
+    const firstResume = prepareP2ProfiledCertificationOperator({ ...resumeSettings,
+      certification: { ...resumeSettings.certification, certificationActionId: 'owned-prior-lesson-resume' } })['lesson-resume'];
+    const restorePrior = writeP2LessonRestorePriorFixture(f.settings.results, firstResume, plan.configurationSha256);
+    const restoreAction = { ...resumeAction, operation: 'restore-resume', prior: restorePrior };
+    const restoreRequests = [
+      ...resumeRows.slice(0, 6),
+      ...[{ event: 'lesson_started', expectedProgressRevision: 4 },
+        { resumePositionSeconds: restorePrior.resumePositionSeconds, maxPositionSeconds: restorePrior.maxPositionSeconds, expectedProgressRevision: 5 }]
+        .map(body => ({ method: 'POST', target: lesson + '/progress', bodySha256: rawHash(JSON.stringify(body)), uses: 1 })),
+    ];
+    const restoreScope = { stage: 'lesson-restore', actorId: userId, windowSeconds: 90, restoreAction, requests: restoreRequests };
+    const restoreSettings = (scope, freshEpoch = '11') => {
+      const pairedSettings = paired(scope, { certificationActionId: 'owned-restore-identity', initialEpoch: freshEpoch, windowSeconds: 240 });
+      return { ...pairedSettings, certification: { ...pairedSettings.certification, certificationActionId: 'owned-lesson-restore',
+        initialEpoch: (BigInt(freshEpoch) + 2n).toString() } };
+    };
+    const restorePair = prepareP2ProfiledCertificationOperator(restoreSettings(restoreScope));
+    assert.equal(restorePair.status, 'P2_INTERACTIVE_LESSON_RESTORE_ACTIONS_PLANNED');
+    assert.deepEqual(restorePair['lesson-restore'].scopedAction, restoreScope);
+    assert.deepEqual(restorePair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    assert.equal(restorePair.identity.initialEpoch, '11');
+    assert.equal(restorePair['lesson-restore'].initialEpoch, '13');
+    const restoreHost = packet => spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(packet), encoding: 'utf8' });
+    const restoreHostResult = restoreHost(restorePair['lesson-restore']);
+    assert.equal(restoreHostResult.status, 0, restoreHostResult.stderr);
+    const restorePlan = restorePair['lesson-restore'];
+    const replacePrior = changes => ({ ...restoreScope, restoreAction: { ...restoreAction, prior: { ...restorePrior, ...changes } } });
+    const mismatchedAction = replacePrior({ actionId: restorePlan.certificationActionId });
+    assert.match(restoreHost({ ...restorePlan, scopedAction: mismatchedAction }).stderr, /LESSON_RESTORE_PRIOR_BINDING_REQUIRED/);
+    assert.match(restoreHost({ ...restorePlan, initialEpoch: '2' }).stderr, /LESSON_RESTORE_PRIOR_BINDING_REQUIRED/);
+    assert.throws(() => prepareP2ProfiledCertificationOperator(restoreSettings(restoreScope, '12')), /P2_LESSON_RESTORE_PRIOR_REFUSED/);
+    assert.throws(() => prepareP2ProfiledCertificationOperator(restoreSettings(replacePrior({ outcomeSha256: '2'.repeat(64) }))),
+      /P2_LESSON_RESTORE_PRIOR_REFUSED/);
+    assert.throws(() => prepareP2ProfiledCertificationOperator(restoreSettings({ ...restoreScope, actorId: selectedInteractive.actorId })),
+      /P2_LESSON_RESTORE_PRIOR_REFUSED/);
+    assert.throws(() => prepareP2ProfiledCertificationOperator(restoreSettings({ ...restoreScope,
+      requests: restoreRequests.map((row, index) => index === 7 ? { ...row, bodySha256: resumeRows[7].bodySha256 } : row) })));
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -874,7 +913,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

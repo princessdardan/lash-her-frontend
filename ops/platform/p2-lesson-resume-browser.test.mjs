@@ -9,17 +9,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { p2InteractiveBrowserEntryPath, p2LessonResumePaths, validateP2InteractiveBrowserInput,
-  validateP2InteractiveBrowserPermit, validateP2LessonResumeReceipt, watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2InteractiveBrowserPermit, validateP2LessonRestoreReceipt, validateP2LessonResumeReceipt,
+  watchP2LessonRestore, watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
 
 const origin = "https://staging.lashher.com", mediaHost = "stream.mux.com";
 const cache = { "cache-control": "private, no-store" };
 const refused = /P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED/u;
+const restoreRefused = /P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED/u;
 
-function selection() {
+function selection(restoring = false) {
   const target = { actorId: randomUUID(), operation: "play-and-rewind", courseId: randomUUID(), lessonId: randomUUID(), grantId: randomUUID() };
   const input = { version: 2, environment: "staging", actionId: "owned-lesson-resume", challenge: "b".repeat(64), bindingSha256: "c".repeat(64),
     sourceCommit: "1".repeat(40), deploymentId: "dpl_ownedBrowser", deploymentUrl: "https://owned-browser.vercel.app",
-    browserOrigin: origin, stage: "lesson-resume", epoch: "11", windowSeconds: 60, resume: target };
+    browserOrigin: origin, stage: "lesson-resume", epoch: "11", windowSeconds: 60 };
   const playbackId = "ownedResume" + randomUUID().replaceAll("-", ""), date = new Date(Math.floor(Date.now() / 1000) * 1000);
   const expires = new Date(date.getTime() + 600_000).toISOString();
   const b64 = value => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -36,7 +38,18 @@ function selection() {
   const receipt = { page: { pathname: paths.lessonPath, status: 200 }, playback, started, writes,
     media: { durationSeconds: 32, videoWidth: 320, heartbeatSeconds: 10, pausedSeconds: 14, rewoundSeconds: 4,
       manifestObserved: true, segmentObserved: true } };
-  return { input, target, paths, receipt, authorization, date };
+  if (restoring) {
+    const { resumePositionSeconds, maxPositionSeconds } = writes.at(-1);
+    const restoreTarget = { ...target, operation: "restore-resume", prior: { actionId: input.actionId, outcomeSha256: "d".repeat(64),
+      progressId: started.progressId, enrollmentId: started.enrollmentId, resumePositionSeconds, maxPositionSeconds,
+      playbackIdSha256: playback.playbackIdSha256, playbackExpiresAt: new Date(Date.parse(expires) - 1000).toISOString() } };
+    return { input: { ...input, actionId: "owned-lesson-restore", stage: "lesson-restore", restore: restoreTarget }, target: restoreTarget,
+      paths, authorization, date, receipt: { page: receipt.page, playback, started: { ...started, revision: 5 },
+        restored: { ...started, requestId: randomUUID(), revision: 6, resumePositionSeconds, maxPositionSeconds },
+        media: { durationSeconds: 32, videoWidth: 320, restoredSeconds: resumePositionSeconds, paused: true,
+          manifestObserved: true, segmentObserved: true } } };
+  }
+  return { input: { ...input, resume: target }, target, paths, receipt, authorization, date };
 }
 
 test("resume permit and receipt bind the learner, media identity and monotonic CAS sequence", () => {
@@ -68,15 +81,46 @@ test("resume permit and receipt bind the learner, media identity and monotonic C
   ]) assert.throws(() => validateP2LessonResumeReceipt(invalid, target));
 });
 
-function ownedLesson(paths, scenario) {
+test("restore permit and receipt require the accepted prior row, media and exact position", () => {
+  const { input, target, paths, receipt } = selection(true), issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+  const selector = (target.actorId + target.courseId + target.lessonId).replaceAll("-", "");
+  const cookie = ["v2", input.epoch, input.stage, issued, expires, "a".repeat(32), selector, "b".repeat(64)].join(".");
+  const permit = { stage: input.stage, epoch: input.epoch, expires, cookie };
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), paths.lessonPath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "owner"));
+  for (const field of ["actorId", "courseId", "lessonId"]) {
+    assert.throws(() => validateP2InteractiveBrowserPermit(permit, { ...input, restore: { ...target, [field]: randomUUID() } }));
+  }
+  for (const invalid of [
+    { actionId: input.actionId }, { maxPositionSeconds: 13 }, { playbackExpiresAt: "2026-11-07" }, { outcomeSha256: "0".repeat(64) },
+  ]) assert.throws(() => validateP2InteractiveBrowserInput({ ...input, restore: { ...target, prior: { ...target.prior, ...invalid } } }));
+  assert.equal(validateP2LessonRestoreReceipt(receipt, target), receipt);
+  for (const invalid of [
+    { ...receipt, playback: { ...receipt.playback, playbackIdSha256: "e".repeat(64) } },
+    { ...receipt, started: { ...receipt.started, requestId: receipt.playback.requestId } },
+    { ...receipt, started: { ...receipt.started, progressId: randomUUID() } },
+    { ...receipt, restored: { ...receipt.restored, enrollmentId: randomUUID() } },
+    { ...receipt, restored: { ...receipt.restored, revision: 5 } },
+    { ...receipt, restored: { ...receipt.restored, maxPositionSeconds: 4 } },
+    { ...receipt, media: { ...receipt.media, restoredSeconds: 5 } },
+    { ...receipt, media: { ...receipt.media, paused: false } },
+    { ...receipt, media: { ...receipt.media, segmentObserved: false } },
+  ]) assert.throws(() => validateP2LessonRestoreReceipt(invalid, target));
+});
+
+function ownedLesson(paths, scenario, prior) {
   return `<!doctype html><main><h1>Owned lesson</h1><p id="progress">Saving progress…</p></main>
   <script src="/owned-mux-player.js"></script><script>
-    const { paths, scenario } = ${JSON.stringify({ paths, scenario })};
+    const { paths, scenario, prior } = ${JSON.stringify({ paths, scenario, prior: prior && {
+      resumePositionSeconds: prior.resumePositionSeconds, maxPositionSeconds: prior.maxPositionSeconds,
+    } })};
     const post = body => fetch(paths.progressPath, {method:'POST',headers:{'content-type':'application/json','x-lash-csrf':'1'},body:JSON.stringify(body)});
     const status = document.querySelector('#progress');
-    let revision = 0, lastSent = 0, watched = 0, acknowledgedMax = 0, seeking = false;
-    const initial = {event:'lesson_started',expectedProgressRevision:0};
-    void post(initial).then(response => response.json()).then(({progress}) => {
+    let revision = prior ? 4 : 0, lastSent = 0, watched = 0, acknowledgedMax = 0, seeking = false;
+    const initial = {event:'lesson_started',expectedProgressRevision:revision};
+    const start = post(initial).then(response => response.json()).then(({progress}) => {
       revision = progress.revision;
       status.textContent = 'Progress saved to your account.';
     });
@@ -91,6 +135,20 @@ function ownedLesson(paths, scenario) {
       player.disableTracking = true;
       player.disableCookies = true;
       player.storyboardSrc = '';
+      if (prior) {
+        player.addEventListener('loadedmetadata', () => {
+          player.currentTime = prior.resumePositionSeconds + (scenario === 'restore-native-drift' ? 1 : 0);
+        }, {once:true});
+        player.addEventListener('seeked', async () => {
+          await start;
+          const resumePositionSeconds = scenario === 'restore-native-drift' ? prior.resumePositionSeconds : Math.floor(player.currentTime);
+          const update = {resumePositionSeconds,maxPositionSeconds:prior.maxPositionSeconds,expectedProgressRevision:revision};
+          await post(update).then(response => response.json());
+          if (scenario === 'restore-extra') setTimeout(() => void post({...update,expectedProgressRevision:6}), 1000);
+        }, {once:true});
+        document.querySelector('main').append(player);
+        return;
+      }
       const save = () => {
         lastSent = Math.floor(player.currentTime);
         const resumePositionSeconds = lastSent, maxPositionSeconds = Math.max(acknowledgedMax, watched);
@@ -115,7 +173,7 @@ function ownedLesson(paths, scenario) {
   </script>`;
 }
 
-test("owned Chromium plays bundled Mux media, saves heartbeat and pause, and rewinds ten seconds", {
+test("owned Chromium plays and rewinds bundled Mux media, then restores a saved position in a fresh context", {
   skip: process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST !== "true",
 }, async () => {
   const { chromium } = await import("playwright"), root = mkdtempSync(join(tmpdir(), "owned-p2-resume-"));
@@ -154,10 +212,11 @@ test("owned Chromium plays bundled Mux media, saves heartbeat and pause, and rew
     });
     const proxyPort = await bind(proxy);
     browser = await chromium.launch();
-    for (const scenario of ["normal", "duplicate"]) {
-      const { input, target, paths, receipt, authorization, date } = selection(), bodies = [];
+    for (const scenario of ["normal", "duplicate", "restore", "restore-row-drift", "restore-native-drift", "restore-extra"]) {
+      const restoring = scenario.startsWith("restore");
+      const { input, target, paths, receipt, authorization, date } = selection(restoring), bodies = [];
       const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
-      let revision = 0, maxPositionSeconds = 0;
+      let revision = restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
       serve = async (request, response) => {
         const send = (status, type, value, headers = {}) => {
           const body = Buffer.isBuffer(value) ? value : Buffer.from(typeof value === "string" ? value : JSON.stringify(value));
@@ -174,7 +233,7 @@ test("owned Chromium plays bundled Mux media, saves heartbeat and pause, and rew
           return send(404, "text/plain", "", cors);
         }
         if (request.headers.host !== host) return send(404, "text/plain", "");
-        if (request.url === paths.lessonPath) return send(200, "text/html", ownedLesson(paths, scenario), cache);
+        if (request.url === paths.lessonPath) return send(200, "text/html", ownedLesson(paths, scenario, target.prior), cache);
         if (request.url === "/owned-mux-player.js") return send(200, "application/javascript", bundle);
         if (request.url === paths.playbackPath) return send(200, "application/json", authorization,
           { ...cache, date: date.toUTCString(), "x-request-id": receipt.playback.requestId });
@@ -183,21 +242,45 @@ test("owned Chromium plays bundled Mux media, saves heartbeat and pause, and rew
           for await (const chunk of request) chunks.push(chunk);
           const body = JSON.parse(Buffer.concat(chunks).toString());
           bodies.push(body);
-          if (body.expectedProgressRevision !== revision || revision >= 4) return send(409, "application/json", {}, cache);
-          const { resumePositionSeconds = 0, maxPositionSeconds: submitted = 0 } = body;
+          if (body.expectedProgressRevision !== revision || revision >= (restoring ? 6 : 4)) return send(409, "application/json", {}, cache);
+          const { resumePositionSeconds = target.prior?.resumePositionSeconds ?? 0, maxPositionSeconds: submitted = 0 } = body;
           maxPositionSeconds = Math.max(maxPositionSeconds, submitted, resumePositionSeconds);
-          const requestId = revision === 0 ? receipt.started.requestId : receipt.writes[revision - 1].requestId;
+          const requestId = restoring ? (revision === 4 ? receipt.started.requestId : receipt.restored.requestId)
+            : (revision === 0 ? receipt.started.requestId : receipt.writes[revision - 1].requestId);
+          const drift = scenario === "restore-row-drift" && revision === 5 ? 1 : 0;
           return send(200, "application/json", { progress: { id: receipt.started.progressId, userId: target.actorId, lessonId: target.lessonId,
-            enrollmentId: receipt.started.enrollmentId, resumePositionSeconds, maxPositionSeconds, revision: ++revision,
+            enrollmentId: receipt.started.enrollmentId, resumePositionSeconds: resumePositionSeconds + drift, maxPositionSeconds, revision: ++revision,
             completedQuizRevision: null, completedAt: null, lastWatchedAt: date.toISOString(), createdAt: date.toISOString(), updatedAt: date.toISOString(),
           } }, { ...cache, "x-request-id": requestId });
         }
         return send(404, "text/plain", "");
       };
-      const page = await context.newPage(), recorder = watchP2LessonResume(context, page, input);
+      const page = await context.newPage(), recorder = (restoring ? watchP2LessonRestore : watchP2LessonResume)(context, page, input);
       const expires = Math.floor(Date.now() / 1000) + 35;
       try {
         if (scenario === "duplicate") await assert.rejects(recorder.open(expires), refused);
+        else if (scenario === "restore-row-drift") await assert.rejects(recorder.open(expires), restoreRefused);
+        else if (restoring) {
+          await recorder.open(expires);
+          if (scenario === "restore-native-drift") {
+            await assert.rejects(recorder.wait(Math.floor(Date.now() / 1000) + 4), restoreRefused);
+          } else if (scenario === "restore-extra") {
+            const extra = page.waitForRequest(request => request.method() === "POST" && request.postDataJSON()?.expectedProgressRevision === 6);
+            await Promise.all([extra, recorder.wait(expires).catch(error => assert.match(error.message, restoreRefused))]);
+            assert.throws(() => recorder.finish(), restoreRefused);
+          } else {
+            await recorder.wait(expires);
+            const observed = recorder.finish();
+            assert.equal(validateP2LessonRestoreReceipt(observed, target), observed);
+            assert.deepEqual(observed.playback, receipt.playback);
+            assert.deepEqual(observed.started, receipt.started);
+            assert.deepEqual(observed.restored, receipt.restored);
+            assert.deepEqual(bodies, [{ event: "lesson_started", expectedProgressRevision: 4 }, {
+              resumePositionSeconds: target.prior.resumePositionSeconds, maxPositionSeconds: target.prior.maxPositionSeconds, expectedProgressRevision: 5,
+            }]);
+            assert.ok(observed.media.videoWidth > 0);
+          }
+        }
         else {
           await recorder.open(expires);
           await recorder.wait(expires).catch(error => {
