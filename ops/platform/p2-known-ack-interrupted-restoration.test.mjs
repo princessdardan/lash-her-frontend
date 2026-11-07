@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {fork,spawn,spawnSync} from 'node:child_process';
-import {mkdtempSync,realpathSync,writeFileSync,readFileSync,rmSync,existsSync} from 'node:fs';
+import {mkdtempSync,realpathSync,writeFileSync,readFileSync,rmSync,existsSync,unlinkSync} from 'node:fs';
+import {registerHooks} from 'node:module';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {MODE,STATUS,TERMINAL,CAUSAL_FILES,REPLACEMENT_FILES,prepareInterruptedKnownAckAction,interruptedKnownAckEnvironmentLock} from './p2-known-ack-interrupted-restoration.mjs';
+import {MODE,PROFILED_MODE,STATUS,TERMINAL,CAUSAL_FILES,REPLACEMENT_FILES,prepareInterruptedKnownAckAction,interruptedKnownAckEnvironmentLock} from './p2-known-ack-interrupted-restoration.mjs';
+import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
 function fixture(){
  const candidate={version:2,environment:'staging',contractPhase:'p2',releaseId:'original-candidate'},bytes=Buffer.from(JSON.stringify(candidate)+'\n');
  const configuration=Object.fromEntries(Array.from({length:19},(_,i)=>['owned-file-'+i,'a'.repeat(64)]));
@@ -84,6 +86,174 @@ test('wrong ordering and host death cannot commit a C terminal or replay restora
   await assert.rejects(f.run(async(_verify,_signal,host)=>{if(mode==='ordering')return host.restore();await host.arm({receipt:f.receipt,probe:{}});await host.prepare();return host.restore();}));
   assert.equal(existsSync(join(f.directory,'p2-host-interrupted-restoration-outcome.json')),false);
  }finally{f.cleanup();}}
+});
+
+// The owned child has a real POSIX lock. Its provider, runtime, and FE close
+// receipts are protocol projections; the physical FE proof has a separate PG fixture.
+const profiledProgram=String.raw`
+import base64,fcntl,json,os,sys,time
+lock,held,scenario=sys.argv[1:]
+fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+initial=json.loads(sys.stdin.readline());plan=initial['reviewedPlan'];frontend=plan['frontendPlan']
+base={'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile']}
+assert initial['mode']=='p2-profiled-known-ack-interrupted-restoration'
+assert initial['credentials']=={'private':'OWNED_PRIVATE_CANARY'}
+print(json.dumps({'id':0,'status':'LOCKED'}),flush=True)
+if scenario=='oversized':
+ print('x'*4_000_000,flush=True);sys.exit(40)
+databases={name:{'jobSha256':pin,'receiptSha256':'9'*64,'image':initial['candidate']['artifacts'][name+'Migration']['image']} for name,pin in initial['apiJobSha256'].items()}
+zero={'newWork':0,'recovery':0}
+def gateway(running, identifier, uncertain):
+ return {'process':{'running':running,'pid':12 if running else 0,'containerId':identifier},'admission':{'newWork':False,'recovery':False,'active':zero.copy(),'uncertain':uncertain}}
+services=['community-api','course-api','community-tls','course-tls','course-snapshot','community-worker','course-media','course-export-cleanup','course-publisher','gateway']
+restored={**base,'status':'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED','environment':'staging','releaseId':plan['originalReleaseId'],
+ 'candidateSha256':plan['candidateSha256'],'restorationActionId':plan['restorationActionId'],'recoveryActionId':plan['restorationActionId'],
+ 'contractPhase':'p2','phase2ContractManifestSha256':frontend['phase2ContractManifestSha256'],'frontier':plan['requestedFrontier'],
+ 'frontendJournalSha256':'8'*64,'readinessReceiptSha256':'7'*64,'nativeDisabled':True,'runtimeReplacements':1,
+ 'apiDatabases':databases,'currentApiDatabasesAfter':databases.copy(),'containers':[{'service':service,'containerId':format(i+1,'064x')[:64]} for i,service in enumerate(services)],
+ 'boundaryChecks':['public-tls-missing-workload-denied','public-metrics-hidden','private-course-tls-catalog','private-application-credential-required','private-community-peer-denied'],
+ 'stoppedGateway':gateway(False,'f'*64,{'newWork':0,'recovery':1 if plan['requestedFrontier']=='original-stopped-one' else 0}),
+ 'newGateway':gateway(True,format(10,'064x'),zero.copy())}
+restored.update({name:False for name in ('sqlReplayed','migrationsExecuted','rolePreparationRepeated','frontendSqlApplied','newWorkOpened','recoveryOpened','trafficAuthorized')})
+mutations={'foreign-runtime-profile':lambda:restored.update(version=1),'changed-journal':lambda:restored.update(frontendJournalSha256='0'*64),
+ 'changed-api':lambda:restored['currentApiDatabasesAfter'].update(course={**databases['course'],'receiptSha256':'0'*64}),
+ 'open-gateway':lambda:restored['newGateway']['admission'].update(recovery=True),
+ 'wrong-frontier-count':lambda:restored['stoppedGateway']['admission']['uncertain'].update(recovery=2),
+ 'duplicate-service':lambda:restored['containers'][0].update(service='gateway')}
+if scenario in mutations:mutations[scenario]()
+steps=['arm-interrupted-restoration','prepare-interrupted-restoration','restore-runtime','prepare-close','finish','commit'];seen=[];heartbeat_during_restore=False
+for raw in sys.stdin:
+ frame=json.loads(raw);op=frame['operation'];reply={'id':frame['id']}
+ if op=='check':
+  assert set(frame)=={'id','operation'}
+  if len(seen)==3:heartbeat_during_restore=True
+  reply['status']='HELD'
+ else:
+  assert op==steps[len(seen)];seen.append(op)
+  if op=='arm-interrupted-restoration':
+   assert set(frame)=={'id','operation','receipt','probe'}
+   assert base64.b64decode(frame['receipt']).endswith(b'\n') and json.loads(base64.b64decode(frame['receipt']))==frame['probe']['receipt']
+   reply.update(status='INTERRUPTED_RESTORATION_ARMED',receipt={**base,'status':'P2_PROFILED_INTERRUPTED_FRESH_CURRENT_READY',
+    'restorationActionId':plan['restorationActionId'],'candidateSha256':plan['candidateSha256'],'authorityIssued':False,
+    'apiDatabases':{} if scenario=='wrong-arm-api' else databases})
+  elif op=='prepare-interrupted-restoration':
+   assert set(frame)=={'id','operation'} and os.path.exists(held)
+   reply.update(status='INTERRUPTED_RESTORATION_PREPARED',receipt={**base,'status':'P2_PROFILED_INTERRUPTED_NEW_TYPED_BOUNDARY_PREPARED','authoritySha256':'6'*64})
+  elif op=='restore-runtime':
+   assert set(frame)=={'id','operation'} and os.path.exists(held)
+   if scenario=='heartbeat':time.sleep(1.2)
+   reply.update(status='INTERRUPTED_RUNTIME_READY',receipt=restored)
+  elif op=='prepare-close':
+   assert set(frame)=={'id','operation'} and os.path.exists(held)
+   reply.update(status='INTERRUPTED_CLOSE_PREPARED',receipt=restored if scenario!='changed-close' else {**restored,'trafficAuthorized':True})
+  elif op=='finish':
+   assert set(frame)=={'id','operation','restoration'}
+   assert not os.path.exists(held) and json.loads(base64.b64decode(frame['restoration']))==restored
+   if scenario=='no-independent-close':os._exit(43)
+   reply.update(status='INTERRUPTED_RESTORATION_JOINED',receipt=restored if scenario!='changed-join' else {**restored,'runtimeReplacements':2})
+  elif op=='commit':
+   assert set(frame)=={'id','operation'}
+   assert scenario!='heartbeat' or heartbeat_during_restore
+   reply.update(status='COMMITTED',receipt=restored);print(json.dumps(reply),flush=True)
+   if scenario=='ack-exit-nonzero':os._exit(44)
+   if scenario=='ack-exit-zero':break
+   if scenario=='ack-trailing-frame':print(json.dumps({'id':99999,'status':'HELD'}),flush=True)
+   if scenario=='ack-partial-frame':sys.stdout.write('{');sys.stdout.flush()
+   sys.stdin.read();break
+ print(json.dumps(reply),flush=True)
+os.close(fd)
+`;
+
+async function projectedProfiledLock(){
+ const source=new URL('./p2-known-ack-interrupted-restoration.mjs',import.meta.url),projection=new URL(source);
+ projection.search='?owned-profiled-transport';
+ const hook=registerHooks({load(url,context,next){
+  if(url!==projection.href)return next(url,context);
+  return{format:'module',shortCircuit:true,source:readFileSync(source,'utf8')+'\nexport {withProfiledInterruptedEnvironmentLock};'};
+ }});
+ try{return (await import(projection.href)).withProfiledInterruptedEnvironmentLock;}finally{hook.deregister();}
+}
+
+function profiledFixture(run,scenario='ready',frontier='original-stopped-one'){
+ const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-profiled-interrupted-pipe-'))),lock=join(directory,'host-lock'),held=join(directory,'frontend-session-model');
+ const base={version:2,qualificationTargetProfile:profile},actionId='restoration-owned-c',sourceCommit='a'.repeat(40),operatorSourceCommit='b'.repeat(40);
+ const targetSha256='c'.repeat(64),candidateSha256='d'.repeat(64),releaseId='candidate-owned';
+ const frontendPlan={...base,mode:PROFILED_MODE,certificationActionId:actionId,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'e'.repeat(64)};
+ const initial={...base,environment:'staging',mode:PROFILED_MODE,sourceCommit:operatorSourceCommit,confirmation:'staging/'+actionId,
+  restorationActionId:actionId,recoveryActionId:actionId,targetSha256,candidateSha256,credentials:{private:'OWNED_PRIVATE_CANARY'},
+  frontendJob:{...base,sourceCommit,releaseId,target:{qualificationTargetProfile:profile,allowEmptyBootstrap:false,approvedPendingTags:[]}},
+  inventory:{...base},owner:{name:'owned',oid:'123'},frontendBaseline:{catalog:{}},apiJobSha256:{course:'1'.repeat(64),community:'2'.repeat(64)},
+  candidate:{...base,version:3,releaseId,sources:{frontend:{commit:sourceCommit}},frontendMigration:{qualificationTargetProfile:profile},
+   artifacts:{courseMigration:{image:'owned-course'},communityMigration:{image:'owned-community'}}},
+  reviewedPlan:{...base,mode:PROFILED_MODE,restorationActionId:actionId,originalReleaseId:releaseId,sourceCommit,operatorSourceCommit,
+   candidateSha256,targetSha256,requestedFrontier:frontier,frontendPlan}};
+ const receipt={...base,status:'P2_CERTIFICATION_DATABASE_CURRENT',journalSha256:'8'.repeat(64)};
+ const probe={...base,plan:frontendPlan,job:initial.frontendJob,baseline:initial.frontendBaseline,owner:initial.owner,receipt};
+ const prepared=join(directory,'p2-profiled-interrupted-close-prepared.json'),terminal=join(directory,'p2-profiled-interrupted-host-outcome.json');
+ let launched;
+ const launch=(executable,args,options)=>{launched={executable,args,options};return spawn('python3',['-I','-u','-c',profiledProgram,lock,held,scenario],options);};
+ const execute=task=>run({knownHosts:'/owned/known-hosts',sshKey:'/owned/key'},initial,directory,task,launch);
+ async function restore(verify,_signal,host){
+  writeFileSync(held,'projection',{mode:0o600});
+  writeFileSync(join(directory,'p2-profiled-interrupted-frontend-current.json'),JSON.stringify(receipt)+'\n',{mode:0o600});
+  try{
+   await verify();
+   const contender=spawnSync('python3',['-I','-c','import fcntl,os,sys;fd=os.open(sys.argv[1],os.O_RDWR);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)',lock]);
+   assert.notEqual(contender.status,0);
+   await host.arm({receipt,probe});await host.prepare();await host.restore();await host.prepareClose();
+   assert.equal(existsSync(prepared),true);assert.equal(existsSync(terminal),false);
+  }finally{unlinkSync(held);}
+ }
+ return{initial,prepared,terminal,restore,execute,launched:()=>launched,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
+}
+
+test('profiled transport accepts each stopped frontier only after a close join and zero child exit',async()=>{
+ const run=await projectedProfiledLock();
+ for(const [frontier,scenario] of [['original-stopped-one','heartbeat'],['replacement-stopped-zero','ack-exit-zero']]){
+  const fixture=profiledFixture(run,scenario,frontier);
+  try{
+   const result=await fixture.execute(fixture.restore);
+   assert.equal(result.frontier,frontier);
+   assert.deepEqual(JSON.parse(readFileSync(fixture.terminal)),result);
+   assert.deepEqual(readFileSync(fixture.prepared),readFileSync(fixture.terminal));
+   assert.equal(fixture.launched().executable,'/usr/bin/ssh');
+   assert.equal(fixture.launched().args.at(-1),"'sudo' '-n' '/usr/bin/python3' '-I' '-u' '/opt/lash-her/operators/"+
+    fixture.initial.sourceCommit+"/ops/platform/host/p2_profiled_known_ack_restoration_parent.py' '--supervisor-profiled-current'");
+   assert.equal(JSON.stringify(fixture.launched()).includes('OWNED_PRIVATE_CANARY'),false);
+  }finally{fixture.cleanup();}
+ }
+});
+
+test('profiled transport rejects prelaunch mode and bounds violations without opening SSH',async()=>{
+ const run=await projectedProfiledLock();
+ for(const mutate of [initial=>{initial.mode=MODE;},initial=>{delete initial.reviewedPlan.frontendPlan.qualificationTargetProfile;},
+  initial=>{initial.confirmation='staging/original-b';},initial=>{initial.privateOversize='x'.repeat(4_000_000);}]){
+  const fixture=profiledFixture(run);try{
+   mutate(fixture.initial);await assert.rejects(fixture.execute(()=>assert.fail('must not invoke the held task')));
+   assert.equal(fixture.launched(),undefined);
+  }finally{fixture.cleanup();}
+ }
+});
+
+test('profiled transport refuses a wrong order, changed proofs, or an unbounded response before commit',async()=>{
+ const run=await projectedProfiledLock();
+ for(const scenario of ['ordering','wrong-arm-api','foreign-runtime-profile','changed-journal','changed-api','open-gateway',
+  'wrong-frontier-count','duplicate-service','changed-close','oversized']){
+  const fixture=profiledFixture(run,scenario);try{
+   const task=scenario==='ordering'?(_verify,_signal,host)=>host.restore():fixture.restore;
+   await assert.rejects(fixture.execute(task));assert.equal(existsSync(fixture.terminal),false,scenario);
+  }finally{fixture.cleanup();}
+ }
+});
+
+test('profiled close preparation remains only evidence if independent close, commit stream, or child exit fails',async()=>{
+ const run=await projectedProfiledLock();
+ for(const scenario of ['no-independent-close','changed-join','ack-exit-nonzero','ack-trailing-frame','ack-partial-frame']){
+  const fixture=profiledFixture(run,scenario);try{
+   await assert.rejects(fixture.execute(fixture.restore));
+   assert.equal(existsSync(fixture.prepared),true,scenario);assert.equal(existsSync(fixture.terminal),false,scenario);
+  }finally{fixture.cleanup();}
+ }
 });
 
 test('owned failure metadata excludes messages, values, raw URLs and non-source frames and bounds causes',async()=>{

@@ -10,19 +10,27 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {prepareP2OperatorRelease,validateP2PriorGatewayReference} from './p2-release.mjs';
 import {withRecoveryFrontendSession,readRecoveryFrontendCurrent} from './p2-recovery-current-probe.mjs';
+import {withP2ProfiledInterruptedFrontendSession} from './p2-certification-current-probe.mjs';
 import {frontendPrivateReceiptDirectory,readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {writeFrontendReceipt} from './frontend-migration.mjs';
 import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh,sshCommand} from './recreation_ssh.mjs';
-import {prepareP2ProfiledCurrentRelease} from './p2-profiled-current-release.mjs';
+import {prepareP2ProfiledCurrentRelease,verifyP2ProfiledCurrentReleaseConfiguration} from './p2-profiled-current-release.mjs';
+import {assertSourceCheckout} from './source-checkout.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
-import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
+import {decodeQualificationTargetJson,requireQualificationTargetProfile,resolveQualificationTargetProfile,
+  STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 
 export const MODE='known-ack-interrupted-restoration';
 export const TERMINAL='p2-known-ack-interrupted-restoration-outcome.json';
 export const STATUS='P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED';
 export const PROFILED_MODE='p2-profiled-known-ack-interrupted-restoration';
+const profiledStatus='P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED';
+const profiledCurrent='p2-profiled-interrupted-frontend-current.json';
+const profiledPrepared='p2-profiled-interrupted-close-prepared.json';
+const profiledTerminal='p2-profiled-interrupted-host-outcome.json';
+const profiledFrameLimit=4_000_000;
 export const CAUSAL_FILES=Object.freeze(['recovery-intent.json','baseline.json','domain.json','request-details.json','settlement.json','replacement-authorization.json']);
 export const REPLACEMENT_FILES=Object.freeze(['known-ack-replacement-intent.json','known-ack-gateway-replacement-started.json',...Array.from({length:5},(_,i)=>['intent','observed'].map(kind=>`known-ack-stage-${i}-${kind}.json`)).flat()]);
 const profiledCausalFiles=Object.freeze([...CAUSAL_FILES,'reconciliation-observed.json']);
@@ -169,8 +177,12 @@ export function prepareProfiledInterruptedKnownAckOperator(settings){
 }
 
 export function prepareProfiledInterruptedKnownAckHostPacket(settings){
-  const checked=prepareProfiledInterruptedKnownAckOperator(settings),{original,plan}=checked;
-  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
+  const checked=prepareProfiledInterruptedKnownAckOperator(settings);
+  return profiledInterruptedHostPacket(settings,checked,committedProfiledCurrentOperatorSource(root,checked.plan.operatorSourceCommit));
+}
+
+function profiledInterruptedHostPacket(settings,checked,source){
+  const {original,plan}=checked;
   const {host}=settings.releaseSettings;
   const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
   return {...profileFields,mode:PROFILED_MODE,environment:'staging',sourceCommit:plan.operatorSourceCommit,sourceSha256,
@@ -240,6 +252,214 @@ export async function runInterruptedKnownAckRestoration({prepared,action},{direc
   });
 }
 
+const profiledServices=['community-api','course-api','community-tls','course-tls','course-snapshot','community-worker',
+  'course-media','course-export-cleanup','course-publisher','gateway'];
+const profiledBoundaryChecks=['public-tls-missing-workload-denied','public-metrics-hidden','private-course-tls-catalog',
+  'private-application-credential-required','private-community-peer-denied'];
+const zeroCounters={newWork:0,recovery:0};
+const profiledFalseFlags=['sqlReplayed','migrationsExecuted','rolePreparationRepeated','frontendSqlApplied','newWorkOpened','recoveryOpened','trafficAuthorized'];
+
+function profiledReceipt(receipt,status){
+  requireQualificationTargetProfile(currentProfile,receipt);
+  demand(receipt.version===2&&receipt.status===status);
+}
+
+function requireProfiledApiDatabases(initial,databases){
+  demand(exact(databases,['course','community'])&&Object.entries(databases).every(([name,record])=>
+    exact(record,['image','jobSha256','receiptSha256'])&&record.image===initial.candidate.artifacts[name+'Migration'].image&&
+    record.jobSha256===initial.apiJobSha256[name]&&sha(record.receiptSha256)));
+}
+
+function requireProfiledGateway(gateway,running,uncertain){
+  const admission=gateway?.admission, process=gateway?.process;
+  demand(admission?.newWork===false&&admission.recovery===false&&isDeepStrictEqual(admission.active,zeroCounters)&&
+    isDeepStrictEqual(admission.uncertain,uncertain)&&process?.running===running&&Number.isSafeInteger(process.pid)&&
+    (running?process.pid>0:process.pid===0)&&/^[a-f0-9]{12,64}$/u.test(process.containerId??''));
+}
+
+function requireProfiledRestored(initial,receipt,current,apiDatabases){
+  profiledReceipt(receipt,profiledStatus);
+  const plan=initial.reviewedPlan;
+  demand(receipt.environment==='staging'&&receipt.releaseId===plan.originalReleaseId&&receipt.candidateSha256===plan.candidateSha256&&
+    receipt.restorationActionId===plan.restorationActionId&&receipt.recoveryActionId===plan.restorationActionId&&
+    receipt.contractPhase===plan.frontendPlan.contractPhase&&receipt.phase2ContractManifestSha256===plan.frontendPlan.phase2ContractManifestSha256&&
+    receipt.frontier===plan.requestedFrontier&&receipt.frontendJournalSha256===current.journalSha256&&sha(receipt.readinessReceiptSha256)&&
+    profiledFalseFlags.every(key=>receipt[key]===false)&&receipt.nativeDisabled===true&&receipt.runtimeReplacements===1&&
+    isDeepStrictEqual(receipt.apiDatabases,apiDatabases)&&isDeepStrictEqual(receipt.currentApiDatabasesAfter,apiDatabases)&&
+    Array.isArray(receipt.boundaryChecks)&&isDeepStrictEqual([...receipt.boundaryChecks].sort(),[...profiledBoundaryChecks].sort())&&
+    Array.isArray(receipt.containers)&&isDeepStrictEqual(receipt.containers.map(row=>row.service).sort(),[...profiledServices].sort())&&
+    receipt.containers.every(row=>/^[a-f0-9]{12,64}$/u.test(row.containerId??''))&&
+    new Set(receipt.containers.map(row=>row.containerId)).size===profiledServices.length);
+  requireProfiledGateway(receipt.stoppedGateway,false,receipt.frontier==='original-stopped-one'?{newWork:0,recovery:1}:zeroCounters);
+  requireProfiledGateway(receipt.newGateway,true,zeroCounters);
+  const gatewayId=receipt.newGateway.process.containerId;
+  demand(gatewayId!==receipt.stoppedGateway.process.containerId&&
+    gatewayId.startsWith(receipt.containers.find(row=>row.service==='gateway').containerId));
+}
+
+async function withProfiledInterruptedEnvironmentLock(settings,initial,directory,task,launch=spawn){
+  const plan=initial.reviewedPlan;
+  requireQualificationTargetProfile(currentProfile,initial,plan,plan?.frontendPlan,initial.candidate,
+    initial.candidate?.frontendMigration,initial.frontendJob,initial.frontendJob?.target,initial.inventory);
+  demand(initial.version===2&&initial.environment==='staging'&&initial.mode===PROFILED_MODE&&plan.mode===PROFILED_MODE&&
+    plan.version===2&&plan.frontendPlan.version===2&&plan.frontendPlan.mode===PROFILED_MODE&&
+    /^[a-f0-9]{40}$/u.test(initial.sourceCommit??'')&&initial.sourceCommit===plan.operatorSourceCommit&&
+    action(plan.restorationActionId)&&initial.confirmation==='staging/'+plan.restorationActionId&&
+    initial.restorationActionId===plan.restorationActionId&&initial.recoveryActionId===plan.restorationActionId&&
+    plan.frontendPlan.certificationActionId===plan.restorationActionId&&initial.candidateSha256===plan.candidateSha256&&
+    initial.targetSha256===plan.targetSha256&&initial.candidate.version===3&&initial.candidate.releaseId===plan.originalReleaseId&&
+    initial.frontendJob.version===2&&initial.frontendJob.releaseId===plan.originalReleaseId&&
+    initial.frontendJob.sourceCommit===plan.sourceCommit&&initial.candidate.sources?.frontend?.commit===plan.sourceCommit&&
+    initial.frontendJob.target.allowEmptyBootstrap===false&&isDeepStrictEqual(initial.frontendJob.target.approvedPendingTags,[]));
+  const rawInitial=JSON.stringify(initial);
+  demand(Buffer.byteLength(rawInitial)+1<=profiledFrameLimit);
+  const remote=['sudo','-n','/usr/bin/python3','-I','-u',
+    `/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_profiled_known_ack_restoration_parent.py`,'--supervisor-profiled-current'];
+  const child=launch('/usr/bin/ssh',sshCommand({knownHosts:settings.knownHosts,keyFile:settings.sshKey},remote),
+    {stdio:['pipe','pipe','pipe'],env:Object.fromEntries(['PATH','HOME','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]))});
+  const pending=new Map(),controller=new AbortController();
+  let sequence=0,failed=false,phase='locked',heartbeat,exit,stdout=Buffer.alloc(0),current,apiDatabases,restored,preparedRaw;
+  const lost=()=>{
+    if(failed)return;
+    failed=true;controller.abort();
+    for(const waiter of pending.values()){clearTimeout(waiter.timer);waiter.reject(new Error('P2_PROFILED_INTERRUPTED_HOST_LOST'));}
+    pending.clear();child.stdin.end();
+  };
+  const accept=raw=>{
+    try{
+      const value=decodeQualificationTargetJson(raw,'private-packet'),waiter=pending.get(value?.id);
+      demand(phase!=='committed'&&waiter&&value.status===waiter.status&&exact(value,waiter.receipt?['id','status','receipt']:['id','status']));
+      if(waiter.status==='COMMITTED'){
+        demand(isDeepStrictEqual(value.receipt,restored));phase='committed';
+      }
+      pending.delete(value.id);clearTimeout(waiter.timer);waiter.resolve(value.receipt);
+    }catch{lost();}
+  };
+  child.stdout.on('data',chunk=>{
+    let offset=0;
+    while(!failed&&offset<chunk.length){
+      const end=chunk.indexOf(10,offset),part=chunk.subarray(offset,end<0?chunk.length:end);
+      if(stdout.length+part.length+1>profiledFrameLimit){lost();return;}
+      stdout=Buffer.concat([stdout,part]);
+      if(end<0)return;
+      accept(stdout);stdout=Buffer.alloc(0);offset=end+1;
+    }
+  });
+  child.stdout.on('end',()=>{if(stdout.length||phase!=='committed')lost();});
+  // Host stderr can contain private material. The independent guard retains its own failure record.
+  child.stderr.resume();child.on('error',lost);child.stdin.on('error',lost);
+  child.on('exit',(code,signal)=>{exit={code,signal};if(code!==0||signal!==null)lost();});
+  const reaped=new Promise(done=>child.once('close',done));
+  const expect=(id,status,timeout,receipt)=>new Promise((resolve,reject)=>{
+    demand(!failed&&!pending.has(id));
+    pending.set(id,{status,receipt,resolve,reject,timer:setTimeout(lost,timeout)});
+  });
+  const send=(operation,status,data={},timeout=90_000,receipt=true)=>{
+    demand(!failed&&phase!=='committed');
+    const id=++sequence,raw=JSON.stringify({id,operation,...data});
+    demand(Buffer.byteLength(raw)+1<=profiledFrameLimit);
+    const result=expect(id,status,timeout,receipt);child.stdin.write(raw+'\n');return result;
+  };
+  const verify=async()=>{await send('check','HELD',{},90_000,false);};
+  const transition=async(before,after,operation,status,data,timeout)=>{
+    demand(phase===before);phase='pending-'+after;
+    const receipt=await send(operation,status,data,timeout);phase=after;return receipt;
+  };
+  const host={
+    async arm({receipt,probe}){
+      requireQualificationTargetProfile(currentProfile,probe,receipt);
+      demand(probe.version===2&&isDeepStrictEqual(probe.plan,plan.frontendPlan)&&isDeepStrictEqual(probe.job,initial.frontendJob)&&
+        isDeepStrictEqual(probe.baseline,initial.frontendBaseline)&&isDeepStrictEqual(probe.owner,initial.owner)&&
+        isDeepStrictEqual(probe.receipt,receipt)&&receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT');
+      const raw=readFrontendReleaseEvidence(directory,profiledCurrent);
+      demand(isDeepStrictEqual(decodeQualificationTargetJson(raw,'carrier'),receipt));
+      const ready=await transition('locked','armed','arm-interrupted-restoration','INTERRUPTED_RESTORATION_ARMED',{receipt:raw.toString('base64'),probe},240_000);
+      profiledReceipt(ready,'P2_PROFILED_INTERRUPTED_FRESH_CURRENT_READY');
+      demand(ready.restorationActionId===plan.restorationActionId&&ready.candidateSha256===plan.candidateSha256&&ready.authorityIssued===false);
+      requireProfiledApiDatabases(initial,ready.apiDatabases);
+      current=receipt;apiDatabases=ready.apiDatabases;
+    },
+    async prepare(){
+      const ready=await transition('armed','prepared','prepare-interrupted-restoration','INTERRUPTED_RESTORATION_PREPARED',{},240_000);
+      profiledReceipt(ready,'P2_PROFILED_INTERRUPTED_NEW_TYPED_BOUNDARY_PREPARED');demand(sha(ready.authoritySha256));
+    },
+    async restore(){
+      restored=await transition('prepared','restored','restore-runtime','INTERRUPTED_RUNTIME_READY',{},900_000);
+      requireProfiledRestored(initial,restored,current,apiDatabases);return structuredClone(restored);
+    },
+    async prepareClose(){
+      const ready=await transition('restored','closing','prepare-close','INTERRUPTED_CLOSE_PREPARED',{},240_000);
+      demand(isDeepStrictEqual(ready,restored));
+      writeFrontendReceipt(directory,profiledPrepared,ready);
+      preparedRaw=readFrontendReleaseEvidence(directory,profiledPrepared);
+      demand(isDeepStrictEqual(decodeQualificationTargetJson(preparedRaw,'carrier'),ready));
+    },
+  };
+  let committed,failure;
+  try{
+    const ready=expect(0,'LOCKED',90_000,false);child.stdin.write(rawInitial+'\n');await ready;
+    heartbeat=setInterval(()=>{if(!failed&&phase!=='committed')void verify().catch(lost);},1000);
+    await task(verify,controller.signal,host);
+    // The source task owns the real FE session. Its return means unlock and disconnect completed.
+    demand(phase==='closing'&&preparedRaw.equals(readFrontendReleaseEvidence(directory,profiledPrepared)));
+    const joined=await transition('closing','joined','finish','INTERRUPTED_RESTORATION_JOINED',{restoration:preparedRaw.toString('base64')},30_000);
+    demand(isDeepStrictEqual(joined,restored));clearInterval(heartbeat);
+    committed=await send('commit','COMMITTED');
+  }catch{failure=new Error('P2_PROFILED_INTERRUPTED_RESTORATION_FAILED_REQUIRES_REVIEW');lost();}
+  finally{
+    clearInterval(heartbeat);child.stdin.end();
+    const stop=setTimeout(()=>{lost();child.kill('SIGTERM');},60_000);
+    const kill=setTimeout(()=>child.kill('SIGKILL'),65_000);
+    await reaped;clearTimeout(stop);clearTimeout(kill);
+    if(pending.size)lost();
+    if(failed||exit?.code!==0||exit.signal!==null)failure??=new Error('P2_PROFILED_INTERRUPTED_HOST_CLEANUP_UNCERTAIN');
+  }
+  if(failure)throw failure;
+  demand(committed&&phase==='committed');
+  writeFrontendReceipt(directory,profiledTerminal,committed);return committed;
+}
+
+function runProfiledInterruptedKnownAckRestoration(settings,initial,prepared,directory){
+  return withProfiledInterruptedEnvironmentLock(settings,initial,directory,async(verifyEnvironment,signal,host)=>{
+    const verifyHost=async()=>{signal.throwIfAborted();assertSourceCheckout(root,initial.sourceCommit);await verifyEnvironment();};
+    await withP2ProfiledInterruptedFrontendSession(prepared,initial.reviewedPlan.frontendPlan,
+      {getUrl:()=>initial.credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,verifyEnvironment:verifyHost},
+      async({verify,receipt,probe,readCurrent})=>{
+        writeFrontendReceipt(directory,profiledCurrent,receipt);
+        await verify();await host.arm({receipt,probe});await verify();
+        await host.prepare();await verify();
+        const result=await host.restore(),after=await readCurrent();
+        demand(isDeepStrictEqual(after,receipt)&&result.frontendJournalSha256===after.journalSha256);
+        await host.prepareClose();
+      });
+  });
+}
+
+export async function p2ProfiledInterruptedKnownAckOperator(settings,{confirmation}={}){
+  demand(process.versions.node.split('.')[0]==='24');
+  const checked=prepareProfiledInterruptedKnownAckOperator(settings),{original,plan}=checked;
+  demand(confirmation==='staging/'+plan.restorationActionId);
+  const releaseSettings=settings.releaseSettings,directory=join(releaseSettings.results,plan.restorationActionId);
+  frontendPrivateReceiptDirectory(releaseSettings.results);demand(lstatSync(directory,{throwIfNoEntry:false})===undefined);
+  verifyP2ProfiledCurrentReleaseConfiguration(original);
+  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit),packet=profiledInterruptedHostPacket(settings,checked,source);
+  const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
+    sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
+  const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
+  requireQualificationTargetProfile(currentProfile,provider);
+  demand(provider.version===2&&typeof provider.vercelToken==='string'&&provider.vercelToken.length>0&&provider.vercelToken.length<=8192);
+  const credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
+    const value=process.env[key];demand(typeof value==='string'&&value.length>0&&value.length<=16_384);return[key,value];}));
+  mkdirSync(directory,{mode:0o700});const diagnostics=join(directory,'ssh');mkdirSync(diagnostics,{mode:0o700});
+  writeFrontendReceipt(directory,'reviewed-plan.json',plan);writeFrontendReceipt(directory,'operator-source-ci.json',sourceCi);
+  const ssh=await recreationSsh({knownHosts:releaseSettings.knownHosts,keyFile:releaseSettings.sshKey,diagnostics});
+  demand((await ssh.machine()).machineId===packet.hostMachineId);
+  const installed=await ssh.installProfiledCurrentSource({commit:plan.operatorSourceCommit,files:source.files});
+  demand(installed.status==='EXACT_OPERATOR_SOURCE_INSTALLED'&&installed.commit===plan.operatorSourceCommit);
+  const initial={...packet,confirmation,credentials,vercelToken:provider.vercelToken};
+  return runProfiledInterruptedKnownAckRestoration(releaseSettings,initial,{migration:original.migration,plan:original.inventory},directory);
+}
+
 export async function interruptedKnownAckOperator(settings,{apply=false,confirmation}={}){
   demand(process.versions.node.split('.')[0]==='24');const checked=prepareInterruptedKnownAckOperator(settings);if(!apply)return checked.plan;
   demand(confirmation==='staging/'+checked.action.restorationActionId);
@@ -263,11 +483,15 @@ export async function interruptedKnownAckOperator(settings,{apply=false,confirma
     assertSource:()=>committedOperatorSource(root,settings.operatorSourceCommit),withEnvironmentLock:interruptedKnownAckEnvironmentLock(settings,initial,directory)});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','apply','plan-profiled-current','host-plan-profiled-current'].includes(operation)&&typeof path==='string'&&
-      (operation==='apply'?flag==='--confirm'&&typeof confirmation==='string':flag===undefined&&confirmation===undefined));
+  try{const[operation,path,flag,confirmation]=process.argv.slice(2),profiledApply=operation==='apply-profiled-current';
+    demand(['plan','apply','plan-profiled-current','host-plan-profiled-current','apply-profiled-current'].includes(operation)&&typeof path==='string'&&
+      (operation==='apply'||profiledApply?flag==='--confirm'&&typeof confirmation==='string':flag===undefined&&confirmation===undefined)&&
+      (!profiledApply||process.argv.length===6));
     if(operation.endsWith('-profiled-current')){
+      resolveQualificationTargetProfile(currentProfile);
       const settings=decodeQualificationTargetJson(privateBytes(resolve(path)),'private-packet');
-      const result=operation==='plan-profiled-current'?prepareProfiledInterruptedKnownAckOperator(settings).plan:prepareProfiledInterruptedKnownAckHostPacket(settings);
+      const result=profiledApply?await p2ProfiledInterruptedKnownAckOperator(settings,{confirmation}):
+        operation==='plan-profiled-current'?prepareProfiledInterruptedKnownAckOperator(settings).plan:prepareProfiledInterruptedKnownAckHostPacket(settings);
       console.log(JSON.stringify(result));
     }else console.log(JSON.stringify(await interruptedKnownAckOperator(object(resolve(path)),{apply:operation==='apply',confirmation})));
   }catch{console.error('P2_KNOWN_ACK_INTERRUPTED_RESTORATION_FAILED_REQUIRES_REVIEW');process.exitCode=1;}
