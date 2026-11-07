@@ -40,6 +40,8 @@ PIN_NAMES = {
     "frontendPromotionStarted": "frontend-promotion-started.json",
     "frontendWorkloadOutcome": "frontend-workload-outcome.json",
 }
+LOST_BUILD_PIN_NAMES = frozenset({"deployStarted", "buildStarted", "buildIntent"})
+BUILD_BODY_KEYS = ["autoAssignCustomDomains", "gitSource", "meta", "name", "project", "target"]
 
 
 def sha(raw):
@@ -334,6 +336,175 @@ def matching_deployments(client, project_id, source_commit, release_id):
                "PROFILED_CURRENT_DEPLOYMENT_INVENTORY_REFUSED")
         cursor = following
     raise ValueError("PROFILED_CURRENT_DEPLOYMENT_INVENTORY_REFUSED")
+
+
+def lost_build_context(initial, provider):
+    """Validate the source-owned carrier without selecting the provider effect."""
+    expected = dict(PROFILE)
+    resolve_qualification_target_profile(expected)
+    demand(isinstance(initial, dict) and isinstance(provider, dict),
+           "PROFILED_CURRENT_LOST_BUILD_CONTEXT_REFUSED")
+    plan, candidate, job = initial.get("plan"), initial.get("candidate"), initial.get("job")
+    demand(all(isinstance(value, dict) for value in (plan, candidate, job)),
+           "PROFILED_CURRENT_LOST_BUILD_CONTEXT_REFUSED")
+    require_qualification_target_profile(expected, initial, plan, candidate,
+                                         candidate.get("frontendMigration"), job, job.get("target"), provider)
+    pins = initial.get("lostBuildReceiptSha256")
+    keys = set(pins) if isinstance(pins, dict) else set()
+    demand(initial.get("version") == 2 and plan.get("version") == 2 and plan.get("mode") == "p2-profiled-current-recovery" and
+           plan.get("environment") == "staging" and
+           plan.get("disposition") == "reconcile-frontend-lost-build-get-first" and
+           candidate.get("version") == 3 and job.get("version") == 2 and
+           candidate.get("releaseId") == job.get("releaseId") == plan.get("originalReleaseId") and
+           candidate.get("sources", {}).get("frontend", {}).get("commit") ==
+           job.get("sourceCommit") == plan.get("sourceCommit") and
+           candidate.get("sources", {}).get("frontend", {}).get("repository") ==
+           "https://github.com/princessdardan/lash-her-frontend.git" and
+           candidate.get("sources", {}).get("frontend", {}).get("requiredChecks") == "passed" and
+           candidate.get("workload", {}).get("projectId") == "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" and
+           candidate.get("workload", {}).get("environment") == "production" and
+           candidate.get("contractPhase") == "p2" and
+           isinstance(candidate.get("phase2ContractManifestSha256"), str) and
+           re.fullmatch(r"sha256:[a-f0-9]{64}", candidate["phase2ContractManifestSha256"]) and
+           candidate["phase2ContractManifestSha256"] != "sha256:" + "0" * 64 and
+           job.get("environment") == "staging" and job.get("target", {}).get("approvedPendingTags") == [] and
+           job.get("target", {}).get("allowEmptyBootstrap") is False and
+           isinstance(plan.get("candidateSha256"), str) and re.fullmatch(r"[a-f0-9]{64}", plan["candidateSha256"]) and
+           plan["candidateSha256"] != "0" * 64 and isinstance(plan.get("targetSha256"), str) and
+           re.fullmatch(r"[a-f0-9]{64}", plan["targetSha256"]) and plan["targetSha256"] != "0" * 64 and
+           isinstance(plan.get("configurationSha256"), dict) and set(plan["configurationSha256"]) == CONFIGURATION_NAMES and
+           all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) and value != "0" * 64
+               for value in plan["configurationSha256"].values()) and
+           plan.get("lostBuildReceiptSha256") == pins and
+           keys in (LOST_BUILD_PIN_NAMES, LOST_BUILD_PIN_NAMES | {"buildOutcome"}) and
+           all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) and value != "0" * 64
+               for value in pins.values()) and
+           set(provider) in ({"version", "qualificationTargetProfile", "vercelToken", "bindings", "originalDirectory"},
+                             {"version", "qualificationTargetProfile", "vercelToken", "bindings", "originalDirectory",
+                              "frontendRuntimeDatabaseUrl"}) and
+           provider.get("version") == 2 and isinstance(provider.get("vercelToken"), str) and
+           0 < len(provider["vercelToken"]) <= 8192 and all(32 < ord(char) < 127 for char in provider["vercelToken"]) and
+           isinstance(provider.get("bindings"), dict),
+           "PROFILED_CURRENT_LOST_BUILD_CONTEXT_REFUSED")
+    demand("verify" not in initial, "PROFILED_CURRENT_LOST_BUILD_CONTEXT_REFUSED")
+    environment, project_id, source_commit = vercel.release_identity(candidate, expected_profile=expected)
+    demand(environment == "staging" and project_id == candidate["workload"]["projectId"] and
+           source_commit == plan["sourceCommit"], "PROFILED_CURRENT_LOST_BUILD_CONTEXT_REFUSED")
+    return expected, plan, candidate, job, pins, project_id, source_commit
+
+
+def _receipt(attempt, name, expected_sha, expected):
+    raw = migrate.read_input(attempt, name)
+    demand(sha(raw) == expected_sha, "PROFILED_CURRENT_LOST_BUILD_RECEIPT_MISMATCH")
+    value = json.loads(raw)
+    require_qualification_target_profile(expected, value)
+    demand(isinstance(value, dict), "PROFILED_CURRENT_LOST_BUILD_RECEIPT_REFUSED")
+    return raw, value
+
+
+def _exists(path):
+    try:
+        path.lstat()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def observe_lost_build_post_ack(initial, provider, verify=checkpoint):
+    """Observe one lost-build POST effect without replaying or qualifying it.
+
+    This path proves only that the provider inventory contains one deployment
+    matching the fixed build intent. It does not recover an acknowledgement or
+    establish readiness, workload, promotion, alias, cron, traffic or release.
+    """
+    demand(callable(verify), "PROFILED_CURRENT_LOST_BUILD_CHECKPOINT_REQUIRED")
+    expected, plan, candidate, _job, pins, project_id, source_commit = lost_build_context(initial, provider)
+    parent = private_directory(provider["originalDirectory"])
+    attempt = existing_child(parent, "vercel")
+    _deploy_raw, deploy = _receipt(attempt, "p2-profiled-current-deploy-started.json", pins["deployStarted"], expected)
+    _build_raw, build = _receipt(attempt, "frontend-build-started.json", pins["buildStarted"], expected)
+    deploy_keys = {"version", "qualificationTargetProfile", "environment", "releaseId", "sourceCommit",
+                   "candidateSha256", "configurationSha256", "trafficAuthorized"}
+    build_keys = {"version", "qualificationTargetProfile", "environment", "projectId", "sourceCommit", "releaseId",
+                  "previousDeploymentId", "trafficAuthorized", "promotionAuthorized"}
+    demand(set(deploy) == deploy_keys and deploy.get("version") == 2 and deploy.get("environment") == "staging" and
+           deploy.get("releaseId") == candidate["releaseId"] and deploy.get("sourceCommit") == plan["sourceCommit"] and
+           deploy.get("candidateSha256") == plan["candidateSha256"] and
+           deploy.get("configurationSha256") == plan["configurationSha256"] and deploy.get("trafficAuthorized") is False,
+           "PROFILED_CURRENT_LOST_BUILD_DEPLOY_RECEIPT_REFUSED")
+    previous = build.get("previousDeploymentId")
+    demand(set(build) == build_keys and build.get("version") == 2 and build.get("environment") == "staging" and
+           build.get("projectId") == project_id and build.get("sourceCommit") == source_commit == plan["sourceCommit"] and
+           build.get("releaseId") == candidate["releaseId"] and build.get("trafficAuthorized") is False and
+           build.get("promotionAuthorized") is False and
+           (previous is None or isinstance(previous, str) and re.fullmatch(r"dpl_[A-Za-z0-9]+", previous)),
+           "PROFILED_CURRENT_LOST_BUILD_STARTED_REFUSED")
+    intent_matches, pinned_intents = [], []
+    for path in attempt.iterdir():
+        if not path.name.startswith("provider-mutation-intent-"):
+            continue
+        demand(re.fullmatch(r"provider-mutation-intent-[0-9]{3}\.json", path.name),
+               "PROFILED_CURRENT_LOST_BUILD_INTENT_REFUSED")
+        raw = migrate.read_input(attempt, path.name)
+        value = json.loads(raw)
+        require_qualification_target_profile(expected, value)
+        demand(isinstance(value, dict) and set(value) == {"version", "qualificationTargetProfile", "sequence", "method",
+               "pathSha256", "bodyKeys", "providerMutationCompleted", "trafficAuthorized"} and
+               type(value.get("sequence")) is int and 1 <= value["sequence"] <= 999 and
+               path.name == f"provider-mutation-intent-{value['sequence']:03d}.json" and value.get("version") == 2,
+               "PROFILED_CURRENT_LOST_BUILD_INTENT_REFUSED")
+        is_build = value.get("method") == "POST" and value.get("pathSha256") == sha(b"/v13/deployments") and \
+            value.get("bodyKeys") == BUILD_BODY_KEYS and value.get("providerMutationCompleted") is False and \
+            value.get("trafficAuthorized") is False
+        if is_build:
+            intent_matches.append((raw, value))
+        if sha(raw) == pins["buildIntent"]:
+            pinned_intents.append((raw, value))
+    demand(len(intent_matches) == 1 and len(pinned_intents) == 1 and intent_matches[0][0] == pinned_intents[0][0],
+           "PROFILED_CURRENT_LOST_BUILD_INTENT_REFUSED")
+    outcome_path = attempt / "frontend-build-outcome.json"
+    if "buildOutcome" in pins:
+        _outcome_raw, outcome = _receipt(attempt, outcome_path.name, pins["buildOutcome"], expected)
+        demand(set(outcome) == build_keys | {"status", "phase", "failureCode"} and
+               all(outcome.get(key) == build.get(key) for key in build_keys) and
+               outcome.get("status") == "FRONTEND_BUILD_FAILED_REQUIRES_REVIEW" and outcome.get("phase") == "create" and
+               outcome.get("failureCode") == "VERCEL_REQUEST_FAILED_REQUIRES_REVIEW",
+               "PROFILED_CURRENT_LOST_BUILD_OUTCOME_REFUSED")
+    else:
+        demand(not _exists(outcome_path), "PROFILED_CURRENT_LOST_BUILD_OUTCOME_REFUSED")
+    for name in ("frontend-build-created.json", "frontend-promotion-started.json", "frontend-promotion-outcome.json",
+                 "frontend-workload-outcome.json"):
+        demand(not _exists(attempt / name), "PROFILED_CURRENT_LOST_BUILD_LATER_RECEIPT_REFUSED")
+    demand(not any(path.name.startswith("frontend-promotion-observation-") for path in attempt.iterdir()),
+           "PROFILED_CURRENT_LOST_BUILD_LATER_RECEIPT_REFUSED")
+    client = GuardedClient(vercel.Client(provider["vercelToken"]), attempt, verify, read_only=True)
+    expected_project = {"projectId": project_id, "productionDeploymentId": previous, "cronsEnabled": False}
+    before = vercel.project_state(client, project_id)
+    demand(before == expected_project, "PROFILED_CURRENT_LOST_BUILD_PRIOR_TARGET_CHANGED")
+    matches = matching_deployments(client, project_id, source_commit, candidate["releaseId"])
+    demand(len(matches) == 1, "PROFILED_CURRENT_LOST_BUILD_EFFECT_AMBIGUOUS")
+    deployment_id = matches[0]
+    deployment = vercel.deployment_state(client, deployment_id, project_id, source_commit, candidate["releaseId"])
+    demand(deployment.get("deploymentId") == deployment_id and deployment.get("projectId") == project_id and
+           deployment.get("sourceCommit") == source_commit,
+           "PROFILED_CURRENT_LOST_BUILD_EFFECT_UNVERIFIED")
+    demand(vercel.project_state(client, project_id) == before,
+           "PROFILED_CURRENT_LOST_BUILD_PRIOR_TARGET_CHANGED")
+    result = {"version": 2, "qualificationTargetProfile": dict(PROFILE),
+        "status": "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED", "environment": "staging",
+        "actionId": candidate["releaseId"], "releaseId": candidate["releaseId"], "sourceCommit": source_commit,
+        "candidateSha256": plan["candidateSha256"], "configurationSha256": plan["configurationSha256"],
+        "targetSha256": plan["targetSha256"], "projectId": project_id, "deploymentId": deployment_id,
+        "previousDeploymentId": previous, "lostBuildReceiptSha256": pins_sha(pins),
+        "deployStartedSha256": pins["deployStarted"], "buildStartedSha256": pins["buildStarted"],
+        "buildIntentSha256": pins["buildIntent"],
+        **({"buildOutcomeSha256": pins["buildOutcome"]} if "buildOutcome" in pins else {}),
+        "getFirst": True, "newProviderPost": False, "ambiguous": False, "deploymentEffectObserved": True,
+        "frontendActionPending": True, "originalBuildAckObserved": False, "providerMutationReplayed": False,
+        "buildReadyVerified": False, "workloadVerified": False, "aliasQualificationVerified": False,
+        "promotionVerified": False, "cronQualificationVerified": False, "trafficAuthorized": False,
+        "releaseAccepted": False}
+    return result
 
 
 def verify_current_workload(deployment, staged, private, project, workload, verify):

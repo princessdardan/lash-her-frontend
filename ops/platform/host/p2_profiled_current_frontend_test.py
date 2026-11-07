@@ -86,6 +86,133 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                     "originalDirectory": str(root), "bindings": {"gatewayObservation": {"owned": True}}}
         return initial, provider, staged, workload
 
+    def lost_build_fixture(self, *, outcome=False):
+        root = self.private(); attempt = root / "vercel"; attempt.mkdir(mode=0o700)
+        configuration = {name: str(index % 9 + 1) * 64 for index, name in enumerate(sorted(subject.CONFIGURATION_NAMES))}
+        candidate = {"version": 3, "qualificationTargetProfile": PROFILE, "environment": "staging",
+            "releaseId": "owned-release", "contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "d" * 64,
+            "sourceApproval": {"qualificationTargetProfile": PROFILE}, "integration": {"qualificationTargetProfile": PROFILE},
+            "sources": {"frontend": {"qualificationTargetProfile": PROFILE, "commit": SOURCE,
+                "repository": "https://github.com/princessdardan/lash-her-frontend.git", "requiredChecks": "passed"},
+                "course": {"qualificationTargetProfile": PROFILE}, "community": {"qualificationTargetProfile": PROFILE}},
+            "workload": {"qualificationTargetProfile": PROFILE, "projectId": PROJECT, "environment": "production"},
+            "approval": {"qualificationTargetProfile": PROFILE},
+            "frontendMigration": {"qualificationTargetProfile": PROFILE}}
+        target = {"qualificationTargetProfile": PROFILE, "approvedPendingTags": [], "allowEmptyBootstrap": False,
+                  "runtimeRole": "frontend_runtime"}
+        job = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging", "releaseId": "owned-release",
+               "sourceCommit": SOURCE, "target": target}
+        plan = {"version": 2, "qualificationTargetProfile": PROFILE, "mode": "p2-profiled-current-recovery",
+            "environment": "staging", "disposition": "reconcile-frontend-lost-build-get-first",
+            "originalReleaseId": "owned-release", "sourceCommit": SOURCE, "candidateSha256": "e" * 64,
+            "configurationSha256": configuration, "targetSha256": "b" * 64}
+        deploy = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging",
+            "releaseId": "owned-release", "sourceCommit": SOURCE, "candidateSha256": plan["candidateSha256"],
+            "configurationSha256": configuration, "trafficAuthorized": False}
+        build = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging", "projectId": PROJECT,
+            "sourceCommit": SOURCE, "releaseId": "owned-release", "previousDeploymentId": "dpl_Previous123",
+            "trafficAuthorized": False, "promotionAuthorized": False}
+        intent = {"version": 2, "qualificationTargetProfile": PROFILE, "sequence": 2, "method": "POST",
+            "pathSha256": subject.sha(b"/v13/deployments"), "bodyKeys": list(subject.BUILD_BODY_KEYS),
+            "providerMutationCompleted": False, "trafficAuthorized": False}
+        other = {**intent, "sequence": 1, "pathSha256": subject.sha(b"/v10/projects/owned/env?upsert=true"),
+                 "bodyKeys": ["key", "value"]}
+        records = [("p2-profiled-current-deploy-started.json", deploy, "deployStarted"),
+                   ("frontend-build-started.json", build, "buildStarted"),
+                   ("provider-mutation-intent-001.json", other, None),
+                   ("provider-mutation-intent-002.json", intent, "buildIntent")]
+        if outcome:
+            records.append(("frontend-build-outcome.json", {**build, "status": "FRONTEND_BUILD_FAILED_REQUIRES_REVIEW",
+                "phase": "create", "failureCode": "VERCEL_REQUEST_FAILED_REQUIRES_REVIEW"}, "buildOutcome"))
+        pins = {}
+        for name, value, key in records:
+            subject.migrate.write_json(attempt, name, value)
+            if key: pins[key] = subject.sha((attempt / name).read_bytes())
+        plan["lostBuildReceiptSha256"] = dict(pins)
+        initial = {"version": 2, "qualificationTargetProfile": PROFILE, "plan": plan, "candidate": candidate,
+                   "job": job, "lostBuildReceiptSha256": pins}
+        provider = {"version": 2, "qualificationTargetProfile": PROFILE, "vercelToken": "private-token",
+                    "originalDirectory": str(root), "bindings": {"gatewayObservation": {"owned": True}}}
+        return initial, provider, attempt
+
+    def lost_build_provider(self, rows, *, current="dpl_Previous123"):
+        class Provider:
+            calls = []
+            def __init__(self, _token): pass
+            def request(self, method, path, body=None):
+                self.calls.append((method, path, body))
+                if method != "GET": raise AssertionError("mutation")
+                if path.startswith("/v7/deployments?"):
+                    return {"deployments": rows, "pagination": {"count": len(rows), "next": None}}
+                if path.startswith("/v13/deployments/"):
+                    deployment_id = path.split("/")[3].split("?")[0]
+                    return {"id": deployment_id, "projectId": PROJECT, "target": "production", "readyState": "READY",
+                        "url": "owned.vercel.app", "gitSource": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID,
+                        "sha": SOURCE}, "meta": {"lashReleaseId": "owned-release"}}
+                if path.startswith("/v9/projects/"):
+                    return {"id": PROJECT, "accountId": subject.vercel.TEAM,
+                        "link": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID},
+                        "targets": {"production": {"id": current}}, "crons": {"disabledAt": 1}}
+                raise AssertionError(path)
+        return Provider
+
+    def test_lost_build_observation_proves_only_one_pending_effect_with_or_without_failure_outcome(self):
+        row = {"uid": DEPLOYMENT, "target": "production",
+               "gitSource": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID, "sha": SOURCE},
+               "meta": {"lashReleaseId": "owned-release"}}
+        for outcome in (False, True):
+            with self.subTest(outcome=outcome):
+                initial, provider, _attempt = self.lost_build_fixture(outcome=outcome)
+                selected = self.lost_build_provider([row]); checks = []
+                with mock.patch.object(subject.vercel, "Client", selected):
+                    result = subject.observe_lost_build_post_ack(initial, provider, lambda: checks.append("checked"))
+                expected_fields = {"version", "qualificationTargetProfile", "status", "environment", "actionId", "releaseId",
+                    "sourceCommit", "candidateSha256", "configurationSha256", "targetSha256", "projectId", "deploymentId",
+                    "previousDeploymentId", "lostBuildReceiptSha256", "deployStartedSha256", "buildStartedSha256",
+                    "buildIntentSha256", "getFirst", "newProviderPost", "ambiguous", "deploymentEffectObserved",
+                    "frontendActionPending", "originalBuildAckObserved", "providerMutationReplayed", "buildReadyVerified",
+                    "workloadVerified", "aliasQualificationVerified", "promotionVerified", "cronQualificationVerified",
+                    "trafficAuthorized", "releaseAccepted"} | ({"buildOutcomeSha256"} if outcome else set())
+                self.assertEqual(set(result), expected_fields)
+                self.assertEqual(result["status"], "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED")
+                self.assertEqual(result["deploymentId"], DEPLOYMENT)
+                self.assertTrue(result["deploymentEffectObserved"] and result["frontendActionPending"])
+                for key in ("originalBuildAckObserved", "providerMutationReplayed", "buildReadyVerified", "workloadVerified",
+                            "aliasQualificationVerified", "promotionVerified", "cronQualificationVerified",
+                            "trafficAuthorized", "releaseAccepted"):
+                    self.assertFalse(result[key], key)
+                self.assertNotIn("readyState", result); self.assertNotIn("aliasJob", result)
+                self.assertEqual("buildOutcomeSha256" in result, outcome)
+                self.assertTrue(selected.calls and all(call[0] == "GET" for call in selected.calls))
+                self.assertEqual(len(checks), len(selected.calls))
+
+    def test_lost_build_observation_refuses_absent_ambiguous_wrong_target_changed_prior_and_later_receipt(self):
+        valid = {"uid": DEPLOYMENT, "target": "production",
+                 "gitSource": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID, "sha": SOURCE},
+                 "meta": {"lashReleaseId": "owned-release"}}
+        cases = (("absent", [], "dpl_Previous123"),
+                 ("ambiguous", [valid, {**valid, "uid": "dpl_Other123"}], "dpl_Previous123"),
+                 ("wrong-target", [{**valid, "target": "preview"}], "dpl_Previous123"),
+                 ("changed-prior", [valid], "dpl_Unrelated123"))
+        for name, rows, current in cases:
+            with self.subTest(name=name):
+                initial, provider, _attempt = self.lost_build_fixture()
+                selected = self.lost_build_provider(rows, current=current)
+                with mock.patch.object(subject.vercel, "Client", selected), self.assertRaises(ValueError):
+                    subject.observe_lost_build_post_ack(initial, provider, lambda: None)
+                self.assertTrue(all(call[0] == "GET" for call in selected.calls))
+        for later in ("frontend-build-created.json", "frontend-promotion-observation-0.json"):
+            with self.subTest(later=later):
+                initial, provider, attempt = self.lost_build_fixture()
+                subject.migrate.write_json(attempt, later, {"deploymentId": DEPLOYMENT})
+                with mock.patch.object(subject.vercel, "Client", side_effect=AssertionError("provider read")):
+                    with self.assertRaises(ValueError): subject.observe_lost_build_post_ack(initial, provider, lambda: None)
+        initial, provider, _attempt = self.lost_build_fixture(outcome=True)
+        del initial["lostBuildReceiptSha256"]["buildOutcome"]
+        initial["plan"]["lostBuildReceiptSha256"] = dict(initial["lostBuildReceiptSha256"])
+        with mock.patch.object(subject.vercel, "Client", side_effect=AssertionError("provider read")):
+            with self.assertRaises(ValueError): subject.observe_lost_build_post_ack(initial, provider, lambda: None)
+
     def test_recovery_is_get_only_unique_and_returns_exact_pinned_workload_with_inner_proof(self):
         initial, provider, staged, workload = self.recovery_fixture()
 
