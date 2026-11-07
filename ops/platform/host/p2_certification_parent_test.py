@@ -33,6 +33,7 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/host/p2_profiled_current_recovery_test.py',
     'ops/platform/host/p2_profiled_current_scope.py',
     'ops/platform/host/p2_profiled_current_scope_test.py',
+    'ops/platform/host/p2_profiled_known_ack_restoration_parent.py',
     'ops/platform/p2-profiled-current-frontend-adapters.mjs',
     'ops/platform/p2-profiled-current-frontend-adapters.test.mjs',
     'ops/platform/p2-profiled-current-probe.mjs',
@@ -909,7 +910,8 @@ class ProfiledCertificationInputTests(unittest.TestCase):
     def physical_child(self, fixture, args, **kwargs):
         fixture.calls.append(args)
         if args[1] == 'run':
-            self.assertEqual(args[-2:], [parent.OBSERVER, '--profiled-current'])
+            flag = '--profiled-known-ack-interrupted' if fixture.request['plan']['mode'] == parent.PROFILED_INTERRUPTED_MODE else '--profiled-current'
+            self.assertEqual(args[-2:], [parent.OBSERVER, flag])
             self.assertEqual(args[args.index('--pull') + 1], 'never')
             self.assertIn('dst=/app/' + parent.OBSERVER + ',readonly', ' '.join(args))
             self.assertEqual(kwargs['env']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], 'owned-frontend-input')
@@ -944,6 +946,19 @@ class ProfiledCertificationInputTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         observer.probe('verify-schema')
                     fixture.expected[field] = saved
+
+    def test_profiled_interrupted_observer_uses_a_fixed_source_flag_and_immutable_witness(self):
+        fixture = self.physical_fixture()
+        fixture.request['plan'] = {**fixture.request['plan'], 'mode': parent.PROFILED_INTERRUPTED_MODE}
+        args = (fixture.selected, fixture.request, self.source, 'owned-frontend-input')
+        with self.assertRaisesRegex(ValueError, 'PHYSICAL_REQUEST_REQUIRED'):
+            parent.P2CertificationPhysicalObserver(*args, **fixture.observer_kwargs)
+        observer = parent.P2CertificationPhysicalObserver(*args, **fixture.observer_kwargs, interrupted=True)
+        with patch.object(parent.subprocess, 'run', side_effect=lambda args, **kwargs: self.physical_child(fixture, args, **kwargs)):
+            self.assertEqual(observer.probe('observe'), fixture.expected)
+            fixture.expected['witnessSha256'] = '9' * 64
+            with self.assertRaisesRegex(ValueError, 'INITIAL_CLOSED_BOUNDARY_REQUIRED'):
+                observer.probe('observe')
 
     def test_profiled_scope_requires_exact_live_observer_and_original_host_flock(self):
         fixture = self.physical_fixture()

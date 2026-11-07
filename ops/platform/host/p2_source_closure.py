@@ -26,12 +26,16 @@ PROFILED_CURRENT_REQUIRED = {
     'ops/platform/host/current_databases.py', 'ops/platform/host/database_current.mjs',
 }
 PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
+PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 CERTIFICATION_OBSERVER = 'ops/platform/p2-certification-current-probe.mjs'
 PROFILED_CERTIFICATION_REQUIRED = {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
                                    CERTIFICATION_OBSERVER, 'ops/platform/p2-lifecycle-native.mjs',
                                    'ops/platform/qualification-target-profile.mjs',
                                    'ops/platform/qualification-target-profiles.json',
                                    'ops/platform/host/qualification_target_profile.py'}
+PROFILED_INTERRUPTED_REQUIRED = {'ops/platform/host/p2_profiled_known_ack_restoration_parent.py',
+                                 'ops/platform/host/p2_known_ack_interrupted_restoration.py',
+                                 'ops/platform/p2-known-ack-interrupted-restoration.mjs'}
 
 
 def verify_source_closure(initial, root):
@@ -42,12 +46,14 @@ def verify_profiled_current_source_closure(initial, root):
     import migrate
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
-                                  PROFILED_CERTIFICATION_MODE):
+                                  PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
         raise ValueError('PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
     migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     required = REQUIRED | PROFILED_CURRENT_REQUIRED
-    if initial['mode'] == PROFILED_CERTIFICATION_MODE:
+    if initial['mode'] in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
         required |= PROFILED_CERTIFICATION_REQUIRED
+    if initial['mode'] == PROFILED_INTERRUPTED_MODE:
+        required |= PROFILED_INTERRUPTED_REQUIRED
     return _verify_source_closure(initial, root, required, 544, 48_000_000)
 
 

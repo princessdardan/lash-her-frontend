@@ -18,6 +18,7 @@ import { nativeSourceCommit } from './harness/p2-native-unit-fixture.mjs';
 import { p2NativeHash } from './p2-lifecycle-native.mjs';
 import { p2LifecyclePersistenceTargetSha256, prepareP2LifecyclePersistencePlan } from './p2-lifecycle-persistence-probe.mjs';
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from './qualification-target-profile.mjs';
+import { CAUSAL_FILES, REPLACEMENT_FILES, PROFILED_MODE, prepareProfiledInterruptedKnownAckOperator } from './p2-known-ack-interrupted-restoration.mjs';
 
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -251,6 +252,36 @@ test('fixed current certification plan joins the original release plan, terminal
       knownAckRecovery: { ...knownInput, receiverTargets: { ...knownInput.receiverTargets,
         course: { ...knownInput.receiverTargets.course, database: 'wrong' } } } } }));
     await assert.rejects(p2ProfiledCertificationOperator(knownSettings, { confirmation: 'staging/owned-fault' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+
+    const originalKnownDirectory = join(f.settings.results, known.certificationActionId);
+    mkdirSync(originalKnownDirectory, { mode: 0o700 });
+    const originalKnownPlanPath = join(originalKnownDirectory, 'p2-certification-started.json');
+    write(originalKnownPlanPath, known);
+    const selection = { version: 2, qualificationTargetProfile: profile, mode: PROFILED_MODE, restorationActionId: 'owned-c',
+      originalCertificationActionId: known.certificationActionId, originalRecoveryActionId: knownInput.recoveryActionId,
+      originalOperatorSourceCommit: plan.sourceCommit,
+      causalReceiptSha256: Object.fromEntries([...CAUSAL_FILES, 'reconciliation-observed.json'].map(name => [name, '7'.repeat(64)])),
+      replacementReceiptSha256: Object.fromEntries(REPLACEMENT_FILES.map(name => [name, name === REPLACEMENT_FILES[0] ? '8'.repeat(64) : null])),
+      priorGatewayReference: { kind: 'stopped-current-candidate', stopReceiptDirectory: '/var/lib/lash-her/releases/staging/p2-profiled-known-ack-' + knownInput.recoveryActionId,
+        stopReceiptSha256: '9'.repeat(64) } };
+    const cSettings = { version: 2, qualificationTargetProfile: profile, environment: 'staging', operatorSourceCommit: plan.sourceCommit,
+      releaseSettings: f.settings, interruptedRestoration: selection, receiverTargets: knownInput.receiverTargets,
+      operationId: '10000000-0000-4000-8000-000000000001' };
+    const cPlan = prepareProfiledInterruptedKnownAckOperator(cSettings).plan;
+    assert.equal(cPlan.originalCertificationPlanBytesSha256, rawHash(readFileSync(originalKnownPlanPath)));
+    assert.equal(cPlan.originalCertificationPlanSha256, known.planSha256);
+    assert.equal(cPlan.configurationInputDirectory, knownInput.configurationInputDirectory);
+    assert.equal(cPlan.frontendPlan.initialEpoch, '4');
+    assert.equal(cPlan.frontendPlan.reconciliationSha256, selection.causalReceiptSha256['settlement.json']);
+    assert.equal(cPlan.requestedFrontier, 'original-stopped-one');
+    assert.equal(cPlan.liveExecutionEligible, false);
+    const complete = Object.fromEntries(REPLACEMENT_FILES.map(name => [name, '8'.repeat(64)]));
+    assert.throws(() => prepareProfiledInterruptedKnownAckOperator({ ...cSettings, interruptedRestoration: { ...selection,
+      replacementReceiptSha256: { ...complete, 'known-ack-stage-4-observed.json': null } } }));
+    const completed = prepareProfiledInterruptedKnownAckOperator({ ...cSettings, interruptedRestoration: { ...selection,
+      replacementReceiptSha256: complete, priorGatewayReference: { ...selection.priorGatewayReference,
+        stopReceiptDirectory: join(f.settings.host.results, 'p2-profiled-current-certification-' + known.certificationActionId) } } }).plan;
+    assert.equal(completed.requestedFrontier, 'replacement-stopped-zero');
 
     const targets = Object.fromEntries(Object.entries({ frontend: migration.job, ...f.apiJobs }).map(([service, job]) => {
       const { host, port, database, serverMajor } = job.target;

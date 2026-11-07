@@ -37,7 +37,7 @@ from frontend_release_adapters import LockedClient,LockedProbe
 import p2_lifecycle_native as native
 from p2_release_broker import Broker,PhysicalObserver,LOCK,MAXIMUM,decode
 from p2_release_scope import P2ReleaseScope
-from p2_source_closure import private_observer_program,verify_profiled_current_source_closure,verify_source_closure
+from p2_source_closure import PROFILED_INTERRUPTED_MODE,private_observer_program,verify_profiled_current_source_closure,verify_source_closure
 from p2_certification_profile import require_profile as require_certification_profile
 from p2_certification_fault import P2CertificationFaultStage,GATEWAY_OBSERVER,frontend_target_sha256
 import p2_identity_negative_probe as identity_probe
@@ -681,8 +681,11 @@ def contain_profiled_certification_frontend(initial, armed, source):
     return result
 
 class P2CertificationPhysicalObserver(PhysicalObserver):
-    def __init__(self, selected, request, source, credential, *, program=None, program_sha256=None, expected_profile=None):
+    def __init__(self, selected, request, source, credential, *, program=None, program_sha256=None, expected_profile=None, interrupted=False):
         self._expected_profile = migrate.profile_context(expected_profile)
+        require(type(interrupted) is bool and (not interrupted or self._expected_profile is not None),
+                'P2_PROFILED_CERTIFICATION_OBSERVER_MODE_REQUIRED')
+        self._interrupted = interrupted
         if self._expected_profile is None:
             job, plan, receipt = (request.get(key, {}) for key in ('job', 'plan', 'receipt'))
             migrate.require_profile(None, selected, request, plan, job, job.get('target'), receipt, receipt.get('target'))
@@ -698,7 +701,8 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
             migrate.require_job_profile(expected, job, frontend=True)
             vercel.require_record_profile(expected, request, history, plan, plan.get('nativePlan'), receipt)
             migrate.require_profile(expected, history.get('target'), plan['nativePlan'].get('target'), receipt.get('target'))
-            require(plan.get('startState') == 'already-closed' and plan.get('mode') in PROFILED_MODES and
+            allowed_modes = (PROFILED_INTERRUPTED_MODE,) if interrupted else PROFILED_MODES
+            require(plan.get('startState') == 'already-closed' and plan.get('mode') in allowed_modes and
                     type(request['backendPid']) is int and request['backendPid'] > 0 and
                     type(request['backendStart']) is str and 0 < len(request['backendStart']) <= 80 and
                     _profiled_digest(request['marker']) and
@@ -736,11 +740,12 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
         from uuid import uuid4
         container='lash-p2-certification-observer-'+uuid4().hex
         entry = OBSERVER if profiled else 'ops/platform/p2-frontend-live-probe.mjs'
+        observer_flag = '--profiled-known-ack-interrupted' if self._interrupted else '--profiled-current'
         args=['docker','run','--rm',*(['--pull','never'] if profiled else []),'--name',container,'--interactive','--network','host','--read-only','--cap-drop','ALL',
             '--security-opt','no-new-privileges','--memory','256m','--pids-limit','64','--env','FRONTEND_STAGING_MIGRATION_DATABASE_URL',
             '--mount',f'type=bind,src={program},dst=/app/{entry},readonly',
             '--mount',f'type=bind,src={core},dst=/app/ops/platform/p2-recovery-current-probe.mjs,readonly',
-            '--entrypoint','node',image,entry,*(['--profiled-current'] if profiled else [])]
+            '--entrypoint','node',image,entry,*([observer_flag] if profiled else [])]
         environment={**runtime.SAFE_ENV,'FRONTEND_STAGING_MIGRATION_DATABASE_URL':self.credential}
         try:result=subprocess.run(args,input=payload,capture_output=True,text=True,env=environment,timeout=30,check=True)
         finally:
@@ -784,7 +789,7 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
             require(all(value[key] is True for key in ('backendAbsent','migrationLockReleased','nonceLockReleased')) and
                     admission['newWork'] is False and admission['recovery'] is False and admission['active'] == admission['uncertain'] == 0,
                     'P2_PROFILED_CERTIFICATION_SESSION_CLOSE_REQUIRED')
-        if operation == 'verify-schema':
+        if operation == 'verify-schema' or self._interrupted:
             require(admission == receipt['admission'] == {'epoch': request['plan']['initialEpoch'], 'newWork': False,
                     'recovery': False, 'active': 0, 'uncertain': 0} and value['witnessSha256'] == receipt['witnessSha256'],
                     'P2_PROFILED_CERTIFICATION_INITIAL_CLOSED_BOUNDARY_REQUIRED')
@@ -806,7 +811,8 @@ class P2CertificationScope(P2ReleaseScope):
         else:
             expected = _profiled_context()
             require(self._expected_profile == expected and type(physical_observer) is P2CertificationPhysicalObserver and
-                    physical_observer._expected_profile == expected, 'P2_PROFILED_CERTIFICATION_PHYSICAL_SCOPE_REQUIRED')
+                    physical_observer._expected_profile == expected and getattr(physical_observer,'_interrupted',False) is
+                    (certification_plan.get('mode') == PROFILED_INTERRUPTED_MODE), 'P2_PROFILED_CERTIFICATION_PHYSICAL_SCOPE_REQUIRED')
             migrate.candidate_profile(release, expected)
             migrate.require_job_profile(expected, jobs['frontend']['job'], frontend=True)
             vercel.require_record_profile(expected, certification_plan, receipt)
