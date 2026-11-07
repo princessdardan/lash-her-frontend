@@ -297,20 +297,37 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
-    def test_identity_permit_selects_admin_family_or_exact_customer_with_no_gateway_write(self):
+    def test_identity_permit_signs_reviewed_selection_with_no_gateway_write(self):
         first = "10000000-0000-4000-8000-000000000001"
         second = "10000000-0000-4000-8000-000000000002"
         secret = "fixture" * 8
+        email_digest = "b" * 62 + "d0"
+        reviewed_nonce = "d" * 32
         selectors = {}
         raw = b'closed gateway fixture'
         gateway = {"version": 1, "valid": True, "newWork": False, "recovery": False, "active": window._ZERO,
                    "uncertain": window._ZERO, "releaseId": "owned", "candidateSha256": "a" * 64, "sha256": window._hash(raw)}
-        for actor_kind, actor_id in (("admin", first), ("customer", first), ("customer", second)):
-            with self.subTest(actor_kind=actor_kind, actor_id=actor_id):
-                action = {"stage": "identity", "actorId": None, "identityActor": {"actorKind": actor_kind, "actorId": actor_id},
-                          "windowSeconds": 60, "requests": []}
-                for changed in ({**action, "actorId": actor_id}, {**action, "identityActor": {"actorKind": "owner", "actorId": actor_id}},
-                                {**action, "identityActor": {"actorKind": actor_kind, "actorId": actor_id, "other": True}}):
+        cases = (("admin", first, None), ("customer", first, None), ("customer", second, None),
+                 ("customer", None, "google"), ("customer", None, "resend"))
+        for actor_kind, actor_id, provider in cases:
+            with self.subTest(actor_kind=actor_kind, actor_id=actor_id, provider=provider):
+                action = {"stage": "identity", "actorId": None, "windowSeconds": 60, "requests": []}
+                actor = {"actorKind": actor_kind, "actorId": actor_id or first}
+                invalid = [{**action, "actorId": first, "identityActor": actor},
+                           {**action, "identityActor": {**actor, "actorKind": "owner"}},
+                           {**action, "identityActor": {**actor, "other": True}}]
+                if provider is None:
+                    action["identityActor"] = actor
+                else:
+                    enrollment = {"provider": provider, "emailSha256": email_digest, "nonce": reviewed_nonce}
+                    action["identityEnrollment"] = enrollment
+                    invalid.extend(({**action, "identityActor": actor}, {**action, "actorId": first},
+                                    {**action, "requests": [{}]}))
+                    invalid.extend({**action, "identityEnrollment": {**enrollment, **change}} for change in (
+                        {"provider": "unknown"}, {"emailSha256": email_digest.upper()}, {"emailSha256": "0" * 64},
+                        {"nonce": "d" * 31}, {"nonce": "0" * 32},
+                        {"email": "private@example.invalid"}))
+                for changed in invalid:
                     with self.assertRaises(ValueError):
                         window.validate_interactive_action(changed)
                 stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
@@ -336,18 +353,24 @@ class InteractiveWindowTests(unittest.TestCase):
                     frontend.update(epoch="8", newWork=True, recovery=True)
                     cookie = stage.take_private_browser_permit()["cookie"].split(".")
                     self.assertEqual(cookie[:5], ["v2", "8", "identity", "1794009600", "1794009660"])
-                    selector = (hashlib.sha256(b'["identity","admin"]').hexdigest() if actor_kind == "admin" else
-                                "7032712d637573746f6d65722d763100" + actor_id.replace("-", ""))
+                    if provider is not None:
+                        self.assertEqual(cookie[5], reviewed_nonce)
+                        selector = ("a1" if provider == "google" else "a2") + "b" * 62
+                    elif actor_kind == "admin":
+                        selector = hashlib.sha256(b'["identity","admin"]').hexdigest()
+                    else:
+                        selector = "7032712d637573746f6d65722d763100" + actor_id.replace("-", "")
                     self.assertEqual(cookie[6], selector)
                     self.assertEqual(len(cookie), 8)
                     signed = "\n".join(("lash-her:p2q:interactive:browser:v1", "owned.vercel.app", "b" * 40, "c" * 64,
                                          ".".join(cookie[:-1])))
                     self.assertEqual(cookie[7], hmac.digest(secret.encode(), signed.encode(), "sha256").hex())
-                    selectors[actor_kind, actor_id] = cookie[6]
+                    selectors[actor_kind, actor_id, provider] = cookie[6]
                     stage.fence_gateway()
                     self.assertTrue(stage.verify_gateway_fenced()["gatewayAdmissionClosed"])
                     replace.assert_not_called()
-        self.assertNotEqual(selectors["customer", first], selectors["customer", second])
+        self.assertNotEqual(selectors["customer", first, None], selectors["customer", second, None])
+        self.assertNotEqual(selectors["customer", None, "google"], selectors["customer", None, "resend"])
 
     def test_guarded_private_permit_and_exact_gateway_fence(self):
         from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker

@@ -4,13 +4,13 @@ import { hasConfiguredRequestOrigin } from "@/lib/api-integration/request-origin
 import NextAuth from "next-auth";
 import { NextRequest } from "next/server";
 import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
-import { currentWriterIdentityCustomerId } from "@/lib/writer-admission/context";
+import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, matchesWriterIdentityEnrollment } from "@/lib/writer-admission/context";
 import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { runWriterAdmission, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { createCustomerAuthConfig } from "./config";
 import { withCustomerWriterContext } from "./context";
-import { CUSTOMER_AUTH_BASE_PATH, customerThrottleKey, normalizeCustomerEmail, resolveCustomerAuthConfiguration, type CustomerAuthConfiguration } from "./policy";
-import { createCustomerAuthStore, type CustomerAuthStore } from "./store";
+import { CUSTOMER_AUTH_BASE_PATH, customerSessionCookieName, customerThrottleKey, normalizeCustomerEmail, resolveCustomerAuthConfiguration, type CustomerAuthConfiguration } from "./policy";
+import { createCustomerAuthStore, customerEnrollmentScopeId, type CustomerAuthStore } from "./store";
 
 const noStore = (response: Response): Response => {
   const headers = new Headers(response.headers);
@@ -21,6 +21,14 @@ const noStore = (response: Response): Response => {
 };
 const unavailable = () => noStore(Response.json({ error: "Sign-in is temporarily unavailable." }, { status: 503, headers: { "retry-after": "30" } }));
 const genericEmailResponse = (origin: string) => new Response(null, { status: 303, headers: { location: `${origin}/sign-in?check-email=1` } });
+const enrollmentDenied = () => Response.json({ error: "Invalid request." }, { status: 403 });
+
+function requestEmail(body: string, contentType: string): string | null {
+  try {
+    const input = contentType === "application/json" ? JSON.parse(body) : Object.fromEntries(new URLSearchParams(body));
+    return normalizeCustomerEmail(input.email);
+  } catch { return null; }
+}
 
 export function createCustomerAuthHandler(dependencies: {
   configuration?: () => CustomerAuthConfiguration | null;
@@ -37,11 +45,26 @@ export function createCustomerAuthHandler(dependencies: {
   const admitted = withWriterAdmission("new-work", async (original: NextRequest, configuration: CustomerAuthConfiguration) => withCustomerWriterContext(async () => {
     let request = original;
     let emailRequest = false;
-    const action = new URL(request.url).pathname.slice(CUSTOMER_AUTH_BASE_PATH.length);
+    const url = new URL(request.url);
+    const action = url.pathname.slice(CUSTOMER_AUTH_BASE_PATH.length);
     const store = getStore();
+    const enrollment = currentWriterIdentityEnrollment();
+    const throttleKey = (bucket: string, subject: string) => customerThrottleKey(configuration.secret,
+      enrollment ? `enrollment:${customerEnrollmentScopeId(enrollment)}:${bucket}` : bucket, subject);
+    if (enrollment && (action.startsWith("/signin/") || action.startsWith("/callback/") || action === "/signout")) {
+      const refuse = () => action === "/signin/resend" ? genericEmailResponse(configuration.origin) : enrollmentDenied();
+      if (action !== `/signin/${enrollment.provider}` && action !== `/callback/${enrollment.provider}`) return refuse();
+      if (action === "/signin/google" && url.search) return refuse();
+      if (action === "/callback/resend") {
+        const [email, ...duplicate] = url.searchParams.getAll("email");
+        if (!email || duplicate.length || !matchesWriterIdentityEnrollment(enrollment, email)) return refuse();
+      }
+      const sessionToken = request.cookies.get(customerSessionCookieName(configuration.secure))?.value;
+      if (sessionToken && await store.hasLiveSession(sessionToken)) return refuse();
+    }
     if (request.method === "GET" && action.startsWith("/callback/")) {
       const clientIp = getTrustedClientIp(request.headers);
-      const allowed = await store.consumeThrottle(customerThrottleKey(configuration.secret, "callback", clientIp ?? "unavailable"), 60, 900);
+      const allowed = await store.consumeThrottle(throttleKey("callback", clientIp ?? "unavailable"), 60, 900);
       if (!allowed || !clientIp && process.env.VERCEL === "1") return Response.json({ error: "Please wait before trying again." }, { status: 429, headers: { "retry-after": "900" } });
     }
     if (request.method === "POST") {
@@ -62,22 +85,21 @@ export function createCustomerAuthHandler(dependencies: {
       const body = Buffer.concat(chunks).toString("utf8");
       request = new NextRequest(original.url, { method: "POST", headers: original.headers, body });
       emailRequest = action === "/signin/resend";
+      const enrollmentEmail = emailRequest && enrollment ? requestEmail(body, contentType) : null;
+      if (emailRequest && enrollment && (!enrollmentEmail || !await store.isEnrollmentAvailable(enrollmentEmail))) return genericEmailResponse(configuration.origin);
       const clientIp = getTrustedClientIp(request.headers);
       // Hosted authentication refuses an absent trusted platform address. Local
       // fixtures share one bucket; arbitrary untrusted headers do not bypass it.
       const client = clientIp ?? "unavailable";
-      const allowed = await store.consumeThrottle(customerThrottleKey(configuration.secret, "client", client), 30, 900);
+      const allowed = await store.consumeThrottle(throttleKey("client", client), 30, 900);
       if (emailRequest) {
         // Stop here before even normalizing an attacker-selected address. A
         // denied/untrusted client must not create arbitrarily many email rows.
         if (!allowed || !clientIp && process.env.VERCEL === "1") return genericEmailResponse(configuration.origin);
-        let email: string;
-        try {
-          const input = contentType === "application/json" ? JSON.parse(body) : Object.fromEntries(new URLSearchParams(body));
-          email = normalizeCustomerEmail(input.email);
-        } catch { return genericEmailResponse(configuration.origin); }
+        const email = enrollmentEmail ?? requestEmail(body, contentType);
+        if (!email) return genericEmailResponse(configuration.origin);
         if (currentWriterIdentityCustomerId() !== undefined && !await store.isActive(email)) return genericEmailResponse(configuration.origin);
-        const emailAllowed = await store.consumeThrottle(customerThrottleKey(configuration.secret, "email", email), 5, 900);
+        const emailAllowed = await store.consumeThrottle(throttleKey("email", email), 5, 900);
         if (!emailAllowed) return genericEmailResponse(configuration.origin);
       } else if (!allowed || !clientIp && process.env.VERCEL === "1") {
         return Response.json({ error: "Please wait before trying again." }, { status: 429, headers: { "retry-after": "900" } });

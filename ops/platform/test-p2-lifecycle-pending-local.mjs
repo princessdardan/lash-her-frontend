@@ -9,9 +9,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
-import { captureP2InteractiveIdentityBaseline, captureP2InteractiveLifecycleBaseline, observeP2InteractiveIdentityCase,
-  observeP2InteractiveLifecycleCase, observeP2SuspensionPending,
-  p2SuspensionEvidenceSha256 } from "./p2-lifecycle-pending-probe.mjs";
+import { captureP2InteractiveEnrollmentBaseline, captureP2InteractiveIdentityBaseline, captureP2InteractiveLifecycleBaseline,
+  observeP2InteractiveEnrollmentCase, observeP2InteractiveIdentityCase, observeP2InteractiveLifecycleCase, observeP2SuspensionPending,
+  p2SuspensionEvidenceSha256, validateP2InteractiveEnrollmentEmail } from "./p2-lifecycle-pending-probe.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const run = (program, args, options = {}) => execFileSync(program, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -80,11 +80,17 @@ async function main() {
     checks.push(...await checkInteractiveLifecycle(client, contender, target, dependencies, adminId));
     phase = "actual-interactive-identity-before-after";
     checks.push(...await checkInteractiveIdentity(client, contender, target, dependencies));
+    phase = "actual-interactive-enrollment-before-after";
+    checks.push(...await checkInteractiveEnrollment(client, contender, target, dependencies));
     await client.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))", ["lash-her:private-db:migrations"]);
     await assert.rejects(observeP2SuspensionPending(client, target, selection, dependencies));
     await assert.rejects(captureP2InteractiveLifecycleBaseline(client, target, {
       actorKind: "admin", actorId: adminId, userId, operation: "restore",
     }, dependencies));
+    const missingLockEmail = "owned-enrollment-no-lock@example.invalid", nonce = "b".repeat(32);
+    const emailSha256 = p2SuspensionEvidenceSha256(JSON.stringify(["p2q-customer-enrollment-v1", "resend", nonce, missingLockEmail]));
+    await assert.rejects(captureP2InteractiveEnrollmentBaseline(client, target,
+      { provider: "resend", nonce, emailSha256 }, missingLockEmail, dependencies));
     checks.push("actual-missing-physical-lock-refused");
     return { version: 1, status: "P2_LIFECYCLE_PENDING_OWNED_PASS", postgresMajor: major, frontendMigrations: 83, checks, skipped: 0,
       actualTlsPostgres: true, actualPendingSelect: true, controlledTokenExpiryQualified: false, browserQualified: false,
@@ -95,6 +101,97 @@ async function main() {
     if (started) try { run(join(pgBin, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); } catch {}
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+async function checkInteractiveEnrollment(client, runtime, target, dependencies) {
+  const refused = /P2_LIFECYCLE_PENDING_REFUSED/u;
+  const binding = (provider = "google") => {
+    const email = `${randomUUID()}@example.invalid`, nonce = randomUUID().replaceAll("-", "");
+    const emailSha256 = createHash("sha256").update(JSON.stringify(["p2q-customer-enrollment-v1", provider, nonce, email])).digest("hex");
+    return { email, selection: { provider, emailSha256, nonce }, actorId: randomUUID() };
+  };
+  const capture = ({ selection, email }) => captureP2InteractiveEnrollmentBaseline(client, target, selection, email, dependencies);
+  const browser = ({ actorId }) => ({ actorKind: "customer", actorId, sessionVerified: true });
+  const observe = (test, baseline, identity = browser(test)) =>
+    observeP2InteractiveEnrollmentCase(client, target, test.selection, baseline, identity, dependencies);
+  const addUser = ({ actorId, email }, { createdAgo = "0 seconds", verified = true, status = "active", accountVersion = 0 } = {}) =>
+    runtime.query(`INSERT INTO public.customer_users(id,email,created_at,email_verified,status,account_version)
+      VALUES($1,$2,pg_catalog.clock_timestamp()-$3::interval,CASE WHEN $4 THEN pg_catalog.clock_timestamp() END,$5,$6)`,
+    [actorId, email, createdAgo, verified, status, accountVersion]);
+  const addSession = ({ actorId }, { createdAgo = "0 seconds", expiresIn = "1 hour" } = {}) =>
+    runtime.query(`INSERT INTO public.customer_sessions(token_hash,user_id,created_at,expires)
+      VALUES($1,$2,pg_catalog.clock_timestamp()-$3::interval,pg_catalog.clock_timestamp()+$4::interval)`,
+    [randomUUID(), actorId, createdAgo, expiresIn]);
+  const addGoogle = ({ actorId }, providerSubject = randomUUID()) =>
+    runtime.query("INSERT INTO public.customer_provider_links(user_id,provider,provider_account_id,type) VALUES($1,'google',$2,'oidc')",
+      [actorId, providerSubject]);
+  const addMarketing = ({ email }) => runtime.query(`INSERT INTO public.marketing_contacts(email,email_normalized,source,first_consented_at,last_consented_at)
+    VALUES($1,$1,'owned-enrollment-test',pg_catalog.clock_timestamp(),pg_catalog.clock_timestamp())`, [email]);
+  const addConsent = ({ email }) => runtime.query(`INSERT INTO public.marketing_consent_events(event_type,email,email_normalized,source,occurred_at)
+    VALUES('opt_in',$1,$1,'owned-enrollment-test',pg_catalog.clock_timestamp())`, [email]);
+
+  const google = binding(), resend = binding("resend");
+  assert.equal(validateP2InteractiveEnrollmentEmail(google.selection, google.email), google.email);
+  assert.throws(() => validateP2InteractiveEnrollmentEmail(google.selection, google.email.toUpperCase()), refused);
+  assert.throws(() => validateP2InteractiveEnrollmentEmail(google.selection, ` ${google.email}`), refused);
+  assert.throws(() => validateP2InteractiveEnrollmentEmail(google.selection, resend.email), refused);
+  assert.throws(() => validateP2InteractiveEnrollmentEmail({ ...google.selection, provider: "resend" }, google.email), refused);
+  assert.throws(() => validateP2InteractiveEnrollmentEmail({ ...google.selection, nonce: "0".repeat(32) }, google.email), refused);
+  await assert.rejects(captureP2InteractiveEnrollmentBaseline(runtime, target, google.selection, google.email,
+    { ...dependencies, verifySession: async () => {} }), refused);
+  for (const selected of [google, resend]) {
+    const before = await capture(selected);
+    assert.deepEqual(Object.keys(before), []);
+    assert.equal(JSON.stringify(before), "{}");
+    await addUser(selected);
+    await addSession(selected);
+    const providerLinkCount = selected.selection.provider === "google" ? 1 : 0;
+    if (providerLinkCount) await addGoogle(selected);
+    await assert.rejects(observe(selected, {}), refused);
+    await assert.rejects(observe(selected, before, { ...browser(selected), sessionVerified: false }), refused);
+    await assert.rejects(observe(selected, before, { ...browser(selected), email: selected.email }), refused);
+    await assert.rejects(observeP2InteractiveEnrollmentCase(runtime, target, selected.selection, before,
+      browser(selected), dependencies), refused);
+    const positive = await observe(selected, before);
+    assert.deepEqual(positive, { actorKind: "customer", actorId: selected.actorId, actorActive: true, liveSessionCount: 1,
+      provider: selected.selection.provider, providerLinkCount });
+    assert.equal(JSON.stringify(positive).includes(selected.email), false);
+    await assert.rejects(observe(selected, before), refused);
+    await assert.rejects(capture(selected), refused);
+  }
+
+  for (const { user, session, extra, provider = "resend", mismatchedActor } of [
+    { user: { createdAgo: "1 day" } },
+    { user: { verified: false } },
+    { user: { status: "suspended" } },
+    { user: { accountVersion: 1 } },
+    { session: { createdAgo: "1 day" } },
+    { session: { expiresIn: "-1 hour" } },
+    { extra: addSession },
+    { extra: test => addGoogle(test, " "), provider: "google" },
+    { provider: "google" },
+    { extra: addGoogle },
+    { extra: addMarketing },
+    { extra: addConsent },
+    { mismatchedActor: true },
+  ]) {
+    const selected = binding(provider), before = await capture(selected);
+    await addUser(selected, user);
+    await addSession(selected, session);
+    if (extra) await extra(selected);
+    await assert.rejects(observe(selected, before, mismatchedActor ? browser({ actorId: randomUUID() }) : undefined), refused);
+    await assert.rejects(observe(selected, before), refused);
+  }
+  const absentAfter = binding("resend");
+  await assert.rejects(observe(absentAfter, await capture(absentAfter)), refused);
+  const priorContact = binding("resend"), priorConsent = binding("resend");
+  await addMarketing(priorContact); await addConsent(priorConsent);
+  await assert.rejects(capture(priorContact), refused);
+  await assert.rejects(capture(priorConsent), refused);
+  assert.equal((await client.query("SHOW transaction_read_only")).rows[0].transaction_read_only, "off");
+  return ["interactive-enrollment-google-and-resend-exact-first-verified-account-fresh-session-and-provider-links",
+    "interactive-enrollment-rejects-stale-or-foreign-identity-session-and-retains-no-private-lookup",
+    "interactive-enrollment-excludes-address-with-subscription-or-consent-before-or-after"];
 }
 
 async function checkInteractiveIdentity(client, runtime, target, dependencies) {

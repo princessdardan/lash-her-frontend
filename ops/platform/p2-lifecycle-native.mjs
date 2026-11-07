@@ -77,6 +77,18 @@ const reviewedCustomerIdentityDependencies = {
   "src/lib/customer-auth/handler.ts": "a680e9f00b040693a1bec437c5fd3d414a70a01ba063e71b609797025d65b224",
   "src/lib/customer-auth/store.ts": "5e1e765f11bf283f48ae52a64b823d9db6710c4fc419d17b881f38faa6b8b2ff"
 };
+const reviewedFirstIdentitySource = {
+  ...reviewedCustomerIdentitySource,
+  "src/lib/writer-admission/runtime.ts": "84dc3584ab331c053ff2306a8072f0acf8f5e874dddc451b3f06eae7e8f5d2be",
+  "src/lib/writer-admission/context.ts": "30096a475be5186f7fdb77d9732431041ab3c5cc36e8ee781c708e21d8b946e7"
+};
+const reviewedFirstIdentityDependencies = {
+  ...reviewedCustomerIdentityDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "5cfa1fe15fc649af48707dff3d5d8fb374ead3d223d5b075e3dcac63b4ede752",
+  "src/lib/customer-auth/config.ts": "343de61716d134729d3a1b222be36fd88f3debf94a20c542c2a65dbebfceac56",
+  "src/lib/customer-auth/handler.ts": "c73fcb0de69521e6bff7a1a1ffc6e57269cd6ce7423869b742f20fe20eae4dff",
+  "src/lib/customer-auth/store.ts": "af6961f2961bf9cc2ecc63663d85e48f06fbf0d6d343767dcc1d7861437be942"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -98,9 +110,12 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
-  if (same(selected, reviewedCustomerIdentitySource)) {
-    const dependencies = Object.fromEntries(Object.keys(reviewedCustomerIdentityDependencies).map(file => [file, readSourceHash(file)]));
-    demand(same(dependencies, reviewedCustomerIdentityDependencies));
+  const customerPolicy = [[reviewedCustomerIdentitySource, reviewedCustomerIdentityDependencies],
+    [reviewedFirstIdentitySource, reviewedFirstIdentityDependencies]].find(([source]) => same(selected, source));
+  if (customerPolicy) {
+    const [, expected] = customerPolicy;
+    const dependencies = Object.fromEntries(Object.keys(expected).map(file => [file, readSourceHash(file)]));
+    demand(same(dependencies, expected));
     return { ...selected, ...dependencies };
   }
   if (same(selected, reviewedLifecyclePermitSource)) {

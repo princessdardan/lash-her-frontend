@@ -11,8 +11,8 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { p2InteractiveBrowserPath, p2LifecycleMutationTarget, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
-  validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
+import { p2InteractiveBrowserPath, p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2InteractiveBrowserInput,
+  validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
@@ -210,7 +210,8 @@ async function reviewedInteractiveInput(plan, challenge) {
     challenge, bindingSha256: plan.planSha256, stage: plan.scopedAction.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
     browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: plan.scopedAction.windowSeconds,
-    ...(plan.scopedAction.stage === "identity" ? { identity: plan.scopedAction.identityActor } : {}),
+    ...(plan.scopedAction.stage === "identity" ? Object.hasOwn(plan.scopedAction, "identityEnrollment")
+      ? { identityEnrollment: plan.scopedAction.identityEnrollment } : { identity: plan.scopedAction.identityActor } : {}),
     ...(plan.scopedAction.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(plan.scopedAction.frontendAction) } : {}) });
 }
 
@@ -260,7 +261,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599);
       }
       if (capture) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
-      if (identity) demand(isDeepStrictEqual(message.identity, { ...input.identity, sessionVerified: true }));
+      if (identity) validateP2InteractiveIdentityReceipt(message.identity, input);
       const waiter = pending;
       pending = undefined;
       clearTimeout(waiter.timer);
@@ -301,10 +302,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       try {
         p2InteractiveBrowserPath(binding.stage, context);
         validateP2InteractiveBrowserPermit(permit, input);
-        if (binding.stage === "identity") {
-          const { actorKind } = input.identity;
-          demand(context === (actorKind === "admin" ? "owner" : "learner"));
-        }
+        if (binding.stage === "identity") demand(context === p2InteractiveIdentityContext(input));
         if (binding.stage === "lifecycle") {
           const { actorId, frontendAction: { actorKind, userId, operation } } = activePlan.scopedAction;
           demand(context === (actorKind === "admin" ? "owner" : "learner")
@@ -346,7 +344,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const selection = requireSelection(context);
       const remaining = selection.expires * 1000 - Date.now();
       demand(phase === "opened" && !closing && binding.stage === "identity"
-        && context === (input.identity.actorKind === "admin" ? "owner" : "learner")
+        && context === p2InteractiveIdentityContext(input)
         && (context === "owner" ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined)
         && remaining > 0 && remaining <= input.windowSeconds * 1000);
       phase = "capturing";
@@ -367,7 +365,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       return receipt;
     },
     async selectPlan(nextPlan) {
-      demand(phase === "cleared" && !failed && !ended && !closing && actions.size < 24);
+      demand(phase === "cleared" && !failed && !ended && !closing && actions.size < 24
+        && !input.identityEnrollment && !nextPlan?.scopedAction?.identityEnrollment);
       phase = "selecting";
       try {
         const next = await reviewedInteractiveInput(nextPlan, binding.challenge), nextBinding = interactiveBinding(next);

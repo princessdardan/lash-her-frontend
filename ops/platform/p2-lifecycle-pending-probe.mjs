@@ -331,3 +331,76 @@ export async function observeP2InteractiveIdentityCase(client, target, selection
   demand(observed.freshSessionCount > 0);
   return { ...selected, actorActive: true, liveSessionCount: observed.liveSessionCount };
 }
+
+const INTERACTIVE_ENROLLMENT_SQL = Object.freeze({
+  absent: `SELECT pg_catalog.clock_timestamp()::text AS cutoff,
+    NOT EXISTS(SELECT 1 FROM public.customer_users WHERE email=$1::text) AS absent`,
+  customer: `WITH observed AS MATERIALIZED (SELECT pg_catalog.clock_timestamp() AS at)
+    SELECT u.id::text,u.status,u.account_version::text,
+      (u.created_at>$2::timestamptz AND u.created_at<=observed.at AND u.email_verified IS NOT NULL) AS fresh_verified_user,
+      sessions.live,sessions.fresh,links.total AS link_count,links.google AS google_link_count
+    FROM public.customer_users u CROSS JOIN observed
+    CROSS JOIN LATERAL (SELECT count(*)::text AS live,count(*) FILTER (
+        WHERE s.created_at>=u.created_at AND s.created_at>$2::timestamptz AND s.created_at<=observed.at)::text AS fresh
+      FROM public.customer_sessions s WHERE s.user_id=u.id AND s.expires>observed.at) sessions
+    CROSS JOIN LATERAL (SELECT count(*)::text AS total,count(*) FILTER (
+        WHERE l.provider='google' AND l.type='oidc' AND length(btrim(l.provider_account_id)) BETWEEN 1 AND 255
+          AND l.created_at>=u.created_at AND l.created_at<=observed.at)::text AS google
+      FROM public.customer_provider_links l WHERE l.user_id=u.id) links
+    WHERE u.email=$1::text`,
+  // Both lookups are indexed. New legacy consent inserts are mirrored into
+  // highlevel_consent_events by the source migration in the same transaction.
+  marketing: `SELECT
+    NOT EXISTS(SELECT 1 FROM public.marketing_contacts WHERE email_normalized=$1::text) AS contact_absent,
+    NOT EXISTS(SELECT 1 FROM public.highlevel_consent_events WHERE email_normalized=$1::text) AS consent_absent`,
+});
+const enrollmentBaselines = new WeakMap();
+
+export function validateP2InteractiveEnrollmentEmail(selection, email) {
+  demand(closed(selection, ["provider", "emailSha256", "nonce"]) && ["google", "resend"].includes(selection.provider)
+    && identityDigest(selection.emailSha256) && typeof selection.nonce === "string" && /^[a-f0-9]{32}$/u.test(selection.nonce)
+    && typeof email === "string" && email.length <= 254 && email === email.normalize("NFKC").trim().toLowerCase()
+    && !/[\u0000-\u001f\u007f]/u.test(email) && /^[^\s@,;<>"\\]+@[^\s@,;<>"\\]+\.[^\s@,;<>"\\]+$/u.test(email)
+    && p2SuspensionEvidenceSha256(JSON.stringify(["p2q-customer-enrollment-v1", selection.provider, selection.nonce, email])) === selection.emailSha256);
+  return email;
+}
+
+async function readInteractiveEnrollment(client, binding, email, cutoff, dependencies, backend) {
+  try {
+    return await readHeldInteractiveSnapshot(client, binding, dependencies, backend, async read => {
+      const args = cutoff === undefined ? [email] : [email, cutoff];
+      const rows = await read(cutoff === undefined ? INTERACTIVE_ENROLLMENT_SQL.absent : INTERACTIVE_ENROLLMENT_SQL.customer, args);
+      const marketing = await read(INTERACTIVE_ENROLLMENT_SQL.marketing, [email]);
+      demand(rows.length === 1 && marketing.length === 1 && marketing[0].contact_absent === true && marketing[0].consent_absent === true);
+      return { row: rows[0] };
+    });
+  } catch {
+    // Database errors can contain the operator's private lookup value.
+    throw new Error("P2_LIFECYCLE_PENDING_REFUSED");
+  }
+}
+
+export async function captureP2InteractiveEnrollmentBaseline(client, target, selection, email, dependencies) {
+  const selected = Object.freeze({ ...selection }), binding = interactiveTarget(target);
+  const address = validateP2InteractiveEnrollmentEmail(selected, email);
+  const { backend, row } = await readInteractiveEnrollment(client, binding, address, undefined, dependencies);
+  demand(row.absent === true && typeof row.cutoff === "string" && Number.isFinite(Date.parse(row.cutoff)));
+  const baseline = Object.freeze({});
+  enrollmentBaselines.set(baseline, { client, binding, selected, address, backend, cutoff: row.cutoff });
+  return baseline;
+}
+
+export async function observeP2InteractiveEnrollmentCase(client, target, selection, baseline, browserIdentity, dependencies) {
+  const saved = enrollmentBaselines.get(baseline);
+  demand(saved?.client === client && isDeepStrictEqual(saved.binding, interactiveTarget(target))
+    && isDeepStrictEqual(saved.selected, selection) && closed(browserIdentity, ["actorKind", "actorId", "sessionVerified"])
+    && browserIdentity.actorKind === "customer" && uuid(browserIdentity.actorId) && browserIdentity.sessionVerified === true);
+  enrollmentBaselines.delete(baseline);
+  const address = validateP2InteractiveEnrollmentEmail(saved.selected, saved.address);
+  const { row } = await readInteractiveEnrollment(client, saved.binding, address, saved.cutoff, dependencies, saved.backend);
+  const { provider } = saved.selected, providerLinkCount = provider === "google" ? 1 : 0;
+  demand(row.id === browserIdentity.actorId && row.status === "active" && row.account_version === "0"
+    && row.fresh_verified_user === true && row.live === "1" && row.fresh === "1"
+    && row.link_count === String(providerLinkCount) && row.google_link_count === String(providerLinkCount));
+  return { actorKind: "customer", actorId: row.id, actorActive: true, liveSessionCount: 1, provider, providerLinkCount };
+}

@@ -12,7 +12,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
-  validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -194,17 +194,26 @@ function interactiveInput(overrides = {}) {
   if (value.stage === "lifecycle" && !Object.hasOwn(value, "lifecycle")) {
     value.lifecycle = p2LifecycleMutationTarget({ actorKind: "admin", userId, operation: "suspend" });
   }
-  if (value.stage === "identity" && !Object.hasOwn(value, "identity")) value.identity = { actorKind: "admin", actorId: adminId };
+  if (value.stage === "identity" && !Object.hasOwn(value, "identity") && !Object.hasOwn(value, "identityEnrollment")) {
+    value.identity = { actorKind: "admin", actorId: adminId };
+  }
   return value;
 }
 const identityHash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const customerIdentitySelector = "7032712d637573746f6d65722d763100" + userId.replaceAll("-", "");
+const enrollmentEmail = "owned-new-customer@example.invalid", enrollmentId = randomUUID();
+function ownedEnrollment(provider) {
+  const nonce = "9".repeat(32);
+  return { provider, nonce, emailSha256: identityHash(["p2q-customer-enrollment-v1", provider, nonce, enrollmentEmail]) };
+}
 function interactivePermit(input) {
   const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
-  const selector = input.stage === "identity" ? input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
-    : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "")
-    : input.stage === "lifecycle" ? "4".repeat(64) : undefined;
-  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, "3".repeat(32),
+  const enrollment = input.identityEnrollment;
+  let selector = input.stage === "lifecycle" ? "4".repeat(64) : undefined;
+  if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
+  else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
+    : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
+  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
 }
@@ -306,13 +315,38 @@ test("identity permit requires the reviewed actor family and the actual child re
   } finally { await runner.close(); }
 });
 
+test("first enrollment requires exactly the selected provider, nonce and selector shape", () => {
+  for (const [provider, prefix] of [["google", "a1"], ["resend", "a2"]]) {
+    const enrollment = ownedEnrollment(provider), input = interactiveInput({ identityEnrollment: enrollment }), permit = interactivePermit(input);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    const parts = permit.cookie.split(".");
+    assert.equal(parts[5], enrollment.nonce);
+    assert.equal(parts[6], prefix + enrollment.emailSha256.slice(0, 62));
+    for (const [index, replacement] of [[0, "v1"], [5, "0".repeat(32)], [6, (prefix === "a1" ? "a2" : "a1") + parts[6].slice(2)]]) {
+      const altered = parts.slice(); altered[index] = replacement;
+      assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: altered.join(".") }, input));
+    }
+    for (const change of [{ provider: "other" }, { nonce: "9".repeat(31) }, { emailSha256: "f".repeat(63) }, { email: enrollmentEmail }]) {
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, identityEnrollment: { ...enrollment, ...change } }));
+    }
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, identity: { actorKind: "customer", actorId: userId } }));
+    assert.throws(() => validateP2InteractiveBrowserInput(interactiveInput({ stage: "learning", identityEnrollment: enrollment })));
+    const receipt = { actorKind: "customer", actorId: enrollmentId, sessionVerified: true };
+    assert.equal(validateP2InteractiveIdentityReceipt(receipt, input), receipt);
+    for (const invalid of [{ actorKind: "admin" }, { actorId: "not-an-uuid" }, { email: enrollmentEmail }, { sessionVerified: false }]) {
+      assert.throws(() => validateP2InteractiveIdentityReceipt({ ...receipt, ...invalid }, input));
+    }
+  }
+});
+
 const ownedGoogleSubject = "owned-private-google-subject";
 function ownerSession(subject = ownedGoogleSubject, authenticatedAt = Math.floor(Date.now() / 1000)) {
   return { expires: new Date(Date.now() + 3_600_000).toISOString(),
     user: { providerUserId: subject, authenticatedAt, isEmailVerified: true, email: "owned-owner@example.invalid" } };
 }
-const customerSession = (id = userId) => ({ expires: new Date(Date.now() + 3_600_000).toISOString(),
-  user: { id, email: "owned-customer@example.invalid", name: null, image: null } });
+const customerSession = (id = userId, email = "owned-customer@example.invalid") => ({ expires: new Date(Date.now() + 3_600_000).toISOString(),
+  user: { id, email, name: null, image: null } });
 const ownerSubject = input => identityHash(["p2q-interactive-owner-v1", input.challenge, input.identity.actorId, ownedGoogleSubject]);
 
 test("identity session refuses wrong or expired identity and waits for a newly authenticated verified owner", async () => {
@@ -341,18 +375,48 @@ test("identity session refuses wrong or expired identity and waits for a newly a
     { actorKind: "customer", actorId: userId, sessionVerified: true });
   await assert.rejects(observeP2InteractiveIdentitySession(page(customerSession(randomUUID()), "/api/customer-auth/session"), learner, customerSelection),
     /IDENTITY_SESSION_REFUSED/u);
+  const enrollment = ownedEnrollment("google"), newCustomer = interactiveInput({ identityEnrollment: enrollment });
+  const captured = await observeP2InteractiveIdentitySession(page(customerSession(enrollmentId, enrollmentEmail), "/api/customer-auth/session"), newCustomer, customerSelection);
+  assert.deepEqual(captured, { actorKind: "customer", actorId: enrollmentId, sessionVerified: true });
+  assert.equal(JSON.stringify(captured).includes(enrollmentEmail), false);
+  const wrongDigest = { ...enrollment, emailSha256: enrollment.emailSha256.slice(0, -1) + (enrollment.emailSha256.endsWith("0") ? "1" : "0") };
+  await assert.rejects(observeP2InteractiveIdentitySession(page(customerSession(enrollmentId, enrollmentEmail), "/api/customer-auth/session"),
+    interactiveInput({ identityEnrollment: wrongDigest }), customerSelection), /IDENTITY_SESSION_REFUSED/u);
+  await assert.rejects(observeP2InteractiveIdentitySession(page(customerSession(enrollmentId), "/api/customer-auth/session"), newCustomer, customerSelection),
+    /IDENTITY_SESSION_REFUSED/u);
   await assert.rejects(observeP2InteractiveIdentitySession(page(ownerSession()), owner, { ...selection, expires: Math.floor(Date.now() / 1000) }),
     /IDENTITY_SESSION_REFUSED/u);
-  assert.equal(requests, 5);
+  assert.equal(requests, 8);
   assert.equal(disposed, requests);
 });
 
 const ownedInteractiveBrowser = process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST === "true";
-test("owned Chromium keeps the customer session from a loopback sign-in through lifecycle permit rotation",
+test("owned Chromium child refuses phase selection into or out of first enrollment",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const enrollment = interactiveInput({ identityEnrollment: ownedEnrollment("google") });
+    const known = interactiveInput({ identity: { actorKind: "customer", actorId: userId } });
+    for (const [first, successor] of [[enrollment, known], [known, enrollment]]) {
+      const runner = interactiveChild(), permit = interactivePermit(first), context = "learner";
+      const next = { ...successor, epoch: "11", actionId: "owned-forbidden-enrollment", bindingSha256: "d".repeat(64) };
+      const selection = { context, expires: permit.expires };
+      try {
+        assert.equal((await runner.command("initialize-interactive", first)).type, "interactive-initialized");
+        assert.equal((await runner.command("interactive-install", { ...binding(first), ...selection }, privateFrame(first, context, permit))).type,
+          "interactive-permit-installed");
+        assert.equal((await runner.command("interactive-clear", { ...binding(first), ...selection })).type, "interactive-permit-cleared");
+        assert.deepEqual(await runner.command("interactive-select", { ...binding(first), next }), { type: "failed" });
+        assert.deepEqual(await runner.exited, [1, null]);
+        assert.deepEqual(runner.output, []);
+      } finally { await runner.close(); }
+    }
+  });
+
+test("owned Chromium observes a new customer and keeps the reviewed known session through lifecycle permit rotation",
   { skip: !ownedInteractiveBrowser, timeout: 15_000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "owned-p2-identity-tls-"));
     const sockets = new Set(), hits = [], lifecycleRequestId = randomUUID();
     const lifecycle = p2LifecycleMutationTarget({ actorKind: "customer", userId, operation: "preferences-on" });
+    const enrollment = ownedEnrollment("resend"), enrollmentSelector = "a2" + enrollment.emailSha256.slice(0, 62);
     const bind = async server => {
       server.on("connection", socket => {
         sockets.add(socket);
@@ -370,21 +434,23 @@ test("owned Chromium keeps the customer session from a loopback sign-in through 
       https = createHttpsServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
         const cookies = request.headers.cookie ?? "";
         const ownerCookie = cookies.includes("owned-owner=fixture"), customerCookie = cookies.includes("owned-customer=fixture");
+        const enrollmentCookie = cookies.includes("owned-customer=enrollment");
         const customerPermit = cookies.includes("__Host-lash-p2q-window=v2.9.identity.") && cookies.includes("." + customerIdentitySelector + ".");
+        const enrollmentPermit = cookies.includes("__Host-lash-p2q-window=v2.9.identity.") && cookies.includes("." + enrollment.nonce + "." + enrollmentSelector + ".");
         const lifecyclePermit = cookies.includes("__Host-lash-p2q-window=v2.11.lifecycle.");
         if (request.method === "GET" && ["/sign-in", "/admin/sign-in"].includes(request.url)) {
           response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><main>Owned identity</main>
             <form method="POST" action="/api/customer-auth/signin/resend"><button>Sign in</button></form>`);
           return;
         }
-        if (request.method === "POST" && request.url === "/api/customer-auth/signin/resend" && customerPermit && !ownerCookie) {
+        if (request.method === "POST" && request.url === "/api/customer-auth/signin/resend" && (customerPermit || enrollmentPermit) && !ownerCookie) {
           request.resume();
           response.writeHead(303, { location: "/api/customer-auth/callback/resend" }).end();
           return;
         }
-        if (request.method === "GET" && request.url === "/api/customer-auth/callback/resend" && customerPermit && !ownerCookie) {
+        if (request.method === "GET" && request.url === "/api/customer-auth/callback/resend" && (customerPermit || enrollmentPermit) && !ownerCookie) {
           response.writeHead(303, { location: "/sign-in",
-            "set-cookie": "owned-customer=fixture; Path=/; Secure; HttpOnly; SameSite=Lax" }).end();
+            "set-cookie": `owned-customer=${enrollmentPermit ? "enrollment" : "fixture"}; Path=/; Secure; HttpOnly; SameSite=Lax` }).end();
           return;
         }
         if (request.method === "GET" && request.url === "/account" && customerCookie && !ownerCookie && lifecyclePermit) {
@@ -403,8 +469,11 @@ test("owned Chromium keeps the customer session from a loopback sign-in through 
         }
         const owner = request.url === "/api/auth/session", customer = request.url === "/api/customer-auth/session";
         if (request.method !== "GET" || (!owner && !customer)) return response.writeHead(404).end();
-        hits.push({ path: request.url, ownerCookie, customerCookie, permitCookie: cookies.includes("__Host-lash-p2q-window=") });
-        const value = owner ? ownerCookie && !customerCookie ? ownerSession() : null : customerCookie && !ownerCookie && customerPermit ? customerSession() : null;
+        hits.push({ path: request.url, ownerCookie, customerCookie, enrollmentCookie, permitCookie: cookies.includes("__Host-lash-p2q-window=") });
+        let value = null;
+        if (owner && ownerCookie && !customerCookie && !enrollmentCookie) value = ownerSession();
+        if (customer && customerCookie && !ownerCookie && customerPermit) value = customerSession();
+        if (customer && enrollmentCookie && !ownerCookie && enrollmentPermit) value = customerSession(enrollmentId, enrollmentEmail);
         const body = JSON.stringify(value);
         response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-cache, no-store",
           "content-length": Buffer.byteLength(body) }).end(body);
@@ -429,6 +498,7 @@ test("owned Chromium keeps the customer session from a loopback sign-in through 
       for (const [context, input, options] of [
         ["owner", interactiveInput(), { ownerSubjectSha256: ownerSubject(interactiveInput()) }],
         ["learner", interactiveInput({ identity: { actorKind: "customer", actorId: userId } }), {}],
+        ["learner", interactiveInput({ identityEnrollment: enrollment }), {}],
       ]) {
         const owned = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
         try {
@@ -446,10 +516,10 @@ test("owned Chromium keeps the customer session from a loopback sign-in through 
             await page.waitForLoadState();
           }
           assert.deepEqual(await observeP2InteractiveIdentitySession(page, input, { context, openedAt, expires: permit.expires, ...options }),
-            { ...input.identity, sessionVerified: true });
+            { ...(input.identity ?? { actorKind: "customer", actorId: enrollmentId }), sessionVerified: true });
           await expireP2InteractiveBrowserCookie(owned);
           await page.close();
-          if (context === "learner") {
+          if (context === "learner" && !input.identityEnrollment) {
             assert.deepEqual((await owned.cookies([input.browserOrigin])).map(cookie => cookie.name), ["owned-customer"]);
             const next = interactiveInput({ stage: "lifecycle", lifecycle, epoch: "11", actionId: "owned-lifecycle", bindingSha256: "d".repeat(64) });
             const nextPermit = interactivePermit(next);
@@ -469,9 +539,11 @@ test("owned Chromium keeps the customer session from a loopback sign-in through 
         } finally { await owned.close(); }
       }
       assert.deepEqual(hits, [
-        { path: "/api/auth/session", ownerCookie: true, customerCookie: false, permitCookie: true },
-        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: false, permitCookie: true },
-        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: true, permitCookie: true },
+        { path: "/api/auth/session", ownerCookie: true, customerCookie: false, enrollmentCookie: false, permitCookie: true },
+        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: false, enrollmentCookie: false, permitCookie: true },
+        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: true, enrollmentCookie: false, permitCookie: true },
+        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: false, enrollmentCookie: false, permitCookie: true },
+        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: false, enrollmentCookie: true, permitCookie: true },
       ]);
     } finally {
       await browser?.close();

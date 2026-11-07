@@ -48,8 +48,8 @@ function validateLifecycleTarget(target) {
   demand(Object.entries(selected).every(([key, value]) => target[key] === value));
 }
 
-function identityContext(identity) {
-  return identity.actorKind === "admin" ? "owner" : "learner";
+export function p2InteractiveIdentityContext(input) {
+  return input.identity?.actorKind === "admin" ? "owner" : "learner";
 }
 
 function identitySelector(identity) {
@@ -59,10 +59,17 @@ function identitySelector(identity) {
   return createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
 }
 
+function enrollmentSelector(enrollment) {
+  demand(closed(enrollment, ["provider", "emailSha256", "nonce"]) && ["google", "resend"].includes(enrollment.provider)
+    && sha(enrollment.emailSha256) && matches(enrollment.nonce, /^[a-f0-9]{32}$/u));
+  return (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
+}
+
 export function validateP2InteractiveBrowserInput(input) {
+  const enrollment = input?.stage === "identity" && Object.hasOwn(input, "identityEnrollment");
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",
     "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds",
-    ...(input?.stage === "lifecycle" ? ["lifecycle"] : input?.stage === "identity" ? ["identity"] : [])])
+    ...(input?.stage === "lifecycle" ? ["lifecycle"] : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
     && matches(input.deploymentId, /^dpl_[A-Za-z0-9]+$/u) && matches(input.deploymentUrl, /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u)
@@ -70,8 +77,8 @@ export function validateP2InteractiveBrowserInput(input) {
     && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
-  if (input.stage === "identity") demand(closed(input.identity, ["actorKind", "actorId"])
-    && ["admin", "customer"].includes(input.identity.actorKind) && uuid(input.identity.actorId));
+  if (enrollment) enrollmentSelector(input.identityEnrollment);
+  else if (input.stage === "identity") identitySelector(input.identity);
   return input;
 }
 
@@ -85,7 +92,10 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
     && /^[a-f0-9]{32}$/u.test(nonce ?? "")
     && (stage === "lifecycle" || stage === "identity" ? version === "v2" && parts.length === 8 && sha(parts[6]) && sha(parts[7])
       : version === "v1" && parts.length === 7 && sha(parts[6])));
-  if (stage === "identity") demand(parts[6] === identitySelector(input.identity));
+  if (stage === "identity") {
+    const enrollment = input.identityEnrollment;
+    demand(enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
+  }
   return permit;
 }
 
@@ -154,35 +164,48 @@ function exactLifecycleJson(bytes) {
 
 const identityRefused = () => new Error("P2_INTERACTIVE_IDENTITY_SESSION_REFUSED");
 
+export function validateP2InteractiveIdentityReceipt(receipt, input) {
+  demand(input.stage === "identity" && closed(receipt, ["actorKind", "actorId", "sessionVerified"])
+    && receipt.sessionVerified === true && uuid(receipt.actorId));
+  if (input.identityEnrollment) demand(receipt.actorKind === "customer");
+  else demand(receipt.actorKind === input.identity.actorKind && receipt.actorId === input.identity.actorId);
+  return receipt;
+}
+
 function readIdentitySession(body, input, ownerSubjectSha256, openedAt, now) {
   if (body === null) return null;
-  const { actorKind, actorId } = input.identity;
+  const enrollment = input.identityEnrollment, actorKind = input.identity?.actorKind ?? "customer";
   demand(closed(body, ["expires", "user"]) && typeof body.expires === "string");
   const expiry = Date.parse(body.expires);
   demand(Number.isFinite(expiry) && expiry > now && new Date(expiry).toISOString() === body.expires);
   const user = body.user;
   if (actorKind === "customer") {
-    demand(closed(user, ["id", "name", "email", "image"]) && user.id === actorId && user.image === null
+    demand(closed(user, ["id", "name", "email", "image"]) && uuid(user.id) && user.image === null
       && typeof user.email === "string" && (user.name === null || typeof user.name === "string"));
-  } else {
-    demand(user && typeof user === "object" && !Array.isArray(user)
-      && Object.keys(user).every(key => ["name", "email", "image", "providerUserId", "isEmailVerified", "authenticatedAt"].includes(key))
-      && typeof user.email === "string" && user.email.trim().length > 0
-      && matches(user.providerUserId, /^[!-~]{1,256}$/u) && user.isEmailVerified === true && Number.isSafeInteger(user.authenticatedAt)
-      && user.authenticatedAt > 0);
-    const subject = createHash("sha256").update(JSON.stringify(["p2q-interactive-owner-v1", input.challenge, actorId, user.providerUserId])).digest("hex");
-    const authenticatedAt = user.authenticatedAt * 1000;
-    demand(subject === ownerSubjectSha256 && authenticatedAt <= now + 1000);
-    if (authenticatedAt < openedAt - 1000 || now - authenticatedAt >= 240_000) return null;
+    if (enrollment) {
+      const email = createHash("sha256").update(JSON.stringify(["p2q-customer-enrollment-v1", enrollment.provider, enrollment.nonce, user.email])).digest("hex");
+      demand(email === enrollment.emailSha256);
+    } else demand(user.id === input.identity.actorId);
+    return validateP2InteractiveIdentityReceipt({ actorKind, actorId: user.id, sessionVerified: true }, input);
   }
-  return { actorKind, actorId, sessionVerified: true };
+  const actorId = input.identity.actorId;
+  demand(user && typeof user === "object" && !Array.isArray(user)
+    && Object.keys(user).every(key => ["name", "email", "image", "providerUserId", "isEmailVerified", "authenticatedAt"].includes(key))
+    && typeof user.email === "string" && user.email.trim().length > 0
+    && matches(user.providerUserId, /^[!-~]{1,256}$/u) && user.isEmailVerified === true && Number.isSafeInteger(user.authenticatedAt)
+    && user.authenticatedAt > 0);
+  const subject = createHash("sha256").update(JSON.stringify(["p2q-interactive-owner-v1", input.challenge, actorId, user.providerUserId])).digest("hex");
+  const authenticatedAt = user.authenticatedAt * 1000;
+  demand(subject === ownerSubjectSha256 && authenticatedAt <= now + 1000);
+  if (authenticatedAt < openedAt - 1000 || now - authenticatedAt >= 240_000) return null;
+  return validateP2InteractiveIdentityReceipt({ actorKind, actorId, sessionVerified: true }, input);
 }
 
 export async function observeP2InteractiveIdentitySession(page, input, { context, ownerSubjectSha256, openedAt, expires }) {
   let response, bytes;
   try {
     validateP2InteractiveBrowserInput(input);
-    demand(input.stage === "identity" && context === identityContext(input.identity) && Number.isSafeInteger(openedAt)
+    demand(input.stage === "identity" && context === p2InteractiveIdentityContext(input) && Number.isSafeInteger(openedAt)
       && Number.isSafeInteger(expires) && openedAt <= Date.now() && openedAt < expires * 1000);
     const owner = context === "owner";
     demand(owner ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined);
@@ -454,9 +477,9 @@ async function runInteractiveBrowser(first) {
         break;
       }
       if (command.type === "interactive-select") {
-        demand(cleared && closed(received, [...Object.keys(binding), "next"]));
+        demand(cleared && !input.identityEnrollment && closed(received, [...Object.keys(binding), "next"]));
         const selectedInput = validateP2InteractiveBrowserInput(received.next);
-        demand(["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
+        demand(!selectedInput.identityEnrollment && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
           && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
           && BigInt(selectedInput.epoch) > BigInt(input.epoch));
         actions.add(selectedInput.actionId);
@@ -469,13 +492,13 @@ async function runInteractiveBrowser(first) {
         continue;
       }
       const captureIdentity = command.type === "interactive-capture-identity";
-      const ownerIdentity = captureIdentity && binding.stage === "identity" && input.identity.actorKind === "admin";
+      const ownerIdentity = captureIdentity && binding.stage === "identity" && p2InteractiveIdentityContext(input) === "owner";
       demand(closed(received, [...Object.keys(binding), "context", "expires", ...(ownerIdentity ? ["ownerSubjectSha256"] : [])])
         && Number.isSafeInteger(received.expires));
       const path = p2InteractiveBrowserPath(binding.stage, received.context);
       if (command.type === "interactive-install") {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
-          && (binding.stage !== "identity" || received.context === identityContext(input.identity)));
+          && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input)));
         selection = { context: received.context, expires: received.expires };
         const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
         try {
@@ -515,6 +538,7 @@ async function runInteractiveBrowser(first) {
         await expireP2InteractiveBrowserCookie(context);
         await Promise.all(context.pages().map(page => page.close()));
         cleared = true;
+        if (input.identityEnrollment) await context.close();
         if (captureLifecycle || captureIdentity) demand(Date.now() < selection.expires * 1000);
         const response = captureLifecycle ? lifecycleWatch.finish() : undefined;
         lifecycleWatch?.close();

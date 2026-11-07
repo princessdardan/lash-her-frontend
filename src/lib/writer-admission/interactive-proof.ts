@@ -5,6 +5,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { isAdminDeveloperModeEnabled } from "@/lib/admin/developer-mode-config";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
+import type { WriterIdentityEnrollment } from "./context";
 
 export const INTERACTIVE_ORIGIN = "https://staging.lashher.com";
 export const INTERACTIVE_COOKIE = "__Host-lash-p2q-window";
@@ -15,7 +16,7 @@ const stages = ["identity", "authoring", "media", "learning", "paid-grant", "lif
 type Stage = (typeof stages)[number];
 const adminIdentitySelector = createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
 const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
-type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer" };
+type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment };
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
@@ -33,10 +34,7 @@ export function withinInteractiveAdminGoogleAction<T>(task: () => Promise<T>): P
   return adminGoogleAction.run(true, task);
 }
 
-const customerAuth = {
-  GET: at("/sign-in|/api/customer-auth/(?:csrf|providers|session|callback/(?:google|resend))"),
-  POST: at("/api/customer-auth/signin/(?:google|resend)"),
-};
+const customerIdentityReads = at("/sign-in|/api/customer-auth/(?:csrf|providers|session)");
 const staffAuth = {
   GET: at("/admin/(?:sign-in|not-authorized)|/api/auth/(?:csrf|providers|session|callback/google)"),
   POST: at("/admin/sign-in|/api/auth/(?:signin/google|signout)"),
@@ -69,10 +67,18 @@ function matches(routes: Readonly<Partial<Record<string, RegExp>>>, method: stri
   return Object.hasOwn(routes, method) && routes[method]?.test(path) === true;
 }
 
-function permits({ stage, identityActorKind }: BrowserScope, method: string, path: string): boolean {
+function permitsCustomerAuth(method: string, path: string, provider?: WriterIdentityEnrollment["provider"]): boolean {
+  if (method === "GET" && customerIdentityReads.test(path)) return true;
+  if (method !== "GET" && method !== "POST") return false;
+  const prefix = method === "GET" ? "/api/customer-auth/callback/" : "/api/customer-auth/signin/";
+  return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
+}
+
+function permits({ stage, identityActorKind, identityEnrollment }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
-    case "identity": return identityActorKind !== undefined &&
-      matches(identityActorKind === "admin" ? staffAuth : customerAuth, method, path);
+    case "identity":
+      if (identityActorKind === "admin") return matches(staffAuth, method, path);
+      return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
     case "authoring": return matches(authoring, method, path);
     case "media": return matches(media, method, path) || (method === "GET" && matches(authoring, method, path));
     case "learning": return matches(learning, method, path) || (method === "GET" && path === "/api/customer-auth/session");
@@ -112,6 +118,12 @@ function decodeIdentityCustomerId(selection: string): string | undefined {
   return canonicalUuid.test(id) ? id : undefined;
 }
 
+function decodeIdentityEnrollment(selection: string, nonce: string): WriterIdentityEnrollment | undefined {
+  const prefix = selection.slice(0, 2);
+  if (prefix !== "a1" && prefix !== "a2") return undefined;
+  return { provider: prefix === "a1" ? "google" : "resend", nonce, emailDigest: selection.slice(2) };
+}
+
 function browserProof(authority: Binding, cookie: string, now: number): BrowserPermit | null {
   if (cookie.length > 256) return null;
   const fields = cookie.split(".");
@@ -127,7 +139,9 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   if (stage === "identity") {
     if (selection === adminIdentitySelector) return { ...permit, identityActorKind: "admin" };
     const identityCustomerId = decodeIdentityCustomerId(selection);
-    return identityCustomerId ? { ...permit, identityActorKind: "customer", identityCustomerId } : null;
+    if (identityCustomerId) return { ...permit, identityActorKind: "customer", identityCustomerId };
+    const identityEnrollment = decodeIdentityEnrollment(selection, nonce);
+    return identityEnrollment ? { ...permit, identityActorKind: "customer", identityEnrollment } : null;
   }
   return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }
@@ -174,7 +188,7 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
-    lifecycleSelectionSha256?: string; identityCustomerId?: string } | null {
+    lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
@@ -182,7 +196,8 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
   return { epoch: browser.epoch, producerSha256, source, target,
     ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}),
-    ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}) };
+    ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}),
+    ...(browser.identityEnrollment ? { identityEnrollment: browser.identityEnrollment } : {}) };
 }
 
 export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof readInteractiveRequest>> {

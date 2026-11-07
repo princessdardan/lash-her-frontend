@@ -79,6 +79,7 @@ from datetime import datetime,timezone
 initial=json.loads(sys.stdin.readline())
 plan=initial['certificationPlan'];binding=initial['interactiveController'];profile=initial['qualificationTargetProfile']
 action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpoch'])+1);behavior=sys.argv[1]
+enrollment=action.get('identityEnrollment')
 initial_time=int(time.time());expires=initial_time+120
 def iso(seconds):return datetime.fromtimestamp(seconds,timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -104,8 +105,14 @@ for raw in sys.stdin:
    value['receipt']={**base,'status':status('OPENED'),'epoch':epoch,'expiresAt':iso(expires),'gatewayScoped':False}
   elif op=='interactive-permit':
    assert phase=='opened';phase='issued'
-   selector='f'*64
-   if stage=='identity':
+   selector='f'*64;nonce='e'*32
+   if enrollment:
+    provider=enrollment['provider'];nonce=enrollment['nonce'];email_digest=enrollment['emailSha256']
+    if behavior=='wrong-nonce':nonce='8'+nonce[1:]
+    if behavior=='wrong-provider':provider='resend' if provider=='google' else 'google'
+    if behavior=='wrong-email':email_digest='7'+email_digest[1:]
+    selector=('a1' if provider=='google' else 'a2')+email_digest[:62]
+   elif stage=='identity':
     identity=action['identityActor']
     if identity['actorKind']=='customer':
      customer_id=identity['actorId']
@@ -113,7 +120,7 @@ for raw in sys.stdin:
      selector='7032712d637573746f6d65722d763100'+customer_id.replace('-','')
      if behavior=='wrong-kind':selector=digest(['identity','admin'])
     else:selector=digest(['identity','admin'])
-   cookie='.'.join(('v2',epoch,stage,str(initial_time),str(expires),'e'*32,selector,'a'*64))
+   cookie='.'.join(('v2',epoch,stage,str(initial_time),str(expires),nonce,selector,'a'*64))
    value.update(status='CERTIFICATION_INTERACTIVE_PRIVATE',permit={'stage':stage,'epoch':epoch,'expires':expires,'cookie':cookie})
   elif op=='interactive-fence':
    assert phase in ('opened','issued');phase='fenced'
@@ -122,12 +129,18 @@ for raw in sys.stdin:
    assert phase=='fenced';phase='retained'
    evidence=p['caseEvidence']
    if stage=='identity':
-    actor=action['identityActor']
+    actor={'actorKind':'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment else action['identityActor']
     assert set(evidence)=={'browserIdentity','identityWitness'}
     assert evidence['browserIdentity']=={**actor,'sessionVerified':True}
+    if enrollment:
+     provider=enrollment['provider']
+     assert evidence['identityWitness']=={**actor,'actorActive':True,'liveSessionCount':1,
+      'provider':provider,'providerLinkCount':1 if provider=='google' else 0}
     joined={**actor,'context':'owner' if actor['actorKind']=='admin' else 'learner',
      'browserIdentitySha256':digest(evidence['browserIdentity']),'identityWitnessSha256':digest(evidence['identityWitness'])}
-    if behavior=='wrong-join':joined['identityWitnessSha256']='0'*64
+    if behavior=='wrong-join':
+     if enrollment:joined['actorId']='12345678-1234-4123-8123-000000000002'
+     else:joined['identityWitnessSha256']='0'*64
    else:
     assert set(evidence)=={'browserResponse','lifecycleWitness'}
     joined={'browserResponseSha256':digest(evidence['browserResponse']),'lifecycleWitnessSha256':digest(evidence['lifecycleWitness']),
@@ -161,15 +174,17 @@ const program=fixture.program,directory=fixture.directory,profile=fixture.profil
 const sourceCommit='a'.repeat(40),planSha256='c'.repeat(64),actionId='interactive-case';
 const actor='12345678-1234-4123-8123-000000000001',target='12345678-1234-4123-8123-000000000002';
 const commandId='12345678-1234-4123-8123-000000000003',requestId='12345678-1234-4123-8123-000000000004';
-const {certificationStage,actorKind,behavior}=fixture;
+const {certificationStage,actorKind,behavior,provider}=fixture;
 const identity=certificationStage==='identity',context=actorKind==='admin'?'owner':'learner';
 const status=disposition=>'P2_INTERACTIVE_'+certificationStage.toUpperCase()+'_'+disposition;
-const refusedSelector=['wrong-selector','wrong-kind'].includes(behavior);
+const refusedSelector=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider','wrong-email'].includes(behavior);
 const installFailure=behavior==='install-failure'||refusedSelector;
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor};
+const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'.repeat(32)}:null;
+const observedActor=identityEnrollment?{actorKind:'customer',actorId:'12345678-1234-4123-8123-000000000005'}:identityActor;
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests:[],windowSeconds:120,
-  ...(identity?{identityActor}:{frontendAction:selection})};
+  ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:{frontendAction:selection})};
 const plan={mode:'interactive-browser',version:2,environment:'staging',qualificationTargetProfile:profile,certificationActionId:actionId,
   initialEpoch:'7',maximumSeconds:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
   nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},
@@ -215,6 +230,11 @@ for(const changed of [
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityActor:{...identityActor,actorKind:'editor'}}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityActor:{...identityActor,actorId:'00000000-0000-0000-0000-000000000000'}}}},
  ]:[]),
+ ...(identityEnrollment?[
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,provider:'github'}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,emailSha256:'6'.repeat(62)}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,nonce:'9'.repeat(31)}}}},
+ ]:[]),
 ]) assert.throws(()=>start(changed),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
 assert.equal(starts,0);
 writeFileSync(join(directory,'p2-certification-current-database.json'),JSON.stringify(receipt),{mode:0o600});
@@ -225,8 +245,9 @@ const witness={version:1,status:'P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED',actorId
  baselineSha256:'3'.repeat(64),frontendStatus:'suspended',accountVersion:2,sessionsBefore:1,sessionsAfter:0,learningUpdates:false,commandId,
  deliveries:['course','community'].map(receiver=>({receiver,status:'pending',attempts:0})),pendingOrDeliveringCount:2,
  observedAt:new Date().toISOString(),readOnly:true};
-const evidence=identity?{browserIdentity:{...identityActor,sessionVerified:true},
- identityWitness:{...identityActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1})}}
+const evidence=identity?{browserIdentity:{...observedActor,sessionVerified:true},
+ identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
+  ...(identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
 const invalidEvidence=identity?{...evidence,identityWitness:{...evidence.identityWitness,actorId:target}}
  :{...evidence,browserResponse:{...response,unexpected:'fixture-forbidden'}};
@@ -261,6 +282,13 @@ const result=start()(async(_verify,_signal,host)=>{
  assert.deepEqual(await stage.fence(),fenced);
  await assert.rejects(stage.fence());
  await assert.rejects(stage.retain(invalidEvidence));
+ if(identityEnrollment){
+  for(const changed of [
+   {provider:provider==='google'?'resend':'google'},
+   {providerLinkCount:provider==='google'?0:1},
+   {liveSessionCount:2},
+  ]) await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,...changed}}));
+ }
  if(behavior==='wrong-join'){
   await assert.rejects(stage.retain(evidence),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
   await assert.rejects(stage.retain(evidence));
@@ -268,7 +296,10 @@ const result=start()(async(_verify,_signal,host)=>{
  }
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
- if(identity) assert.equal(retained.context,context);
+ if(identity){
+  assert.equal(retained.context,context);
+  assert.equal(retained.actorId,observedActor.actorId);
+ }
  await assert.rejects(stage.retain(evidence));
  await assert.rejects(host.prepareClose({...retained,actorId:target}));
  await host.prepareClose(retained);await host.finish(outcome);
@@ -289,7 +320,7 @@ assert.deepEqual(writes.filter(row=>row.operation?.startsWith('interactive-')).m
 assert.ok(!JSON.stringify(writes).includes('v2.8.')&&!JSON.stringify(writes).includes('fixture-forbidden'));
 `;
 
-for(const [certificationStage,actorKind,behavior] of [
+for(const [certificationStage,actorKind,behavior,provider] of [
  ['lifecycle','admin','joined'],
  ['lifecycle','customer','install-failure'],
  ['identity','admin','joined'],
@@ -297,15 +328,21 @@ for(const [certificationStage,actorKind,behavior] of [
  ['identity','customer','wrong-kind'],
  ['identity','customer','wrong-selector'],
  ['identity','admin','wrong-join'],
+ ['identity','customer','joined','google'],
+ ['identity','customer','joined','resend'],
+ ['identity','customer','wrong-nonce','google'],
+ ['identity','customer','wrong-provider','resend'],
+ ['identity','customer','wrong-email','resend'],
+ ['identity','customer','wrong-join','google'],
 ]){
- test(`fixed interactive transport handles ${certificationStage} ${actorKind} ${behavior} over the guarded pipe`,()=>{
+ test(`fixed interactive transport handles ${certificationStage} ${provider??actorKind} ${behavior} over the guarded pipe`,()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-interactive-wire-')));chmodSync(directory,0o700);
   try{
    // Subprocess-local imports project the source-owned recorder and fixed SSH
    // launch onto a synthetic recorder and actual Python pipes. The transport
    // runs with its ordinary launch argument and retains no test-only bypass.
    const result=spawnSync(process.execPath,['--experimental-test-module-mocks','--input-type=module','--eval',interactiveHarness],{
-    input:JSON.stringify({certificationStage,actorKind,behavior,directory,profile,program:interactiveProgram,
+    input:JSON.stringify({certificationStage,actorKind,behavior,provider,directory,profile,program:interactiveProgram,
       transportUrl:new URL('./p2-certification-transport.mjs',import.meta.url).href,
       browserUrl:new URL('./p2-lifecycle-suspension-evidence.mjs',import.meta.url).href}),encoding:'utf8',timeout:20_000,
    });

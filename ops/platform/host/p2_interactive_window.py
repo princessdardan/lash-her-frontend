@@ -28,6 +28,7 @@ _UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-
 _SHA = re.compile(r"[a-f0-9]{64}")
 _SOURCE_SHA = re.compile(r"[a-f0-9]{40}")
 _EPOCH = re.compile(r"[1-9][0-9]{0,17}")
+_NONCE = re.compile(r"[a-f0-9]{32}")
 _DEPLOYMENT = re.compile(r"https://([a-z0-9][a-z0-9-]*\.vercel\.app)")
 _TARGET = re.compile(r"/course/v1/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?@\[\]_~A-Za-z0-9-]+)?")
 _EMPTY = hashlib.sha256(b"").hexdigest()
@@ -111,15 +112,27 @@ def browser_case_evidence(plan, evidence):
     if _closed_browser_stage(plan) == "lifecycle":
         return _lifecycle_case_evidence(action, evidence)
     demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
-    actor = action["identityActor"]
     identity, witness = evidence["browserIdentity"], evidence["identityWitness"]
-    owner = actor["actorKind"] == "admin"
     demand(_closed_fields(identity, "actorKind actorId sessionVerified") and identity["sessionVerified"] is True and
-           all(identity[key] == value for key, value in actor.items()), "P2_INTERACTIVE_IDENTITY_SESSION_REQUIRED")
-    field = "ownerMappingVerified" if owner else "liveSessionCount"
-    demand(_closed_fields(witness, f"actorKind actorId actorActive {field}") and witness["actorActive"] is True and
-           all(witness[key] == value for key, value in actor.items()) and
-           (witness[field] is True if owner else _safe_integer(witness[field], 1)), "P2_INTERACTIVE_IDENTITY_WITNESS_REQUIRED")
+           _matches(_UUID, identity["actorId"]), "P2_INTERACTIVE_IDENTITY_SESSION_REQUIRED")
+    enrollment = action.get("identityEnrollment")
+    actor = action["identityActor"] if enrollment is None else {"actorKind": "customer", "actorId": identity["actorId"]}
+    owner = actor["actorKind"] == "admin"
+    demand(all(identity[key] == value for key, value in actor.items()), "P2_INTERACTIVE_IDENTITY_SESSION_REQUIRED")
+    fields = "actorKind actorId actorActive " + ("ownerMappingVerified" if owner else "liveSessionCount")
+    if enrollment is not None:
+        fields += " provider providerLinkCount"
+    demand(_closed_fields(witness, fields) and witness["actorActive"] is True and
+           all(witness[key] == value for key, value in actor.items()), "P2_INTERACTIVE_IDENTITY_WITNESS_REQUIRED")
+    if enrollment is not None:
+        provider = enrollment["provider"]
+        demand(type(witness["liveSessionCount"]) is int and witness["liveSessionCount"] == 1 and
+               witness["provider"] == provider and type(witness["providerLinkCount"]) is int and
+               witness["providerLinkCount"] == (1 if provider == "google" else 0),
+               "P2_INTERACTIVE_IDENTITY_ENROLLMENT_WITNESS_REQUIRED")
+    else:
+        demand(witness["ownerMappingVerified"] is True if owner else _safe_integer(witness["liveSessionCount"], 1),
+               "P2_INTERACTIVE_IDENTITY_WITNESS_REQUIRED")
     return {**actor, "context": "owner" if owner else "learner", "browserIdentitySha256": _receipt_sha(identity),
             "identityWitnessSha256": _receipt_sha(witness)}
 
@@ -204,8 +217,9 @@ def validate_interactive_action(action):
     fields = {"stage", "actorId", "requests", "windowSeconds"}
     if lifecycle:
         fields.add("frontendAction")
+    enrollment = identity and "identityEnrollment" in action
     if identity:
-        fields.add("identityActor")
+        fields.add("identityEnrollment" if enrollment else "identityActor")
     demand(type(action) is dict and set(action) == fields and
            type(action["stage"]) is str and action["stage"] in _STAGES and
            type(action["windowSeconds"]) is int and 30 <= action["windowSeconds"] <= 300 and
@@ -223,7 +237,13 @@ def validate_interactive_action(action):
                 frontend["actorKind"] == "customer" and frontend["userId"] == action["actorId"] and
                 frontend["operation"] in ("export", "delete", "preferences-on", "preferences-off")),
                "P2_INTERACTIVE_FRONTEND_ACTION_REQUIRED")
-    if identity:
+    if enrollment:
+        selected_enrollment = action["identityEnrollment"]
+        demand(_closed_fields(selected_enrollment, "provider emailSha256 nonce") and
+               selected_enrollment["provider"] in ("google", "resend") and _digest(selected_enrollment["emailSha256"]) and
+               _matches(_NONCE, selected_enrollment["nonce"]) and selected_enrollment["nonce"] != "0" * 32,
+               "P2_INTERACTIVE_IDENTITY_ENROLLMENT_REQUIRED")
+    elif identity:
         actor = action["identityActor"]
         demand(_closed_fields(actor, "actorKind actorId") and actor["actorKind"] in ("admin", "customer") and
                _matches(_UUID, actor["actorId"]), "P2_INTERACTIVE_IDENTITY_ACTOR_REQUIRED")
@@ -243,6 +263,9 @@ def validate_interactive_action(action):
 
 def _selection_sha(action):
     if action["stage"] == "identity":
+        if "identityEnrollment" in action:
+            enrollment = action["identityEnrollment"]
+            return ("a1" if enrollment["provider"] == "google" else "a2") + enrollment["emailSha256"][:62]
         actor = action["identityActor"]
         if actor["actorKind"] == "customer":
             # Hex for "p2q-customer-v1" and a null byte, then the reviewed UUID.
@@ -260,7 +283,7 @@ def _material(secret, deployment, source, target, epoch, stage, starts, duration
            _matches(_SOURCE_SHA, source) and _matches(_SHA, target) and _matches(_EPOCH, epoch) and
            type(stage) is str and stage in _STAGES and
            type(starts) is int and 1_000_000_000 <= starts < 9_999_999_700 and
-           type(duration) is int and 30 <= duration <= 300 and _matches(re.compile(r"[a-f0-9]{32}"), nonce),
+           type(duration) is int and 30 <= duration <= 300 and _matches(_NONCE, nonce),
            "P2_INTERACTIVE_PRIVATE_BINDING_REQUIRED")
     demand(_matches(_SHA, selection_sha) if stage in CLOSED_BROWSER_STAGES else selection_sha is None,
            "P2_INTERACTIVE_FRONTEND_BINDING_REQUIRED")
@@ -398,7 +421,8 @@ class P2InteractiveWindow:
                {"epoch": self.plan["initialEpoch"], "newWork": False, "recovery": False, "active": 0, "uncertain": 0},
                "P2_INTERACTIVE_GATEWAY_FRONTEND_START_REQUIRED")
         now = int(time.time())
-        nonce = secrets.token_hex(16)
+        enrollment = self.action.get("identityEnrollment")
+        nonce = enrollment["nonce"] if enrollment is not None else secrets.token_hex(16)
         epoch = str(int(self.plan["initialEpoch"]) + 1)
         remaining = math.floor(self.broker.certification_started + self.plan["maximumSeconds"] - time.monotonic()) - 10
         duration = min(self.action["windowSeconds"], remaining)

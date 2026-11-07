@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { NextRequest } from "next/server";
 import { createCustomerAuthHandler } from "./handler";
@@ -7,7 +8,7 @@ import type { CustomerAuthConfiguration } from "./policy";
 import { createCustomerAuthStore, type CustomerAuthStore } from "./store";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
-import { withWriterOperationContext } from "@/lib/writer-admission/context";
+import { withWriterOperationContext, type WriterIdentityEnrollment } from "@/lib/writer-admission/context";
 import { assertCustomerWriterContext, withCustomerWriterContext } from "./context";
 
 const configuration: CustomerAuthConfiguration = { origin: "https://example.com", secret: "s".repeat(32), googleId: "google", googleSecret: "google-secret", resendKey: "resend-secret", emailFrom: "account@example.com", secure: true };
@@ -86,6 +87,7 @@ test("scoped email initiation reaches Auth.js only for the selected active addre
   const handler = createCustomerAuthHandler({
     configuration: () => configuration,
     store: () => ({
+      ...createCustomerAuthStore(() => assert.fail("unexpected database access")),
       adapter: {},
       consumeThrottle: async () => { seen.push("throttle"); return true; },
       isActive: async (email: string) => { seen.push(email); return email === "reviewed@example.com"; },
@@ -108,6 +110,7 @@ test("scoped Google callback requires the verified subject already linked to the
   const account = { provider: "google", type: "oidc" as const, providerAccountId: "verified-subject" };
   const profile = { sub: account.providerAccountId, email_verified: true };
   const config = createCustomerAuthConfig(configuration, {
+    ...createCustomerAuthStore(() => assert.fail("unexpected database access")),
     adapter: { async getUserByAccount(input: { provider: string; providerAccountId: string }) {
       assert.deepEqual(input, { provider: account.provider, providerAccountId: profile.sub });
       return { ...selectedUser, id: linkedId };
@@ -124,6 +127,81 @@ test("scoped Google callback requires the verified subject already linked to the
     linkedId = foreignCustomerId;
     assert.equal(await allow({ user: selectedUser, account, profile }), false);
   });
+});
+
+const enrollmentEmail = "first-time@example.com";
+const enrollmentSelection = (provider: WriterIdentityEnrollment["provider"], nonce = "a".repeat(64)): WriterIdentityEnrollment => ({
+  provider, nonce, emailDigest: createHash("sha256")
+    .update(JSON.stringify(["p2q-customer-enrollment-v1", provider, nonce, enrollmentEmail])).digest("hex").slice(0, 62),
+});
+const inEnrollment = <T>(selection: WriterIdentityEnrollment, task: () => Promise<T>) => withWriterOperationContext(task, undefined, undefined, undefined, selection);
+
+test("first-time Resend handler refuses other providers, addresses and live sessions before writes", async () => {
+  const seen: string[] = [];
+  const handler = createCustomerAuthHandler({
+    configuration: () => configuration,
+    store: () => ({
+      ...createCustomerAuthStore(() => assert.fail("unexpected database access")),
+      hasLiveSession: async (token) => token === "already-signed-in",
+      consumeThrottle: async () => { seen.push("throttle"); return true; },
+      isEnrollmentAvailable: async (email) => email === enrollmentEmail,
+    }),
+    run: async (_kind, work) => inEnrollment(enrollmentSelection("resend"), work),
+    handle: async () => { seen.push("authjs"); return new Response(null, { status: 302 }); },
+  });
+  const liveSession = post(enrollmentEmail);
+  assert.equal((await handler(request("/signin/resend", { ...liveSession, headers: { ...liveSession.headers, cookie: "__Host-lash-customer.session-token=already-signed-in" } }))).status, 303);
+  assert.equal((await handler(request("/signin/google", post(enrollmentEmail)))).status, 403);
+  assert.equal((await handler(request("/signin/resend", post("foreign@example.com")))).status, 303);
+  assert.equal((await handler(request(`/callback/resend?email=${enrollmentEmail}&email=foreign@example.com`))).status, 403);
+  assert.deepEqual(seen, []);
+  assert.equal((await handler(request("/signin/resend", post(` ${enrollmentEmail.toUpperCase()} `)))).status, 303);
+  assert.deepEqual(seen, ["throttle", "throttle", "authjs"]);
+});
+
+test("first-time Google callback joins the signed profile email and subject and isolates OAuth cookies by scope", async () => {
+  const proofs: unknown[] = [];
+  const store = {
+    ...createCustomerAuthStore(() => assert.fail("unexpected database access")),
+    authorizeEnrollment: async (proof: unknown) => { proofs.push(proof); return true; },
+  };
+  const account = { provider: "google", type: "oidc" as const, providerAccountId: "verified-subject" };
+  const user = { id: "provider-user", email: enrollmentEmail, emailVerified: null };
+  const profile = { email: enrollmentEmail.toUpperCase(), email_verified: true, sub: account.providerAccountId };
+  const scoped = await inEnrollment(enrollmentSelection("google"), async () => {
+    const config = createCustomerAuthConfig(configuration, store);
+    const allow = config.callbacks!.signIn!;
+    assert.equal(await allow({ user, account, profile: { ...profile, email_verified: false } }), false);
+    assert.equal(await allow({ user, account, profile: { ...profile, sub: "wrong-subject" } }), false);
+    assert.equal(await allow({ user, account, profile: { ...profile, email: "foreign@example.com" } }), false);
+    assert.equal(await allow({ user, account: { ...account, provider: "resend" }, profile }), false);
+    assert.equal(await allow({ user, account, profile }), true);
+    return config;
+  });
+  assert.deepEqual(proofs, [{ provider: "google", email: enrollmentEmail, subject: account.providerAccountId }]);
+  const ordinary = createCustomerAuthConfig(configuration, store);
+  const other = await inEnrollment(enrollmentSelection("google", "b".repeat(64)), async () => createCustomerAuthConfig(configuration, store));
+  for (const name of ["state", "nonce", "pkceCodeVerifier"] as const) {
+    assert.notEqual(scoped.cookies?.[name]?.name, ordinary.cookies?.[name]?.name);
+    assert.notEqual(scoped.cookies?.[name]?.name, other.cookies?.[name]?.name);
+  }
+  assert.equal(scoped.cookies?.sessionToken?.name, ordinary.cookies?.sessionToken?.name);
+});
+
+test("first-time store denies mutations without callback proof and leaves foreign proof and session untouched", async () => {
+  const store = createCustomerAuthStore(() => assert.fail("denied enrollment touched the database"));
+  const expires = new Date(Date.now() + 60_000);
+  await inEnrollment(enrollmentSelection("resend"), () => withCustomerWriterContext(async () => {
+    const denied = /CUSTOMER_IDENTITY_SELECTION_DENIED/u;
+    await assert.rejects(async () => store.adapter.createUser!({ id: selectedCustomerId, email: enrollmentEmail, emailVerified: null }), denied);
+    await assert.rejects(async () => store.adapter.updateUser!({ id: selectedCustomerId }), denied);
+    await assert.rejects(async () => store.adapter.createSession!({ userId: selectedCustomerId, sessionToken: "foreign", expires }), denied);
+    await assert.rejects(async () => store.adapter.linkAccount!({ userId: selectedCustomerId, provider: "google", type: "oidc", providerAccountId: "subject" }), denied);
+    await assert.rejects(async () => store.adapter.createVerificationToken!({ identifier: "foreign@example.com", token: "proof", expires }), denied);
+    assert.equal(await store.adapter.useVerificationToken!({ identifier: "foreign@example.com", token: "proof" }), null);
+    assert.equal(await store.adapter.getSessionAndUser!("foreign"), null);
+    await store.adapter.deleteSession!("foreign");
+  }));
 });
 
 test("scoped identity denies creation, linking and foreign mutations without database work or uncertainty", async () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterIdentityCustomerId, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
+import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -187,6 +187,75 @@ test("interactive writer uses only its certified producer and refuses a changed 
   await run("recovery", async () => assert.equal(currentWriterOperationIdentity()?.producerSha256, selected.producerSha256));
   assert.equal(f.calls.at(-2)?.values?.[5], selected.producerSha256);
   assert.ok(f.calls.filter(call => call.sql.includes("current_policy")).every(call => call.values?.[2] === selected.producerSha256));
+});
+
+test("first-time identity permits bind the selected provider, normalized email and operation context", async () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const nonce = "ab".repeat(16);
+  const normalizedEmail = "iñés@owned.example";
+  const issue = (selector: string, issuedNonce = nonce) => {
+    const body = `v2.12.identity.${now}.${now + 120}.${issuedNonce}.${selector}`;
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const attest = (cookie: string, method: string, path: string) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie }, env, now);
+  for (const [prefix, provider, otherProvider] of [["a1", "google", "resend"], ["a2", "resend", "google"]] as const) {
+    const emailDigest = createHash("sha256").update(JSON.stringify(["p2q-customer-enrollment-v1", provider, nonce, normalizedEmail]))
+      .digest("hex").slice(0, 62);
+    const selector = prefix + emailDigest;
+    const cookie = issue(selector);
+    const callbackPath = `/api/customer-auth/callback/${provider}`;
+    const callbackProof = attest(cookie, "GET", callbackPath)!;
+    const verified = readInteractiveRequest(callbackProof, cookie, env, now);
+    const enrollment = { provider, nonce, emailDigest };
+    assert.deepEqual(verified?.identityEnrollment, enrollment);
+    assert.equal(verified?.identityCustomerId, undefined);
+    assert.ok(matchesWriterIdentityEnrollment(enrollment, normalizedEmail));
+    assert.equal(matchesWriterIdentityEnrollment(enrollment, normalizedEmail.toUpperCase()), false);
+    assert.equal(matchesWriterIdentityEnrollment(enrollment, "other@owned.example"), false);
+    assert.equal(matchesWriterIdentityEnrollment({ ...enrollment, provider: otherProvider }, normalizedEmail), false);
+    assert.equal(matchesWriterIdentityEnrollment({ ...enrollment, nonce: "cd".repeat(16) }, normalizedEmail), false);
+    assert.equal(matchesWriterIdentityEnrollment({ ...enrollment, emailDigest: "x".repeat(62) }, normalizedEmail), false);
+    assert.ok(attest(cookie, "POST", `/api/customer-auth/signin/${provider}`));
+    for (const path of ["/sign-in", "/api/customer-auth/csrf", "/api/customer-auth/providers", "/api/customer-auth/session"]) {
+      assert.ok(attest(cookie, "GET", path));
+    }
+    for (const [method, path] of [
+      ["POST", `/api/customer-auth/signin/${otherProvider}`], ["GET", `/api/customer-auth/callback/${otherProvider}`],
+      ["GET", "/account/sign-in-methods"], ["POST", "/api/customer-auth/signout"], ["POST", "/api/auth/signin/google"],
+    ]) assert.equal(attest(cookie, method, path), null);
+    const wrongRoute = `${now}.${Buffer.from(`GET /api/customer-auth/callback/${otherProvider}`).toString("base64url")}`;
+    const wrongMac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:request:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${cookie}\n${wrongRoute}`).digest("hex");
+    assert.equal(readInteractiveRequest(`${wrongRoute}.${wrongMac}`, cookie, env, now), null);
+    assert.equal(attest(issue("a3" + emailDigest), "GET", callbackPath), null);
+    assert.equal(attest(issue(selector.slice(0, -1)), "GET", callbackPath), null);
+    assert.equal(readInteractiveRequest(callbackProof, issue(selector, "cd".repeat(16)), env, now), null);
+
+    const f = fixture();
+    f.state.epoch = "12";
+    const run = createWriterAdmissionRunner({
+      getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+      createClient: () => f.client,
+      getInteractiveWriter: async () => verified,
+    });
+    let observeAfterCompletion!: () => void;
+    let outsideSelection: Promise<ReturnType<typeof currentWriterIdentityEnrollment>> | undefined;
+    await run("new-work", async () => {
+      assert.deepEqual(currentWriterIdentityEnrollment(), enrollment);
+      assert.ok(Object.isFrozen(currentWriterIdentityEnrollment()));
+      assert.equal(currentWriterIdentityCustomerId(), undefined);
+      assert.equal(currentWriterLifecycleSelection(), undefined);
+      outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterIdentityEnrollment);
+    });
+    observeAfterCompletion();
+    assert.equal(await outsideSelection, undefined);
+    assert.equal(currentWriterIdentityEnrollment(), undefined);
+    assert.equal(JSON.stringify(f.calls).includes(emailDigest), false);
+  }
 });
 
 test("lifecycle browser proof requires a signed v2 selection and carries it only through the admitted operation", async () => {

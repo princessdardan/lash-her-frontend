@@ -65,6 +65,7 @@ async function main() {
   const originalConsole = { log: console.log, warn: console.warn, error: console.error };
   const sourceBefore = frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url)));
   let server, closePool, gate, providerMode = "success", verificationUrl, providerCalls = [], unexpectedFetches = 0, logCount = 0;
+  let reviewedResendScope;
   let expectedLifecycleCommand, lifecycleMode = "success", adminDiagnostic;
   const diagnosticLogTypes = [];
   const lifecycleSeen = new Map();
@@ -165,7 +166,10 @@ async function main() {
         const body = await req.json(); assert.equal(body.to, "owned@example.invalid");
         verificationUrl = body.text.split("\n\n")[1];
         const token = new URL(verificationUrl).searchParams.get("token");
-        const hash = createHash("sha256").update(token + secret).digest("hex");
+        const authHash = createHash("sha256").update(token + secret).digest("hex");
+        const hash = reviewedResendScope
+          ? createHash("sha256").update(JSON.stringify(["lash-her:customer-enrollment:verification:v1", reviewedResendScope, authHash])).digest("hex")
+          : authHash;
         const durable = (await operator.query("SELECT identifier,expires FROM customer_verification_tokens WHERE token=$1", [hash])).rows;
         providerCalls.push({ stage, durableTokenBeforeProvider: durable.length === 1, method: req.method, path: selected.pathname });
       } else providerCalls.push({ stage, method: req.method, path: selected.pathname });
@@ -389,12 +393,22 @@ async function main() {
       interactiveProducer: { producerSha256: scopedProducer, role } };
     await prepareFrontendInteractiveProducer(operator, scopedTarget, epoch, scope);
     epoch = (await openFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope)).epoch;
-    const permit = (selector) => {
+    const permit = (selector, identityNonce = randomUUID().replaceAll("-", "")) => {
       const issued = Math.floor(Date.now() / 1000);
-      const unsigned = `v2.${epoch}.identity.${issued}.${issued + 120}.${randomUUID().replaceAll("-", "")}.${selector}`;
+      const unsigned = `v2.${epoch}.identity.${issued}.${issued + 120}.${identityNonce}.${selector}`;
       const signature = createHmac("sha256", process.env.CRON_SECRET).update(
         `lash-her:p2q:interactive:browser:v1\n${process.env.VERCEL_URL}\n${scopedSource}\n${target.targetSha256}\n${unsigned}`).digest("hex");
       return `${INTERACTIVE_COOKIE}=${unsigned}.${signature}`;
+    };
+    const scopedGoogle = async (selectedPermit, subject, email, priorSession = "") => {
+      googleSubject = subject; googleEmail = email;
+      const proof = await csrf(selectedPermit);
+      const start = await request("/api/customer-auth/signin/google", { method: "POST", cookie: cookieJoin(proof.cookie, selectedPermit),
+        body: new URLSearchParams({ csrfToken: proof.token, callbackUrl: "/academy" }) });
+      const url = new URL(start.headers.get("location")); assert.equal(url.origin, "https://accounts.google.com");
+      nonce = url.searchParams.get("nonce"); assert.ok(nonce);
+      const path = `/api/customer-auth/callback/google?${new URLSearchParams({ code: "owned-synthetic-code", state: url.searchParams.get("state") })}`;
+      return request(path, { cookie: cookieJoin(proof.cookie, start.headers.getSetCookie(), selectedPermit, priorSession) });
     };
     const customerPermit = permit("7032712d637573746f6d65722d763100" + selectedCustomer.replaceAll("-", ""));
     const legacyPermit = permit(createHash("sha256").update(JSON.stringify(["identity", "customer"])).digest("hex"));
@@ -421,21 +435,11 @@ async function main() {
       await entries(before, ["completed", "completed", "completed"]);
       assert.equal(providerCalls.length, initialProviderCalls);
       await verifyUnchanged(3, 2);
-      const scopedGoogle = async (subject, email) => {
-        googleSubject = subject; googleEmail = email;
-        const proof = await csrf(customerPermit);
-        const start = await request("/api/customer-auth/signin/google", { method: "POST", cookie: cookieJoin(proof.cookie, customerPermit),
-          body: new URLSearchParams({ csrfToken: proof.token, callbackUrl: "/academy" }) });
-        const url = new URL(start.headers.get("location")); assert.equal(url.origin, "https://accounts.google.com");
-        nonce = url.searchParams.get("nonce"); assert.ok(nonce);
-        const path = `/api/customer-auth/callback/google?${new URLSearchParams({ code: "owned-synthetic-code", state: url.searchParams.get("state") })}`;
-        return request(path, { cookie: cookieJoin(proof.cookie, start.headers.getSetCookie(), customerPermit, foreignSession) });
-      };
       before = await operations();
-      assert.equal(sessionCookie(await scopedGoogle(otherSubject, otherEmail)), undefined);
-      assert.equal(sessionCookie(await scopedGoogle("owned-unlinked-google-subject", "owned@example.invalid")), undefined);
+      assert.equal(sessionCookie(await scopedGoogle(customerPermit, otherSubject, otherEmail, foreignSession)), undefined);
+      assert.equal(sessionCookie(await scopedGoogle(customerPermit, "owned-unlinked-google-subject", "owned@example.invalid", foreignSession)), undefined);
       await entries(before, Array(6).fill("completed")); await verifyUnchanged(3, 2);
-      const scopedGoogleSession = sessionCookie(await scopedGoogle(originalSubject, "owned@example.invalid"));
+      const scopedGoogleSession = sessionCookie(await scopedGoogle(customerPermit, originalSubject, "owned@example.invalid", foreignSession));
       assert.ok(scopedGoogleSession);
       assert.equal(JSON.parse((await request("/api/customer-auth/session", { cookie: cookieJoin(customerPermit, scopedGoogleSession) })).text).user.id, selectedCustomer);
       assert.equal((await emailStart(scopedProof, customerPermit)).status, 303);
@@ -454,6 +458,79 @@ async function main() {
     }
     checks.push("scoped-customer-identity-refuses-foreign-proof-unlinked-subject-and-cross-account-session-before-business-writes");
     checks.push("scoped-known-customer-google-and-resend-issue-selected-session-through-actual-route-and-closed-ledger");
+
+    for (const provider of ["google", "resend"]) {
+      phase = `interactive-first-time-${provider}`;
+      await reset();
+      const email = "owned@example.invalid", enrollmentNonce = randomUUID().replaceAll("-", "");
+      const digest = createHash("sha256").update(JSON.stringify(["p2q-customer-enrollment-v1", provider, enrollmentNonce, email])).digest("hex");
+      let reservedGoogleCustomer;
+      if (provider === "google") {
+        reservedGoogleCustomer = (await operator.query("INSERT INTO customer_users(email) VALUES($1) RETURNING id", [otherEmail])).rows[0].id;
+        await operator.query("INSERT INTO customer_provider_links(user_id,provider,provider_account_id,type) VALUES($1,'google',$2,'oidc')", [reservedGoogleCustomer, otherSubject]);
+      }
+      epoch = (await openFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope)).epoch;
+      const firstPermit = permit((provider === "google" ? "a1" : "a2") + digest.slice(0, 62), enrollmentNonce);
+      const scopedProof = await csrf(firstPermit);
+      let firstSession, customerId;
+      try {
+        before = await operations();
+        const wrongProvider = provider === "google" ? "resend" : "google";
+        const wrong = await request(`/api/customer-auth/signin/${wrongProvider}`, { method: "POST", cookie: cookieJoin(scopedProof.cookie, firstPermit),
+          body: new URLSearchParams({ email, csrfToken: scopedProof.token }) });
+        assert.equal(wrong.status, 503); await entries(before, []);
+        assert.equal(providerCalls.length, 0);
+        if (provider === "google") {
+          const wrongGoogle = await scopedGoogle(firstPermit, "owned-enrollment-wrong-google", otherEmail);
+          assert.equal(sessionCookie(wrongGoogle), undefined);
+          assert.equal(sessionCookie(await scopedGoogle(firstPermit, otherSubject, email)), undefined);
+          assert.equal((await counts()).customer_users, 1);
+          const correctGoogle = await scopedGoogle(firstPermit, originalSubject, email);
+          firstSession = sessionCookie(correctGoogle);
+          assert.equal(sessionCookie(await scopedGoogle(firstPermit, originalSubject, email)), undefined);
+        } else {
+          reviewedResendScope = createHash("sha256").update(JSON.stringify(["lash-her:customer-enrollment:scope:v1", provider, enrollmentNonce, digest.slice(0, 62)])).digest("hex");
+          assert.equal((await emailStart(scopedProof, firstPermit, otherEmail)).status, 303);
+          assert.equal(providerCalls.length, 0);
+          const priorProof = randomUUID(), priorHash = createHash("sha256").update(priorProof + secret).digest("hex");
+          await operator.query("INSERT INTO customer_verification_tokens(identifier,token,expires) VALUES($1,$2,now()+interval '10 minutes')", [email, priorHash]);
+          const priorLink = `/api/customer-auth/callback/resend?${new URLSearchParams({ email, token: priorProof })}`;
+          assert.equal(sessionCookie(await request(priorLink, { cookie: cookieJoin(scopedProof.cookie, firstPermit) })), undefined);
+          assert.equal((await counts()).customer_users, 0);
+          assert.equal((await emailStart(scopedProof, firstPermit)).status, 303);
+          assert.deepEqual(providerCalls, [{ stage: "resend", durableTokenBeforeProvider: true, method: "POST", path: "/emails" }]);
+          const parallel = await Promise.all([callback(scopedProof, firstPermit), callback(scopedProof, firstPermit)]);
+          const sessions = parallel.map(sessionCookie).filter(Boolean); assert.equal(sessions.length, 1);
+          firstSession = sessions[0];
+          assert.equal(sessionCookie(await callback(scopedProof, firstPermit)), undefined);
+          assert.deepEqual((await operator.query("SELECT identifier FROM customer_verification_tokens WHERE token=$1", [priorHash])).rows, [{ identifier: email }]);
+        }
+        assert.ok(firstSession);
+        const verified = await request("/api/customer-auth/session", { cookie: cookieJoin(firstPermit, firstSession) });
+        customerId = JSON.parse(verified.text).user.id;
+        assert.deepEqual((await operator.query("SELECT id,email,status,account_version FROM customer_users WHERE email=$1", [email])).rows,
+          [{ id: customerId, email, status: "active", account_version: "0" }]);
+        assert.deepEqual((await operator.query("SELECT user_id,provider,provider_account_id FROM customer_provider_links WHERE user_id=$1", [customerId])).rows,
+          provider === "google" ? [{ user_id: customerId, provider, provider_account_id: originalSubject }] : []);
+        if (reservedGoogleCustomer) {
+          assert.deepEqual((await operator.query("SELECT user_id FROM customer_provider_links WHERE provider_account_id=$1", [otherSubject])).rows, [{ user_id: reservedGoogleCustomer }]);
+        }
+        assert.deepEqual((await operator.query("SELECT user_id FROM customer_sessions")).rows, [{ user_id: customerId }]);
+        for (const table of ["marketing_contacts", "highlevel_consent_events"]) {
+          assert.deepEqual((await operator.query(`SELECT 1 FROM ${table} WHERE email_normalized=$1`, [email])).rows, []);
+        }
+      } finally {
+        reviewedResendScope = undefined; googleSubject = originalSubject; googleEmail = "owned@example.invalid";
+        const closed = await closeFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope);
+        epoch = closed.epoch;
+        assert.equal(closed.ledgerDrained, true);
+      }
+      await change(true);
+      const ordinarySession = await request("/api/customer-auth/session", { cookie: firstSession });
+      assert.equal(JSON.parse(ordinarySession.text).user.id, customerId);
+      await reconcile();
+      checks.push(`scoped-first-time-${provider}-one-selected-customer-session-and-provider-effect-without-marketing`);
+    }
 
     for (const fault of ["close", "ledger-death"]) {
       phase = `auth-blocked-session-insert-${fault}`; await reset(); await change(true); const proof = await issueEmail(); before = await operations();

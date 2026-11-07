@@ -5,15 +5,19 @@ import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import Resend from "next-auth/providers/resend";
 import { assertStagingEmailRecipients } from "@/lib/env/staging-email-policy.mjs";
-import { currentWriterIdentityCustomerId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { CUSTOMER_AUTH_BASE_PATH, CUSTOMER_EMAIL_MAX_AGE, CUSTOMER_SESSION_MAX_AGE, customerSessionCookieName, normalizeCustomerEmail, safeCustomerReturn, type CustomerAuthConfiguration } from "./policy";
-import type { CustomerAuthStore } from "./store";
+import { customerEnrollmentScopeId, generateCustomerSessionToken, type CustomerAuthStore } from "./store";
 
 export function createCustomerAuthConfig(configuration: CustomerAuthConfiguration, store: CustomerAuthStore): NextAuthConfig {
   const cookie = (suffix: string, maxAge?: number) => ({
     name: `${configuration.secure ? "__Host-" : ""}lash-customer.${suffix}`,
     options: { httpOnly: true, secure: configuration.secure, sameSite: "lax" as const, path: "/", ...(maxAge === undefined ? {} : { maxAge }) },
   });
+  const enrollment = currentWriterIdentityEnrollment();
+  // OAuth state from a different window or an ordinary sign-in cannot be used
+  // for this first-time account. The actual session cookie keeps its normal name.
+  const oauthCookie = (name: string) => cookie(enrollment?.provider === "google" ? `${name}.${customerEnrollmentScopeId(enrollment)}` : name, CUSTOMER_EMAIL_MAX_AGE);
   return {
     adapter: store.adapter,
     basePath: CUSTOMER_AUTH_BASE_PATH,
@@ -23,11 +27,11 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
     // The public route separately validates its URL and mutation Origin against
     // the configured origin before NextAuth may use request headers.
     trustHost: true,
-    session: { strategy: "database", maxAge: CUSTOMER_SESSION_MAX_AGE, updateAge: CUSTOMER_SESSION_MAX_AGE + 1 },
+    session: { strategy: "database", maxAge: CUSTOMER_SESSION_MAX_AGE, updateAge: CUSTOMER_SESSION_MAX_AGE + 1, generateSessionToken: generateCustomerSessionToken },
     cookies: {
       sessionToken: { ...cookie("session-token"), name: customerSessionCookieName(configuration.secure) },
       callbackUrl: cookie("callback-url"), csrfToken: cookie("csrf-token"),
-      pkceCodeVerifier: cookie("pkce", CUSTOMER_EMAIL_MAX_AGE), state: cookie("state", CUSTOMER_EMAIL_MAX_AGE), nonce: cookie("nonce", CUSTOMER_EMAIL_MAX_AGE),
+      pkceCodeVerifier: oauthCookie("pkce"), state: oauthCookie("state"), nonce: oauthCookie("nonce"),
     },
     pages: { signIn: "/sign-in", error: "/sign-in", verifyRequest: "/sign-in?check-email=1" },
     providers: [
@@ -64,6 +68,21 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
     ],
     callbacks: {
       async signIn({ user, account, profile, email }) {
+        const enrollment = currentWriterIdentityEnrollment();
+        if (enrollment) {
+          if (account?.provider !== enrollment.provider || !user.email) return false;
+          if (account.provider === "resend") {
+            if (account.type !== "email" || account.providerAccountId !== user.email) return false;
+            return email?.verificationRequest ? store.isEnrollmentAvailable(user.email) : store.authorizeEnrollment({ provider: "resend", email: user.email });
+          }
+          if (account.type !== "oidc" || profile?.email_verified !== true || typeof profile.sub !== "string" || profile.sub !== account.providerAccountId) return false;
+          let verifiedEmail: string;
+          try {
+            verifiedEmail = normalizeCustomerEmail(profile.email);
+            if (verifiedEmail !== normalizeCustomerEmail(user.email)) return false;
+          } catch { return false; }
+          return store.authorizeEnrollment({ provider: "google", email: verifiedEmail, subject: profile.sub });
+        }
         // Neither existence nor lifecycle state changes the request response.
         const selectedId = currentWriterIdentityCustomerId();
         if (email?.verificationRequest && selectedId === undefined) return true;

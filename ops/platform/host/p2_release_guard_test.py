@@ -162,23 +162,30 @@ class IndependentGuardTests(unittest.TestCase):
                 supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw))
 
     def test_profiled_interactive_terminal_joins_private_dispatch_and_physical_ledger(self):
-        for stage, actor_kind in (('lifecycle', 'admin'), ('identity', 'admin'), ('identity', 'customer')):
-            with self.subTest(stage=stage, actor_kind=actor_kind):
-                self.check_profiled_interactive_terminal(stage, actor_kind)
+        cases = (('lifecycle', 'admin', None), ('identity', 'admin', None), ('identity', 'customer', None),
+                 ('identity', 'customer', 'google'), ('identity', 'customer', 'resend'))
+        for stage, actor_kind, provider in cases:
+            with self.subTest(stage=stage, actor_kind=actor_kind, provider=provider):
+                self.check_profiled_interactive_terminal(stage, actor_kind, provider)
 
-    def check_profiled_interactive_terminal(self, stage_name, actor_kind):
+    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
-        initial, directory = self.profiled_certification(f'owned-{stage_name}-{actor_kind}')
+        initial, directory = self.profiled_certification(f'owned-{stage_name}-{provider or actor_kind}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
         actor, user, request, command, *ledger_ids = ids
         identity = stage_name == 'identity'
         reviewed = {'actorKind': actor_kind, 'actorId': actor}
         selection = {'actorKind': actor_kind, 'userId': user, 'operation': 'delete'}
-        action = {'stage': stage_name, 'actorId': None if identity else actor, 'requests': [], 'windowSeconds': 60,
-                  **({'identityActor': reviewed} if identity else {'frontendAction': selection})}
+        action = {'stage': stage_name, 'actorId': None if identity else actor, 'requests': [], 'windowSeconds': 60}
+        if provider is not None:
+            action['identityEnrollment'] = {'provider': provider, 'emailSha256': '7' * 64, 'nonce': '8' * 32}
+        elif identity:
+            action['identityActor'] = reviewed
+        else:
+            action['frontendAction'] = selection
         plan.update(mode='interactive-browser', scopedAction=action, nativePlan={'producer': {'role': {'oid': '22222'}}})
         source = Path(__file__).resolve().parents[3]
         recorder = migrate.read_input(source, window._BROWSER_SOURCE)
@@ -202,6 +209,8 @@ class IndependentGuardTests(unittest.TestCase):
             browser = {**reviewed, 'sessionVerified': True}
             domain = {**reviewed, 'actorActive': True, **({'ownerMappingVerified': True} if actor_kind == 'admin'
                       else {'liveSessionCount': 1})}
+            if provider is not None:
+                domain.update(provider=provider, providerLinkCount=1 if provider == 'google' else 0)
             browser_key, domain_key = 'browserIdentity', 'identityWitness'
         else:
             browser_key, domain_key = 'browserResponse', 'lifecycleWitness'
@@ -235,12 +244,21 @@ class IndependentGuardTests(unittest.TestCase):
             broker.command({**envelope, 'operation': 'interactive-retain',
                             'caseEvidence': {**evidence, domain_key: {**domain, 'actorId': user}}})
         if identity:
+            wrong_actor = 'invalid-uuid' if provider is not None else user
             with self.assertRaisesRegex(ValueError, 'IDENTITY_SESSION_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain',
-                                'caseEvidence': {**evidence, browser_key: {**browser, 'actorId': user}}})
+                                'caseEvidence': {**evidence, browser_key: {**browser, 'actorId': wrong_actor}}})
             with self.assertRaisesRegex(ValueError, 'IDENTITY_WITNESS_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain',
                                 'caseEvidence': {**evidence, domain_key: {**domain, 'providerSubject': 'fixture'}}})
+        if provider is not None:
+            other_provider = 'resend' if provider == 'google' else 'google'
+            for change in ({'provider': other_provider}, {'liveSessionCount': 2}, {'liveSessionCount': True},
+                           {'providerLinkCount': 1 - domain['providerLinkCount']},
+                           {'providerLinkCount': bool(domain['providerLinkCount'])}):
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'IDENTITY_ENROLLMENT_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         with patch.object(stage, 'verify_gateway_fenced', side_effect=ValueError('P2_INTERACTIVE_FENCE_REQUIRED')):
             with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -261,8 +279,12 @@ class IndependentGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         for retained in directory.iterdir():
-            self.assertNotIn(permit['cookie'], retained.read_text())
-            self.assertNotIn(envelope['controllerChallenge'], retained.read_text())
+            raw = retained.read_text()
+            self.assertNotIn(permit['cookie'], raw)
+            self.assertNotIn(envelope['controllerChallenge'], raw)
+            if provider is not None:
+                self.assertNotIn(action['identityEnrollment']['emailSha256'], raw)
+                self.assertNotIn(action['identityEnrollment']['nonce'], raw)
         terminal = {**plan, 'status': supervisor.PROFILED_CERTIFICATION_LAYOUT['terminalStatus'], 'releaseId': 'original',
                     'configurationSha256': initial['configurationSha256'], 'caseStatus': f'P2_INTERACTIVE_{stage_name.upper()}_JOINED',
                     'caseOutcomeSha256': supervisor._canonical_sha(case), 'frontendAdmission': closed,
@@ -287,7 +309,9 @@ class IndependentGuardTests(unittest.TestCase):
             change = {'ownerMappingVerified': False} if actor_kind == 'admin' else {'liveSessionCount': 0}
         changed = {**domain, **change}
         (directory / window.browser_artifact(plan, 'evidence')).write_text(json.dumps({**evidence, domain_key: changed}))
-        with self.assertRaisesRegex(ValueError, 'IDENTITY_WITNESS_REQUIRED' if identity else 'INTERACTIVE_CASE_REFUSED'):
+        error = ('IDENTITY_ENROLLMENT_WITNESS_REQUIRED' if provider is not None else
+                 'IDENTITY_WITNESS_REQUIRED' if identity else 'INTERACTIVE_CASE_REFUSED')
+        with self.assertRaisesRegex(ValueError, error):
             guard(terminal)
 
     def test_profiled_arm_constructs_interactive_leaf_after_guard_and_current_checks(self):

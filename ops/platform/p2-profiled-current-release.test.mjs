@@ -240,8 +240,15 @@ test('fixed current certification plan joins the original release plan, terminal
     };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
+    const enrolledEmail = 'owned-enrollment@example.invalid';
+    const firstEnrollments = ['google', 'resend'].map((provider, index) => {
+      const nonce = String(index+1).repeat(32);
+      const emailSha256 = rawHash(JSON.stringify(['p2q-customer-enrollment-v1', provider, nonce, enrolledEmail]));
+      return { stage: 'identity', actorId: null, requests: [], windowSeconds: 240, identityEnrollment: { provider, emailSha256, nonce } };
+    });
     for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
-      ['lifecycle-persistence', selectedPersistence], ['interactive-browser', selectedInteractive]]) {
+      ['lifecycle-persistence', selectedPersistence], ['interactive-browser', selectedInteractive],
+      ...firstEnrollments.map(selected => ['interactive-browser', selected])]) {
       const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
       assert.deepEqual(preparedScope.scopedAction, selected);
       assert.equal(preparedScope.maximumSeconds, 300);
@@ -249,6 +256,7 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.equal(preparedScope.nativePlan.initialEpoch, preparedScope.initialEpoch);
       assert.deepEqual(preparedScope.nativePlan.commandWitnesses, []);
       assert.equal(preparedScope.wholeReleaseAccepted, false);
+      assert.equal(JSON.stringify(preparedScope).includes(enrolledEmail), false);
       const checked = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
         { input: JSON.stringify(preparedScope), encoding: 'utf8' });
       assert.equal(checked.status, 0, checked.stderr);
@@ -265,6 +273,15 @@ test('fixed current certification plan joins the original release plan, terminal
       { ...selectedPersistence, stage: 'unreviewed-stage' })));
     await assert.rejects(p2ProfiledCertificationOperator(scoped('interactive-browser', selectedInteractive),
       { confirmation: 'staging/owned-scoped-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+    const enrollmentSettings = scoped('interactive-browser', firstEnrollments[0]);
+    await assert.rejects(p2ProfiledCertificationOperator(enrollmentSettings, { confirmation: 'staging/owned-scoped-action' }),
+      /P2_CERTIFICATION_PARENT_REFUSED/);
+    await assert.rejects(p2ProfiledCertificationOperator({ ...enrollmentSettings, execution: { identityEnrollmentEmail: 'wrong@example.invalid' } },
+      { confirmation: 'staging/owned-scoped-action' }), error => error.code !== 'ENOENT');
+    await assert.rejects(p2ProfiledCertificationOperator({ ...enrollmentSettings, execution: { identityEnrollmentEmail: enrolledEmail } },
+      { confirmation: 'staging/owned-scoped-action' }), { code: 'ENOENT' });
+    assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('interactive-browser', { ...firstEnrollments[0],
+      identityActor: { actorKind: 'customer', actorId: userId } })));
     for (const requests of [
       [...selectedInteractive.requests, selectedInteractive.requests[0]],
       [{ ...selectedInteractive.requests[0], bodySha256: 'b'.repeat(64) }],
@@ -324,14 +341,18 @@ test('fixed current certification plan joins the original release plan, terminal
       [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
+      ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },
+        (identityEnrollment.provider === 'google' ? 'a1' : 'a2') + identityEnrollment.emailSha256.slice(0,62)]),
     ]) {
       const scopedMaterial = [...material];
       scopedMaterial[5] = selection.stage;
+      const scopedNonce = selection.identityEnrollment?.nonce ?? nonce;
+      scopedMaterial[8] = scopedNonce;
       const frontendFixture = spawnSync('python3', ['-B', '-c',
         'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _selection_sha as digest,_material,validate_interactive_action as check;data=json.load(sys.stdin);print(json.dumps(_material(*data["material"],digest(check(data["action"])))))',
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
-      const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${nonce}.${selector}`;
+      const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, null, host, expires,
       ]);

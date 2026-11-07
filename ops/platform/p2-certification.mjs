@@ -28,7 +28,8 @@ import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launch
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {interactiveCourseStagePermits} from '../gateway/operations.mjs';
-import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,
+import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,captureP2InteractiveEnrollmentBaseline,
+  observeP2InteractiveEnrollmentCase,validateP2InteractiveEnrollmentEmail,
   captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
@@ -55,7 +56,9 @@ export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started
 
 function interactiveActionValid(value){
   const lifecycle=value?.stage==='lifecycle',identity=value?.stage==='identity';
-  if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(lifecycle?['frontendAction']:identity?['identityActor']:[])])||
+  const enrollment=identity&&Object.hasOwn(value,'identityEnrollment');
+  const selectionKey=lifecycle?'frontendAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
+  if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
      !Number.isInteger(value.windowSeconds)||value.windowSeconds<30||value.windowSeconds>300||
@@ -68,6 +71,12 @@ function interactiveActionValid(value){
         ['export','delete','preferences-on','preferences-off'].includes(selected.operation));
   }
   if(identity){
+    if(enrollment){
+      const selected=value.identityEnrollment;
+      return value.requests.length===0&&exactKeys(selected,['provider','emailSha256','nonce'])&&
+        ['google','resend'].includes(selected.provider)&&sha(selected.emailSha256)&&typeof selected.nonce==='string'&&
+        /^[a-f0-9]{32}$/u.test(selected.nonce)&&!/^0+$/u.test(selected.nonce);
+    }
     const selected=value.identityActor;
     return value.requests.length===0&&exactKeys(selected,['actorKind','actorId'])&&
       ['admin','customer'].includes(selected.actorKind)&&uuid(selected.actorId);
@@ -358,15 +367,16 @@ async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,cl
 }
 
 export async function runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,verifySession,verifyEnvironment,
-  target,ordinaryProducers,signal,controllerChallenge,record=()=>{}}){
+  target,ordinaryProducers,signal,controllerChallenge,identityEnrollmentEmail,record=()=>{}}){
   const action=plan.scopedAction;
   demand(plan.mode==='interactive-browser'&&['identity','lifecycle'].includes(action?.stage)&&interactiveActionValid(action)&&
     plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
-  const identity=action.stage==='identity',statusPrefix=identity?'P2_INTERACTIVE_IDENTITY':'P2_INTERACTIVE_LIFECYCLE';
+  const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined;
+  const statusPrefix=identity?'P2_INTERACTIVE_IDENTITY':'P2_INTERACTIVE_LIFECYCLE';
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
-  const selection=identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
-  const context=selection.actorKind==='admin'?'owner':'learner';
+  const selection=enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
+  const context=!enrollment&&selection.actorKind==='admin'?'owner':'learner';
   const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
   const runtimeProducer=plan.nativePlan.producer;
   const producerSha256=rawHash(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`);
@@ -379,8 +389,9 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     signal?.throwIfAborted();
     const prepared=await stage.prepare();
     demand(prepared.status===statusPrefix+'_PREPARED');
-    const baseline=identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
-      await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
+    const baseline=enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
+      identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
+        await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
     if(!identity)record('p2-interactive-lifecycle-baseline.json',baseline);
     const registered=await withOwner(()=>prepareFrontendInteractiveProducer(client,policy,plan.initialEpoch,reviewed));
     demand(registered.epoch===plan.initialEpoch&&registered.producerSha256===producerSha256&&
@@ -419,8 +430,9 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       if(closureFailed)throw new Error(statusPrefix+'_CLOSURE_REQUIRES_REVIEW');
     }
     signal?.throwIfAborted();
-    const witness=identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
-      await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
+    const witness=enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
+      identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
+        await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
     record(`p2-interactive-${action.stage}-witness.json`,witness);
     const joined=await stage.retain(identity?{browserIdentity:browserEvidence,identityWitness:witness}:
       {browserResponse:browserEvidence,lifecycleWitness:witness});
@@ -466,7 +478,8 @@ async function runBoundedCertification(plan,dependencies,profile){
         const stage=readP2CertificationInteractiveStage(await host.interactiveStage(controller),plan);
         const joined=await runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,controllerChallenge:challenge,
           verifySession:verify,verifyEnvironment:environment,target:prepared.migration.job.target,
-          ordinaryProducers:prepared.plan.producers,signal,record:(name,receipt)=>store.record(name,receipt)});
+          ordinaryProducers:prepared.plan.producers,signal,identityEnrollmentEmail:dependencies.identityEnrollmentEmail,
+          record:(name,receipt)=>store.record(name,receipt)});
         requireQualificationTargetProfile(currentProfile,joined);
         terminal=await host.prepareClose(joined);
         demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256&&
@@ -795,9 +808,15 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
   const interactive=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='lifecycle'&&identityPlan!==undefined;
-  const scoped=scopedModes.has(plan.mode)||interactive;
+  const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
+  const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment;
   demand(confirmation==='staging/'+plan.certificationActionId&&
     (scoped||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
+  let identityEnrollmentEmail;
+  if(enrollment){
+    demand(exactKeys(execution,['identityEnrollmentEmail']));
+    identityEnrollmentEmail=validateP2InteractiveEnrollmentEmail(enrollment,execution.identityEnrollmentEmail);
+  }
   demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
   const releaseSettings=selection.releaseSettings;
   const directory=releaseSettings.results;
@@ -834,7 +853,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       const reviewed=plan.mode==='browser-pending'?selection.browser.input.persistencePlan:selection.worker.suspensionInput.persistencePlan;
       demand(isDeepStrictEqual(persistenceReviewed.plan,reviewed));
     }
-  }else demand(execution===undefined);
+  }else if(!enrollment)demand(execution===undefined);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
     sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
   const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
@@ -873,12 +892,19 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
         frontendRuntimeDatabaseUrl:provider.frontendRuntimeDatabaseUrl,witness:execution.persistenceWitness,
       }}:{})};
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
-      interactiveController,
+      interactiveController,...(enrollment?{identityEnrollmentEmail}:{}),
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),
       assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),
       withEnvironmentLock:p2CertificationEnvironmentLock(releaseSettings,initial,results,{expectedProfile:currentProfile})},currentProfile);
   };
+  if(enrollment){
+    const controller=await launchP2InteractiveBrowserRecorder(plan);
+    try{
+      await controller.initialized();
+      return await execute(plan,packet,undefined,controller);
+    }finally{await controller.close();}
+  }
   if(interactive){
     const controller=await launchP2InteractiveBrowserRecorder(identityPlan);
     try{

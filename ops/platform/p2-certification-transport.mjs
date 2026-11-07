@@ -19,6 +19,7 @@ const interactiveStages=new WeakMap();
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 const sha256=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
+const canonicalUuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
 const utc=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
 const interactiveReceiptKeys=['version','qualificationTargetProfile','status','certificationActionId','planSha256','stage'];
@@ -43,24 +44,33 @@ export function readP2CertificationInteractiveStage(handle,plan){
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity';
+  const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
-    (identity||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',identity?'identityActor':'frontendAction'])&&
+    (identity||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
+      enrollment?'identityEnrollment':identity?'identityActor':'frontendAction'])&&
     Array.isArray(action.requests)&&action.requests.length===0&&Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
     binding.bindingSha256===plan.planSha256&&sha256(binding.browserProgramSha256));
+  if(enrollment){
+    const selected=action.identityEnrollment;
+    demand(action.actorId===null&&exact(selected,['provider','emailSha256','nonce'])&&
+      ['google','resend'].includes(selected.provider)&&sha256(selected.emailSha256)&&
+      typeof selected.nonce==='string'&&/^[a-f0-9]{32}$/u.test(selected.nonce));
+    return {selection:{actorKind:'customer'},enrollment:{...selected}};
+  }
   if(identity){
     const actor=action.identityActor;
     demand(action.actorId===null&&exact(actor,['actorKind','actorId'])&&['admin','customer'].includes(actor.actorKind)&&
-      typeof actor.actorId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(actor.actorId));
-    return {...actor};
+      canonicalUuid(actor.actorId));
+    return {selection:{...actor}};
   }
   const selected=action.frontendAction;
   demand(uuid(action.actorId)&&exact(selected,['actorKind','userId','operation'])&&uuid(selected.userId)&&
     (selected.actorKind==='admin'?['suspend','restore','export','delete'].includes(selected.operation):
       selected.actorKind==='customer'&&action.actorId===selected.userId&&['export','delete','preferences-on','preferences-off'].includes(selected.operation)));
-  return {...selected,actorId:action.actorId};
+  return {selection:{...selected,actorId:action.actorId}};
 }
 
 function lifecycleJoinedEvidence(evidence,selected){
@@ -89,15 +99,21 @@ function lifecycleJoinedEvidence(evidence,selected){
   return {...selected,browserResponseSha256:p2NativeHash(response),lifecycleWitnessSha256:p2NativeHash(witness)};
 }
 
-function identityJoinedEvidence(evidence,selected,context){
+function identityJoinedEvidence(evidence,selected,context,enrollment){
   demand(exact(evidence,['browserIdentity','identityWitness']));
   const {browserIdentity:identity,identityWitness:witness}=evidence;
-  const owner=context==='owner',field=owner?'ownerMappingVerified':'liveSessionCount';
+  const owner=context==='owner';
+  const actor={...selected,actorId:enrollment?identity?.actorId:selected.actorId};
+  const witnessFields=enrollment?['liveSessionCount','provider','providerLinkCount']:[owner?'ownerMappingVerified':'liveSessionCount'];
   demand(exact(identity,['actorKind','actorId','sessionVerified'])&&identity.sessionVerified===true&&
-    exact(witness,['actorKind','actorId','actorActive',field])&&witness.actorActive===true&&
-    Object.entries(selected).every(([key,value])=>identity[key]===value&&witness[key]===value)&&
-    (owner?witness.ownerMappingVerified===true:Number.isSafeInteger(witness.liveSessionCount)&&witness.liveSessionCount>0));
-  return {...selected,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
+    exact(witness,['actorKind','actorId','actorActive',...witnessFields])&&witness.actorActive===true&&
+    canonicalUuid(actor.actorId)&&Object.entries(actor).every(([key,value])=>identity[key]===value&&witness[key]===value));
+  if(enrollment){
+    demand(witness.liveSessionCount===1&&witness.provider===enrollment.provider&&witness.providerLinkCount===(enrollment.provider==='google'?1:0));
+  }else{
+    demand(owner?witness.ownerMappingVerified===true:Number.isSafeInteger(witness.liveSessionCount)&&witness.liveSessionCount>0);
+  }
+  return {...actor,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
 }
 
 export function readP2CertificationWorkerStage(handle,plan){
@@ -178,8 +194,10 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           requireRecorder();
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
           const stage=snapshot.scopedAction.stage,identity=stage==='identity';
-          const context=selectedInteractive.actorKind==='admin'?'owner':'learner';
-          const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,...(identity?{identity:selectedInteractive}:{})};
+          const {selection,enrollment}=selectedInteractive;
+          const context=selection.actorKind==='admin'?'owner':'learner';
+          const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
+            ...(enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
             demand(alive());
@@ -231,7 +249,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async retain(caseEvidence){
               demand(phase==='fenced'&&installed);requireRecorder();
               const evidence=structuredClone(caseEvidence);
-              const expected=identity?identityJoinedEvidence(evidence,selectedInteractive,context):lifecycleJoinedEvidence(evidence,selectedInteractive);
+              const expected=identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);
               phase='retaining';
               const receipt=await call('interactive-retain','JOINED',
                 ['browserProgramSha256',...Object.keys(expected),
