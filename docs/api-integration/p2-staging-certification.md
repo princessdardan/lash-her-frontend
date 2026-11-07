@@ -121,7 +121,22 @@ For S07 replay, pair the same learner identity with stage `learning` and `learni
 
 Review three one-use gateway rows in order. Use an empty-body GET to `/course/v1/student/courses/<courseId>`, an empty-body GET to `/course/v1/student/progress?courseId=<courseId>`, and a POST to `/course/v1/student/courses/<courseId>/enrollments` with the original exact JSON body hash. Accept acknowledgement indexes `[0,1,2]` or `[1,0,2]`, all with status 200. The normal Academy page must show **Course overview**. From that page the recorder sends one same-origin request through the enrollment handler with the original key and required CSRF header. It verifies the original grant and enrollment, `idempotentReplay: true`, and the exact gateway request ID. Retain both terminal receipts. The postflight compares the Course and Community records and requires the original activation with no extra event or learning write.
 
-The normal lesson page submits a revision-bound `lesson_started` write on hydration. Its guarded window needs a signed actor, course and lesson selection and exact request budgets for the two course-index reads, five lesson reads, and the hydration playback and progress requests. Verify genuine link navigation against a production Next build and fence and drain before closing the media page. For cross-account cases use separate verified customer contexts, denied document and Flight requests, and a ready nonpreview asset so the playback request exercises access denial. S08 needs a scoped policy for the positions and revision sequence emitted by real playback. S09 can proceed independently with a text-only graded lesson and narrowly scoped attempt requests that bind the reviewed revision and answers while accepting the browser-generated attempt UUID.
+For an allowed normal lesson entry, pair the verified customer identity with stage `lesson-entry`. Set `lessonEntryAction.operation` to `open-lesson` and review `courseId`, `lessonId` and the active `grantId` from the retained free enrollment. Use a published free course, a nonpreview lesson with a ready current managed Mux asset and a current quiz, and a customer with no progress or attempts for that lesson.
+
+Review the following rows in order. Use empty-body hashes for the GETs.
+
+1. `GET /course/v1/student/courses/<courseId>` with two uses.
+2. `GET /course/v1/student/progress?courseId=<courseId>` with one use.
+3. `GET /course/v1/student/lessons/<lessonId>` with one use.
+4. `GET /course/v1/student/progress?lessonId=<lessonId>` with one use.
+5. `GET /course/v1/student/lessons/<lessonId>/quiz` with one use.
+6. `GET /course/v1/student/lessons/<lessonId>/quiz/attempts` with one use.
+7. `GET /course/v1/student/lessons/<lessonId>/playback` with one use.
+8. `POST /course/v1/student/lessons/<lessonId>/progress` with one use. Hash the exact UTF-8 JSON `{"event":"lesson_started","expectedProgressRevision":0}`.
+
+The recorder opens the Academy course, follows the selected lesson link through an actual Flight request, and verifies the rendered lesson and saved progress status. The gateway must acknowledge three successive groups of indexes `{0,1}`, `{0,2,3,4,5}`, and `{6,7}`. Order within each group may vary. Require status 200 for all nine acknowledgements. Match the playback and progress request IDs to their browser responses. Keep the page open through gateway fencing and frontend drain, and close it only after the controlled window. The held Course witness verifies the original grant and enrollment, one revision-1 progress row with zero positions and incomplete state, and the stored token expiry. Use an actual candidate to certify live Flight behavior and Mux delivery.
+
+For cross-account cases use separate verified customer contexts, denied document and Flight requests, and a ready nonpreview asset so the playback request exercises access denial. S08 needs a scoped policy for the positions and revision sequence emitted by real playback. S09 can proceed independently with a text-only graded lesson and narrowly scoped attempt requests that bind the reviewed revision and answers while accepting the browser-generated attempt UUID.
 
 Frontend source `85130cdc` integrates `mux-callback-recovery` under the guarded controller. It binds the actual managed upload, generation and running gateway; restores the original closed state; and requires a positive Course acknowledgement, zero active and uncertain work, and an unchanged final managed row. The scoped action requires the reviewed managed-only Course implementation and currently pins exact source `b21e25cf`. Verify and pin the final candidate and qualify the composed action on staging.
 
