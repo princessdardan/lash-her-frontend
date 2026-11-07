@@ -1,6 +1,8 @@
 """Owned POSIX scope tests; no Docker, provider or PostgreSQL qualification."""
 import copy
 import fcntl
+import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -76,6 +78,39 @@ class ProfiledCurrentScopeTests(unittest.TestCase):
             self.scope.verify()
         with self.assertRaisesRegex(ValueError, 'CLOSE_ONLY'):
             self.scope.run([sys.executable, '-I', '-c', 'raise SystemExit(99)'], timeout=1)
+
+    def test_suffix_consumes_only_source_derived_job_and_still_binds_original_bytes(self):
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker
+        parent = object.__new__(P2ProfiledCurrentRecoveryBroker)
+        parent.directory = self.root
+        parent.bundle = self.root / 'reviewed'
+        derived_bundle = self.root / 'api-suffix-bundle'
+        original = {'target': {'approvedPendingTags': ['first', 'remaining']}}
+        derived = {'target': {'approvedPendingTags': ['remaining'], 'allowEmptyBootstrap': False}}
+        pins = []
+        for bundle, job in ((parent.bundle, original), (derived_bundle, derived)):
+            (bundle / 'jobs').mkdir(mode=0o700, parents=True)
+            job_file = bundle / 'jobs/course.json'
+            raw = (json.dumps(job, indent=2) + '\n').encode()
+            job_file.write_bytes(raw)
+            job_file.chmod(0o600)
+            pins.append({'course': hashlib.sha256(raw).hexdigest()})
+        parent.initial = {'recoveryActionId': 'owned-recovery', 'disposition': 'resume-approved-api-suffix',
+                          'apiJobSha256': pins[0], 'recoveryApiJobSha256': pins[1]}
+        self.jobs['course'] = {'job': derived}
+        self.scope.revoke()
+        self.scope = P2ProfiledCurrentScope(self.fd, self.path, self.observe, self.receipt, 'd' * 64,
+            release=self.release, jobs=self.jobs, configuration_sha256={'owned': 'e' * 64},
+            recovery_action_id='owned-recovery')
+        parent.scope, parent.lock_fd, parent.selected, parent.jobs = self.scope, self.fd, self.release, self.jobs
+        self.scope.bind_runtime_parent(parent)
+        with self.assertRaisesRegex(ValueError, 'API_JOB_BYTES_CHANGED'):
+            self.scope.api_job_bytes('course')
+        parent.derived_bundle, parent.derived_api_job_sha256 = derived_bundle, pins[1]
+        self.assertEqual(self.scope.api_job_bytes('course'), (derived_bundle / 'jobs/course.json').read_bytes())
+        (parent.bundle / 'jobs/course.json').write_text(json.dumps(original))
+        with self.assertRaisesRegex(ValueError, 'API_JOB_BYTES_CHANGED'):
+            self.scope.api_job_bytes('course')
 
     def test_current_receipt_rejects_pending_or_apply_or_drift_or_downgrade(self):
         changes = [lambda r: r.update(version=True), lambda r: r.update(version=1),

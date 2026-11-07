@@ -218,6 +218,9 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                     if expected is not None:
                         demand(type(record.get("version")) is int and record["version"] == 2,
                                "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+                        demand(type(record.get("checks")) is list and
+                               "selected-image-operator-role-policy" in record["checks"],
+                               "CURRENT_DATABASES_NATIVE_ROLE_POLICY_PROOF_REQUIRED")
                     else:
                         demand(record.get("version") != 2, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
                     migrate.require_contract_identity(selected, record)

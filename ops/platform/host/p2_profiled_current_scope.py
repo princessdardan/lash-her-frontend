@@ -93,13 +93,28 @@ class P2ProfiledCurrentScope(P2ReleaseScope):
 
     def api_job_bytes(self, name):
         from p2_profiled_current_parent import P2ProfiledCurrentBroker
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker
         from qualification_target_profile import decode_qualification_target_json
         self.verify()
         parent = self.runtime_parent
-        migrate.demand(name in ('course', 'community') and isinstance(parent, P2ProfiledCurrentBroker)
+        migrate.demand(name in ('course', 'community') and type(parent) in
+                       (P2ProfiledCurrentBroker, P2ProfiledCurrentRecoveryBroker)
                        and parent.scope is self, 'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
-        raw = migrate.read_input(parent.bundle, f'jobs/{name}.json')
-        migrate.demand(migrate.file_hash(raw) == parent.initial['apiJobSha256'][name]
+        bundle, pins = parent.bundle, parent.initial['apiJobSha256']
+        if type(parent) is P2ProfiledCurrentRecoveryBroker:
+            migrate.demand(self.recovery_action_id == P2ProfiledCurrentRecoveryBroker.action_id(parent),
+                           'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
+            if parent.initial['disposition'] == 'resume-approved-api-suffix':
+                bundle, pins = getattr(parent, 'derived_bundle', None), getattr(parent, 'derived_api_job_sha256', None)
+                migrate.demand(bundle == parent.directory / 'api-suffix-bundle'
+                               and type(pins) is dict and pins == parent.initial['recoveryApiJobSha256']
+                               and migrate.file_hash(migrate.read_input(parent.bundle, f'jobs/{name}.json'))
+                                   == parent.initial['apiJobSha256'][name],
+                               'P2_PROFILED_CURRENT_API_JOB_BYTES_CHANGED')
+        else:
+            migrate.demand(self.recovery_action_id is None, 'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
+        raw = migrate.read_input(bundle, f'jobs/{name}.json')
+        migrate.demand(migrate.file_hash(raw) == pins[name]
                        and decode_qualification_target_json(raw, 'carrier') == self.jobs[name]['job'],
                        'P2_PROFILED_CURRENT_API_JOB_BYTES_CHANGED')
         self.verify()

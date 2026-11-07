@@ -77,7 +77,8 @@ class CurrentDatabasesTests(unittest.TestCase):
                       "transportVerifier": "selected-image/hasVerifiedMigrationTransport",
                       "target": {key: job["target"][key] for key in ("host", "port", "database", "user", "serverMajor")}}
             if "qualificationTargetProfile" in job:
-                record.update(version=2, qualificationTargetProfile=job["qualificationTargetProfile"])
+                record.update(version=2, qualificationTargetProfile=job["qualificationTargetProfile"],
+                              checks=["selected-image-operator-role-policy"])
             if self.bad_api:
                 record["target"]["host"] = "other.invalid"
             return subprocess.CompletedProcess(args, 0, json.dumps(record).encode(), b"")

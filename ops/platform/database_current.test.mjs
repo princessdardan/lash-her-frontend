@@ -50,9 +50,23 @@ test("profiled read-only leaf joins explicit source context before TLS/SQL witho
   const expected = qualificationProfileModule.STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
   const f = fixture(); f.qualificationProfileModule = qualificationProfileModule;
   for (const value of [f.prepared.manifest, f.prepared.target]) Object.assign(value, { schemaVersion: 2, qualificationTargetProfile: expected });
+  const args = [f.prepared.target.user, f.prepared.manifest.runtimeRole, true,
+    { service: f.prepared.artifact.service, environment: "staging", qualificationTargetProfile: expected }, expected];
+  await assert.rejects(checkCurrentDatabase(f, expected), /NATIVE_ROLE_VERIFIER_REQUIRED/u);
+  assert.deepEqual(f.queries, []);
+  f.verifyOperatorRoles = async (read, ...actual) => {
+    assert.deepEqual(actual, args);
+    assert.match(f.queries[0], /READ ONLY/u);
+    await read.query("WITH acl AS (SELECT 1) SELECT * FROM acl");
+  };
   const result = await checkCurrentDatabase(f, expected);
   assert.equal(result.version, 2); assert.deepEqual(result.qualificationTargetProfile, expected);
   assert.equal(result.migrationsExecuted, false);
+  assert.ok(result.checks.includes("selected-image-operator-role-policy"));
+  assert.ok(!f.queries.some(q => q.startsWith("SELECT rolname")));
+  f.verifyOperatorRoles = async () => { throw new Error("MIGRATION_ROLE_CONFIGURATION_REFUSED"); };
+  await assert.rejects(checkCurrentDatabase(f, expected), /ROLE_CONFIGURATION_REFUSED/u);
+  assert.equal(f.queries.at(-1), "ROLLBACK");
   const mutations = [g => { delete g.prepared.target.qualificationTargetProfile; },
     g => { g.prepared.manifest.schemaVersion = 1; }, g => { g.prepared.target.schemaVersion = 1; },
     g => { g.prepared.target.qualificationTargetProfile = { ...expected, sha256: "a".repeat(64) }; }];
