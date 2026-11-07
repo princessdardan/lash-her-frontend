@@ -28,7 +28,7 @@ import staging_state
 import p2_prior_gateway
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
 from p2_source_closure import verify_source_closure, verify_profiled_current_source_closure, private_observer_program
-from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE
+from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE
 
 require = migrate.demand
 
@@ -56,8 +56,16 @@ PROFILED_CERTIFICATION_LAYOUT = {'actionIdKey': 'certificationActionId', 'receip
                                  'runtimePrefix': 'runtime-profiled-current-certification-',
                                  'terminalName': 'p2-profiled-current-certification-outcome.json',
                                  'terminalStatus': 'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED'}
+PROFILED_INTERRUPTED_LAYOUT = {'actionIdKey': 'restorationActionId',
+                               'receiptPrefix': 'p2-profiled-known-ack-restoration-',
+                               'runtimePrefix': 'runtime-profiled-known-ack-restoration-',
+                               'terminalName': 'p2-profiled-known-ack-interrupted-restoration-outcome.json',
+                               'terminalStatus': 'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED'}
 PROFILED_CERTIFICATION_ARM = 'p2-profiled-current-certification-guard-armed.json'
 PROFILED_CERTIFICATION_ARM_READY = 'p2-profiled-current-certification-guard-ready.json'
+PROFILED_INTERRUPTED_ARM = 'p2-profiled-known-ack-restoration-guard-armed.json'
+PROFILED_INTERRUPTED_ARM_READY = 'p2-profiled-known-ack-restoration-guard-ready.json'
+PROFILED_INTERRUPTED_FRONTEND_CLOSED = 'p2-profiled-interrupted-frontend-session-closed.json'
 PROFILED_CERTIFICATION_CONTAINMENT_NAMES = (
     '^/lash-p2-certification-observer-[a-f0-9]{32}$',
     '^/lash-p2-certification-api-check-(course|community)-[a-f0-9]{32}$',
@@ -68,7 +76,8 @@ PROFILED_CERTIFICATION_CONTAINMENT_NAMES = (
 
 def _guard_profile(initial):
     # The supervisor replaces this layout from its fixed source argument.
-    if fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT, PROFILED_CERTIFICATION_LAYOUT):
+    if fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT,
+                                     PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT):
         return None
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
@@ -136,6 +145,134 @@ def _profiled_certification_directory(initial):
     migrate.private_directory(path)
     require(path == path.resolve(), 'P2_PROFILED_CERTIFICATION_GUARD_DIRECTORY_REQUIRED')
     return path
+
+
+def _profiled_interrupted_directory(initial):
+    require(fixed_layout(initial) == PROFILED_INTERRUPTED_LAYOUT and initial.get('mode') == PROFILED_INTERRUPTED_MODE,
+            'P2_PROFILED_INTERRUPTED_FIXED_LAYOUT_REQUIRED')
+    path = Path(initial['results']) / (PROFILED_INTERRUPTED_LAYOUT['receiptPrefix'] + action_id(initial))
+    migrate.private_directory(path)
+    require(path == path.resolve(), 'P2_PROFILED_INTERRUPTED_GUARD_DIRECTORY_REQUIRED')
+    return path
+
+
+def _profiled_interrupted_arm_record(initial, probe):
+    expected = _guard_profile(initial)
+    plan, frontend = initial['reviewedPlan'], initial['reviewedPlan']['frontendPlan']
+    app_source = initial['candidate']['sources']['frontend']['commit']
+    require(plan['sourceCommit'] == frontend['sourceCommit'] == app_source and
+            plan['operatorSourceCommit'] == initial['sourceCommit'],
+            'P2_PROFILED_INTERRUPTED_GUARD_SOURCE_BINDING_REQUIRED')
+    return {'version': 2, 'qualificationTargetProfile': expected,
+            'status': 'P2_PROFILED_INTERRUPTED_GUARD_ARMED', 'environment': 'staging',
+            'originalReleaseId': initial['candidate']['releaseId'],
+            'restorationActionId': action_id(initial), 'operatorSourceCommit': initial['sourceCommit'],
+            'sourceCommit': app_source, 'candidateSha256': initial['candidateSha256'],
+            'targetSha256': initial['targetSha256'], 'reviewedPlanSha256': _canonical_sha(plan),
+            'frontendPlanSha256': frontend['planSha256'], 'probeSha256': _canonical_sha(probe)}
+
+
+def _profiled_interrupted_arm_ready(record, raw):
+    return {'version': 2, 'qualificationTargetProfile': record['qualificationTargetProfile'],
+            'status': 'P2_PROFILED_INTERRUPTED_GUARD_ARM_READY',
+            'armReceiptSha256': migrate.file_hash(raw)}
+
+
+def _retain_profiled_interrupted_arm(initial, probe):
+    directory = _profiled_interrupted_directory(initial)
+    record = _profiled_interrupted_arm_record(initial, probe)
+    migrate.write_json(directory, PROFILED_INTERRUPTED_ARM, record)
+    raw = migrate.read_input(directory, PROFILED_INTERRUPTED_ARM, 65_536)
+    migrate.write_json(directory, PROFILED_INTERRUPTED_ARM_READY,
+                       _profiled_interrupted_arm_ready(record, raw))
+
+
+def require_profiled_interrupted_guard_arm(initial, probe):
+    from qualification_target_profile import decode_qualification_target_json
+    directory = _profiled_interrupted_directory(initial)
+    expected = _profiled_interrupted_arm_record(initial, probe)
+    def read(name):
+        info = (directory / name).lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and
+                stat.S_IMODE(info.st_mode) == 0o600, 'P2_PROFILED_INTERRUPTED_GUARD_ARM_REQUIRED')
+        if name == PROFILED_INTERRUPTED_ARM_READY and info.st_nlink == 2:
+            raise FileNotFoundError('P2_PROFILED_INTERRUPTED_GUARD_ARM_PUBLICATION_PENDING')
+        require(info.st_nlink == 1, 'P2_PROFILED_INTERRUPTED_GUARD_ARM_REQUIRED')
+        return migrate.read_input(directory, name, 65_536)
+    ready = decode_qualification_target_json(read(PROFILED_INTERRUPTED_ARM_READY), 'carrier')
+    raw = read(PROFILED_INTERRUPTED_ARM)
+    retained = decode_qualification_target_json(raw, 'carrier')
+    require(_canonical_sha(retained) == _canonical_sha(expected) and
+            _canonical_sha(ready) == _canonical_sha(_profiled_interrupted_arm_ready(expected, raw)),
+            'P2_PROFILED_INTERRUPTED_GUARD_ARM_REQUIRED')
+    return retained
+
+
+def require_profiled_interrupted_frontend_closed(initial, probe):
+    from qualification_target_profile import decode_qualification_target_json
+    expected = _guard_profile(initial)
+    value = decode_qualification_target_json(
+        migrate.read_input(_profiled_interrupted_directory(initial), PROFILED_INTERRUPTED_FRONTEND_CLOSED, 65_536),
+        'carrier')
+    receipt, plan = probe['receipt'], probe['plan']
+    fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'releaseId', 'sourceCommit',
+              'targetSha256', 'marker', 'backendPid', 'backendStart', 'admission', 'journalSha256',
+              'witnessSha256', 'backendAbsent', 'migrationLockReleased', 'nonceLockReleased'}
+    migrate.require_profile(expected, value)
+    require(type(value.get('version')) is int and value['version'] == 2 and set(value) == fields and
+            value['status'] == 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED' and value['environment'] == 'staging' and
+            all(value[key] == probe[key] for key in ('marker', 'backendPid', 'backendStart')) and
+            value['releaseId'] == probe['job']['releaseId'] and value['sourceCommit'] == probe['job']['sourceCommit'] and
+            value['targetSha256'] == plan['targetSha256'] and value['journalSha256'] == receipt['journalSha256'] and
+            value['witnessSha256'] == receipt['witnessSha256'] and
+            all(value[key] is True for key in ('backendAbsent', 'migrationLockReleased', 'nonceLockReleased')) and
+            value['admission'] == {'epoch': plan['initialEpoch'], 'newWork': False, 'recovery': False,
+                                   'active': 0, 'uncertain': 0},
+            'P2_PROFILED_INTERRUPTED_FRONTEND_SESSION_CLOSE_REQUIRED')
+    return value
+
+
+def _validate_profiled_interrupted_arm(initial, probe, job_info):
+    from qualification_target_profile import decode_qualification_target_json
+    expected = _guard_profile(initial)
+    require(type(probe) is dict and set(probe) == {'version', 'qualificationTargetProfile', 'marker',
+            'backendPid', 'backendStart', 'job', 'baseline', 'owner', 'producers', 'historicalLogins',
+            'plan', 'receipt'}, 'P2_PROFILED_INTERRUPTED_GUARD_PROBE_REQUIRED')
+    plan, frontend, receipt = initial['reviewedPlan'], initial['reviewedPlan']['frontendPlan'], probe['receipt']
+    job = job_info['job']
+    migrate.require_profile(expected, probe, probe['job'], probe['job'].get('target'), probe['plan'], receipt,
+                            receipt.get('target'), probe['historicalLogins'], probe['historicalLogins'].get('target'))
+    app_source = initial['candidate']['sources']['frontend']['commit']
+    closed = {'epoch': frontend['initialEpoch'], 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+    require(type(probe['version']) is int and probe['version'] == 2 and
+            _canonical_sha(probe['job']) == _canonical_sha(job) and
+            _canonical_sha(probe['baseline']) == _canonical_sha(
+                decode_qualification_target_json(job_info['schema'], 'carrier')) and
+            _canonical_sha(probe['plan']) == _canonical_sha(frontend) and
+            probe['owner'] == initial['owner'] and probe['producers'] == initial['inventory']['producers'] and
+            probe['historicalLogins'] == initial['inventory']['historicalLogins'] and
+            plan['sourceCommit'] == frontend['sourceCommit'] == job['sourceCommit'] == app_source and
+            plan['operatorSourceCommit'] == initial['sourceCommit'] and
+            type(probe['marker']) is str and re.fullmatch(r'[a-f0-9]{64}', probe['marker']) and
+            probe['marker'] != '0' * 64 and type(probe['backendPid']) is int and probe['backendPid'] > 0 and
+            type(probe['backendStart']) is str and 0 < len(probe['backendStart']) <= 80 and
+            type(receipt.get('version')) is int and receipt['version'] == 2 and
+            receipt.get('status') == 'P2_CERTIFICATION_DATABASE_CURRENT' and receipt.get('service') == 'frontend' and
+            receipt.get('releaseId') == initial['candidate']['releaseId'] and receipt.get('sourceCommit') == app_source and
+            receipt.get('target') == frontend['nativePlan']['target'] and receipt.get('owner') == initial['owner'] and
+            receipt.get('runtime') == frontend['nativePlan']['producer']['role'] and
+            receipt.get('candidateSha256') == initial['candidateSha256'] and
+            receipt.get('targetSha256') == initial['targetSha256'] and
+            receipt.get('certificationActionId') == initial['restorationActionId'] and
+            receipt.get('planSha256') == frontend['planSha256'] and receipt.get('sqlReplayed') is False and
+            receipt.get('trafficAuthorized') is False and receipt.get('schemaVerified') is True and
+            receipt.get('runtimeRoleVerified') is True and type(receipt.get('journalSha256')) is str and
+            re.fullmatch(r'[a-f0-9]{64}', receipt['journalSha256']) and receipt['journalSha256'] != '0' * 64 and
+            type(receipt.get('witnessSha256')) is str and re.fullmatch(r'[a-f0-9]{64}', receipt['witnessSha256']) and
+            receipt['witnessSha256'] != '0' * 64 and
+            _canonical_sha(receipt.get('admission')) == _canonical_sha(closed),
+            'P2_PROFILED_INTERRUPTED_GUARD_PROBE_REQUIRED')
+    migrate.require_contract_identity(initial['candidate'], receipt)
 
 
 def _profiled_certification_arm_record(initial, probe):
@@ -469,6 +606,90 @@ def _profiled_known_ack_gateway_mount(initial, source):
     return configuration
 
 
+def _profiled_interrupted_allowed_configurations(initial):
+    selection = initial['interruptedRestoration']
+    original = Path(initial['configuration'])
+    prior = p2_prior_gateway.ROOT / ('p2-profiled-known-ack-' + selection['originalRecoveryActionId']) / \
+        'runtime-known-ack' / 'configuration'
+    current = _profiled_interrupted_directory(initial) / 'runtime-interrupted' / 'configuration'
+    return original, prior, current
+
+
+def _profiled_interrupted_gateway_mount(initial, source):
+    def verify():
+        verify_guard_boundary(initial, source)
+    ids = p2_prior_gateway._inventory(runtime.command, verify)
+    if not ids:
+        return None
+    configuration = p2_prior_gateway._mounted_configuration(ids[0], runtime.command, verify)
+    require(configuration in _profiled_interrupted_allowed_configurations(initial) and
+            staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
+            'P2_PROFILED_INTERRUPTED_GUARD_MOUNT_REFUSED')
+    return configuration
+
+
+def _profiled_interrupted_runtime_inventory(initial, source):
+    def run(args):
+        verify_guard_boundary(initial, source)
+        value = runtime.command(args, runtime.SAFE_ENV, 15)
+        verify_guard_boundary(initial, source)
+        return value
+    rows = run(['docker', 'container', 'ls', '--all', '--filter',
+        'label=com.docker.compose.project=lash-her-staging', '--format',
+        '{{.ID}}|{{.Label "com.docker.compose.service"}}']).splitlines()
+    services, observed = set(runtime.SERVICES), {}
+    allowed = _profiled_interrupted_allowed_configurations(initial)
+    for row in rows:
+        fields = row.split('|')
+        require(len(fields) == 2 and re.fullmatch(r'[a-f0-9]{12,64}', fields[0]) and
+                fields[1] in services and fields[1] not in observed,
+                'P2_PROFILED_INTERRUPTED_RUNTIME_INVENTORY_REFUSED')
+        labels = run(['docker', 'inspect', '--format',
+            '{{index .Config.Labels "com.docker.compose.project.working_dir"}}|'
+            '{{index .Config.Labels "com.docker.compose.project.config_files"}}|'
+            '{{index .Config.Labels "com.docker.compose.service"}}', fields[0]]).split('|')
+        require(len(labels) == 3 and labels[2] == fields[1],
+                'P2_PROFILED_INTERRUPTED_RUNTIME_LABELS_REFUSED')
+        configuration = Path(labels[0])
+        require(configuration in allowed and labels[1] == str(configuration / 'compose.yaml') and
+                staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
+                'P2_PROFILED_INTERRUPTED_GUARD_MOUNT_REFUSED')
+        observed[fields[1]] = {'containerId': fields[0], 'configuration': str(configuration)}
+    return observed
+
+
+def _profiled_interrupted_running_ids(initial, source):
+    verify_guard_boundary(initial, source)
+    value = runtime.command(['docker', 'ps', '--filter', 'label=com.docker.compose.project=lash-her-staging',
+                             '--format', '{{.ID}}'], runtime.SAFE_ENV, 15).splitlines()
+    verify_guard_boundary(initial, source)
+    require(all(re.fullmatch(r'[a-f0-9]{12,64}', identity) for identity in value),
+            'P2_PROFILED_INTERRUPTED_RUNTIME_INVENTORY_REFUSED')
+    return value
+
+
+def _stop_profiled_interrupted_runtime(initial, source, result):
+    try:
+        containers = _profiled_interrupted_runtime_inventory(initial, source)
+        if not containers:
+            result.update(runtimeStopAttempted=False, runtimeStopped=True, runtimeAlreadyAbsent=True)
+            return
+        mounted = _profiled_interrupted_gateway_mount(initial, source)
+        require(mounted is not None and containers.get('gateway', {}).get('configuration') == str(mounted),
+                'P2_PROFILED_INTERRUPTED_GATEWAY_RUNTIME_CHANGED')
+        result['selectedRuntimeConfiguration'] = str(mounted)
+        result['selectedRuntimeContainers'] = containers
+        verify_guard_boundary(initial, source)
+        result['runtimeStopAttempted'] = True
+        migrate.suspend_runtime('staging', runtime.SAFE_ENV)
+        verify_guard_boundary(initial, source)
+        require(not _profiled_interrupted_running_ids(initial, source),
+                'P2_PROFILED_INTERRUPTED_RUNTIME_REMAINS')
+        result['runtimeStopped'] = True
+    except BaseException:
+        result['runtimeStopUncertain'] = True
+
+
 def remove_profiled_certification_fault_lease(initial, source):
     from p2_certification_fault import LEASE
     plan, configuration = initial['certificationPlan'], Path(initial['configuration'])
@@ -575,6 +796,68 @@ def _fail_profiled_certification(initial, armed, source, result, record_name, na
     return result
 
 
+def contain_profiled_interrupted_after_reap(initial, armed, source, result,
+                                            native_containment, frontend_containment):
+    """Fixed fallback after the independent broker process tree is absent."""
+    require(result.get('workerProcessesQuiesced') is True,
+            'P2_PROFILED_INTERRUPTED_BROKER_REAP_REQUIRED')
+    try:
+        require_profiled_interrupted_guard_arm(initial, armed)
+        result['profiledInterruptedArmReceiptVerified'] = True
+    except BaseException:
+        # The in-memory value was independently validated before assignment.
+        # A failed durable publication must remain visible, but cannot skip
+        # containment after the broker may already have started a mutator.
+        result['profiledInterruptedArmReceiptUncertain'] = True
+    for callback, verified, attempted, unknown in (
+            (native_containment, 'nativeDisabled', 'nativeDisableAttempted', 'nativeContainmentUncertain'),
+            (frontend_containment, 'frontendAdmissionClosed', 'frontendCloseAttempted', 'frontendContainmentUncertain')):
+        try:
+            verify_guard_boundary(initial, source)
+            state = callback(initial, armed, source)
+            require(type(state) is dict and set(state) == {verified, attempted} and
+                    (state[verified] is True or state[verified] is None) and type(state[attempted]) is bool,
+                    'P2_PROFILED_INTERRUPTED_CONTAINMENT_RESULT_REFUSED')
+            verify_guard_boundary(initial, source)
+            result.update(state)
+        except BaseException:
+            result[unknown] = True
+    try:
+        verify_guard_boundary(initial, source)
+        cleanup_profiled_certification_containers()
+        result['profiledInterruptedContainerCleanupVerified'] = True
+    except BaseException:
+        result['profiledInterruptedContainerCleanupUncertain'] = True
+    # No prior-gateway capture or ordinary closed-zero gate is consulted.
+    # The retained C source owns the interrupted lineage. The guard only
+    # identifies and stops the exact currently mounted original/B/C runtime.
+    _stop_profiled_interrupted_runtime(initial, source, result)
+    if result['frontendAdmissionClosed'] is True and result['nativeDisabled'] is True and result['runtimeStopped'] is True:
+        result['trafficAuthorized'] = False
+    return result
+
+
+def _fail_profiled_interrupted(initial, armed, source, result, record_name,
+                               native_containment, frontend_containment):
+    plan = initial['reviewedPlan']
+    result.update(restorationActionId=action_id(initial), targetSha256=initial['targetSha256'],
+                  reviewedPlanSha256=_canonical_sha(plan), runtimeStopAttempted=False,
+                  nativeDisabled=None, nativeDisableAttempted=False,
+                  frontendAdmissionClosed=None, frontendCloseAttempted=False)
+    if armed is None:
+        result['status'] = 'P2_GUARD_REFUSED_BEFORE_PROFILED_INTERRUPTED_STAGE'
+    elif result['workerProcessesQuiesced']:
+        contain_profiled_interrupted_after_reap(initial, armed, source, result,
+                                                native_containment, frontend_containment)
+    else:
+        result['profiledInterruptedCleanupUncertain'] = True
+    try:
+        migrate.write_json(_profiled_interrupted_directory(initial), record_name, result)
+    except BaseException:
+        result['guardReceiptRetained'] = False
+    return result
+
+
 def _stop_profiled_certification_runtime(initial, source, result, record_name):
     selected, configuration = initial['candidate'], Path(initial['configuration'])
     known = initial['certificationPlan'].get('mode') == 'known-ack-recovery'
@@ -645,12 +928,16 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
 
     if group is not None:
         try:
-            stop = _stop_profiled_certification_group if fixed_layout(initial) == PROFILED_CERTIFICATION_LAYOUT else stop_group
+            stop = (_stop_profiled_certification_group if fixed_layout(initial) in
+                    (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT) else stop_group)
             result['workerProcessesQuiesced'] = stop(group)
         except BaseException:
             result['workerProcessCleanupUncertain'] = True
     if fixed_layout(initial) == PROFILED_CERTIFICATION_LAYOUT:
         return _fail_profiled_certification(initial, armed, source, result, record_name, native_containment, frontend_containment)
+    if fixed_layout(initial) == PROFILED_INTERRUPTED_LAYOUT:
+        return _fail_profiled_interrupted(initial, armed, source, result, record_name,
+                                          native_containment, frontend_containment)
     if armed is None:
         # Certification starts from an existing runtime but cannot issue any
         # mutator before its separate source-selected armed handshake.
@@ -780,19 +1067,20 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
 
 def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None, native_containment=None, frontend_containment=None):
     options = {'observer_type': observer_type, 'native_containment': native_containment}
-    if fixed_layout(initial) == PROFILED_CERTIFICATION_LAYOUT:
+    if fixed_layout(initial) in (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT):
         options['frontend_containment'] = frontend_containment
     failed = fail_closed(initial, armed, source, group=child, **options)
     if (armed is not None or _guard_profile(initial) is not None) and not failed['workerProcessesQuiesced']:
         # Admissions have already been closed/stopped as far as can be
         # observed. Keep the actual flock while an unreaped mutator survives.
-        stop = _stop_profiled_certification_group if fixed_layout(initial) == PROFILED_CERTIFICATION_LAYOUT else stop_group
+        stop = (_stop_profiled_certification_group if fixed_layout(initial) in
+                (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT) else stop_group)
         while True:
             try:
                 if stop(child):
                     break
             except BaseException:
-                if fixed_layout(initial) != PROFILED_CERTIFICATION_LAYOUT:
+                if fixed_layout(initial) not in (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT):
                     raise
             time.sleep(1)
         failed = fail_closed(initial, armed, source, group=child,
@@ -864,6 +1152,40 @@ def _require_profiled_certification_terminal(initial, raw, committed):
     return terminal
 
 
+def _require_profiled_interrupted_terminal(initial, raw, committed):
+    from qualification_target_profile import decode_qualification_target_json
+    expected = _guard_profile(initial)
+    terminal = decode_qualification_target_json(raw, 'carrier')
+    migrate.require_profile(expected, terminal)
+    directory = _profiled_interrupted_directory(initial)
+    retained = migrate.read_input(directory / 'runtime-interrupted',
+                                  'profiled-interrupted-runtime-outcome.json')
+    require(raw == retained, 'P2_PROFILED_INTERRUPTED_GUARD_RUNTIME_RECEIPT_CHANGED')
+    require(migrate.file_hash(raw) == committed and type(terminal.get('version')) is int and terminal['version'] == 2 and
+            terminal.get('status') == PROFILED_INTERRUPTED_LAYOUT['terminalStatus'] and
+            terminal.get('environment') == 'staging' and terminal.get('releaseId') == initial['candidate']['releaseId'] and
+            terminal.get('restorationActionId') == initial['restorationActionId'] and
+            terminal.get('candidateSha256') == initial['candidateSha256'] and
+            terminal.get('frontier') in ('original-stopped-one', 'replacement-stopped-zero') and
+            type(terminal.get('apiDatabases')) is dict and set(terminal['apiDatabases']) == {'course', 'community'} and
+            terminal.get('currentApiDatabasesAfter') == terminal['apiDatabases'] and
+            type(terminal.get('stoppedGateway')) is dict and type(terminal.get('newGateway')) is dict and
+            p2_prior_gateway._closed_observed(terminal['stoppedGateway']) and
+            all(value == 0 for value in terminal['stoppedGateway']['admission']['active'].values()) and
+            p2_prior_gateway._zero(terminal['newGateway']) and
+            terminal.get('runtimeReplacements') == 1 and
+            all(terminal.get(key) is False for key in ('frontendSqlApplied', 'trafficAuthorized', 'sqlReplayed',
+                'migrationsExecuted', 'rolePreparationRepeated', 'newWorkOpened', 'recoveryOpened')) and
+            terminal.get('nativeDisabled') is True,
+            'P2_PROFILED_INTERRUPTED_GUARD_TERMINAL_REFUSED')
+    stopped_uncertain = terminal['stoppedGateway']['admission']['uncertain']
+    require(stopped_uncertain == ({'newWork': 0, 'recovery': 1} if terminal['frontier'] == 'original-stopped-one'
+                                  else {'newWork': 0, 'recovery': 0}),
+            'P2_PROFILED_INTERRUPTED_GUARD_FRONTIER_REFUSED')
+    migrate.require_contract_identity(initial['candidate'], terminal)
+    return terminal
+
+
 def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
               observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None,
               frontend_containment=None):
@@ -894,8 +1216,23 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             callable(native_containment) and native_containment is getattr(certification_parent, 'contain_profiled_certification_native', None) and
             callable(frontend_containment) and frontend_containment is getattr(certification_parent, 'contain_profiled_certification_frontend', None))
         require(profiled_certification, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
-    else:
+    elif initial.get('mode') != PROFILED_INTERRUPTED_MODE and layout != PROFILED_INTERRUPTED_LAYOUT:
         require(frontend_containment is None, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    profiled_interrupted = False
+    interrupted_parent = None
+    if initial.get('mode') == PROFILED_INTERRUPTED_MODE or layout == PROFILED_INTERRUPTED_LAYOUT:
+        import p2_profiled_known_ack_restoration_parent as interrupted_parent
+        import p2_certification_parent as certification_parent
+        profiled_interrupted = (
+            initial.get('mode') == PROFILED_INTERRUPTED_MODE and layout == PROFILED_INTERRUPTED_LAYOUT and
+            broker_type is getattr(interrupted_parent, 'P2ProfiledInterruptedKnownAckBroker', None) and
+            observer_type is certification_parent.P2CertificationPhysicalObserver and
+            observer_source == CERTIFICATION_OBSERVER and
+            callable(native_containment) and native_containment is
+                getattr(interrupted_parent, 'contain_profiled_interrupted_native', None) and
+            callable(frontend_containment) and frontend_containment is
+                getattr(interrupted_parent, 'contain_profiled_interrupted_frontend', None))
+        require(profiled_interrupted, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     interrupted = False
     if initial.get('mode') == 'known-ack-interrupted-restoration':
         from p2_known_ack_interrupted_restoration import InterruptedKnownAckRestorationBroker, InterruptedRestorationPhysicalObserver, contain_interrupted_native
@@ -910,14 +1247,15 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
              and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)) or
             (layout == ROTATION_LAYOUT and initial.get('mode') == 'p2-identity-key-rotation'
              and rotation_types == (broker_type, observer_type)
-             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or interrupted or profiled or profiled_certification,
+             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or interrupted or profiled or
+            profiled_certification or profiled_interrupted,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
     expected = _guard_profile(initial)
     if expected is not None:
-        require((profiled or profiled_certification) and initial.get('version') == 2,
+        require((profiled or profiled_certification or profiled_interrupted) and initial.get('version') == 2,
                 'PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
-        if profiled_certification:
+        if profiled_certification or profiled_interrupted:
             require(type(initial['version']) is int, 'PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
         migrate.require_profile(expected, initial)
     identity = action_id(initial)
@@ -952,6 +1290,17 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
         except BaseException:
             os.close(fd)
             raise
+    elif profiled_interrupted:
+        try:
+            verified_plan, _original, verified_selected, verified_interrupted_jobs = \
+                interrupted_parent.prepare_profiled_interrupted_input(
+                    {key: initial[key] for key in interrupted_parent.INITIAL_FIELDS}, source)
+            require(verified_plan == initial['reviewedPlan'] and verified_selected == selected and
+                    verified_interrupted_jobs == verified_jobs,
+                    'P2_PROFILED_INTERRUPTED_GUARD_INPUT_REQUIRED')
+        except BaseException:
+            os.close(fd)
+            raise
     safety_read, safety_write = os.pipe()
     health_read, health_write = os.pipe()
     child = os.fork()
@@ -980,7 +1329,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                     # The profiled worker flushes its ACK before returning.
                     # Its next ordered stage may arrive during that tiny tail;
                     # wait on the actual mutex, never overlap or replay stages.
-                    acquired = (broker.operation_active.acquire(timeout=2) if profiled or profiled_certification else
+                    acquired = (broker.operation_active.acquire(timeout=2) if profiled or profiled_certification or profiled_interrupted else
                                 broker.operation_active.acquire(blocking=False))
                     require(acquired, 'P2_CONCURRENT_STAGE_REFUSED')
                     import threading
@@ -1014,11 +1363,18 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                 armed = probe
                 _retain_profiled_certification_arm(initial, probe)
                 return
+            if profiled_interrupted:
+                verify_guard_boundary(initial, source)
+                _validate_profiled_interrupted_arm(initial, probe, verified_jobs['frontend'])
+                armed = probe
+                _retain_profiled_interrupted_arm(initial, probe)
+                return
             armed = probe
             require(probe['job'] == verified_jobs['frontend']['job']
                     and probe['baseline'] == json.loads(verified_jobs['frontend']['schema']), 'P2_SAFETY_SCOPE_REFUSED')
         committed = (watch_broker(child, safety_read, health_write, arm, profiled_certification=True)
-                     if profiled_certification else watch_broker(child, safety_read, health_write, arm))
+                     if profiled_certification or profiled_interrupted else
+                     watch_broker(child, safety_read, health_write, arm))
         result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
         if profiled_certification:
             require(not members(child), 'P2_PROFILED_CERTIFICATION_TERMINAL_CHILD_REMAINS')
@@ -1026,6 +1382,14 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             require_profiled_certification_guard_arm(initial, armed)
             _profiled_certification_containers(remove=False)
             _require_profiled_certification_terminal(initial, result, committed)
+            verify_guard_boundary(initial, source)
+            return
+        if profiled_interrupted:
+            require(not members(child), 'P2_PROFILED_INTERRUPTED_TERMINAL_CHILD_REMAINS')
+            verify_guard_boundary(initial, source)
+            require_profiled_interrupted_guard_arm(initial, armed)
+            require_profiled_interrupted_frontend_closed(initial, armed)
+            _require_profiled_interrupted_terminal(initial, result, committed)
             verify_guard_boundary(initial, source)
             return
         terminal = json.loads(result)
@@ -1041,7 +1405,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     except BaseException:
         with sticky_cleanup_signals():
             options = {'observer_type': observer_type, 'native_containment': native_containment}
-            if profiled_certification:
+            if profiled_certification or profiled_interrupted:
                 options['frontend_containment'] = frontend_containment
             finish_failure_cleanup(initial, armed, source, child, **options)
         raise

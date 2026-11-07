@@ -13,6 +13,246 @@ import p2_release_supervisor as supervisor
 
 
 class FixedDispatchTests(unittest.TestCase):
+    def profiled_interrupted(self, root=None):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile
+        app_source, operator_source = 'a' * 40, 'b' * 40
+        candidate = {'version': 3, 'qualificationTargetProfile': dict(profile), 'releaseId': 'original',
+                     'environment': 'staging', 'contractPhase': 'p2',
+                     'phase2ContractManifestSha256': 'sha256:' + '9' * 64,
+                     'sources': {'frontend': {'commit': app_source}}}
+        frontend = {'version': 2, 'qualificationTargetProfile': dict(profile), 'sourceCommit': app_source,
+                    'planSha256': 'c' * 64, 'initialEpoch': '3'}
+        plan = {'version': 2, 'qualificationTargetProfile': dict(profile),
+                'mode': supervisor.PROFILED_INTERRUPTED_MODE, 'environment': 'staging',
+                'sourceCommit': app_source, 'operatorSourceCommit': operator_source,
+                'frontendPlan': frontend}
+        return {'version': 2, 'qualificationTargetProfile': dict(profile),
+                'mode': supervisor.PROFILED_INTERRUPTED_MODE, 'environment': 'staging',
+                'sourceCommit': operator_source, 'candidate': candidate, 'candidateSha256': 'e' * 64,
+                'targetSha256': 'f' * 64, 'restorationActionId': 'restoration-2',
+                'reviewedPlan': plan, 'results': str(root) if root else '/private/owned',
+                '_guardLayout': supervisor.PROFILED_INTERRUPTED_LAYOUT}
+
+    def test_profiled_interrupted_dispatch_requires_exact_source_types_and_callbacks(self):
+        import p2_profiled_known_ack_restoration_parent as parent
+        class OwnedBroker(Broker):
+            pass
+        def native(*_):
+            return {'nativeDisabled': True, 'nativeDisableAttempted': False}
+        def frontend(*_):
+            return {'frontendAdmissionClosed': True, 'frontendCloseAttempted': False}
+        initial = self.profiled_interrupted()
+        options = {'broker_type': OwnedBroker, 'observer_type': certification.P2CertificationPhysicalObserver,
+                   'observer_source': supervisor.CERTIFICATION_OBSERVER,
+                   'layout': supervisor.PROFILED_INTERRUPTED_LAYOUT,
+                   'native_containment': native, 'frontend_containment': frontend}
+        with patch.object(parent, 'P2ProfiledInterruptedKnownAckBroker', OwnedBroker, create=True), \
+             patch.object(parent, 'contain_profiled_interrupted_native', native, create=True), \
+             patch.object(parent, 'contain_profiled_interrupted_frontend', frontend, create=True), \
+             patch.object(supervisor.os, 'geteuid', return_value=1), \
+             patch.object(supervisor.migrate, 'make_plan', side_effect=AssertionError('unexpected plan I/O')):
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(dict(initial), **options)
+            for mismatch in ({'broker_type': Broker}, {'observer_type': PhysicalObserver},
+                             {'observer_source': 'ops/platform/p2-profiled-current-probe.mjs'},
+                             {'layout': supervisor.PROFILED_CERTIFICATION_LAYOUT},
+                             {'native_containment': frontend}, {'frontend_containment': native},
+                             {'frontend_containment': None}):
+                with self.subTest(mismatch=tuple(mismatch)), \
+                     self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                    supervise(dict(initial), **{**options, **mismatch})
+
+    def test_profiled_interrupted_arm_binds_app_and_operator_sources_and_is_durable(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            initial = self.profiled_interrupted(root)
+            directory = root / 'p2-profiled-known-ack-restoration-restoration-2'
+            directory.mkdir(mode=0o700)
+            probe = {'fixed': 'physical-request'}
+            record = supervisor._profiled_interrupted_arm_record(initial, probe)
+            self.assertEqual(record['sourceCommit'], 'a' * 40)
+            self.assertEqual(record['operatorSourceCommit'], 'b' * 40)
+            with self.assertRaises(FileNotFoundError):
+                supervisor.require_profiled_interrupted_guard_arm(initial, probe)
+            supervisor._retain_profiled_interrupted_arm(initial, probe)
+            self.assertEqual(supervisor.require_profiled_interrupted_guard_arm(initial, probe), record)
+            with self.assertRaisesRegex(ValueError, 'GUARD_ARM_REQUIRED'):
+                supervisor.require_profiled_interrupted_guard_arm(initial, {'fixed': 'changed'})
+            initial['reviewedPlan']['sourceCommit'] = initial['sourceCommit']
+            with self.assertRaisesRegex(ValueError, 'SOURCE_BINDING_REQUIRED'):
+                supervisor._profiled_interrupted_arm_record(initial, probe)
+
+    def test_profiled_interrupted_arm_requires_the_exact_fresh_frontend_plan(self):
+        initial = self.profiled_interrupted()
+        profile = {'version': 2, 'qualificationTargetProfile': initial['qualificationTargetProfile']}
+        target = {'host': 'fixture.invalid', 'port': 5432, 'database': 'fixture', 'user': 'runtime',
+                  'serverMajor': 18, 'qualificationTargetProfile': initial['qualificationTargetProfile']}
+        owner, role = {'name': 'owner', 'oid': '11'}, {'name': 'runtime', 'oid': '22'}
+        producer = {'producerSha256': '1' * 64, 'role': role}
+        history = {**profile, 'target': target, 'retiredLogins': []}
+        frontend = initial['reviewedPlan']['frontendPlan']
+        frontend.update(certificationActionId=initial['restorationActionId'], candidateSha256=initial['candidateSha256'],
+                        targetSha256=initial['targetSha256'], nativePlan={'target': target, 'producer': producer})
+        job = {**profile, 'releaseId': 'original', 'sourceCommit': 'a' * 40, 'target': target}
+        initial.update(owner=owner, inventory={'producers': [producer], 'historicalLogins': history})
+        receipt = {**profile, **supervisor.migrate.contract_identity(initial['candidate']), 'target': target,
+                   'owner': owner, 'runtime': role, 'status': 'P2_CERTIFICATION_DATABASE_CURRENT',
+                   'service': 'frontend', 'releaseId': 'original', 'sourceCommit': 'a' * 40,
+                   'candidateSha256': initial['candidateSha256'], 'targetSha256': initial['targetSha256'],
+                   'certificationActionId': initial['restorationActionId'], 'planSha256': frontend['planSha256'],
+                   'sqlReplayed': False, 'trafficAuthorized': False, 'schemaVerified': True,
+                   'runtimeRoleVerified': True, 'journalSha256': '3' * 64, 'witnessSha256': '4' * 64,
+                   'admission': {'epoch': '3', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}}
+        probe = {**profile, 'marker': '2' * 64, 'backendPid': 123, 'backendStart': 'fixture-start',
+                 'job': job, 'baseline': {}, 'owner': owner, 'producers': [producer],
+                 'historicalLogins': history, 'plan': frontend, 'receipt': receipt}
+        supervisor._validate_profiled_interrupted_arm(initial, probe, {'job': job, 'schema': b'{}'})
+        for change in ({'plan': {**frontend, 'initialEpoch': '4'}},
+                       {'receipt': {**receipt, 'admission': {**receipt['admission'], 'uncertain': 1}}},
+                       {'backendPid': True}):
+            with self.subTest(change=tuple(change)), self.assertRaisesRegex(ValueError, 'GUARD_PROBE_REQUIRED'):
+                supervisor._validate_profiled_interrupted_arm(initial, {**probe, **change}, {'job': job, 'schema': b'{}'})
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            initial['results'] = str(root)
+            directory = root / 'p2-profiled-known-ack-restoration-restoration-2'
+            directory.mkdir(mode=0o700)
+            closed = {**profile, 'status': 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED', 'environment': 'staging',
+                      'releaseId': 'original', 'sourceCommit': 'a' * 40, 'targetSha256': initial['targetSha256'],
+                      'marker': probe['marker'], 'backendPid': probe['backendPid'], 'backendStart': probe['backendStart'],
+                      'admission': receipt['admission'], 'journalSha256': receipt['journalSha256'],
+                      'witnessSha256': receipt['witnessSha256'], 'backendAbsent': True,
+                      'migrationLockReleased': True, 'nonceLockReleased': True}
+            supervisor.migrate.write_json(directory, supervisor.PROFILED_INTERRUPTED_FRONTEND_CLOSED, closed)
+            self.assertEqual(supervisor.require_profiled_interrupted_frontend_closed(initial, probe), closed)
+            (directory / supervisor.PROFILED_INTERRUPTED_FRONTEND_CLOSED).unlink()
+            supervisor.migrate.write_json(directory, supervisor.PROFILED_INTERRUPTED_FRONTEND_CLOSED,
+                                          {**closed, 'backendAbsent': False})
+            with self.assertRaisesRegex(ValueError, 'SESSION_CLOSE_REQUIRED'):
+                supervisor.require_profiled_interrupted_frontend_closed(initial, probe)
+
+    def test_profiled_interrupted_mount_selection_accepts_only_original_b_or_c(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            initial = self.profiled_interrupted(root)
+            initial.update(configuration=str(root / 'configuration'), configurationSha256={'runtime.json': '1' * 64},
+                           interruptedRestoration={'originalRecoveryActionId': 'replacement-b'})
+            (root / 'p2-profiled-known-ack-restoration-restoration-2').mkdir(mode=0o700)
+            with patch.object(supervisor.p2_prior_gateway, 'ROOT', root):
+                allowed = supervisor._profiled_interrupted_allowed_configurations(initial)
+                self.assertEqual(allowed[0], root / 'configuration')
+                self.assertEqual(allowed[1], root / 'p2-profiled-known-ack-replacement-b' / 'runtime-known-ack' / 'configuration')
+                self.assertEqual(allowed[2], root / 'p2-profiled-known-ack-restoration-restoration-2' /
+                                 'runtime-interrupted' / 'configuration')
+                with patch.object(supervisor, 'verify_guard_boundary'), \
+                     patch.object(supervisor.p2_prior_gateway, '_inventory', return_value=['a' * 64]), \
+                     patch.object(supervisor.p2_prior_gateway, '_mounted_configuration', return_value=root / 'foreign'), \
+                     patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']), \
+                     patch.object(supervisor.migrate, 'suspend_runtime', side_effect=AssertionError('foreign runtime stop')):
+                    with self.assertRaisesRegex(ValueError, 'GUARD_MOUNT_REFUSED'):
+                        supervisor._profiled_interrupted_gateway_mount(initial, root)
+                def command(args, *_):
+                    if args[1:3] == ['container', 'ls']:
+                        return 'a' * 12 + '|gateway\n' + 'b' * 12 + '|course-api\n'
+                    identity = args[-1]
+                    directory = root / ('configuration' if identity == 'a' * 12 else 'foreign')
+                    service = 'gateway' if identity == 'a' * 12 else 'course-api'
+                    return f'{directory}|{directory / "compose.yaml"}|{service}'
+                with patch.object(supervisor, 'verify_guard_boundary'), \
+                     patch.object(supervisor.runtime, 'command', side_effect=command), \
+                     patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']):
+                    with self.assertRaisesRegex(ValueError, 'GUARD_MOUNT_REFUSED'):
+                        supervisor._profiled_interrupted_runtime_inventory(initial, root)
+                result, original = {}, root / 'configuration'
+                with patch.object(supervisor, '_profiled_interrupted_gateway_mount', return_value=original), \
+                     patch.object(supervisor, '_profiled_interrupted_runtime_inventory', return_value={
+                         'gateway': {'containerId': 'a' * 12, 'configuration': str(original)}}), \
+                     patch.object(supervisor, '_profiled_interrupted_running_ids', return_value=[]), \
+                     patch.object(supervisor, 'verify_guard_boundary'), \
+                     patch.object(supervisor.migrate, 'suspend_runtime') as suspend:
+                    supervisor._stop_profiled_interrupted_runtime(initial, root, result)
+                suspend.assert_called_once_with('staging', supervisor.runtime.SAFE_ENV)
+                self.assertIs(result['runtimeStopped'], True)
+                self.assertEqual(result['selectedRuntimeConfiguration'], str(original))
+                result = {}
+                with patch.object(supervisor, '_profiled_interrupted_runtime_inventory', return_value={
+                         'course-api': {'containerId': 'b' * 12, 'configuration': str(original)}}), \
+                     patch.object(supervisor, '_profiled_interrupted_gateway_mount', return_value=None), \
+                     patch.object(supervisor.migrate, 'suspend_runtime', side_effect=AssertionError('incomplete runtime stop')):
+                    supervisor._stop_profiled_interrupted_runtime(initial, root, result)
+                self.assertIs(result['runtimeStopUncertain'], True)
+                self.assertNotIn('runtimeStopped', result)
+
+    def test_profiled_interrupted_containment_runs_only_after_reap_and_keeps_failed_frontend_unknown(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            initial = self.profiled_interrupted(root)
+            initial.update(configuration=str(root / 'configuration'), configurationSha256={},
+                           interruptedRestoration={'originalRecoveryActionId': 'replacement-b'},
+                           _guardLockDescriptor=3)
+            (root / 'p2-profiled-known-ack-restoration-restoration-2').mkdir(mode=0o700)
+            events = []
+            def native(*_):
+                events.append('native')
+                return {'nativeDisabled': True, 'nativeDisableAttempted': True}
+            def frontend(*_):
+                events.append('frontend')
+                raise RuntimeError('private frontend readback failed')
+            def stop(*_):
+                events.append('runtime')
+                return None
+            armed = {'physical': 'arm'}
+            supervisor._retain_profiled_interrupted_arm(initial, armed)
+            with patch.object(supervisor, '_stop_profiled_certification_group', return_value=True), \
+                 patch.object(supervisor, 'verify_guard_boundary'), \
+                 patch.object(supervisor, 'cleanup_profiled_certification_containers'), \
+                 patch.object(supervisor, '_stop_profiled_interrupted_runtime', side_effect=stop), \
+                 patch.object(supervisor, 'capture_gateway_before_stop', side_effect=AssertionError('ordinary gate selected')), \
+                 patch.object(supervisor, 'close_gateway', side_effect=AssertionError('ordinary close selected')):
+                result = supervisor.fail_closed(initial, armed, root, group=123,
+                                                native_containment=native, frontend_containment=frontend)
+            self.assertEqual(events, ['native', 'frontend', 'runtime'])
+            self.assertIs(result['workerProcessesQuiesced'], True)
+            self.assertIs(result['nativeDisabled'], True)
+            self.assertIs(result['frontendAdmissionClosed'], None)
+            self.assertIs(result['frontendContainmentUncertain'], True)
+            self.assertIs(result['trafficAuthorized'], None)
+            retained = (root / 'p2-profiled-known-ack-restoration-restoration-2' /
+                        'p2-independent-guard-outcome.json').read_text()
+            self.assertNotIn('private frontend readback failed', retained)
+
+    def test_profiled_interrupted_terminal_is_the_verbatim_runtime_receipt(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            initial = self.profiled_interrupted(root)
+            directory = root / 'p2-profiled-known-ack-restoration-restoration-2'
+            runtime_output = directory / 'runtime-interrupted'
+            runtime_output.mkdir(parents=True, mode=0o700)
+            directory.chmod(0o700)
+            zero = {'newWork': 0, 'recovery': 0}
+            stopped = {'admission': {'newWork': False, 'recovery': False, 'active': zero,
+                                     'uncertain': {'newWork': 0, 'recovery': 1}}}
+            new = {'admission': {'newWork': False, 'recovery': False, 'active': zero, 'uncertain': zero}}
+            databases = {'course': {'current': True}, 'community': {'current': True}}
+            terminal = {'version': 2, 'qualificationTargetProfile': initial['qualificationTargetProfile'],
+                        **supervisor.migrate.contract_identity(initial['candidate']),
+                        'status': supervisor.PROFILED_INTERRUPTED_LAYOUT['terminalStatus'],
+                        'environment': 'staging', 'releaseId': 'original',
+                        'restorationActionId': initial['restorationActionId'],
+                        'candidateSha256': initial['candidateSha256'], 'frontier': 'original-stopped-one',
+                        'apiDatabases': databases, 'currentApiDatabasesAfter': databases,
+                        'stoppedGateway': stopped, 'newGateway': new, 'runtimeReplacements': 1,
+                        'frontendSqlApplied': False, 'trafficAuthorized': False, 'sqlReplayed': False,
+                        'migrationsExecuted': False, 'rolePreparationRepeated': False, 'newWorkOpened': False,
+                        'recoveryOpened': False, 'nativeDisabled': True}
+            supervisor.migrate.write_json(runtime_output, 'profiled-interrupted-runtime-outcome.json', terminal)
+            raw = supervisor.migrate.read_input(runtime_output, 'profiled-interrupted-runtime-outcome.json')
+            self.assertEqual(supervisor._require_profiled_interrupted_terminal(
+                initial, raw, supervisor.migrate.file_hash(raw)), terminal)
+            changed = json.dumps({**terminal, 'trafficAuthorized': True}, separators=(',', ':')).encode() + b'\n'
+            with self.assertRaisesRegex(ValueError, 'RUNTIME_RECEIPT_CHANGED'):
+                supervisor._require_profiled_interrupted_terminal(initial, changed,
+                                                                  supervisor.migrate.file_hash(changed))
     def test_profiled_fault_guard_removes_only_the_original_lease_from_the_original_mount(self):
         from p2_certification_fault import LEASE
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile
