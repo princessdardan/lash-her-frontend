@@ -66,9 +66,7 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
 export const config = {
   matcher: [
     "/admin/:path*", "/booking", "/services/:slug/booking",
-    "/sign-in", "/account/:path*", "/academy/:path*", "/courses/:path*",
-    "/api/auth/:path*", "/api/customer-auth/:path*", "/api/account/:path*",
-    "/api/admin/:path*", "/api/academy/:path*",
+    { source: "/:path*", has: [{ type: "cookie", key: "__Host-lash-p2q-window" }] },
     { source: "/:path*", has: [{ type: "header", key: "x-lash-internal-interactive-admission" }] },
   ],
 };

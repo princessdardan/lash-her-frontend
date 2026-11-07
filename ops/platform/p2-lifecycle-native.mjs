@@ -42,7 +42,7 @@ const reviewedInteractiveSource = {
 };
 const reviewedInteractiveDependencies = {
   "src/lib/writer-admission/interactive-proof.ts": "fc832f7cbb07f270861e2753a8bf62253109240fb7ce0135097bdf834526de93",
-  "src/proxy.ts": "129ddc4555e8074d28f9ed55fd9b140174cbc21c9f8702ae55b5a485d0c1f997",
+  "src/proxy.ts": "790b076d78dc67a992a9662bd0d0f3b54b2ea5a23965a2d8be881e20099a0a80",
   "src/app/admin/auth-actions.ts": "e2420cae789e8239f44058ba66d82d46fd7bfcf0b08c69ea59c1dab8ecd54de1"
 };
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();

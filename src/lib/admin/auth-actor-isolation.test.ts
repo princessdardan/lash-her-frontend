@@ -155,12 +155,29 @@ test("real Auth.js administrator actors stay within their authorization operatio
 
 test("the actual proxy matcher does not overwrite caller request IDs on administrator API routes", async () => {
   const source = ts.createSourceFile("proxy.ts", readFileSync(new URL("../../proxy.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-  let matcher: string[] | undefined;
+  type Match = string | { source: string; has: { type: "cookie" | "header"; key: string }[] };
+  function literalProperty(node: ts.ObjectLiteralExpression, name: string) {
+    const property = node.properties.find(item => ts.isPropertyAssignment(item) && item.name.getText(source) === name);
+    assert.ok(property && ts.isPropertyAssignment(property));
+    return property.initializer;
+  }
+  let matcher: Match[] | undefined;
   const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "config" && node.initializer && ts.isObjectLiteralExpression(node.initializer)) {
-      const property = node.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(source) === "matcher");
-      assert.ok(property && ts.isPropertyAssignment(property) && ts.isArrayLiteralExpression(property.initializer));
-      matcher = property.initializer.elements.map(element => { assert.ok(ts.isStringLiteral(element)); return element.text; });
+      const list = literalProperty(node.initializer, "matcher");
+      assert.ok(ts.isArrayLiteralExpression(list));
+      matcher = list.elements.map(element => {
+        if (ts.isStringLiteral(element)) return element.text;
+        assert.ok(ts.isObjectLiteralExpression(element));
+        const path = literalProperty(element, "source"), conditions = literalProperty(element, "has");
+        assert.ok(ts.isStringLiteral(path) && ts.isArrayLiteralExpression(conditions));
+        return { source: path.text, has: conditions.elements.map(condition => {
+          assert.ok(ts.isObjectLiteralExpression(condition));
+          const type = literalProperty(condition, "type"), key = literalProperty(condition, "key");
+          assert.ok(ts.isStringLiteral(type) && (type.text === "cookie" || type.text === "header") && ts.isStringLiteral(key));
+          return { type: type.text, key: key.text };
+        }) };
+      });
     }
     ts.forEachChild(node, visit);
   };
@@ -171,4 +188,7 @@ test("the actual proxy matcher does not overwrite caller request IDs on administ
   for (const url of ["/admin", "/admin/customer-accounts"]) assert.equal(unstable_doesMiddlewareMatch({ config: { matcher }, nextConfig: {}, url }), true);
   for (const url of ["/api/admin/customer-accounts/owned/commands", "/api/admin/shipping/labels"])
     assert.equal(unstable_doesMiddlewareMatch({ config: { matcher }, nextConfig: {}, url }), false);
+  const config = { matcher }, url = "/api/admin/customer-accounts/owned/commands", nextConfig = {};
+  assert.equal(unstable_doesMiddlewareMatch({ config, url, nextConfig, cookies: { "__Host-lash-p2q-window": "owned" } }), true);
+  assert.equal(unstable_doesMiddlewareMatch({ config, url, nextConfig, headers: { "x-lash-internal-interactive-admission": "owned" } }), true);
 });
