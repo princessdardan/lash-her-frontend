@@ -845,5 +845,88 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerDraftEditAndStale": {
+    "frontendSourceCommit": "063d7660f7514d792463e53e345ad013ad673216",
+    "normalAuthoringBrowser": {
+      "passed": 6,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "twoTabsWithSameInitialRevisionVerified": true,
+      "browserConflictReferenceAndUnsavedTitleVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "39b1b0b39daf9b820c6bb8040a81d41d207ebdbcee923788ef6b85e4aa177042",
+      "logSha256": "35143209f02f70d5ccaf397b6536c458f55a350d346bf58c682e8c4f483a41e5"
+    },
+    "frontendUnitNode24": {
+      "testedCommit": "62db4c2ea4cb3c250505214f2d33a2ab4eadf254",
+      "finalCommitChangesOnlyAuthoringBrowserTestLocator": true,
+      "sourcePassed": 2536,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "66d7c0b38188efc2f1a076c86b3dc92c1e76e5f0816f7926c1c8809357267b55"
+    },
+    "certificationPlatformNode24": {
+      "passed": 94,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 9,
+      "twoExactTabsAndVisibleStaleOutcomeWithUnreadErrorBody": true,
+      "logSha256": "f90f8b839c547b3641b5eff9ceba083d5263bd4d8496f8e614780cc5dd995475"
+    },
+    "host": {
+      "passed": 120,
+      "failed": 0,
+      "ownedFixtures": true,
+      "exactOwnerPermitFiveAcknowledgementsAndClosedGates": true,
+      "logSha256": "9dd671cde5628b80c7d63acabb29d6e64f1be3f886db2fc4d7f92bb74e7d56ed"
+    },
+    "loopbackGateway": {
+      "passed": 68,
+      "failed": 0,
+      "acknowledgementRequestIndexes": [0, 0, 1, 0, 2],
+      "upstreamStatuses": [200, 200, 200, 200, 409],
+      "logSha256": "8a6958b9edaa387c82dccc0ddea68326a20d9e9a570704aead60c538bca738ab"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {"frontend": 83, "course": 22, "community": 11},
+      "sourceCommits": {"course": "0bb054d5a04db71c481a8b3d182db6df19782cdc", "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"},
+      "heldLifecycleAndDraftWitnessChecks": 17,
+      "exactWinningFieldsAtSingleNextRevision": true,
+      "logSha256": "ceb6d33121832277ebfca145b2bd6de21937f0b94f00862e3fd42c65bb004ecd"
+    },
+    "priorNormalBrowserFailures": [
+      {"sourceCommit": "5a8f87f95e3de9306e6dda3757d20078307fddb9", "finding": "Normal UI leaves the 409 response body unread and Chromium may discard it.", "logSha256": "6e358e86c29aeb33dbb0a1fc91109e4e574bf0705cc6d851ae42ce6adf08b6a0"},
+      {"sourceCommit": "62db4c2ea4cb3c250505214f2d33a2ab4eadf254", "finding": "The regression locator also selected the framework route-announcer alert.", "logSha256": "0a8e1dfd3ec51e0bf7dcc5cc4cac00414bb309868aa49cf1450fd1361c799ed3"}
+    ],
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42899504,
+      "expandedBytes": 57278875,
+      "wireBytes": 18647403,
+      "wireSha256": "3cf86256b2fa322add539355384fa0eb5bab1499e716dc67f853915b0c4f8808",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyPinsVerified": 24,
+    "githubReadback": {
+      "coursePolicyPr": {"number": 10, "state": "open", "merged": false, "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3"},
+      "communityPolicyPr": {"number": 9, "state": "open", "merged": false, "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff"},
+      "frontendPr": {"number": 93, "state": "open", "draft": true, "head": "f78cf3af38665acca73d111fe1241e0a3d99bfe0"}
+    },
+    "draftEditAndStaleOperatorActionImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
