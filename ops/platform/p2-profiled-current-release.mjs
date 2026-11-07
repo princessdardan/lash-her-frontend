@@ -19,9 +19,12 @@ import { githubSourceApi } from './release-inputs.mjs';
 import { recreationSsh } from './recreation_ssh.mjs';
 import { createP2ProfiledCurrentProbe } from './p2-profiled-current-probe.mjs';
 import { p2ProfiledCurrentEnvironmentLock, readP2ProfiledCurrentFrontendReceipt, retainP2ProfiledCurrentRaw } from './p2-profiled-current-transport.mjs';
-import { deployProfiledCurrentFrontend, observeProfiledCurrentFrontend, readProfiledCurrentWorkloadReceipt } from './p2-profiled-current-frontend-adapters.mjs';
+import { deployProfiledCurrentFrontend, observeProfiledCurrentFrontend, readProfiledCurrentWorkloadReceipt,
+  verifyP2ProfiledCurrentWriterBoundary } from './p2-profiled-current-frontend-adapters.mjs';
 import { decodeQualificationTargetJson, requireQualificationTargetProfile, resolveQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from './qualification-target-profile.mjs';
+
+export { verifyP2ProfiledCurrentWriterBoundary };
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const profile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
@@ -154,28 +157,6 @@ export function verifyP2ProfiledCurrentReleaseConfiguration(prepared) {
   const original = preparations.get(prepared);
   demand(original);
   verifyConfiguration(prepared, original.settings);
-}
-
-export async function verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify) {
-  demand(/^[a-z][a-z0-9_]{0,62}$/u.test(inventory?.owner?.name ?? ""));
-  await verify(); await client.query('BEGIN READ ONLY');
-  try {
-    const retired = inventory.historicalLogins.retiredLogins;
-    const roles = (await client.query('SELECT oid::text,rolname,rolcanlogin FROM pg_catalog.pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname', [retired.map(row => row.name)])).rows;
-    demand(roles.length === retired.length && roles.every(row => row.rolcanlogin === false && retired.some(expected => expected.name === row.rolname && expected.oid === row.oid)));
-    await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
-    demand((await client.query('SELECT count(*)::int AS count FROM pg_catalog.pg_stat_activity WHERE usesysid=ANY($1::oid[])', [retired.map(row => row.oid)])).rows[0]?.count === 0);
-    await client.query(`SET LOCAL ROLE "${inventory.owner.name}"`);
-    const controls = (await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
-    demand(controls.length === 1 && controls[0].environment === 'staging' && controls[0].target_sha256 === inventory.targetSha256 &&
-      controls[0].epoch === inventory.expectedEpoch && controls[0].new_work === false && controls[0].recovery === false);
-    const counts = (await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
-    demand(counts?.active === 0 && counts.uncertain === 0);
-    const producers = (await client.query('SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows;
-    demand(producers.length === inventory.producers.length && producers.every((row, index) => row.source_sha === migration.job.sourceCommit &&
-      row.producer_sha256 === inventory.producers[index].producerSha256 && row.role_oid === inventory.producers[index].role.oid));
-    return { epoch: controls[0].epoch, newWork: false, recovery: false, active: counts.active, uncertain: counts.uncertain, ledgerDrained: true };
-  } finally { await client.query('ROLLBACK'); await verify(); }
 }
 
 function deploymentProof(prepared, result) {

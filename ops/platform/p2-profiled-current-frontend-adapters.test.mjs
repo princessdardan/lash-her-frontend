@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
+import { Client } from "pg";
+import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
+import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import { deployProfiledCurrentFrontend, observeProfiledCurrentFrontend,
   readProfiledCurrentWorkloadReceipt } from "./p2-profiled-current-frontend-adapters.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
@@ -14,6 +19,11 @@ const names = ["runtime.json", "gateway.json", "course-tls.json", "community-tls
   "tls/gateway/key.pem", "tls/gateway/cert.pem", "tls/course/key.pem", "tls/course/cert.pem", "tls/community/key.pem",
   "tls/community/cert.pem", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env",
   "community-worker.env", "course-media.env", "course-export-cleanup.env"];
+
+const runtimeUrl = "postgresql://frontend_runtime:private@db.example.com/frontend?sslmode=verify-full";
+const runtimeOid = "17001", databaseOid = "17002", heldPid = 1000;
+const privateProvider = frontendRuntimeDatabaseUrl => ({ version: 2, qualificationTargetProfile: profile,
+  vercelToken: "private", frontendRuntimeDatabaseUrl, bindings: {} });
 
 function fixture() {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "profiled-current-adapter-")));
@@ -27,7 +37,9 @@ function fixture() {
       projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", environment: "production" },
     frontendMigration: { qualificationTargetProfile: profile } };
   const plan = { version: 2, qualificationTargetProfile: profile, environment: "staging", actionId: candidate.releaseId,
-    sourceCommit, targetSha256, runtimeProducerSha256: producer, certification: structuredClone(P2_CERTIFICATION_PROFILE) };
+    sourceCommit, targetSha256, expectedEpoch: "7", runtimeProducerSha256: producer, owner: { name: "admission_owner", oid: "17003" },
+    producers: [{ producerSha256: producer, role: { name: target.runtimeRole, oid: runtimeOid } }],
+    historicalLogins: { retiredLogins: [] }, certification: structuredClone(P2_CERTIFICATION_PROFILE) };
   const job = { version: 2, qualificationTargetProfile: profile, environment: "staging", releaseId: candidate.releaseId,
     sourceCommit, target };
   const bootstrapRuntimeTarget = { qualificationTargetProfile: profile, environment: "staging", targetSha256,
@@ -38,6 +50,10 @@ function fixture() {
     if (sql.includes("SELECT environment,target_sha256")) return { rows: [{ environment: "staging", target_sha256: targetSha256,
       epoch: "7", new_work: false, recovery: false }] };
     if (sql.includes("count(*) FILTER")) return { rows: [{ active: 0, uncertain: 0 }] };
+    if (sql.includes("pg_stat_activity")) return { rows: [{ count: 0 }] };
+    if (sql.includes("FROM frontend_admission.producers")) return { rows: [{ producer_sha256: producer, source_sha: sourceCommit, role_oid: runtimeOid }] };
+    if (sql.includes("AS migration_lock")) return { rows: [{ pid: heldPid, username: target.user, login: target.user,
+      database: target.database, database_oid: databaseOid, major: target.serverMajor, read_only: "on", runtime_oid: runtimeOid, migration_lock: true }] };
     return { rows: [] };
   } };
   const context = { qualificationTargetProfile: profile, plan, inventorySha256: sha(JSON.stringify(plan)), candidate,
@@ -111,10 +127,7 @@ test("recovery preserves the exact 19-file configuration map across the retained
   } finally { chmodSync(directory, 0o700); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("actual child checkpoint protocol rechecks the admission ledger and reaps the worker", async () => {
-  const f = fixture(), bin = join(f.context.directory, "bin"); mkdirSync(bin, { mode: 0o700 });
-  const executable = join(bin, "python3"), previousPath = process.env.PATH;
-  const program = String.raw`#!/usr/bin/python3
+const verifiedWorker = String.raw`#!/usr/bin/python3
 import json,sys
 p=json.loads(sys.stdin.readline())
 print(json.dumps({'type':'checkpoint','id':1}),flush=True)
@@ -132,14 +145,123 @@ r={'version':2,'qualificationTargetProfile':p['qualificationTargetProfile'],'sta
 'frontendSqlApplied':False,'historicalProviderClosureClaimed':False,'oldP200Qualified':False,'trafficAuthorized':False,'releaseAccepted':False}
 print(json.dumps({'type':'result','value':r}),flush=True)
 `;
+
+async function withWorker(directory, program, run) {
+  const bin = join(directory, "bin"), previousPath = process.env.PATH;
+  mkdirSync(bin, { mode: 0o700 });
   try {
-    writeFileSync(executable, program, { mode: 0o700 }); process.env.PATH = `${bin}:${previousPath}`;
-    f.context.getProviderContext = async () => ({ version: 2, qualificationTargetProfile: profile, vercelToken: "private",
-      frontendRuntimeDatabaseUrl: "postgresql://frontend_runtime:private@db.example.com/frontend?sslmode=verify-full", bindings: {} });
-    const result = await deployProfiledCurrentFrontend(f.context);
-    assert.equal(result.status, "P2_PROFILED_CURRENT_FRONTEND_VERIFIED");
-    assert.ok(f.counts().queries >= 16);
-  } finally { process.env.PATH = previousPath; f.cleanup(); }
+    writeFileSync(join(bin, "python3"), program, { mode: 0o700 });
+    process.env.PATH = `${bin}:${previousPath}`;
+    return await run();
+  } finally { process.env.PATH = previousPath; }
+}
+
+function mockRuntime(t, readIdentity) {
+  t.mock.method(Client.prototype, "connect", async function () {
+    assert.equal(this.connectionParameters.ssl.rejectUnauthorized, true);
+    assert.match(this.connectionParameters.options, /default_transaction_read_only=on/u);
+    Object.assign(this.connection.stream, { encrypted: true, authorized: true });
+  });
+  t.mock.method(Client.prototype, "query", async function (sql, values) {
+    assert.match(sql, /FROM pg_catalog.pg_database/u);
+    assert.deepEqual(values, ["frontend_runtime", heldPid, FRONTEND_MIGRATION_LOCK]);
+    return { rows: [readIdentity()] };
+  });
+  t.mock.method(Client.prototype, "end", async () => {});
+}
+
+const runtimeIdentity = () => ({ pid: heldPid + 1, username: "frontend_runtime", login: "frontend_runtime", database: "frontend",
+  database_oid: databaseOid, major: 18, read_only: "on", runtime_oid: runtimeOid, migration_lock: true });
+
+test("actual child checkpoint protocol rechecks the admission ledger and reaps the worker", async t => {
+  const f = fixture();
+  try {
+    mockRuntime(t, runtimeIdentity);
+    f.context.getProviderContext = async () => privateProvider(runtimeUrl);
+    await withWorker(f.context.directory, verifiedWorker, async () => {
+      const result = await deployProfiledCurrentFrontend(f.context);
+      assert.equal(result.status, "P2_PROFILED_CURRENT_FRONTEND_VERIFIED");
+      assert.ok(f.counts().queries >= 16);
+    });
+  } finally { f.cleanup(); }
+});
+
+test("worker never starts for a wrong URL target or an independent database binding mismatch", async t => {
+  const f = fixture(); let actual = runtimeIdentity();
+  try {
+    mockRuntime(t, () => actual);
+    const marker = join(f.context.directory, "worker-started");
+    const refuseIfSpawned = `#!/usr/bin/python3
+open(${JSON.stringify(marker)}, 'w').close()
+raise SystemExit(1)
+`;
+    await withWorker(f.context.directory, refuseIfSpawned, async () => {
+      for (const value of [runtimeUrl.replace("db.example.com", "old.example.com"), runtimeUrl.replace("/frontend?", "/other?"),
+        runtimeUrl.replace("frontend_runtime:", "operator:"), runtimeUrl.replace("verify-full", "require")]) {
+        f.context.getProviderContext = async () => privateProvider(value);
+        await assert.rejects(deployProfiledCurrentFrontend(f.context), /REVIEW_REQUIRED/u);
+      }
+      f.context.getProviderContext = async () => privateProvider(runtimeUrl);
+      for (const drift of [{ database_oid: "99" }, { runtime_oid: "99" }, { read_only: "off" }, { migration_lock: false }, { pid: heldPid }]) {
+        actual = { ...runtimeIdentity(), ...drift };
+        await assert.rejects(deployProfiledCurrentFrontend(f.context), /REVIEW_REQUIRED/u);
+      }
+      assert.throws(() => readFileSync(marker), { code: "ENOENT" });
+    });
+  } finally { f.cleanup(); }
+});
+
+test("owned TLS PostgreSQL joins a real read-only migration lock and runtime login before provider effects", {
+  skip: process.env.P2_PROFILED_CURRENT_OWNED_TEST !== "true", timeout: 90_000,
+}, async () => {
+  const f = fixture(), directory = f.context.directory, key = join(directory, "server.key"), cert = join(directory, "server.crt");
+  const pgBin = process.env.PG_BIN, major = Number(process.env.OWNED_POSTGRES_MAJOR), originalCa = getCACertificates("default");
+  assert.ok(pgBin?.startsWith("/") && [16, 18].includes(major));
+  let cluster, setup, migration;
+  try {
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
+      "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert], { stdio: "ignore" });
+    chmodSync(key, 0o600);
+    setDefaultCACertificates([...originalCa, readFileSync(cert, "utf8")]);
+    const data = join(directory, "cluster"); mkdirSync(data, { mode: 0o700 });
+    cluster = await openOwnedFrontendReplacementCluster(data, pgBin, "owned_frontend_admin", key, cert);
+    setup = await cluster.connect("postgres");
+    const password = randomUUID(), runtimePassword = randomUUID(), { job, plan, bootstrapRuntimeTarget } = f.context;
+    const database = { host: "127.0.0.1", port: cluster.port, database: "postgres", serverMajor: major };
+    Object.assign(job.target, database);
+    Object.assign(bootstrapRuntimeTarget, database);
+    await setup.query(`CREATE ROLE operator LOGIN NOINHERIT PASSWORD '${password}';
+      CREATE ROLE frontend_runtime LOGIN PASSWORD '${runtimePassword}'; CREATE ROLE admission_owner NOLOGIN;
+      GRANT admission_owner TO operator;
+      CREATE SCHEMA frontend_admission AUTHORIZATION admission_owner; SET ROLE admission_owner;
+      CREATE TABLE frontend_admission.control(singleton boolean, environment text, target_sha256 text, epoch integer, new_work boolean, recovery boolean);
+      CREATE TABLE frontend_admission.operations(state text);
+      CREATE TABLE frontend_admission.producers(producer_sha256 text, source_sha text, database_role oid, enabled boolean); RESET ROLE;`);
+    const roles = (await setup.query("SELECT rolname,oid::text FROM pg_roles WHERE rolname IN ('admission_owner','frontend_runtime')")).rows;
+    const oids = Object.fromEntries(roles.map(row => [row.rolname, row.oid]));
+    plan.owner.oid = oids.admission_owner; plan.producers[0].role.oid = oids.frontend_runtime;
+    f.context.inventorySha256 = sha(JSON.stringify(plan));
+    await setup.query("INSERT INTO frontend_admission.control VALUES(true,'staging',$1,7,false,false)", [plan.targetSha256]);
+    await setup.query("INSERT INTO frontend_admission.producers VALUES($1,$2,$3,true)", [plan.runtimeProducerSha256, plan.sourceCommit, oids.frontend_runtime]);
+    const suffix = `@${database.host}:${database.port}/${database.database}?sslmode=verify-full`;
+    migration = new Client(frontendConnectionOptions(`postgresql://operator:${password}${suffix}`, job.target));
+    await migration.connect();
+    await migration.query("SELECT pg_advisory_lock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
+    f.context.databaseClient = migration;
+    f.context.getProviderContext = async () => privateProvider(`postgresql://frontend_runtime:${runtimePassword}${suffix}`);
+    await withWorker(directory, verifiedWorker, async () => {
+      assert.equal((await migration.query("SHOW default_transaction_read_only")).rows[0].default_transaction_read_only, "on");
+      assert.equal((await deployProfiledCurrentFrontend(f.context)).status, "P2_PROFILED_CURRENT_FRONTEND_VERIFIED");
+      f.context.getProviderContext = async () => privateProvider(`postgresql://frontend_runtime:invalid${suffix}`);
+      await assert.rejects(deployProfiledCurrentFrontend(f.context), /REVIEW_REQUIRED/u);
+      f.context.getProviderContext = async () => privateProvider(`postgresql://frontend_runtime:${runtimePassword}${suffix}`);
+      await migration.query("SELECT pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
+      await assert.rejects(deployProfiledCurrentFrontend(f.context), /REVIEW_REQUIRED/u);
+    });
+  } finally {
+    try { await migration?.end(); await setup?.end(); }
+    finally { await cluster?.stop(); setDefaultCACertificates(originalCa); f.cleanup(); }
+  }
 });
 
 test("lost-build disposition uses the fixed child operation and cannot become a workload proof", async () => {

@@ -6,7 +6,8 @@ import { createInterface } from "node:readline";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { observeFrontendDrain } from "./frontend-admission.mjs";
+import { Client } from "pg";
+import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { frontendPrivateReceiptDirectory, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { prepareP2CertificationProfile } from "./p2-certification-profile.mjs";
 import { requireQualificationTargetProfile, resolveQualificationTargetProfile,
@@ -16,6 +17,7 @@ const workerPath = fileURLToPath(new URL("./host/p2_profiled_current_frontend.py
 const refuse = () => { throw new Error("P2_PROFILED_CURRENT_FRONTEND_REVIEW_REQUIRED"); };
 const demand = value => { if (!value) refuse(); };
 const digest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
+const oid = value => typeof value === "string" && /^[1-9][0-9]{0,9}$/u.test(value) && Number(value) <= 4294967295;
 const commit = value => typeof value === "string" && /^[a-f0-9]{40}$/u.test(value) && !/^0+$/u.test(value);
 const hash = value => createHash("sha256").update(value).digest("hex");
 const jsonHash = value => hash(JSON.stringify(value));
@@ -119,8 +121,12 @@ function validateRelease(context) {
   const expectedFeatureControls = featureControls(plan);
   const writerAdmissionBinding = { mode: "enforce", targetSha256: plan.targetSha256,
     producerSha256: plan.runtimeProducerSha256, sourceCommit, roleName: target.user };
-  demand(digest(writerAdmissionBinding.producerSha256) && /^[a-z][a-z0-9_]{0,62}$/u.test(writerAdmissionBinding.roleName ?? ""));
+  demand(digest(writerAdmissionBinding.producerSha256) && /^[a-z][a-z0-9_]{0,62}$/u.test(writerAdmissionBinding.roleName ?? "") &&
+    job.target.user !== target.user && Array.isArray(plan.producers));
+  const producers = plan.producers.filter(row => row.producerSha256 === writerAdmissionBinding.producerSha256);
+  demand(producers.length === 1 && producers[0].role?.name === target.user && oid(producers[0].role.oid));
   return { plan, candidate, job, configurationSha256, target, admission, expectedFeatureControls, writerAdmissionBinding,
+    runtimeOid: producers[0].role.oid,
     candidateSha256: context.candidateSha256, inventorySha256: context.inventorySha256 };
 }
 
@@ -170,13 +176,70 @@ function validateLostBuildRecovery(context) {
   return { plan, migration, candidate, job, pins, configurationSha256 };
 }
 
+export async function verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify) {
+  demand(/^[a-z][a-z0-9_]{0,62}$/u.test(inventory?.owner?.name ?? ""));
+  await verify(); await client.query('BEGIN READ ONLY');
+  try {
+    const retired = inventory.historicalLogins.retiredLogins;
+    const roles = (await client.query('SELECT oid::text,rolname,rolcanlogin FROM pg_catalog.pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname', [retired.map(row => row.name)])).rows;
+    demand(roles.length === retired.length && roles.every(row => row.rolcanlogin === false && retired.some(expected => expected.name === row.rolname && expected.oid === row.oid)));
+    await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
+    demand((await client.query('SELECT count(*)::int AS count FROM pg_catalog.pg_stat_activity WHERE usesysid=ANY($1::oid[])', [retired.map(row => row.oid)])).rows[0]?.count === 0);
+    await client.query(`SET LOCAL ROLE "${inventory.owner.name}"`);
+    const controls = (await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
+    demand(controls.length === 1 && controls[0].environment === 'staging' && controls[0].target_sha256 === inventory.targetSha256 &&
+      controls[0].epoch === inventory.expectedEpoch && controls[0].new_work === false && controls[0].recovery === false);
+    const counts = (await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
+    demand(counts?.active === 0 && counts.uncertain === 0);
+    const producers = (await client.query('SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows;
+    demand(producers.length === inventory.producers.length && producers.every((row, index) => row.source_sha === migration.job.sourceCommit &&
+      row.producer_sha256 === inventory.producers[index].producerSha256 && row.role_oid === inventory.producers[index].role.oid));
+    return { epoch: controls[0].epoch, newWork: false, recovery: false, active: counts.active, uncertain: counts.uncertain, ledgerDrained: true };
+  } finally { await client.query('ROLLBACK'); await verify(); }
+}
+
 async function closedAdmission(context, selected) {
-  await context.verifyLockedSession(); demand(!context.environmentSignal?.aborted);
-  const actual = await observeFrontendDrain(context.databaseClient,
-    { environment: "staging", targetSha256: selected.plan.targetSha256 }, selected.admission.epoch);
-  demand(actual.epoch === selected.admission.epoch && actual.newWork === false && actual.recovery === false &&
-    actual.active === 0 && actual.uncertain === 0 && actual.ledgerDrained === true);
-  await context.verifyLockedSession(); demand(!context.environmentSignal?.aborted); return actual;
+  const actual = await verifyP2ProfiledCurrentWriterBoundary(context.databaseClient, selected, selected.plan, async () => {
+    await context.verifyLockedSession(); demand(!context.environmentSignal?.aborted);
+  });
+  demand(actual.epoch === selected.admission.epoch);
+}
+
+const runtimeIdentitySql = `SELECT pg_catalog.pg_backend_pid() AS pid, current_user AS username,
+  session_user AS login, d.datname AS database, d.oid::text AS database_oid,
+  pg_catalog.current_setting('server_version_num')::int / 10000 AS major,
+  pg_catalog.current_setting('transaction_read_only') AS read_only,
+  (SELECT oid::text FROM pg_catalog.pg_roles WHERE rolname=$1 AND rolcanlogin) AS runtime_oid,
+  EXISTS (SELECT 1 FROM pg_catalog.pg_locks WHERE locktype='advisory' AND database=d.oid
+    AND pid=COALESCE($2::int,pg_catalog.pg_backend_pid())
+    AND classid=((pg_catalog.hashtext($3)::bigint >> 32) & 4294967295)::oid
+    AND objid=(pg_catalog.hashtext($3)::bigint & 4294967295)::oid
+    AND objsubid=1 AND mode='ExclusiveLock' AND granted) AS migration_lock
+  FROM pg_catalog.pg_database d WHERE d.datname=pg_catalog.current_database()`;
+
+async function readRuntimeIdentity(client, target, runtimeOid, runtimeRole, migrationPid = null) {
+  const { rows } = await client.query(runtimeIdentitySql, [runtimeRole, migrationPid, FRONTEND_MIGRATION_LOCK]);
+  const identity = rows[0];
+  demand(rows.length === 1 && identity.username === target.user && identity.login === target.user &&
+    identity.database === target.database && identity.major === target.serverMajor && identity.read_only === "on" &&
+    Number.isSafeInteger(identity.pid) && identity.pid > 0 && oid(identity.database_oid) &&
+    identity.runtime_oid === runtimeOid && identity.migration_lock === true);
+  return { pid: identity.pid, databaseOid: identity.database_oid };
+}
+
+async function proveRuntimeDatabase(selected, runtimeDatabaseUrl, migration) {
+  const target = { ...selected.target, approvedPendingTags: [] };
+  const runtime = new Client({ ...frontendConnectionOptions(runtimeDatabaseUrl, target),
+    application_name: "lash-her-profiled-runtime-credential", statement_timeout: 10_000, query_timeout: 12_000 });
+  let lost = false;
+  runtime.on("error", () => { lost = true; });
+  try {
+    await runtime.connect();
+    demand(runtime.connection?.stream?.encrypted === true && runtime.connection.stream.authorized === true);
+    const identity = await readRuntimeIdentity(runtime, target, selected.runtimeOid, target.user, migration.pid);
+    demand(identity.pid !== migration.pid && identity.databaseOid === migration.databaseOid);
+  } finally { await runtime.end(); }
+  demand(!lost);
 }
 
 async function runWorker(operation, payload, checkpoint, signal) {
@@ -217,13 +280,13 @@ async function runWorker(operation, payload, checkpoint, signal) {
   } catch { refuse(); } finally { clearTimeout(timeout); clearTimeout(killTimeout); }
 }
 
-function releasePayload(selected, provider, directory) {
+function releasePayload(selected, provider, directory, runtimeDatabaseUrl = provider.frontendRuntimeDatabaseUrl) {
   return { qualificationTargetProfile: profile, plan: selected.plan, candidate: selected.candidate, job: selected.job,
     candidateSha256: selected.candidateSha256, inventorySha256: selected.inventorySha256,
     configurationSha256: selected.configurationSha256, directory, vercelToken: provider.vercelToken,
     bindings: provider.bindings, expectedFeatureControls: selected.expectedFeatureControls,
     writerAdmissionBinding: selected.writerAdmissionBinding, bootstrapRuntimeTarget: selected.target,
-    frontendRuntimeDatabaseUrl: provider.frontendRuntimeDatabaseUrl };
+    frontendRuntimeDatabaseUrl: runtimeDatabaseUrl };
 }
 
 function releaseProof(result, selected) {
@@ -317,9 +380,17 @@ export async function deployProfiledCurrentFrontend(context) {
     const selected = validateRelease(context); await closedAdmission(context, selected);
     const provider = providerContext(await context.getProviderContext(Object.freeze({ qualificationTargetProfile: profile,
       actionId: selected.plan.actionId, sourceCommit: selected.plan.sourceCommit, targetSha256: selected.plan.targetSha256 })), false);
-    await closedAdmission(context, selected);
-    const result = await runWorker("deploy", releasePayload(selected, provider, context.directory),
-      () => closedAdmission(context, selected), context.environmentSignal);
+    const runtimeDatabaseUrl = own(provider, "frontendRuntimeDatabaseUrl");
+    const migrationBinding = () => readRuntimeIdentity(context.databaseClient, selected.job.target, selected.runtimeOid, selected.target.user);
+    const migration = await migrationBinding();
+    await proveRuntimeDatabase(selected, runtimeDatabaseUrl, migration);
+    const checkpoint = async () => {
+      await closedAdmission(context, selected);
+      demand(isDeepStrictEqual(await migrationBinding(), migration) && !context.environmentSignal?.aborted);
+    };
+    await checkpoint();
+    const result = await runWorker("deploy", releasePayload(selected, provider, context.directory, runtimeDatabaseUrl),
+      checkpoint, context.environmentSignal);
     return releaseProof(result, selected);
   } catch { refuse(); }
 }
