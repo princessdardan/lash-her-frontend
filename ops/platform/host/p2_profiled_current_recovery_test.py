@@ -399,9 +399,12 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
                 broker._require_native_schedules_off()
         del broker.lost_build_observation
         del broker.lost_build_observation_sha256
-        changed = copy.deepcopy(observation); changed['providerMutationReplayed'] = True
-        with self.assertRaises(Exception):
-            broker.observe_lost_build(changed)
+        replayed = copy.deepcopy(observation); replayed['providerMutationReplayed'] = True
+        same_deployment = copy.deepcopy(observation); same_deployment['previousDeploymentId'] = same_deployment['deploymentId']
+        boolean_version = copy.deepcopy(observation); boolean_version['version'] = True
+        for changed in (replayed, same_deployment, boolean_version):
+            with self.assertRaises(Exception):
+                broker.observe_lost_build(changed)
 
     def test_protocol_has_no_sql_replay_path_or_caller_fields_on_field_free_operations(self):
         broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)

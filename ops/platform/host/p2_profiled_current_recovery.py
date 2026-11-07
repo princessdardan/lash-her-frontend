@@ -419,7 +419,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                   'aliasQualificationVerified', 'promotionVerified', 'cronQualificationVerified', 'trafficAuthorized',
                   'releaseAccepted'}
         pins = self.initial['lostBuildReceiptSha256']
-        require(set(observation) == fields and observation.get('status') == 'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED' and
+        require(set(observation) == fields and type(observation.get('version')) is int and observation['version'] == 2 and
+                observation.get('status') == 'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED' and
                 observation.get('environment') == 'staging' and observation.get('actionId') == self.selected['releaseId'] and
                 observation.get('releaseId') == self.selected['releaseId'] and observation.get('sourceCommit') == self.initial['sourceCommit'] and
                 observation.get('candidateSha256') == self.initial['candidateSha256'] and
@@ -429,6 +430,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 type(observation.get('deploymentId')) is str and re.fullmatch(r'dpl_[A-Za-z0-9]+', observation['deploymentId']) and
                 (observation.get('previousDeploymentId') is None or type(observation['previousDeploymentId']) is str and
                  re.fullmatch(r'dpl_[A-Za-z0-9]+', observation['previousDeploymentId'])) and
+                observation.get('deploymentId') != observation.get('previousDeploymentId') and
                 observation.get('lostBuildReceiptSha256') == sha(encoded(dict(sorted(pins.items())))) and
                 observation.get('deployStartedSha256') == pins['deployStarted'] and
                 observation.get('buildStartedSha256') == pins['buildStarted'] and
