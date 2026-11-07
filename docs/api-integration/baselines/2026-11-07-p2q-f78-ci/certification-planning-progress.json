@@ -1469,5 +1469,128 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveLearnerFirstFreeEnrollment": {
+    "frontendSourceCommit": "8f88a81f0032898f93e926d8c6843a4ed53b5804",
+    "implementationCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+    "finalCommitChangesOnlyOperatorEarlyExecutionInputRefusal": true,
+    "normalLearnerBrowser": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "passed": 6,
+      "failed": 0,
+      "projects": [
+        "chromium",
+        "mobile"
+      ],
+      "courseSourceCommit": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "singlePublicCatalogReadAndBeforeAfterLearnerAccessVerified": true,
+      "actualEnrollmentToAcademyAndLearnerRegressionsVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "9d756466f0e7bc4090ece73757a1c68329eda39d754135ca33332fb81679fa11",
+      "persistenceSha256": "6352f3c1db5e356833ac47a305f7149095f137959e672c4897c83d70adeb17ba",
+      "logSha256": "d2347e64375a75b61a6a9c4b8d5d01c927261db007a256aef17bb7321994813e"
+    },
+    "frontendUnitNode24": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "sourcePassed": 2542,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "6560ac652aca8824409be29daf9031d6fe8f074121673ca4a2f9d9fa18cacff7"
+    },
+    "certificationPlatformNode24": {
+      "passed": 142,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "a0c2cd8b8422c9ed243f516b2ac620f5d58fdfea2c014d87d18a416279b618d4",
+      "ownedChromiumCases": 15,
+      "exactEnrollmentAndCanonicalProtectedDestinationVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "priorPlatformRun": {
+      "sourceCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "finding": "Unsupported execution input reached the configuration read before refusal.",
+      "logSha256": "d15e3695e76d41e9d2706119617f55a5980701d1f4d1aea137eb50a335eadd19"
+    },
+    "host": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "passed": 127,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "5da3b69b3addb69b009dfb09d8842e7bffd03953f8b5bc3a9b3f286e81ee662b"
+    },
+    "loopbackGateway": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "passed": 78,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "d3c3775a69f6686ebf8e6fbee7ecfb43a0fc22b4b0a4e68488f0d2756f9a6152",
+      "acknowledgementRequestIndexPrefix": [
+        0,
+        1,
+        2
+      ],
+      "upstreamStatusPrefix": [
+        200,
+        403,
+        201
+      ],
+      "postEnrollmentReadIndexes": [
+        1,
+        3
+      ],
+      "eitherReadbackOrderAccepted": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "8f88a81f0032898f93e926d8c6843a4ed53b5804",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 28,
+      "freeOrderlessGrantIdempotencyAndPendingCanonicalCommunityActivationVerified": true,
+      "noProgressWritesVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "ea5a23c0ee516d3bbe6a9ad6ba70c33f4ddb7c4d1229055e0a663096cf3c697f",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "2413ecf507e8b9dd7d871d9b3c3fffb3b9feb2d8cabaf4c0a5ccb29e2a27f20d"
+      },
+      "logSha256": "c10376f3e47a2a8a48c0a2c00ee2d38f1775b4bc1a9361d56dd7aa456943b2f1"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43202796,
+      "expandedBytes": 57683271,
+      "wireBytes": 18770139,
+      "wireSha256": "9b8a0ff1601f410c092d75a29db417da83815d812d48a34ea7b90f815f67c914",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "b9187349b2803e21cd4057978e6d76fc161061eec6b482cd85b821e243dadb00"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "18b77644120d7dbf5ea43a86d7bdcde28d79b2afcdd5a01606a92d39084a0702",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "628d11d12c5d5406511c84319e210b8f59504d204a9a05591f49ca4b935b6d72",
+    "firstFreeEnrollmentOperatorActionImplemented": true,
+    "remainingS07GuardedActionsImplemented": false,
+    "communityDownstreamDeliveryVerified": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedLearnerVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
