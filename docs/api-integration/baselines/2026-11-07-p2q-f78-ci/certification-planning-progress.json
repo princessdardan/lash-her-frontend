@@ -379,5 +379,52 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveBrowserComponents": {
+    "frontendSourceCommit": "6e7cd730e23d62232e75e50e13e655b79c4da838",
+    "componentCommit": "a6f98497aa73d516ae53138f6016ac29be8ed7f3",
+    "frontendSourceUnitsNode24": {
+      "passed": 2520,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "efb0197f84829748c1e618db0db01a9299ce29206353b3823b244ab0c1cb578a"
+    },
+    "certificationPlannerNode24": {"passed": 31, "failed": 0, "skipped": 0},
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "gatewayOwnedTls": {"passed": 21, "courseMethodPathPairsClassified": 34},
+    "protectedIngressHost": {"passed": 16, "fixedPaths": 8, "testedOrigins": 2, "actualOwnedTls": true},
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "passed": 15,
+      "migrations": 83,
+      "actualTls": true,
+      "interactiveChecks": "Deterministic disabled registration, exact idempotence, ordinary producer denial, scoped new and recovery admission, fencing with unresolved effects, and explicit registry restoration"
+    },
+    "nextBuild": {
+      "webpackCompiled": true,
+      "typeCheckPassed": true,
+      "fontsFixture": "tests/course-authoring-browser/font-fixture.cjs",
+      "fullBuildPassed": false,
+      "firstBlockingPhase": "page data collection",
+      "failure": "Sandbox DNS could not resolve the staging Sanity API for the policies route",
+      "logSha256": "9eb0cebfe43c903a82f38336ed23483d6a51486433b55cde28a2f81e4da14dc4"
+    },
+    "profiledSourceInstaller": {
+      "files": 543,
+      "decodedBytes": 42471392,
+      "expandedBytes": 56707919,
+      "wireBytes": 18440475,
+      "wireSha256": "d8a218735f22ac7cf2169370288bc0edc19731bf44f1bb6f529bfba688495cc8",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "interactivePermitIssuanceImplemented": false,
+    "actorAndResourceSelectionJoined": false,
+    "interactiveGatewayEnforcementImplemented": false,
+    "composedGuardedWindowVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
