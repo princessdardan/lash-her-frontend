@@ -195,7 +195,7 @@ test('fixed current certification plan joins the original release plan, terminal
         certificationActionId: 'owned-certification', mode: 'contain-native', startState: 'already-closed', initialEpoch: '1',
         candidateSha256: plan.candidateSha256, inventorySha256: plan.inventorySha256, configurationSha256: hash(plan.configurationSha256),
         readyReceiptSha256, runtimeInventorySha256: '1'.repeat(64), gatewayProcessSha256: '2'.repeat(64),
-        gatewayConfigurationSha256: '3'.repeat(64), operatorSourceClosureSha256: '4'.repeat(64),
+        gatewayConfigurationSha256: plan.configurationSha256['gateway.json'], operatorSourceClosureSha256: '4'.repeat(64),
         native: { version: 2, qualificationTargetProfile: profile, actionId: plan.releaseId, deploymentId, deploymentUrl, configurationRecordSha256,
           epoch: '1', target: migration.job.target, targetSha256: plan.targetSha256, owner: inventory.owner,
           producer: inventory.producers[0], featureControls: inventory.certification.featureControls,

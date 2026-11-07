@@ -12,6 +12,7 @@ import {readMigrationCatalog} from './frontend-schema.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
 import {reconcileFrontendOperation} from './frontend-admission.mjs';
 import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent} from './p2-certification-current-probe.mjs';
+import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
 const run=(program,args,options={})=>execFileSync(program,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'},...options});
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 let phase='owned-preflight';
@@ -38,11 +39,11 @@ async function child(){
     const targetSha256=frontendAdmissionTargetSha256('staging',target),sourceCommit='b'.repeat(40),producerSha256='c'.repeat(64),owner={name:'cert_owner',oid:roles.cert_owner};
     await admin.query("INSERT INTO frontend_admission.control(singleton,environment,target_sha256) VALUES(true,'staging',$1)",[targetSha256]);
     await admin.query('INSERT INTO frontend_admission.producers VALUES($1,$2,$3,true)',[producerSha256,sourceCommit,roles.cert_runtime]);
-    const job={environment:'staging',releaseId:'original-qualified',sourceCommit,target,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'d'.repeat(64),sqlArtifactSha256:artifact.sqlArtifactSha256,
+    const job={version:1,environment:'staging',releaseId:'original-qualified',sourceCommit,target,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'d'.repeat(64),sqlArtifactSha256:artifact.sqlArtifactSha256,
       migrationImageDigest:'sha256:'+'e'.repeat(64),schemaBaselineSha256:'f'.repeat(64),contractManifestSha256:artifact.contractManifestSha256};
     const prepared={migration:{job,artifact,baseline:{catalog:await readMigrationCatalog(admin)}},plan:{targetSha256,owner,producers:[{producerSha256,role:{name:'cert_runtime',oid:roles.cert_runtime}}],historicalLogins:{retiredLogins:[{name:'cert_retired',oid:roles.cert_retired}]}}};
     const nativePlan={initialEpoch:'2',commandWitnesses:[],producer:{producerSha256,role:{name:'cert_runtime',oid:roles.cert_runtime}}};
-    const plan={mode:'native-window',startState:'already-closed',initialEpoch:'1',sourceCommit,targetSha256,certificationActionId:'owned-certification',candidateSha256:'1'.repeat(64),planSha256:'2'.repeat(64),nativePlan};
+    const plan={version:1,mode:'native-window',startState:'already-closed',initialEpoch:'1',sourceCommit,targetSha256,certificationActionId:'owned-certification',candidateSha256:'1'.repeat(64),planSha256:'2'.repeat(64),nativePlan};
     const deps={getUrl:()=>url.href,verifyEnvironment:async()=>{}};
     const current=()=>withP2CertificationFrontendSession(prepared,plan,deps,async({receipt,probe,verify,client})=>{
       assert.equal(receipt.status,'P2_CERTIFICATION_DATABASE_CURRENT');assert.equal(receipt.after.length,83);await verify();
@@ -148,6 +149,24 @@ async function child(){
     assert.equal((await observeP2CertificationPhysical({...sourceProbe,operation:'fence'},deps)).frontendAdmissionClosed,true);
     assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control')).rows,[{new_work:false,recovery:false}]);
     checks.push('independent-fence-after-parent-session-loss-and-without-native-credential');
+    const selectedProfile={qualificationTargetProfile:profile};
+    const profileTarget={...target,...selectedProfile,approvedPendingTags:[]};
+    const currentJob={...job,version:2,...selectedProfile,target:profileTarget};
+    const profiled={migration:{...prepared.migration,job:currentJob},plan:{...prepared.plan,
+      historicalLogins:{...prepared.plan.historicalLogins,version:2,...selectedProfile,target:profileTarget}}};
+    const profiledPlan={...plan,version:2,...selectedProfile,initialEpoch:'3',
+      nativePlan:{...nativePlan,version:2,...selectedProfile,target:profileTarget,initialEpoch:'4'}};
+    await withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({probe,receipt})=>{
+      assert.equal(receipt.version,2);assert.deepEqual(receipt.qualificationTargetProfile,profile);
+      assert.equal(receipt.sqlReplayed,false);
+      const observed=await observeP2CertificationPhysical({...probe,operation:'witness'},deps,profile);
+      assert.equal(observed.version,2);assert.deepEqual(observed.qualificationTargetProfile,profile);
+      assert.equal(observed.journalSha256,receipt.journalSha256);
+      await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps));
+      await assert.rejects(observeP2CertificationPhysical({...probe,operation:'fence'},deps,profile));
+      await assert.rejects(observeP2CertificationPhysical({...probe,marker:'f'.repeat(64),operation:'observe'},deps,profile));
+    },profile);
+    checks.push('actual-profiled-current-certification-lock-readback-and-fence-refusal');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};

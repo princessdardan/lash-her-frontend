@@ -46,7 +46,7 @@ test('receipt must prove the selected actual major, every required physical scen
   }
 });
 
-test('certification fixture requires all ten current/physical cases and cannot claim deployed qualification', () => {
+test('certification fixture requires every current and physical case and cannot claim deployed qualification', () => {
   const fixture = P2_OWNED_FIXTURES.find(value => value.id === 'certification'), actual = receipt(fixture);
   for (const change of [value => { value.frontendMigrations = 82; }, value => { value.actualTlsPostgres = false; },
     value => { value.noSqlReplay = false; }, value => { value.browserQualified = true; }, value => { value.nativeInvocationQualified = true; },
@@ -55,16 +55,17 @@ test('certification fixture requires all ten current/physical cases and cannot c
   }
 });
 
-test('strict certification consumer accepts actual retained PG18 ten-case receipt and refuses either missing new case', () => {
+test('strict certification consumer accepts the retained profiled PG18 receipt and requires its new lock check', () => {
   const fixture=P2_OWNED_FIXTURES.find(value=>value.id==='certification');
-  const actual=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-current-postgres18.json',import.meta.url)));
-  assert.equal(validateP2FixtureReceipt(fixture,actual,18).executedChecks,10);
+  const actual=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-07-p2q-certification-planning/owned-postgres18.json',import.meta.url)));
+  assert.equal(validateP2FixtureReceipt(fixture,actual,18).executedChecks,11);
   for(const missing of ['actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal',
-    'actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement']){
+    'actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement',
+    'actual-profiled-current-certification-lock-readback-and-fence-refusal']){
     assert.throws(()=>validateP2FixtureReceipt(fixture,{...actual,checks:actual.checks.filter(value=>value!==missing)},18));
   }
-  const originalNine=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-06-p2-direct-worker-parent-hooks/owned-postgres18.json',import.meta.url)));
-  assert.equal(originalNine.checks.length,9);assert.throws(()=>validateP2FixtureReceipt(fixture,originalNine,18));
+  const originalTen=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-current-postgres18.json',import.meta.url)));
+  assert.equal(originalTen.checks.length,10);assert.throws(()=>validateP2FixtureReceipt(fixture,originalTen,18));
 });
 
 test('native success cannot substitute for an enabled schedule, unfinished ledger or modeled app path', () => {

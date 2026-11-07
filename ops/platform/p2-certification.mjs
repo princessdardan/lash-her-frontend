@@ -412,7 +412,8 @@ function prepareProfiledCertification(settings){
     receipt.version===2&&receipt.status==='P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION'&&identity.every(key=>receipt[key]===release[key])&&
     isDeepStrictEqual(receipt.configurationSha256,release.configurationSha256)&&flags.every(key=>receipt[key]===false)&&pins.every(key=>sha(receipt[key])));
   const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
-  demand(input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
+  demand(input.gatewayConfigurationSha256===release.configurationSha256['gateway.json']&&
+    input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
     input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
   const candidateBytes=readFrontendReleaseEvidence(directory,'release.candidate.json');
   demand(rawHash(candidateBytes)===release.candidateSha256);

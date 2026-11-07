@@ -65,6 +65,7 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal',
     'actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement',
     'independent-fence-after-parent-session-loss-and-without-native-credential',
+    'actual-profiled-current-certification-lock-readback-and-fence-refusal',
   ]) }),
 ]);
 

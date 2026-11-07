@@ -8,6 +8,7 @@ import {frontendConnectionOptions,FRONTEND_MIGRATION_LOCK} from './frontend-migr
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {assertAppliedMigrationLineage} from '../../src/lib/private-db/migration-lineage.ts';
 import {verifyRecoveryRuntimeGrants,RECOVERY_HELD_LOCK} from './p2-recovery-current-probe.mjs';
+import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 
 const demand=(ok,checkpoint)=>{if(!ok){const error=new Error('P2_CERTIFICATION_CURRENT_REFUSED');if(checkpoint)error.checkpoint=checkpoint;throw error;}};
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -16,6 +17,18 @@ const canonical=value=>JSON.stringify(value,(_key,child)=>child&&typeof child===
 const name=value=>typeof value==='string'&&/^[a-z][a-z0-9_]{0,62}$/u.test(value);
 const bodies={admit:'e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be21504',begin_operation:'c634f0f3f018062fb2b115f923ab8637f02a34c515e8532b41ccd912762917d3',current_policy:'1322b30139dcb101aafcbd461536c1788233da1f0ab6e9084745513a4da1694e',finish_operation:'84257c2f6b8be184397e3d326d9908f11a6e9d75facde5c7abb5bad2e9db4e1d',settle:'a6fb927fbc0df4d7262aba5c6185ebffa737d1adafcf5766080078e0d0f45fbd'};
 const options=(value,target)=>({...frontendConnectionOptions(value,target),options:'-c search_path=pg_catalog,public',application_name:'lash-her-p2-bounded-certification'});
+
+function profileFields(expectedProfile,plan,job,historicalLogins){
+  const carriers=[plan,plan?.nativePlan,plan?.nativePlan?.target,job,job?.target,historicalLogins,historicalLogins?.target];
+  if(expectedProfile===undefined){
+    demand(plan?.version===1&&job?.version===1&&!carriers.some(row=>row&&Object.hasOwn(row,'qualificationTargetProfile')));
+    return {};
+  }
+  const qualificationTargetProfile=requireQualificationTargetProfile(currentProfile,{qualificationTargetProfile:expectedProfile},...carriers);
+  demand(plan.version===2&&plan.nativePlan.version===2&&job.version===2&&historicalLogins.version===2&&
+    plan.startState==='already-closed'&&Array.isArray(job.target.approvedPendingTags)&&job.target.approvedPendingTags.length===0);
+  return {qualificationTargetProfile};
+}
 
 function admissionPolicy(plan,value,initial){
   demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(plan.mode)&&
@@ -42,8 +55,9 @@ function admissionPolicy(plan,value,initial){
   }
 }
 
-export async function readP2CertificationCurrent(client,prepared,plan,verify,initial=false){
+export async function readP2CertificationCurrent(client,prepared,plan,verify,initial=false,expectedProfile){
   const {job,artifact,baseline}=prepared.migration,target=job.target,owner=prepared.plan.owner;
+  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins);
   demand(name(owner.name)&&plan.sourceCommit===job.sourceCommit&&plan.targetSha256===prepared.plan.targetSha256&&plan.targetSha256===targetHash(target)&&
     artifact.sqlArtifactSha256===job.sqlArtifactSha256&&artifact.contractManifestSha256===job.contractManifestSha256,'current-target');await verify();
   await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -101,36 +115,43 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
       FROM frontend_admission.operations WHERE epoch >= $1::bigint ORDER BY started_at,id LIMIT 4097`,[(BigInt(nativePlan.initialEpoch)+(plan.mode==='direct-worker'?0n:1n)).toString()])).rows;
     demand(operations.length<=4096);
     const witness={commands,deliveries,orderViolations,operations};
-    return{version:1,status:'P2_CERTIFICATION_DATABASE_CURRENT',service:'frontend',environment:'staging',releaseId:job.releaseId,certificationActionId:plan.certificationActionId,
+    return{version:plan.version,...selectedProfile,status:'P2_CERTIFICATION_DATABASE_CURRENT',service:'frontend',environment:'staging',releaseId:job.releaseId,certificationActionId:plan.certificationActionId,
       sourceCommit:job.sourceCommit,candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
       ...Object.fromEntries(['migrationImageDigest','sqlArtifactSha256','schemaBaselineSha256','contractManifestSha256','contractPhase','phase2ContractManifestSha256'].map(key=>[key,job[key]])),
-      target:Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,target[key]])),after,journalSha256:hash(after),schemaVerified:true,runtimeRoleVerified:true,
+      target:{...Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,target[key]])),...selectedProfile},after,journalSha256:hash(after),schemaVerified:true,runtimeRoleVerified:true,
       owner,runtime,retiredLogins:retired,oldLoginsDenied:true,oldRoleSessions:0,admission,witness,witnessSha256:hash(witness),sqlReplayed:false,trafficAuthorized:false};
   }catch(error){if(!error.checkpoint)error.checkpoint=checkpoint;throw error;}finally{await client.query('ROLLBACK');}
 }
 
-export async function withP2CertificationFrontendSession(prepared,plan,{getUrl,verifyEnvironment},task){
-  const target=prepared.migration.job.target,client=new Client(options(await getUrl(),target));let lost=false,locked=false,identity;
+export async function withP2CertificationFrontendSession(prepared,plan,{getUrl,verifyEnvironment},task,expectedProfile){
+  const job=prepared.migration.job, target=job.target;
+  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins);
+  const client=new Client(options(await getUrl(),target));let lost=false,locked=false,identity,marker;
   client.on('error',()=>{lost=true;});
   const verify=async()=>{
     await verifyEnvironment();demand(!lost&&client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
     const actual=(await client.query("SELECT pg_catalog.pg_backend_pid() AS pid,current_user AS username,session_user AS session_username,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
     demand(actual.username===target.user&&actual.session_username===target.user&&actual.database===target.database&&actual.major===target.serverMajor&&(!identity||identity.pid===actual.pid));identity=actual;
     if(locked)demand((await client.query(RECOVERY_HELD_LOCK,[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true);
+    if(marker)demand((await client.query(RECOVERY_HELD_LOCK,[marker])).rows[0]?.held===true);
   };
   try{
     await client.connect();await verify();locked=(await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',[FRONTEND_MIGRATION_LOCK])).rows[0]?.locked===true;demand(locked);
-    const marker=randomBytes(32).toString('hex');await client.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
+    marker=randomBytes(32).toString('hex');await client.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
     const backendStart=(await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0]?.backend_start;demand(typeof backendStart==='string');
-    const receipt=await readP2CertificationCurrent(client,prepared,plan,verify,true);
-    const result=await task({client,verify,receipt,probe:{version:1,marker,backendPid:identity.pid,backendStart,job:prepared.migration.job,baseline:prepared.migration.baseline,
+    const receipt=await readP2CertificationCurrent(client,prepared,plan,verify,true,expectedProfile);
+    const result=await task({client,verify,receipt,probe:{version:plan.version,...selectedProfile,marker,backendPid:identity.pid,backendStart,job:prepared.migration.job,baseline:prepared.migration.baseline,
       owner:prepared.plan.owner,producers:prepared.plan.producers,historicalLogins:prepared.plan.historicalLogins,plan,receipt}});await verify();return result;
   }catch(error){const failure=new Error('P2_CERTIFICATION_PHYSICAL_SESSION_FAILED');if(typeof error?.checkpoint==='string'&&/^[a-z-]{1,80}$/u.test(error.checkpoint))failure.checkpoint=error.checkpoint;throw failure;}
   finally{try{if(locked)await client.query('SELECT pg_catalog.pg_advisory_unlock_all()');}catch{lost=true;}try{await client.end();}catch{lost=true;}if(lost)throw new Error('P2_CERTIFICATION_PHYSICAL_CLEANUP_UNCERTAIN');}
 }
 
-export async function observeP2CertificationPhysical(input,{getUrl}){
-  demand(input?.version===1&&['observe','verify-schema','witness','fence'].includes(input.operation)&&/^[a-f0-9]{64}$/u.test(input.marker??'')&&Number.isSafeInteger(input.backendPid)&&typeof input.backendStart==='string');
+export async function observeP2CertificationPhysical(input,{getUrl},expectedProfile){
+  const selectedProfile=profileFields(expectedProfile,input?.plan,input?.job,input?.historicalLogins);
+  if(expectedProfile===undefined)demand(!Object.hasOwn(input,'qualificationTargetProfile'));
+  else requireQualificationTargetProfile(currentProfile,input);
+  demand(input.version===input.plan.version&&['observe','verify-schema','witness','fence'].includes(input.operation)&&
+    (expectedProfile===undefined||input.operation!=='fence')&&/^[a-f0-9]{64}$/u.test(input.marker??'')&&Number.isSafeInteger(input.backendPid)&&typeof input.backendStart==='string');
   const client=new Client(options(await getUrl(),input.job.target));let lost=false;client.on('error',()=>{lost=true;});
   try{
     await client.connect();demand(client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
@@ -154,13 +175,19 @@ export async function observeP2CertificationPhysical(input,{getUrl}){
     for(const key of [FRONTEND_MIGRATION_LOCK,input.marker])demand((await client.query(RECOVERY_HELD_LOCK.replace('pid=pg_backend_pid()','pid=$2'),[key,input.backendPid])).rows[0]?.held===true);
     const artifact=await import('./frontend-migration.mjs');
     const prepared={migration:{job:input.job,artifact:artifact.frontendMigrationArtifact(),baseline:input.baseline},plan:{owner:input.owner,producers:input.producers,historicalLogins:input.historicalLogins,targetSha256:input.plan.targetSha256}};
-    const current=await readP2CertificationCurrent(client,prepared,input.plan,verify);
-    return{version:1,status:'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
+    const current=await readP2CertificationCurrent(client,prepared,input.plan,verify,false,expectedProfile);
+    return{version:input.version,...selectedProfile,status:'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
       witnessSha256:current.witnessSha256,...(input.operation==='witness'?{witness:current.witness}:{})};
   }finally{try{await client.end();demand(!lost);}catch{throw new Error('P2_CERTIFICATION_OBSERVER_CLEANUP_UNCERTAIN');}}
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
-  try{const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);console.log(JSON.stringify(await observeP2CertificationPhysical(JSON.parse(raw),{getUrl:()=>process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL})));}
+  try{
+    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&flags[0]==='--profiled-current'));
+    const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);
+    const expectedProfile=flags.length?currentProfile:undefined;
+    const input=expectedProfile?decodeQualificationTargetJson(raw,'carrier'):JSON.parse(raw);
+    console.log(JSON.stringify(await observeP2CertificationPhysical(input,{getUrl:()=>process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL},expectedProfile)));
+  }
   catch{console.error('P2_CERTIFICATION_PHYSICAL_REFUSED');process.exitCode=1;}
 }
