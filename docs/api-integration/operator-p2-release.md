@@ -30,6 +30,21 @@ The bootstrap frontend keeps all ten feature flags false. Only the post-SQL comp
 
 `P2_STAGING_READY_FOR_CERTIFICATION` records actual staging admission, not G2 acceptance. Real Google/Resend/Mux, authoring/learning/lifecycle, accessibility and existing-site certification remain necessary. Production, paid Course checkout, Community member features and monitoring are outside this driver.
 
+## Existing staging with a current frontend database
+
+The fixed `staging-current` source path is separate from the pending frontend SQL coordinator above. Plan with `node ops/platform/p2-profiled-current-release.mjs --plan --settings /absolute/private/settings.json`. Planning validates the reviewed candidate, targets, configuration and inventory without opening a database or provider connection. Before an apply is eligible, exact source CI, the immutable candidate, the actual staging bindings and the current frontend lineage must qualify. The reviewed frontend job must have an empty pending chain; the driver still reads and checks the real journal, schema, roles and closed writer state. A target at the previously recorded 80 migrations cannot qualify against the current 83-migration source through this path.
+
+The [single-operator policy](release-policy.md) governs the later `--apply --settings … --confirm staging/RELEASE_ID` action. The host holds its environment lock while the original frontend database session holds its own migration and nonce locks. This path checks actual prior gateway closure, starts only the selected APIs, and verifies and promotes the compatible frontend while admission and native schedules remain closed. Its terminal result supplies fenced source/runtime evidence; it does not supply staging admission or G2-Q acceptance.
+
+Deliberate recovery has a separate `p2-profiled-current-recovery.mjs --plan --settings …` entry and a distinct recovery action ID. It uses the original candidate, frontend database and continuation receipts with the exact original API job hashes. It selects one of four supported dispositions:
+
+- Restore current runtime from fresh, read-only API lineage/schema/role checks. Early failures may leave a fenced result with a frontend action pending.
+- Resume only a reviewed remaining API migration suffix. The selected API image must first prove the actual committed prefix and exact remaining tags. The original job and receipts stay intact.
+- Reconcile a prior frontend promotion from its original staged, workload and promotion evidence and a fresh provider/workload readback.
+- Observe a lost frontend build response from original build intent and unique matching provider state. The prior production target must stay unchanged. The result leaves frontend work pending; it establishes neither a returned acknowledgement nor readiness or promotion.
+
+All recovery outcomes keep admission closed. None repeats frontend SQL or resends an ambiguous provider mutation. Exact integrated Linux and deployed qualification are still required before any staging apply. If frontend SQL is pending, select the applicable reviewed migration path; do not use a current-only receipt as first-install or historical-fencing evidence.
+
 ## Open source qualification
 
 The [owned driver record](baselines/2026-11-05-p2-release-driver/) distinguishes real PostgreSQL/OS tests from intercepted API/provider responses. The [role-composition milestone](baselines/2026-11-05-p2-release-driver/role-composition-validation.json) records actual generated-role authentication, observed OIDs, all 83 frontend migrations and the same physical backend through promotion. The critical guard correction at `05c20e5b` passed independent source review. Same-action role composition still needs independent review; deliberate post-SQL recovery, later qualification profiles, exact integrated-source Linux CI, immutable candidate qualification and actual deployed execution remain separate open conditions. Original failure receipts and earlier evidence are retained.
