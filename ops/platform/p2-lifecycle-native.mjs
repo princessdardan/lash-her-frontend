@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { changeFrontendAdmission } from "./frontend-admission.mjs";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 
 export const P2_LIFECYCLE_NATIVE_PROJECT = "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM";
 export const P2_LIFECYCLE_NATIVE_SCHEDULE = Object.freeze({ path: "/api/cron/account-lifecycle", schedule: "* * * * *" });
@@ -49,16 +50,25 @@ function sourcePolicy(sourceCommit) {
   }
   return reviewedSource;
 }
-export function prepareP2LifecycleNativePlan(candidate, input) {
+export function prepareP2LifecycleNativePlan(candidate, input, expectedProfile) {
   try {
     const publicOnly = value => { if (!value || typeof value !== "object") return; for (const [key, child] of Object.entries(value)) { demand(!/password|credential|databaseurl|access.?token|private.?key/iu.test(key)); publicOnly(child); } };
     publicOnly(candidate);
-    demand(candidate?.version === 2 && candidate.environment === "staging" && candidate.contractPhase === "p2" && candidate.integration?.state === "passed" &&
+    const carriers = [candidate, candidate?.workload, candidate?.sources?.frontend, input, input?.target];
+    let profileFields = {};
+    if (expectedProfile === undefined) {
+      demand(!carriers.some(carrier => carrier && "qualificationTargetProfile" in carrier));
+    } else {
+      const qualificationTargetProfile = requireQualificationTargetProfile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE,
+        { qualificationTargetProfile: expectedProfile }, ...carriers);
+      profileFields = { qualificationTargetProfile };
+    }
+    demand(candidate?.version === (expectedProfile === undefined ? 2 : 3) && candidate.environment === "staging" && candidate.contractPhase === "p2" && candidate.integration?.state === "passed" &&
       candidate.sourceApproval?.mode === "single-operator-dispatch" && candidate.sourceApproval.operatorGithubUserId === "8996309" &&
       candidate.workload?.projectId === P2_LIFECYCLE_NATIVE_PROJECT && candidate.workload.environment === "production" &&
       candidate.sources?.frontend?.repository === "https://github.com/princessdardan/lash-her-frontend.git" && candidate.sources.frontend.requiredChecks === "passed" &&
       digest(candidate.sources.frontend.commit, 40) && /^sha256:[a-f0-9]{64}$/u.test(candidate.phase2ContractManifestSha256 ?? "") &&
-      input?.version === 1 && input.actionId === candidate.releaseId && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) &&
+      input?.version === (expectedProfile === undefined ? 1 : 2) && input.actionId === candidate.releaseId && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) &&
       /^dpl_[A-Za-z0-9]+$/u.test(input.deploymentId ?? "") && /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(input.deploymentUrl ?? "") &&
       digest(input.configurationRecordSha256) && epoch(input.epoch) && digest(input.producer?.producerSha256) &&
       /^[a-z][a-z0-9_]{0,62}$/u.test(input.producer.role?.name ?? "") && /^[1-9][0-9]{0,9}$/u.test(input.producer.role?.oid ?? "") &&
@@ -71,11 +81,11 @@ export function prepareP2LifecycleNativePlan(candidate, input) {
       Array.isArray(input.commandWitnesses) && input.commandWitnesses.length > 0 && input.commandWitnesses.length <= 32 &&
       input.commandWitnesses.every(row => uuid(row.commandId) && epoch(row.accountVersion) && ['suspend','restore','export','delete'].includes(row.action)) &&
       new Set(input.commandWitnesses.map(row => row.commandId)).size === input.commandWitnesses.length);
-    const base = { version: 1, environment: "staging", actionId: input.actionId, projectId: P2_LIFECYCLE_NATIVE_PROJECT,
+    const base = { version: input.version, ...profileFields, environment: "staging", actionId: input.actionId, projectId: P2_LIFECYCLE_NATIVE_PROJECT,
       sourceCommit: candidate.sources.frontend.commit, candidateSha256: p2NativeHash(candidate), phase2ContractManifestSha256: candidate.phase2ContractManifestSha256,
       sourcePolicy: sourcePolicy(candidate.sources.frontend.commit), deploymentId: input.deploymentId, deploymentUrl: input.deploymentUrl,
       configurationRecordSha256: input.configurationRecordSha256, featureControls: { ...input.featureControls }, targetSha256: input.targetSha256,
-      target: Object.fromEntries(["host","port","database","user","serverMajor"].map(key => [key, input.target[key]])), owner: { name:input.owner.name,oid:input.owner.oid },
+      target: { ...Object.fromEntries(["host","port","database","user","serverMajor"].map(key => [key, input.target[key]])), ...profileFields }, owner: { name:input.owner.name,oid:input.owner.oid },
       producer: {producerSha256:input.producer.producerSha256,role:{name:input.producer.role.name,oid:input.producer.role.oid}},
       initialEpoch: input.epoch, schedule: P2_LIFECYCLE_NATIVE_SCHEDULE, windowSeconds: input.windowSeconds, drainSeconds: input.drainSeconds,
       commandWitnesses: input.commandWitnesses.map(row => ({ commandId: row.commandId, accountVersion: row.accountVersion, action: row.action })),

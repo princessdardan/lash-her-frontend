@@ -15,7 +15,9 @@ import {withP2CertificationFrontendSession,readP2CertificationCurrent} from './p
 import {collectP2CertificationRequestDetails} from './p2-certification-request-evidence.mjs';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {prepareP2OperatorRelease} from './p2-release.mjs';
-import {committedOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
+import {prepareP2ProfiledCurrentRelease} from './p2-profiled-current-release.mjs';
+import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
+import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationKnownAckStage} from './p2-certification-transport.mjs';
@@ -37,8 +39,23 @@ export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
 export function bindP2CertificationReadyReceipts(directory,plan){
-  const records={};
-  for(const name of P2_CERTIFICATION_READY_FILES){const bytes=readFrontendReleaseEvidence(directory,name);demand(rawHash(bytes)===plan.readyReceiptSha256[name]);records[name]=JSON.parse(bytes);}
+  const profiled=plan.version===2, records={};
+  for(const name of P2_CERTIFICATION_READY_FILES){
+    const bytes=readFrontendReleaseEvidence(directory,name);demand(rawHash(bytes)===plan.readyReceiptSha256[name]);
+    records[name]=profiled?decodeQualificationTargetJson(bytes,'carrier'):JSON.parse(bytes);
+  }
+  if(profiled){
+    requireQualificationTargetProfile(currentProfile,plan,...Object.values(records));
+    const [intent,created,staged,workload,promotion,completed]=P2_CERTIFICATION_READY_FILES.map(name=>records[name]);
+    demand(Object.values(records).every(row=>row.version===2&&row.previousDeploymentId===intent.previousDeploymentId)&&
+      [intent,created,staged,workload,completed].every(row=>row.trafficAuthorized===false)&&workload.nativeSchedulerVerified===false&&
+      (intent.previousDeploymentId===null||/^dpl_[A-Za-z0-9]+$/u.test(intent.previousDeploymentId))&&
+      intent.previousDeploymentId!==plan.nativePlan.deploymentId&&[intent,created,staged].every(row=>row.promotionAuthorized===false)&&
+      staged.readyState==='READY'&&staged.phase==='completed'&&staged.url===plan.nativePlan.deploymentUrl&&
+      Number.isSafeInteger(promotion.previousAliasRequestedAt)&&promotion.previousAliasRequestedAt>=0&&
+      completed.previousAliasRequestedAt===promotion.previousAliasRequestedAt&&Number.isSafeInteger(completed.aliasRequestedAt)&&
+      completed.aliasRequestedAt>promotion.previousAliasRequestedAt&&completed.phase==='completed'&&completed.frontendDomainsPromoted===true);
+  }
   const candidate=plans.get(plan)?.candidate??plan.candidate;
   const build=records['frontend-build-created.json'],workload=records['frontend-workload-outcome.json'];
   demand(candidate&&records['frontend-build-outcome.json'].status==='FRONTEND_STAGED'&&records['frontend-promotion-outcome.json'].status==='FRONTEND_DOMAINS_PROMOTED'&&
@@ -50,11 +67,19 @@ export function bindP2CertificationReadyReceipts(directory,plan){
   return records;
 }
 
-export function prepareP2BoundedCertification(prepared,input,candidateBytes,{frontendReceipts,configurationSha256}){
+export function prepareP2BoundedCertification(prepared,input,candidateBytes,{frontendReceipts,configurationSha256,profiledRelease}){
   const candidate=prepared?.migration?.candidate,inventory=prepared?.plan,job=prepared?.migration?.job;
-  demand(Buffer.isBuffer(candidateBytes)&&candidateBytes.length>0&&candidateBytes.length<=2_000_000&&isDeepStrictEqual(JSON.parse(candidateBytes),candidate)&&
+  const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
+  if(profile)demand(input.startState==='already-closed'&&input.operatorSourceCommit===job.sourceCommit&&
+    !['auth-preparation','browser-pending','direct-worker'].includes(input.mode)&&
+    sha(profiledRelease.receiptSha256)&&sha(profiledRelease.planSha256)&&
+    exactKeys(profiledRelease.apiJobSha256,['course','community'])&&Object.values(profiledRelease.apiJobSha256).every(sha));
+  else demand(!Object.hasOwn(input??{},'qualificationTargetProfile')&&!Object.hasOwn(candidate??{},'qualificationTargetProfile'));
+  demand(Buffer.isBuffer(candidateBytes)&&candidateBytes.length>0&&candidateBytes.length<=2_000_000);
+  const document=profile?decodeQualificationTargetJson(candidateBytes,'carrier'):JSON.parse(candidateBytes);
+  demand(isDeepStrictEqual(document,candidate)&&
     candidate?.contractPhase==='p2'&&candidate.environment==='staging'&&candidate.releaseId===inventory?.actionId&&job?.sourceCommit===candidate.sources.frontend.commit&&
-    input?.version===1&&input.environment==='staging'&&inventory.targetSha256===frontendAdmissionTargetSha256('staging',job.target)&&action(input.certificationActionId)&&input.certificationActionId!==candidate.releaseId&&commit(input.operatorSourceCommit)&&
+    input?.version===(profile?2:1)&&input.environment==='staging'&&inventory.targetSha256===frontendAdmissionTargetSha256('staging',job.target)&&action(input.certificationActionId)&&input.certificationActionId!==candidate.releaseId&&commit(input.operatorSourceCommit)&&
     ['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(input.mode)&&['qualified-ready','already-closed'].includes(input.startState)&&
     (!['auth-preparation','browser-pending','direct-worker','native-window','known-ack-recovery'].includes(input.mode)||input.operatorSourceCommit===job.sourceCommit)&&
     (input.mode!=='direct-worker'||input.startState==='already-closed')&&
@@ -83,12 +108,14 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
       writerAdmissionBinding:{mode:'enforce',targetSha256:inventory.targetSha256,producerSha256:selected.producerSha256,sourceCommit:job.sourceCommit,roleName:job.target.runtimeRole},
       schedule:P2_LIFECYCLE_NATIVE_SCHEDULE,initialEpoch:input.initialEpoch,commandWitnesses:[],finalDisposition:'disabled-and-admission-closed'};
     nativePlan=freeze({...control,planSha256:p2NativeHash(control)});
-  }else nativePlan=prepareP2LifecycleNativePlan(candidate,nativeSettings);
+  }else nativePlan=prepareP2LifecycleNativePlan(candidate,nativeSettings,profile);
   if(input.mode==='direct-worker')demand(nativePlan.commandWitnesses.length===1&&input.worker?.input?.commandIndex===0);
   const workerPlan=input.mode==='direct-worker'?prepareP2LifecycleWorkerEvidencePlan(nativePlan,input.worker?.suspensionPlan,input.worker?.input):null;
   demand(workerPlan===null||workerPlan.actionId===input.certificationActionId&&workerPlan.candidateSha256===input.candidateSha256&&workerPlan.configurationSha256===p2NativeHash(configurationSha256)&&
     workerPlan.gatewayProcessSha256===input.gatewayProcessSha256&&workerPlan.gatewayConfigurationSha256===input.gatewayConfigurationSha256);
-  const base={version:1,environment:'staging',certificationActionId:input.certificationActionId,originalReleaseId:candidate.releaseId,sourceCommit:job.sourceCommit,
+  const base={version:input.version,...(profile?{qualificationTargetProfile:profile,
+    originalReleaseReceiptSha256:profiledRelease.receiptSha256,originalReleasePlanSha256:profiledRelease.planSha256,
+    apiJobSha256:structuredClone(profiledRelease.apiJobSha256)}:{}),environment:'staging',certificationActionId:input.certificationActionId,originalReleaseId:candidate.releaseId,sourceCommit:job.sourceCommit,
     operatorSourceCommit:input.operatorSourceCommit,candidateSha256:input.candidateSha256,candidateObjectSha256:p2NativeHash(candidate),inventorySha256:input.inventorySha256,
     configurationSha256:input.configurationSha256,targetSha256:inventory.targetSha256,mode:input.mode,startState:input.startState,initialEpoch:input.initialEpoch,
     browserPlanSha256:['auth-preparation','browser-pending'].includes(input.mode)?input.browserPlanSha256:null,
@@ -144,7 +171,7 @@ export function deriveP2CertificationNativePlan(plan,closedAdmission){
   demand(!['auth-preparation','browser-pending','direct-worker','contain-native'].includes(plan.mode));
   demand(closedAdmission?.newWork===false&&closedAdmission.recovery===false&&closedAdmission.active===0&&closedAdmission.uncertain===0&&
     closedAdmission.epoch===(BigInt(plan.initialEpoch)+closedOffset).toString());
-  const derived=prepareP2LifecycleNativePlan(context.candidate,{...context.nativeSettings,epoch:(BigInt(closedAdmission.epoch)+1n).toString()});
+  const derived=prepareP2LifecycleNativePlan(context.candidate,{...context.nativeSettings,epoch:(BigInt(closedAdmission.epoch)+1n).toString()},plan.qualificationTargetProfile);
   demand(derived.planSha256===plan.nativePlan.planSha256);return derived;
 }
 
@@ -188,6 +215,7 @@ async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,v
 }
 
 export async function runP2BoundedCertification(plan,dependencies){
+  demand(plan?.version===1);
   const context=p2CertificationParentContext(plan),{prepared}=context;
   demand(dependencies.confirmation==='staging/'+plan.certificationActionId&&typeof dependencies.withEnvironmentLock==='function'&&typeof dependencies.getUrl==='function');
   const store=frontendReleaseReceiptStore(dependencies.directory);store.record('p2-certification-started.json',plan);
@@ -363,6 +391,64 @@ function privateBytes(path,maximum=2_000_000){
 }
 function privateObject(path,maximum){const value=JSON.parse(privateBytes(path,maximum));demand(value&&typeof value==='object'&&!Array.isArray(value));return value;}
 
+function prepareProfiledCertification(settings){
+  demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification'])&&
+    settings.version===2&&settings.environment==='staging');
+  requireQualificationTargetProfile(currentProfile,settings);
+  const original=prepareP2ProfiledCurrentRelease(settings.releaseSettings), release=original.plan;
+  demand(settings.operatorSourceCommit===release.sourceCommit);
+  const directory=join(settings.releaseSettings.results,release.releaseId);
+  const frontend=join(directory,'frontend'), frontendReceipts=join(frontend,'vercel');
+  const retainedPlan=decodeQualificationTargetJson(readFrontendReleaseEvidence(directory,'reviewed-plan.json'),'carrier');
+  demand(isDeepStrictEqual(retainedPlan,release));
+  const raw=readFrontendReleaseEvidence(frontend,'p2-profiled-current-host-outcome.json');
+  const receipt=decodeQualificationTargetJson(raw,'carrier');
+  requireQualificationTargetProfile(currentProfile,receipt);
+  const identity=['environment','releaseId','sourceCommit','candidateSha256','targetSha256','inventorySha256','contractPhase','phase2ContractManifestSha256'];
+  const flags=['frontendSqlApplied','historicalProviderClosureClaimed','oldP200Qualified','nativeSchedulesEnabled','trafficAuthorized','releaseAccepted'];
+  const pins=['frontendDatabaseReceiptSha256','frontendTerminalSha256','frontendContinuationCompletedSha256','frontendReleaseOutcomeSha256',
+    'frontendSessionClosedSha256','frontendWorkloadReceiptSha256','apiRuntimeReceiptSha256','migrationOutcomeSha256'];
+  demand(exactKeys(receipt,['version','qualificationTargetProfile','status','configurationSha256',...identity,...flags,...pins])&&
+    receipt.version===2&&receipt.status==='P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION'&&identity.every(key=>receipt[key]===release[key])&&
+    isDeepStrictEqual(receipt.configurationSha256,release.configurationSha256)&&flags.every(key=>receipt[key]===false)&&pins.every(key=>sha(receipt[key])));
+  const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
+  demand(input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
+    input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
+  const candidateBytes=readFrontendReleaseEvidence(directory,'release.candidate.json');
+  demand(rawHash(candidateBytes)===release.candidateSha256);
+  const plan=prepareP2BoundedCertification({migration:original.migration,plan:original.inventory},input,candidateBytes,
+    {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease:{
+      receiptSha256:rawHash(raw),planSha256:rawHash(release),apiJobSha256:release.apiJobSha256}});
+  return {plan,original,frontendReceipts,originalReleaseReceipt:raw};
+}
+
+export function prepareP2ProfiledCertificationOperator(settings){
+  return prepareProfiledCertification(settings).plan;
+}
+
+function profiledCertificationHostPlan(settings){
+  const {plan,original,frontendReceipts,originalReleaseReceipt}=prepareProfiledCertification(settings);
+  const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
+  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
+  const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
+  const sourceClosureSha256=rawHash(JSON.stringify(Object.entries(sourceSha256).sort(([a],[b])=>a<b?-1:a>b?1:0)));
+  demand(sourceClosureSha256===plan.operatorSourceClosureSha256);
+  const readyReceipts=Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name=>{
+    const bytes=readFrontendReleaseEvidence(frontendReceipts,name);
+    demand(rawHash(bytes)===plan.readyReceiptSha256[name]);
+    return [name,bytes.toString('base64')];
+  }));
+  const {plan:release,inventory,migration}=original;
+  const {machineId:hostMachineId,bundle,configuration,results}=settings.releaseSettings.host;
+  return {version:2,qualificationTargetProfile:currentProfile,environment:'staging',mode:'p2-bounded-certification-profiled-current',
+    sourceCommit:plan.operatorSourceCommit,sourceSha256,sourceClosureSha256,hostMachineId,bundle,configuration,results,
+    candidate:migration.candidate,candidateSha256:release.candidateSha256,configurationSha256:release.configurationSha256,
+    apiJobSha256:release.apiJobSha256,frontendJob:migration.job,frontendBaseline:migration.baseline,targetSha256:release.targetSha256,
+    owner:inventory.owner,inventory,inventorySha256:release.inventorySha256,certification:release.certification,
+    expectedWriterAdmissionBinding:release.writerAdmissionBinding,certificationActionId:plan.certificationActionId,certificationPlan:plan,
+    originalReleaseReceipt:originalReleaseReceipt.toString('base64'),readyReceipts};
+}
+
 export function prepareP2CertificationOperator(settings){
   demand(settings?.version===1&&settings.environment==='staging'&&commit(settings.operatorSourceCommit));
   const candidateBytes=privateBytes(join(settings.bundle,'release.candidate.json')),candidate=JSON.parse(candidateBytes);
@@ -450,7 +536,12 @@ export async function p2CertificationOperator(settings,{apply=false,confirmation
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','apply'].includes(operation)&&typeof path==='string'&&(operation==='plan'?flag===undefined&&confirmation===undefined:flag==='--confirm'&&typeof confirmation==='string'));
-    console.log(JSON.stringify(await p2CertificationOperator(privateObject(resolve(path)),{apply:operation==='apply',confirmation})));
+  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply'].includes(operation)&&typeof path==='string'&&
+    (operation==='apply'?flag==='--confirm'&&typeof confirmation==='string':flag===undefined&&confirmation===undefined));
+    if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'){
+      const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
+      const plan=operation==='plan-profiled-current'?prepareP2ProfiledCertificationOperator(settings):profiledCertificationHostPlan(settings);
+      console.log(JSON.stringify(plan));
+    }else console.log(JSON.stringify(await p2CertificationOperator(privateObject(resolve(path)),{apply:operation==='apply',confirmation})));
   }catch{console.error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');process.exitCode=1;}
 }

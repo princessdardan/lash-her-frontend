@@ -383,7 +383,8 @@ class P2ProfiledCurrentBroker(Broker):
         self.observer_program = private_observer_program(p, self.directory / 'private-source')
         self.outcome.update(self.record_base('P2_PROFILED_CURRENT_FAILED_REQUIRES_REVIEW'))
         migrate.write_json(self.directory, 'p2-profiled-current-started.json',
-                           {**self.outcome, 'apiJobSha256': copy.deepcopy(self.api_job_sha256)})
+                           {**self.outcome, 'apiJobSha256': copy.deepcopy(self.api_job_sha256),
+                            'reviewedPlanSha256': p['reviewedPlanSha256']})
         self.check()
         self.preflight_frontend_bindings()
         self.prior_gateway = None

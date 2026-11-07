@@ -34,10 +34,15 @@ def verify_source_closure(initial, root):
 def verify_profiled_current_source_closure(initial, root):
     import migrate
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
-    if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery'):
+    if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
+                                  'p2-bounded-certification-profiled-current'):
         raise ValueError('PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
     migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
-    return _verify_source_closure(initial, root, REQUIRED | PROFILED_CURRENT_REQUIRED, 544, 41_500_000)
+    required = REQUIRED | PROFILED_CURRENT_REQUIRED
+    if initial['mode'] == 'p2-bounded-certification-profiled-current':
+        required |= {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
+                     'ops/platform/p2-certification-current-probe.mjs', 'ops/platform/p2-lifecycle-native.mjs'}
+    return _verify_source_closure(initial, root, required, 544, 41_700_000)
 
 
 def _verify_source_closure(initial, root, required, max_files, max_bytes):
@@ -80,7 +85,8 @@ def private_observer_program(initial, directory):
     if source_name == 'ops/platform/p2-profiled-current-probe.mjs':
         import migrate
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
-        if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery'):
+        if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
+                                  'p2-bounded-certification-profiled-current'):
             raise ValueError('PROFILED_CURRENT_FIXED_OBSERVER_REQUIRED')
         migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     expected = initial['sourceSha256'][source_name]

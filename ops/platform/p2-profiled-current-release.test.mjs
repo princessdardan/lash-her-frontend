@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -13,16 +13,18 @@ import { frontendAdmissionTargetSha256 } from './frontend-admission-bootstrap.mj
 import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
 import { prepareP2ProfiledCurrentRelease, runP2ProfiledCurrentRelease, p2ProfiledCurrentReleaseOperator,
   openP2ProfiledCurrentSource, readP2ProfiledCurrentSource, P2_PROFILED_CURRENT_CONFIGURATION_FILES } from './p2-profiled-current-release.mjs';
+import { prepareP2ProfiledCertificationOperator, runP2BoundedCertification } from './p2-certification.mjs';
+import { nativeSourceCommit } from './harness/p2-native-unit-fixture.mjs';
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from './qualification-target-profile.mjs';
 
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const write = (path, value) => writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value) + '\n', { mode: 0o600 });
-function fixture() {
+function fixture(sourceCommit = 'a'.repeat(40)) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'p2-profile-current-plan-')));
   const make = name => { const path = join(directory, name); mkdirSync(path, { mode: 0o700, recursive: true }); return path; };
   const bundle = make('bundle'), configuration = make('configuration'), results = make('results'); make('bundle/jobs'); make('bundle/schema');
-  const artifact = frontendMigrationArtifact(), environment = 'staging', releaseId = 'owned-profile-current', sourceCommit = 'a'.repeat(40);
+  const artifact = frontendMigrationArtifact(), environment = 'staging', releaseId = 'owned-profile-current';
   const phase2 = { contractPhase: 'p2', phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
   const target = { qualificationTargetProfile: profile, host: 'owned.invalid', port: 5432, database: 'owned', user: 'operator', runtimeRole: 'runtime',
     serverMajor: 18, allowEmptyBootstrap: false, approvedPendingTags: [] };
@@ -33,7 +35,7 @@ function fixture() {
     schemaBaselineSha256: hash(baseline), recoveryRef: 'owned/recovery', target };
   const sources = Object.fromEntries(['frontend', 'course', 'community'].map((name, index) => [name, {
     qualificationTargetProfile: profile, repository: `https://github.com/princessdardan/lash-her-${name}${name === 'frontend' ? '' : '-api'}.git`,
-    commit: ['a', 'b', 'c'][index].repeat(40), requiredChecks: 'passed',
+    commit: [sourceCommit, 'b'.repeat(40), 'c'.repeat(40)][index], requiredChecks: 'passed',
   }]));
   const artifacts = Object.fromEntries([['frontendMigration', 'frontend-migration'], ['courseMigration', 'course-migration'],
     ['communityMigration', 'community-migration'], ['courseRuntime', 'course-runtime'], ['communityRuntime', 'community-runtime'], ['gateway', 'gateway']]
@@ -145,5 +147,78 @@ test('source apply requires actual custody and config before credentials or host
     await assert.rejects(openP2ProfiledCurrentSource(structuredClone(prepared), { actionId: prepared.plan.releaseId, confirmation }));
     await assert.rejects(openP2ProfiledCurrentSource(prepared, { actionId: prepared.plan.releaseId, confirmation }));
     assert.equal(called, false); assert.equal(existsSync(join(f.settings.results, prepared.plan.releaseId)), false);
+  } finally { f.dispose(); }
+});
+
+test('fixed current certification plan joins the original release plan, terminal and ready receipt bytes', async () => {
+  const f = fixture(nativeSourceCommit());
+  const rawHash = raw => createHash('sha256').update(raw).digest('hex');
+  try {
+    const { plan, inventory, migration } = prepareP2ProfiledCurrentRelease(f.settings);
+    const original = join(f.settings.results, plan.releaseId);
+    const frontend = join(original, 'frontend'), vercel = join(frontend, 'vercel');
+    mkdirSync(vercel, { recursive: true, mode: 0o700 });
+    const candidateBytes = readFileSync(join(f.settings.bundle, 'release.candidate.json'));
+    writeFileSync(join(original, 'release.candidate.json'), candidateBytes, { mode: 0o600 });
+    write(join(original, 'reviewed-plan.json'), plan);
+    const deploymentId = 'dpl_Owned', deploymentUrl = 'https://owned.vercel.app';
+    const base = { version: 2, qualificationTargetProfile: profile, environment: 'staging', releaseId: plan.releaseId,
+      sourceCommit: plan.sourceCommit, projectId: migration.candidate.workload.projectId, previousDeploymentId: 'dpl_Prior' };
+    const intent = { ...base, trafficAuthorized: false, promotionAuthorized: false };
+    const promotion = { ...base, deploymentId, previousAliasRequestedAt: 1 };
+    const records = {
+      'frontend-build-started.json': intent,
+      'frontend-build-created.json': { ...intent, deploymentId },
+      'frontend-build-outcome.json': { ...intent, deploymentId, status: 'FRONTEND_STAGED', phase: 'completed', readyState: 'READY', url: deploymentUrl },
+      'frontend-workload-outcome.json': { ...base, deploymentId, status: 'FRONTEND_VERIFIED', contractPhase: 'p2',
+        phase2ContractManifestSha256: plan.phase2ContractManifestSha256, featureControls: inventory.certification.featureControls,
+        writerAdmissionBinding: plan.writerAdmissionBinding, trafficAuthorized: false, nativeSchedulerVerified: false },
+      'frontend-promotion-started.json': promotion,
+      'frontend-promotion-outcome.json': { ...promotion, trafficAuthorized: false, status: 'FRONTEND_DOMAINS_PROMOTED',
+        phase: 'completed', frontendDomainsPromoted: true, aliasRequestedAt: 2 },
+    };
+    const readyReceiptSha256 = Object.fromEntries(Object.entries(records).map(([name, row]) => {
+      const path = join(vercel, name); write(path, row); return [name, rawHash(readFileSync(path))];
+    }));
+    const configurationRecordSha256 = readyReceiptSha256['frontend-workload-outcome.json'];
+    const terminal = { version: 2, qualificationTargetProfile: profile, status: 'P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION',
+      ...Object.fromEntries(['environment', 'releaseId', 'sourceCommit', 'candidateSha256', 'targetSha256', 'inventorySha256',
+        'contractPhase', 'phase2ContractManifestSha256', 'configurationSha256', 'frontendSqlApplied', 'historicalProviderClosureClaimed',
+        'oldP200Qualified', 'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted'].map(key => [key, plan[key]])),
+      frontendWorkloadReceiptSha256: configurationRecordSha256,
+      ...Object.fromEntries(['frontendDatabaseReceiptSha256', 'frontendTerminalSha256', 'frontendContinuationCompletedSha256',
+        'frontendReleaseOutcomeSha256', 'frontendSessionClosedSha256', 'apiRuntimeReceiptSha256', 'migrationOutcomeSha256']
+        .map(name => [name, '9'.repeat(64)])) };
+    const terminalPath = join(frontend, 'p2-profiled-current-host-outcome.json'); write(terminalPath, terminal);
+    const settings = { version: 2, environment: 'staging', qualificationTargetProfile: profile, operatorSourceCommit: plan.sourceCommit,
+      releaseSettings: f.settings, certification: { version: 2, environment: 'staging', qualificationTargetProfile: profile,
+        certificationActionId: 'owned-certification', mode: 'contain-native', startState: 'already-closed', initialEpoch: '1',
+        candidateSha256: plan.candidateSha256, inventorySha256: plan.inventorySha256, configurationSha256: hash(plan.configurationSha256),
+        readyReceiptSha256, runtimeInventorySha256: '1'.repeat(64), gatewayProcessSha256: '2'.repeat(64),
+        gatewayConfigurationSha256: '3'.repeat(64), operatorSourceClosureSha256: '4'.repeat(64),
+        native: { version: 2, qualificationTargetProfile: profile, actionId: plan.releaseId, deploymentId, deploymentUrl, configurationRecordSha256,
+          epoch: '1', target: migration.job.target, targetSha256: plan.targetSha256, owner: inventory.owner,
+          producer: inventory.producers[0], featureControls: inventory.certification.featureControls,
+          windowSeconds: 60, drainSeconds: 15, finalDisposition: 'disabled-and-admission-closed',
+          commandWitnesses: [{ commandId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', accountVersion: '1', action: 'suspend' }] } } };
+    const output = prepareP2ProfiledCertificationOperator(settings);
+    assert.equal(output.version, 2);
+    assert.equal(output.wholeReleaseAccepted, false);
+    assert.deepEqual(output.qualificationTargetProfile, profile);
+    assert.equal(output.nativePlan.configurationRecordSha256, configurationRecordSha256);
+    assert.deepEqual(output.apiJobSha256, plan.apiJobSha256);
+    assert.equal(output.originalReleasePlanSha256, hash(plan));
+    assert.equal(output.originalReleaseReceiptSha256, rawHash(readFileSync(terminalPath)));
+    await assert.rejects(runP2BoundedCertification(output, {}), /P2_CERTIFICATION_PARENT_REFUSED/);
+
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, certification: { ...settings.certification, startState: 'qualified-ready' } }));
+    write(terminalPath, { ...terminal, frontendWorkloadReceiptSha256: '5'.repeat(64) });
+    assert.throws(() => prepareP2ProfiledCertificationOperator(settings));
+    write(terminalPath, terminal);
+    const promotionName = 'frontend-promotion-outcome.json';
+    const promotionPath = join(vercel, promotionName);
+    write(promotionPath, { ...records[promotionName], previousAliasRequestedAt: 3 });
+    readyReceiptSha256[promotionName] = rawHash(readFileSync(promotionPath));
+    assert.throws(() => prepareP2ProfiledCertificationOperator(settings));
   } finally { f.dispose(); }
 });

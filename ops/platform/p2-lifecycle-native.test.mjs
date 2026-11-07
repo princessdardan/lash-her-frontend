@@ -7,6 +7,7 @@ import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { prepareP2LifecycleNativePlan, validateP2NativeRequestObservation, containP2LifecycleNative } from "./p2-lifecycle-native.mjs";
 import { nativeDocuments, nativeModel, nativeObservation, nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 test('fixed native Git reads ignore ambient repository/configuration overrides and bind the canonical selected source',()=>{
   const sourceCommit=nativeSourceCommit(),settings={GIT_DIR:'/owned-nonexistent-foreign-git',GIT_WORK_TREE:'/owned-foreign-source',GIT_CONFIG_GLOBAL:'/owned-foreign-config',
@@ -25,6 +26,25 @@ test("plan requires exact qualified P2/staging/ten-control lifecycle-only profil
     const fixture = nativeDocuments(); change(fixture); assert.throws(() => prepareP2LifecycleNativePlan(fixture.candidate, fixture.settings));
   }
 });
+test("native plans bind the explicitly selected profile without accepting version downgrades", () => {
+  const { candidate, settings } = nativeDocuments();
+  candidate.version = 3;
+  settings.version = 2;
+  for (const carrier of [candidate, candidate.workload, candidate.sources.frontend, settings, settings.target]) {
+    carrier.qualificationTargetProfile = profile;
+  }
+  assert.throws(() => prepareP2LifecycleNativePlan(candidate, settings));
+  const plan = prepareP2LifecycleNativePlan(candidate, settings, profile);
+  assert.equal(plan.version, 2);
+  assert.deepEqual(plan.qualificationTargetProfile, profile);
+  assert.deepEqual(plan.target.qualificationTargetProfile, profile);
+  assert.throws(() => prepareP2LifecycleNativePlan(candidate, { ...settings, version: 1 }, profile));
+  assert.throws(() => prepareP2LifecycleNativePlan({ ...candidate, version: 2 }, settings, profile));
+  assert.throws(() => prepareP2LifecycleNativePlan(candidate, { ...settings, target: {
+    ...settings.target, qualificationTargetProfile: { ...profile, sha256: "f".repeat(64) }
+  } }, profile));
+});
+
 test("finite native request witnesses join exact admitted recovery operations, ordered effects, and actual source closure without a cancellation claim", async () => {
   const fixture = nativeModel();
   try {
