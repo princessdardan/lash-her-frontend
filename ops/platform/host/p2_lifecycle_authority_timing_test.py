@@ -16,14 +16,26 @@ import p2_identity_negative_probe as identity
 import p2_identity_probe_scope as identity_scope
 import p2_lifecycle_authority_timing as timing
 import p2_lifecycle_authority_timing_scope as timing_scope
+from p2_certification_parent_test import legacy_source_fixture
 
 
 class AuthorityTimingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(directory.cleanup)
+        cls.source = Path(directory.name).resolve()
+        actual = Path(timing.__file__).resolve().parents[3]
+        legacy_source_fixture(actual, cls.source)
+        # This standalone plan also binds its reviewed Markdown runbook,
+        # which is outside the public installed program inventory.
+        runbook = Path("ops/platform/p2-lifecycle-authority-timing.md")
+        (cls.source / runbook).write_bytes((actual / runbook).read_bytes())
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="owned-p2-s13-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
-        self.source = Path(timing.__file__).resolve().parents[3]
         self.private_parent = self.root / "private"
         self.private_parent.mkdir(mode=0o700)
         self.action = "p2-s13-owned"

@@ -36,6 +36,27 @@ def initial(disposition='restore-current-runtime'):
 
 
 class ProfiledCurrentRecoveryTest(unittest.TestCase):
+    def test_out_of_order_recovery_cannot_close_prior_gateway_before_its_proof(self):
+        broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)
+        broker.check = lambda: None
+        broker.directory = Path('/owned/result')
+        broker.scope, broker.selected, broker.jobs = object(), selected(), {}
+        with patch.object(recovery.P2ProfiledCurrentBroker, 'prepare_prior_gateway') as prepare:
+            for disposition, code in (
+                ('restore-current-runtime', 'API_READ_ONLY_PROOF_REQUIRED'),
+                ('reconcile-frontend-get-first', 'API_READ_ONLY_PROOF_REQUIRED'),
+                ('resume-approved-api-suffix', 'API_SUFFIX_PROOF_REQUIRED'),
+            ):
+                broker.initial = initial(disposition)
+                with self.subTest(disposition=disposition), self.assertRaisesRegex(ValueError, code):
+                    broker.prepare_prior_gateway()
+            broker.initial = initial('reconcile-frontend-lost-build-get-first')
+            broker.current_database_proof = object.__new__(recovery.current_databases.ProfiledCurrentDatabaseProof)
+            with patch.object(recovery.current_databases, 'read_profiled_current_proof'), \
+                    self.assertRaisesRegex(ValueError, 'LOST_BUILD_OBSERVATION_REQUIRED'):
+                broker.prepare_prior_gateway()
+            prepare.assert_not_called()
+
     def test_initialize_joins_the_five_host_original_receipts_by_exact_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); bundle = root / 'bundle'; results = root / 'results'

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import uuid
 
 import p2_identity_negative_probe as probe
+from p2_certification_parent_test import legacy_source_fixture
 import release_test
 
 
@@ -31,6 +32,13 @@ class Observer:
 
 
 class IdentityNegativeProbeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(directory.cleanup)
+        cls.source = Path(directory.name).resolve()
+        legacy_source_fixture(Path(probe.__file__).resolve().parents[3], cls.source)
+
     def setUp(self):
         self.parent = release_test.RuntimeReleaseTests()
         self.parent.setUp()
@@ -42,7 +50,6 @@ class IdentityNegativeProbeTests(unittest.TestCase):
         self.fixture.release["frontendMigration"].update(pair)
         for job in self.fixture.jobs.values():
             job.update(pair)
-        self.source = Path(probe.__file__).resolve().parents[3]
         self.fixture.release["runtime"]["composeSha256"] = "sha256:" + probe._hash((self.source / "ops/platform/compose.yaml").read_bytes())
         self.fixture.save()
         self.parent.gateway["publicHost"] = probe.certificates.HOST
@@ -225,7 +232,8 @@ class IdentityNegativeProbeTests(unittest.TestCase):
     def test_current_stage_cli_defaults_to_actual_plan_without_runtime_or_sql_execution(self):
         packet = {"version": 1, "operation": "plan", "bundleDirectory": str(self.bundle), "configurationDirectory": str(self.configuration),
             "reviewed": self.reviewed, "priorEvidence": None}
-        result = subprocess.run(["python3", "-I", "-B", str(Path(probe.__file__).with_name("p2_identity_probe_current.py"))],
+        entry = self.source / "ops/platform/host/p2_identity_probe_current.py"
+        result = subprocess.run(["python3", "-I", "-B", str(entry)],
             input=json.dumps(packet).encode(), capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)

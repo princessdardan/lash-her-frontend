@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import p2_identity_probe_scope as current
 import p2_identity_negative_probe as probe
+from p2_certification_parent_test import legacy_source_fixture
 
 
 class CurrentIdentityProbeScopeTests(unittest.TestCase):
@@ -161,7 +162,9 @@ class CurrentIdentityProbeScopeTests(unittest.TestCase):
 
     def test_source_closure_is_exact_and_contains_all_fixed_transitive_host_imports(self):
         source = Path(probe.__file__).resolve().parents[3]
-        files = probe.source_closure(source)
+        destination = self.root / "installed-legacy"
+        legacy_source_fixture(source, destination)
+        files = probe.source_closure(destination)
         self.assertTrue(probe.SOURCE_ANCHORS.issubset(files))
         self.assertGreater(len(files), len(probe.SOURCE_ANCHORS))
         self.assertIn("ops/platform/host/p2_identity_probe_current.py", files)

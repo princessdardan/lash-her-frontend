@@ -12,6 +12,7 @@ import migrate
 import release as runtime
 import p2_lifecycle_persistence_probe as probe
 from p2_lifecycle_persistence_scope import CurrentLifecyclePersistenceScope
+from p2_certification_parent_test import legacy_source_fixture
 
 
 class PersistenceProbeTests(unittest.TestCase):
@@ -23,7 +24,10 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertLess(len(program), 131_072)
         self.assertIn(b"runPrivatePersistenceProbeFromStdin", program)
         self.assertEqual(program, probe.private_program(self.source))
-        closure = probe.identity_probe.source_closure(self.source)
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory).resolve()
+            legacy_source_fixture(self.source, destination)
+            closure = probe.identity_probe.source_closure(destination)
         self.assertIn(probe.PROGRAM_FILES[0], closure)
         self.assertIn(probe.PROGRAM_FILES[1], closure)
 

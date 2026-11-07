@@ -13,9 +13,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import p2_identity_key_rotation as rotation
 import p2_identity_negative_probe as identity
+from p2_certification_parent_test import legacy_source_fixture
 
 
 class IdentityKeyRotationPlanTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(directory.cleanup)
+        source = Path(directory.name).resolve()
+        legacy_source_fixture(Path(rotation.__file__).resolve().parents[3], source)
+        cls.source_files = identity.source_closure(source)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="owned-p2-key-rotation-")
         self.addCleanup(self.temporary.cleanup)
@@ -32,7 +41,7 @@ class IdentityKeyRotationPlanTests(unittest.TestCase):
         self.bundle.mkdir(mode=0o700)
         candidate = b'{"owned":"rotation"}\n'
         (self.bundle / "release.candidate.json").write_bytes(candidate)
-        source_files = identity.source_closure(actual)
+        source_files = deepcopy(self.source_files)
         self.identity = {
             "version": 1, "environment": "staging", "probeId": "owned-rotation-identity", "releaseId": "owned-release",
             "candidateSha256": rotation._hash(candidate), "hostMachineId": "1" * 32, "configurationSha256": "2" * 64,

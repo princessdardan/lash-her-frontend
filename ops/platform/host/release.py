@@ -272,10 +272,12 @@ def runtime_environment(release, snapshot, *, expected_profile=None):
                 ("COMMUNITY_RUNTIME_IMAGE", "communityRuntime"), ("COMMUNITY_MIGRATION_IMAGE", "communityMigration"))}}
 
 
-def configuration_container(arguments):
-    from p2_profiled_current_scope import P2ProfiledCurrentScope
+def configuration_container(arguments, *, expected_profile=None):
     scope = _command_scope.get()
-    profiled = type(scope) is P2ProfiledCurrentScope
+    profiled = expected_profile is not None and scope is not None
+    if profiled:
+        from p2_profiled_current_scope import P2ProfiledCurrentScope
+        demand(type(scope) is P2ProfiledCurrentScope, "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
     name = ("lash-p2-profiled-current-image-check-" if profiled else "lash-config-") + uuid4().hex
     try:
         image_options = ["--pull", "never", "--platform", "linux/amd64"] if profiled else []
@@ -321,7 +323,7 @@ def preflight(release, snapshot, jobs, pull=True, *, expected_profile=None):
             stream.write("".join(f"{key}={value}\n" for key, value in values.items()))
         configuration_container(["docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
                  "--memory", "128m", "--pids-limit", "64", "--env-file", str(file), "--entrypoint", "node",
-                 release["artifacts"][IMAGE_KEYS[service]]["image"], "--input-type=module", "--eval", NODE_CONFIG_CHECKS[service]])
+                 release["artifacts"][IMAGE_KEYS[service]]["image"], "--input-type=module", "--eval", NODE_CONFIG_CHECKS[service]], expected_profile=expected)
     image = release["artifacts"]["gateway"]["image"]
     for service, module, expression in (("gateway", "server.mjs", "createGateway(c).server"),
                                         ("course", "private-tls.mjs", "createPrivateTlsProxy(c)"),
@@ -331,7 +333,7 @@ def preflight(release, snapshot, jobs, pull=True, *, expected_profile=None):
         configuration_container(["docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
                  "--memory", "128m", "--pids-limit", "64", "--mount", f"type=bind,src={snapshot / config_name},dst=/config/input.json,readonly",
                  "--mount", f"type=bind,src={snapshot / 'tls' / service},dst=/tls,readonly", "--entrypoint", "node", image,
-                 "--input-type=module", "--eval", source])
+                 "--input-type=module", "--eval", source], expected_profile=expected)
 
 
 def check_containers(release, snapshot, *, expected_profile=None):

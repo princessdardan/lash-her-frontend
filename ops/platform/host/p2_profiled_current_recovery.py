@@ -181,6 +181,29 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
             self.initial['candidateSha256'], release=self.selected, jobs=self.jobs,
             configuration_sha256=self.initial['configurationSha256'], recovery_action_id=self.action_id())
 
+    def prepare_prior_gateway(self):
+        # Do not let a correctly armed but out-of-order recovery frame close
+        # the real predecessor before this disposition has its required proof.
+        self.check()
+        disposition = self.initial['disposition']
+        if disposition == 'resume-approved-api-suffix':
+            pins = getattr(self, 'api_suffix_lineage_sha256', {})
+            require(getattr(self, 'derived_bundle', None) == self.directory / 'api-suffix-bundle' and
+                    set(pins) == {'course', 'community'}, 'P2_PROFILED_CURRENT_API_SUFFIX_PROOF_REQUIRED')
+            for service in ('course', 'community'):
+                self.scope.api_job_bytes(service)
+                require(sha(migrate.read_input(self.directory, f'api-suffix-{service}-lineage.json')) == pins[service],
+                        'P2_PROFILED_CURRENT_API_SUFFIX_PROOF_CHANGED')
+        else:
+            proof = getattr(self, 'current_database_proof', None)
+            require(type(proof) is current_databases.ProfiledCurrentDatabaseProof,
+                    'P2_PROFILED_CURRENT_API_READ_ONLY_PROOF_REQUIRED')
+            current_databases.read_profiled_current_proof(proof, self.scope, self.selected, self.jobs,
+                                                        expected_profile=PROFILE)
+            if disposition == 'reconcile-frontend-lost-build-get-first':
+                require(hasattr(self, 'lost_build_observation'), 'P2_PROFILED_CURRENT_LOST_BUILD_OBSERVATION_REQUIRED')
+        return super().prepare_prior_gateway()
+
     def prepare_api_suffix(self):
         require(self.initial['disposition'] == 'resume-approved-api-suffix' and self.scope is not None and
                 self.prior_gateway is None and self.worker is None and not hasattr(self, 'derived_bundle'),

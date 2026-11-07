@@ -63,6 +63,14 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset()):
     return names
 
 
+def legacy_source_fixture(source, destination):
+    """Install only the v1 fixture tree; preserve the strict production bounds."""
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY)
+    if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
+        raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
+    return names
+
+
 class CertificationScopeTests(unittest.TestCase):
     save=scope_fixture.P2ScopeTests.save
     add_frontend=scope_fixture.P2ScopeTests.add_frontend
@@ -345,10 +353,7 @@ class ActualCertificationEntryTests(unittest.TestCase):
     def setUpClass(cls):
         temporary=tempfile.TemporaryDirectory();cls.addClassCleanup(temporary.cleanup)
         cls.source=Path(temporary.name).resolve()
-        cls.source_names=tracked_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source,
-            exclude=PROFILED_CURRENT_SOURCE_ONLY)
-        if len(cls.source_names)>512 or sum((cls.source/name).stat().st_size for name in cls.source_names)>41_000_000:
-            raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
+        cls.source_names=legacy_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source)
 
     def entry(self,mode,flavor='normal'):
         root=self.source
