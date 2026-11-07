@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
 import threading
 import tempfile
 import unittest
@@ -85,8 +86,15 @@ class RetainedChainTests(unittest.TestCase):
         self.addCleanup(f.tearDown);self.root=f.root;self.f=f
         operators=self.root/'operators';operators.mkdir();self.old_source=operators/('b'*40);self.old_source.mkdir()
         manifest={};actual=Path(__file__).resolve().parents[3]
+        # Gateway frontier eligibility is tied to the actual approved original
+        # helper. A newer current helper must never inherit that source pin.
+        original_frontier=subprocess.run(['git','-c','safe.directory='+str(actual),'-C',str(actual),'show',
+            '91d44bd24d2df64901f7cb3f243580834707eb98:'+c.B_FRONTIER_MODULE],
+            check=True,capture_output=True,timeout=10).stdout
+        self.assertEqual(c.sha(original_frontier),c.B_FRONTIER_SHA256)
         for name in sorted(REQUIRED|{c.known.MODULE,c.B_FRONTIER_MODULE}):
-            target=self.old_source/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((actual/name).read_bytes());target.chmod(0o444);manifest[name]=c.sha(target.read_bytes())
+            raw=original_frontier if name==c.B_FRONTIER_MODULE else (actual/name).read_bytes()
+            target=self.old_source/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw);target.chmod(0o444);manifest[name]=c.sha(raw)
         closure=c.sha(c.canonical(sorted(manifest.items())))
         self.causal=self.root/'p2-known-ack-loss-cert-old';self.causal.mkdir(mode=0o700)
         self.replacement=self.root/'p2-certification-replace-old';self.replacement.mkdir(mode=0o700)
