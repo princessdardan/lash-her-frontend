@@ -4,7 +4,8 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { deployProfiledCurrentFrontend, readProfiledCurrentWorkloadReceipt } from "./p2-profiled-current-frontend-adapters.mjs";
+import { deployProfiledCurrentFrontend, observeProfiledCurrentFrontend,
+  readProfiledCurrentWorkloadReceipt } from "./p2-profiled-current-frontend-adapters.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -139,4 +140,56 @@ print(json.dumps({'type':'result','value':r}),flush=True)
     assert.equal(result.status, "P2_PROFILED_CURRENT_FRONTEND_VERIFIED");
     assert.ok(f.counts().queries >= 16);
   } finally { process.env.PATH = previousPath; f.cleanup(); }
+});
+
+test("lost-build disposition uses the fixed child operation and cannot become a workload proof", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "profiled-current-lost-build-"))), bin = join(directory, "bin");
+  mkdirSync(bin, { mode: 0o700 }); const executable = join(bin, "python3"), previousPath = process.env.PATH;
+  const sourceCommit = "a".repeat(40), targetSha256 = "b".repeat(64);
+  const configurationSha256 = Object.fromEntries(names.map((name, index) => [name, String(index % 9 + 1).repeat(64)]));
+  const pins = { deployStarted: "1".repeat(64), buildStarted: "2".repeat(64), buildIntent: "3".repeat(64) };
+  const target = { qualificationTargetProfile: profile, approvedPendingTags: [], allowEmptyBootstrap: false,
+    runtimeRole: "frontend_runtime" };
+  const candidate = { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "owned-release",
+    contractPhase: "p2", phase2ContractManifestSha256: `sha256:${"d".repeat(64)}`,
+    sources: { frontend: { qualificationTargetProfile: profile, commit: sourceCommit,
+      repository: "https://github.com/princessdardan/lash-her-frontend.git", requiredChecks: "passed" } },
+    workload: { qualificationTargetProfile: profile, projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", environment: "production" },
+    frontendMigration: { qualificationTargetProfile: profile } };
+  const job = { version: 2, qualificationTargetProfile: profile, environment: "staging", releaseId: "owned-release",
+    sourceCommit, target };
+  const plan = { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
+    disposition: "reconcile-frontend-lost-build-get-first", originalReleaseId: "owned-release", sourceCommit,
+    candidateSha256: "e".repeat(64), configurationSha256, targetSha256, lostBuildReceiptSha256: pins };
+  let environmentChecks = 0, sessionChecks = 0;
+  const context = { plan, migration: { qualificationTargetProfile: profile, candidate, job }, lostBuildReceiptSha256: pins,
+    providerContext: { version: 2, qualificationTargetProfile: profile, vercelToken: "private",
+      originalDirectory: directory, bindings: {} }, environmentSignal: new AbortController().signal,
+    verifyEnvironment: async () => { environmentChecks++; }, verifySession: async () => { sessionChecks++; } };
+  const program = String.raw`#!/usr/bin/python3
+import hashlib,json,sys
+p=json.loads(sys.stdin.readline());assert p['operation']=='recovery-observe-lost-build';assert p['version']==2
+print(json.dumps({'type':'checkpoint','id':1}),flush=True)
+assert json.loads(sys.stdin.readline())=={'type':'continue','id':1}
+pins=p['lostBuildReceiptSha256'];joined=hashlib.sha256(json.dumps(dict(sorted(pins.items())),separators=(',',':')).encode()).hexdigest()
+r={'version':2,'qualificationTargetProfile':p['qualificationTargetProfile'],'status':'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED',
+'environment':'staging','actionId':p['candidate']['releaseId'],'releaseId':p['candidate']['releaseId'],'sourceCommit':p['plan']['sourceCommit'],
+'candidateSha256':p['plan']['candidateSha256'],'configurationSha256':p['plan']['configurationSha256'],'targetSha256':p['plan']['targetSha256'],
+'projectId':p['candidate']['workload']['projectId'],'deploymentId':'dpl_Owned123','previousDeploymentId':'dpl_Previous123',
+'lostBuildReceiptSha256':joined,'deployStartedSha256':pins['deployStarted'],'buildStartedSha256':pins['buildStarted'],
+'buildIntentSha256':pins['buildIntent'],'getFirst':True,'newProviderPost':False,'ambiguous':False,'deploymentEffectObserved':True,
+'frontendActionPending':True,'originalBuildAckObserved':False,'providerMutationReplayed':False,'buildReadyVerified':False,
+'workloadVerified':False,'aliasQualificationVerified':False,'promotionVerified':False,'cronQualificationVerified':False,
+'trafficAuthorized':False,'releaseAccepted':False}
+print(json.dumps({'type':'result','value':r}),flush=True)
+`;
+  try {
+    writeFileSync(executable, program, { mode: 0o700 }); process.env.PATH = `${bin}:${previousPath}`;
+    const result = await observeProfiledCurrentFrontend(context);
+    assert.equal(result.status, "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED");
+    assert.equal(result.frontendActionPending, true); assert.equal(result.originalBuildAckObserved, false);
+    assert.ok(Buffer.isBuffer(result.evidence) && sha(result.evidence) === result.evidenceSha256);
+    assert.ok(environmentChecks >= 3 && sessionChecks >= 3);
+    await assert.rejects(readProfiledCurrentWorkloadReceipt(context, result), /REVIEW_REQUIRED/u);
+  } finally { process.env.PATH = previousPath; chmodSync(directory, 0o700); rmSync(directory, { recursive: true, force: true }); }
 });

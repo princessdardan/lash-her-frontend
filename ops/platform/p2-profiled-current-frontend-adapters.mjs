@@ -37,6 +37,7 @@ const falseFields = Object.freeze(["frontendSqlApplied", "historicalProviderClos
   "nativeSchedulesEnabled", "trafficAuthorized", "releaseAccepted"]);
 const recoveryPinNames = Object.freeze(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome",
   "apiRuntimeOutcome", "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]);
+const lostBuildPinNames = Object.freeze(["deployStarted", "buildStarted", "buildIntent"]);
 
 // Reject getters, proxies with inconsistent own data and exotic prototypes
 // before source-owned functions or private values are consumed.
@@ -142,6 +143,29 @@ function validateRecovery(context) {
     job.target.allowEmptyBootstrap === false && commit(plan.sourceCommit) && digest(plan.candidateSha256) &&
     digest(plan.targetSha256) && isDeepStrictEqual(pins, plan.originalReceiptSha256) &&
     isDeepStrictEqual(Object.keys(pins).sort(), [...recoveryPinNames].sort()) && Object.values(pins).every(digest));
+  demand(typeof own(context, "verifyEnvironment") === "function" && typeof own(context, "verifySession") === "function");
+  return { plan, migration, candidate, job, pins, configurationSha256 };
+}
+
+function validateLostBuildRecovery(context) {
+  demand(context && typeof context === "object");
+  const plan = plain(own(context, "plan")), migration = plain(own(context, "migration"));
+  profiles(plan, migration, migration.candidate, migration.candidate.frontendMigration, migration.job, migration.job.target);
+  const candidate = migration.candidate, job = migration.job, pins = plain(own(context, "lostBuildReceiptSha256"));
+  const configurationSha256 = configurationMap(plan.configurationSha256), keys = Object.keys(pins).sort();
+  demand(plan.version === 2 && plan.mode === "p2-profiled-current-recovery" && plan.environment === "staging" &&
+    plan.disposition === "reconcile-frontend-lost-build-get-first" && candidate.version === 3 && job.version === 2 &&
+    candidate.releaseId === plan.originalReleaseId && job.releaseId === plan.originalReleaseId &&
+    candidate.sources?.frontend?.commit === plan.sourceCommit && job.sourceCommit === plan.sourceCommit &&
+    candidate.sources.frontend.repository === "https://github.com/princessdardan/lash-her-frontend.git" &&
+    candidate.sources.frontend.requiredChecks === "passed" && candidate.workload?.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" &&
+    candidate.workload.environment === "production" && candidate.contractPhase === "p2" &&
+    /^sha256:[a-f0-9]{64}$/u.test(candidate.phase2ContractManifestSha256 ?? "") &&
+    candidate.phase2ContractManifestSha256 !== `sha256:${"0".repeat(64)}` && job.environment === "staging" &&
+    Array.isArray(job.target.approvedPendingTags) && job.target.approvedPendingTags.length === 0 &&
+    job.target.allowEmptyBootstrap === false && commit(plan.sourceCommit) && digest(plan.candidateSha256) && digest(plan.targetSha256) &&
+    isDeepStrictEqual(pins, plan.lostBuildReceiptSha256) && (isDeepStrictEqual(keys, [...lostBuildPinNames].sort()) ||
+      isDeepStrictEqual(keys, [...lostBuildPinNames, "buildOutcome"].sort())) && Object.values(pins).every(digest));
   demand(typeof own(context, "verifyEnvironment") === "function" && typeof own(context, "verifySession") === "function");
   return { plan, migration, candidate, job, pins, configurationSha256 };
 }
@@ -259,6 +283,34 @@ function recoveryProof(result, selected) {
   return { ...result, evidence, evidenceSha256: hash(evidence) };
 }
 
+function lostBuildProof(result, selected) {
+  plain(result); profiles(result);
+  const fields = ["version", "qualificationTargetProfile", "status", "environment", "actionId", "releaseId", "sourceCommit",
+    "candidateSha256", "configurationSha256", "targetSha256", "projectId", "deploymentId", "previousDeploymentId",
+    "lostBuildReceiptSha256", "deployStartedSha256", "buildStartedSha256", "buildIntentSha256",
+    ...(Object.hasOwn(selected.pins, "buildOutcome") ? ["buildOutcomeSha256"] : []), "getFirst", "newProviderPost", "ambiguous",
+    "deploymentEffectObserved", "frontendActionPending", "originalBuildAckObserved", "providerMutationReplayed",
+    "buildReadyVerified", "workloadVerified", "aliasQualificationVerified", "promotionVerified", "cronQualificationVerified",
+    "trafficAuthorized", "releaseAccepted"];
+  demand(isDeepStrictEqual(Object.keys(result).sort(), fields.sort()) && result.version === 2 &&
+    result.status === "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED" && result.environment === "staging" &&
+    result.actionId === selected.plan.originalReleaseId && result.releaseId === selected.plan.originalReleaseId &&
+    result.sourceCommit === selected.plan.sourceCommit && result.candidateSha256 === selected.plan.candidateSha256 &&
+    isDeepStrictEqual(result.configurationSha256, selected.configurationSha256) && result.targetSha256 === selected.plan.targetSha256 &&
+    result.projectId === selected.candidate.workload.projectId && /^dpl_[A-Za-z0-9]+$/u.test(result.deploymentId ?? "") &&
+    (result.previousDeploymentId === null || /^dpl_[A-Za-z0-9]+$/u.test(result.previousDeploymentId ?? "")) &&
+    result.lostBuildReceiptSha256 === pinsHash(selected.pins) && result.deployStartedSha256 === selected.pins.deployStarted &&
+    result.buildStartedSha256 === selected.pins.buildStarted && result.buildIntentSha256 === selected.pins.buildIntent &&
+    (!Object.hasOwn(selected.pins, "buildOutcome") || result.buildOutcomeSha256 === selected.pins.buildOutcome) &&
+    result.getFirst === true && result.newProviderPost === false && result.ambiguous === false &&
+    result.deploymentEffectObserved === true && result.frontendActionPending === true &&
+    ["originalBuildAckObserved", "providerMutationReplayed", "buildReadyVerified", "workloadVerified",
+      "aliasQualificationVerified", "promotionVerified", "cronQualificationVerified", "trafficAuthorized", "releaseAccepted"]
+      .every(key => result[key] === false));
+  const evidence = Buffer.from(JSON.stringify(result)); demand(evidence.length > 0 && evidence.length <= 2_000_000);
+  return { ...result, evidence, evidenceSha256: hash(evidence) };
+}
+
 export async function deployProfiledCurrentFrontend(context) {
   try {
     const selected = validateRelease(context); await closedAdmission(context, selected);
@@ -276,6 +328,16 @@ export async function observeProfiledCurrentFrontend(context) {
     const descriptor = context && Object.getOwnPropertyDescriptor(context, "plan"), mode = descriptor &&
       Object.hasOwn(descriptor, "value") && Object.getOwnPropertyDescriptor(descriptor.value, "mode");
     if (mode && Object.hasOwn(mode, "value") && mode.value === "p2-profiled-current-recovery") {
+      const disposition = Object.getOwnPropertyDescriptor(descriptor.value, "disposition");
+      if (disposition && Object.hasOwn(disposition, "value") && disposition.value === "reconcile-frontend-lost-build-get-first") {
+        const selected = validateLostBuildRecovery(context); await context.verifyEnvironment(); await context.verifySession();
+        const provider = providerContext(own(context, "providerContext"), true);
+        const result = await runWorker("recovery-observe-lost-build", { version: 2, qualificationTargetProfile: profile,
+          plan: selected.plan, candidate: selected.candidate, job: selected.job, lostBuildReceiptSha256: selected.pins,
+          originalDirectory: provider.originalDirectory, vercelToken: provider.vercelToken, bindings: provider.bindings },
+        async () => { await context.verifyEnvironment(); await context.verifySession(); }, context.environmentSignal);
+        return lostBuildProof(result, selected);
+      }
       const selected = validateRecovery(context); await context.verifyEnvironment(); await context.verifySession();
       const provider = providerContext(own(context, "providerContext"), true);
       const result = await runWorker("recovery-observe", { qualificationTargetProfile: profile, plan: selected.plan,

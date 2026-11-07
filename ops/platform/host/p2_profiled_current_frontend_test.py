@@ -1,6 +1,8 @@
+import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import time
 import unittest
@@ -212,6 +214,23 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
         initial["plan"]["lostBuildReceiptSha256"] = dict(initial["lostBuildReceiptSha256"])
         with mock.patch.object(subject.vercel, "Client", side_effect=AssertionError("provider read")):
             with self.assertRaises(ValueError): subject.observe_lost_build_post_ack(initial, provider, lambda: None)
+
+    def test_main_routes_only_the_fixed_lost_build_operation_to_the_internal_helper(self):
+        payload = {"operation": "recovery-observe-lost-build", "version": 2, "qualificationTargetProfile": PROFILE,
+                   "vercelToken": "private-token", "originalDirectory": "/private/source-owned",
+                   "bindings": {"owned": True}, "plan": {"owned": "source"}}
+        result = {"version": 2, "qualificationTargetProfile": PROFILE,
+                  "status": "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED"}
+        stdin = io.TextIOWrapper(io.BytesIO((json.dumps(payload) + "\n").encode()))
+        stdout = io.StringIO()
+        with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stdout", stdout), \
+             mock.patch.object(subject, "observe_lost_build_post_ack", return_value=result) as observed:
+            subject.main()
+        self.assertEqual(json.loads(stdout.getvalue()), {"type": "result", "value": result})
+        initial, provider = observed.call_args.args
+        self.assertEqual(initial, payload)
+        self.assertEqual(provider, {"version": 2, "qualificationTargetProfile": PROFILE,
+            "vercelToken": "private-token", "originalDirectory": "/private/source-owned", "bindings": {"owned": True}})
 
     def test_recovery_is_get_only_unique_and_returns_exact_pinned_workload_with_inner_proof(self):
         initial, provider, staged, workload = self.recovery_fixture()

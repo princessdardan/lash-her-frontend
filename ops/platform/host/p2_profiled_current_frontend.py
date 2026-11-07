@@ -614,6 +614,11 @@ def main():
                         "vercelToken": context["vercelToken"], "originalDirectory": context["originalDirectory"],
                         "bindings": context["bindings"]}
             result = observe_recovery(context, provider)["observation"]
+        elif operation == "recovery-observe-lost-build":
+            provider = {"version": 2, "qualificationTargetProfile": dict(PROFILE),
+                        "vercelToken": context["vercelToken"], "originalDirectory": context["originalDirectory"],
+                        "bindings": context["bindings"]}
+            result = observe_lost_build_post_ack(context, provider)
         else:
             raise ValueError("PROFILED_CURRENT_FRONTEND_OPERATION_REFUSED")
         print(json.dumps({"type": "result", "value": result}, separators=(",", ":")), flush=True)
