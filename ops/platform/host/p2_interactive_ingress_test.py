@@ -337,7 +337,9 @@ class InteractiveWindowTests(unittest.TestCase):
                         "nativePlan": {"deploymentUrl": "https://owned.vercel.app"},
                         "gatewayProcessSha256": "d" * 64, "gatewayConfigurationSha256": "e" * 64}}
                 frontend = {"epoch": "7", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
-                broker.observer = SimpleNamespace(probe=lambda _operation: {"admission": dict(frontend)})
+                operations = []
+                broker.observer = SimpleNamespace(probe=lambda _operation: {
+                    "admission": dict(frontend), "witness": {"operations": copy.deepcopy(operations)}})
                 observed = []
 
                 def gateway():
@@ -396,6 +398,18 @@ class InteractiveWindowTests(unittest.TestCase):
                     stage.fence_gateway()
                     self.assertEqual(stage.verify_gateway_fenced(),
                                      {"gatewayAdmissionClosed": True, "gatewayActive": 0, "gatewayUncertain": 0})
+                    with self.assertRaisesRegex(ValueError, "FRONTEND_DRAIN"):
+                        stage.verify_fenced()
+                    frontend.update(epoch="9", newWork=False, recovery=False, uncertain=1)
+                    with self.assertRaisesRegex(ValueError, "FRONTEND_DRAIN"):
+                        stage.verify_fenced()
+                    frontend["uncertain"] = 0
+                    operations.append({"state": "completed", "reconciliation_sha256": "f" * 64})
+                    with self.assertRaisesRegex(ValueError, "FRONTEND_DRAIN"):
+                        stage.verify_fenced()
+                    operations[0]["reconciliation_sha256"] = None
+                    self.assertEqual(stage.verify_fenced()["frontendAdmission"], frontend)
+                    self.assertEqual(stage.verify_fenced()["frontendOperationCount"], 1)
                     self.assertEqual(path.read_bytes(), raw)
                     self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
             finally:

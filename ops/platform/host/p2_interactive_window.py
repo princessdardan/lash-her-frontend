@@ -54,7 +54,9 @@ def _instant(seconds):
 
 
 def validate_interactive_action(action):
-    demand(type(action) is dict and set(action) == {"stage", "actorId", "requests", "windowSeconds"} and
+    lifecycle = type(action) is dict and action.get("stage") == "lifecycle"
+    fields = {"stage", "actorId", "requests", "windowSeconds"} | ({"frontendAction"} if lifecycle else set())
+    demand(type(action) is dict and set(action) == fields and
            type(action["stage"]) is str and action["stage"] in _STAGES and
            type(action["windowSeconds"]) is int and 30 <= action["windowSeconds"] <= 300 and
            type(action["requests"]) is list and
@@ -63,6 +65,14 @@ def validate_interactive_action(action):
     gateway = action["stage"] in _GATEWAY_STAGES
     requests = action["requests"]
     demand(1 <= len(requests) <= 16 if gateway else requests == [], "P2_INTERACTIVE_REQUESTS_REQUIRED")
+    if lifecycle:
+        frontend = action["frontendAction"]
+        demand(type(frontend) is dict and set(frontend) == {"actorKind", "userId", "operation"} and
+               _matches(_UUID, frontend["userId"]) and
+               (frontend["operation"] in ("suspend", "restore", "export", "delete") if frontend["actorKind"] == "admin" else
+                frontend["actorKind"] == "customer" and frontend["userId"] == action["actorId"] and
+                frontend["operation"] in ("export", "delete", "preferences-on", "preferences-off")),
+               "P2_INTERACTIVE_FRONTEND_ACTION_REQUIRED")
     selected = set()
     for row in requests:
         demand(type(row) is dict and set(row) == {"method", "target", "bodySha256", "uses"} and
@@ -77,7 +87,15 @@ def validate_interactive_action(action):
     return copy.deepcopy(action)
 
 
-def _material(secret, deployment, source, target, epoch, stage, starts, duration, nonce):
+def _lifecycle_selection_sha(action):
+    if action["stage"] != "lifecycle":
+        return None
+    selected = action["frontendAction"]
+    return _hash(json.dumps([selected["actorKind"], action["actorId"], selected["userId"], selected["operation"]],
+                            separators=(",", ":")).encode())
+
+
+def _material(secret, deployment, source, target, epoch, stage, starts, duration, nonce, selection_sha=None):
     match = _DEPLOYMENT.fullmatch(deployment) if type(deployment) is str else None
     demand(match is not None and _matches(re.compile(r"[!-~]{32,8192}"), secret) and
            _matches(_SOURCE_SHA, source) and _matches(_SHA, target) and _matches(_EPOCH, epoch) and
@@ -85,16 +103,19 @@ def _material(secret, deployment, source, target, epoch, stage, starts, duration
            type(starts) is int and 1_000_000_000 <= starts < 9_999_999_700 and
            type(duration) is int and 30 <= duration <= 300 and _matches(re.compile(r"[a-f0-9]{32}"), nonce),
            "P2_INTERACTIVE_PRIVATE_BINDING_REQUIRED")
+    demand(_matches(_SHA, selection_sha) if stage == "lifecycle" else selection_sha is None,
+           "P2_INTERACTIVE_FRONTEND_BINDING_REQUIRED")
     host = match.group(1)
     ends = starts + duration
-    body = f"v1.{epoch}.{stage}.{starts}.{ends}.{nonce}"
+    body = (f"v2.{epoch}.{stage}.{starts}.{ends}.{nonce}.{selection_sha}" if selection_sha is not None else
+            f"v1.{epoch}.{stage}.{starts}.{ends}.{nonce}")
 
     def sign(value):
         return hmac.digest(secret.encode(), value.encode(), "sha256").hex()
 
     binding = f"{host}\n{source}\n{target}"
     signature = sign(f"lash-her:p2q:interactive:browser:v1\n{binding}\n{body}")
-    key = sign(f"lash-her:p2q:interactive:gateway-key:v1\n{binding}\n{epoch}\n{stage}\n{nonce}")
+    key = sign(f"lash-her:p2q:interactive:gateway-key:v1\n{binding}\n{epoch}\n{stage}\n{nonce}") if stage in _GATEWAY_STAGES else None
     return f"{body}.{signature}", key, host, ends
 
 
@@ -209,7 +230,8 @@ class P2InteractiveWindow:
         remaining = math.floor(self.broker.certification_started + self.plan["maximumSeconds"] - time.monotonic()) - 10
         duration = min(self.action["windowSeconds"], remaining)
         cookie, key, host, expiry = _material(self.broker.initial["scopedCronSecret"], self.plan["nativePlan"]["deploymentUrl"],
-            self.plan["sourceCommit"], self.plan["targetSha256"], epoch, self.action["stage"], now, duration, nonce)
+            self.plan["sourceCommit"], self.plan["targetSha256"], epoch, self.action["stage"], now, duration, nonce,
+            _lifecycle_selection_sha(self.action))
         if self.action["stage"] in _GATEWAY_STAGES:
             _, mount = self._mount()
             interactive = {"actorId": self.action["actorId"], "stage": self.action["stage"], "epoch": epoch,
@@ -307,3 +329,16 @@ class P2InteractiveWindow:
         demand(_closed(gateway) and gateway["sha256"] == _hash(self._original[0]),
                "P2_INTERACTIVE_GATEWAY_DRAIN_REQUIRED")
         return {"gatewayAdmissionClosed": True, "gatewayActive": 0, "gatewayUncertain": 0}
+
+    def verify_fenced(self):
+        gateway = self.verify_gateway_fenced()
+        physical = self.broker.observer.probe("witness")
+        frontend = physical["admission"]
+        operations = physical["witness"]["operations"]
+        demand(frontend == {"epoch": str(int(self.plan["initialEpoch"]) + 2),
+                            "newWork": False, "recovery": False, "active": 0, "uncertain": 0} and
+               type(operations) is list and all(type(row) is dict and row.get("state") == "completed" and
+                                              "reconciliation_sha256" in row and row["reconciliation_sha256"] is None
+                                              for row in operations),
+               "P2_INTERACTIVE_FRONTEND_DRAIN_REQUIRED")
+        return {**gateway, "frontendAdmission": copy.deepcopy(frontend), "frontendOperationCount": len(operations)}

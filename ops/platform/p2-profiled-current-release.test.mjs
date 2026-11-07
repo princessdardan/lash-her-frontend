@@ -231,10 +231,14 @@ test('fixed current certification plan joins the original release plan, terminal
         { method: 'GET', target: '/course/v1/admin/courses/' + courseId, bodySha256: rawHash(Buffer.alloc(0)), uses: 1 },
         { method: 'POST', target: '/course/v1/admin/entitlements/grants', bodySha256: 'a'.repeat(64), uses: 1 },
       ] };
+    const userId = '10000000-0000-4000-8000-000000000004';
+    const selectedLifecycle = { stage: 'lifecycle', actorId: selectedInteractive.actorId, requests: [], windowSeconds: 90,
+      frontendAction: { actorKind: 'admin', userId, operation: 'suspend' } };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
     for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
-      ['lifecycle-persistence', selectedPersistence], ['interactive-browser', selectedInteractive]]) {
+      ['lifecycle-persistence', selectedPersistence], ['interactive-browser', selectedInteractive],
+      ['interactive-browser', selectedLifecycle]]) {
       const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
       assert.deepEqual(preparedScope.scopedAction, selected);
       assert.equal(preparedScope.maximumSeconds, 300);
@@ -264,6 +268,16 @@ test('fixed current certification plan joins the original release plan, terminal
       [{ ...selectedInteractive.requests[1], target: '/course/v1/internal/accounts/commands' }],
       [{ ...selectedInteractive.requests[1], target: '/course/v1/admin/courses/' + courseId + '/modules' }],
     ]) assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('interactive-browser', { ...selectedInteractive, requests })));
+    for (const frontendAction of [
+      undefined,
+      { actorKind: 'customer', userId, operation: 'export' },
+      { actorKind: 'customer', userId: selectedLifecycle.actorId, operation: 'suspend' },
+      { actorKind: 'admin', userId, operation: 'preferences-on' },
+      { actorKind: 'admin', userId, operation: 'suspend', commandId: courseId },
+    ]) assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('interactive-browser', { ...selectedLifecycle, frontendAction })));
+    const preferenceScope = { ...selectedLifecycle, actorId: userId,
+      frontendAction: { actorKind: 'customer', userId, operation: 'preferences-off' } };
+    assert.deepEqual(prepareP2ProfiledCertificationOperator(scoped('interactive-browser', preferenceScope)).scopedAction, preferenceScope);
     const material = ['owned-interoperability-fixture-key', 'https://owned.vercel.app', 'a'.repeat(40), 'b'.repeat(64),
       '14', 'paid-grant', 1794009600, 90, 'c'.repeat(32)];
     const privateFixture = spawnSync('python3', ['-B', '-c',
@@ -277,6 +291,17 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.deepEqual(JSON.parse(privateFixture.stdout), [
       `${cookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${cookieBody}`)}`,
       sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${stage}\n${nonce}`), host, expires,
+    ]);
+    const lifecycleMaterial = [...material];
+    lifecycleMaterial[5] = 'lifecycle';
+    const lifecycleFixture = spawnSync('python3', ['-B', '-c',
+      'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _lifecycle_selection_sha as digest,_material,validate_interactive_action as check;data=json.load(sys.stdin);print(json.dumps(_material(*data["material"],digest(check(data["action"])))))',
+      join(root, 'ops/platform/host')], { input: JSON.stringify({ material: lifecycleMaterial, action: selectedLifecycle }), encoding: 'utf8' });
+    assert.equal(lifecycleFixture.status, 0, lifecycleFixture.stderr);
+    const frontendDigest = rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']));
+    const lifecycleCookieBody = `v2.${epoch}.lifecycle.${issued}.${expires}.${nonce}.${frontendDigest}`;
+    assert.deepEqual(JSON.parse(lifecycleFixture.stdout), [
+      `${lifecycleCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${lifecycleCookieBody}`)}`, null, host, expires,
     ]);
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('contain-native', selectedCommand)));
 

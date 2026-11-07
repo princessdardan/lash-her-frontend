@@ -57,7 +57,7 @@ const paidGrant = {
   POST: at(`/api/admin/courses/${uuid}/manual-grants`),
 };
 const lifecycle = {
-  GET: at(`/account|/admin/customer-accounts|/api/account(?:/exports/${uuid})?|/api/admin/customer-accounts/${uuid}/exports/${uuid}`),
+  GET: at(`/account|/admin/customer-accounts|/api/account(?:/exports/${uuid})?`),
   POST: at(`/api/account/(?:preferences|commands)|/api/admin/customer-accounts/${uuid}/commands`),
 };
 
@@ -102,12 +102,16 @@ function authentic(actual: string | undefined, expected: string): boolean {
 
 function browserProof(authority: Binding, cookie: string, now: number) {
   if (cookie.length > 256) return null;
-  const [version, epoch, stage, started, expires, nonce, mac, extra] = cookie.split(".");
-  if (extra !== undefined || version !== "v1" || !epochPattern.test(epoch ?? "") || !stages.includes(stage as Stage) ||
+  const fields = cookie.split(".");
+  const [version, epoch, stage, started, expires, nonce, selection] = fields;
+  const lifecycle = stage === "lifecycle";
+  if ((lifecycle ? version !== "v2" || fields.length !== 8 || !signedDigest.test(selection ?? "")
+    : version !== "v1" || fields.length !== 7) ||
+    !epochPattern.test(epoch ?? "") || !stages.includes(stage as Stage) ||
     !/^\d{10}$/u.test(started ?? "") || !/^\d{10}$/u.test(expires ?? "") || !/^[a-f0-9]{32}$/u.test(nonce ?? "") ||
     Number(started) > now || Number(expires) <= now || Number(expires) - Number(started) > maxLeaseSeconds ||
-    !authentic(mac, signature(authority, "browser", [version, epoch, stage, started, expires, nonce].join(".")))) return null;
-  return { epoch, stage: stage as Stage, nonce };
+    !authentic(fields.at(-1), signature(authority, "browser", fields.slice(0, -1).join(".")))) return null;
+  return { epoch, stage: stage as Stage, nonce, lifecycleSelectionSha256: lifecycle ? selection : undefined };
 }
 
 // A browser cookie is accepted only on selected paths. Proxy issues a short
@@ -151,13 +155,25 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 }
 
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
-  now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string } | null {
+  now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string; lifecycleSelectionSha256?: string } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
   const { source, target } = authority;
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
-  return { epoch: browser.epoch, producerSha256, source, target };
+  return { epoch: browser.epoch, producerSha256, source, target,
+    ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}) };
+}
+
+export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof readInteractiveRequest>> {
+  if (process.env.APP_ENV !== "staging" || process.env.VERCEL_ENV !== "production") return null;
+  try {
+    const { cookies, headers } = await import("next/headers");
+    const proof = (await headers()).get(INTERACTIVE_HEADER);
+    if (!proof) return null;
+    const permits = (await cookies()).getAll(INTERACTIVE_COOKIE);
+    return permits.length === 1 ? readInteractiveRequest(proof, permits[0].value) : null;
+  } catch { return null; }
 }
 
 export async function interactiveCourseGatewayProof(request: {

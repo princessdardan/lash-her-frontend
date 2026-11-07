@@ -89,3 +89,163 @@ export async function observeP2SuspensionPending(client, target, selection, { ve
     return qualifyP2SuspensionPending(observation, selection);
   } finally { await client.query("ROLLBACK"); }
 }
+
+const INTERACTIVE_LIFECYCLE_SQL = Object.freeze({
+  state: `SELECT u.id::text,u.status,u.account_version::text,
+    (SELECT count(*)::int FROM public.customer_sessions s WHERE s.user_id=u.id) AS sessions,
+    EXISTS(SELECT 1 FROM public.customer_sessions s WHERE s.user_id=u.id AND s.expires>pg_catalog.statement_timestamp()) AS has_live_session,
+    (SELECT p.learning_updates FROM public.customer_account_preferences p WHERE p.user_id=u.id) AS learning_updates,
+    (SELECT count(*)::text FROM public.customer_account_commands c WHERE c.user_id=u.id) AS command_count,
+    (SELECT coalesce(max(c.account_version),0)::text FROM public.customer_account_commands c WHERE c.user_id=u.id) AS latest_version,
+    (SELECT count(*)::int FROM public.customer_account_deliveries d JOIN public.customer_account_commands c USING(command_id)
+      WHERE c.user_id=u.id AND d.status IN ('pending','delivering')) AS outstanding,
+    NOT EXISTS(SELECT 1 FROM public.customer_provider_links l WHERE l.user_id=u.id) AS links_cleared,
+    NOT EXISTS(SELECT 1 FROM public.customer_account_exports e WHERE e.user_id=u.id
+      AND (e.status<>'expired' OR e.data IS NOT NULL OR e.frontend_data IS NOT NULL)) AS exports_cleared
+    FROM public.customer_users u WHERE u.id=$1::uuid`,
+  command: `SELECT c.command_id::text,c.user_id::text,c.account_version::text,c.action,c.requested_by_admin_id::text,
+    c.issued_at=pg_catalog.date_trunc('milliseconds',c.issued_at)
+      AND c.command=pg_catalog.jsonb_build_object('version',1,'commandId',c.command_id::text,'userId',c.user_id::text,
+        'accountVersion',c.account_version,'action',c.action,'issuedAt',
+        pg_catalog.to_char(c.issued_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) AS canonical
+    FROM public.customer_account_commands c WHERE c.command_id=$1::uuid AND c.user_id=$2::uuid`,
+  deliveries: `SELECT d.receiver,d.status,d.attempts,
+    (d.lease_id IS NULL AND d.lease_until IS NULL AND d.acknowledged_at IS NULL AND d.last_error IS NULL
+      AND d.next_run_at=c.issued_at) AS pristine
+    FROM public.customer_account_deliveries d JOIN public.customer_account_commands c USING(command_id)
+    WHERE d.command_id=$1::uuid ORDER BY CASE d.receiver WHEN 'course' THEN 0 ELSE 1 END`,
+  pendingExport: `SELECT command_id::text,user_id::text,status,
+    (ready_at IS NULL AND expires_at IS NULL AND data IS NULL AND frontend_data IS NOT NULL) AS pending_snapshot
+    FROM public.customer_account_exports WHERE command_id=$1::uuid`,
+});
+const interactiveBaselines = new WeakMap();
+const commandOperations = new Set(["suspend", "restore", "export", "delete"]);
+const preferencesOperation = operation => operation === "preferences-on" || operation === "preferences-off";
+
+function interactiveSelection(value) {
+  demand(closed(value, ["actorKind", "actorId", "userId", "operation"]) && uuid(value.actorId) && uuid(value.userId)
+    && (value.actorKind === "admin" && commandOperations.has(value.operation)
+      || value.actorKind === "customer" && value.actorId === value.userId
+        && (["export", "delete"].includes(value.operation) || preferencesOperation(value.operation))));
+  return Object.freeze({ ...value });
+}
+
+function interactiveResponse(value, selection, before) {
+  const preferences = preferencesOperation(selection.operation);
+  const pathname = selection.actorKind === "admin" ? `/api/admin/customer-accounts/${selection.userId}/commands`
+    : preferences ? "/api/account/preferences" : "/api/account/commands";
+  demand(closed(value, ["method", "pathname", "status", "requestId", "body"]) && value.method === "POST"
+    && value.pathname === pathname && uuid(value.requestId) && value.status === (preferences ? 200 : 202));
+  if (preferences) {
+    demand(closed(value.body, ["saved"]) && value.body.saved === true);
+  } else {
+    demand(closed(value.body, ["commandId", "action", "accountVersion", "status"]) && uuid(value.body.commandId)
+      && value.body.action === selection.operation && value.body.status === "pending"
+      && Number.isSafeInteger(value.body.accountVersion) && value.body.accountVersion === Number(before.account_version) + 1);
+  }
+  return { ...value, body: { ...value.body } };
+}
+
+const interactiveTarget = ({ host, port, user, database, serverMajor }) => ({ host, port, user, database, serverMajor });
+
+async function readInteractiveLifecycle(client, target, selection, response, { verifyEnvironment, verifySession }, backend) {
+  demand(client instanceof Client && typeof verifyEnvironment === "function" && typeof verifySession === "function"
+    && client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true
+    && client.connectionParameters?.host === target.host && Number(client.connectionParameters.port) === target.port);
+  const read = async (sql, values) => {
+    await verifyEnvironment(); await verifySession();
+    const { rows } = await client.query(sql, values);
+    await verifySession(); await verifyEnvironment();
+    return rows;
+  };
+  const requireBound = async pid => {
+    const [identity] = await read(P2_LIFECYCLE_PENDING_SQL.identity);
+    demand(identity?.username === target.user && identity.session_username === target.user && identity.database === target.database
+      && identity.major === target.serverMajor && Number.isInteger(identity.pid) && (pid === undefined || identity.pid === pid)
+      && client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
+    demand((await read(P2_LIFECYCLE_PENDING_SQL.lock, ["lash-her:private-db:migrations"]))[0]?.held === true);
+    return identity;
+  };
+  const initial = await requireBound(backend);
+  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  try {
+    demand((await requireBound(initial.pid)).read_only === "on");
+    const states = await read(INTERACTIVE_LIFECYCLE_SQL.state, [selection.userId]);
+    const state = states[0];
+    demand(states.length === 1 && state.id === selection.userId && ["active", "suspended", "deleted"].includes(state.status)
+      && /^(0|[1-9][0-9]*)$/u.test(state.account_version) && Number.isSafeInteger(Number(state.account_version))
+      && state.command_count === state.account_version && state.latest_version === state.account_version
+      && Number.isInteger(state.sessions) && state.sessions >= 0 && Number.isInteger(state.outstanding) && state.outstanding >= 0
+      && (state.learning_updates === null || typeof state.learning_updates === "boolean")
+      && typeof state.has_live_session === "boolean" && typeof state.links_cleared === "boolean" && typeof state.exports_cleared === "boolean");
+    if (selection.actorKind === "admin") {
+      const owners = await read(P2_LIFECYCLE_PENDING_SQL.owner, [selection.actorId]);
+      demand(owners.length === 1 && owners[0].id === selection.actorId && owners[0].status === "active" && owners[0].role === "owner");
+    }
+    const commandId = response?.body.commandId;
+    const command = commandId ? await read(INTERACTIVE_LIFECYCLE_SQL.command, [commandId, selection.userId]) : [];
+    const deliveries = commandId ? await read(INTERACTIVE_LIFECYCLE_SQL.deliveries, [commandId]) : [];
+    const pendingExport = commandId && selection.operation === "export"
+      ? await read(INTERACTIVE_LIFECYCLE_SQL.pendingExport, [commandId]) : [];
+    const [{ now }] = await read(P2_LIFECYCLE_PENDING_SQL.now);
+    demand((await requireBound(initial.pid)).read_only === "on");
+    return { backend: initial.pid, state, command, deliveries, pendingExport, observedAt: date(now) };
+  } finally {
+    await client.query("ROLLBACK");
+    await requireBound(initial.pid);
+  }
+}
+
+export async function captureP2InteractiveLifecycleBaseline(client, target, selection, dependencies) {
+  const selected = interactiveSelection(selection), binding = interactiveTarget(target);
+  const { backend, state, observedAt } = await readInteractiveLifecycle(client, binding, selected, null, dependencies);
+  const { operation } = selected;
+  demand(state.status !== "deleted" && (selected.actorKind !== "customer" || state.status === "active" && state.has_live_session));
+  if (operation === "suspend") demand(state.status === "active");
+  if (operation === "restore") demand(state.status === "suspended" && state.sessions === 0);
+  if (preferencesOperation(operation)) demand((state.learning_updates ?? false) === (operation === "preferences-off"));
+  const receipt = Object.freeze({
+    version: 1, status: "P2_INTERACTIVE_LIFECYCLE_BASELINE_OBSERVED", ...selected,
+    accountVersion: Number(state.account_version), frontendStatus: state.status, sessions: state.sessions,
+    learningUpdates: state.learning_updates ?? false, pendingOrDeliveringCount: state.outstanding, observedAt, readOnly: true,
+  });
+  interactiveBaselines.set(receipt, { client, binding, selected, backend, state });
+  return receipt;
+}
+
+export async function observeP2InteractiveLifecycleCase(client, target, selection, baseline, response, dependencies) {
+  const selected = interactiveSelection(selection), saved = interactiveBaselines.get(baseline);
+  demand(saved?.client === client && isDeepStrictEqual(saved.binding, interactiveTarget(target)) && isDeepStrictEqual(saved.selected, selected));
+  const before = saved.state, checked = interactiveResponse(response, selected, before);
+  interactiveBaselines.delete(baseline);
+  const { state: after, command, deliveries, pendingExport, observedAt } = await readInteractiveLifecycle(
+    client, saved.binding, selected, checked, dependencies, saved.backend);
+  const { actorKind, actorId, userId, operation } = selected;
+  if (preferencesOperation(operation)) {
+    demand(after.status === "active" && after.has_live_session && after.account_version === before.account_version
+      && after.sessions === before.sessions && after.outstanding === before.outstanding && after.learning_updates === (operation === "preferences-on"));
+  } else {
+    const row = command[0], commandId = checked.body.commandId, accountVersion = String(checked.body.accountVersion);
+    demand(command.length === 1 && row.command_id === commandId && row.user_id === userId && row.account_version === accountVersion
+      && row.action === operation && row.canonical === true && row.requested_by_admin_id === (actorKind === "admin" ? actorId : null)
+      && after.account_version === accountVersion && after.outstanding === before.outstanding + 2
+      && deliveries.length === 2 && deliveries[0].receiver === "course" && deliveries[1].receiver === "community"
+      && deliveries.every(delivery => delivery.status === "pending" && delivery.attempts === 0 && delivery.pristine === true));
+    if (operation === "export") {
+      demand(after.status === before.status && after.sessions === before.sessions && after.learning_updates === before.learning_updates
+        && pendingExport.length === 1 && pendingExport[0].command_id === commandId && pendingExport[0].user_id === userId
+        && pendingExport[0].status === "pending" && pendingExport[0].pending_snapshot === true);
+    } else if (operation === "delete") {
+      demand(after.status === "deleted" && after.sessions === 0 && after.learning_updates === null && after.links_cleared && after.exports_cleared);
+    } else {
+      demand(after.status === "suspended" && after.sessions === 0 && after.learning_updates === before.learning_updates);
+    }
+  }
+  return {
+    version: 1, status: "P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED", ...selected, requestId: checked.requestId, httpStatus: checked.status,
+    baselineSha256: p2SuspensionEvidenceSha256(baseline), frontendStatus: after.status, accountVersion: Number(after.account_version),
+    sessionsBefore: before.sessions, sessionsAfter: after.sessions, learningUpdates: after.learning_updates ?? false,
+    commandId: checked.body.commandId ?? null, deliveries: deliveries.map(({ receiver, status, attempts }) => ({ receiver, status, attempts })),
+    pendingOrDeliveringCount: after.outstanding, observedAt, readOnly: true,
+  };
+}

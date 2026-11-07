@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
-import { observeP2SuspensionPending, p2SuspensionEvidenceSha256 } from "./p2-lifecycle-pending-probe.mjs";
+import { captureP2InteractiveLifecycleBaseline, observeP2InteractiveLifecycleCase, observeP2SuspensionPending,
+  p2SuspensionEvidenceSha256 } from "./p2-lifecycle-pending-probe.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const run = (program, args, options = {}) => execFileSync(program, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -74,8 +75,13 @@ async function main() {
     checks.push("actual-nonowner-attribution-refused-and-repair-positive");
     await assert.rejects(observeP2SuspensionPending(client, { ...target, user: "foreign_operator" }, selection, dependencies));
     checks.push("actual-wrong-session-identity-refused");
+    phase = "actual-interactive-lifecycle-before-after";
+    checks.push(...await checkInteractiveLifecycle(client, contender, target, dependencies, adminId));
     await client.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))", ["lash-her:private-db:migrations"]);
     await assert.rejects(observeP2SuspensionPending(client, target, selection, dependencies));
+    await assert.rejects(captureP2InteractiveLifecycleBaseline(client, target, {
+      actorKind: "admin", actorId: adminId, userId, operation: "restore",
+    }, dependencies));
     checks.push("actual-missing-physical-lock-refused");
     return { version: 1, status: "P2_LIFECYCLE_PENDING_OWNED_PASS", postgresMajor: major, frontendMigrations: 83, checks, skipped: 0,
       actualTlsPostgres: true, actualPendingSelect: true, controlledTokenExpiryQualified: false, browserQualified: false,
@@ -87,5 +93,107 @@ async function main() {
     rmSync(directory, { recursive: true, force: true });
   }
 }
+
+async function checkInteractiveLifecycle(client, runtime, target, dependencies, adminId) {
+  const otherAdmin = randomUUID(), subject = randomUUID(), otherSubject = randomUUID();
+  const admin = (operation, userId = subject, actorId = adminId) => ({ actorKind: "admin", actorId, userId, operation });
+  const customer = (operation, userId = otherSubject) => ({ actorKind: "customer", actorId: userId, userId, operation });
+  const adminPath = userId => `/api/admin/customer-accounts/${userId}/commands`;
+  const baseline = selection => captureP2InteractiveLifecycleBaseline(client, target, selection, dependencies);
+  const observe = (selection, before, response) => observeP2InteractiveLifecycleCase(client, target, selection, before, response, dependencies);
+  await runtime.query("INSERT INTO public.admin_users(id,provider_user_id,email,email_normalized,role,status) VALUES($1,$2,'other-owner@example.invalid','other-owner@example.invalid','owner','active')", [otherAdmin, randomUUID()]);
+  for (const id of [subject, otherSubject]) {
+    await runtime.query("INSERT INTO public.customer_users(id,email) VALUES($1,$2)", [id, `${id}@example.invalid`]);
+    await runtime.query("INSERT INTO public.customer_sessions(token_hash,user_id,expires) VALUES($1,$2,pg_catalog.clock_timestamp()+interval '1 hour')", [randomUUID(), id]);
+  }
+
+  async function issue(selection, accountVersion) {
+    const { actorKind, actorId, userId, operation } = selection;
+    const commandId = randomUUID(), issuedAt = new Date().toISOString();
+    const command = { version: 1, commandId, userId, accountVersion, action: operation, issuedAt };
+    await runtime.query("BEGIN");
+    try {
+      await runtime.query(`INSERT INTO public.customer_account_commands(command_id,user_id,account_version,idempotency_key,action,issued_at,command,requested_by_admin_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [commandId, userId, accountVersion, randomUUID(), operation, issuedAt, command,
+        actorKind === "admin" ? actorId : null]);
+      await runtime.query("INSERT INTO public.customer_account_deliveries(command_id,receiver,next_run_at) VALUES($1,'course',$2),($1,'community',$2)", [commandId, issuedAt]);
+      await runtime.query("UPDATE public.customer_users SET account_version=$2 WHERE id=$1", [userId, accountVersion]);
+      if (operation === "export") {
+        await runtime.query("INSERT INTO public.customer_account_exports(command_id,user_id,frontend_data) VALUES($1,$2,$3)", [commandId, userId, { synthetic: "private-export-marker" }]);
+      } else {
+        await runtime.query("DELETE FROM public.customer_sessions WHERE user_id=$1", [userId]);
+        if (operation === "delete") {
+          await runtime.query("UPDATE public.customer_users SET status='deleted',email='deleted+'||id::text||'@account.invalid' WHERE id=$1", [userId]);
+          await runtime.query("DELETE FROM public.customer_provider_links WHERE user_id=$1", [userId]);
+          await runtime.query("DELETE FROM public.customer_account_preferences WHERE user_id=$1", [userId]);
+          await runtime.query("UPDATE public.customer_account_exports SET status='expired',data=NULL,frontend_data=NULL WHERE user_id=$1", [userId]);
+        } else {
+          await runtime.query("UPDATE public.customer_users SET status='suspended' WHERE id=$1", [userId]);
+        }
+      }
+      await runtime.query("COMMIT");
+    } catch (error) { await runtime.query("ROLLBACK"); throw error; }
+    return { method: "POST", pathname: actorKind === "admin" ? adminPath(userId) : "/api/account/commands",
+      status: 202, requestId: randomUUID(), body: { commandId, action: operation, accountVersion, status: "pending" } };
+  }
+
+  const suspend = admin("suspend"), wrongOwner = admin("suspend", subject, otherAdmin), wrongResource = admin("suspend", otherSubject);
+  const beforeSuspend = await baseline(suspend), beforeWrongOwner = await baseline(wrongOwner), beforeWrongResource = await baseline(wrongResource);
+  const suspendReceipt = await issue(suspend, 1);
+  await assert.rejects(observe(suspend, { ...beforeSuspend }, suspendReceipt), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  await assert.rejects(observe(suspend, beforeSuspend, { ...suspendReceipt, pathname: adminPath(otherSubject) }), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  await assert.rejects(observe(wrongOwner, beforeWrongOwner, suspendReceipt), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  await assert.rejects(observe(wrongResource, beforeWrongResource, { ...suspendReceipt, pathname: adminPath(otherSubject) }), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  const suspended = await observe(suspend, beforeSuspend, suspendReceipt);
+  assert.equal(suspended.frontendStatus, "suspended");
+  assert.equal(suspended.sessionsBefore, 1);
+  assert.equal(suspended.sessionsAfter, 0);
+  assert.deepEqual(suspended.deliveries, ["course", "community"].map(receiver => ({ receiver, status: "pending", attempts: 0 })));
+  await assert.rejects(observe(suspend, beforeSuspend, suspendReceipt), /P2_LIFECYCLE_PENDING_REFUSED/u);
+
+  const restore = admin("restore"), beforeRestore = await baseline(restore);
+  const restored = await observe(restore, beforeRestore, await issue(restore, 2));
+  assert.equal(restored.frontendStatus, "suspended");
+  assert.equal(restored.sessionsAfter, 0);
+  assert.equal(restored.accountVersion, 2);
+
+  const preferencesReceipt = { method: "POST", pathname: "/api/account/preferences", status: 200, requestId: randomUUID(), body: { saved: true } };
+  const optIn = customer("preferences-on"), wrongCustomer = { ...optIn, actorId: subject };
+  await assert.rejects(baseline(wrongCustomer), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  const wrongPreference = await baseline(optIn), beforeOptIn = await baseline(optIn);
+  await runtime.query("INSERT INTO public.customer_account_preferences(user_id,learning_updates) VALUES($1,false)", [otherSubject]);
+  await assert.rejects(observe(optIn, wrongPreference, preferencesReceipt), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  await runtime.query("UPDATE public.customer_account_preferences SET learning_updates=true WHERE user_id=$1", [otherSubject]);
+  const optedIn = await observe(optIn, beforeOptIn, preferencesReceipt);
+  assert.equal(optedIn.learningUpdates, true);
+  assert.equal(optedIn.accountVersion, 0);
+  assert.equal(optedIn.commandId, null);
+  const optOut = customer("preferences-off"), beforeOptOut = await baseline(optOut);
+  await runtime.query("UPDATE public.customer_account_preferences SET learning_updates=false WHERE user_id=$1", [otherSubject]);
+  assert.equal((await observe(optOut, beforeOptOut, { ...preferencesReceipt, requestId: randomUUID() })).learningUpdates, false);
+  await assert.rejects(baseline(optOut), /P2_LIFECYCLE_PENDING_REFUSED/u);
+
+  const exportAction = customer("export"), beforeExport = await baseline(exportAction);
+  const exportReceipt = await issue(exportAction, 1);
+  const exported = await observe(exportAction, beforeExport, exportReceipt);
+  assert.equal(exported.frontendStatus, "active");
+  assert.equal(exported.sessionsAfter, 1);
+  assert.equal(JSON.stringify(exported).includes("private-export-marker"), false);
+  const beforeReplay = await baseline(exportAction);
+  await assert.rejects(observe(exportAction, beforeReplay, { ...exportReceipt, requestId: randomUUID() }), /P2_LIFECYCLE_PENDING_REFUSED/u);
+  await assert.rejects(observe(exportAction, beforeReplay, { ...exportReceipt, requestId: randomUUID(),
+    body: { ...exportReceipt.body, accountVersion: 2 } }), /P2_LIFECYCLE_PENDING_REFUSED/u);
+
+  await runtime.query("INSERT INTO public.customer_provider_links(user_id,provider,provider_account_id,type) VALUES($1,'google',$2,'oidc')", [otherSubject, randomUUID()]);
+  const deleteAction = customer("delete"), beforeDelete = await baseline(deleteAction);
+  const deleted = await observe(deleteAction, beforeDelete, await issue(deleteAction, 2));
+  assert.equal(deleted.frontendStatus, "deleted");
+  assert.equal(deleted.sessionsAfter, 0);
+  assert.equal(deleted.learningUpdates, false);
+  assert.equal((await client.query("SHOW transaction_read_only")).rows[0].transaction_read_only, "off");
+  return ["interactive-admin-attribution-resource-session-revocation-and-restore-ordering",
+    "interactive-preference-changes-and-account-binding", "interactive-export-metadata-only-old-replay-refusal-and-deletion"];
+}
+
 main().then(value => console.log(JSON.stringify(value))).catch(error => { console.error(JSON.stringify({ status: "P2_LIFECYCLE_PENDING_OWNED_FAILED", phase,
   code: error?.code ?? error?.name ?? "Error", providerTouched: false })); process.exitCode = 1; });

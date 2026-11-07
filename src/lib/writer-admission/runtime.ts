@@ -4,7 +4,7 @@ import { withWriterOperationContext } from "@/lib/writer-admission/context";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { runFrontendWriterOperation } from "../../../ops/platform/frontend-admission.mjs";
-import { INTERACTIVE_COOKIE, INTERACTIVE_HEADER, readInteractiveRequest } from "./interactive-proof";
+import { readInteractiveBrowserRequest } from "./interactive-proof";
 import {
   resolveWriterAdmissionConfiguration,
   WriterAdmissionError,
@@ -23,14 +23,7 @@ export type WriterAdmissionRunner = <T>(kind: WriterOperationKind, task: () => P
   options?: { uncertainResult?: (value: T) => boolean }) => Promise<T>;
 
 async function interactiveWriter(configuration: WriterAdmissionConfiguration) {
-  if (configuration.target.environment !== "staging" || process.env.VERCEL_ENV !== "production") return null;
-  try {
-    const { cookies, headers } = await import("next/headers");
-    const proof = (await headers()).get(INTERACTIVE_HEADER);
-    if (!proof) return null;
-    const matches = (await cookies()).getAll(INTERACTIVE_COOKIE);
-    return matches.length === 1 ? readInteractiveRequest(proof, matches[0].value) : null;
-  } catch { return null; }
+  return configuration.target.environment === "staging" ? readInteractiveBrowserRequest() : null;
 }
 
 export function createWriterAdmissionRunner(dependencies: {
@@ -75,7 +68,7 @@ export function createWriterAdmissionRunner(dependencies: {
         producerSha256, sourceSha: configuration.sourceSha }, async () => {
         if (connectionLost) throw new Error();
         const result = await withWriterOperationContext(task, { operationId, kind, epoch,
-          producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 });
+          producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 }, interactive?.lifecycleSelectionSha256);
         // A 5xx may describe an uncertain provider result. Preserve an unresolved
         // operation even when a domain handler catches its own exception.
         if (connectionLost || options?.uncertainResult?.(result)) throw new Error();

@@ -50,6 +50,17 @@ const reviewedGatewayProofDependencies = {
   "src/lib/writer-admission/interactive-proof.ts": "a7b55a52a4194f67f90058fd2e17939f63af9f0669b1f9601f1bb80f24accc9f",
   "src/lib/api-integration/gateway-transport.ts": "69fdca4874a44faad96318151270dbf37948becabed33c5255d1f6516ce4cbf8"
 };
+const reviewedLifecyclePermitSource = {
+  ...reviewedInteractiveSource,
+  "src/lib/writer-admission/runtime.ts": "b787f2e9b0746a342d0dac6e855c5e4510670772d5357ac516e7ac42998b6e23",
+  "src/lib/writer-admission/context.ts": "5cc5f69904ef7b76a079f0c8525616370edcd57b5b4c9f0364c2053812eb3d25"
+};
+const reviewedLifecyclePermitDependencies = {
+  ...reviewedGatewayProofDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "bcdc988d36f15be015af59c277f337d4cff6936f01f3c3a14ec8af798b3b4e8c",
+  "src/lib/customer-lifecycle/handler.ts": "88f53c68378e5931123026d0f245a629a5a052b06fbec50cf303b60ddf047c1d",
+  "src/app/(site)/account/page.tsx": "e159f2ceb622a9b56bc31afcdb09e2afdf8d2e91c7ebacfa1455c43c51e075c0"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -71,6 +82,11 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
+  if (same(selected, reviewedLifecyclePermitSource)) {
+    const dependencies = Object.fromEntries(Object.keys(reviewedLifecyclePermitDependencies).map(file => [file, readSourceHash(file)]));
+    demand(same(dependencies, reviewedLifecyclePermitDependencies));
+    return { ...selected, ...dependencies };
+  }
   demand(same(selected, reviewedInteractiveSource));
   const dependencies = Object.fromEntries(Object.keys(reviewedInteractiveDependencies).map(file => [file, readSourceHash(file)]));
   if (same(dependencies, reviewedInteractiveDependencies)) return { ...selected, ...dependencies };

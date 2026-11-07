@@ -50,12 +50,20 @@ export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
 function interactiveActionValid(value){
-  if(!exactKeys(value,['stage','actorId','requests','windowSeconds'])||
+  const lifecycle=value?.stage==='lifecycle';
+  if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(lifecycle?['frontendAction']:[])])||
      !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
      !Number.isInteger(value.windowSeconds)||value.windowSeconds<30||value.windowSeconds>300||
      !Array.isArray(value.requests))return false;
-  if(['identity','lifecycle'].includes(value.stage))return value.requests.length===0;
+  if(lifecycle){
+    const selected=value.frontendAction;
+    return value.requests.length===0&&exactKeys(selected,['actorKind','userId','operation'])&&uuid(selected.userId)&&
+      (selected.actorKind==='admin'?['suspend','restore','export','delete'].includes(selected.operation):
+        selected.actorKind==='customer'&&selected.userId===value.actorId&&
+        ['export','delete','preferences-on','preferences-off'].includes(selected.operation));
+  }
+  if(value.stage==='identity')return value.requests.length===0;
   if(!value.requests.length||value.requests.length>16)return false;
   const selected=new Set(), empty=rawHash(Buffer.alloc(0));
   for(const row of value.requests){

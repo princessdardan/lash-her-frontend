@@ -6,12 +6,108 @@ import { resolve } from "node:path";
 
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_BROWSER_REFUSED"); };
 const closed = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
-  && Object.keys(value).sort().join() === [...keys].sort().join();
+  && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][0-9a-f]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const sha = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+const matches = (value, pattern) => typeof value === "string" && pattern.test(value);
 const pause = milliseconds => new Promise(done => setTimeout(done, milliseconds));
 const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["cache-control"] ?? "")
   && /(?:^|,)\s*no-store\s*(?:,|$)/iu.test(headers["cache-control"] ?? "");
+const interactiveOrigin = "https://staging.lashher.com";
+const permitName = "__Host-lash-p2q-window";
+const interactivePages = {
+  identity: { owner: "/admin/sign-in", learner: "/sign-in" },
+  authoring: { owner: "/admin/courses" },
+  media: { owner: "/admin/courses" },
+  learning: { learner: "/academy" },
+  "paid-grant": { owner: "/admin/courses" },
+  lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
+};
+
+export function p2InteractiveBrowserPath(stage, context) {
+  const pages = typeof stage === "string" && Object.hasOwn(interactivePages, stage) && interactivePages[stage];
+  demand(pages && typeof context === "string" && Object.hasOwn(pages, context));
+  return pages[context];
+}
+
+export function validateP2InteractiveBrowserInput(input) {
+  demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",
+    "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds"])
+    && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
+    && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
+    && matches(input.deploymentId, /^dpl_[A-Za-z0-9]+$/u) && matches(input.deploymentUrl, /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u)
+    && input.browserOrigin === interactiveOrigin && typeof input.stage === "string" && Object.hasOwn(interactivePages, input.stage)
+    && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
+    && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
+  return input;
+}
+
+export function validateP2InteractiveBrowserPermit(permit, input, now = Math.floor(Date.now() / 1000)) {
+  demand(closed(permit, ["stage", "epoch", "expires", "cookie"]) && permit.stage === input.stage && permit.epoch === input.epoch
+    && Number.isSafeInteger(permit.expires) && permit.expires > now && typeof permit.cookie === "string" && permit.cookie.length <= 256);
+  const parts = permit.cookie.split(".");
+  const [version, epoch, stage, issued, expires, nonce] = parts;
+  demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
+    && Number(issued) <= now && Number(expires) === permit.expires && permit.expires - Number(issued) <= input.windowSeconds
+    && /^[a-f0-9]{32}$/u.test(nonce ?? "")
+    && (stage === "lifecycle" ? version === "v2" && parts.length === 8 && sha(parts[6]) && sha(parts[7])
+      : version === "v1" && parts.length === 7 && sha(parts[6])));
+  return permit;
+}
+
+export function readP2InteractiveBrowserPermit(stream, input, selection) {
+  return new Promise((resolve, reject) => {
+    const bytes = Buffer.alloc(1024);
+    let length = 0;
+    const finish = permit => {
+      clearTimeout(timer);
+      stream.pause();
+      stream.off("data", read);
+      stream.off("end", refused);
+      stream.off("error", refused);
+      bytes.fill(0);
+      if (permit) resolve(permit);
+      else reject(new Error("P2_INTERACTIVE_BROWSER_STDIN_REFUSED"));
+    };
+    const refused = () => finish();
+    const read = chunk => {
+      try {
+        demand(Buffer.isBuffer(chunk) && length + chunk.length <= bytes.length);
+        chunk.copy(bytes, length);
+        length += chunk.length;
+        const end = bytes.subarray(0, length).indexOf(10);
+        if (end === -1) return;
+        demand(end === length - 1);
+        const line = bytes.subarray(0, end).toString("utf8"), value = JSON.parse(line);
+        demand(JSON.stringify(value) === line && closed(value, ["challenge", "bindingSha256", "context", "permit"])
+          && value.challenge === input.challenge && value.bindingSha256 === input.bindingSha256 && value.context === selection.context);
+        const permit = validateP2InteractiveBrowserPermit(value.permit, input);
+        demand(permit.expires === selection.expires);
+        finish(permit);
+      } catch { refused(); }
+    };
+    const timer = setTimeout(refused, 15_000);
+    stream.once("end", refused);
+    stream.once("error", refused);
+    stream.on("data", read);
+    if (stream.readableEnded || stream.destroyed) refused();
+    else stream.resume();
+  });
+}
+
+function scopedCookie(value, expires) {
+  return { name: permitName, value, url: `${interactiveOrigin}/`, secure: true, httpOnly: true, sameSite: "Lax", expires };
+}
+
+export async function installP2InteractiveBrowserCookie(context, permit, input) {
+  validateP2InteractiveBrowserPermit(permit, input);
+  await context.addCookies([scopedCookie(permit.cookie, permit.expires)]);
+}
+
+export async function expireP2InteractiveBrowserCookie(context) {
+  await context.addCookies([scopedCookie("", 1)]);
+}
+
 export function validateP2LifecycleBrowserInput(input) {
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin", "userId", "courseId", "lessonId", "windowSeconds"])
     && input.version === 1 && input.environment === "staging" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId)
@@ -104,8 +200,125 @@ export async function recordP2SuspensionBrowser(input, pages, control) {
     tokensRetained: false, rawHarRetained: false, nativeInvocationQualified: false, releaseAccepted: false };
 }
 
+function receiveBrowserMessage(timeout) {
+  return new Promise((done, fail) => {
+    const clean = () => {
+      clearTimeout(timer);
+      process.off("message", receive);
+      process.off("disconnect", lost);
+    };
+    const lost = () => { clean(); fail(new Error("P2_BROWSER_PARENT_UNAVAILABLE")); };
+    const receive = message => { clean(); done(message); };
+    const timer = setTimeout(lost, timeout);
+    process.once("message", receive);
+    process.once("disconnect", lost);
+  });
+}
+
+function sendBrowserMessage(message) {
+  return new Promise((done, fail) => process.send(message, error => error ? fail(error) : done()));
+}
+
+const interactiveBinding = input => ({ challenge: input.challenge, bindingSha256: input.bindingSha256, stage: input.stage, epoch: input.epoch });
+
+async function runInteractiveBrowser(first) {
+  let input = validateP2InteractiveBrowserInput(first), binding = interactiveBinding(input);
+  const send = (type, value = {}) => sendBrowserMessage({ type, ...binding, ...value });
+  const next = () => {
+    const pending = receiveBrowserMessage(300_000);
+    pending.catch(() => {}); // An IPC send can fail before the caller awaits this receive.
+    return pending;
+  };
+  let browser, context, selection, opened = false, cleared = false;
+  const contexts = new Map(), actions = new Set([input.actionId]);
+  const lost = () => { if (browser) void browser.close().catch(() => {}); };
+  const terminate = () => { if (process.connected) process.disconnect(); else lost(); };
+  process.once("disconnect", lost);
+  process.once("SIGTERM", terminate);
+  try {
+    let pending = next();
+    await send("interactive-initialized");
+    while (true) {
+      const command = await pending;
+      demand(closed(command, ["type", "input"]) && command.input?.challenge === binding.challenge
+        && command.input.bindingSha256 === binding.bindingSha256 && command.input.stage === binding.stage && command.input.epoch === binding.epoch);
+      const received = command.input;
+      if (command.type === "interactive-close") {
+        demand(closed(received, Object.keys(binding)));
+        break;
+      }
+      if (command.type === "interactive-select") {
+        demand(cleared && closed(received, [...Object.keys(binding), "next"]));
+        const selectedInput = validateP2InteractiveBrowserInput(received.next);
+        demand(["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
+          && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
+          && BigInt(selectedInput.epoch) > BigInt(input.epoch));
+        actions.add(selectedInput.actionId);
+        input = selectedInput;
+        binding = interactiveBinding(input);
+        selection = context = undefined;
+        opened = cleared = false;
+        pending = next();
+        await send("interactive-selected");
+        continue;
+      }
+      demand(closed(received, [...Object.keys(binding), "context", "expires"]) && Number.isSafeInteger(received.expires));
+      const path = p2InteractiveBrowserPath(binding.stage, received.context);
+      if (command.type === "interactive-install") {
+        demand(selection === undefined);
+        selection = { context: received.context, expires: received.expires };
+        const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
+        try {
+          if (!browser) {
+            const { chromium } = await import("playwright");
+            browser = await chromium.launch({ headless: false });
+          }
+          context = contexts.get(received.context);
+          if (!context) {
+            context = await browser.newContext();
+            contexts.set(received.context, context);
+          }
+          await installP2InteractiveBrowserCookie(context, permit, input);
+        } finally { permit.cookie = ""; }
+        pending = next();
+        await send("interactive-permit-installed", selection);
+        continue;
+      }
+      demand(selection && received.context === selection.context && received.expires === selection.expires && context && !cleared);
+      if (command.type === "interactive-open") {
+        demand(!opened && Date.now() < selection.expires * 1000);
+        opened = true;
+        const page = await context.newPage();
+        const response = await page.goto(input.browserOrigin + path, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        demand(response && Number.isInteger(response.status()));
+        pending = next();
+        await send("interactive-page-opened", { ...selection, path, httpStatus: response.status() });
+      } else {
+        demand(command.type === "interactive-clear");
+        await expireP2InteractiveBrowserCookie(context);
+        await Promise.all(context.pages().map(page => page.close()));
+        cleared = true;
+        pending = next();
+        await send("interactive-permit-cleared", selection);
+      }
+    }
+  } finally {
+    process.off("disconnect", lost);
+    process.off("SIGTERM", terminate);
+    process.stdin.destroy();
+    try { if (context && !cleared) await expireP2InteractiveBrowserCookie(context); }
+    finally { await browser?.close(); }
+  }
+  await send("interactive-closed");
+  process.disconnect();
+}
+
 async function childMain() {
   demand(process.versions.node.split(".")[0] === "24" && typeof process.send === "function" && process.argv.length === 1);
+  const first = await receiveBrowserMessage(30_000);
+  demand(closed(first, ["type", "input"]));
+  if (first.type === "initialize-interactive") return runInteractiveBrowser(first.input);
+  demand(first.type === "initialize");
   let authCheck;
   const next = type => new Promise((done, fail) => {
     const timer = setTimeout(() => { process.off("message", receive); fail(new Error("P2_BROWSER_PARENT_TIMEOUT")); }, type === "initialize" ? 30_000 : 900_000);
@@ -121,7 +334,7 @@ async function childMain() {
       clearTimeout(timer); process.off("message", receive); done(message.input); };
     process.on("message", receive);
   });
-  const input = validateP2LifecycleBrowserInput(await next("initialize"));
+  const input = validateP2LifecycleBrowserInput(first.input);
   process.send({ type: "initialized", challenge: input.challenge });
   // Only the fixed armed auth-preparation parent may release this barrier.
   // No browser or authentication request exists before that source capability.

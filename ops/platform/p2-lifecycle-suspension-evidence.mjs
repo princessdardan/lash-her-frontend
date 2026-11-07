@@ -11,12 +11,14 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
+import { p2InteractiveBrowserPath, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 const plans = new WeakMap(), controllers = new WeakMap(), artifacts = new WeakMap();
 const controlledCaptures = new WeakMap(), naturalArtifacts = new WeakMap(), pendingArtifacts = new WeakMap();
 const authenticationArtifacts = new WeakMap();
+const interactiveControllers = new WeakMap();
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_SUSPENSION_EVIDENCE_REFUSED"); };
 const sha = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
@@ -193,6 +195,186 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
     }, close,
   });
   controllers.set(controller, { plan, input, values, active: () => !failed && !ended }); send("initialize", input); return controller;
+}
+
+const interactiveBinding = input => ({ challenge: input.challenge, bindingSha256: input.bindingSha256, stage: input.stage, epoch: input.epoch });
+
+async function reviewedInteractiveInput(plan, challenge) {
+  const { p2CertificationParentContext } = await import("./p2-certification.mjs");
+  p2CertificationParentContext(plan);
+  demand(plan.mode === "interactive-browser" && plan.version === 2 && plan.maximumSeconds === 300
+    && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
+    && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
+  return validateP2InteractiveBrowserInput({ version: 2, environment: "staging", actionId: plan.certificationActionId,
+    challenge, bindingSha256: plan.planSha256, stage: plan.scopedAction.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
+    sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
+    browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: plan.scopedAction.windowSeconds });
+}
+
+// A dedicated stdin pipe carries one permit per reviewed phase. All IPC data
+// is challenge-bound control or sanitized evidence, including on failure.
+export async function launchP2InteractiveBrowserRecorder(plan) {
+  let input = await reviewedInteractiveInput(plan, randomBytes(32).toString("hex")), binding = interactiveBinding(input);
+  committedProgramBytes(plan.sourceCommit, "ops/platform/p2-lifecycle-suspension-evidence.mjs");
+  const program = Buffer.concat([committedProgramBytes(plan.sourceCommit, "ops/platform/p2-lifecycle-browser-recorder.mjs"),
+    Buffer.from(P2_LIFECYCLE_BROWSER_LAUNCHER)]);
+  const programSha256 = hash(program), actions = new Set([input.actionId]);
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: sourceRoot,
+    stdio: ["pipe", "ignore", "ignore", "ipc"],
+    env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
+  let activePlan = plan, pending, selected, phaseTimer, force, closePromise;
+  let ended = false, failed = false, closing = false, phase = "initializing";
+  const failure = () => new Error("P2_INTERACTIVE_BROWSER_CHILD_FAILED");
+  const fail = () => {
+    if (failed) return;
+    failed = true;
+    clearTimeout(overall);
+    clearTimeout(phaseTimer);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pending.reject(failure());
+      pending = undefined;
+    }
+    child.stdin.destroy();
+    if (!ended) {
+      child.kill("SIGTERM");
+      force = setTimeout(() => { if (!ended) child.kill("SIGKILL"); }, 5000);
+    }
+  };
+  const overall = setTimeout(fail, 1_800_000);
+  child.on("error", fail);
+  child.stdin.on("error", fail);
+  child.on("message", message => {
+    try {
+      demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
+        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : [])])
+        && message.type === pending.type
+        && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
+      if (pending.type === "interactive-page-opened") {
+        demand(message.path === p2InteractiveBrowserPath(pending.binding.stage, pending.selection.context)
+          && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599);
+      }
+      const waiter = pending;
+      pending = undefined;
+      clearTimeout(waiter.timer);
+      waiter.resolve(freeze(message));
+    } catch { fail(); }
+  });
+  const exit = new Promise(resolve => child.once("close", (code, signal) => {
+    ended = true;
+    clearTimeout(overall);
+    clearTimeout(phaseTimer);
+    clearTimeout(force);
+    if (!closing || pending || code !== 0 || signal) fail();
+    resolve({ code, signal });
+  }));
+  const command = (type, packet, expect, selection = {}, timeout = 30_000, expectedBinding = binding) => {
+    demand(!pending && !ended && !failed && child.connected);
+    return new Promise((resolve, reject) => {
+      pending = { type: expect, binding: expectedBinding, selection, resolve, reject, timer: setTimeout(fail, timeout) };
+      child.send({ type, input: packet }, error => { if (error) fail(); });
+    });
+  };
+  const ready = command("initialize-interactive", input, "interactive-initialized").then(value => {
+    phase = "ready";
+    phaseTimer = setTimeout(fail, plan.maximumSeconds * 1000);
+    return value;
+  });
+  ready.catch(() => {});
+  const requireSelection = context => {
+    demand(!failed && !ended && selected?.context === context);
+    return selected;
+  };
+  const controller = Object.freeze({
+    initialized: () => ready,
+    async installPermit(permit, context) {
+      await ready;
+      demand(phase === "ready" && !failed && !ended && !closing);
+      phase = "installing";
+      try {
+        p2InteractiveBrowserPath(binding.stage, context);
+        validateP2InteractiveBrowserPermit(permit, input);
+        if (binding.stage === "lifecycle") {
+          const { actorId, frontendAction: { actorKind, userId, operation } } = activePlan.scopedAction;
+          demand(context === (actorKind === "admin" ? "owner" : "learner")
+            && permit.cookie.split(".")[6] === hash(JSON.stringify([actorKind, actorId, userId, operation])));
+        }
+        selected = { context, expires: permit.expires };
+        const installed = command("interactive-install", { ...binding, ...selected }, "interactive-permit-installed", selected);
+        installed.catch(() => {});
+        const privatePermit = { stage: permit.stage, epoch: permit.epoch, expires: permit.expires, cookie: permit.cookie };
+        const frame = Buffer.from(JSON.stringify({ challenge: binding.challenge, bindingSha256: binding.bindingSha256, context, permit: privatePermit }) + "\n");
+        privatePermit.cookie = "";
+        try { child.stdin.write(frame, () => frame.fill(0)); }
+        catch { frame.fill(0); throw failure(); }
+        const receipt = await installed;
+        phase = "installed";
+        return receipt;
+      } catch { fail(); throw failure(); }
+    },
+    async open(context) {
+      const selection = requireSelection(context);
+      demand(phase === "installed" && !closing && Date.now() < selection.expires * 1000);
+      phase = "opening";
+      const receipt = await command("interactive-open", { ...binding, ...selection }, "interactive-page-opened", selection, 40_000);
+      phase = "opened";
+      return receipt;
+    },
+    async clearPermit(context) {
+      const selection = requireSelection(context);
+      demand((phase === "installed" || phase === "opened") && !closing);
+      phase = "clearing";
+      const receipt = await command("interactive-clear", { ...binding, ...selection }, "interactive-permit-cleared", selection);
+      phase = "cleared";
+      clearTimeout(phaseTimer);
+      return receipt;
+    },
+    async selectPlan(nextPlan) {
+      demand(phase === "cleared" && !failed && !ended && !closing && actions.size < 24);
+      phase = "selecting";
+      try {
+        const next = await reviewedInteractiveInput(nextPlan, binding.challenge), nextBinding = interactiveBinding(next);
+        demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
+          && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
+          && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
+        const receipt = await command("interactive-select", { ...binding, next }, "interactive-selected", {}, 30_000, nextBinding);
+        actions.add(next.actionId);
+        activePlan = nextPlan;
+        input = next;
+        binding = nextBinding;
+        selected = undefined;
+        phase = "ready";
+        phaseTimer = setTimeout(fail, nextPlan.maximumSeconds * 1000);
+        const source = interactiveControllers.get(controller);
+        source.plan = nextPlan;
+        source.binding = freeze({ challenge: binding.challenge, bindingSha256: binding.bindingSha256, browserProgramSha256: programSha256 });
+        return receipt;
+      } catch { fail(); throw failure(); }
+    },
+    close: () => closePromise ??= (async () => {
+      closing = true;
+      let acknowledged = false;
+      if (!failed && !ended && !pending) {
+        try { await command("interactive-close", binding, "interactive-closed", {}, 5000); acknowledged = true; }
+        catch { fail(); }
+      } else if (!ended) fail();
+      child.stdin.destroy();
+      const reap = setTimeout(() => { if (!ended) child.kill("SIGKILL"); }, 5000);
+      try {
+        const result = await exit;
+        return { childClosed: true, browserCleanupAcknowledged: acknowledged && !failed && result.code === 0 && result.signal === null };
+      } finally { clearTimeout(reap); }
+    })(),
+  });
+  interactiveControllers.set(controller, { plan, active: () => !failed && !ended && !closing,
+    binding: freeze({ challenge: binding.challenge, bindingSha256: binding.bindingSha256, browserProgramSha256: programSha256 }) });
+  return controller;
+}
+
+export function readP2InteractiveBrowserControllerBinding(plan, controller) {
+  const source = interactiveControllers.get(controller);
+  demand(source?.plan === plan && source.active());
+  return { ...source.binding };
 }
 
 export function readP2LifecycleBrowserControllerBinding(plan, controller) {

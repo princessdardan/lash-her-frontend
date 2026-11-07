@@ -21,6 +21,9 @@ const epoch=value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value);
 const oid=value=>typeof value==='string'&&/^[1-9][0-9]{0,9}$/u.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
 const interruptedMode='p2-profiled-known-ack-interrupted-restoration';
+const interactiveMode='interactive-browser';
+const interactiveWindowEpoch=plan=>(BigInt(plan.initialEpoch)+1n).toString();
+const interactiveClosedEpoch=plan=>(BigInt(plan.initialEpoch)+2n).toString();
 const bodies={admit:'e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be21504',begin_operation:'c634f0f3f018062fb2b115f923ab8637f02a34c515e8532b41ccd912762917d3',current_policy:'1322b30139dcb101aafcbd461536c1788233da1f0ab6e9084745513a4da1694e',finish_operation:'84257c2f6b8be184397e3d326d9908f11a6e9d75facde5c7abb5bad2e9db4e1d',settle:'a6fb927fbc0df4d7262aba5c6185ebffa737d1adafcf5766080078e0d0f45fbd'};
 const options=(value,target,interrupted=false)=>({...frontendConnectionOptions(value,target),
   options:'-c search_path=pg_catalog,public'+(interrupted?' -c default_transaction_read_only=on':''),
@@ -30,14 +33,29 @@ function profileFields(expectedProfile,plan,job,historicalLogins,interrupted=fal
   demand((plan?.mode===interruptedMode)===interrupted&&(!interrupted||expectedProfile!==undefined),'current-source-context');
   const carriers=[plan,plan?.nativePlan,plan?.nativePlan?.target,job,job?.target,historicalLogins,historicalLogins?.target];
   if(expectedProfile===undefined){
-    demand(plan?.version===1&&job?.version===1&&!carriers.some(row=>row&&Object.hasOwn(row,'qualificationTargetProfile')));
+    demand(plan?.version===1&&plan.mode!==interactiveMode&&job?.version===1&&!carriers.some(row=>row&&Object.hasOwn(row,'qualificationTargetProfile')));
     return {};
   }
   const qualificationTargetProfile=requireQualificationTargetProfile(currentProfile,{qualificationTargetProfile:expectedProfile},...carriers);
   demand(plan.version===2&&plan.nativePlan.version===2&&job.version===2&&historicalLogins.version===2&&
     plan.startState==='already-closed'&&Array.isArray(job.target.approvedPendingTags)&&job.target.approvedPendingTags.length===0);
   if(interrupted)requireInterruptedPlan(plan,job);
+  if(plan.mode===interactiveMode)requireInteractivePlan(plan,job);
   return {qualificationTargetProfile};
+}
+
+function requireInteractivePlan(plan,job){
+  const native=plan.nativePlan;
+  demand(plan.environment==='staging'&&job.environment==='staging'&&plan.contractPhase==='p2'&&job.contractPhase==='p2'&&
+    plan.originalReleaseId===job.releaseId&&native.actionId===job.releaseId&&action(plan.certificationActionId)&&
+    plan.certificationActionId!==job.releaseId&&/^[a-f0-9]{40}$/u.test(plan.sourceCommit??'')&&!/^0+$/u.test(plan.sourceCommit)&&
+    plan.sourceCommit===job.sourceCommit&&plan.sourceCommit===plan.operatorSourceCommit&&plan.sourceCommit===native.sourceCommit&&
+    plan.targetSha256===native.targetSha256&&plan.targetSha256===targetHash(job.target)&&plan.targetSha256===targetHash(native.target)&&
+    plan.phase2ContractManifestSha256===job.phase2ContractManifestSha256&&plan.phase2ContractManifestSha256===native.phase2ContractManifestSha256&&
+    epoch(plan.initialEpoch)&&epoch(interactiveClosedEpoch(plan))&&native.initialEpoch===plan.initialEpoch&&
+    native.purpose==='scoped-certification-control-only'&&Array.isArray(native.commandWitnesses)&&native.commandWitnesses.length===0&&
+    name(job.target.runtimeRole)&&native.producer?.role?.name===job.target.runtimeRole&&oid(native.producer.role.oid)&&
+    digest(native.producer.producerSha256), 'current-interactive-plan');
 }
 
 function requireInterruptedPlan(plan,job){
@@ -66,12 +84,17 @@ function admissionPolicy(plan,value,initial,interrupted){
       'current-interrupted-closed');
     return;
   }
-  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native','export-cleanup','mux-callback-recovery','lifecycle-persistence'].includes(plan.mode)&&
+  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native','export-cleanup','mux-callback-recovery','lifecycle-persistence',interactiveMode].includes(plan.mode)&&
     ['qualified-ready','already-closed'].includes(plan.startState)&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&/^[1-9][0-9]{0,17}$/u.test(value.epoch)&&
     typeof value.newWork==='boolean'&&typeof value.recovery==='boolean'&&
     Number.isInteger(value.active)&&value.active>=0&&Number.isInteger(value.uncertain)&&value.uncertain>=0);
   if(plan.mode==='contain-native')return;
   const closedOffset=plan.startState==='qualified-ready'?1n:0n,delta=BigInt(value.epoch)-BigInt(plan.initialEpoch);
+  if(plan.mode===interactiveMode){
+    demand(delta>=0n&&delta<=2n&&value.newWork===(delta===1n)&&value.recovery===(delta===1n)&&
+      (!initial||delta===0n)&&(delta!==0n||value.active===0&&value.uncertain===0));
+    return;
+  }
   if(['export-cleanup','mux-callback-recovery','lifecycle-persistence'].includes(plan.mode)){
     const cleanup=plan.mode==='export-cleanup';
     demand(plan.version===2&&plan.startState==='already-closed'&&plan.nativePlan.purpose==='scoped-certification-control-only'&&
@@ -96,6 +119,34 @@ function admissionPolicy(plan,value,initial,interrupted){
       value.recovery===(closedOffset===1n&&delta===0n||delta===closedOffset+1n||delta===closedOffset+2n));
     demand(['fault-drop-after-ack','known-ack-recovery'].includes(plan.mode)?value.uncertain<=1:value.uncertain===0);
   }
+}
+
+async function observeInteractiveProducers(client,plan,ordinary,runtime,admission){
+  const producerSha256=createHash('sha256').update(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`).digest('hex');
+  const enabled=admission.epoch===interactiveWindowEpoch(plan);
+  const ordinaryBindings=new Map(ordinary.map(row=>[row.producerSha256,row.role.oid]));
+  demand(isDeepStrictEqual(runtime,plan.nativePlan.producer.role)&&ordinaryBindings.size===ordinary.length&&
+    ordinaryBindings.get(plan.nativePlan.producer.producerSha256)===runtime.oid&&!ordinaryBindings.has(producerSha256));
+  const rows=(await client.query(`SELECT producer_sha256,source_sha,database_role::text AS role_oid,enabled
+    FROM frontend_admission.producers WHERE enabled OR producer_sha256=ANY($1::text[]) LIMIT 258`,
+  [[...ordinaryBindings.keys(),producerSha256]])).rows;
+  const selected=rows.find(row=>row.producer_sha256===producerSha256);
+  demand((selected||admission.epoch===plan.initialEpoch)&&rows.length===ordinary.length+(selected?1:0)&&rows.every(row=>
+    row.source_sha===plan.sourceCommit&&(row===selected
+      ? row.enabled===enabled&&row.role_oid===runtime.oid
+      : row.enabled===!enabled&&row.role_oid===ordinaryBindings.get(row.producer_sha256))));
+  return {producerSha256,roleOid:runtime.oid};
+}
+
+function requireInteractiveOperations(plan,admission,operations,interactive){
+  demand((admission.epoch!==plan.initialEpoch||operations.length===0)&&operations.every(row=>
+    uuid(row.id)&&row.epoch===interactiveWindowEpoch(plan)&&row.source_sha===plan.sourceCommit&&
+    row.producer_sha256===interactive.producerSha256&&row.role_oid===interactive.roleOid&&
+    ['new-work','recovery'].includes(row.kind)&&['active','uncertain','completed'].includes(row.state)&&
+    (row.state==='completed'?row.completed_at instanceof Date&&Number.isFinite(+row.completed_at):row.completed_at===null)&&
+    (row.reconciliation_sha256===null||row.state==='completed'&&digest(row.reconciliation_sha256)))&&
+    operations.filter(row=>row.state==='active').length===admission.active&&
+    operations.filter(row=>row.state==='uncertain').length===admission.uncertain);
 }
 
 export function readP2CertificationCurrent(client,prepared,plan,verify,initial=false,expectedProfile){
@@ -132,21 +183,29 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
       FROM pg_catalog.pg_proc p WHERE p.pronamespace='frontend_admission'::regnamespace ORDER BY p.proname`)).rows;
     demand(routines.length===5&&routines.every(row=>bodies[row.proname]===createHash('sha256').update(row.prosrc).digest('hex')&&row.owner===owner.oid&&row.public_execute===false&&
       (['begin_operation','finish_operation'].includes(row.proname)?row.prokind==='p'&&!row.prosecdef&&row.proconfig===null:row.prokind==='f'&&row.prosecdef&&isDeepStrictEqual(row.proconfig,['search_path=pg_catalog, frontend_admission']))));
-    checkpoint='current-producers';const producers=(await client.query('SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows;
-    demand(producers.length===prepared.plan.producers.length&&producers.every((row,index)=>row.producer_sha256===prepared.plan.producers[index].producerSha256&&row.source_sha===job.sourceCommit&&row.role_oid===prepared.plan.producers[index].role.oid));
     const controls=(await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
     const counts=(await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
     demand(controls.length===1&&controls[0].environment==='staging'&&controls[0].target_sha256===plan.targetSha256);
     checkpoint='current-admission-state';const admission={epoch:controls[0].epoch,newWork:controls[0].new_work,recovery:controls[0].recovery,...counts};admissionPolicy(plan,admission,initial,interrupted);
-    const unresolved=(await client.query("SELECT id::text,epoch::text,kind,producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.operations WHERE state<>'completed' ORDER BY id LIMIT 4097")).rows;
-    if(interrupted)demand(unresolved.length===0,'current-interrupted-closed');
-    const preNative=BigInt(admission.epoch)<=BigInt(plan.initialEpoch)+(plan.startState==='qualified-ready'?1n:0n);
-    demand(unresolved.length<=4096&&(plan.mode==='contain-native'||unresolved.every(row=>row.source_sha===plan.sourceCommit&&
-      (['auth-preparation','browser-pending'].includes(plan.mode)?prepared.plan.producers.some(producer=>producer.producerSha256===row.producer_sha256&&producer.role.oid===row.role_oid)&&
-        BigInt(row.epoch)<=BigInt(plan.initialEpoch)+1n:
-      (preNative?prepared.plan.producers.some(producer=>producer.producerSha256===row.producer_sha256&&producer.role.oid===row.role_oid)&&BigInt(row.epoch)<=BigInt(plan.initialEpoch):
-        row.kind==='recovery'&&row.producer_sha256===plan.nativePlan.producer.producerSha256&&row.role_oid===plan.nativePlan.producer.role.oid&&
-        BigInt(row.epoch)>=BigInt(plan.nativePlan.initialEpoch)&&BigInt(row.epoch)<=BigInt(plan.nativePlan.initialEpoch)+1n)))));
+    let interactive;
+    if(plan.mode===interactiveMode){
+      checkpoint='current-interactive-producers';
+      interactive=await observeInteractiveProducers(client,plan,prepared.plan.producers,runtime,admission);
+    }else{
+      checkpoint='current-producers';
+      const producers=(await client.query('SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows;
+      demand(producers.length===prepared.plan.producers.length&&producers.every((row,index)=>row.producer_sha256===prepared.plan.producers[index].producerSha256&&row.source_sha===job.sourceCommit&&row.role_oid===prepared.plan.producers[index].role.oid));
+      checkpoint='current-admission-state';
+      const unresolved=(await client.query("SELECT id::text,epoch::text,kind,producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.operations WHERE state<>'completed' ORDER BY id LIMIT 4097")).rows;
+      if(interrupted)demand(unresolved.length===0,'current-interrupted-closed');
+      const preNative=BigInt(admission.epoch)<=BigInt(plan.initialEpoch)+(plan.startState==='qualified-ready'?1n:0n);
+      demand(unresolved.length<=4096&&(plan.mode==='contain-native'||unresolved.every(row=>row.source_sha===plan.sourceCommit&&
+        (['auth-preparation','browser-pending'].includes(plan.mode)?prepared.plan.producers.some(producer=>producer.producerSha256===row.producer_sha256&&producer.role.oid===row.role_oid)&&
+          BigInt(row.epoch)<=BigInt(plan.initialEpoch)+1n:
+        (preNative?prepared.plan.producers.some(producer=>producer.producerSha256===row.producer_sha256&&producer.role.oid===row.role_oid)&&BigInt(row.epoch)<=BigInt(plan.initialEpoch):
+          row.kind==='recovery'&&row.producer_sha256===plan.nativePlan.producer.producerSha256&&row.role_oid===plan.nativePlan.producer.role.oid&&
+          BigInt(row.epoch)>=BigInt(plan.nativePlan.initialEpoch)&&BigInt(row.epoch)<=BigInt(plan.nativePlan.initialEpoch)+1n)))));
+    }
     checkpoint='current-command-witness';demand(name(target.user));await client.query(`SET LOCAL ROLE "${target.user}"`);
     const nativePlan=plan.nativePlan,ids=nativePlan.commandWitnesses.map(row=>row.commandId);
     const commandRows=(await client.query('SELECT command_id::text,user_id::text,account_version::text,action,issued_at,command FROM public.customer_account_commands WHERE command_id=ANY($1::uuid[]) ORDER BY command_id',[ids])).rows;
@@ -169,6 +228,10 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
     const operations=(await client.query(`SELECT id::text,epoch::text,kind,state,producer_sha256,source_sha,database_role::text AS role_oid,completed_at,reconciliation_sha256
       FROM frontend_admission.operations WHERE epoch >= $1::bigint ORDER BY started_at,id LIMIT 4097`,[(BigInt(nativePlan.initialEpoch)+(plan.mode==='direct-worker'?0n:1n)).toString()])).rows;
     demand(operations.length<=4096);
+    if(interactive){
+      checkpoint='current-interactive-operations';
+      requireInteractiveOperations(plan,admission,operations,interactive);
+    }
     if(interrupted){
       const selected=operations.find(row=>row.id===plan.operationId), windowEpoch=(BigInt(nativePlan.initialEpoch)+1n).toString();
       demand(operations.length===2&&selected?.reconciliation_sha256===plan.reconciliationSha256&&orderViolations.length===0&&
@@ -302,7 +365,9 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
     if(expectedProfile!==undefined)await verifyCurrent();
     if(interrupted)demand(current.journalSha256===input.receipt.journalSha256&&current.witnessSha256===input.receipt.witnessSha256,
       'current-interrupted-witness-changed');
-    if(closing)demand(current.admission.newWork===false&&current.admission.recovery===false&&current.admission.active===0&&current.admission.uncertain===0);
+    if(closing)demand(current.admission.newWork===false&&current.admission.recovery===false&&current.admission.active===0&&current.admission.uncertain===0&&
+      (input.plan.mode!==interactiveMode||current.admission.epoch===interactiveClosedEpoch(input.plan)&&
+        current.witness.operations.every(row=>row.reconciliation_sha256===null)), 'current-admission-closure');
     return{version:input.version,...selectedProfile,status:closing?'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED':'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
       ...(expectedProfile===undefined?{}:{backendStart:input.backendStart,environment:current.environment,releaseId:current.releaseId,targetSha256:current.targetSha256}),
       witnessSha256:current.witnessSha256,...(input.operation==='witness'?{witness:current.witness}:{}),
@@ -324,7 +389,10 @@ export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
     receipt.certificationActionId===plan.certificationActionId&&receipt.planSha256===plan.planSha256&&
     receipt.candidateSha256===plan.candidateSha256&&receipt.targetSha256===plan.targetSha256&&plan.targetSha256===targetHash(target)&&
     ['host','port','database','user','serverMajor'].every(key=>receipt.target[key]===target[key])&&
-    receipt.admission?.epoch===plan.initialEpoch&&receipt.admission.newWork===false&&receipt.admission.recovery===false);
+    receipt.admission?.epoch===plan.initialEpoch&&receipt.admission.newWork===false&&receipt.admission.recovery===false&&
+    (plan.mode!==interactiveMode||receipt.admission.active===0&&receipt.admission.uncertain===0&&
+      isDeepStrictEqual(receipt.runtime,plan.nativePlan.producer.role)&&Array.isArray(receipt.witness?.operations)&&
+      receipt.witness.operations.length===0&&receipt.witnessSha256===hash(receipt.witness)));
   const client=new Client(options(await getUrl(),target));let lock=false,started=false,lost=false;
   client.on('error',()=>{lost=true;});
   const verify=async()=>{

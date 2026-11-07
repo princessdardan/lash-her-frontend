@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AccountControls } from "@/components/customer-auth/account-controls";
 import { getCustomerActor } from "@/lib/customer-auth/session";
-import { isAccountLifecycleEnabled } from "@/lib/customer-lifecycle/handler";
+import { canReadAccountOverview, isAccountLifecycleEnabled } from "@/lib/customer-lifecycle/handler";
 import { createAccountLifecycleStore } from "@/lib/customer-lifecycle/store";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export default async function AccountPage() {
   if (!isAccountLifecycleEnabled()) notFound();
   const customer = await getCustomerActor();
   if (!customer) redirect("/sign-in?callbackUrl=%2Faccount");
+  if (!await canReadAccountOverview(customer.id)) notFound();
   const overview = await createAccountLifecycleStore().overview(customer.id);
   return <main className="mx-auto max-w-3xl space-y-12 px-6 py-20">
     <header><h1 className="mb-4 font-serif text-4xl">Your account</h1><p>{customer.email}</p><a href="/account/sign-in-methods" className="mt-4 inline-block underline">Manage sign-in methods</a></header>

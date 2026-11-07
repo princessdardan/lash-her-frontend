@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
+import { currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -127,6 +127,45 @@ test("interactive writer uses only its certified producer and refuses a changed 
   await run("recovery", async () => assert.equal(currentWriterOperationIdentity()?.producerSha256, selected.producerSha256));
   assert.equal(f.calls.at(-2)?.values?.[5], selected.producerSha256);
   assert.ok(f.calls.filter(call => call.sql.includes("current_policy")).every(call => call.values?.[2] === selected.producerSha256));
+});
+
+test("lifecycle browser proof requires a signed v2 selection and carries it only through the admitted operation", async () => {
+  const f = fixture();
+  f.state.epoch = "12";
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const userId = "8d680a92-8071-4fd0-9da2-c4d350aa729d";
+  const selection = createHash("sha256").update(JSON.stringify(["customer", userId, userId, "preferences-off"])).digest("hex");
+  const nonce = "a".repeat(32);
+  const tail = `12.lifecycle.${now}.${now + 120}.${nonce}`;
+  const issue = (body: string) => `${body}.${createHmac("sha256", env.CRON_SECRET)
+    .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex")}`;
+  const cookie = issue(`v2.${tail}.${selection}`);
+  const input = { origin: INTERACTIVE_ORIGIN, method: "POST", path: "/api/account/preferences" };
+  const proof = attestInteractiveRequest({ ...input, cookie }, env, now)!;
+  const selected = readInteractiveRequest(proof, cookie, env, now);
+  assert.equal(selected?.lifecycleSelectionSha256, selection);
+  for (const invalid of [issue(`v1.${tail}`), issue(`v2.${tail}`), issue(`v2.${tail}.bad`),
+    issue(`v2.${tail.replace(".lifecycle.", ".identity.")}.${selection}`), cookie.replace(selection, "0".repeat(64))]) {
+    assert.equal(attestInteractiveRequest({ ...input, cookie: invalid }, env, now), null);
+    assert.equal(readInteractiveRequest(proof, invalid, env, now), null);
+  }
+  assert.equal(attestInteractiveRequest({ ...input, method: "GET", path: `/api/admin/customer-accounts/${userId}/exports/${userId}`, cookie }, env, now), null);
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+    createClient: () => f.client,
+    getInteractiveWriter: async () => selected,
+  });
+  let observeAfterCompletion!: () => void;
+  let outsideSelection: Promise<string | undefined> | undefined;
+  await run("new-work", async () => {
+    assert.equal(currentWriterLifecycleSelection(), selection);
+    outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterLifecycleSelection);
+  });
+  observeAfterCompletion();
+  assert.equal(await outsideSelection, undefined);
+  assert.equal(currentWriterLifecycleSelection(), undefined);
+  assert.equal(JSON.stringify(f.calls).includes(selection), false);
 });
 
 test("Next request handoff overwrites caller headers on selected paths and strips them elsewhere", async () => {

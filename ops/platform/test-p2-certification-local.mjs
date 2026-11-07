@@ -238,6 +238,7 @@ async function child(){
     phase='actual-child-interactive-producer-swap';
     await proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targetSha256,sourceCommit,producerSha256,roleOid:roles.cert_runtime});
     checks.push('actual-interactive-producer-swap-same-role-denial-drain-and-independent-fence-recovery');
+    checks.push('actual-interactive-physical-window-witness-and-independent-closure');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
@@ -254,7 +255,10 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
   await admin.query('INSERT INTO frontend_admission.producers VALUES($1,$3,$4,true),($2,$3,$4,false)',
     [secondary.producerSha256,unexpected,sourceCommit,roleOid]);
   const current={...profiled,plan:{...profiled.plan,producers:ordinaryProducers}};
-  const initial={...scoped,mode:'lifecycle-persistence',initialEpoch:'7',nativePlan:{...scoped.nativePlan,initialEpoch:'7'}};
+  const {releaseId,phase2ContractManifestSha256}=profiled.migration.job;
+  const actionPlan=(initialEpoch,certificationActionId)=>({...scoped,mode:'interactive-browser',environment:'staging',contractPhase:'p2',
+    operatorSourceCommit:sourceCommit,originalReleaseId:releaseId,phase2ContractManifestSha256,certificationActionId,initialEpoch,
+    nativePlan:{...scoped.nativePlan,initialEpoch,actionId:releaseId,phase2ContractManifestSha256,sourceCommit,targetSha256,producer:runtimeProducer}});
   const runtimeUrl=new URL(url);runtimeUrl.username='cert_runtime';
   const runtime=new Client({connectionString:runtimeUrl.href,ssl:{rejectUnauthorized:true}});
   const peer=new Client({connectionString:runtimeUrl.href,ssl:{rejectUnauthorized:true}});
@@ -262,24 +266,34 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
     control:(await admin.query('SELECT epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows[0],
     enabled:(await admin.query('SELECT producer_sha256 FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows.map(row=>row.producer_sha256),
   });
+  const withOwner=async(client,work)=>{
+    await client.query('SET ROLE cert_owner');
+    try{return await work();}
+    finally{await client.query('RESET ROLE');}
+  };
+  const run=(connection,selected,kind,epoch,id,work)=>runFrontendWriterOperation(connection,policy,
+    {id,kind,epoch,producerSha256:selected,sourceSha:sourceCommit},work);
+  const witness=probe=>observeP2CertificationPhysical({...probe,operation:'witness'},deps,profile);
+  const verifyClosed=probe=>observeP2CertificationPhysical({...probe,operation:'verify-closed'},deps,profile);
+  const activeId=randomUUID(),uncertainId=randomUUID(),evidence='a'.repeat(64);
   try{
     await runtime.connect();await peer.connect();
-    await withP2CertificationFrontendSession(current,initial,deps,async({client,verify})=>{
-      const withOwner=async(work)=>{
-        await verify();await client.query('SET ROLE cert_owner');
-        try{return await work();}
-        finally{await client.query('RESET ROLE');await verify();}
+    const initial=actionPlan('7','interactive-first');
+    const rejectedProbe=await withP2CertificationFrontendSession(current,initial,deps,async({client,verify,probe,receipt})=>{
+      const heldOwner=async(work)=>{
+        await verify();
+        try{return await withOwner(client,work);}
+        finally{await verify();}
       };
-      const open=epoch=>withOwner(()=>openFrontendInteractiveAdmission(client,policy,epoch,reviewed));
-      const close=epoch=>withOwner(()=>closeFrontendInteractiveAdmission(client,policy,epoch,reviewed));
-      const restore=epoch=>withOwner(()=>restoreFencedFrontendInteractiveProducers(client,policy,epoch,reviewed));
-      const prepare=(epoch,selection=reviewed)=>withOwner(()=>prepareFrontendInteractiveProducer(client,policy,epoch,selection));
-      const run=(connection,selected,kind,epoch,id,work)=>runFrontendWriterOperation(connection,policy,
-        {id,kind,epoch,producerSha256:selected,sourceSha:sourceCommit},work);
+      const open=epoch=>heldOwner(()=>openFrontendInteractiveAdmission(client,policy,epoch,reviewed));
+      const close=epoch=>heldOwner(()=>closeFrontendInteractiveAdmission(client,policy,epoch,reviewed));
+      const prepare=(epoch,selection=reviewed)=>heldOwner(()=>prepareFrontendInteractiveProducer(client,policy,epoch,selection));
       const denied=(connection,selected,kind,epoch)=>assert.rejects(
         run(connection,selected,kind,epoch,randomUUID(),()=>assert.fail('denied producer reached an effect')),
         {message:'FRONTEND_ADMISSION_REFUSED'});
       const starting=await actual();
+      assert.deepEqual(receipt.admission,{epoch:'7',newWork:false,recovery:false,active:0,uncertain:0});
+      assert.deepEqual((await witness(probe)).witness.operations,[]);
       const registration={epoch:'7',newWork:false,recovery:false,producerSha256:interactiveSha256};
       const readRegistered=async()=>(await admin.query('SELECT source_sha,database_role::text AS role_oid,enabled FROM frontend_admission.producers WHERE producer_sha256=$1',
         [interactiveSha256])).rows;
@@ -300,6 +314,7 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
         const changed=await readRegistered();
         try{
           await assert.rejects(prepare('7'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+          await assert.rejects(witness(probe),{checkpoint:'current-interactive-producers'});
           assert.deepEqual(await readRegistered(),changed);
         }finally{await alter(repair);}
       }
@@ -315,12 +330,27 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
       assert.deepEqual(await actual(),starting);
       assert.deepEqual(await open('7'),{epoch:'8',newWork:true,recovery:true});
       assert.deepEqual(await actual(),{control:{epoch:'8',new_work:true,recovery:true},enabled:[interactive.producerSha256]});
+      assert.deepEqual((await witness(probe)).admission,{epoch:'8',newWork:true,recovery:true,active:0,uncertain:0});
       await assert.rejects(prepare('8'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
       for(const entry of ordinaryProducers)for(const kind of ['new-work','recovery']){
         await denied(peer,entry.producerSha256,kind,'8');
       }
       await denied(peer,interactive.producerSha256,'new-work','7');
-      const activeId=randomUUID(),uncertainId=randomUUID();
+      await admin.query('UPDATE frontend_admission.producers SET enabled=true WHERE producer_sha256=$1',[unexpected]);
+      try{await assert.rejects(witness(probe),{checkpoint:'current-interactive-producers'});}
+      finally{await admin.query('UPDATE frontend_admission.producers SET enabled=false WHERE producer_sha256=$1',[unexpected]);}
+      for(const [selected,source,role,epoch] of [
+        [producerSha256,sourceCommit,roleOid,'8'],
+        [interactiveSha256,'a'.repeat(40),roleOid,'8'],
+        [interactiveSha256,sourceCommit,profiled.plan.owner.oid,'8'],
+        [interactiveSha256,sourceCommit,roleOid,'9'],
+      ]){
+        const id=randomUUID();
+        await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+          VALUES($1,$2,$3,$4,$5,'recovery','completed',pg_catalog.clock_timestamp())`,[id,selected,source,role,epoch]);
+        try{await assert.rejects(witness(probe),{checkpoint:'current-interactive-operations'});}
+        finally{await admin.query('DELETE FROM frontend_admission.operations WHERE id=$1',[id]);}
+      }
       let entered,finish;
       const started=new Promise(resolve=>{entered=resolve;});
       const stop=new Promise(resolve=>{finish=resolve;});
@@ -329,24 +359,66 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
         await Promise.race([started,operation]);
         await assert.rejects(run(peer,interactive.producerSha256,'recovery','8',uncertainId,async()=>{throw Error('owned uncertainty');}),
           {message:'FRONTEND_OPERATION_OUTCOME_REQUIRES_REVIEW'});
+        const live=await witness(probe);
+        assert.deepEqual(live.admission,{epoch:'8',newWork:true,recovery:true,active:1,uncertain:1});
+        assert.deepEqual(live.witness.operations.map(row=>[row.id,row.kind,row.state]),
+          [[activeId,'new-work','active'],[uncertainId,'recovery','uncertain']]);
         assert.deepEqual(await close('8'),{epoch:'9',newWork:false,recovery:false,active:1,uncertain:1,ledgerDrained:false});
         assert.deepEqual(await actual(),{control:{epoch:'9',new_work:false,recovery:false},enabled:starting.enabled});
+        const closed=await witness(probe);
+        assert.deepEqual(closed.admission,{epoch:'9',newWork:false,recovery:false,active:1,uncertain:1});
+        assert.deepEqual(closed.witness.operations,live.witness.operations);
         await denied(peer,interactive.producerSha256,'recovery','9');
         await denied(peer,producerSha256,'new-work','9');
         await assert.rejects(open('9'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
         await assert.rejects(prepare('9'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
       }finally{finish();await operation;}
       assert.equal((await admin.query('SELECT state FROM frontend_admission.operations WHERE id=$1',[activeId])).rows[0].state,'completed');
-      const evidence='a'.repeat(64);
-      await withOwner(()=>reconcileFrontendOperation(client,policy,'9',uncertainId,evidence));
-      assert.equal((await open('9')).epoch,'10');
-      await withOwner(()=>changeFrontendAdmission(client,policy,'10',{newWork:false,recovery:false}));
-      assert.deepEqual(await actual(),{control:{epoch:'11',new_work:false,recovery:false},enabled:[interactive.producerSha256]});
-      await assert.rejects(close('10'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
-      assert.deepEqual(await restore('11'),{epoch:'12',newWork:false,recovery:false,active:0,uncertain:0,ledgerDrained:true});
-      assert.deepEqual(await actual(),{control:{epoch:'12',new_work:false,recovery:false},enabled:starting.enabled});
-      await assert.rejects(restore('12'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      return probe;
     },profile);
+    await assert.rejects(verifyClosed(rejectedProbe),{checkpoint:'current-admission-closure'});
+    await withOwner(admin,()=>reconcileFrontendOperation(admin,policy,'9',uncertainId,evidence));
+    await assert.rejects(verifyClosed(rejectedProbe),{checkpoint:'current-admission-closure'});
+
+    const cleanProbe=await withP2CertificationFrontendSession(current,actionPlan('9','interactive-clean'),deps,async({client,probe})=>{
+      assert.equal((await withOwner(client,()=>openFrontendInteractiveAdmission(client,policy,'9',reviewed))).epoch,'10');
+      const id=randomUUID();
+      assert.equal(await run(runtime,interactiveSha256,'recovery','10',id,async()=>true),true);
+      assert.deepEqual(await withOwner(client,()=>closeFrontendInteractiveAdmission(client,policy,'10',reviewed)),
+        {epoch:'11',newWork:false,recovery:false,active:0,uncertain:0,ledgerDrained:true});
+      const closed=await witness(probe);
+      assert.deepEqual(closed.admission,{epoch:'11',newWork:false,recovery:false,active:0,uncertain:0});
+      assert.deepEqual(closed.witness.operations.map(row=>[row.id,row.kind,row.state]),[[id,'recovery','completed']]);
+      await assert.rejects(verifyClosed(probe));
+      return probe;
+    },profile);
+    const final=await verifyClosed(cleanProbe);
+    assert.equal(final.status,'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED');
+    assert.equal(final.admission.epoch,'11');
+    assert.equal(final.backendAbsent&&final.migrationLockReleased&&final.nonceLockReleased,true);
+
+    const interruptedProbe=await withP2CertificationFrontendSession(current,actionPlan('11','interactive-interrupted'),deps,async({client,probe})=>{
+      assert.equal((await withOwner(client,()=>openFrontendInteractiveAdmission(client,policy,'11',reviewed))).epoch,'12');
+      await assert.rejects(containP2ProfiledCertificationAdmission(probe,deps),{checkpoint:'guard-physical-lock'});
+      return probe;
+    },profile);
+    const fenced=await containP2ProfiledCertificationAdmission(interruptedProbe,deps);
+    assert.equal(fenced.epoch,'13');
+    assert.equal(fenced.frontendAdmissionClosed&&fenced.admissionChanged,true);
+    assert.deepEqual(await actual(),{control:{epoch:'13',new_work:false,recovery:false},enabled:[interactiveSha256]});
+    await assert.rejects(verifyClosed(interruptedProbe),{checkpoint:'current-interactive-producers'});
+    assert.equal((await containP2ProfiledCertificationAdmission(interruptedProbe,deps)).admissionChanged,false);
+    await admin.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',['lash-her:private-db:migrations']);
+    try{
+      await withOwner(admin,async()=>{
+        await assert.rejects(closeFrontendInteractiveAdmission(admin,policy,'12',reviewed),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+        assert.deepEqual(await restoreFencedFrontendInteractiveProducers(admin,policy,'13',reviewed),
+          {epoch:'14',newWork:false,recovery:false,active:0,uncertain:0,ledgerDrained:true});
+        await assert.rejects(restoreFencedFrontendInteractiveProducers(admin,policy,'14',reviewed),
+          {message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      });
+    }finally{await admin.query('SELECT pg_catalog.pg_advisory_unlock_all()');}
+    assert.deepEqual(await actual(),{control:{epoch:'14',new_work:false,recovery:false},enabled:ordinaryProducers.map(row=>row.producerSha256)});
   }finally{await Promise.all([runtime.end(),peer.end()]);}
 }
 

@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { readFileSync } from "node:fs";
+import { PassThrough } from "node:stream";
 import test from "node:test";
-import { parseP2OwnerSuspensionResponse, parseP2PlaybackObservation, validateP2LifecycleBrowserInput } from "./p2-lifecycle-browser-recorder.mjs";
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, p2InteractiveBrowserPath, parseP2OwnerSuspensionResponse,
+  parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
+  validateP2LifecycleBrowserInput } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
-import { launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
+import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
@@ -177,3 +181,139 @@ test("actual immutable-bytes NodeIPC launcher refuses malformed input without br
     assert.equal(await exited, 1); assert.deepEqual(messages, [{ type: "failed" }]); assert.equal(output, "");
   } finally { clearTimeout(timer); if (child.exitCode === null) child.kill("SIGKILL"); }
 });
+
+function interactiveInput(overrides = {}) {
+  return { version: 2, environment: "staging", actionId: "owned-interactive", challenge: "b".repeat(64), bindingSha256: "c".repeat(64),
+    sourceCommit: "1".repeat(40), deploymentId: "dpl_ownedBrowser", deploymentUrl: "https://owned-browser.vercel.app",
+    browserOrigin: "https://staging.lashher.com", stage: "identity", epoch: "9", windowSeconds: 120, ...overrides };
+}
+function interactivePermit(input) {
+  const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+  const lifecycle = input.stage === "lifecycle";
+  const cookie = [lifecycle ? "v2" : "v1", input.epoch, input.stage, issued, expires, "3".repeat(32),
+    ...(lifecycle ? ["4".repeat(64)] : []), "5".repeat(64)].join(".");
+  return { stage: input.stage, epoch: input.epoch, expires, cookie };
+}
+const binding = input => ({ challenge: input.challenge, bindingSha256: input.bindingSha256, stage: input.stage, epoch: input.epoch });
+const privateFrame = (input, context, permit) => Buffer.from(JSON.stringify({
+  challenge: input.challenge, bindingSha256: input.bindingSha256, context, permit,
+}) + "\n");
+
+test("interactive recorder requires the exact in-process reviewed plan and a fixed stage, epoch and actor context", async () => {
+  const input = interactiveInput();
+  assert.deepEqual(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(p2InteractiveBrowserPath("identity", "owner"), "/admin/sign-in");
+  assert.equal(p2InteractiveBrowserPath("learning", "learner"), "/academy");
+  assert.throws(() => p2InteractiveBrowserPath("learning", "owner"));
+  assert.throws(() => p2InteractiveBrowserPath("identity", "__proto__"));
+  for (const change of [{ cookie: "private" }, { browserOrigin: "https://elsewhere.example" }, { epoch: 9 }, { stage: ["identity"] }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, ...change }));
+  }
+  await assert.rejects(launchP2InteractiveBrowserRecorder(Object.freeze({ ...input, mode: "interactive-browser" })));
+  for (const selected of [input, interactiveInput({ stage: "lifecycle" })]) {
+    const permit = interactivePermit(selected);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, selected), permit);
+    assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: permit.cookie.replace(/^v[12]/u, "v3") }, selected));
+    assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, epoch: "8" }, selected));
+    assert.throws(() => validateP2InteractiveBrowserPermit(permit, selected, permit.expires));
+  }
+});
+
+test("private stdin accepts one bounded matching frame per phase and refuses replay, duplication, malformed bytes and EOF", async () => {
+  const input = interactiveInput(), context = "owner", permit = interactivePermit(input), selection = { context, expires: permit.expires };
+  const frame = privateFrame(input, context, permit), stream = new PassThrough();
+  const received = readP2InteractiveBrowserPermit(stream, input, selection);
+  stream.write(frame.subarray(0, 19));
+  stream.write(frame.subarray(19));
+  assert.deepEqual(await received, permit);
+  const next = interactiveInput({ stage: "lifecycle", epoch: "11", bindingSha256: "d".repeat(64) }), nextPermit = interactivePermit(next);
+  const stale = readP2InteractiveBrowserPermit(stream, next, { context, expires: nextPermit.expires });
+  stream.write(frame);
+  await assert.rejects(stale, { message: "P2_INTERACTIVE_BROWSER_STDIN_REFUSED" });
+  stream.destroy();
+  for (const invalid of [Buffer.concat([frame, frame]), Buffer.alloc(1025, 97), Buffer.from("{bad json}\n"),
+    privateFrame({ ...input, challenge: "f".repeat(64) }, context, permit), privateFrame(input, "learner", permit),
+    Buffer.from(frame.toString().replace('"context":', '"context":"owner","context":')), Buffer.alloc(0)]) {
+    const stream = new PassThrough(), observed = readP2InteractiveBrowserPermit(stream, input, selection);
+    stream.end(invalid);
+    await assert.rejects(observed, { message: "P2_INTERACTIVE_BROWSER_STDIN_REFUSED" });
+  }
+});
+
+function interactiveChild() {
+  const bytes = readFileSync(new URL("./p2-lifecycle-browser-recorder.mjs", import.meta.url), "utf8") + P2_LIFECYCLE_BROWSER_LAUNCHER;
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", bytes], { stdio: ["pipe", "pipe", "pipe", "ipc"],
+    env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) });
+  const records = [], output = [];
+  child.on("message", value => records.push(value));
+  child.stdout.on("data", value => output.push(value));
+  child.stderr.on("data", value => output.push(value));
+  const exited = once(child, "close");
+  const command = (type, input, frame) => {
+    const response = once(child, "message");
+    child.send({ type, input });
+    if (frame) child.stdin.write(frame);
+    return Promise.race([response.then(([receipt]) => receipt), exited.then(() => { throw new Error("OWNED_INTERACTIVE_CHILD_EXITED"); })]);
+  };
+  const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
+  const close = async () => { clearTimeout(timer); if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL"); await exited; };
+  return { child, records, output, exited, command, close };
+}
+
+test("actual interactive child refuses secret-bearing IPC before browser launch and emits only a generic failure", async () => {
+  const input = interactiveInput(), permit = interactivePermit(input), runner = interactiveChild();
+  try {
+    assert.deepEqual(await runner.command("initialize-interactive", input), { type: "interactive-initialized", ...binding(input) });
+    assert.deepEqual(await runner.command("interactive-install", { ...binding(input), context: "owner", expires: permit.expires, cookie: permit.cookie }), { type: "failed" });
+    assert.deepEqual(await runner.exited, [1, null]);
+    assert.deepEqual(runner.output, []);
+    assert.equal(JSON.stringify(runner.records).includes(permit.cookie), false);
+  } finally { await runner.close(); }
+});
+
+const ownedInteractiveBrowser = process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST === "true";
+test("owned Chromium installs the exact host-only permit and expires it without disturbing the other context or cookies",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const input = interactiveInput(), permit = interactivePermit(input), origin = input.browserOrigin + "/";
+      const owner = await browser.newContext(), learner = await browser.newContext();
+      await owner.addCookies([{ name: "owned-session", value: "owned-fixture", url: origin }]);
+      await installP2InteractiveBrowserCookie(owner, permit, input);
+      const engine = await owner.newCDPSession(await owner.newPage());
+      const named = async url => (await engine.send("Network.getCookies", { urls: [url] })).cookies.find(row => row.name === "__Host-lash-p2q-window");
+      const cookie = await named(origin);
+      assert.deepEqual({ domain: cookie.domain, path: cookie.path, httpOnly: cookie.httpOnly, secure: cookie.secure, sameSite: cookie.sameSite },
+        { domain: "staging.lashher.com", path: "/", httpOnly: true, secure: true, sameSite: "Lax" });
+      for (const url of ["https://lashher.com", "https://other.staging.lashher.com", input.deploymentUrl, "https://accounts.google.com", "http://staging.lashher.com"]) {
+        assert.equal(await named(url), undefined);
+      }
+      assert.equal((await learner.cookies([origin])).length, 0);
+      await expireP2InteractiveBrowserCookie(owner);
+      assert.equal(await named(origin), undefined);
+      assert.deepEqual((await owner.cookies([origin])).map(row => row.name), ["owned-session"]);
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium child rotates the stage only after clearing and retains only sanitized protocol receipts",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const runner = interactiveChild(), first = interactiveInput(), firstPermit = interactivePermit(first), context = "owner";
+    const next = interactiveInput({ stage: "lifecycle", epoch: "11", actionId: "owned-next-phase", bindingSha256: "d".repeat(64) }), nextPermit = interactivePermit(next);
+    try {
+      assert.equal((await runner.command("initialize-interactive", first)).type, "interactive-initialized");
+      const firstSelection = { context, expires: firstPermit.expires };
+      assert.deepEqual(await runner.command("interactive-install", { ...binding(first), ...firstSelection }, privateFrame(first, context, firstPermit)),
+        { type: "interactive-permit-installed", ...binding(first), ...firstSelection });
+      assert.deepEqual(await runner.command("interactive-clear", { ...binding(first), ...firstSelection }),
+        { type: "interactive-permit-cleared", ...binding(first), ...firstSelection });
+      assert.deepEqual(await runner.command("interactive-select", { ...binding(first), next }), { type: "interactive-selected", ...binding(next) });
+      const nextSelection = { context, expires: nextPermit.expires };
+      assert.deepEqual(await runner.command("interactive-install", { ...binding(next), ...nextSelection }, privateFrame(next, context, nextPermit)),
+        { type: "interactive-permit-installed", ...binding(next), ...nextSelection });
+      assert.deepEqual(await runner.command("interactive-close", binding(next)), { type: "interactive-closed", ...binding(next) });
+      assert.deepEqual(await runner.exited, [0, null]);
+      assert.deepEqual(runner.output, []);
+      for (const permit of [firstPermit, nextPermit]) assert.equal(JSON.stringify(runner.records).includes(permit.cookie), false);
+    } finally { await runner.close(); }
+  });
