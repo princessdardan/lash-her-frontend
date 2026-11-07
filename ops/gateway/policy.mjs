@@ -3,11 +3,12 @@ import routes from "./routes.json" with { type: "json" };
 // Raw request targets are checked before URL parsing can normalize dot segments.
 export function matchRoute(method, target) {
   if (typeof target !== "string" || target.length > 4096 ||
-      !/^\/course\/[A-Za-z0-9/_-]+(?:\?[^#\s\\]*)?$/u.test(target)) return null;
+      !/^\/(?:course|community)\/[A-Za-z0-9/_-]+(?:\?[^#\s\\]*)?$/u.test(target)) return null;
   const [pathname] = target.split("?", 1);
   if (pathname.includes("//")) return null;
-  const path = pathname.slice("/course".length);
-  return routes.find((route) => route.method === method &&
+  const service = pathname.split("/", 3)[1];
+  const path = pathname.slice(service.length + 1);
+  return routes.find((route) => (route.service ?? "course") === service && route.method === method &&
     new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(path)) ?? null;
 }
 
@@ -30,6 +31,10 @@ export function validateConfig(config) {
   const upstream = new URL(courseOrigin);
   if (upstream.protocol !== "https:" || upstream.username || upstream.password ||
       upstream.pathname !== "/" || upstream.search || upstream.hash) throw new Error("Private upstream must be an HTTPS origin");
+  if (config.communityOrigin !== undefined) {
+    const community = new URL(config.communityOrigin);
+    if (community.protocol !== "https:" || community.username || community.password || community.pathname !== "/" || community.search || community.hash) throw new Error("Private upstream must be an HTTPS origin");
+  }
   for (const field of ["tlsKeyFile", "tlsCertFile", "upstreamCaFile"]) {
     if (typeof config[field] !== "string" || !config[field].startsWith("/")) throw new Error("TLS files must use absolute paths");
   }

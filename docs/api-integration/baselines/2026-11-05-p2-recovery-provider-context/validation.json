@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "baseCommit": "475a0ed6ddae1317d8e8fc701d1c48912ea3089b",
+  "problem": "missing reviewed bootstrapRuntimeTarget in recovery adapter context",
+  "checks": {
+    "nodeTests": 6,
+    "actualSharedJavaScriptAdapter": true,
+    "actualPythonProviderExecute": true,
+    "ownedHttps": true,
+    "missingTargetRefusedBeforeHttp": true,
+    "onlyGetRequests": true
+  },
+  "claims": {
+    "liveOperations": false,
+    "providerMutation": false,
+    "sqlReplay": false,
+    "rolePreparation": false,
+    "forwardBuildImplemented": false,
+    "wholeReleaseAccepted": false
+  },
+  "fileSha256": {
+    "ops/platform/p2-post-sql-recovery.mjs": "b3dbf77466ea7ed28c1ddc44e8babbac546d7cbf82b5b19b0a4753c763a2cce8",
+    "ops/platform/p2-post-sql-recovery.test.mjs": "542dd65f1712702d28c2f14731dde5b72213a7bcff2b0f547039995a3379f22e",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-provider-context/README.md": "5226f961a981f288f62fe5605b9bd1528ef1fca3d8c1efc48d362b49391a1aec",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-provider-context/node-tests.log": "26957ab508532837df5559ecac5079dd8ccfe323987a9c2796d845f08bbcd54d"
+  }
+}

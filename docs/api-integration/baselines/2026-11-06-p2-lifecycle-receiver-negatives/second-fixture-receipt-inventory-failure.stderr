@@ -1,0 +1,5 @@
+(node:49763) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-lifecycle-receiver-negatives/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-lifecycle-receiver-negatives/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"status":"P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES16_FAILED","phase":"actual-three-domain-observer","code":"ENOENT","diagnostic":"ENOENT: no such file or directory, open '/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-lifecycle-receiver-negatives/ops/platform/p2-lifecycle-receivers-probe.mjs'","providerTouched":false}

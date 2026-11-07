@@ -2,12 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 import { prepareHistoricalFrontendLogins, retireHistoricalFrontendLogins } from "./frontend-historical-logins.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 
 const input = () => ({ version: 1, environment: "staging", actionId: "owned-historical-retirement", sourceCommit: "a".repeat(40), clusterScopeSha256: "b".repeat(64),
   target: { host: "owned.invalid", port: 5432, database: "owned", user: "operator", serverMajor: 18, currentRuntimeRole: "current_runtime", admissionOwnerRole: "admission_owner" },
   retiredLogins: [{ name: "old_runtime", oid: "123" }] });
-function fixture() {
-  const value = input(), calls = [], records = [], state = { canLogin: true, held: true, oid: "123", members: false, owns: false, sessions: [{ pid: 42, role_oid: "123", datname: "owned", backend_start: "2026-11-03 00:00:00+00" }] };
+const profiledInput = () => {
+  const value = input(); value.version = 2;
+  value.qualificationTargetProfile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
+  value.target.qualificationTargetProfile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
+  return value;
+};
+function fixture(value = input(), expectedQualificationTargetProfile = undefined) {
+  const calls = [], records = [], state = { canLogin: true, held: true, oid: "123", members: false, owns: false, sessions: [{ pid: 42, role_oid: "123", datname: "owned", backend_start: "2026-11-03 00:00:00+00" }] };
   const client = Object.assign(new EventEmitter(), { connection: { stream: { encrypted: true, authorized: true } }, connectionParameters: { host: value.target.host, port: 5432 },
     async query(sql, args) {
       calls.push({ sql, args });
@@ -23,7 +30,8 @@ function fixture() {
       return { rows: [] };
     } });
   const deps = { confirmation: `staging/${value.actionId}`, record(name, value) { records.push({ name, value }); } };
-  return { value, calls, records, state, client, deps, run: () => retireHistoricalFrontendLogins(value, client, deps) };
+  return { value, calls, records, state, client, deps,
+    run: () => retireHistoricalFrontendLogins(value, client, deps, expectedQualificationTargetProfile) };
 }
 const mutations = f => f.calls.filter(call => /^(ALTER ROLE|SELECT pg_terminate_backend)/u.test(call.sql));
 
@@ -33,6 +41,48 @@ test("plan preparation excludes unknown secret fields and refuses protected, dup
   for (const mutate of [v => { v.environment = "production"; }, v => { v.retiredLogins[0].name = "operator"; },
     v => { v.retiredLogins.push(v.retiredLogins[0]); }, v => { v.retiredLogins[0].name = 'bad"role'; }, v => { v.retiredLogins[0].oid = "0"; }]) {
     const copy = input(); mutate(copy); assert.throws(() => prepareHistoricalFrontendLogins(copy));
+  }
+});
+
+test("profiled plan preserves the exact source-selected profile on the plan and target", () => {
+  const prepared = prepareHistoricalFrontendLogins(profiledInput(), STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  assert.equal(prepared.version, 2);
+  assert.deepEqual(prepared.qualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  assert.deepEqual(prepared.target.qualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  const legacy = prepareHistoricalFrontendLogins(input());
+  assert.equal(legacy.version, 1); assert.equal("qualificationTargetProfile" in legacy, false);
+  assert.equal("qualificationTargetProfile" in legacy.target, false);
+});
+
+test("profile mismatch, downgrade and null context refuse before records, listeners or queries", async () => {
+  for (const arrange of [
+    value => { value.version = 1; },
+    value => { delete value.target.qualificationTargetProfile; },
+    value => { delete value.qualificationTargetProfile; },
+  ]) {
+    const value = profiledInput(); arrange(value);
+    const f = fixture(value, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+    await assert.rejects(f.run());
+    assert.equal(f.records.length, 0); assert.equal(f.calls.length, 0); assert.equal(f.client.listenerCount("error"), 0);
+  }
+  const f = fixture(profiledInput(), null);
+  await assert.rejects(f.run());
+  assert.equal(f.records.length, 0); assert.equal(f.calls.length, 0); assert.equal(f.client.listenerCount("error"), 0);
+  const legacyWithProfile = input(); legacyWithProfile.target.qualificationTargetProfile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
+  assert.throws(() => prepareHistoricalFrontendLogins(legacyWithProfile));
+});
+
+test("profiled retirement retains the exact profile on every durable receipt and result", async () => {
+  const f = fixture(profiledInput(), STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  const result = await f.run();
+  assert.equal(result.version, 2);
+  assert.deepEqual(result.qualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  assert.deepEqual(result.target.qualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  assert.equal(f.records.length > 0, true);
+  for (const record of f.records) {
+    assert.equal(record.value.version, 2);
+    assert.deepEqual(record.value.qualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+    assert.deepEqual(record.value.target.qualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
   }
 });
 

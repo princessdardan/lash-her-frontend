@@ -140,15 +140,15 @@ Use `.env.local.example` as the source of truth for local variables.
 
 ### Sanity
 
-- Project ID: `3auncj84`
-- API version: `2026-03-24`
-- Production dataset: `production`
-- Staging/preview dataset: `staging-2026-05-10`
+- Production: project `3auncj84`, dataset `production`.
+- Staging/preview and CI: project `7o23yrvk`, dataset `staging-2026-05-10`.
+- API version: `2026-03-24`.
 
-Dataset alignment is enforced by `scripts/validate-sanity-env.mjs`:
+Project/dataset alignment is enforced by `scripts/validate-sanity-env.mjs`:
 
-- `VERCEL_ENV=preview` expects `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
-- `VERCEL_ENV=production` expects `NEXT_PUBLIC_SANITY_DATASET=production`.
+- Hosted `APP_ENV=staging`, including the dedicated staging project's Production target and reviewed Preview deployments, requires the staging pair.
+- Hosted `APP_ENV=production` requires the production pair and its reviewed Vercel identity.
+- Non-hosted local/CI checks may use the exact staging pair. Their application environment remains `local`, and they gain no gateway authorization. Existing local datasets in project `3auncj84` remain supported.
 
 `npm run build` runs this validation before `next build`, so a mismatched dataset can fail the build before Next.js starts compiling.
 
@@ -345,6 +345,8 @@ npm run build
 ```
 
 `npm run test:unit` intentionally excludes DB-backed source tests. Use an isolated `TEST_DATABASE_URL` with `npm run test:unit:db`, or `npm run test:unit:all` for both source scopes plus script tests.
+
+CI build and general browser checks read real published editorial content from the reviewed staging Sanity pair. They still require provider availability; compilation and local environment validation do not prove that availability. The commerce E2E catalog/provider fixtures cover selected commerce paths, while layout, metadata and training content still use the shared Sanity loaders. Focused course/learning/consent fixtures do not qualify the complete build or staging/provider readiness.
 
 Use focused commands while developing:
 

@@ -1,0 +1,187 @@
+{
+  "ciBuiltImagesQualified": true,
+  "deployedRuntimeVerified": false,
+  "mainCommunityContainerLog": {
+    "path": "/private/tmp/phase2-api-final-main-artifacts/community-main-containers-42134273891.log",
+    "sha256": "eaa54591972c60379a7c9c3bed15db2eb07c1c89c874b64ee9d5f77a4a082da9"
+  },
+  "mainCommunityNativeDiagnostics": [
+    {
+      "abortControlReturncode": null,
+      "abortControlStderr": null,
+      "cAbortControlReturncode": null,
+      "cAbortControlStderr": null,
+      "coreLimit": [
+        0,
+        0
+      ],
+      "event": "ZLIB_UNPATCHED_REGRESSION_DIAGNOSTIC",
+      "expectedAssertionPresent": true,
+      "expectedSigabrtReturncode": -6,
+      "kernelRelease": "7.0.0-1017-azure",
+      "lsmProfile": "unconfined",
+      "machine": "x86_64",
+      "platform": "linux",
+      "processSecurity": {
+        "CapAmb": "0000000000000000",
+        "CapBnd": "00000000a80425fb",
+        "CapEff": "00000000a80425fb",
+        "CapInh": "0000000000000000",
+        "CapPrm": "00000000a80425fb",
+        "NoNewPrivs": "0",
+        "Seccomp": "2",
+        "Seccomp_filters": "1",
+        "SigBlk": "0000000000000000",
+        "SigCgt": "0000000000000002",
+        "SigIgn": "0000000201001000"
+      },
+      "pythonVersion": "3.13.5",
+      "returncode": -6,
+      "signalNumber": 6
+    },
+    {
+      "abortControlReturncode": null,
+      "abortControlStderr": null,
+      "cAbortControlReturncode": null,
+      "cAbortControlStderr": null,
+      "coreLimit": [
+        0,
+        0
+      ],
+      "event": "ZLIB_UNPATCHED_REGRESSION_DIAGNOSTIC",
+      "expectedAssertionPresent": true,
+      "expectedSigabrtReturncode": -6,
+      "kernelRelease": "7.0.0-1017-azure",
+      "lsmProfile": "docker-default (enforce)",
+      "machine": "x86_64",
+      "platform": "linux",
+      "processSecurity": {
+        "CapAmb": "0000000000000000",
+        "CapBnd": "00000000a80425fb",
+        "CapEff": "00000000a80425fb",
+        "CapInh": "0000000000000000",
+        "CapPrm": "00000000a80425fb",
+        "NoNewPrivs": "0",
+        "Seccomp": "2",
+        "Seccomp_filters": "1",
+        "SigBlk": "0000000000000000",
+        "SigCgt": "0000000000000002",
+        "SigIgn": "0000000001001000"
+      },
+      "pythonVersion": "3.13.5",
+      "returncode": -6,
+      "signalNumber": 6
+    }
+  ],
+  "nativeAcceptancePredicateChanged": false,
+  "nativeCapabilitiesOrSecurityOptionsChanged": false,
+  "qualificationHost": "ubuntu-24.04 / linux-amd64",
+  "registryImagesPublishedByThisTask": false,
+  "repositories": {
+    "community": {
+      "applicationBaseline": "a454702be10362a4054f60579e92aa3b4641ff51",
+      "applicationContractsMigrationsAndDependenciesUnchanged": true,
+      "artifacts": [
+        {
+          "archive": "/private/tmp/phase2-api-final-main-artifacts/community-native-13464594219.zip",
+          "bytes": 242126,
+          "githubDigestVerified": true,
+          "id": 13464594219,
+          "kind": "native",
+          "sha256": "c1ddb42b091f6b58961d05f0685a37052e05ca780dc67dfe65661efec3b6e15f"
+        },
+        {
+          "archive": "/private/tmp/phase2-api-final-main-artifacts/community-postgres18-13464084689.zip",
+          "bytes": 5898,
+          "githubDigestVerified": true,
+          "id": 13464084689,
+          "kind": "postgres18",
+          "sha256": "eb08af65e642ba58111a56cdf5ccf96d5f2e256b99527f358353ab2c6fd24b7f"
+        }
+      ],
+      "canonicalRemote": "https://github.com/princessdardan/lash-her-community-api.git",
+      "ciBranch": "main",
+      "ciConclusion": "success",
+      "ciEvent": "push",
+      "ciRun": 42134273891,
+      "ciStatus": "completed",
+      "ciUrl": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42134273891",
+      "compatibilityRun": 42134273771,
+      "databaseTests": 31,
+      "mainCommit": "1ce696a7ae6073cb125da19146789693398b6cc4",
+      "mergedPr": 5,
+      "migrationDownUpRehearsal": "PASS",
+      "nativeArtifact": 13464594219,
+      "nativeZipSha256": "c1ddb42b091f6b58961d05f0685a37052e05ca780dc67dfe65661efec3b6e15f",
+      "postgres18Artifact": 13464084689,
+      "postgres18ZipSha256": "eb08af65e642ba58111a56cdf5ccf96d5f2e256b99527f358353ab2c6fd24b7f",
+      "qualityTests": 364,
+      "reviewedHead": "0c98ef27a962f0e75812c63ec716ab53981705a8",
+      "reviewedTreeIdentical": true,
+      "sourceFileSha256": {
+        "contracts/course-enrollment/v1/enrollment-event.schema.json": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "openapi/community-api.json": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+        "ops/runtime/inputs.lock.json": "dfc40ded4946d22ee705f8d68f1131f170da4a144963ac9beae1401220d2122a"
+      },
+      "tree": "f8c926bc07c9c6f83ab16ab3438e24d9a29e17a8",
+      "workingTreeClean": true,
+      "worktree": "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community"
+    },
+    "course": {
+      "applicationBaseline": "61c7024eb9bdae190c6c3019638eaa28f1413baa",
+      "applicationContractsMigrationsAndDependenciesUnchanged": true,
+      "artifacts": [
+        {
+          "archive": "/private/tmp/phase2-api-final-main-artifacts/course-native-13463814852.zip",
+          "bytes": 167859,
+          "githubDigestVerified": true,
+          "id": 13463814852,
+          "kind": "native",
+          "sha256": "37cfd9e31b06498d2384c9bf6595e0771f2c604ecb6c8079d6a1714c4b8a50f1"
+        },
+        {
+          "archive": "/private/tmp/phase2-api-final-main-artifacts/course-postgres18-13463914533.zip",
+          "bytes": 13934,
+          "githubDigestVerified": true,
+          "id": 13463914533,
+          "kind": "postgres18",
+          "sha256": "40245fb79a5213a526d1685b4b503722987f78579e9e5e776205a197d45e3112"
+        }
+      ],
+      "canonicalRemote": "https://github.com/princessdardan/lash-her-course-api.git",
+      "ciBranch": "main",
+      "ciConclusion": "success",
+      "ciEvent": "push",
+      "ciRun": 42134134628,
+      "ciStatus": "completed",
+      "ciUrl": "https://github.com/princessdardan/lash-her-course-api/actions/runs/42134134628",
+      "databaseTests": 87,
+      "mainCommit": "3c0a0d6eee64344d97f98387755e9f34195a4c42",
+      "mergedPr": 6,
+      "migrationRoundTrips": 22,
+      "nativeArtifact": 13463814852,
+      "nativeZipSha256": "37cfd9e31b06498d2384c9bf6595e0771f2c604ecb6c8079d6a1714c4b8a50f1",
+      "postgres18Artifact": 13463914533,
+      "postgres18ZipSha256": "40245fb79a5213a526d1685b4b503722987f78579e9e5e776205a197d45e3112",
+      "qualityTests": 697,
+      "reviewedHead": "56d783912a90a15cf4646b56832cd25476561119",
+      "reviewedTreeIdentical": true,
+      "sourceFileSha256": {
+        "contracts/community/course-enrollment/v1/enrollment-event.schema.json": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "openapi/course-api.json": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+        "ops/runtime/inputs.lock.json": "74ef1c74c0c0d119c8a0704314be61dfc9e9d26bb2c3416e9ca36db51a8ff69c"
+      },
+      "tree": "fbb5a14b827eed165060cf6953f0caed6e053343",
+      "workingTreeClean": true,
+      "worktree": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"
+    }
+  },
+  "runtimeProviderOrDeploymentMutationsPerformed": false,
+  "status": "API_FINAL_MAIN_SOURCE_AND_CI_PASS",
+  "unsupportedUbuntu26Evidence": {
+    "record": "/private/tmp/phase2-native-investigation-sources-0c98ef2.json",
+    "sha256": "169a3fad55184ad7e9f3162debf64aee83a91c75a230a845e8cb4a1b91577aad",
+    "signalDeliveryErrno": 13,
+    "specificKernelOrSecurityRuleEstablished": false
+  }
+}

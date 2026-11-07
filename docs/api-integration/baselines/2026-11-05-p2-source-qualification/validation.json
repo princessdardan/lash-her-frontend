@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "status": "SOURCE_QUALIFICATION_IN_PROGRESS",
+  "frontendAtCollection": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+  "contract": {
+    "publication": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+    "phase2ManifestSha256": "2f22b8f19b02028781d5f763c75f58fdca5c575b6c21912a14955aeb2897882e",
+    "baseline": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "exactDeltaEntries": 44,
+    "changedCourseOperations": 23,
+    "sourceArchiveReleaseCheck": "passed",
+    "generatedAdapterCheck": "passed",
+    "v1FilesChanged": false
+  },
+  "apiMerges": {
+    "course": {
+      "pr": 5,
+      "reviewedHead": "5c23b8c53f7849426cf8a71703cc6a5c84fef3d7",
+      "main": "61c7024eb9bdae190c6c3019638eaa28f1413baa",
+      "tree": "84808a831e83f3ef10a2441598ce3410ef1a7eb9",
+      "treeEqualToReviewedHead": true,
+      "mainCi": 42129827062,
+      "mainCiConclusion": "success",
+      "unitCases": 697
+    },
+    "community": {
+      "pr": 4,
+      "reviewedHead": "5709ab0a71bf22b2d2a48044d59dd1f60d8765e7",
+      "main": "a454702be10362a4054f60579e92aa3b4641ff51",
+      "tree": "fdf0a6335e77a88fcf360d1ba34c3a64cbc34ec6",
+      "treeEqualToReviewedHead": true,
+      "mainCi": 42130005740,
+      "mainCiConclusion": "failure",
+      "failure": "independent native reference build expected SIGABRT but observed SIGSEGV with expected assertion; diagnostics show self-signal EACCES on Ubuntu26.04; guard remains unchanged",
+      "unitCases": 364,
+      "postgresAndPackagedPg18": "passed",
+      "diagnosticPr": 5,
+      "selfSignalDiagnosticRun": 42132072511
+    }
+  },
+  "frontendUnit": {
+    "source": "f561025adf9ee2568415afd722e72c7714854e8d",
+    "command": "npm run test:unit",
+    "regular": 1885,
+    "serverOnly": 601,
+    "scripts": 39,
+    "securityDependencies": 14,
+    "total": 2539,
+    "failures": 0,
+    "skipped": 0
+  },
+  "frontendFirstCi": {
+    "source": "f561025adf9ee2568415afd722e72c7714854e8d",
+    "run": 42127817127,
+    "passed": [
+      "database",
+      "audit",
+      "quality-and-unit",
+      "build",
+      "browser (chromium)",
+      "browser (firefox)",
+      "browser (webkit)"
+    ],
+    "failed": [
+      "gateway-and-platform: stale source CLI fixture",
+      "frontend-operator-migrations: missing Docker build-context files",
+      "browser aggregate: required dependency failures"
+    ],
+    "corrections": [
+      "6670bbad",
+      "a824b8f8"
+    ]
+  },
+  "frontendSecondCi": {
+    "source": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+    "run": 42131288245,
+    "nativeImageBuild": "passed",
+    "openFailures": [
+      "owned PostgreSQL18 bootstrap import requires full legacy v1 read-only contract mount",
+      "gateway native reference-build assertion/exit-status predicate; diagnostics and supported-runner pin in progress"
+    ]
+  },
+  "componentEvidence": {
+    "actorIsolation": "../2026-11-05-p2-admin-actor-isolation/validation.json",
+    "exportScrubbing": "../2026-11-05-lifecycle-scrub-receipts/validation.json",
+    "actualLearner": "../2026-11-05-p2-learner-actual/validation.json",
+    "actualAuthoring": "../2026-11-05-p2-authoring-requalification/validation.json",
+    "platformRegression": "../2026-11-05-p2-gateway-platform-regression/validation.json",
+    "shippingEffects": "../2026-11-05-chitchats-accepted-effects/validation.json"
+  },
+  "ownedResults": {
+    "identityEntrypoints": 43,
+    "identityLifecycleDatabaseBeforeScrubAddition": 33,
+    "lifecycleDatabaseIncludingScrubCorrections": 19,
+    "actualLearnerDesktopMobile": 6,
+    "actualAuthoring": 4,
+    "gatewayPlatform": {
+      "passed": 333,
+      "skipped": 5
+    },
+    "hostPython": {
+      "passed": 377,
+      "skipped": 1
+    },
+    "actualCorrectedApiSourceHarness": 11
+  },
+  "producerInventory": {
+    "source": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+    "routes": 90,
+    "renderEntries": 64,
+    "manualEntries": 38,
+    "actionModules": 7,
+    "databaseConstructors": 14,
+    "schedules": 11,
+    "deploymentInventoryVerified": false,
+    "writerFenceVerified": false,
+    "drainVerified": false
+  },
+  "open": [
+    "Final provider/coordinator join and actual historical bindings/effects",
+    "Final required frontend/API CI and exact immutable artifact candidate",
+    "Dardan-started reviewed staging release",
+    "Actual Google Resend Mux deployed authoring learning access lifecycle and accessibility certification",
+    "P2-12 and G2"
+  ],
+  "liveDeploymentsOrSqlChangedByThisGoal": false,
+  "g2Accepted": false,
+  "receipts": {
+    "frontend-unit-pass.txt": {
+      "sha256": "15ae8bed0dc5f074156626072545ae89bdd1eb91655ba292063b6ce329b50a4b",
+      "bytes": 250596
+    },
+    "actual-platform-source-harness.json": {
+      "sha256": "4c6cd5c63fcfd65995a05b6ec52e277a944d83a5c1cc43884b853e14a5b1e9d6",
+      "bytes": 961
+    },
+    "api-postmerge-source-and-ci.json": {
+      "sha256": "f4476369625d1673f3e5c376b35b7d8183b1ceba4c1460f89d3173bd0349c795",
+      "bytes": 3149
+    },
+    "api-native-byte-identity.json": {
+      "sha256": "8476d33836dfe2b43d23bda59c7dfbc040e22fb2412cbcaefdb5b4b99510f2b5",
+      "bytes": 2048
+    },
+    "community-main-native-failure.txt": {
+      "sha256": "66c0d8a799936058917e9f272c56103c7c8783470888b1e86157b24151ecf555",
+      "bytes": 329025
+    },
+    "frontend-source-producer-inventory.json": {
+      "sha256": "41157886b8611583b45ebf3854568f8928bf5e6b2312b0cb837793f2bcf013f1",
+      "bytes": 44653
+    },
+    "main-contract-release-check.txt": {
+      "sha256": "0b07a77f279c4b8ee49d872a5d52530a03fe7cc3e3e9189a9f8c790c8d295f08",
+      "bytes": 51
+    }
+  }
+}

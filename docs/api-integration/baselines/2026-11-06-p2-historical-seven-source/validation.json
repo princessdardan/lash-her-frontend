@@ -1,0 +1,19 @@
+{
+  "status": "P2_HISTORICAL_SEVEN_SOURCE_PROFILE_PASS",
+  "baseSourceCommit": "196ca0e2772707051cef21cae582d282f621c5be",
+  "reviewedSources": 7,
+  "storedFullProfilesUnchanged": 33,
+  "existingExactTreeAliasesUnchanged": 7,
+  "unknownMissingSourceDeployments": 5,
+  "tests": {"passed": 30, "failed": 0, "skipped": 0},
+  "operatorSourceHandoff": {"files": 460, "decodedBytes": 39576087, "maximumFiles": 480, "maximumDecodedBytes": 40000000},
+  "deltaRegister": {"bytes": 970417, "sha256": "27a7bc9ca3fd3281035a9671204e686677fbf29ef5eadfc0ec2549b03f21f829"},
+  "frontendHistoricalSourceSha256": "a2f34d6424db0beb674267804666913624b53f545d69f646e8c7b796c0b9398f",
+  "generatorSha256": "ba8066bb7fa778afe90b5d5092eb2da6f2ec5c9cf21267fe948e719e6c1c281f",
+  "deltaGeneratorSha256": "55e666d2bf0ebe2c4e743185308bcda2474443044b54a26098014b4aa25617fa",
+  "targetCatalogSha256": "a155da535d0bb663cfc77d867b3584a42316ae81f36048865428c7fd2e8535ea",
+  "generationReproducible": true,
+  "actualGitTreesAndBlobsVerified": true,
+  "providerTouched": false,
+  "stagingQualified": false
+}

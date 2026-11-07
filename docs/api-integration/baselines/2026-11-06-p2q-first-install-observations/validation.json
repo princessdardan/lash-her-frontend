@@ -1,0 +1,70 @@
+{
+  "actualAllocatedProfileQualified": false,
+  "actualDocker": false,
+  "admissionInstalled": false,
+  "baseCommit": "c89b4da52e1924169d5354f038dbbdfc7aebbd56",
+  "checks": {
+    "actualPg18": 9,
+    "host": 7,
+    "lintExitCode": 0,
+    "node": 4,
+    "skipped": 0
+  },
+  "designReferences": {
+    "creationAuthoritySpecificationSha256": "85d0288cbe3eaaf67555c26856b5bc3a67712c217d7a7cf7e7c57e33779212d3",
+    "profileInterfaceSha256": "af863c7b4a3b99a7492c9d0b73d306f42d5ce413ebe2b077387cab662e41e1d3"
+  },
+  "dockerMetadataProjected": true,
+  "evidenceSha256": {
+    "host-tests.log": "c6a2ab0390d670babdd6a68b373e01149704c25246292c46ca045763125d66a6",
+    "initial-owned-fixture-refusal.json": "312cfa6cb602e0b6762f1ef57dd2cda9447868bed282621edec3c08a1edd5866",
+    "initial-owned-fixture-refusal.stderr": "be91ff545549b6403ca00bcc2f53e5b09769d7bfeece3bbbf64bd10f99a6b3ea",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "node-tests.log": "a39c2dd2710f4a230363b05d4f4df171274f150662bf08226e51fe75d42a9ff8",
+    "pg18.json": "dfe6abf83e3b59f8eb7eec1ab49bd208c6895a0c0a2b1fde9061fd1c50dc7cc8"
+  },
+  "firstUseAuthorityMinted": false,
+  "fixedProfileRegistryIntegrationQualified": false,
+  "fixtureRegistryProjected": true,
+  "fullFirstInstallQualified": false,
+  "independentReview": "Pending; implementation-authored manifest confers no clearance.",
+  "migrationExecuted": false,
+  "newOpsFiles": 5,
+  "observationOnly": true,
+  "originalFailureSourceReference": {
+    "scope": "Initial WIP fixture setup refusal; no complete authority or runtime transition. Corrected only the owned empty-Docker output projection before successful qualification.",
+    "sha256": "d8f68b5ff50358d4072d63fcfa3822d8c64bda6f3f165fc794bda3ca14b2ca42",
+    "source": "/private/tmp/p2q-first-install-original-driver.mjs"
+  },
+  "pg18ReceiptSha256": "dfe6abf83e3b59f8eb7eec1ab49bd208c6895a0c0a2b1fde9061fd1c50dc7cc8",
+  "providerTouched": false,
+  "rolePreparationExecuted": false,
+  "run": {
+    "command": [
+      "node",
+      "--import",
+      "tsx",
+      "ops/platform/test-p2q-first-install-local.mjs"
+    ],
+    "environment": {
+      "P2Q_FIRST_INSTALL_OWNED_TEST": "true",
+      "PATH": "/Users/dardan/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/usr/bin:/bin",
+      "PG_BIN": "/private/tmp/pg18-forward-owned-u5qd0tla/prefix/bin"
+    },
+    "exitCode": 0,
+    "platform": "macOS; no Linux CI claim",
+    "stderrBytes": 0
+  },
+  "runbookSha256": "768a444556435d0eca117ad440cd846ef7626c1b2652d94d073b13aaae709c86",
+  "sourceBytes": 45922,
+  "sourceCommit": "401a7ef11c460f3e5a12fe531230d14458901e3b",
+  "sourceSha256": {
+    "ops/platform/host/p2q_first_install.py": "d444ef9330e1f0508dded91c136faf928a0f153f4a8e5d31b466888bd13db25c",
+    "ops/platform/host/p2q_first_install_test.py": "64182983cf3f76a9d020a8b2d9a12b56957b301be7d0ed304fc08a98c06b93e2",
+    "ops/platform/p2q-first-install.mjs": "a83e980ca3cd784cff73e620719974dae442f72d85c858169ab275d81e7200c9",
+    "ops/platform/p2q-first-install.test.mjs": "d5d3aa931f4cae6a940f3893095c4397f882f1d1a5240a889d901d80379c9042",
+    "ops/platform/test-p2q-first-install-local.mjs": "69f56d4dce9fbcf1fe14229113b5b06d35d27151d40f01eae18c7ce2fefadcb7"
+  },
+  "status": "OBSERVATION_ONLY_COLLECTOR_OWNED_PASS",
+  "version": 1
+}

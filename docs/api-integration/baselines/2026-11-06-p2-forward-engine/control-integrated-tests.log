@@ -1,0 +1,20 @@
+✔ post-SQL recovery preserves original candidate and pending chain without fabricating absent terminal (13.955292ms)
+✔ reviewed new build eligibility is exact for failed, canceled and expired retained READY sources (15.395166ms)
+✔ reviewed new build refuses incomplete source history, fabricated prior terminals and unreviewed mode inputs (34.603666ms)
+✔ forward provider context binds the reviewed action and inventory at the adapter boundary (6.728166ms)
+✔ serialized forward scope cannot replace a live source-issued recovery session (0.173125ms)
+✔ candidate bytes, source, original action, inventory, config and deployment retry mode are bounded (19.241916ms)
+✔ actual retained receipt hashes and actual missing terminal cannot be stale or overwritten (4.529541ms)
+✔ recovery runtime target reaches the actual shared adapter and Python worker over owned HTTPS (227.535458ms)
+✔ retained READY recovery uses actual inherited pipe/flock without needing or creating old terminal (64.41825ms)
+✔ reviewed forward recovery transmits only the newly verified workload bytes (28.159916ms)
+✔ reviewed forward recovery refuses omitted or mismatched new workload bytes before host verification (51.083959ms)
+✔ remote process death aborts recovery before frontend/promotion/admission work (21.723208ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 723.484459

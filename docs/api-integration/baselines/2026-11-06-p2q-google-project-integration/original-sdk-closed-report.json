@@ -1,0 +1,478 @@
+{
+  "actualLoginOrAccountListingOrTokenOrRevocation": false,
+  "actualTlsOrProviderApiCalls": false,
+  "builderDeclaredNonSystemInterpreterLoadClosureRetainedAsInput": true,
+  "emptyModuleAndCaDirectoriesStable": true,
+  "fullOsOrAllFutureAuxiliarySdkProgramQualification": false,
+  "independentAdministratorOrFirstUseAuthorityIssued": false,
+  "knownSourceNetrcMetadataStable": true,
+  "operations": [
+    {
+      "actualAuthOrTlsOrApiOperation": false,
+      "arguments": [
+        "--version"
+      ],
+      "elapsedSeconds": 4.621,
+      "emptyCaDirectoryStillEmpty": true,
+      "env": {
+        "CLOUDSDK_ACTIVE_CONFIG_NAME": "NONE",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS": "true",
+        "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION": "false",
+        "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK": "true",
+        "CLOUDSDK_CONFIG": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/version/config",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
+        "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true",
+        "CLOUDSDK_CORE_DISABLE_USAGE_REPORTING": "true",
+        "CLOUDSDK_CORE_LOG_HTTP": "false",
+        "CLOUDSDK_PAGER": "/bin/cat",
+        "CLOUDSDK_PYTHON": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+        "CLOUDSDK_PYTHON_ARGS": "-B -s",
+        "HTTPLIB2_CA_CERTS": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "NETRC": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/version/sdk.netrc",
+        "NO_GCE_CHECK": "true",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_MODULES": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/lib/openssl/ossl-modules",
+        "PAGER": "/bin/cat",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "REQUESTS_CA_BUNDLE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "SSL_CERT_DIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/version/empty-ca",
+        "SSL_CERT_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "TMPDIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/version/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/version/tmp",
+        "XDG_CONFIG_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/version/xdg"
+      },
+      "exactSourceUmaskWrapper": true,
+      "exitCode": 0,
+      "expectedOutputPresent": true,
+      "freshOwnedConfiguration": true,
+      "netrcContentNeverReadOrHashed": true,
+      "netrcKnownSourceConstantCreated": true,
+      "netrcMetadataUnchanged": true,
+      "networkAndRealHomeDenied": true,
+      "offlineOnlyAdditions": [
+        "PAGER",
+        "CLOUDSDK_PAGER",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS",
+        "CLOUDSDK_ACTIVE_CONFIG_NAME"
+      ],
+      "openSslModuleDirectoryStillEmpty": true,
+      "sourceIsolationCommit": "33163d784c27adf865465fd6598f52a44cbe77f9",
+      "stderrBytes": 0,
+      "stdoutBytes": 111,
+      "version": 1,
+      "wrapperSha256": "6a60d5dcbc28d1a0120fa800220ac27d6ccd9109c8945af21cd8a89a301c4af1"
+    },
+    {
+      "actualAuthOrTlsOrApiOperation": false,
+      "arguments": [
+        "auth",
+        "login",
+        "--help"
+      ],
+      "elapsedSeconds": 0.895,
+      "emptyCaDirectoryStillEmpty": true,
+      "env": {
+        "CLOUDSDK_ACTIVE_CONFIG_NAME": "NONE",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS": "true",
+        "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION": "false",
+        "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK": "true",
+        "CLOUDSDK_CONFIG": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-login-help/config",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
+        "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true",
+        "CLOUDSDK_CORE_DISABLE_USAGE_REPORTING": "true",
+        "CLOUDSDK_CORE_LOG_HTTP": "false",
+        "CLOUDSDK_PAGER": "/bin/cat",
+        "CLOUDSDK_PYTHON": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+        "CLOUDSDK_PYTHON_ARGS": "-B -s",
+        "HTTPLIB2_CA_CERTS": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "NETRC": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-login-help/sdk.netrc",
+        "NO_GCE_CHECK": "true",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_MODULES": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/lib/openssl/ossl-modules",
+        "PAGER": "/bin/cat",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "REQUESTS_CA_BUNDLE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "SSL_CERT_DIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-login-help/empty-ca",
+        "SSL_CERT_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "TMPDIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-login-help/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-login-help/tmp",
+        "XDG_CONFIG_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-login-help/xdg"
+      },
+      "exactSourceUmaskWrapper": true,
+      "exitCode": 0,
+      "expectedOutputPresent": true,
+      "freshOwnedConfiguration": true,
+      "netrcContentNeverReadOrHashed": true,
+      "netrcKnownSourceConstantCreated": true,
+      "netrcMetadataUnchanged": true,
+      "networkAndRealHomeDenied": true,
+      "offlineOnlyAdditions": [
+        "PAGER",
+        "CLOUDSDK_PAGER",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS",
+        "CLOUDSDK_ACTIVE_CONFIG_NAME"
+      ],
+      "openSslModuleDirectoryStillEmpty": true,
+      "sourceIsolationCommit": "33163d784c27adf865465fd6598f52a44cbe77f9",
+      "stderrBytes": 0,
+      "stdoutBytes": 6764,
+      "version": 1,
+      "wrapperSha256": "6a60d5dcbc28d1a0120fa800220ac27d6ccd9109c8945af21cd8a89a301c4af1"
+    },
+    {
+      "actualAuthOrTlsOrApiOperation": false,
+      "arguments": [
+        "auth",
+        "list",
+        "--help"
+      ],
+      "elapsedSeconds": 0.957,
+      "emptyCaDirectoryStillEmpty": true,
+      "env": {
+        "CLOUDSDK_ACTIVE_CONFIG_NAME": "NONE",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS": "true",
+        "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION": "false",
+        "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK": "true",
+        "CLOUDSDK_CONFIG": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-list-help/config",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
+        "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true",
+        "CLOUDSDK_CORE_DISABLE_USAGE_REPORTING": "true",
+        "CLOUDSDK_CORE_LOG_HTTP": "false",
+        "CLOUDSDK_PAGER": "/bin/cat",
+        "CLOUDSDK_PYTHON": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+        "CLOUDSDK_PYTHON_ARGS": "-B -s",
+        "HTTPLIB2_CA_CERTS": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "NETRC": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-list-help/sdk.netrc",
+        "NO_GCE_CHECK": "true",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_MODULES": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/lib/openssl/ossl-modules",
+        "PAGER": "/bin/cat",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "REQUESTS_CA_BUNDLE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "SSL_CERT_DIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-list-help/empty-ca",
+        "SSL_CERT_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "TMPDIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-list-help/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-list-help/tmp",
+        "XDG_CONFIG_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-list-help/xdg"
+      },
+      "exactSourceUmaskWrapper": true,
+      "exitCode": 0,
+      "expectedOutputPresent": true,
+      "freshOwnedConfiguration": true,
+      "netrcContentNeverReadOrHashed": true,
+      "netrcKnownSourceConstantCreated": true,
+      "netrcMetadataUnchanged": true,
+      "networkAndRealHomeDenied": true,
+      "offlineOnlyAdditions": [
+        "PAGER",
+        "CLOUDSDK_PAGER",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS",
+        "CLOUDSDK_ACTIVE_CONFIG_NAME"
+      ],
+      "openSslModuleDirectoryStillEmpty": true,
+      "sourceIsolationCommit": "33163d784c27adf865465fd6598f52a44cbe77f9",
+      "stderrBytes": 0,
+      "stdoutBytes": 3005,
+      "version": 1,
+      "wrapperSha256": "6a60d5dcbc28d1a0120fa800220ac27d6ccd9109c8945af21cd8a89a301c4af1"
+    },
+    {
+      "actualAuthOrTlsOrApiOperation": false,
+      "arguments": [
+        "auth",
+        "print-access-token",
+        "--help"
+      ],
+      "elapsedSeconds": 0.862,
+      "emptyCaDirectoryStillEmpty": true,
+      "env": {
+        "CLOUDSDK_ACTIVE_CONFIG_NAME": "NONE",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS": "true",
+        "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION": "false",
+        "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK": "true",
+        "CLOUDSDK_CONFIG": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-print-access-token-help/config",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
+        "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true",
+        "CLOUDSDK_CORE_DISABLE_USAGE_REPORTING": "true",
+        "CLOUDSDK_CORE_LOG_HTTP": "false",
+        "CLOUDSDK_PAGER": "/bin/cat",
+        "CLOUDSDK_PYTHON": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+        "CLOUDSDK_PYTHON_ARGS": "-B -s",
+        "HTTPLIB2_CA_CERTS": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "NETRC": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-print-access-token-help/sdk.netrc",
+        "NO_GCE_CHECK": "true",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_MODULES": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/lib/openssl/ossl-modules",
+        "PAGER": "/bin/cat",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "REQUESTS_CA_BUNDLE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "SSL_CERT_DIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-print-access-token-help/empty-ca",
+        "SSL_CERT_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "TMPDIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-print-access-token-help/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-print-access-token-help/tmp",
+        "XDG_CONFIG_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-print-access-token-help/xdg"
+      },
+      "exactSourceUmaskWrapper": true,
+      "exitCode": 0,
+      "expectedOutputPresent": true,
+      "freshOwnedConfiguration": true,
+      "netrcContentNeverReadOrHashed": true,
+      "netrcKnownSourceConstantCreated": true,
+      "netrcMetadataUnchanged": true,
+      "networkAndRealHomeDenied": true,
+      "offlineOnlyAdditions": [
+        "PAGER",
+        "CLOUDSDK_PAGER",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS",
+        "CLOUDSDK_ACTIVE_CONFIG_NAME"
+      ],
+      "openSslModuleDirectoryStillEmpty": true,
+      "sourceIsolationCommit": "33163d784c27adf865465fd6598f52a44cbe77f9",
+      "stderrBytes": 0,
+      "stdoutBytes": 2212,
+      "version": 1,
+      "wrapperSha256": "6a60d5dcbc28d1a0120fa800220ac27d6ccd9109c8945af21cd8a89a301c4af1"
+    },
+    {
+      "actualAuthOrTlsOrApiOperation": false,
+      "arguments": [
+        "auth",
+        "revoke",
+        "--help"
+      ],
+      "elapsedSeconds": 0.868,
+      "emptyCaDirectoryStillEmpty": true,
+      "env": {
+        "CLOUDSDK_ACTIVE_CONFIG_NAME": "NONE",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS": "true",
+        "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION": "false",
+        "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK": "true",
+        "CLOUDSDK_CONFIG": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-revoke-help/config",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
+        "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true",
+        "CLOUDSDK_CORE_DISABLE_USAGE_REPORTING": "true",
+        "CLOUDSDK_CORE_LOG_HTTP": "false",
+        "CLOUDSDK_PAGER": "/bin/cat",
+        "CLOUDSDK_PYTHON": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+        "CLOUDSDK_PYTHON_ARGS": "-B -s",
+        "HTTPLIB2_CA_CERTS": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "NETRC": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-revoke-help/sdk.netrc",
+        "NO_GCE_CHECK": "true",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_MODULES": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/lib/openssl/ossl-modules",
+        "PAGER": "/bin/cat",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "REQUESTS_CA_BUNDLE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "SSL_CERT_DIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-revoke-help/empty-ca",
+        "SSL_CERT_FILE": "/private/tmp/p2q-google-sdk-offline-20261106/extracted/google-cloud-sdk/lib/third_party/certifi/cacert.pem",
+        "TMPDIR": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-revoke-help/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-revoke-help/tmp",
+        "XDG_CONFIG_HOME": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed/private/auth-revoke-help/xdg"
+      },
+      "exactSourceUmaskWrapper": true,
+      "exitCode": 0,
+      "expectedOutputPresent": true,
+      "freshOwnedConfiguration": true,
+      "netrcContentNeverReadOrHashed": true,
+      "netrcKnownSourceConstantCreated": true,
+      "netrcMetadataUnchanged": true,
+      "networkAndRealHomeDenied": true,
+      "offlineOnlyAdditions": [
+        "PAGER",
+        "CLOUDSDK_PAGER",
+        "CLOUDSDK_AUTH_DISABLE_CREDENTIALS",
+        "CLOUDSDK_ACTIVE_CONFIG_NAME"
+      ],
+      "openSslModuleDirectoryStillEmpty": true,
+      "sourceIsolationCommit": "33163d784c27adf865465fd6598f52a44cbe77f9",
+      "stderrBytes": 0,
+      "stdoutBytes": 2408,
+      "version": 1,
+      "wrapperSha256": "6a60d5dcbc28d1a0120fa800220ac27d6ccd9109c8945af21cd8a89a301c4af1"
+    }
+  ],
+  "preflight": {
+    "counts": {
+      "directories": 125,
+      "regularFiles": 3030,
+      "symlinks": 0
+    },
+    "emptyPhysicalOpenSslModuleDirectory": true,
+    "largestFile": {
+      "bytes": 31384880,
+      "path": "lib/libpython3.14.a"
+    },
+    "netrcConstantMatchesSource": true,
+    "originalAndInitialAuditsUnchanged": true,
+    "providedClosedPrefixTreeSha256": "97f3fa93b9215963feee1ef32e0ea83fafab28457024735a7ef103a9ab72bf85",
+    "providedClosedToolchainResultSha256": "ca69229ba477a2628fe1a8086fce562a3afa77f016c5a2b38e542eceb851c473",
+    "providedSnapshotVerified": true,
+    "pythonExecutable": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+    "pythonRoot": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed",
+    "realAuthOrTlsOrApiCompatibilityProven": false,
+    "regularBytes": 135491062,
+    "sdkCaRelativePath": "lib/third_party/certifi/cacert.pem",
+    "sdkCaSha256": "50f79f98dac192b20dbf73f35c56f0b0c557ab267ff5199d1117cc1180b70785",
+    "sourceIsolationCommit": "33163d784c27adf865465fd6598f52a44cbe77f9",
+    "sourceIsolationFile": "ops/platform/p2q-google-project-allocation.mjs",
+    "sourceIsolationFileSha256": "9511b6d5fad5ad5c8f72e59f9824f4fd750ff1fcc0608b1211e7fa5f80f90f47",
+    "sourceSdkManifestSha256": "9a2016bef489b4b3bae66c45d705e019196f50ed03d9f5a4f242c3a1d270e6d9",
+    "trustedAppleSystemLibrariesRemainOsBaseline": true,
+    "version": 1,
+    "wrapper": "import os,sys\nos.umask(0o077)\nos.execve(sys.argv[1],sys.argv[1:],dict(os.environ))\n",
+    "wrapperSha256": "6a60d5dcbc28d1a0120fa800220ac27d6ccd9109c8945af21cd8a89a301c4af1"
+  },
+  "priorAuditsVerifiedUnchanged": {
+    "cpython-3.14.10-initial": "cd0bc5c9e044c6355d3cf086fbdb11e4ed279d89084275505ba5cc9fef4372f7",
+    "p2q-google-sdk-offline-20261106": "9a2016bef489b4b3bae66c45d705e019196f50ed03d9f5a4f242c3a1d270e6d9"
+  },
+  "realApiCompatibilityProven": false,
+  "realGoogleAuthCompatibilityProven": false,
+  "registrySelection": false,
+  "repositoryEdits": false,
+  "runtimeFileContentsReadOrHashed": false,
+  "runtimeMetadataOnly": [
+    {
+      "case": "auth-list-help",
+      "counts": {
+        "directories": 5,
+        "regularFiles": 1,
+        "symlinks": 0
+      },
+      "emptyCaDirectoryStillEmpty": true,
+      "fileModes": {
+        "0o600": 1
+      },
+      "includesSourceCreatedNetrcMarker": true,
+      "regularBytes": 55,
+      "runtimeFileContentsReadOrHashed": false,
+      "sdkGeneratedRuntimeFileNamesEmitted": false
+    },
+    {
+      "case": "auth-login-help",
+      "counts": {
+        "directories": 5,
+        "regularFiles": 1,
+        "symlinks": 0
+      },
+      "emptyCaDirectoryStillEmpty": true,
+      "fileModes": {
+        "0o600": 1
+      },
+      "includesSourceCreatedNetrcMarker": true,
+      "regularBytes": 55,
+      "runtimeFileContentsReadOrHashed": false,
+      "sdkGeneratedRuntimeFileNamesEmitted": false
+    },
+    {
+      "case": "auth-print-access-token-help",
+      "counts": {
+        "directories": 5,
+        "regularFiles": 1,
+        "symlinks": 0
+      },
+      "emptyCaDirectoryStillEmpty": true,
+      "fileModes": {
+        "0o600": 1
+      },
+      "includesSourceCreatedNetrcMarker": true,
+      "regularBytes": 55,
+      "runtimeFileContentsReadOrHashed": false,
+      "sdkGeneratedRuntimeFileNamesEmitted": false
+    },
+    {
+      "case": "auth-revoke-help",
+      "counts": {
+        "directories": 5,
+        "regularFiles": 1,
+        "symlinks": 0
+      },
+      "emptyCaDirectoryStillEmpty": true,
+      "fileModes": {
+        "0o600": 1
+      },
+      "includesSourceCreatedNetrcMarker": true,
+      "regularBytes": 55,
+      "runtimeFileContentsReadOrHashed": false,
+      "sdkGeneratedRuntimeFileNamesEmitted": false
+    },
+    {
+      "case": "version",
+      "counts": {
+        "directories": 5,
+        "regularFiles": 2,
+        "symlinks": 0
+      },
+      "emptyCaDirectoryStillEmpty": true,
+      "fileModes": {
+        "0o600": 2
+      },
+      "includesSourceCreatedNetrcMarker": true,
+      "regularBytes": 91,
+      "runtimeFileContentsReadOrHashed": false,
+      "sdkGeneratedRuntimeFileNamesEmitted": false
+    }
+  ],
+  "scope": "Only version/four auth-help forms with source isolation; no real auth/TLS/API/authority qualification.",
+  "sdkOrOriginalOrInitialPythonPrefixesMutated": false,
+  "sourceCaReview": "source-ca-review.json",
+  "sourceReadbacks": {
+    "python": {
+      "beforeManifestSha256": "fe88be8e42b8ca103e0bf691a06bbf66452a3583d3735279dba77a27ceac7717",
+      "changedEntries": [],
+      "checkedEntries": 3155,
+      "counts": {
+        "directories": 125,
+        "regularFiles": 3030,
+        "symlinks": 0
+      },
+      "regularBytes": 135491062,
+      "root": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed",
+      "runtimeConfigurationExcluded": true,
+      "unchanged": true,
+      "version": 1
+    },
+    "sdk": {
+      "beforeManifestSha256": "ac502048de3e156249976b8c5f4c93390d8611be7a35bad1b038566512ab4bda",
+      "changedEntries": [],
+      "checkedEntries": 36724,
+      "counts": {
+        "directories": 4816,
+        "regularFiles": 31902,
+        "symlinks": 6
+      },
+      "regularBytes": 318466428,
+      "runtimeConfigurationExcluded": true,
+      "unchanged": true,
+      "version": 1
+    }
+  },
+  "status": "SDK592_CLOSED_CPYTHON_OFFLINE_SOURCE_ENV_PASS",
+  "trustedAppleSystemLibrariesRemainSeparateBaseline": true,
+  "version": 1
+}

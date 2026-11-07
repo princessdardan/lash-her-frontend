@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "status": "CLEAR_BOUNDED_SDK_ISOLATION_SOURCE_DELTA",
+  "baselineCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+  "reviewedCommits": [
+    "33163d784c27adf865465fd6598f52a44cbe77f9",
+    "c3a5d09d3eecfe80faa874829a06453fc283d4fa"
+  ],
+  "sourceHashes": {
+    "ops/platform/p2q-google-project-allocation.mjs": "9511b6d5fad5ad5c8f72e59f9824f4fd750ff1fcc0608b1211e7fa5f80f90f47",
+    "ops/platform/p2q-first-install.test.mjs": "2614dfb2a1b267ac1d983a3e9ac5ff56cf9f2ccbbf405b2428dae3f05f9344eb",
+    "ops/platform/source-policy.mjs": "5d2fb992e1e68cd4163807bf2177f2abf2cf413cb62335ef02b61561a764f9ac"
+  },
+  "outstandingFindings": [],
+  "verifiedChanges": [
+    "fixed source-owned0600 NETRC comment and empty0700 CA directory created before SDK work and joined by original inode/content metadata",
+    "fixed SDK certifi CA path for SSL/requests/httplib2/CloudSDK; source-fixed devnull OpenSSL config and pinned empty modules directory; no HOME/CODEX_HOME override",
+    "ambient NETRC/SSL/OpenSSL/CA overrides refused; actual private CLI guard before modeled spawn and CA symlink drift stops second spawn",
+    "physical closure now records root/nested/empty directory device,inode,mode as well as existing regular targets/symlinks; operator512/41M guard unchanged",
+    "test-only dispatch export remains outside public source API; original registry empty/no activation path/all authority flags false"
+  ],
+  "independentVerification": {
+    "node": "24.18.0",
+    "testsPassed": 28,
+    "skipped": 0,
+    "elapsedMilliseconds": 3955.598708,
+    "sourceUnchangedBeforeAfterTest": true,
+    "testLogPath": "/private/tmp/p2q-google-sdk-isolation-independent-tests.log",
+    "testLogSha256": "4bf70f1a4e97a214f39e8d47120b261ccfc87d8881650be9ebab7c109dee9ee7",
+    "scopedLintExitCode": 0,
+    "scopedLintLogBytes": 0,
+    "opsDiffCheckPassed": true,
+    "evidenceFilesHashChecked": 4
+  },
+  "preservedPriorReview": {
+    "path": "/private/tmp/p2q-google-project-independent-review.json",
+    "sha256": "204c897ff416d8a5f0c1d75c67c6cf2550a62b4b65a186ce1e9fbf220024c616",
+    "byteIdentical": true
+  },
+  "qualificationLimits": [
+    "Review covers only the two source commits over the cleared baseline",
+    "Actual owned filesystem and stdlib netrc/umask subprocess controls; SDK process/CLI/HTTPS/identity effects remain explicit models",
+    "No real SDK/auth/provider/project/IAM, Linux-root execution or SDK-prefix eligibility qualification performed by reviewer",
+    "Separate offline actual-SDK five-form audit is not replaced by this review",
+    "Current cases remain unregistered, production first-use/control authority remains absent, and post-crash holder recovery remains unavailable",
+    "Existing immutable evidence logs have preserved trailing whitespace; scoped source diff check is clean"
+  ],
+  "repositoryEdits": false,
+  "providerActions": false,
+  "credentialValuesRead": false
+}

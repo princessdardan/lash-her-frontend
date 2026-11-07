@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "kind": "manual-grant-source-review-only",
+  "sourceCommit": "5e007c4447cb1070c8718fa16bb0ca73e0b69213",
+  "sourceInventory": {
+    "sha256": "6c85da70f390c09ca26830a3003a9edbe39a0f49abf2904a56b20f0332dbbf7e",
+    "bytes": 58890
+  },
+  "rows": [
+    {
+      "file": "src/app/api/admin/courses/[courseId]/manual-grants/route.ts",
+      "export": "GET",
+      "sourceSha256": "afb05ec80e5346e94bd56cff7a12a92a679cc753d5aae9014ca0b73d37f28018",
+      "sourceDisposition": "WHOLE_OPERATION_ADMITTED",
+      "basis": "Actual exported handler calls the reviewed manual-grant service, whose admitted operation includes actor persistence, reads, POST and reconciliation."
+    },
+    {
+      "file": "src/app/api/admin/courses/[courseId]/manual-grants/route.ts",
+      "export": "HEAD",
+      "sourceSha256": "afb05ec80e5346e94bd56cff7a12a92a679cc753d5aae9014ca0b73d37f28018",
+      "sourceDisposition": "CLOSED_NO_WRITER",
+      "basis": "Static private/no-store 405; no auth, DB or provider work."
+    },
+    {
+      "file": "src/app/api/admin/courses/[courseId]/manual-grants/route.ts",
+      "export": "POST",
+      "sourceSha256": "afb05ec80e5346e94bd56cff7a12a92a679cc753d5aae9014ca0b73d37f28018",
+      "sourceDisposition": "WHOLE_OPERATION_ADMITTED",
+      "basis": "Actual exported handler calls the reviewed manual-grant service, whose admitted operation includes actor persistence, reads, POST and reconciliation."
+    },
+    {
+      "file": "src/app/admin/(protected)/courses/[courseId]/manual-grants/page.tsx",
+      "export": "default",
+      "sourceSha256": "81f1f3968b5f8a7224419ab1709e3d31bc7705185f61345019c29ba712302f31",
+      "sourceDisposition": "WHOLE_OPERATION_ADMITTED",
+      "basis": "Manual-grant render uses runCourseAdminOperation; parent uses loadCourseAuthoringPage, which wraps actor resolution and Course read before Next control flow."
+    },
+    {
+      "file": "src/app/admin/(protected)/courses/[courseId]/page.tsx",
+      "export": "default",
+      "sourceSha256": "0857b31b2dffdf6bb7ac8460d1736dcd2a3738ba5273194ae799bbe7e48360fd",
+      "sourceDisposition": "WHOLE_OPERATION_ADMITTED",
+      "basis": "Manual-grant render uses runCourseAdminOperation; parent uses loadCourseAuthoringPage, which wraps actor resolution and Course read before Next control flow."
+    }
+  ],
+  "deploymentProducerBound": false,
+  "releaseInventoryQualified": false,
+  "communityDeliveryVerified": false,
+  "liveS10Verified": false,
+  "evidence": "../2026-11-06-p2q-owner-manual-grant/review-fixes.json",
+  "independentReview": "Original defects closed at b73af49f3d3410b0574c1ca2a1b2719d275af9d8; evidence13924c18a83949b9bad26d823623df2ae3115f27; 30 focused tests, PG16/18 eleven checks each, actual-stack five browser cases. No actual Community delivery."
+}

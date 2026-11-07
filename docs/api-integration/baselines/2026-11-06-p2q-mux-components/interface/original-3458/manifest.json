@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "status": "OWNERS_ACK_PENDING_ROOT_FREEZE",
+  "files": [
+    {
+      "name": "README.md",
+      "bytes": 2419,
+      "sha256": "3fb081b3b643e1426fad98fe939a7734ca46cc7e9c5457be9877646191352757"
+    },
+    {
+      "name": "joint-schemas.json",
+      "bytes": 13890,
+      "sha256": "3458d245b54e5fe63aaea0354bbd40327f6b0180b97e6f62fd5b4cb40fb0e2b8"
+    }
+  ],
+  "productionAuthorityAvailable": false
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.lashher.com/community/course-enrollment/v1/enrollment-event.schema.json",
+  "title": "Course enrollment event v1",
+  "description": "A minimized Course authority transition consumed by Community.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "eventType", "schemaVersion", "producer", "occurredAt", "stream", "data"],
+  "properties": {
+    "eventId": { "$ref": "#/$defs/uuidV4" },
+    "eventType": { "enum": ["enrollment.activated", "enrollment.revoked"] },
+    "schemaVersion": { "const": 1 },
+    "producer": { "const": "lash-her-course-api" },
+    "occurredAt": { "$ref": "#/$defs/utcTimestamp" },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuidV4" },
+        "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "courseId", "state", "effectiveAt"],
+      "properties": {
+        "userId": { "$ref": "#/$defs/uuid" },
+        "courseId": { "$ref": "#/$defs/uuid" },
+        "state": { "enum": ["active", "revoked"] },
+        "effectiveAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "type": "object", "properties": { "eventType": { "const": "enrollment.activated" } }, "required": ["eventType"] },
+      "then": { "type": "object", "properties": { "data": { "type": "object", "properties": { "state": { "const": "active" } } } } }
+    },
+    {
+      "if": { "type": "object", "properties": { "eventType": { "const": "enrollment.revoked" } }, "required": ["eventType"] },
+      "then": { "type": "object", "properties": { "data": { "type": "object", "properties": { "state": { "const": "revoked" } } } } }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "uuidV4": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$"
+    }
+  }
+}

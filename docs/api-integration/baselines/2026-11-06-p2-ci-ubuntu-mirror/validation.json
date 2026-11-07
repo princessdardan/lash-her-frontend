@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "scope": "CI-only mirror selection; no package/test/OS/security or timeout reduction",
+  "failedSource": "96df28f3eedffa5607637f4f2fa3b48f9489c3f1",
+  "runId": 42262251250,
+  "webkitJobId": 128044939190,
+  "cause": "Continuously progressing slow Azure mirror transfers exceeded20minuteinstallstep; inactivitytimeouts didnotfire. NoWebkittestsstarted.",
+  "runnerImage": "ubuntu24/20261101.360",
+  "playwrightVersion": "1.59.1",
+  "sourceFile": ".github/workflows/ci.yml",
+  "workflowSha256": "275a8970924f65270f19b9fac6d5c0faf7db80eac6f5b3e69b29da5ea269a7f2",
+  "mirrorChange": {
+    "file": "/etc/apt/apt-mirrors.txt",
+    "officialHttpsOnly": [
+      "https://archive.ubuntu.com/ubuntu/",
+      "https://security.ubuntu.com/ubuntu/"
+    ],
+    "ubuntuSourcesChanged": false,
+    "signedByChanged": false,
+    "retry": 1,
+    "inactivitySeconds": 15,
+    "installMinutes": 20,
+    "jobMinutes": 30,
+    "matrix": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ]
+  },
+  "checks": {
+    "yamlParse": true,
+    "independentBashSyntax": true,
+    "independentReviewFindings": 0
+  },
+  "independentReviewSha256": "8f6b83eb3ab9583011024a93e2aa61327600ebed5ff3314eb692be8cbbfc6c4e",
+  "actualNewCiInstall": "PENDING",
+  "privateLogs": [
+    {
+      "privateFile": "/private/tmp/p2-ci-96df-failure/operator.log",
+      "bytes": 232440,
+      "sha256": "9c39454fedd5a39ef2add60b28f88c96bb8cd563fa16be0dc9bdb0ebb8364f0a"
+    },
+    {
+      "privateFile": "/private/tmp/p2-ci-96df-failure/webkit.log",
+      "bytes": 92322,
+      "sha256": "32a6d2e759b0458c0ae05107f9fad310184d92adc058e722c2acfad38b04f177"
+    }
+  ],
+  "releaseAccepted": false
+}

@@ -1,0 +1,36 @@
+{
+  "actualPostgres18Execution": false,
+  "actualProviderNativeEvidence": false,
+  "ambientGitRepositoryAndConfigurationOverridesIgnored": true,
+  "canonicalSelectedSourcePerCommandTrust": true,
+  "codeCommit": "2dcb00af50bc8daa5010f102ae17083f793b6f2f",
+  "fileSha256": {
+    "README.md": "5162919156bbd08d980df0d209b7d51b03daede5f2fa78a1943119962f1dbafd",
+    "focused-eslint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "postgres16-stderr.log": "9daf051c83920154b59763ff302923e6e0bd7ed8551a64e054e75ac2c3ebb3ec",
+    "postgres16.json": "1a962e9a5c8de61129e0e51dcda7cffe6c023314479f984493b1a2128eea7aca",
+    "protocol.log": "aabc9874047c7e73bee3232ce3cda6ee92da0e09024591d1829693fd5b1e3e56"
+  },
+  "globalGitConfigurationModified": false,
+  "kind": "fixed-readonly-native-source-git-selection",
+  "localCrossUidReadonlyMountTested": false,
+  "observedAt": "2026-11-06T03:16:20+00:00",
+  "sourceModuleSha256": "ea5467ef9f5980e1a96cc61f9648390bc4cb9a41d765af30c2d1577a3e3404dd",
+  "testedAppSourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+  "tests": {
+    "actualOwnedPostgres": {
+      "checks": 9,
+      "major": 16,
+      "migrations": 83,
+      "skipped": 0
+    },
+    "focusedEslint": "passed",
+    "protocol": {
+      "failed": 0,
+      "passed": 17,
+      "skipped": 0
+    }
+  },
+  "version": 1,
+  "wholeReleaseAccepted": false
+}

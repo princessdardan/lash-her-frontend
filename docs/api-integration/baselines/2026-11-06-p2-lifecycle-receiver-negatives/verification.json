@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "status": "P2_LIFECYCLE_RECEIVER_OWNED_QUALIFICATION_RETAINED",
+  "implementationCommit": "4c6070915a3aed6cb59ddfa8955bcaf267b15f0c",
+  "postgresMajor": 16,
+  "migrationCounts": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "namedChecks": 12,
+  "httpCaseCount": 8,
+  "nodeTests": 8,
+  "hostTests": 8,
+  "lintWarnings": 0,
+  "skipped": 0,
+  "files": {
+    "owned-postgres16.json": {
+      "sha256": "e610d32f8f1947e0cc5e40ee05d2e35aa427e6948c743ea699ceb0437b39a98e",
+      "bytes": 2032
+    },
+    "owned-postgres16.stderr": {
+      "sha256": "2dc3315dfcd8779f17bdfbea01a322e472d7b8619ee52b7cfc041452664be394",
+      "bytes": 576
+    },
+    "node-tests.log": {
+      "sha256": "9216517a9a2a64501b39910ad2c21d40f8256e9fb942c59e27e927a787400228",
+      "bytes": 877
+    },
+    "host-tests.log": {
+      "sha256": "8de4ae56affdefe2a4663a9efc9dc38eb6c39ac65cd93491d9038671a7d0ad21",
+      "bytes": 106
+    },
+    "eslint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "first-contract-envelope-failure.stderr": {
+      "sha256": "81696f745a0e56dba4e940353a5d1fe884839cef6755ebcc966217ca43807a29",
+      "bytes": 800
+    },
+    "second-fixture-receipt-inventory-failure.stderr": {
+      "sha256": "be191827c8b31346787a6be3c59a93c1e0afb3f957fe7dc11ad984131fd8ea93",
+      "bytes": 906
+    }
+  },
+  "fixtureOnly": true,
+  "actualApiModules": true,
+  "localVerifiedHttps": true,
+  "databaseTlsScram": true,
+  "providerTouched": false,
+  "liveCertification": false,
+  "linuxDockerSshQualified": false,
+  "deployedFutureGapQualified": false,
+  "deployedDeletedAccountProfileQualified": false,
+  "oidcVerified": false,
+  "releaseAccepted": false,
+  "sourceHandoffMeasurement": {
+    "files": 413,
+    "decodedBytes": 37604167,
+    "fileCap": 400,
+    "rootOwnedCapResolutionRequired": true
+  },
+  "retainedFailures": [
+    "initial Course error envelope assumption corrected to pinned service-specific contract",
+    "fixture source-receipt filename inventory corrected; no API/application change"
+  ]
+}

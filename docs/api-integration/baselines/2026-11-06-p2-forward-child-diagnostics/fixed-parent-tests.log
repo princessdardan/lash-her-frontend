@@ -1,0 +1,36 @@
+✔ frontend source proof accepts only the two fixed actions/checkout HTTPS remote spellings (156.522792ms)
+✔ prepares exact manifest sources with fixed clean builds and requires all 19 actual tests (13.272375ms)
+✔ recovery mode runs current and forward PostgreSQL 18 fixtures after all identity checks in separate containers (25.180792ms)
+✔ lifecycle mode sends one internally built exact source manifest to an isolated PostgreSQL 18 fixture (28.581625ms)
+✔ lifecycle receipt parser refuses missing, extra, drifted, skipped and partial source evidence (28.372208ms)
+✔ receiver receipt parser requires PostgreSQL 18, all twelve checks, eight HTTP cases, and exact mounted source evidence (24.713ms)
+✔ lifecycle mode refuses source aliases and mounted hash, extra, or missing drift with fixed diagnostics (74.727167ms)
+✔ lifecycle mode cannot be selected without current and forward recovery (5.382292ms)
+✔ lifecycle child failures expose only fixed persistence diagnostics (58.696083ms)
+✔ receiver child failures expose only fixed receiver diagnostics and retain private output (73.478625ms)
+✔ Docker child failure output is retained privately outside disposable checkout with commit binding (15.568666ms)
+✔ CI uploads only the fixed private failure directory for three days (0.847666ms)
+✔ Docker context accepts only an existing local Unix socket (0.270667ms)
+✔ recovery failures expose only fixed Docker transport and child exit diagnostics (47.941334ms)
+✔ recovery mode refuses persisted API Git authentication before permission changes or Docker (10.16025ms)
+✔ recovery mode refuses a frontend mount that resolves outside the exact source (10.419792ms)
+✔ refuses ignored source, environment configuration, and unreviewed dependency roots (26.229625ms)
+✔ refuses a noncanonical repository, mismatched event revision, or artifact digest (0.163209ms)
+✔ refuses skipped, failed, partial, or duplicated TAP summaries (0.104583ms)
+✔ recovery receipt refuses wrong major, migration counts, skips, replay, or extra output (0.383333ms)
+✔ forward recovery receipt refuses wrong mode, PG16, echoed current proof, missing checks, skips, and runtime claims (0.336417ms)
+✔ forward parser matches the retained actual nineteen-case producer receipt (0.282791ms)
+✔ a forward qualification failure reports only the fixed forward mode and no child output (42.598ms)
+✔ failures expose only fixed diagnostic phases and never private child output (51.100792ms)
+✔ refuses a non-Node-24 executor before source fetch (4.799375ms)
+✔ refuses a missing or structurally unsafe private source token before Git (15.165958ms)
+✔ removes the complete disposable checkout after a build refusal (6.965875ms)
+✔ fixture manifest used by the test remains byte readable (4.918958ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 770.189917

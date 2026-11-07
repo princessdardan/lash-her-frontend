@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "status": "CORE_CATALOG_SCOPE_CORRECTION_OWNED_PASS",
+  "sourceCommit": "5a6f98f047ae1af2e379d68df213c32637e9200e",
+  "baseCommit": "cb085adc4db4e62f6553c47deef74cb4fd91cbc0",
+  "independentReviewPending": true,
+  "sourceSha256": {
+    "ops/platform/p2q-first-install.mjs": "fe8e2102390c9e4010b976d3b1b88b2955069b3ac172854f57b7d36f56700e18",
+    "ops/platform/p2q-first-install.test.mjs": "a92282bc213724c323383396998f95b600bcffccce5abde539df148fbb557f03",
+    "ops/platform/host/p2q_first_install.py": "d444ef9330e1f0508dded91c136faf928a0f153f4a8e5d31b466888bd13db25c",
+    "ops/platform/host/p2q_first_install_test.py": "64182983cf3f76a9d020a8b2d9a12b56957b301be7d0ed304fc08a98c06b93e2",
+    "ops/platform/test-p2q-first-install-local.mjs": "d76cb8aa9f579fc0a908ad2635ff74956cd4e89cfae70d6beaaba69eebbb6a77"
+  },
+  "scope": {
+    "catalogObservationScope": "frontend-core-counts-v1",
+    "completeDatabaseEmptyProven": false,
+    "status": "P2Q_FIRST_INSTALL_CORE_CATALOG_OBSERVED_ZERO",
+    "unobservedCatalogClasses": [
+      "pg_collation",
+      "pg_default_acl",
+      "pg_db_role_setting",
+      "pg_auth_members",
+      "pg_cast",
+      "pg_conversion",
+      "pg_event_trigger",
+      "pg_ts_config",
+      "pg_ts_config_map",
+      "pg_ts_dict",
+      "pg_ts_parser",
+      "pg_ts_template",
+      "other-standalone-object-catalogs"
+    ]
+  },
+  "actualPg18Checks": 11,
+  "nodeTests": 4,
+  "hostTests": 7,
+  "lintExitCode": 0,
+  "skipped": 0,
+  "run": {
+    "command": "TMPDIR=/private/tmp P2Q_FIRST_INSTALL_OWNED_TEST=true PG_BIN=/absolute/owned/pg18/bin node --import tsx ops/platform/test-p2q-first-install-local.mjs",
+    "platform": "macOS PG18.6 / Node24.18.0; no Linux CI claim",
+    "stderrBytes": 0
+  },
+  "omissionControls": [
+    "Actual custom public collation exists while observed core counts and selected pg_roles hash remain identical.",
+    "Actual selected-user per-database role setting exists while observed core counts and selected pg_roles hash remain identical.",
+    "Both corrected receipts explicitly deny complete emptiness and all first-use/migration/role-preparation authority."
+  ],
+  "queryProgramAndGuardsUnchanged": true,
+  "hostCollectorUnchanged": true,
+  "originalEvidenceBytesUnchanged": true,
+  "originalInitialStartRefusal": "Default-temp fixture refused at owned-start-server before checks. The PostgreSQL startup detail was not retained; underlying cause is not claimed. Identical frozen source passed with a short owned /private/tmp root.",
+  "artifacts": {
+    "pg18.json": {
+      "sha256": "eb7243d47cf9d7c338cb7dd3ac836d1eaed0779fdf8916757ea522900c7142e8",
+      "bytes": 3254
+    },
+    "initial-start-server-refusal.stderr": {
+      "sha256": "ab90e793b228fbf287337455324c2c1225f1245d02c57d2d6673580bd0591468",
+      "bytes": 157
+    },
+    "node-tests.log": {
+      "sha256": "b3d7aa49433db3d82da7b96614f2c3535105f101097d067b1c5f7c5e7f792c58",
+      "bytes": 1080
+    },
+    "host-tests.log": {
+      "sha256": "4784c448796f80cab2b7625b9fd54f88cd35bbe61c44536e88108801b85243f3",
+      "bytes": 105
+    },
+    "lint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  },
+  "completeDatabaseEmptyProven": false,
+  "firstUseAuthorityMinted": false,
+  "fullFirstInstallQualified": false,
+  "authenticFactoryAvailable": false,
+  "fixedProfileRegistryIntegrationQualified": false,
+  "actualAllocatedProfileQualified": false,
+  "fixtureRegistryProjected": true,
+  "dockerMetadataProjected": true,
+  "actualDocker": false,
+  "providerTouched": false,
+  "migrationExecuted": false,
+  "rolePreparationExecuted": false,
+  "admissionInstalled": false,
+  "newOpsFiles": 0
+}

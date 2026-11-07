@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "scope": "Read-only Google Cloud Console current access check",
+  "recordedProjectId": "lash-her-staging-20261022",
+  "recordedProjectNumber": "185770842371",
+  "accountSelection": "Owner-identified existing staging account; private email not published",
+  "recordedProjectAccess": "DENIED in current selected browser session",
+  "reportedMissingPermissions": [
+    "iam.serviceAccounts.list",
+    "oauthconfig.verification.get",
+    "resourcemanager.projects.get"
+  ],
+  "accessibleProjectCountInVisibleAllSelector": 4,
+  "clientInventoryRead": false,
+  "credentialValuesRead": false,
+  "projectOrIamOrCredentialMutation": false,
+  "nextInput": "Owner identifies intended existing project ID/name or correct existing account; no new account required",
+  "troubleshooterTokenOrPrivateAccountListRetained": false
+}

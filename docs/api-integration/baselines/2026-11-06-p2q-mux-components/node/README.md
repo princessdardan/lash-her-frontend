@@ -1,0 +1,17 @@
+# P2Q Mux Node data components
+
+Source revision: `dcea40053ed51e7ffe59649279097a0701d672e7`, based on `ff4c0a340b578e0d2c4df1c2c942209227a9f24c`.
+
+This verifies pure metadata components and projected inputs. Production ARM and dispatch remain unavailable with `P2Q_MUX_SOURCE_AUTHORITY_UNAVAILABLE`, before argument inspection. No source parent factory, registered allocated profile, new-mode physical observer, or live sender authority exists in this package. S05 live certification remains **OPEN**.
+
+The two new files total 32,656 bytes against the assigned 32,768-byte limit. Node 24.18.0 on macOS passed all 15 tests with zero skips; focused ESLint passed. Exact file hashes, commands, environment scope, and results are in `validation.json`. The test process uses only PATH/LANG/LC_ALL; the owned subprocess receives PATH only. No provider credentials or database URLs are needed or read.
+
+Coverage includes closed safe-value keys/types; canonical sorted compact UTF8 JSON plus LF and exact hashes; duplicate/invalid UTF8/noncanonical numeric and encoding refusal; nonzero profile-reference syntax; RFC3339 nanosecond comparison; D1/R1/A1 capture-data consistency; fixed 120-second arm, original 300-second signature, and 15-second minimum send budgets; conjunctive 16KiB record/64-record/192KiB stage limits; global counter consistency; and fixed field-free intent prefixes. An actual owned Node subprocess exercises strict stdin decoding and unavailable ARM. It is not a host/parent transport test.
+
+The corrected joint DATA schema is retained as `joint-schemas.json`, SHA256 `c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a`. The associated interface-manifest snapshots are retained separately. The controlled correction only excludes an all-zero profile-reference digest; ordinary metadata hashes retain raw lowercase 64-hex syntax. A syntactically valid fixture reference is not registry/resource authority.
+
+Raw bodies, signatures, private commits/intents, private envelope hashes, private paths, and caller-selected HTTP URLs are unsupported in Node values. Accepted metadata never attests signature verification, durable producer publication, actual managed database state, actual HTTP response joins, provider-generated duplication, first-delivery inversion, replacement qualification, drainage, or provider queue closure. Global windows are global admission observations, not selective controls. A full window may hit its 16KiB record limit before 64 entries; the aggregate budget grants no exception. Actual Course webhook handling wakes reconciliation and supplies the managed response; no event inbox, deduplication row, or exactly-once application is asserted.
+
+The initial uncommitted draft passed 15 behavioral tests but failed its combined-byte-budget test. Its original test output is retained as `initial-draft-budget-failure.log`; draft source bytes were not retained and that run is not attributed to the frozen revision. The frozen source removes a redundant optional replay-response metadata join; actual host/source response joining remains a separate missing authority boundary. The final frozen run is `tests.log`; `lint.log` is empty on success.
+
+These records do not qualify PostgreSQL, Linux/Docker, gateway wiring, the source parent, managed Mux/provider ingress/replay, or staging. No live action, provider access, resource allocation, or deployment occurred.

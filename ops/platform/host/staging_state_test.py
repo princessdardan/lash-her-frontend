@@ -12,6 +12,7 @@ import staging_state as state
 
 class StagingStateTests(unittest.TestCase):
     def setUp(self):
+        self.legacy_runtime = release_test.historical_runtime_fixture()
         self.runtime = release_test.RuntimeReleaseTests()
         self.runtime.setUp()
         fixture = self.runtime.fixture
@@ -47,7 +48,7 @@ class StagingStateTests(unittest.TestCase):
         self.args = (self.runtime.bundle, self.runtime.configuration, self.database, self.receipts, self.runtime.compose, self.candidate_hash)
 
     def tearDown(self):
-        self.runtime.tearDown()
+        self.runtime.tearDown(); self.legacy_runtime.close()
 
     def bind(self):
         return state.retained_state(*self.args)

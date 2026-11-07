@@ -1,0 +1,23 @@
+(node:89185) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ public current and unregistered first-install requests refuse before client or parent work (1.503125ms)
+✔ JSON fresh/zero/authority flags and forged observation handles cannot select a path (0.181583ms)
+✔ owned fixture resolver only models selection and emits no install permission (3.298333ms)
+✔ resolved current policy still refuses before transport in the private interface fixture (1.607708ms)
+✔ Google public empty registry and fresh import refuse before filesystem/child/network/credential IO (33.214583ms)
+✔ Google private protocol creates once after durable intent and captures original ACK/current/IAM without authority (93.806375ms)
+✔ Google lost ACK is never re-POSTed; GET-only reconciliation distinguishes current evidence and timeout UNKNOWN (257.817959ms)
+✔ Google preflight existing/wrong or multiple principals and source drift permit zero creation (144.37ms)
+✔ Google ALREADY_EXISTS, foreign operation/project/parent/owner and operation errors require review without retries (575.691375ms)
+✔ Google clean child environment rejects ambient auth/ADC/impersonation/Python/browser/proxy overrides (26.307334ms)
+✔ Google raw truncation/symlink/partial write/fsync loss refuses and cleanup uncertainty retains config (94.235667ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1369.346958

@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+  "actualAppCron": true,
+  "actualDispatcher": true,
+  "actualTlsGateway": true,
+  "actualTlsReceivers": true,
+  "actualCanonicalApiReceivers": true,
+  "actualThreeDatabaseDomainProof": true,
+  "actualTlsPostgres": true,
+  "actualProvider": false,
+  "modeledOidc": true,
+  "firstHttpStatus": 503,
+  "firstFrontendLedgerState": "uncertain",
+  "firstFrontendUncertain": 1,
+  "firstGatewayUncertain": 1,
+  "firstDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "pending",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "replayHttpStatus": 200,
+  "finalFrontendUncertain": 1,
+  "finalGatewayUncertain": 1,
+  "finalDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "acknowledged",
+      "attempts": 2,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "sourceTraceMatchesOperation": true,
+  "settledFrontendUncertain": 0,
+  "specificFrontendOperationReconciled": true,
+  "gatewayCounterReset": false,
+  "domainProofSha256": "61a322ef6d905952b92a77f724e10611d02156ceac4df83dda030b798c8fad92",
+  "canonicalFaultRefusals": 2,
+  "immutableReceiptRewriteRefusals": 2,
+  "noSqlReplay": true,
+  "noRoleChange": true,
+  "noRuntimeRestart": true,
+  "fixtureOnly": true,
+  "postgresMajor": 16,
+  "migrations": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "frontendSourceCommit": "b7d19088add9d6efaebd340a24b69c5de6ff4a90",
+  "apiSourceCommits": {
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+  },
+  "apiSourceArchives": {
+    "course": {
+      "sha256": "84ff026ee80024fc0890e2ade42a692c5cf2072010aa428b6472e34d46702d51",
+      "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+    },
+    "community": {
+      "sha256": "616d8f504481ab24d4335bce3ebdd42b9ff2bc75f2ec47321b48d56d42ea14d1",
+      "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+    }
+  },
+  "fixtureSourceSha256": {
+    "p2-known-ack-loss-probe.mjs": "bf84f7490a3f802792263ae5d92997e56c141581f595d5877047eb60a87f85e8",
+    "harness/owned-p2-known-ack-loss.mjs": "6b204d123f7a4b776131d090da2492ef5f368d3fdb9c1b040152b356a05434b7",
+    "harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"
+  },
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false
+}

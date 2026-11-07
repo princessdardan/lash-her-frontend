@@ -1,0 +1,3 @@
+Verified @lash-her/braces@3.0.3-lash-her.1: source, archive, and 2 installed location(s)
+Verified @lash-her/load-yaml-file@0.2.0-lash-her.1: source, archive, and 2 installed location(s)
+Verified @lash-her/auth-core@0.41.3-lash-her.1: source, archive, and 2 installed location(s)

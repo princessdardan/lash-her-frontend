@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "FROZEN_SOURCE_QUALIFICATION_FAILED",
+  "sourceCommit": "1fedfa404c32893dd781711dd9f3ad956c8cab65",
+  "applicationSourceManifestSha256": "03e1dbebdd12b2ed01510901ea921203ceaeffe17e9d0f4e4b2ae082a8cc5a12",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "files": {
+    "ops/platform/harness/owned-frontend-identity-admission.mjs": "43fc69fb2ad5d1d01d35b65763c2c35602332452f3e12594797d65a945b05c7d",
+    "ops/platform/test-frontend-identity-local.mjs": "44f27e8662a7d779a28f8965c235d335cafc7cfe21514904f9c14f3e17034cf4",
+    "src/lib/customer-auth/store.ts": "db97015444f6a8e10c4b9f07e779f6b634e9536eab78df6a5a00123da0c81809",
+    "src/lib/customer-auth/handler.ts": "57e293afecd250c7ebfe4598c057514f15872d426b23525c061e1a1968ef5797",
+    "src/lib/customer-auth/config.ts": "1562a9b47ea9458e5699c19688b680540b84ad07824529b628d4a070eeeca41b",
+    "src/lib/customer-lifecycle/handler.ts": "193ec1ec55b9a79f67c1f170a1f57b99a70c9c38ae4f776282eef5cdc4c20325",
+    "src/lib/customer-lifecycle/store.ts": "d2f2bbf7f8a9724f85fd9f184b31196fa740022d3e2d4acf5eb6cfa8da8e3743",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1"
+  },
+  "command": "FRONTEND_IDENTITY_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node --import tsx ops/platform/test-frontend-identity-local.mjs",
+  "exitCode": 1,
+  "migrations": 83,
+  "admissionChecks": 14,
+  "positiveIdentityAndAccountChecks": 20,
+  "existingDatabaseRegressions": {
+    "files": [
+      "src/lib/customer-auth/store.db.test.ts",
+      "src/lib/customer-auth/session-issuance.db.test.ts",
+      "src/lib/customer-lifecycle/store.db.test.ts",
+      "src/lib/customer-lifecycle/faults.db.test.ts"
+    ],
+    "tests": 26,
+    "failures": 0,
+    "skipped": 0
+  },
+  "findings": [
+    {
+      "code": "MISSING_CUSTOMER_VERIFICATION_TOKENS_RECEIPT",
+      "path": "src/lib/customer-auth/store.ts",
+      "table": "customer_verification_tokens",
+      "responseStatus": 303,
+      "operationStates": [
+        "completed"
+      ],
+      "persistedRows": 0,
+      "providerCalls": 1,
+      "issuedSessionCookie": false,
+      "durableTokenBeforeProvider": false
+    },
+    {
+      "code": "MISSING_CUSTOMER_SESSIONS_RECEIPT",
+      "path": "src/lib/customer-auth/store.ts",
+      "table": "customer_sessions",
+      "responseStatus": 302,
+      "operationStates": [
+        "completed"
+      ],
+      "persistedRows": 0,
+      "providerCalls": 1,
+      "issuedSessionCookie": true,
+      "durableTokenBeforeProvider": true
+    }
+  ],
+  "artifacts": {
+    "postgres16": {
+      "path": "postgres16.json",
+      "sha256": "28786051dd408d70937811629f429c48a057fcfe38117e13c382bbefdc66f1ea"
+    }
+  },
+  "scope": {
+    "actualRouteExports": true,
+    "realAuthJs": true,
+    "realDatabase": true,
+    "verifiedTlsScram": true,
+    "constructedNextRequestStorage": true,
+    "projectedSyntheticHttpsOrigin": true,
+    "nativeNextServer": false,
+    "liveProviderTouched": false,
+    "liveDatabaseTouched": false
+  },
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false
+}

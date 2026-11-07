@@ -1,3 +1,5 @@
+import { runAdminReadOperation } from "./read-operation";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import {
@@ -312,13 +314,21 @@ export async function getAdminAppointments(
 export async function getAdminAppointmentDetail(
   id: string,
 ): Promise<AdminAppointmentDetail | null> {
+  return runAdminReadOperation("appointment-detail", () =>
+    getAdminAppointmentDetailWork(id),
+  );
+}
+
+async function getAdminAppointmentDetailWork(
+  id: string,
+): Promise<AdminAppointmentDetail | null> {
   const actor = await requirePermission("bookings:view");
   if (!UUID_PATTERN.test(id)) return null;
 
   const db = getPrivateDb();
   const now = new Date();
   const resourceScope = getAppointmentResourceScope(actor);
-  const [settings, rows] = await Promise.all([
+  const [settings, rows] = await settleWriterEffects([
     db
       .select({ timezone: bookingBusinessSettings.timezone })
       .from(bookingBusinessSettings)

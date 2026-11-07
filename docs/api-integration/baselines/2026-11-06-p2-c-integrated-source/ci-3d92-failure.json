@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "sourceCommit": "3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+  "runId": 42254906975,
+  "url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42254906975",
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": [
+    {
+      "id": 128019408804,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 128019408977,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409011,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409043,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409113,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409120,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409154,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409187,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128019409201,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128024576248,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  ],
+  "scope": "Required-source CI. Eight ordinary jobs pass; operator fixture and dependent aggregate fail. No final C Linux qualification, registry candidate or live acceptance.",
+  "failure": {
+    "jobId": 128019408804,
+    "step": "Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18",
+    "stage": "interrupted-restoration",
+    "code": "child-exit",
+    "originalArtifact": {
+      "id": 13522841284,
+      "name": "p2-owned-fixture-failure-3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+      "bytes": 4426,
+      "sha256": "754e0ee2a4062f6e5d0105ec4557e339c8daa0cba813118930996c38892f402e"
+    },
+    "innerDiagnostic": {
+      "status": "OWNED_OUTER_FAILURE_DIAGNOSTIC",
+      "kind": "Error",
+      "code": null,
+      "frame": [
+        "83",
+        "406"
+      ]
+    },
+    "cause": "Unresolved. Child error is discarded by fixture cleanup; tracing underway. Do not infer a release or provider failure."
+  },
+  "fourPartStage": {
+    "postgresMajor": 18,
+    "roles": 24,
+    "release": 18,
+    "native": 9,
+    "certification": 10,
+    "skipped": 0,
+    "fixtureOnly": true,
+    "providerTouched": false,
+    "releaseAccepted": false,
+    "g2Accepted": false
+  },
+  "originalPrivateEvidence": "/private/tmp/p2-ci-3d92-failure",
+  "durableManifestSha256": "9ad3aabe29f7f3aa6969cbd145ae4abae1e70acea58646fd206e8eb60db21e0f"
+}

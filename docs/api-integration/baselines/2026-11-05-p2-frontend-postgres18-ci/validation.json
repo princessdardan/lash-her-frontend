@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "FRONTEND_POSTGRES18_AND_NATIVE_JOB_VERIFIED",
+  "sourceCommit": "7a0a2bb4e1ece9cf6fd681fdf438530427cc9997",
+  "runId": 42141554694,
+  "jobId": 127643302192,
+  "jobUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42141554694/job/127643302192",
+  "wholeRunRequiredChecksPassed": false,
+  "migrationImageDigest": "sha256:7060339b2df070fd5f51ee74593a9b4e93488fd321fa716929c67a66032d4f5b",
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "schemaBaselineSha256": "0157a7991480f737b231e870d5f88b12e675eb7ba4da2f55cdeaaf91759c64da",
+  "migrations": 83,
+  "postgresMajor": 18,
+  "nativeStatus": "PATCHED_RUNTIME_VERIFIED",
+  "artifactArchives": [
+    {
+      "id": 13468392631,
+      "name": "frontend-runtime-qualification",
+      "file": "frontend-runtime-qualification-13468392631.zip",
+      "sha256": "d02b2e98b7554c3e78edddc6d6a6c955ad2c5ce33a2dd2bd2c61812a61a6a0f5",
+      "bytes": 60614
+    },
+    {
+      "id": 13467944053,
+      "name": "frontend-operator-schema-summary",
+      "file": "frontend-operator-schema-summary-13467944053.zip",
+      "sha256": "d64c5fd453ec5ca167984693e3f4a05090d523249c17677c382e929dc9f8b9b4",
+      "bytes": 10822
+    }
+  ],
+  "remainingScope": "Whole current-source CI, historical/provider integration, executable P2 driver, immutable candidate publication and actual deployed P2-12/G2 evidence remain required. Later changed source requires fresh checks.",
+  "liveStagingChanged": false
+}

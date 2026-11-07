@@ -1,0 +1,7 @@
+# Frozen identity admission findings
+
+Qualification of application commit `1fedfa404c32893dd781711dd9f3ad956c8cab65` failed on two real Auth.js export cases. A PostgreSQL `BEFORE INSERT ... RETURN NULL` trigger suppresses the requested token/session write. The token case still calls synthetic Resend and returns 303; the session case returns 302 and a session cookie. Both ledger operations complete despite zero persisted rows. [Validation](validation.json) binds the frozen source and fixture hashes; the [PostgreSQL 16 receipt](postgres16.json) retains the failed result without being replaced by later corrected qualification.
+
+The same run passed 20 positive/negative identity/account checks and all 26 existing auth, session-issuance and lifecycle database tests, on 83 migrations and 14 admission checks. The launcher exits 1 for findings; this is not a passing source qualification.
+
+The fixture invokes the actual auth and account route exports with real Auth.js, stores and PostgreSQL. Google and Resend are synthetic and all unexpected external fetches refuse. The loopback HTTP bridge maps a fixed synthetic HTTPS origin and constructs the installed Next.js request storage so account `cookies()` reads the supplied cookie. This does not establish native Next.js server, browser cookie, TLS proxy, provider or deployed scheduler behavior. No live provider/database is touched and no release is authorized.

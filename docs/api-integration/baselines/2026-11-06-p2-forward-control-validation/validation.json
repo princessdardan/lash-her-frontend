@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "status": "CONTROL_LAYER_VALIDATED_INTEGRATION_REVIEW_PENDING",
+  "baseCommit": "efa5c2c687bfbc015cfe0561ce4e81f56d36a782",
+  "engineCommit": "9b56688dce12cc109a6ff20d93fc7a6dceeabf4b",
+  "controlCommit": "e93d2453b124a05dbd3139abc5fce9401eac0d4e",
+  "checks": {
+    "node24ControlAndTransport": { "passed": 12, "failed": 0, "skipped": 0 },
+    "pythonRecoveryHost": { "passed": 13, "failed": 0, "skipped": 0 },
+    "ownedEslint": true,
+    "syntax": true,
+    "diffCheck": true,
+    "loopbackHttpsOnly": true,
+    "liveOperations": false,
+    "wholePathIntegration": false,
+    "independentReviewPending": true
+  },
+  "fileSha256": {
+    "ops/platform/p2-post-sql-recovery.mjs": "6ff171355be42a65bd254ac2b73872521f46afc3c7b574daebabeeb692a09812",
+    "ops/platform/p2-recovery.mjs": "468f1d3d0788becc59b18f6d8328394973aa078526ac4a17c08f3addd13f65a9",
+    "ops/platform/p2-recovery-transport.mjs": "97a602ed9462364f3a6cc176a4e448120685e1e8b7c46be453b5778f9e9f8f55",
+    "ops/platform/host/p2_recovery_broker.py": "4f221aa0efb8056e1a6d73b2f772f7a2ddd215c72a6e9d8199c00c3ccff23794",
+    "ops/platform/p2-post-sql-recovery.test.mjs": "ec07996051541207a2e5e0d8be2553383968cbd7e043cb8503b436e190b09a01",
+    "ops/platform/p2-recovery-transport.test.mjs": "7a8fd01cc128f02d40d6febe9dd2eab81440a6afbb2ecbe12b930a201bb8816a",
+    "docs/api-integration/operator-p2-post-sql-recovery.md": "8db37ea2b9b3394b0ea259185d0947721c5057a174e0cc658f5052153912f7ee"
+  },
+  "limitations": [
+    "The separately owned engine and control commits have not yet been integrated and qualified as one tree.",
+    "No live provider or staging operation was performed.",
+    "A failed or uncertain forward mutation requires a new reviewed action; this package does not retry it."
+  ]
+}

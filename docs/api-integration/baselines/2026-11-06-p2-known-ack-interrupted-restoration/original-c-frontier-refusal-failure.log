@@ -1,0 +1,14 @@
+F
+======================================================================
+FAIL: test_original_gateway_intent_without_readback_cannot_prove_no_lost_newer_generation (p2_known_ack_interrupted_restoration_test.RetainedChainTests.test_original_gateway_intent_without_readback_cannot_prove_no_lost_newer_generation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-known-ack-interrupted-restoration/ops/platform/host/p2_known_ack_interrupted_restoration_test.py", line 138, in test_original_gateway_intent_without_readback_cannot_prove_no_lost_newer_generation
+    with self.assertRaisesRegex(ValueError,'GATEWAY_FRONTIER_UNKNOWN'):self.load()
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.017s
+
+FAILED (failures=1)

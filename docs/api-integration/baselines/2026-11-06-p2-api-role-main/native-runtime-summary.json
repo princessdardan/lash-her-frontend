@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "generatedFrom": "sanitized GitHub Actions native-runtime artifacts",
+  "artifacts": [
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "runId": 42162176192,
+      "sourceSha": "a447bfde20299e12afab68a3331b3792ddd07598",
+      "artifactId": 13476649536,
+      "artifactName": "course-native-runtime-qualification",
+      "archiveSha256": "04ef430b8c955fa4b3883b52912ca4d345d47a2534c679b7b8d4f44c4aa78966",
+      "images": [
+        {
+          "name": "lash-her-course-api",
+          "imageSha256": "6899aae582db19a37956e0cd4e7c7a63f195c88528bb026a6278ca0674846190",
+          "status": "PATCHED_RUNTIME_VERIFIED",
+          "architecture": "amd64",
+          "runtimeUid": 65532,
+          "component": "zlib1g",
+          "componentVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+          "componentSha256": "49411e6cd2eafbb786c00c585aa5c912d91dbf02dbb516399d9ce540e5609242",
+          "regression": {
+            "patched": "PASS",
+            "shared": "PASS",
+            "unpatched": "EXPECTED_ASSERTION_FAILURE",
+            "upstreamTests": "PASS"
+          },
+          "scan": {
+            "createdAt": "2026-11-06T04:26:53.491575012Z",
+            "vulnerabilities": 0,
+            "misconfigurations": 0,
+            "secrets": 0,
+            "sha256": "b3989e0da8d0097c5762f670af90f328878b401bb3e377d311cbc056eb3d6f22"
+          }
+        },
+        {
+          "name": "lash-her-course-migration",
+          "imageSha256": "205f311232c0faa1a2ae3bf3f1b8d98865142ea12a59eb993fe532edfbddfbef",
+          "status": "PATCHED_RUNTIME_VERIFIED",
+          "architecture": "amd64",
+          "runtimeUid": 65532,
+          "component": "zlib1g",
+          "componentVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+          "componentSha256": "49411e6cd2eafbb786c00c585aa5c912d91dbf02dbb516399d9ce540e5609242",
+          "regression": {
+            "patched": "PASS",
+            "shared": "PASS",
+            "unpatched": "EXPECTED_ASSERTION_FAILURE",
+            "upstreamTests": "PASS"
+          },
+          "scan": {
+            "createdAt": "2026-11-06T04:27:18.397793826Z",
+            "vulnerabilities": 0,
+            "misconfigurations": 0,
+            "secrets": 0,
+            "sha256": "10beb2014a0c6160476652e0603c77bbb91343f986e868fab84ff4780e0935e5"
+          }
+        }
+      ]
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "runId": 42162186353,
+      "sourceSha": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+      "artifactId": 13477089295,
+      "artifactName": "community-native-runtime-qualification",
+      "archiveSha256": "c54165e1bbe19606c24fa81785eae0ac069ba469e78c07f08eec4a5a98311ddc",
+      "images": [
+        {
+          "name": "lash-her-community-api",
+          "imageSha256": "2f95df51e7f4638bf7d53f52429724ee5cfb322b3c36b17dcc514fd16c67caa6",
+          "status": "PATCHED_RUNTIME_VERIFIED",
+          "architecture": "amd64",
+          "runtimeUid": 65532,
+          "component": "zlib1g",
+          "componentVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+          "componentSha256": "49411e6cd2eafbb786c00c585aa5c912d91dbf02dbb516399d9ce540e5609242",
+          "regression": {
+            "patched": "PASS",
+            "shared": "PASS",
+            "unpatched": "EXPECTED_ASSERTION_FAILURE",
+            "upstreamTests": "PASS"
+          },
+          "scan": {
+            "createdAt": "2026-11-06T04:27:22.314923294Z",
+            "vulnerabilities": 0,
+            "misconfigurations": 0,
+            "secrets": 0,
+            "sha256": "4129945ae0abcefaa7f9ee60946cb94eb7916d96a0ece7c536bfdbcbaa1e1e92"
+          }
+        },
+        {
+          "name": "lash-her-community-worker",
+          "imageSha256": "b1fa77f057f82ba1b1718f6ae600bf9096f1c8e75b5c5c4b33c23e81847657c0",
+          "status": "PATCHED_RUNTIME_VERIFIED",
+          "architecture": "amd64",
+          "runtimeUid": 65532,
+          "component": "zlib1g",
+          "componentVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+          "componentSha256": "49411e6cd2eafbb786c00c585aa5c912d91dbf02dbb516399d9ce540e5609242",
+          "regression": {
+            "patched": "PASS",
+            "shared": "PASS",
+            "unpatched": "EXPECTED_ASSERTION_FAILURE",
+            "upstreamTests": "PASS"
+          },
+          "scan": {
+            "createdAt": "2026-11-06T04:27:49.980605645Z",
+            "vulnerabilities": 0,
+            "misconfigurations": 0,
+            "secrets": 0,
+            "sha256": "80153eff1fb9e300267e0e611987e88bb591c3cc19f26a33163479eefbecb004"
+          }
+        },
+        {
+          "name": "lash-her-community-migration",
+          "imageSha256": "105bce7ac9072d982b00e56234d83f252cc52095b885b4bde33e99b5d9218d3a",
+          "status": "PATCHED_RUNTIME_VERIFIED",
+          "architecture": "amd64",
+          "runtimeUid": 65532,
+          "component": "zlib1g",
+          "componentVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+          "componentSha256": "49411e6cd2eafbb786c00c585aa5c912d91dbf02dbb516399d9ce540e5609242",
+          "regression": {
+            "patched": "PASS",
+            "shared": "PASS",
+            "unpatched": "EXPECTED_ASSERTION_FAILURE",
+            "upstreamTests": "PASS"
+          },
+          "scan": {
+            "createdAt": "2026-11-06T04:28:12.101235147Z",
+            "vulnerabilities": 0,
+            "misconfigurations": 0,
+            "secrets": 0,
+            "sha256": "b59581cfa25412ad57c31ee41152a6d8e151d00cc698c6b221f6f9a683117c4a"
+          }
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    "raw scanner output",
+    "SBOM documents",
+    "VEX documents",
+    "signed artifact URLs",
+    "credentials",
+    "private source payloads"
+  ]
+}

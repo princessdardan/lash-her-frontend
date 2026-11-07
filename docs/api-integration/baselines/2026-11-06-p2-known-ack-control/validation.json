@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_TYPED_CONTROL_SOURCE_PREPARED",
+  "workingTreeBase": "f1fc3b4dc33acc5e6030294a9c429fab449b4fcb",
+  "apiSourceCommits": {
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+  },
+  "sourcePolicySha256": {
+    "course": {
+      "src/community-enrollment-publisher.ts": "7d8be38cf9a84bf10f3bcb7f568b9ef6638e5749ddcc2ed3f296f182faf1632a",
+      "src/integrations/community/persistence/drizzle-publisher.repository.ts": "f83a486cc84bd9de37adfe67826280bb19cb0d8b14e256bfd477ab790e887b16",
+      "src/integrations/community/publisher/publisher-retention.ts": "f566de6dda1eee5bf3da5591ae935d713d5a42d142b7d5113fcf2980efcec15f",
+      "src/community-snapshot-worker.ts": "01795b2a54a58f10c5729990feb23a0c1d198f63cb26b8f38bd7eb60c7db5d11",
+      "src/integrations/community/community-read.repository.ts": "583b603f9045a07aea2ae7fb88f9df2da1dea039b7ac37db05563b9e479c7ccd",
+      "src/mux-media-worker.ts": "717f6a0e952f618bc7eb0e404fe81dec292bdd10e11fa1b3584947eeaec191c8",
+      "src/video/media-lifecycle.ts": "eb992a4babf13583df44b58c1805387cf14c9d61b4e86183e7faa3822e1f8b2a",
+      "src/video/media-lifecycle.repository.ts": "d61ee29959f2634200eb177be516fb088741e94429724335cd0c68e736c0acb3",
+      "src/account-export-cleanup-worker.ts": "d01a551528f358f2d189b13b00524d865960326beca26e990958500633235b4e"
+    },
+    "community": {
+      "src/worker.ts": "29e20e270599ea9e31f031da8186d90c1aa10b291e0052b01c45b7381219349b",
+      "src/integrations/course/repair/drizzle-repair-store.ts": "2c22cb3f45a6ca3e3a33de654d86a4ee8afed20db97c1698276d27e265b00504",
+      "src/integrations/course/reconciliation/drizzle-reconciliation-store.ts": "f93c634cafaa7ce64040ae8b4537e9ff5adb98f3a0edd5c8ad1a399832cdd24d",
+      "src/integrations/course/reconciliation/schedule.ts": "b99356a0c0b5b968f74afad75c46bdcf3854889a615c0567eab65132b9739a1b",
+      "src/ops/retention.ts": "63cfc8f989b02245d9f57823b43525a76180ec83535678c5879e46469a4aa5eb"
+    }
+  },
+  "checks": {
+    "node": 23,
+    "host": 35,
+    "skipped": 0,
+    "ownedCurrent": {
+      "16": 10,
+      "18": 10
+    },
+    "wholeRoute": {
+      "majors": [
+        16,
+        18
+      ],
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "domainFaultRefusals": 11,
+      "backendFaultRefusals": 17,
+      "allThreeJournalsUnchanged": true
+    }
+  },
+  "sourceOnly": true,
+  "providerTouched": false,
+  "actualHostDocker": false,
+  "nativeInvocationQualified": false,
+  "liveWorkerProcessesQualified": false,
+  "noSqlReplay": true,
+  "noRoleChange": true,
+  "ordinaryZeroGateRelaxed": false,
+  "newOpsFiles": 0,
+  "changedOpsFiles": 15,
+  "sourceDeltaBytes": 102678,
+  "consumerFiles": [
+    "ops/platform/test-p2-platform-local.mjs",
+    "ops/platform/test-p2-platform-local.test.mjs"
+  ],
+  "unavailableStages": [
+    [
+      "community-api",
+      "course-api"
+    ],
+    [
+      "community-tls",
+      "course-tls"
+    ],
+    [
+      "gateway"
+    ]
+  ],
+  "open": [
+    "independent-committed-B-review",
+    "actual-Linux-Docker-SSH-replacement-and-loss-containment",
+    "actual-three-target-provider-source-config-runtime-qualification",
+    "actual-native-request-provenance",
+    "real-backend-idle-preflight",
+    "reviewed-staging-start",
+    "deployed-certification-G2",
+    "S14"
+  ],
+  "sha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/README.md": "1a85833d4bdea781265c3d281edb4e00ba0b2e277c0e17211350f2e9d630afdc",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/host-tests.log": "57ed51226861099a2111bc530c9c5cbdb3ca1c9c634aca8e1fa1364c2a021881",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/node-tests.log": "e9c0a7d4d5bd975f3cdfb47dc299dd5ba6370b7af1639c336f0f2b8300dbe931",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-current-postgres16.json": "1a3690fbbea6360a9d27514aa1d27354e0252ee7aabf08c6b5598550617cf031",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-current-postgres18.json": "9d5cd83ccc503800c048cca12d74ff46a54787a6996fce5e52e6e6da2fc6305e",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-whole-postgres16.json": "781551f637bffa779d76a95e704cea875a7e9aa98977861bbe630dc0dcd1243a",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-whole-postgres18.json": "694f5a8a748f814763823de35c3c4850e91aa68e9352b647f926e528d97f9b8e",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "51d858b2f7928ade7ed7cbfb83e1b323784993738b378f11dd0474347eb3a601",
+    "ops/platform/host/p2_certification_parent.py": "f7d69a575fa265ba97a522920210625748e4a23e267a9b21b2b0648512780d79",
+    "ops/platform/host/p2_certification_parent_test.py": "72a2d777596fae54b786495cfcbf21189abc9c809b15c9033a213a53095c82cf",
+    "ops/platform/host/p2_known_ack_loss.py": "cc9a11a0b6b212dc481c8bd2de037e1cbfc0fbf8ab0de8b34f6db35f3efd9a2b",
+    "ops/platform/host/p2_known_ack_loss_test.py": "3c727a9e8b633f37f45ed84837e3b82907fc17fb0086e7de5af6be61f7c7f244",
+    "ops/platform/p2-certification-current-probe.mjs": "d8ef66459455982b45913646b78f5d7095c72e193147fd00f1ef81bd2d951089",
+    "ops/platform/p2-certification-transport.mjs": "aafe5c1d5855f528c014fcc102c83899ed59b526718eda937bd52f86ff733f3e",
+    "ops/platform/p2-certification-transport.test.mjs": "990b79566593a1c4c181c1438daf0be6cef5acb8eda6367fa1d75d455dae248d",
+    "ops/platform/p2-certification.md": "4384ce48c9fd33c4524e0d488bd5b52d44cac0a809b7c7f12c584ea81947fa1c",
+    "ops/platform/p2-certification.mjs": "b7ded1d437d729ee1fa35921c2379968feba55cc987922c1e46126c452abfb04",
+    "ops/platform/p2-certification.test.mjs": "17387ae09ea3d7fb5b0c81d913006aeab59da6731f96144e9f6d910df1e07941",
+    "ops/platform/p2-known-ack-loss-probe.mjs": "155700b3a5ff7ed65410ce28046fb8ac07ff00a9d7ee3cb0237bc53ca3a42186",
+    "ops/platform/test-p2-certification-local.mjs": "08d601633ba6edee25635c828df5d8bbfbe21a66afe882c4de83747871637c64",
+    "ops/platform/test-p2-platform-local.mjs": "820a503805822327e59b2f6f3fea242e9febb570b8e608db26a018954d92b802",
+    "ops/platform/test-p2-platform-local.test.mjs": "44b64aa5ae610e08c3061773c4696d1c891865541da19f87995f62348cce3722"
+  },
+  "producerCommit": "57216d5a29ee783a40a69815134c359d0122ce2a"
+}

@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "status": "P2_MANAGED_API_METADATA_UNKNOWN",
+  "observedAt": "2026-11-06T04:50:58.000Z",
+  "managedConnectionAttempts": 2,
+  "results": [
+    {
+      "version": 1,
+      "status": "P2_MANAGED_API_ROLE_METADATA_UNKNOWN",
+      "context": "course",
+      "target": {
+        "context": "course",
+        "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+        "port": 5432,
+        "database": "neondb",
+        "serverMajor": 18,
+        "runtimeRole": "lash_her_course_staging_runtime",
+        "migrationRole": "lash_her_course_staging_migration"
+      },
+      "connected": true,
+      "failure": {
+        "phase": "initial-metadata",
+        "code": "EXACT_READONLY_IDENTITY_REQUIRED"
+      },
+      "closeAwaited": true,
+      "sourceBindingVerified": true,
+      "tlsAuthorized": false,
+      "rowBoundsComplete": false,
+      "readbackStable": false,
+      "metadataOnly": true,
+      "observerImposed": {
+        "searchPath": "pg_catalog,public",
+        "defaultTransactionReadOnly": "on",
+        "statementTimeoutMs": 5000,
+        "lockTimeoutMs": 1000,
+        "idleInTransactionSessionTimeoutMs": 5000
+      },
+      "caSource": "Node24.18.0-built-in-rootCertificates",
+      "pgVersion": "8.20.0",
+      "frontendQualified": false,
+      "migrationAuthorized": false,
+      "rolePreparationAuthorized": false,
+      "wholeReleaseAccepted": false,
+      "redactions": {
+        "roleNames": 0,
+        "identifiers": 0
+      }
+    },
+    {
+      "version": 1,
+      "status": "P2_MANAGED_API_ROLE_METADATA_UNKNOWN",
+      "context": "community",
+      "target": {
+        "context": "community",
+        "host": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+        "port": 5432,
+        "database": "neondb",
+        "serverMajor": 18,
+        "runtimeRole": "lash_her_community_staging_runtime",
+        "migrationRole": "lash_her_community_staging_migration"
+      },
+      "connected": true,
+      "failure": {
+        "phase": "initial-metadata",
+        "code": "EXACT_READONLY_IDENTITY_REQUIRED"
+      },
+      "closeAwaited": true,
+      "sourceBindingVerified": true,
+      "tlsAuthorized": false,
+      "rowBoundsComplete": false,
+      "readbackStable": false,
+      "metadataOnly": true,
+      "observerImposed": {
+        "searchPath": "pg_catalog,public",
+        "defaultTransactionReadOnly": "on",
+        "statementTimeoutMs": 5000,
+        "lockTimeoutMs": 1000,
+        "idleInTransactionSessionTimeoutMs": 5000
+      },
+      "caSource": "Node24.18.0-built-in-rootCertificates",
+      "pgVersion": "8.20.0",
+      "frontendQualified": false,
+      "migrationAuthorized": false,
+      "rolePreparationAuthorized": false,
+      "wholeReleaseAccepted": false,
+      "redactions": {
+        "roleNames": 0,
+        "identifiers": 0
+      }
+    }
+  ],
+  "readonlyPreparationOnly": true,
+  "frontendQualified": false,
+  "wholeReleaseAccepted": false,
+  "attemptId": "managed-api-metadata-1",
+  "interpretation": {
+    "initialIdentityGuard": "Aggregate conjunct refused; first row was not retained, therefore mismatching field is unknown.",
+    "tlsAuthorizedField": "False means no complete accepted initial snapshot; it does not prove TLS authorization failed.",
+    "roleSchemaObservation": "Not performed: neither context passed the initial identity guard.",
+    "retryPerformed": false,
+    "managedMutationPerformed": false
+  }
+}

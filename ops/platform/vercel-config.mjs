@@ -23,6 +23,20 @@ export function createVercelConfiguration(env, now = Date.now()) {
     throw new Error("Invalid release scheduler qualification mode");
   }
   let crons = ordinaryCrons.map((job) => ({ ...job }));
+  const lifecycleSchedule = { path: "/api/cron/account-lifecycle", schedule: "* * * * *" };
+  if (env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED === "true") crons.push(lifecycleSchedule);
+  const p2Schedules = env.LASH_P2_CERTIFICATION_SCHEDULES;
+  if (p2Schedules !== undefined && p2Schedules !== "off") {
+    if (p2Schedules !== "account-lifecycle" || resolveApplicationEnvironment(env) !== "staging" ||
+        env.VERCEL_ENV !== "production" || env.VERCEL_TARGET_ENV !== "production" ||
+        !/^[a-f0-9]{40}$/u.test(env.VERCEL_GIT_COMMIT_SHA ?? "") || /^0+$/u.test(env.VERCEL_GIT_COMMIT_SHA ?? "") ||
+        env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED !== "true" || mode === "true") {
+      throw new Error("Phase 2 schedules require the exact staging source and lifecycle recovery");
+    }
+    // A reviewed staging certification build can exercise lifecycle delivery
+    // without enabling unrelated business/native qualification schedules.
+    crons = [lifecycleSchedule];
+  }
   if (mode === "true") {
     const expires = Number(env.LASH_RELEASE_PROBE_EXPIRES_AT);
     if (resolveApplicationEnvironment(env) !== "staging" || env.VERCEL_ENV !== "production" ||

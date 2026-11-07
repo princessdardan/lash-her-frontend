@@ -1,0 +1,13 @@
+# Integrated certification source and remaining gates
+
+[validation.json](validation.json) records the reviewed source components, exact earlier PostgreSQL run, original CI failures and open conditions. Integration passes 37 certification/release Node checks, 106 host checks, 44 historical/source checks, four worker Node/six host checks, 15 protected-probe checks and 17 native source checks, without skips. Focused lint and frontend type checking pass.
+
+The four-part fixed wrapper at exact `537e2aff` passes owned macOS PostgreSQL 18.6: roles 24, release 18, native fixture 9 and certification scope 8. The official build/checksum and per-child program hashes are retained. This is a sanitized summary of successful wrapper output, not Linux/Docker, provider-native or staging acceptance. Later auth-origin and source additions require affected fresh checks.
+
+Seven distinct historical trees now reconstruct through a closed typed register and the existing actual Git/blob/excerpt verifier. All 33 original full profiles and seven existing exact-tree aliases are unchanged. Source coverage is 76 of 81 deployment surfaces; five lack authoritative source identity. Revision `8745a4…` now includes its exact direct Sanity mutator, alternative credentials and external editorial residual. Classification supplies no original values or operational fence.
+
+Required CI at `1ebd4855` failed in two platform jobs. The rotation fixture used a macOS-only temporary path, now corrected. Forward recovery reached the strict child after current recovery passed, but its inner output had been discarded. The original 887-byte failure artifact and both job logs are retained privately. New failure diagnostics emit only fixed phases, allowlisted error metadata and bounded source-relative frames; raw child output and assertion values remain discarded. No production workaround is inferred from the unresolved failure.
+
+The prior-gateway source gate and certification parent are integrated after review corrections. A further normal-call-chain gap is being qualified: the API migrator stops the runtime before its next bound-scope check, so actual ordered stop proof must cross that transition. Canonical alias hooks, rotation activation, worker/S12 joins and the formal known-ACK binder remain separate implementation gates. The actual owned dropped-ACK proof preserves gateway uncertainty even after exact frontend settlement; it does not authorize a generic counter reset.
+
+No staging SQL, provider control, deployment, scheduler or admission change occurred. Original configuration/provider evidence, final required Linux CI/candidate, Dardan-started deployed certification and real 24-hour cleanup remain necessary for P2-12/G2. Accepted G1 stays preserved.

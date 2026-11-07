@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type {
   BookingNoShowProviderMetadata,
   NoShowChargeStatus,
@@ -356,6 +357,7 @@ export async function createDraftNoShowInvoice(
   try {
     orderResponse = await dependencies.squareInvoices.createOrder(orderRequest);
   } catch (error) {
+    markWriterOperationUncertain();
     throw new NoShowInvoiceSquareApiError(
       error instanceof Error ? error.message : "Square order creation failed",
     );
@@ -372,6 +374,7 @@ export async function createDraftNoShowInvoice(
     invoiceResponse =
       await dependencies.squareInvoices.createInvoice(invoiceRequest);
   } catch (error) {
+    markWriterOperationUncertain();
     // The order was already created, so a provider reference exists.
     // Local fallback is not safe here; record the order id for manual
     // follow-up if possible, then block booking.
@@ -387,6 +390,7 @@ export async function createDraftNoShowInvoice(
         ...providerRefs,
       });
     } catch {
+      markWriterOperationUncertain();
       // Persistence failed, but a provider order id still exists.
       // Block booking regardless so staff can reconcile the orphan.
     }
@@ -414,6 +418,7 @@ export async function createDraftNoShowInvoice(
         ...providerRefs,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       throw new NoShowInvoiceBlockedError(
         error instanceof Error
           ? `Unexpected Square invoice status ${invoiceResponse.invoice.status} and failed to persist provider refs: ${error.message}`
@@ -447,6 +452,7 @@ export async function createDraftNoShowInvoice(
       ...providerRefs,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     // Best-effort: delete the DRAFT invoice so we don't leave an orphaned
     // Square charge instrument if local persistence fails.
     let deleteFailed = false;
@@ -456,6 +462,7 @@ export async function createDraftNoShowInvoice(
         invoiceResponse.invoice.version,
       );
     } catch {
+      markWriterOperationUncertain();
       deleteFailed = true;
     }
 
@@ -538,6 +545,7 @@ export async function chargeNoShowInvoice(
           providerFailureReason: reason,
         });
       } catch (error) {
+        markWriterOperationUncertain();
         const persistenceReason =
           error instanceof Error
             ? error.message
@@ -578,6 +586,7 @@ export async function chargeNoShowInvoice(
     try {
       invoiceResponse = await squareInvoices.getInvoice(record.squareInvoiceId);
     } catch (error) {
+      markWriterOperationUncertain();
       const lookupReason =
         error instanceof Error ? error.message : "Square invoice lookup failed";
 
@@ -589,6 +598,7 @@ export async function chargeNoShowInvoice(
           providerFailureReason: lookupReason,
         });
       } catch (persistenceError) {
+        markWriterOperationUncertain();
         const persistenceReason =
           persistenceError instanceof Error
             ? persistenceError.message
@@ -659,6 +669,7 @@ export async function chargeNoShowInvoice(
               providerMetadata: updatedMetadata,
             });
           } catch (error) {
+            markWriterOperationUncertain();
             const persistenceReason =
               error instanceof Error
                 ? error.message
@@ -700,6 +711,7 @@ export async function chargeNoShowInvoice(
           providerFailureReason: manualReason,
         });
       } catch (error) {
+        markWriterOperationUncertain();
         const persistenceReason =
           error instanceof Error
             ? error.message
@@ -754,6 +766,7 @@ export async function chargeNoShowInvoice(
           providerFailureReason: failureReason,
         });
       } catch (error) {
+        markWriterOperationUncertain();
         const persistenceReason =
           error instanceof Error
             ? error.message
@@ -876,6 +889,7 @@ export async function chargeNoShowInvoice(
         providerFailureReason: reason,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       const persistenceReason =
         error instanceof Error
           ? error.message
@@ -955,6 +969,7 @@ export async function chargeNoShowInvoice(
       publishRequest,
     );
   } catch (error) {
+    markWriterOperationUncertain();
     const reason =
       error instanceof Error ? error.message : "Square invoice publish failed";
     await alerts.alert({
@@ -994,6 +1009,7 @@ export async function chargeNoShowInvoice(
         chargedAt: now,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       const reason =
         error instanceof Error
           ? error.message
@@ -1040,6 +1056,7 @@ export async function chargeNoShowInvoice(
         providerFailureReason: manualReason,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       const reason =
         error instanceof Error
           ? error.message
@@ -1098,6 +1115,7 @@ export async function chargeNoShowInvoice(
         providerFailureReason: reason,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       const persistenceReason =
         error instanceof Error
           ? error.message
@@ -1156,6 +1174,7 @@ export async function chargeNoShowInvoice(
       providerStatus: status,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     const persistenceReason =
       error instanceof Error
         ? error.message

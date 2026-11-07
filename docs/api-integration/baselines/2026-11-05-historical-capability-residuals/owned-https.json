@@ -1,0 +1,70 @@
+{
+  "status": "HISTORICAL_SIX_OWNED_HTTPS_PASS",
+  "fixtureOnly": true,
+  "actualHistoricalDeploymentObserved": false,
+  "liveProviderCalls": 0,
+  "sourceModuleSha256": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+  "executedChecks": 10,
+  "checks": [
+    {
+      "name": "empty",
+      "requests": 12,
+      "checkpoints": 32,
+      "status": "PASS"
+    },
+    {
+      "name": "scoped",
+      "requests": 12,
+      "checkpoints": 32,
+      "status": "PASS"
+    },
+    {
+      "name": "legacy",
+      "requests": 12,
+      "checkpoints": 32,
+      "status": "PASS"
+    },
+    {
+      "name": "lock",
+      "requests": 12,
+      "checkpoints": 32,
+      "status": "PASS"
+    },
+    {
+      "name": "state",
+      "requests": 14,
+      "checkpoints": 36,
+      "status": "PASS"
+    },
+    {
+      "name": "401",
+      "requests": 1,
+      "checkpoints": 6,
+      "status": "PASS"
+    },
+    {
+      "name": "redirect",
+      "requests": 1,
+      "checkpoints": 6,
+      "status": "PASS"
+    },
+    {
+      "name": "malformed",
+      "requests": 1,
+      "checkpoints": 6,
+      "status": "PASS"
+    },
+    {
+      "name": "loop",
+      "requests": 5,
+      "checkpoints": 14,
+      "status": "PASS"
+    },
+    {
+      "name": "changing",
+      "requests": 12,
+      "checkpoints": 30,
+      "status": "PASS"
+    }
+  ]
+}

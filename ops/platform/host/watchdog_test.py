@@ -1,5 +1,7 @@
 from pathlib import Path
 import tempfile
+import json
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -29,6 +31,24 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), {"community-worker": [self.now]})
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_new_workers_preserve60second_grace_and_durable_restart_budget_after_timeout(self):
+        class OwnedHistory(type(Path())):
+            def resolve(self, *args, **kwargs): return Path("/var/lib/lash-her/owned-watchdog.json")
+        for service in ("course-media", "course-export-cleanup"):
+            with tempfile.TemporaryDirectory() as directory:
+                path = OwnedHistory(directory, "watchdog.json"); calls = []
+                def command(args, timeout=5):
+                    calls.append((args, timeout))
+                    if args[1] == "ps": return "a" * 64
+                    if args[1] == "inspect": return json.dumps({"com.docker.compose.service": service}) + "|unhealthy"
+                    self.assertEqual(args, ["docker", "restart", "--timeout", "60", "a" * 64]); self.assertEqual(timeout, 70)
+                    self.assertEqual(json.loads(path.read_text()), {service: [10000]})
+                    raise subprocess.TimeoutExpired(args, timeout)
+                with patch.object(watchdog, "command", side_effect=command), patch.object(watchdog.time, "time", return_value=10000):
+                    with self.assertRaises(subprocess.TimeoutExpired): watchdog.recover("lash-her-staging", path, True)
+                    watchdog.recover("lash-her-staging", path, True)
+                self.assertEqual(len([args for args, _timeout in calls if args[1] == "restart"]), 1)
 
     def test_invalid_target_refuses_before_docker(self):
         with patch.object(watchdog, "command", side_effect=AssertionError("Unexpected Docker call")):

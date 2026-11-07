@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "scope": "P2Q resource-reuse CI retained qualification artifacts",
+  "metadataSource": "GitHub Actions list-workflow-run-artifacts read-only API",
+  "safeExtractionPolicy": {
+    "maximumEntries": 10000,
+    "maximumUncompressedBytes": 104857600,
+    "rejectAbsolutePaths": true,
+    "rejectParentTraversal": true,
+    "rejectBackslashPaths": true,
+    "rejectSymlinks": true,
+    "resultMeaning": "pass means the original ZIP matched the GitHub digest, remained within both bounds, had zero rejected paths and symlinks, and was extracted into the listed dedicated directory"
+  },
+  "artifacts": [
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13551924334,
+      "artifactName": "frontend-operator-schema-summary",
+      "expectedGitHubDigest": "sha256:95997f9994a23fb5a82c4ed3a42235153af0f67f6c4111d2f3b87a3ec75865e1",
+      "localZipSha256": "95997f9994a23fb5a82c4ed3a42235153af0f67f6c4111d2f3b87a3ec75865e1",
+      "localZip": "frontend/run-42318731124/artifacts/frontend-operator-schema-summary-13551924334.zip",
+      "safeExtraction": {"status": "pass", "entries": 3, "uncompressedBytes": 60849, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/frontend-operator-schema-summary-13551924334"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13552527209,
+      "artifactName": "frontend-runtime-qualification",
+      "expectedGitHubDigest": "sha256:c9979837c0e038aca5fe1078a8c909c148c03444853758a308ca84d81e6d0fa8",
+      "localZipSha256": "c9979837c0e038aca5fe1078a8c909c148c03444853758a308ca84d81e6d0fa8",
+      "localZip": "frontend/run-42318731124/artifacts/frontend-runtime-qualification-13552527209.zip",
+      "safeExtraction": {"status": "pass", "entries": 5, "uncompressedBytes": 448495, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/frontend-runtime-qualification-13552527209"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13551858595,
+      "artifactName": "gateway-runtime-qualification",
+      "expectedGitHubDigest": "sha256:00b401102ca73a24331d8db66d4befa6fccb9afa0df41738d14b3e83c8816c0c",
+      "localZipSha256": "00b401102ca73a24331d8db66d4befa6fccb9afa0df41738d14b3e83c8816c0c",
+      "localZip": "frontend/run-42318731124/artifacts/gateway-runtime-qualification-13551858595.zip",
+      "safeExtraction": {"status": "pass", "entries": 5, "uncompressedBytes": 418752, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/gateway-runtime-qualification-13551858595"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13552430853,
+      "artifactName": "playwright-blob-chromium",
+      "expectedGitHubDigest": "sha256:7ba9e1200fd27cb89268a3c9312dff91de66ea4e14e294e5c134338b34ed1ddb",
+      "localZipSha256": "7ba9e1200fd27cb89268a3c9312dff91de66ea4e14e294e5c134338b34ed1ddb",
+      "localZip": "frontend/run-42318731124/artifacts/playwright-blob-chromium-13552430853.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 213222, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/playwright-blob-chromium-13552430853"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13552123252,
+      "artifactName": "playwright-blob-firefox",
+      "expectedGitHubDigest": "sha256:874394d7fd4950699ec04cb48efbc34782f13c23f0846de61c12f0dc1b84a6a5",
+      "localZipSha256": "874394d7fd4950699ec04cb48efbc34782f13c23f0846de61c12f0dc1b84a6a5",
+      "localZip": "frontend/run-42318731124/artifacts/playwright-blob-firefox-13552123252.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 215581, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/playwright-blob-firefox-13552123252"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13551399668,
+      "artifactName": "playwright-blob-webkit",
+      "expectedGitHubDigest": "sha256:d3798bf9c9fb2c3207131f7be5af2d6a73b52383ae15a06012f29b4dc2536d37",
+      "localZipSha256": "d3798bf9c9fb2c3207131f7be5af2d6a73b52383ae15a06012f29b4dc2536d37",
+      "localZip": "frontend/run-42318731124/artifacts/playwright-blob-webkit-13551399668.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 215981, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/playwright-blob-webkit-13551399668"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "artifactId": 13552303525,
+      "artifactName": "playwright-report",
+      "expectedGitHubDigest": "sha256:c577f87d01974a7e0d0067cd28ceeee39050479d49bd9f60ad9f5f4ccf61bbf6",
+      "localZipSha256": "c577f87d01974a7e0d0067cd28ceeee39050479d49bd9f60ad9f5f4ccf61bbf6",
+      "localZip": "frontend/run-42318731124/artifacts/playwright-report-13552303525.zip",
+      "safeExtraction": {"status": "pass", "entries": 2, "uncompressedBytes": 2398655, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-42318731124/artifacts/playwright-report-13552303525"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13553101985,
+      "artifactName": "frontend-operator-schema-summary",
+      "expectedGitHubDigest": "sha256:ea1676da46d8c724812f48ced20f6d3832125e576de0a235627ef93d421272a3",
+      "localZipSha256": "ea1676da46d8c724812f48ced20f6d3832125e576de0a235627ef93d421272a3",
+      "localZip": "frontend/run-7d53/artifacts/frontend-operator-schema-summary-13553101985.zip",
+      "safeExtraction": {"status": "pass", "entries": 3, "uncompressedBytes": 60847, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/frontend-operator-schema-summary-13553101985"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13552504932,
+      "artifactName": "frontend-runtime-qualification",
+      "expectedGitHubDigest": "sha256:af2e1d86aed76a7efd2d41f04efdfb19749739686b49f200ae2e6c10dcd94660",
+      "localZipSha256": "af2e1d86aed76a7efd2d41f04efdfb19749739686b49f200ae2e6c10dcd94660",
+      "localZip": "frontend/run-7d53/artifacts/frontend-runtime-qualification-13552504932.zip",
+      "safeExtraction": {"status": "pass", "entries": 5, "uncompressedBytes": 448494, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/frontend-runtime-qualification-13552504932"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13552896571,
+      "artifactName": "gateway-runtime-qualification",
+      "expectedGitHubDigest": "sha256:a99b3b1f92c017e432075e34b352041653ccd55886e69c6259655119f7a228bf",
+      "localZipSha256": "a99b3b1f92c017e432075e34b352041653ccd55886e69c6259655119f7a228bf",
+      "localZip": "frontend/run-7d53/artifacts/gateway-runtime-qualification-13552896571.zip",
+      "safeExtraction": {"status": "pass", "entries": 5, "uncompressedBytes": 418753, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/gateway-runtime-qualification-13552896571"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13552921119,
+      "artifactName": "playwright-blob-chromium",
+      "expectedGitHubDigest": "sha256:71b2c66671a49d87958e99b3808c001667a70572cede13bc217cc461858f876f",
+      "localZipSha256": "71b2c66671a49d87958e99b3808c001667a70572cede13bc217cc461858f876f",
+      "localZip": "frontend/run-7d53/artifacts/playwright-blob-chromium-13552921119.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 214541, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/playwright-blob-chromium-13552921119"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13552817637,
+      "artifactName": "playwright-blob-firefox",
+      "expectedGitHubDigest": "sha256:60a050250251d136537ebf2df3bf3c89cb554f1cb94b56b84fda22834f4cbf56",
+      "localZipSha256": "60a050250251d136537ebf2df3bf3c89cb554f1cb94b56b84fda22834f4cbf56",
+      "localZip": "frontend/run-7d53/artifacts/playwright-blob-firefox-13552817637.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 1257842, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/playwright-blob-firefox-13552817637"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13552892290,
+      "artifactName": "playwright-blob-webkit",
+      "expectedGitHubDigest": "sha256:8cbd3044afc2e18185bdc4f198ce3640174c6d413d298bf13b5a30b10327358f",
+      "localZipSha256": "8cbd3044afc2e18185bdc4f198ce3640174c6d413d298bf13b5a30b10327358f",
+      "localZip": "frontend/run-7d53/artifacts/playwright-blob-webkit-13552892290.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 215963, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/playwright-blob-webkit-13552892290"}
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "artifactId": 13553596367,
+      "artifactName": "playwright-report",
+      "expectedGitHubDigest": "sha256:2bef6f1670d80f085a8c7eab573ea976db0e1308b6aaf75bd665fd04c3e97f46",
+      "localZipSha256": "2bef6f1670d80f085a8c7eab573ea976db0e1308b6aaf75bd665fd04c3e97f46",
+      "localZip": "frontend/run-7d53/artifacts/playwright-report-13553596367.zip",
+      "safeExtraction": {"status": "pass", "entries": 22, "uncompressedBytes": 5534397, "unsafePaths": 0, "symlinks": 0, "directory": "frontend/run-7d53/artifacts/playwright-report-13553596367"}
+    },
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "runId": 42318763350,
+      "headSha": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+      "artifactId": 13551563342,
+      "artifactName": "course-native-runtime-qualification",
+      "expectedGitHubDigest": "sha256:daf9e6a32b8081aa75e7d28da2a639b3ca5c52e1e42ac2fcb46399914f8387d9",
+      "localZipSha256": "daf9e6a32b8081aa75e7d28da2a639b3ca5c52e1e42ac2fcb46399914f8387d9",
+      "localZip": "course/run-42318763350/artifacts/course-native-runtime-qualification-13551563342.zip",
+      "safeExtraction": {"status": "pass", "entries": 10, "uncompressedBytes": 1543753, "unsafePaths": 0, "symlinks": 0, "directory": "course/run-42318763350/artifacts/course-native-runtime-qualification-13551563342"}
+    },
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "runId": 42318763350,
+      "headSha": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+      "artifactId": 13551074825,
+      "artifactName": "operator-schema-postgres18",
+      "expectedGitHubDigest": "sha256:452a17704c2d46c50ea4ed6736ae19e8351eec11a7d7d7f91b306a62721b6c23",
+      "localZipSha256": "452a17704c2d46c50ea4ed6736ae19e8351eec11a7d7d7f91b306a62721b6c23",
+      "localZip": "course/run-42318763350/artifacts/operator-schema-postgres18-13551074825.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 186618, "unsafePaths": 0, "symlinks": 0, "directory": "course/run-42318763350/artifacts/operator-schema-postgres18-13551074825"}
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "runId": 42318757611,
+      "headSha": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+      "artifactId": 13552107555,
+      "artifactName": "community-native-runtime-qualification",
+      "expectedGitHubDigest": "sha256:25fc03bb21796aad2bdd43a1f92faf3bbf62b36bd2fc4db5459c656f1e977efe",
+      "localZipSha256": "25fc03bb21796aad2bdd43a1f92faf3bbf62b36bd2fc4db5459c656f1e977efe",
+      "localZip": "community/run-42318757611/artifacts/community-native-runtime-qualification-13552107555.zip",
+      "safeExtraction": {"status": "pass", "entries": 15, "uncompressedBytes": 2172691, "unsafePaths": 0, "symlinks": 0, "directory": "community/run-42318757611/artifacts/community-native-runtime-qualification-13552107555"}
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "runId": 42318757611,
+      "headSha": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+      "artifactId": 13552241780,
+      "artifactName": "operator-schema-postgres18",
+      "expectedGitHubDigest": "sha256:973f1adb87033143b180aadcbb13718a4061924269764a507c2ff9da9164a01c",
+      "localZipSha256": "973f1adb87033143b180aadcbb13718a4061924269764a507c2ff9da9164a01c",
+      "localZip": "community/run-42318757611/artifacts/operator-schema-postgres18-13552241780.zip",
+      "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 85236, "unsafePaths": 0, "symlinks": 0, "directory": "community/run-42318757611/artifacts/operator-schema-postgres18-13552241780"}
+    }
+  ],
+  "sourceReporterBrowserObservations": [
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42318731124,
+      "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+      "expected": 582,
+      "skipped": 159,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "runId": 42320214307,
+      "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "expected": 581,
+      "skipped": 159,
+      "unexpected": 0,
+      "flaky": 1,
+      "flakyCase": {
+        "file": "tests/product-detail.spec.ts",
+        "line": 417,
+        "project": "firefox",
+        "firstAttempt": "expected checkout request to be defined; received undefined",
+        "firstAttemptDurationMs": 6698,
+        "retry": "passed",
+        "retryDurationMs": 4660
+      }
+    }
+  ],
+  "limitations": [
+    "This receipt covers the 18 retained qualification ZIPs only, not every artifact produced by the runs.",
+    "Safe-extraction checks apply to each retained outer GitHub artifact ZIP. Nested Playwright blob ZIPs remain source evidence and are not separately attributed as GitHub artifacts.",
+    "No signed download URL, access token, provider configuration, merge, rerun, or repository mutation is included or claimed."
+  ]
+}

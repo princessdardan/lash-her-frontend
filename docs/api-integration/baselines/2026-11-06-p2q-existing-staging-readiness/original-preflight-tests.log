@@ -1,0 +1,18 @@
+✔ reviewed staging identities, endpoints, role and migration pin validate (2.002584ms)
+✔ a shared Resend account accepts the reviewed staging sender and resources (0.198625ms)
+✔ Resend account separation evidence is optional for the reviewed staging configuration (0.155375ms)
+✔ production project, owner credentials, live payments and recipient escape fail closed (0.266208ms)
+✔ uncommitted candidates and missing migration/compatibility evidence cannot pass (0.176625ms)
+✔ protected release pins can approve an existing commit without modifying that commit (0.230416ms)
+✔ OAuth preflight rejects unreviewed/shared clients and production callbacks (0.213792ms)
+✔ staging release rejects added administrators and unreviewed email configuration (0.168958ms)
+✔ shared administration does not permit different Sanity, database or Redis targets (0.472917ms)
+✔ runtime database TLS and connection parameters cannot weaken the reviewed target (0.267208ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 51.12325

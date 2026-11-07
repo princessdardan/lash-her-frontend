@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "baseCommit": "13c9c29d",
+  "implementationCommit": "b4f71dcc4e7ba6ef284a0091850d597485321ed3",
+  "originalCiSourceCommit": "8f3112d7ee12adedb36ca63c1e61af7742bd34b0",
+  "originalCiRunId": "42204767907",
+  "originalCiJobId": "127848526156",
+  "originalZipSha256": "eb4c6dbf204e54cf449e9ff7dc126895e08495c4a7ed290eb00d643c25313327",
+  "sourceSha256": {
+    "ops/platform/test-p2-recovery-owned.mjs": "d32b49e401e8ecf2d2f062499ffbc2c41ccbbcce202436152e1c4f15ed1e1bb3",
+    "ops/platform/test-p2-recovery-owned.py": "83e455f33558b88b7a9eb9a657e70c8cdffceb8cd0f1224266f066ea11173e5b",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "94e2d55af75ba26368126d9b19870da817e84bc50df94bf440ca53da357fecbd"
+  },
+  "testedFileBytesMatchCommit": true,
+  "evidenceSha256": {
+    "baseline-root13c9-pg18.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "baseline-root13c9-pg18.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "corrected-owned-pg18.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "corrected-owned-pg18.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diagnostic-unit.log": "f732530a90462f5eac75ad6377c57a45b8a53b7fd8b75c4f15838cfefa62993f",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-ci-artifact.zip": "eb4c6dbf204e54cf449e9ff7dc126895e08495c4a7ed290eb00d643c25313327"
+  },
+  "platform": "macOS",
+  "node": "24.18.0",
+  "postgres": "18.6",
+  "fixtureOnly": true,
+  "linuxFailureReproduced": false,
+  "linuxCorrectionQualified": false,
+  "providerTouched": false,
+  "releaseAccepted": false
+}

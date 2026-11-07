@@ -1,0 +1,116 @@
+{
+  "actualCourseReadOnlyReducerQualified": false,
+  "actualDatabaseSessions": 0,
+  "actualDrainQualified": false,
+  "actualHttpPosts": 0,
+  "actualNetworkListeners": 0,
+  "actualOwnedFilesystemFsyncObserved": true,
+  "actualProviderCalls": 0,
+  "actualRootOwnershipQualified": false,
+  "actualRuntimeMountQualified": false,
+  "baseCommit": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "durableReplayStartQualified": false,
+  "filesystemUidGidProjected": true,
+  "historicProducerFsyncQualified": false,
+  "jointDataSchemaSha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+  "jointManifestSha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f",
+  "limitations": [
+    "Row reducers consume only source-shaped fixture projections; no actual query/session/provider adapter exists.",
+    "Replay burn is an in-process model; no durable SEND_STARTED publication or HTTP dispatch exists.",
+    "Current fsync/readback cannot prove historic producer commit ACK.",
+    "Codec/profile reference acceptance is syntax-only, not registry/resource/lease authority.",
+    "Global ledger/counter equality is coverage consistency only; actual gateway/FE drain and provider queue remain unknown.",
+    "Filesystem tests use actual owned descriptors/fsync with projected macOS UID/GID, not Linux root/mount proof.",
+    "No fixed production authority factory, positive profile, physical observer, allocation/control/provider-before-use proof, or parent integration exists."
+  ],
+  "moduleImports": [
+    "copy",
+    "datetime",
+    "hashlib",
+    "json",
+    "math",
+    "os",
+    "re",
+    "stat",
+    "struct",
+    "threading"
+  ],
+  "operationalByteLimit": 102400,
+  "operationalBytes": 70442,
+  "originalAssignedByteLimit": 106496,
+  "originalJointDataSchemaSha256": "3458d245b54e5fe63aaea0354bbd40327f6b0180b97e6f62fd5b4cb40fb0e2b8",
+  "precedingSourceCommit": "2ff5daac7756ac65a38dbc49a324d4568b9f867e",
+  "productionArmAvailable": false,
+  "proposalManifestSha256": "58aa846dd76f3a457d69a12bdd3e6c9a4b0473033c4bb35f312547015483200c",
+  "providerQueueQualified": false,
+  "rebalance": "Root-approved host100KiB/Node36KiB/gateway56KiB; total192KiB unchanged.",
+  "runtime": {
+    "machine": "arm64",
+    "node": "v24.18.0",
+    "platform": "Darwin",
+    "python": "3.14.3"
+  },
+  "s05LiveQualified": false,
+  "senderActivationAvailable": false,
+  "source": {
+    "ops/platform/host/p2q_mux_capture.py": {
+      "bytes": 38483,
+      "sha256": "4a872b04d0441029f0a0efdad0233b1e7999ae164f21fe87f26782983668204f"
+    },
+    "ops/platform/host/p2q_mux_capture_test.py": {
+      "bytes": 31959,
+      "sha256": "dfa0101941f7404ef51244833b6b082cd9bb76d6fbd126efe812ed9859135dc9"
+    }
+  },
+  "sourceAuthorityFactoryImplemented": false,
+  "sourceCommit": "8e323605831f2a479c8778bc2a61b1e5da78c882",
+  "sourceSemanticsReference": {
+    "files": {
+      "src/video/media-lifecycle.repository.ts": {
+        "bytes": 17991,
+        "sha256": "d61ee29959f2634200eb177be516fb088741e94429724335cd0c68e736c0acb3"
+      },
+      "src/video/media-lifecycle.ts": {
+        "bytes": 12494,
+        "sha256": "eb992a4babf13583df44b58c1805387cf14c9d61b4e86183e7faa3822e1f8b2a"
+      },
+      "src/video/mux.client.ts": {
+        "bytes": 13187,
+        "sha256": "14a55b1cc6623959b41c0c67d7640e3121e029c1029b31777d9acbaaa7230a56"
+      },
+      "src/video/video.routes.ts": {
+        "bytes": 11949,
+        "sha256": "4e1a7705ef6b9c4a01cb64def1d8fa45e693576b8311895b761858b8d57eeef3"
+      }
+    },
+    "repository": "princessdardan/lash-her-course-api",
+    "revision": "0bb054d5a04db71c481a8b3d182db6df19782cdc"
+  },
+  "status": "SOURCE_COMPONENT_TESTS_PASS",
+  "tests": {
+    "codecParity": {
+      "equalCanonicalBytesAndHashes": true,
+      "nodeSourceCommit": "83fcfcef9da54acdf0b6626c708fe6c2a629a3c7",
+      "nodeSourceSha256": "4d8b7ebd1b6bcbe87bb69b8ddedb6830e46b01b1378936b19f8f9d1fda1680bc",
+      "safeKinds": [
+        "globalRequest",
+        "lease",
+        "replayObservation",
+        "safeCapture",
+        "safeSendStarted",
+        "windowSummary",
+        "wireFrame"
+      ],
+      "vectors": 28
+    },
+    "command": "python3 -m unittest -v ops/platform/host/p2q_mux_capture_test.py",
+    "compileExitCode": 0,
+    "exitCode": 0,
+    "jointClosedKeySets": 15,
+    "jointFixedCases": 3,
+    "jointFixedOperations": 10,
+    "passed": 23,
+    "skipped": 0
+  },
+  "version": 1
+}

@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "repository": "princessdardan/lash-her-frontend",
+  "run": {
+    "id": 42314923915,
+    "number": 283,
+    "attempt": 1,
+    "name": "CI",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "headBranch": "codex/phase2-integration",
+    "headSha": "ad1f2abd3cb26462beb7c51885878e23abfc810d",
+    "createdAt": "2026-11-06T23:54:40Z",
+    "updatedAt": "2026-11-07T00:09:48Z"
+  },
+  "allTenJobsSucceeded": true,
+  "jobs": [
+    {"id": 128225080021, "name": "frontend-operator-migrations", "conclusion": "success"},
+    {"id": 128225080111, "name": "build", "conclusion": "success"},
+    {"id": 128225080172, "name": "database", "conclusion": "success"},
+    {"id": 128225080268, "name": "quality-and-unit", "conclusion": "success"},
+    {"id": 128225080277, "name": "gateway-and-platform", "conclusion": "success"},
+    {"id": 128225080319, "name": "browser (firefox)", "conclusion": "success"},
+    {"id": 128225080348, "name": "audit", "conclusion": "success"},
+    {"id": 128225080387, "name": "browser (webkit)", "conclusion": "success"},
+    {"id": 128225080499, "name": "browser (chromium)", "conclusion": "success"},
+    {"id": 128230037413, "name": "browser", "conclusion": "success"}
+  ],
+  "operatorEvidence": {
+    "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+    "sourceCommit": "ad1f2abd3cb26462beb7c51885878e23abfc810d",
+    "postgresMajor": 18,
+    "migrations": 83,
+    "profiledCurrent": {
+      "readOnlyVerified": true,
+      "pendingSqlRefusedBeforeIntent": true,
+      "originalJournalAndSchemaUnchanged": true,
+      "trafficAuthorized": false,
+      "virginInstallAuthorityIssued": false
+    },
+    "platformStatus": "P2_PLATFORM_OWNED_PASS",
+    "fixtureChecks": {"roles": 29, "release": 18, "native": 9, "certification": 10},
+    "identityRecoveryLifecycleStatus": "P2_IDENTITY_RECOVERY_AND_LIFECYCLE_FIXTURES_PASS",
+    "nodeTests": {"pass": 19, "fail": 0, "skipped": 0},
+    "courseRevision": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "communityRevision": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+    "interruptedRestorationNegativeCases": 7,
+    "allInterruptedRestorationNegativeJournalsUnchanged": true,
+    "providerTouched": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "nativeRuntimeEvidence": {
+    "frontend": {
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "imageId": "sha256:09d051543206941e18857ea2eae842a647364c22d5dc62d684efbf237643565f",
+      "rawHighCriticalCount": 2,
+      "rawHighCriticalIds": ["CVE-2026-76844", "CVE-2026-85091"],
+      "qualifiedHighCriticalCount": 0
+    },
+    "gateway": {
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "imageId": "sha256:27b87264329bac7261586e3ebdfca3127c85b49b45f1682ec33fdc8d11f11c4b",
+      "rawHighCriticalCount": 2,
+      "rawHighCriticalIds": ["CVE-2026-76844", "CVE-2026-85091"],
+      "qualifiedHighCriticalCount": 0
+    }
+  },
+  "browserEvidence": {
+    "aggregateJob": "success",
+    "expected": 582,
+    "skipped": 159,
+    "unexpected": 0,
+    "flaky": 0,
+    "errors": [],
+    "projects": {
+      "chromium": {"expected": 194, "skipped": 53, "flaky": 0},
+      "firefox": {"expected": 194, "skipped": 53, "flaky": 0},
+      "webkit": {"expected": 194, "skipped": 53, "flaky": 0}
+    }
+  },
+  "artifacts": [
+    {"id": 13550852196, "name": "frontend-operator-schema-summary", "zipSha256": "73f60765c46fc5b70ca308f206927feb514007c554fa8310d4772d09ccf2e1b0", "digestMatchedGitHub": true},
+    {"id": 13551330860, "name": "frontend-runtime-qualification", "zipSha256": "19cf57cb5082722ea023f9c705e7c4d669b414827c9f7428f8b014ae2ae483d2", "digestMatchedGitHub": true},
+    {"id": 13550870601, "name": "gateway-runtime-qualification", "zipSha256": "799e7335df98c020ef569e59951aab5720669fe36ffdf561f95ce0f22057ac38", "digestMatchedGitHub": true},
+    {"id": 13549964784, "name": "playwright-report", "zipSha256": "d4cda77737f5f8b43f2c561fa0c833f7da563e0432f9041661519ab60b407140", "digestMatchedGitHub": true},
+    {"id": 13551005835, "name": "playwright-blob-chromium", "zipSha256": "46af7851a59658884759668c5133a8344444f26139ff634d3d115838321fd117", "digestMatchedGitHub": true},
+    {"id": 13549359733, "name": "playwright-blob-firefox", "zipSha256": "15172481c0a8a97e6e459128440f1c6e054df8ba8397250d407397858113bb52", "digestMatchedGitHub": true},
+    {"id": 13551250172, "name": "playwright-blob-webkit", "zipSha256": "6b712b99ab021aaa197555e960ee5c9d8ee1fe2223f6b5507496b6dd0a44284a", "digestMatchedGitHub": true}
+  ],
+  "logs": [
+    {"jobId": 128225080277, "name": "gateway-and-platform", "path": "/private/tmp/p2q-ci-ad1-20261106/logs/gateway-and-platform-128225080277.log", "sha256": "4f5d1ef0fa123ac136b2a03167efaec9de58270fb66dacbb85d9c80e2c384154"},
+    {"jobId": 128225080021, "name": "frontend-operator-migrations", "path": "/private/tmp/p2q-ci-ad1-20261106/logs/frontend-operator-migrations-128225080021.log", "sha256": "b9a64404df08a03c33882a9409174fabb3b2f328e778fccfcf1f44d1daba4cf7"},
+    {"jobId": 128230037413, "name": "browser", "path": "/private/tmp/p2q-ci-ad1-20261106/logs/browser-aggregate-128230037413.log", "sha256": "9e48d9f045257fa7c04cba678949e6590c9a8ceb2563d0a575a9fecbe5af31a0"}
+  ],
+  "artifactExtraction": {
+    "root": "/private/tmp/p2q-ci-ad1-20261106/artifacts",
+    "checks": ["no absolute paths", "no path traversal", "no backslash paths", "no symlinks", "entry cap 10000", "uncompressed cap 100000000"],
+    "allSevenArchivesPassed": true,
+    "originalZipsPreserved": true
+  },
+  "observerLimitations": [
+    "The evidence establishes CI and retained artifact results for this exact source; it does not claim provider activation or live provider behavior.",
+    "No workflow rerun, provider action, deployment, publication, registry mutation, credential use, database mutation, or repository edit was performed by this observer."
+  ]
+}

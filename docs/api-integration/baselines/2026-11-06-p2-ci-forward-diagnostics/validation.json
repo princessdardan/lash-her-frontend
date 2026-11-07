@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "status": "REQUIRED_LINUX_FORWARD_CI_FAILED_DIAGNOSTICS_PREPARED",
+  "reviewedFrontendSource": "693f984b77717c30abcdb5fbe869aae564dcd390",
+  "failedCi": {
+    "frontendSource": "630819604bb8868aad15c3ad05f25d15437ae3c3",
+    "runId": 42179251843,
+    "jobId": 127765260299,
+    "conclusion": "failure",
+    "failedQualification": "forward",
+    "reportedFailure": "child-exit",
+    "currentRecoveryPassed": true,
+    "otherSuccessfulJobs": [
+      "gateway-and-platform",
+      "quality-and-unit",
+      "build",
+      "database",
+      "audit",
+      "browser (chromium)",
+      "browser (firefox)",
+      "browser (webkit)"
+    ],
+    "aggregateBrowserGate": "failure: required operator dependency failed",
+    "originalLog": {
+      "retainedPrivate": true,
+      "bytes": 225227,
+      "sha256": "1c92cf47969253f0cb7201d9d65dda9927b95c3724e3f2e9cadf3981ff38a73b"
+    }
+  },
+  "ownedDiagnostic": {
+    "frontendSource": "630819604bb8868aad15c3ad05f25d15437ae3c3",
+    "apiSources": {
+      "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+      "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+    },
+    "platform": {
+      "system": "Darwin",
+      "release": "25.6.0",
+      "architecture": "arm64",
+      "macos": "26.6.2",
+      "node": "v24.18.0"
+    },
+    "postgresVersion": "postgres (PostgreSQL) 18.6",
+    "officialArchiveSha256": "555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f",
+    "binarySha256": "3f111ef83adfa08ffd87f97875842ee1af8346c9cede50e07b0c48a96758c267",
+    "summarySha256": "2db1e3a329a98887322411a3d6a46bb9344b29ccbd7bf51b42ce3bf06fd065bc",
+    "receipt": {
+      "status": "OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS",
+      "serverMajor": 18,
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "checks": [
+        "actual-fe-physical-session",
+        "both-api-current-readonly",
+        "actual-tls-build-probe-promote",
+        "same-source-candidate-new-action",
+        "real-opaque-scope-shared-observer",
+        "selected-workload-bytes",
+        "cloned-plain-scope-refused",
+        "wrong-client-verifier-refused",
+        "wrong-plan-candidate-target-directory-refused",
+        "wrong-inventory-action-refused",
+        "shared-mutation-operations-refused",
+        "receipt-drift-refused",
+        "expired-session-refused",
+        "open-admission-mutation-refused",
+        "opened-admission-get-retained",
+        "original-terminal-retained-not-current",
+        "original-receipts-preserved",
+        "actual-runtime-credential-tls-physical-binding",
+        "bad-runtime-credential-and-foreign-physical-refused"
+      ],
+      "mutationRefusals": 1,
+      "runtimeCredentialRefusals": 9,
+      "foreignRuntimeTlsAuthenticated": true,
+      "runtimeCredentialFaultProviderCalls": 0,
+      "skipped": 0,
+      "fixtureOnly": true,
+      "providerTouched": false,
+      "actualRuntimeContainers": false,
+      "noSqlReplay": true,
+      "journalDigestsUnchanged": true,
+      "originalFrontendTerminalRecreated": false,
+      "environmentIsolation": {
+        "nodeOptionsPositiveControlExecuted": true,
+        "poisonedParentEnvironment": true,
+        "ambientNodeOptionsExecuted": false,
+        "ambientConfigVariablesAbsent": true,
+        "childEnvironmentAllowlistEnforced": true
+      }
+    },
+    "linuxDockerProof": false,
+    "trackedSourceModified": false,
+    "producerGuardsModified": false
+  },
+  "reviewedDiagnostics": {
+    "sourceCommits": [
+      "e5e14efe",
+      "6350e1d4",
+      "f05554bb",
+      "8ad1c1d5",
+      "047bd8c2"
+    ],
+    "focusedTests": 34,
+    "failedChildren": "current/forward/persistence fixed owned Docker invocations only",
+    "retention": "owner-private CI artifact, 3 days, at most 4 MiB per stream",
+    "sameSourceApiPinsRequired": true,
+    "callerSuppliedProvenanceAccepted": false,
+    "requiredTestsRelaxed": false,
+    "actualNewCiRunClaimed": false
+  },
+  "followups": {
+    "transportFaultStage": "corrected and integrated at a41d40a7; actual parent join remains open",
+    "receiverNegatives": "corrected and integrated through 02a3dd20; exact owned PG18 CI remains open",
+    "highlevelSqlCapability": "reviewed correction integrated b3348b1a; configured SQL/provider fencing remains required",
+    "recoveryCliReceiptLayout": "reviewed regression correction f329d8b2",
+    "admittedCronRequestCorrelation": "f5c4c6b8, independently executed 4 tests; native source pin updated 73eac6ee",
+    "certificationGuard": "d1965ee2 and 693f984b, 25 focused host tests; actual parent remains open"
+  },
+  "evidenceRetention": {
+    "directory": "owner-private phase2-goal-evidence/2026-11-06",
+    "newFiles": 36,
+    "newBytes": 1536632,
+    "manifestSha256": "c0b1b1e004ae323742dfc8376a61e068b07cf643e094e0fdcf3782182cc45bfd",
+    "byteIdentical": true,
+    "originalsPreserved": true
+  },
+  "externalMutations": {
+    "stagingSql": false,
+    "providerControl": false,
+    "deployment": false,
+    "schedule": false,
+    "admission": false
+  },
+  "g2Accepted": false
+}

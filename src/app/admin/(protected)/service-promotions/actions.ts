@@ -1,5 +1,6 @@
 "use server";
 
+import { attemptAdmittedAdminAction } from "@/lib/admin/action-admission";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -64,11 +65,8 @@ async function runAction(
   success: string,
   task: () => Promise<unknown>,
 ): Promise<never> {
-  try {
-    await task();
-  } catch (error) {
-    redirect(feedbackUrl("error", friendlyError(error)));
-  }
+  const outcome = await attemptAdmittedAdminAction(task, friendlyError);
+  if (!outcome.ok) redirect(feedbackUrl("error", outcome.error));
 
   revalidatePath(DESTINATION);
   redirect(feedbackUrl("notice", success));

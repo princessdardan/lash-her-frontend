@@ -3,6 +3,7 @@ import "dotenv/config";
 import { loaders } from "../src/data/loaders";
 import { closePrivateDbPool } from "../src/lib/private-db/client";
 import { reconcileProductStock } from "../src/lib/commerce/product-stock-sync";
+import { runManualWriterAdmission } from "../src/lib/writer-admission/manual";
 
 /**
  * One-time (or occasional) reconcile of Postgres product inventory from the
@@ -17,6 +18,10 @@ import { reconcileProductStock } from "../src/lib/commerce/product-stock-sync";
  */
 async function main(): Promise<void> {
   const execute = process.argv.includes("--execute");
+  return runManualWriterAdmission(execute, "new-work", () => backfill(execute));
+}
+
+async function backfill(execute: boolean): Promise<void> {
   const products = await loaders.getAllProductsForStockSync();
 
   const authored = products.filter((product) => {
@@ -58,8 +63,8 @@ async function main(): Promise<void> {
 }
 
 main()
-  .catch((error: unknown) => {
-    console.error("[stock-backfill] Failed", error);
+  .catch(() => {
+    console.error("[stock-backfill] Failed; inspect the retained admission outcome before retrying.");
     process.exitCode = 1;
   })
   .finally(() => closePrivateDbPool());

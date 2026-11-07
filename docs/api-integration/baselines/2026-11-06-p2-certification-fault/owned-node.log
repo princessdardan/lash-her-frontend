@@ -1,0 +1,48 @@
+✔ staging/project/team/host/candidate/process/TTL/closed shape are mandatory (8.842167ms)
+✔ only exact method/route/receiver/idempotency/canonical record matches (0.481292ms)
+✔ pre-await fuse reserves exactly one concurrent request and never rearms an upstream failure (1.302333ms)
+✔ 503 mode completes before upstream and emits only a matching actual response effect (0.181125ms)
+✔ ACK loss requires complete typed200 with no downstream bytes and drops only once (0.375958ms)
+✔ expiry, monotonic expiry and removal cancel an already reserved drop (0.1945ms)
+✔ same stage cannot be replaced or gateway process identity reused after restart (0.156667ms)
+✔ closed Mux profile emits only after exact managed200 and retains a fixed old/new/same-event metadata sequence (0.934208ms)
+✔ unmatched/ignored/legacy-identity Mux replies never establish verified managed ingress (0.239333ms)
+✔ timestamp ordering retains provider microseconds and timezone equivalence (0.153208ms)
+✔ certification503 runs only after actual auth/admission and before any TLS upstream effect (32.860375ms)
+✔ certification ACK loss drops actual complete upstream200 before response bytes and preserves uncertainty (8.612541ms)
+✔ certification never turns untyped or unsuccessful upstream replies into ACK-loss proof (9.927458ms)
+✔ certification Mux profile sees actual raw bytes and signature then drops only verified managed200 (6.90775ms)
+✔ private TLS upstream receives only selected headers, original query and application authorization (4.778583ms)
+✔ same lifecycle paths route to their explicit service and never expose private enrollment routes (9.252792ms)
+✔ missing optional Community upstream fails closed without forwarding to Course (2.721084ms)
+✔ host fence changes immediately for historical callers while recovery remains independent (20.22575ms)
+✔ fencing accounts for admitted delayed work before reporting drained (6.112208ms)
+✔ an upstream disconnect preserves mutation uncertainty even after transport drain (5.191625ms)
+✔ missing workload, OIDC-only protected requests, wrong host and duplicate credentials never reach upstream (10.013208ms)
+✔ maintenance holds application writes while read probes and signed callback forwarding remain available (5.93125ms)
+✔ exact Mux exception preserves raw bytes/signature; other webhook methods are denied (4.607833ms)
+✔ upstream 429 envelope and Retry-After survive; internal locations and cookies cannot escape (4.918041ms)
+✔ workload admission does not consume independent webhook/service budgets (5.942084ms)
+✔ untrusted private TLS certificate is refused without exposing connection details (4.389916ms)
+✔ private TLS terminator checks actual peer and route, replacing spoofed forwarding metadata (4.548ms)
+✔ private TLS permits exact P2 quiz PUT and caption DELETE routes while denying other methods and peers (8.642125ms)
+(node:65754) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-certification-fault/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-certification-fault/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ source plan has no executable standalone path or caller command/body/URL options (124.633708ms)
+✔ physical/owner/native gates precede activation, and cleanup runs after a failed lock check (141.623ms)
+✔ open new-work, prior uncertainty, native enabled, changed command or unrelated pending work cannot arm (789.676833ms)
+✔ observed source effect and real delivery attempt require awaited closure of all admissions (135.330125ms)
+✔ outstanding uncertainty is retained and cannot be called contained or automatically reconciled (141.345333ms)
+✔ unknown arm, source effect mismatch and later receipt loss still attempt both closures (403.132375ms)
+✔ component cannot unwind before an in-flight containment callback completes (137.838708ms)
+✔ a serialized plan or an already attempted source plan cannot replay activation (135.937917ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2095.911125

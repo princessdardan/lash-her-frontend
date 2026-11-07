@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { runWriterAdmission } from "../src/lib/writer-admission/runtime";
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
@@ -24,6 +25,12 @@ const REQUEUE_FROM = ["dead_letter", "retryable_failed"] as const;
 
 async function main(): Promise<void> {
   const execute = process.argv.includes("--execute");
+  return execute
+    ? runWriterAdmission("new-work", () => processRequeue(true))
+    : processRequeue(false);
+}
+
+async function processRequeue(execute: boolean): Promise<void> {
   const db = getPrivateDb();
 
   const [row] = await db

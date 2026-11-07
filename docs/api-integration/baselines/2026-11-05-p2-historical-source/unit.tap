@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: every checked retained staging/preview profile verifies its actual complete selected Git tree and blobs
+ok 1 - every checked retained staging/preview profile verifies its actual complete selected Git tree and blobs
+  ---
+  duration_ms: 2227.563166
+  type: 'test'
+  ...
+# Subtest: the C07 inventory retains real transient/lost-ack sites and independently inventoried entrypoint classes
+ok 2 - the C07 inventory retains real transient/lost-ack sites and independently inventoried entrypoint classes
+  ---
+  duration_ms: 2.510125
+  type: 'test'
+  ...
+# Subtest: unreviewed source, shortened refs and source/profile omissions cannot be self-approved
+ok 3 - unreviewed source, shortened refs and source/profile omissions cannot be self-approved
+  ---
+  duration_ms: 43.230042
+  type: 'test'
+  ...
+# Subtest: different preview source receives facts and unresolved capabilities rather than inherited C07 guard assumptions
+ok 4 - different preview source receives facts and unresolved capabilities rather than inherited C07 guard assumptions
+  ---
+  duration_ms: 105.894458
+  type: 'test'
+  ...
+# Subtest: pure original-config preflight binds source/surface/provenance/full sorted catalog before any connection
+ok 5 - pure original-config preflight binds source/surface/provenance/full sorted catalog before any connection
+  ---
+  duration_ms: 1.556125
+  type: 'test'
+  ...
+# Subtest: actual reducer pipeline closes an absent original capability with exact requirement and context bindings
+ok 6 - actual reducer pipeline closes an absent original capability with exact requirement and context bindings
+  ---
+  duration_ms: 0.470791
+  type: 'test'
+  ...
+# Subtest: configured SQL key needs the actual TLS credential/role/database/readonly session and four parent-held markers
+ok 7 - configured SQL key needs the actual TLS credential/role/database/readonly session and four parent-held markers
+  ---
+  duration_ms: 1.055375
+  type: 'test'
+  ...
+# Subtest: the fixed query plan cannot be replaced by caller SQL or boolean/serialized evidence
+ok 8 - the fixed query plan cannot be replaced by caller SQL or boolean/serialized evidence
+  ---
+  duration_ms: 1.293
+  type: 'test'
+  ...
+# Subtest: same source on a different surface/configuration cannot reuse a previous SQL capability proof
+ok 9 - same source on a different surface/configuration cannot reuse a previous SQL capability proof
+  ---
+  duration_ms: 0.187792
+  type: 'test'
+  ...
+# Subtest: post-observation private configuration or role changes invalidate the proof without emitting credential hashes
+ok 10 - post-observation private configuration or role changes invalidate the proof without emitting credential hashes
+  ---
+  duration_ms: 0.313166
+  type: 'test'
+  ...
+# Subtest: present empty/masked credentials remain potential capabilities and different SQL never implies provider absence
+ok 11 - present empty/masked credentials remain potential capabilities and different SQL never implies provider absence
+  ---
+  duration_ms: 0.323709
+  type: 'test'
+  ...
+# Subtest: manual template mutation scope and original staging broadcast guard use checked source and bound original selectors
+ok 12 - manual template mutation scope and original staging broadcast guard use checked source and bound original selectors
+  ---
+  duration_ms: 0.462625
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2508.441917

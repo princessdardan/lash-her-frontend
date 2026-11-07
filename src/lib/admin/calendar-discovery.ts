@@ -1,3 +1,4 @@
+import { runAdminReadOperation } from "./read-operation";
 import "server-only";
 
 import {
@@ -12,8 +13,10 @@ export type AdminGoogleCalendarOption = GoogleCalendarOption;
 export async function listConnectedGoogleCalendars(
   connectionId: string,
 ): Promise<AdminGoogleCalendarOption[]> {
-  await requirePermission("calendar-connections:view");
-  return listConnectionGoogleCalendars(connectionId);
+  return runAdminReadOperation("calendar-discovery", async () => {
+    await requirePermission("calendar-connections:view");
+    return listConnectionGoogleCalendars(connectionId);
+  });
 }
 
 export { canGoogleCalendarAcceptBookings } from "./calendar-capabilities";

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "priceResearchDate": "2026-11-06",
+  "notQuoteOrSpendingCeiling": true,
+  "calculationMethod": "Python decimal.Decimal; full-month component subtotal, not hourly proration.",
+  "selectedFixedMonthly": {
+    "lightsail4Gb": "24.00",
+    "vercelProOneSeat": "20.00",
+    "secretGroups4": "1.60",
+    "kmsKey1": "1.00",
+    "route53Zone1": "0.50",
+    "knownSubtotal": "47.10"
+  },
+  "domainAnnualUpfront": "15.00",
+  "knownFirstMonthWithAnnualDomain": "62.10",
+  "eightGbAlternativeMonthlyKnownSubtotal": "67.10",
+  "eightGbAlternativeFirstMonthWithDomain": "82.10",
+  "neonComputeIllustrations": {
+    "freeCuHoursPerProject": "100",
+    "proposedCuSubjectToSupport": "0.25",
+    "continuousActiveHoursAtProposedCu": "400",
+    "threeProjectsAtProposedCuFor72HoursTotalCuHours": "54.00",
+    "illustrationIsNotAUsageForecast": true
+  },
+  "excludedUnknowns": [
+    "actual resource availability and account/tier eligibility",
+    "tax and CAD/USD conversion",
+    "domain availability/nonstandard quote/registrant requirements",
+    "Vercel usage beyond included allocations and credit",
+    "Neon free quota fit, connection/capacity limits and optional paid plan",
+    "Mux actual feature entitlement and usage beyond Free/credits",
+    "Resend or Sanity quota/plan changes",
+    "recovery mailbox/principal provider requirements or charges",
+    "Secrets Manager/KMS API calls and key rotation storage additions",
+    "DNS query charges",
+    "transfer overage, detached static IPs, snapshots or retained resources",
+    "any private billing/account-specific prices"
+  ],
+  "selectedZeroDollarTierCandidates": [
+    "Neon Free (three root projects)",
+    "Resend Free",
+    "Sanity Free",
+    "Mux Free"
+  ],
+  "google": "No additional paid Google product selected; no independent pricing/entitlement claim for an uncreated account/client. Do not substitute Identity Platform pricing.",
+  "retentionBillingNotes": [
+    "Lightsail bills while stopped until deleted.",
+    "Route53 zone fee is not prorated except its documented initial test exception; no deletion timing exemption assumed.",
+    "Domain registration paid annually upfront; renewal/lifecycle reviewed explicitly.",
+    "No free-trial, promotional credit, automatic shutdown or waiver assumed."
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "status": "ALL_TEN_FRONTEND_CI_JOBS_PASSED",
+  "sourceCommit": "7a0a2bb4e1ece9cf6fd681fdf438530427cc9997",
+  "runId": 42141554694,
+  "runConclusion": "success",
+  "jobs": [
+    {
+      "id": 127643301636,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302015,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302058,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302063,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302081,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302099,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302170,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302192,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127643302239,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127647135315,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "unitTests": 2539,
+  "stagingReleaseTests": 17,
+  "browsers": {
+    "chromium": {
+      "passed": 194,
+      "skipped": 52
+    },
+    "firefox": {
+      "passed": 194,
+      "skipped": 52
+    },
+    "webkit": {
+      "passed": 194,
+      "skipped": 52
+    },
+    "requiredCoverage": "Seven required scenarios passed without skips in each of three browsers.",
+    "isolatedChromiumTrackingPassed": 18
+  },
+  "laterSourceRequiresChecks": true,
+  "stage": "source-and-owned-fixtures",
+  "deployedPhase2Accepted": false
+}

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "status": "SOURCE_COUNT_512_CLEARED",
+  "sourceCommit": "70989c27b8f048647b25509e2faf98d0c23fa65d",
+  "evidenceCommit": "57531a277126b32c77419122526477d647dc0190",
+  "baseCommit": "839d6a68ee6c45acdcb344cc3849b69c22ddbc7a",
+  "findings": [],
+  "productionDelta": {
+    "files": 7,
+    "predicates": 8,
+    "onlyChange": "496 to 512",
+    "selectionUnchanged": true,
+    "historicalProfilesByteIdentical": 33,
+    "pr91RuntimeUnchanged": true
+  },
+  "limits": {
+    "files": 512,
+    "decodedBytes": 41000000,
+    "publicBytes": 56000000,
+    "perFileBytes": 2000000,
+    "privateBytes": 24000000
+  },
+  "independentlyExecuted": {
+    "node": {
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0
+    },
+    "host": {
+      "passed": 59,
+      "failed": 0,
+      "skipped": 0
+    },
+    "eslintExitCode": 0,
+    "actualIsolatedProducer": {
+      "files": 492,
+      "decodedBytes": 40463995,
+      "publicBytes": 54023960,
+      "historicalProfiles": 33
+    }
+  },
+  "boundaryEvidence": [
+    "Actual disposable Git producer accepts 512 and rejects 513",
+    "Actual embedded installer executes with only fixed root identity/path fixture projection; accepts 512 and rejects 513",
+    "Installed closure, identity reviewed/installed source, persistence and receiver reject 513 with recomputed valid digests",
+    "Actual C installed original-source reconstruction accepts 512 and rejects 513, wrong closure hash, per-file and aggregate overflow",
+    "Unchanged 2 MB, 41 MB, 56 MB and 24 MB boundaries execute at exact and +1 bounds"
+  ],
+  "manifestSha256": "79893b86699ee0245bbaabad60d15eb0309ce026a874e9d6ad9f3d23da12be48",
+  "auditSha256": "78632239cf33c2fe14843460a0a1824584700819a31be219dfd677bd52f24233",
+  "independentLogs": {
+    "node.log": {
+      "bytes": 2492,
+      "sha256": "323277c7ebaca3dca173d49a07764a9eb08b988102f60cc72f0e0337fd6a8228"
+    },
+    "host.log": {
+      "bytes": 158,
+      "sha256": "8f82321b00c8ab1e4391862b726f73010206eef785d2a208fe51d0c32859a678"
+    },
+    "lint.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "limitations": [
+    "This is a finite defensive file-count allowance, not release or target acceptance.",
+    "Final complete committed root union still requires its own actual producer and serialized public envelope measurement after pending package integration. The 492-file isolated measurement does not qualify that future union.",
+    "No PG or live/provider/SSH action was performed; no source edits."
+  ],
+  "worktreeClean": true
+}

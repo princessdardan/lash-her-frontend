@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "sourceParent": "f512e09c",
+  "status": "ROLE_ABORT_PHYSICAL_BACKEND_CLEANUP_OWNED_PASS",
+  "reviewFinding": "abort started client.end but finalizer skipped the in-flight close; socket close alone could leave a blocked backend holding the advisory lock",
+  "correction": "cached close promise plus bounded same-identity exact PID/backend-start termination and actual absence readback, awaited before continuation returns",
+  "checks": {
+    "ownedPostgres16Groups": 17,
+    "frontendMigrations": 83,
+    "actualBlockedRoleTransactionAndAdvisoryLock": true,
+    "backendAbsentBeforeContinuationRejection": true,
+    "physicalLockAvailableBeforeEnvironmentLockRelease": true,
+    "abortedRoleTransactionRolledBack": true,
+    "node": 21,
+    "lint": "pass"
+  },
+  "sourceFiles": {
+    "ops/platform/p2-release.mjs": "609889c68a6b7fb5ddb36e9c9c1d04bd2847d74cfc734147cd61aac5174ef6c7",
+    "ops/platform/test-frontend-release-local.mjs": "f5cb2ac2c9b9d099939654e719705360afc4bdc95028f5a6872d88d29a1b2658"
+  },
+  "files": {
+    "role-abort-owned-postgres16.log": "721a9e988525077013868deddcf1a13e5d837f8d4d3e60e2701beeaa905f1ef5",
+    "role-abort-node-21.log": "ff407c34077ecac54c597216c97d9ea7af28c12b92c59cf492a30fbf0caa02d7"
+  },
+  "liveProviderOrStagingTouched": false,
+  "actualApiDocker": false,
+  "releaseAccepted": false,
+  "g2Accepted": false,
+  "open": [
+    "Independent review of final close correction",
+    "Final actual adapter proof integration and exact-source CI",
+    "Complete deliberate recovery source parent qualification",
+    "Dardan-started real staging and certification evidence"
+  ]
+}

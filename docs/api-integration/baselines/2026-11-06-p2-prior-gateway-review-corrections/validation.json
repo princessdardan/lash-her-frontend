@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "status": "OWNED_PRIOR_GATEWAY_REVIEW_CORRECTIONS_PASS",
+  "reviewedOriginalCommit": "843b00819b8fa08e2274d3066e6e856856f4fac2",
+  "originalHelperSha256": "954e6d8002f58d6baf401a6c92ac5c2f343dcb4d965a7f952a2631058759aafb",
+  "sourceSha256": {
+    "ops/platform/host/p2_prior_gateway.py": "568732681975a73180895c80b5fe3d13617379b604093417602a0a09ab83667a",
+    "ops/platform/host/p2_prior_gateway_test.py": "8efe0d3aa15994ddecfd95c977313133c547c207ce0a3d193400f7a4016a30ff"
+  },
+  "newOpsFiles": 0,
+  "original843BaselineByteIdentical": true,
+  "originalReproduction": {
+    "firstNegativeAssertionFailures": 7,
+    "finalNegativeAssertionFailures": 8,
+    "testMethods": 2,
+    "exitCode": 1,
+    "expectedFailure": true,
+    "command": "python3 docs/api-integration/baselines/2026-11-06-p2-prior-gateway-review-corrections/reproduce-original.py"
+  },
+  "correctedQualification": {
+    "count": 98,
+    "elapsedSeconds": 23.162,
+    "exitCode": 0,
+    "workingDirectory": "ops/platform/host",
+    "command": "python3 -m unittest p2_prior_gateway_test p2_release_guard_test p2_release_scope_test p2_recovery_test p2_supervisor_dispatch_test release_test"
+  },
+  "corrections": [
+    "require exact latest stopped-observed pointer with process/binding/stop-directory/hash for every stopped proof, even when container remains present",
+    "require different actual containerId before gateway replacement completes or publishes running lineage"
+  ],
+  "regressions": [
+    "same-process pending/refused/running pointer rejects with stopped container present",
+    "mismatched binding/stop directory/hash rejects with stopped container present",
+    "missing pointer rejects with stopped container present",
+    "unchanged gateway process cannot complete replacement; pointer remains pending",
+    "valid retained eight-service P1 and actual new gateway process remain supported"
+  ],
+  "actualOwnedExecutions": [
+    "gateway HTTPS/operations counters",
+    "process stop and replacement",
+    "local flock"
+  ],
+  "fixtureTransports": [
+    "Docker identity/image/mount metadata",
+    "API current results and Compose service startup",
+    "frontend guard observer"
+  ],
+  "liveActionsPerformed": false,
+  "knownAckExceptionImplemented": false,
+  "independentReviewPending": true,
+  "artifactSha256": {
+    "README.md": "3e8a12cdb9ba28fe308a967ba58790df75dc79be16f8b8d8146eb1f5647d96e9",
+    "host-tests.log": "341583eef55b9da5e2865964eda6616401ae9531dc6d84e53c08754eb942d69f",
+    "original-843-final-regressions.log": "e1a2b8d12e106b13e826128611e900209a0a6cf7546cfb52b867700d5bc31515",
+    "original-843-reproduction.log": "252d57158e666a3969e51de65bb21609f2d570e1c35784080f531478d6582c2f",
+    "reproduce-original.py": "bd824299360dcbbdbd0179e67dbc1e31a46d82a4d016ab6de899b5cf2e04fcc2"
+  }
+}

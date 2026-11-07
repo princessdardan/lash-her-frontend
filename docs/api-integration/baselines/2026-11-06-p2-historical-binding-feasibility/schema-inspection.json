@@ -1,0 +1,591 @@
+{
+  "version": 1,
+  "sourceUrl": "https://openapi.vercel.sh/",
+  "sourceSha256": "60d727cb620a7b778318944a5ea12b619efa7ff35b3e0c47e94bdce9dfcc0b87",
+  "sourceBytes": 12255866,
+  "openapi": "3.0.3",
+  "pathCount": 349,
+  "getDeployment": {
+    "method": "GET",
+    "path": "/v13/deployments/{idOrUrl}",
+    "operationId": "getDeployment",
+    "parameters": [
+      {
+        "name": "idOrUrl",
+        "in": "path"
+      },
+      {
+        "name": "withGitRepoInfo",
+        "in": "query"
+      },
+      {
+        "name": "teamId",
+        "in": "query"
+      },
+      {
+        "name": "slug",
+        "in": "query"
+      }
+    ],
+    "responseVariants": 3,
+    "ownerSchemaFields": {
+      "config": {
+        "type": "object",
+        "description": "Since February 2025 the configuration must include snapshot data at the time of deployment creation to capture properties for the /deployments/:id/config endpoint utilized for displaying Deployment Configuration on the frontend This is optional because older deployments may not have this data captured",
+        "fieldNames": [
+          "functionMemoryType",
+          "functionTimeout",
+          "functionType",
+          "isUsingActiveCPU",
+          "resourceConfig",
+          "secureComputeFallbackRegion",
+          "secureComputePrimaryRegion",
+          "version"
+        ],
+        "schema": {
+          "properties": {
+            "functionMemoryType": {
+              "type": "string",
+              "enum": [
+                "performance",
+                "performance_xl",
+                "standard",
+                "standard_legacy"
+              ]
+            },
+            "functionTimeout": {
+              "nullable": true,
+              "type": "number"
+            },
+            "functionType": {
+              "type": "string",
+              "enum": [
+                "fluid",
+                "standard"
+              ]
+            },
+            "isUsingActiveCPU": {
+              "type": "boolean",
+              "enum": [
+                false,
+                true
+              ]
+            },
+            "resourceConfig": {
+              "properties": {
+                "buildQueue": {
+                  "properties": {
+                    "configuration": {
+                      "type": "string",
+                      "enum": [
+                        "SKIP_NAMESPACE_QUEUE",
+                        "WAIT_FOR_NAMESPACE_QUEUE"
+                      ],
+                      "description": "Build resource configuration snapshot for this deployment."
+                    }
+                  },
+                  "type": "object",
+                  "description": "Build resource configuration snapshot for this deployment."
+                },
+                "elasticConcurrency": {
+                  "type": "string",
+                  "enum": [
+                    "PROJECT_SETTING",
+                    "SKIP_QUEUE",
+                    "TEAM_SETTING"
+                  ],
+                  "description": "When elastic concurrency is used for this deployment, a value is set. The value tells the reason where the setting was coming from. - TEAM_SETTING: Inherited from team settings - PROJECT_SETTING: Inherited from project settings - SKIP_QUEUE: Manually triggered by user to skip the queues"
+                },
+                "buildMachine": {
+                  "properties": {
+                    "purchaseType": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "14cpu-28gb",
+                        "basic",
+                        "enhanced",
+                        "standard",
+                        "turbo",
+                        null
+                      ],
+                      "description": "Machine type that was used for the build."
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object",
+              "description": "Build resource configuration snapshot for this deployment."
+            },
+            "secureComputeFallbackRegion": {
+              "nullable": true,
+              "type": "string"
+            },
+            "secureComputePrimaryRegion": {
+              "nullable": true,
+              "type": "string"
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "functionMemoryType",
+            "functionTimeout",
+            "functionType",
+            "secureComputeFallbackRegion",
+            "secureComputePrimaryRegion"
+          ],
+          "type": "object",
+          "description": "Since February 2025 the configuration must include snapshot data at the time of deployment creation to capture properties for the /deployments/:id/config endpoint utilized for displaying Deployment Configuration on the frontend This is optional because older deployments may not have this data captured"
+        }
+      },
+      "build": {
+        "type": "object",
+        "description": null,
+        "fieldNames": [
+          "env"
+        ],
+        "schema": {
+          "properties": {
+            "env": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "env"
+          ],
+          "type": "object"
+        }
+      },
+      "env": {
+        "type": "array",
+        "description": null,
+        "fieldNames": [],
+        "schema": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "projectSettings": {
+        "type": "object",
+        "description": null,
+        "fieldNames": [
+          "buildCommand",
+          "commandForIgnoringBuildStep",
+          "devCommand",
+          "framework",
+          "installCommand",
+          "nodeVersion",
+          "outputDirectory",
+          "speedInsights",
+          "vercelFlags",
+          "webAnalytics"
+        ],
+        "schema": null
+      },
+      "connectConfigurationId": {
+        "type": "string",
+        "description": null,
+        "fieldNames": [],
+        "schema": null
+      },
+      "passiveConnectConfigurationId": {
+        "type": "string",
+        "description": "Since November 2023 this field defines a Secure Compute network that will only be used to deploy passive lambdas to (as in passiveRegions)",
+        "fieldNames": [],
+        "schema": null
+      }
+    },
+    "servicesEnvironmentReferences": [
+      {
+        "variant": 0,
+        "envSchema": {
+          "additionalProperties": {
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "service-ref"
+                ]
+              }
+            },
+            "required": [
+              "service",
+              "type"
+            ],
+            "type": "object"
+          },
+          "type": "object"
+        }
+      }
+    ],
+    "openEndedBuildConfigPresent": true
+  },
+  "boundedRelatedEndpointIndex": [
+    {
+      "method": "GET",
+      "path": "/v1/bulk-redirects",
+      "operationId": "getRedirects",
+      "summary": "Gets project-level redirects."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/bulk-redirects/versions",
+      "operationId": "getVersions",
+      "summary": "Get the version history for a project's redirects."
+    },
+    {
+      "method": "GET",
+      "path": "/v2/deployments/{deploymentId}/check-runs",
+      "operationId": "listDeploymentCheckRuns",
+      "summary": "List check runs for a deployment"
+    },
+    {
+      "method": "POST",
+      "path": "/v2/deployments/{deploymentId}/check-runs",
+      "operationId": "createDeploymentCheckRun",
+      "summary": "Create a check run"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/deployments/{deploymentId}/check-runs/{checkRunId}",
+      "operationId": "getDeploymentCheckRun",
+      "summary": "Get a check run"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v2/deployments/{deploymentId}/check-runs/{checkRunId}",
+      "operationId": "updateDeploymentCheckRun",
+      "summary": "Update a check run"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/deployments/{deploymentId}/checks",
+      "operationId": "createCheck",
+      "summary": "Creates a new Check"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/deployments/{deploymentId}/checks",
+      "operationId": "getAllChecks",
+      "summary": "Retrieve a list of all checks"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/deployments/{deploymentId}/checks/{checkId}",
+      "operationId": "getCheck",
+      "summary": "Get a single check"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/deployments/{deploymentId}/checks/{checkId}",
+      "operationId": "updateCheck",
+      "summary": "Update a check"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/deployments/{deploymentId}/checks/{checkId}/rerequest",
+      "operationId": "rerequestCheck",
+      "summary": "Rerequest a check"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connect/connectors/{connector}/projects/{projectId}/environments/{environment}",
+      "operationId": "disconnectConnectorProjectEnvironment",
+      "summary": "Disconnect a connector from a project environment"
+    },
+    {
+      "method": "GET",
+      "path": "/v3/deployments/{idOrUrl}/events",
+      "operationId": "getDeploymentEvents",
+      "summary": "Get deployment events"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/deployments/{deploymentId}/integrations/{integrationConfigurationId}/resources/{resourceId}/actions/{action}",
+      "operationId": "update-integration-deployment-action",
+      "summary": "Update deployment integration action"
+    },
+    {
+      "method": "GET",
+      "path": "/v13/deployments/{idOrUrl}",
+      "operationId": "getDeployment",
+      "summary": "Get a deployment by ID or URL"
+    },
+    {
+      "method": "POST",
+      "path": "/v13/deployments",
+      "operationId": "createDeployment",
+      "summary": "Create a new deployment"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v12/deployments/{id}/cancel",
+      "operationId": "cancelDeployment",
+      "summary": "Cancel a deployment"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/global-config/{edgeConfigId}/backups/{edgeConfigBackupVersionId}",
+      "operationId": "getEdgeConfigBackup",
+      "summary": "Get Global Config backup"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/global-config/{edgeConfigId}/backups/{edgeConfigBackupVersionId}/restore",
+      "operationId": "restoreEdgeConfigBackup",
+      "summary": "Restore Global Config backup"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/env",
+      "operationId": "createSharedEnvVariable",
+      "summary": "Create one or more shared environment variables"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/env",
+      "operationId": "listSharedEnvVariable",
+      "summary": "Lists all Shared Environment Variables for a team"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/env",
+      "operationId": "updateSharedEnvVariable",
+      "summary": "Updates one or more shared environment variables"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/env",
+      "operationId": "deleteSharedEnvVariable",
+      "summary": "Delete one or more Env Var"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/env/{id}",
+      "operationId": "getSharedEnvVar",
+      "summary": "Retrieve the decrypted value of a Shared Environment Variable by id."
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/env/{id}/unlink/{projectId}",
+      "operationId": "unlinkSharedEnvVariable",
+      "summary": "Disconnects a shared environment variable for a given project"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/deployments/{deploymentId}/feature-flags",
+      "operationId": "getDeploymentFeatureFlags",
+      "summary": "Retrieve the feature flags of a deployment"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/kms/issuers/{issuerId}/policies",
+      "operationId": "createKmsIssuerPolicy",
+      "summary": "Create an issuer policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs",
+      "operationId": "getRuntimeLogs",
+      "summary": "Get logs for a deployment"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/{projectId}/routes/versions",
+      "operationId": "getRouteVersions",
+      "summary": "Get routing rule version history"
+    },
+    {
+      "method": "GET",
+      "path": "/v10/projects/{idOrName}/env",
+      "operationId": "filterProjectEnvs",
+      "summary": "Retrieve the environment variables of a project by id or name"
+    },
+    {
+      "method": "POST",
+      "path": "/v10/projects/{idOrName}/env",
+      "operationId": "createProjectEnv",
+      "summary": "Create one or more environment variables"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/{idOrName}/env/{id}",
+      "operationId": "getProjectEnv",
+      "summary": "Retrieve the decrypted value of an environment variable of a project by id"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v9/projects/{idOrName}/env/{id}",
+      "operationId": "removeProjectEnv",
+      "summary": "Remove an environment variable"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v9/projects/{idOrName}/env/{id}",
+      "operationId": "editProjectEnv",
+      "summary": "Edit an environment variable"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/{idOrName}/env",
+      "operationId": "batchRemoveProjectEnv",
+      "summary": "Batch remove environment variables"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/{idOrName}/rolling-release/config",
+      "operationId": "deleteRollingReleaseConfig",
+      "summary": "Delete rolling release configuration"
+    },
+    {
+      "method": "POST",
+      "path": "/v10/projects/{projectId}/promote/{deploymentId}",
+      "operationId": "requestPromote",
+      "summary": "Point production traffic to a given deployment"
+    },
+    {
+      "method": "POST",
+      "path": "/v2/sandboxes",
+      "operationId": "createSandboxesV2",
+      "summary": "Create a named sandbox"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/sandboxes/snapshots",
+      "operationId": "listSessionSnapshots",
+      "summary": "List snapshots"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/sandboxes/snapshots/{snapshotId}",
+      "operationId": "getSessionSnapshot",
+      "summary": "Get a snapshot"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v2/sandboxes/snapshots/{snapshotId}",
+      "operationId": "deleteSessionSnapshot",
+      "summary": "Delete a snapshot"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/sandboxes/{name}",
+      "operationId": "getNamedSandbox",
+      "summary": "Get a named sandbox"
+    },
+    {
+      "method": "POST",
+      "path": "/v2/sandboxes/sessions/{sessionId}/snapshot",
+      "operationId": "createSandboxesSessionsBySessionIdSnapshotV2",
+      "summary": "Create a snapshot"
+    },
+    {
+      "method": "POST",
+      "path": "/v2/sandboxes/{name}/fork",
+      "operationId": "createSandboxesByNameForkV2",
+      "summary": "Fork a named sandbox"
+    },
+    {
+      "method": "POST",
+      "path": "/v3/sandboxes",
+      "operationId": "createSandboxesV3",
+      "summary": "Create a named sandbox"
+    },
+    {
+      "method": "POST",
+      "path": "/v3/sandboxes/sessions/{sessionId}/snapshot",
+      "operationId": "createSandboxesSessionsBySessionIdSnapshotV3",
+      "summary": "Create a snapshot"
+    },
+    {
+      "method": "POST",
+      "path": "/v3/sandboxes/{name}/fork",
+      "operationId": "createSandboxesByNameForkV3",
+      "summary": "Fork a named sandbox"
+    },
+    {
+      "method": "POST",
+      "path": "/v4/sandboxes",
+      "operationId": "createSandboxesV4",
+      "summary": "Create a named sandbox"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/security/firewall/config/{configVersion}",
+      "operationId": "getFirewallConfig",
+      "summary": "Read Firewall Configuration"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/security/firewall/config/{configVersion}",
+      "operationId": "deleteSecurityFirewallConfigByConfigVersion",
+      "summary": "Returns activated WAF config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/security/firewall/config/{configVersion}/activate",
+      "operationId": "createSecurityFirewallConfigByConfigVersionActivate",
+      "summary": "Returns activated WAF config"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/vcr/repository/{idOrName}/images/{imageIdOrDigest}",
+      "operationId": "getRepositoryImage",
+      "summary": "Get a repository image"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/deployments/{id}/aliases",
+      "operationId": "listDeploymentAliases",
+      "summary": "List Deployment Aliases"
+    },
+    {
+      "method": "POST",
+      "path": "/v2/deployments/{id}/aliases",
+      "operationId": "assignAlias",
+      "summary": "Assign an Alias"
+    },
+    {
+      "method": "PATCH",
+      "path": "/aliases/{id}/protection-bypass",
+      "operationId": "patchUrlProtectionBypass",
+      "summary": "Update the protection bypass for a URL"
+    },
+    {
+      "method": "GET",
+      "path": "/v6/deployments/{id}/files",
+      "operationId": "listDeploymentFiles",
+      "summary": "List Deployment Files"
+    },
+    {
+      "method": "GET",
+      "path": "/v8/deployments/{id}/files/{fileId}",
+      "operationId": "getDeploymentFileContents",
+      "summary": "Get Deployment File Contents"
+    },
+    {
+      "method": "GET",
+      "path": "/v7/deployments",
+      "operationId": "getDeployments",
+      "summary": "List deployments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v13/deployments/{id}",
+      "operationId": "deleteDeployment",
+      "summary": "Delete a Deployment"
+    }
+  ],
+  "finding": "No documented deployment-specific original environment binding/credential-version or sealed export/attestation path identified. Resource/function configuration snapshot exists; this is not a negative assertion about internal Vercel data or support recovery."
+}

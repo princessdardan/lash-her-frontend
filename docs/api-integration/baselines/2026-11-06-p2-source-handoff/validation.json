@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "status": "P2_PUBLIC_SOURCE_HANDOFF_OWNED_PASS",
+  "sourceCommit": "88fd8abf24f15b8887b8eb937f69d9c2f2f0d63e",
+  "files": 376,
+  "decodedBytes": 35533833,
+  "packetBytes": 47433265,
+  "historicalProfiles": 33,
+  "historicalProfileBytes": 31838624,
+  "sourceClosureSha256": "7795ef2f7b0c71ba9ed7c50870075eb3f5bf97853914bd79f928bbe07677541c",
+  "limits": {
+    "files": 400,
+    "perFileBytes": 2000000,
+    "decodedBytes": 40000000,
+    "publicSourcePacketBytes": 56000000,
+    "privateActionPacketBytes": 24000000
+  },
+  "executed": {
+    "sourceAndSshTests": 10,
+    "hostSourceClosureTests": 4,
+    "eslint": "passed",
+    "actualCommittedOperatorSource": "passed",
+    "actualInstalledSourceClosure": "passed"
+  },
+  "independentReview": "No actionable findings at 88fd8abf; measured inventory independently confirmed.",
+  "limitations": {
+    "sshOrProviderContacted": false,
+    "linuxRootReceiverExecuted": false,
+    "newReceiverCasesWiredInRequiredCi": true,
+    "candidateOrStagingQualified": false
+  },
+  "sourceFiles": {
+    "ops/platform/recreation_source.mjs": "5f335c375f0443b59bef6d413dbe9b900d8d73bb56c2a8fdf968dd5499ddc46e",
+    "ops/platform/recreation_ssh.mjs": "154a80d0d83ac8be5614a9f1e8320f70ceee67da7f500f8f8c7bb126c535c01f",
+    "ops/platform/host/p2_source_closure.py": "66cc55fc0c1a1a30d5c01dcd8ec0e42d06058e16bb9673879e8fcc750739df04",
+    "ops/platform/harness/owned-recreation-controls.py": "d90bf19465b763903805fa404f484589069d1eb4f42a3ab493807b6121ba8c75"
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "component": "P2-09 local actual authoring requalification",
+  "frontendSource": "825d5ead4d6ae7b3fe4867635e0076104f0bc236",
+  "courseSource": "2847d953771adc8e8be287f9512b3003af94f190",
+  "policyDecisionAncestor": "fd037668",
+  "courseDomainCommit": "bac4d589d9c808a350b546457f2c257b8c173678",
+  "frontendArchiveWarningCommit": "2146652064544f3713071e31c4f2ba8ada5c91e9",
+  "instrumentationFixAncestor": "3ba66f46",
+  "checks": {
+    "actualBrowser": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "retries": 0,
+      "duration": "38.6s"
+    },
+    "frontendTypeScript": {
+      "exitCode": 0,
+      "source": "825d5ead4d6ae7b3fe4867635e0076104f0bc236"
+    },
+    "frontendOwnedLint": {
+      "exitCode": 0,
+      "source": "825d5ead4d6ae7b3fe4867635e0076104f0bc236"
+    },
+    "courseDomainVerify": {
+      "exitCode": 0,
+      "unitTestsPassed": 691,
+      "source": "bac4d589d9c808a350b546457f2c257b8c173678"
+    },
+    "courseDomainDatabase": {
+      "exitCode": 0,
+      "passed": 11,
+      "postgresMajor": 16,
+      "source": "bac4d589d9c808a350b546457f2c257b8c173678"
+    },
+    "sourceSelectionSafety": {
+      "missingRevisionRefused": true,
+      "wrongCommitRefused": true,
+      "source": "f6cefb9ad93a8e28461dbbeacde6655f61480d82"
+    }
+  },
+  "boundaries": {
+    "authJsAdminJWT": "actual current implementation; generated local claims and seeded SQL identities",
+    "frontendDatabase": "actual owned PostgreSQL 16, 83 migrations",
+    "courseAPI": "actual selected source, JWT verifier, routes and PostgreSQL, 22 migrations",
+    "gatewayWorkloadVerification": "fixture",
+    "sanity": "synthetic public shell",
+    "fonts": "bundled local font through Next mock responses",
+    "speedInsights": "intercepted script with no collection",
+    "otherExternalBrowserRequests": "blocked and fail the check",
+    "muxGoogleResend": "no live provider certification",
+    "paidCheckout": "not implemented or enabled by this work",
+    "stagingActivated": false,
+    "productionActivated": false,
+    "g2Accepted": false
+  },
+  "earlierAttempts": [
+    {
+      "receipt": "failed-01-font-proxy.txt",
+      "cleanupReceipt": "failed-01-font-proxy.outcome.json",
+      "reason": "Turbopack mock response Proxy had no enumerable URL entries; owned Next deliberately stopped, then all cleanup awaited.",
+      "frontendSource": "f6cefb9ad93a8e28461dbbeacde6655f61480d82",
+      "courseSource": "bac4d589d9c808a350b546457f2c257b8c173678"
+    },
+    {
+      "receipt": "failed-02-font-file.txt",
+      "cleanupReceipt": "failed-02-font-file.outcome.json",
+      "reason": "Native font loader could not fetch an absolute filesystem path; owned Next deliberately stopped and cleanup awaited.",
+      "frontendSource": "67c87051fb946f6465910d6ea8ec81fc69358937",
+      "courseSource": "bac4d589d9c808a350b546457f2c257b8c173678"
+    },
+    {
+      "receipt": "failed-03-webpack-edge.txt",
+      "cleanupReceipt": "failed-03-webpack-edge.outcome.json",
+      "reason": "Actual Webpack instrumentation bundled Node-only OTel into Edge; corrected independently by coordinator commit 3ba66f46.",
+      "frontendSource": "f63013e09f3266b8488133973c67ee4f76ce5312",
+      "courseSource": "2847d953771adc8e8be287f9512b3003af94f190"
+    },
+    {
+      "receipt": "failed-04-network-locator.txt",
+      "cleanupReceipt": "failed-04-network-locator.outcome.json",
+      "reason": "Strict browser guard blocked the existing Speed Insights debug script. New paid case also used exact label matching including select option text. Added an explicit no-collection telemetry fixture and semantic combobox locator.",
+      "frontendSource": "d75abc14681cf3810234d43283efb979678d9933",
+      "courseSource": "2847d953771adc8e8be287f9512b3003af94f190"
+    },
+    {
+      "receipt": "failed-05-header.txt",
+      "cleanupReceipt": "failed-05-header.outcome.json",
+      "reason": "Synthetic public CMS header omitted its required ctaButton array. Three original scenarios passed; completed the fixture.",
+      "frontendSource": "4cdc350536efe7b84e88f0bd9919e96434135806",
+      "courseSource": "2847d953771adc8e8be287f9512b3003af94f190"
+    },
+    {
+      "receipt": "failed-06-dev-refresh.txt",
+      "cleanupReceipt": "failed-06-dev-refresh.outcome.json",
+      "reason": "First public site compilation refreshed the admin page during the paid warning interaction. Three original scenarios passed. Moved public-page rendering after archive/restoration, retaining all behavior assertions.",
+      "frontendSource": "b402f1ff558eb0f80f69f9a4c95822315251edbe",
+      "courseSource": "2847d953771adc8e8be287f9512b3003af94f190"
+    }
+  ],
+  "sourceSha256": {
+    "scripts/test-course-authoring-browser.mjs": "f75bac5713d3d3cd996be67d88aef80348f9937db5ce0cbf48f23789a2579235",
+    "tests/course-authoring-browser/authoring.spec.ts": "291bed0e582dacbc9e79985a1cfce63264dc606387ca330de1f53f1eeec4f97e",
+    "tests/course-authoring-browser/gateway-fixture.cjs": "1b0a1e4b7b89c9cd4f73f9ec15b94a475ed87b5225400858c88da8ddb8143e09",
+    "tests/course-authoring-browser/font-fixture.cjs": "2981b5090ee9b8a5512979f69d2401cd9baba5fcc078695edfb705aee9315a1a",
+    "src/components/admin/course-authoring/course-workspace.tsx": "350a9f5d5c2e6e476fa645f246264afb9406ffa7147d6cf60432cf489692fd15",
+    "src/instrumentation.ts": "288f32e5989a0edeac8624e8795e1bbf2e57cda95404834779832123bf2ee82b",
+    "package.json": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+    "package-lock.json": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+    "contracts/api-integration/p2-candidate/course-api.json": "0ebc41df298a5d515cde6a5d70f9428bfbc20058cfeedb8470d77debc0b95186",
+    "docs/api-integration/decisions/2026-11-05-paid-publication-archive-policy.md": "4e4cce86f59d8f32cdebef27e9b9c8f2fc06ece0961b797e8167621ba265ae68"
+  },
+  "receiptSha256": {
+    "authoring-mobile.png": "a970425d0e72ea0bc7b7e9752acd0ebb2d447fabdadc7106db9109a740647a31",
+    "course-database-configuration-failure.txt": "fa996774b1b6262376e2002065ed0b6bb6f7d72021add772d7dbbe407f1abd59",
+    "course-domain-database.txt": "8503079e2094c536b28fcc2e4e466bb272e5e7138f39080f3e1ac245299f09a6",
+    "course-domain-verify.txt": "37601ee510124c4db44587e63d03e861b24dd5af67c78045590d9a97f643ca50",
+    "course-verify-sandbox-failure.txt": "4d4438ea7ad16f2c316a5294891ab70f53d6164b416b778b041cc5362cf80f36",
+    "failed-01-font-proxy.outcome.json": "ce0d3d494294dfa6642e955a7dfbf7ecc76741227b4118b93255d3860974de0d",
+    "failed-01-font-proxy.txt": "8ff145e5edad5f3e4cfa5a2649936dfe90a3a7b7d8508c031cc850d59dd44d77",
+    "failed-02-font-file.outcome.json": "a6d29bee804d3cd2fc743d7e9ef335b286cb2425c410e3593361114dde033715",
+    "failed-02-font-file.txt": "ffa76d058b5f14c04f37711876e7ddc2f19088bb88a65bcf09674ae9429a6b0d",
+    "failed-03-webpack-edge.outcome.json": "608b6aad08a967003c65ddcd5e4b7cf93a94300203512592a64ec31bf425ef6f",
+    "failed-03-webpack-edge.txt": "08361432f13b8004b26ea236b65589174e488ef55c97719ed55abda83935048b",
+    "failed-04-network-locator.outcome.json": "60b9f80af9dbede7daf9b0fc8281aadb1f6598cf0e1740414784b01c128b0488",
+    "failed-04-network-locator.txt": "78b74d901eaa0c2e16458f1eeb8aab053456fd09093b5298b72901e26f3609ab",
+    "failed-05-header.outcome.json": "88afcffb9fff7dfa56bc1086d4b76fe04d935872d3ce1762bd894891bdd4f58f",
+    "failed-05-header.txt": "f6a89218faefbf3c49faada0aa361e59170e678d741775e0aa1b2331c7239f0c",
+    "failed-06-dev-refresh.outcome.json": "1e4ffb78644cf66a51d681a0c856c1e473e0c6391b8d51b25f4fd557ccb0676d",
+    "failed-06-dev-refresh.txt": "e29a748822a426ca2fa484f3888e9ca8bf04d19eec132d81f4440fcc7e27d3c4",
+    "final-browser.txt": "ea16e2416ada47e7d4350d104d8ab4fcd778b58307f004538462add5b9d98ff8",
+    "final-evidence.json": "1fd73e215ce502c519a4f7825c95dd98be9f092c4c8e3f1f39ff1edaeee5cd43",
+    "final-outcome.json": "49c129a3f912a68d415544a7e47d78f9528e54f6fe907cd25851b28715d9ca04",
+    "lint.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "paid-archive-warning.png": "aeb73a852668f3dad29d1f35d90b2e6751ed0aad6e0f37fdd7a9ed3aab8fcefb",
+    "safety-missing-revision.txt": "3b1f79fe56397be310969dd46c497c4410636dd1dfa1488fc0db0b224d07bbcb",
+    "safety-wrong-commit.txt": "26428b8b1484f894f2b5f993f1260a8cb0a49c4b7e679c54a82bdb96f72ce8db",
+    "typescript.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

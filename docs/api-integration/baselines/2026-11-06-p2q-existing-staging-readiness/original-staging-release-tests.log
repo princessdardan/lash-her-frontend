@@ -1,0 +1,29 @@
+
+> frontend@0.1.0 test:staging-release
+> node --import tsx --test ops/staging/tests/migrate-frontend.test.ts ops/staging/tests/import-release-secrets.test.mjs
+
+✔ exports only isolated runtime and direct migration fields with verified TLS (1.0105ms)
+✔ refuses wrong project (0.6365ms)
+✔ refuses wrong runtime project (0.122667ms)
+✔ refuses production target (0.088958ms)
+✔ refuses owner role in runtime (0.107583ms)
+✔ refuses owner metadata in runtime (0.073ms)
+✔ refuses unreviewed host (0.1235ms)
+✔ refuses direct host in runtime (0.095333ms)
+✔ refuses runtime in migration (0.106875ms)
+✔ refuses insecure TLS (0.144208ms)
+✔ refuses nonpostgres protocol (0.119459ms)
+✔ refuses unexpected port (0.095958ms)
+✔ refuses different database (0.084125ms)
+✔ refuses session override (0.081292ms)
+✔ refuses credential reuse (0.091792ms)
+✔ only the reviewed direct staging owner and verified TLS can migrate (0.724375ms)
+✔ protected job identity, branch and exact approved revision are mandatory (2.0835ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 88.280875

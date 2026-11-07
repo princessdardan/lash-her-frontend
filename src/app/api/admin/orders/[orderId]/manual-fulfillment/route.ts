@@ -1,3 +1,5 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -30,7 +32,7 @@ import {
 
 type ManualAction = ManualFulfillmentAction | "deny_cancellation";
 
-export async function POST(
+async function handlePost(
   req: NextRequest,
   { params }: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
@@ -321,6 +323,7 @@ export async function POST(
       { status: result.refundIds.length > 0 ? 202 : 200 },
     );
   } catch (error) {
+    markWriterOperationUncertain();
     return NextResponse.json(
       {
         error:
@@ -403,3 +406,5 @@ function cleanText(value: unknown, maximum: number): string {
 function nextUpdatedAt(current: Date): Date {
   return new Date(Math.max(Date.now(), current.getTime() + 1));
 }
+
+export const POST = withWriterAdmission("new-work", handlePost);

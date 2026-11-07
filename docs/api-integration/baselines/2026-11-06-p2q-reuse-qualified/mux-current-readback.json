@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "source": "Read-only existing Mux dashboard session",
+  "organizationId": "4g1uhq",
+  "organizationLabel": "Lash Her by Nataliea",
+  "environments": [
+    {
+      "id": "7j65e8",
+      "label": "Lash Her Academy [DEV]",
+      "candidateUse": "Existing staging environment; runtime/API/credential equality and live certification unverified"
+    },
+    {
+      "id": "mpbbkt",
+      "label": "Lash Her Academy [PROD]",
+      "candidateUse": "Excluded from this inspection and staging mutations"
+    }
+  ],
+  "devAssetPage": "https://dashboard.mux.com/organizations/4g1uhq/environments/7j65e8/video/assets",
+  "devAssetUiObservation": "Getting started with assets / Upload your first video or audio file; displayed demo video explicitly described as placeholder",
+  "apiExhaustiveInventoryVerified": false,
+  "historyOrDrainOrFirstUseProven": false,
+  "runtimeCredentialBindingVerified": false,
+  "actualUploadOrPlaybackOrWebhookCertification": false,
+  "credentialsOrSigningKeysRead": false,
+  "providerConfigurationOrResourcesChanged": false
+}

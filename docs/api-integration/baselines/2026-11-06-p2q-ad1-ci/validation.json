@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "sourceCommit": "ad1f2abd3cb26462beb7c51885878e23abfc810d",
+  "runId": 42314923915,
+  "status": "ALL_TEN_CI_AND_ORIGINAL_ARTIFACTS_VERIFIED",
+  "originalTerminalReportSha256": "a08aff8ea11b346efdff993c29cd5040c5c35ad1bf6d78dc6271e7ba9cfd3c9e",
+  "allSevenOriginalZipDigestsMatched": true,
+  "browser": {
+    "aggregateJob": "success",
+    "expected": 582,
+    "skipped": 159,
+    "unexpected": 0,
+    "flaky": 0,
+    "errors": [],
+    "projects": {
+      "chromium": {
+        "expected": 194,
+        "skipped": 53,
+        "flaky": 0
+      },
+      "firefox": {
+        "expected": 194,
+        "skipped": 53,
+        "flaky": 0
+      },
+      "webkit": {
+        "expected": 194,
+        "skipped": 53,
+        "flaky": 0
+      }
+    }
+  },
+  "sourceAndContracts": "source-and-contracts.json",
+  "pr91RuntimeUnchanged": true,
+  "immutableProfilesUnchanged": true,
+  "sourceRetention": "google-source-retention.json",
+  "newCiDurableArchive": {
+    "manifest": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-ad1-ci-qualified/MANIFEST.json",
+    "sha256": "136ab808282b9a400a62ecfac5662383a6bc46393c7f2479e3c1a4eb4d61ce1f",
+    "files": 27,
+    "totalBytes": 4510266,
+    "missingProofs": []
+  },
+  "actualProviderOrDeployedQualification": false
+}

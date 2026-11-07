@@ -1,0 +1,62 @@
+{
+  "version": 3,
+  "status": "SOURCE_MECHANICS_VALIDATED_LIVE_OPEN",
+  "baseCommit": "caea30f6297a0da0b441c20cc9598ab1e798e192",
+  "preparationCommit": "7ac1f859abe75561cf538d63d867517f20a8b9b7",
+  "sourceFiles": {
+    "ops/platform/p2-identity-key-rotation.mjs": "45d89633b0e6a194974fc9750661f2ea08799dc1c7b41b391269905f4bcb8558",
+    "ops/platform/p2-identity-key-rotation.test.mjs": "02790b8e5ed9d0a9f0a7013e2408678ba399b56521c0833c7e8498cff1f6155c",
+    "ops/platform/p2-identity-key-rotation-controller.mjs": "7ea9f0314037e3d2f0903016a5d46b40709dd0ff06ab3ba26b87e453b8a42e51",
+    "ops/platform/p2-identity-key-rotation-controller.test.mjs": "c0d6061ea48e2de434350692d0aff4675bd0ad46bfa3f3720eb0efe638203fca",
+    "ops/platform/p2-identity-key-rotation-observer.mjs": "73cbf46a51b241168921d986be93107c03f3c62d679e314de12004e5726e10bb",
+    "ops/platform/host/p2_identity_key_rotation.py": "178f63244c90cc3683e11917e02e77d77dd40f6a61f8fabe0f24c3d035705d61",
+    "ops/platform/host/p2_identity_key_rotation_test.py": "11380fdf9558c5d05629091486183fb71e791714afb736d1649245787806597d",
+    "ops/platform/host/p2_identity_key_rotation_adapter.py": "d1c0d7a6c9b06e6a13bda10593d815d449525a2ab342fb748fa6b94df4dca2ce",
+    "ops/platform/host/p2_identity_key_rotation_adapter_test.py": "d6e0ba9204bdb129ccb4b5649f4f6d8ea9a03d66be42d1fd0617dd039065e496",
+    "ops/platform/p2-identity-key-rotation.md": "ad72fa0f6723d538634a91e6b7f3bfbb3c9f99c267770c7319d507988af69e0b"
+  },
+  "embeddedProgram": {
+    "sha256": "046b6c2cc34b810d341748faac347b18a71a7784dfb0ea737a0fecfacf022b82",
+    "bytes": 69576,
+    "importsExistingIdentityHelper": true
+  },
+  "verification": {
+    "rotationObserverNode": { "passed": 6, "failed": 0, "skipped": 0, "realLoopbackVerifiedTls": true },
+    "rotationControllerNode": { "passed": 9, "failed": 0, "skipped": 0 },
+    "python": { "passed": 16, "failed": 0, "skipped": 0 },
+    "eslint": "passed",
+    "javascriptSyntax": "passed",
+    "pythonCompile": "passed",
+    "externalCalls": 0
+  },
+  "boundaries": {
+    "sourceMechanicsQualified": true,
+    "parentAdapterReady": false,
+    "sourceParentDispatchIntegrated": false,
+    "liveEligible": false,
+    "liveCalls": false,
+    "providerCalls": false,
+    "databaseCalls": false,
+    "vercelCalls": false,
+    "credentialValuesRead": false,
+    "credentialHashesOutput": false,
+    "privateConfigurationByteHashesOutput": false,
+    "newPublicEndpoint": false,
+    "communityFeatureAdded": false,
+    "sharedRuntimeEdited": false,
+    "sqlAuthorized": false,
+    "rolesAuthorized": false,
+    "loginChangeAuthorized": false,
+    "keyRemovalVerified": false,
+    "releaseAccepted": false
+  },
+  "openGates": [
+    "fixed-root-owned-config-only-certification-dispatch",
+    "actual-host-and-frontend-physical-lock-composition",
+    "source-installation-cap-review-for-new-required-files",
+    "actual-staging-api-and-frontend-provider-qualification",
+    "actual-four-profile-source-container-config-joined-evidence",
+    "qualified-live-failure-containment-and-restoration",
+    "independent-review"
+  ]
+}

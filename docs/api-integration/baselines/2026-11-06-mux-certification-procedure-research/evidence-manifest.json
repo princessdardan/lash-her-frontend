@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": {
+    "README.md": "049fe572f0d90670ce37280ed0b007439ed1c53e08450ed35fa14e90e93787a7",
+    "observer-receipt.schema.json": "4e8ddb5dccda691d9f1e5b11a6f0c0884e39125aafa9f6b2574eaffdb8affda6",
+    "research.json": "d56111f2083b64679ec804cfee520d91d5a0294f9f21ecea5107532988221de9",
+    "source-map.json": "e8a94e49598a2602b2cedaf5cbce275db5d7a20503d65460253d00d7e88fcbe8",
+    "validation.json": "80d44a58a7ea5b63ae2d82bb9e487e2156ec77890b6ace9de3d56260ad443fcc"
+  },
+  "documentationOnly": true,
+  "certificationEvidence": false
+}

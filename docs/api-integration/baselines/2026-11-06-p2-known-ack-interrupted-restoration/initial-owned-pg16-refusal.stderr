@@ -1,0 +1,2 @@
+{"http":503,"ledgerStates":["uncertain"],"effectCount":1,"gatewayUncertain":{"newWork":0,"recovery":1},"courseAccepted":1,"communityAccepted":1,"gatewayCounters":{"requests":3,"rejected":0,"upstream_failures":0},"fetchObservations":[{"status":200},{"status":200}]}
+{"status":"P2_KNOWN_ACK_WHOLE_ROUTE_FAILED","phase":"child-specific-frontend-operation-reconciliation","providerTouched":false}

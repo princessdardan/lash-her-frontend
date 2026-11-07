@@ -1,0 +1,37 @@
+# Managed API metadata preflight: attempt 1
+
+**UNKNOWN for both API contexts.** Two authorized read-only connections authenticated, ran the first literal identity query, refused the aggregate exact-identity guard and closed awaited. No role, membership, schema, ACL or database/role-setting query ran against either managed database. No retry, fallback credential, mutation, migration, explicit lock or provider/host control occurred.
+
+The fixed selectors and private custody checks are in the [approved plan](../2026-11-06-vercel-deployment-key-catalogs/managed-db-preflight-plan.md). Before any connection, all five accepted API runtime files were verified privately as unchanged regular files with private permissions. Course's three credential inputs agreed, as did Community's two. Both selectors were the exact approved direct endpoints; no pooler or alternate endpoint was substituted. No credential bytes, file digests, connection URLs, GUC values, certificate bodies or private keys are included here.
+
+The executed [observer](observe.mjs) uses pinned Node 24.18.0 and the repository's locked `pg` dependency. It supplies Node's built-in CA roots, exact SNI and `rejectUnauthorized: true`, with no inherited PG or TLS overrides. Its closed child environment contained only `PATH` and `LANG`. Startup options impose `search_path=pg_catalog,public`, `default_transaction_read_only=on` and bounded statement, lock and idle-transaction timeouts before the first query. These are observer-imposed session settings, not observed stored provider defaults.
+
+The actual failure is retained in [attempt-1-sanitized.json](attempt-1-sanitized.json). Each context reports `EXACT_READONLY_IDENTITY_REQUIRED` at `initial-metadata`, `connected: true`, `closeAwaited: true`. The first implementation checked all identity conjuncts together before retaining the first row. Consequently it cannot identify whether role/database/major/read-only/search-path/server TLS metadata/client TLS state/port differed. No cause is inferred. In this attempt's schema, `tlsAuthorized: false` means that a complete initial snapshot was never accepted; it does **not** establish a TLS authorization failure. `rowBoundsComplete` and `readbackStable` are also false because no complete snapshots exist.
+
+The private execution record is retained outside the repository with mode 0600 under a mode 0700 directory. It contains the same fixed failure codes and no captured first identity row. The public result intentionally omits its temporary-directory locator. No raw upstream or exception body was printed.
+
+This observation does not establish provider role attributes, effective schema privileges, stored role/database defaults, frontend credentials/settings, historical fencing, migration permission, staging release acceptance or P2/G2 certification. The source-relevant original frontend configuration archive/value provenance remains a separate unresolved artifact.
+
+## Validation
+
+`observe.test.mjs` passed all nine checks with pinned Node 24.18.0. This includes unchanged-byte/group binding, direct/pooler/foreign-selector refusal, duplicate/control/production input refusal, role-name and setting-value redaction, default plan-only CLI, fixed read-only SQL closure and execution of all six literal catalog queries twice against an actual disposable PostgreSQL 16.13 cluster. The local cluster authenticated only a fixture-owned role and was removed after awaited client/cluster cleanup. It does not qualify the managed PostgreSQL 18 contexts.
+
+ESLint, JavaScript syntax and whitespace checks passed. The first unit run had seven passes, one failure and one explicit owned-cluster skip: its SQL-token check mistakenly treated the quoted privilege name `'CREATE'` as a SQL mutation. The test now removes SQL string literals before checking statement tokens; the observer query and acceptance predicates were unchanged by that test correction. The owned-cluster run then passed nine of nine with no skips.
+
+The default command remains plan-only. Re-running `--observe-read-only` would open new managed sessions and requires a separately authorized diagnostic attempt; this evidence records only the two one-attempt sessions already authorized and executed.
+
+## Separately authorized identity diagnostic 2
+
+After reviewing the unchanged first failure and exact guard, root authorized one additional identity-only SELECT session per existing target. The [additive diagnostic record](identity-diagnostic-2-sanitized.json) retains attempt 1 unchanged. Its `P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED` status means only that safe diagnostics were captured and both clients closed; strict identity acceptance remains false.
+
+Both sessions reported the same sole mismatch: `serverReportsTls: false`, from `pg_stat_ssl.ssl`. Every other guard conjunct matched: exactly one identity row, expected database and authenticated/session role, PostgreSQL major 18, observer-imposed read-only mode and search path, positive physical backend PID, expected selected host/port, and authorized encrypted client transport. Both clients negotiated TLS 1.3 using the explicit built-in Node CA roots and exact SNI. These observations distinguish backend catalog SSL metadata from the verified client transport; they do not establish where provider TLS terminates. No provider policy or acceptance predicate was changed.
+
+The new diagnostic output contains only match booleans, actual nonsecret major/read-only mode and allowlisted client TLS protocol. Unexpected authentication identities, search-path contents, passwords, URLs, raw errors and certificate bodies are not retained. The existing exact `checkIdentity` function still refuses each mismatch; the diagnostic unit check exercises that production function directly. The dedicated CLI mode cannot proceed to role/schema queries. Accepted runtime file bindings were checked again after the query, and both connections closed awaited.
+
+Across these two explicitly authorized stages, four managed connections and four identity SELECTs ran, one per target in each stage. Zero managed role, membership, schema, ACL, setting-name, application or migration-journal queries ran. There was no automatic retry, repair, credential fallback, SQL mutation, explicit lock or control operation. Any later metadata observation remains a separate decision following provider-policy review; the observer has not been relaxed.
+
+Validation after the diagnostic addition: **10/10 tests passed**, with no skips, including all six literal queries twice against an actual disposable PostgreSQL 16 cluster and actual-production-guard refusal for every changed identity field. ESLint and JavaScript syntax checks passed. The original nine-test result and failed initial token-check attempt above remain part of the history.
+
+## Final separately authorized metadata pass 3
+
+The reviewed observer-only TLS correction and actual successful API metadata pass are recorded in [metadata-pass-3.md](metadata-pass-3.md), with a [summary](metadata-pass-3-summary.json) and [complete sanitized evidence](metadata-pass-3-sanitized.json). Earlier refusals above and their JSON files remain unchanged. The final pass does not qualify frontend bindings or authorize a release.

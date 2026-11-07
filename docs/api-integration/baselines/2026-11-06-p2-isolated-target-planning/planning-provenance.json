@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "status": "PLANNING_ONLY_PROPOSED_TARGET_AND_ACCEPTANCE_AMENDMENT_NOT_APPROVED",
+  "recordedAt": "2026-11-06T17:10:55.913136+00:00",
+  "logicalTarget": "p2q-20261106",
+  "userAuthorized": "Plan a separate isolated P2 qualification lane",
+  "resourceNames": "proposed only",
+  "allocatedNewResourceIds": null,
+  "observedFrontendRoot": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration",
+  "observedFrontendHead": "3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+  "sourceCoverageFact": {
+    "surfaces": 81,
+    "sourceQualified": 76,
+    "revisions": 47,
+    "missingCliSourceIdentities": 5
+  },
+  "localSources": [
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/release-policy.md",
+      "sha256": "e087d868b61a7eee53465b3b0556a8ddd711c51481b5007b070ca6c14cb01ead",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/p1-environments.md",
+      "sha256": "56452617b6b0d96d67f8db5b96908eceff1940f79919c461336ebc6f4cc9241a",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/phase2-goal.md",
+      "sha256": "7ab4e4c5a1f85de8f9379b14aa592c5ff4b8594a4896151678b4b4a7180fa212",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/p2-staging-certification.md",
+      "sha256": "ffdf693227ba52ce34724951f40fdd1fb01f411c7a688025ba446d3296a98d02",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/current-state.md",
+      "sha256": "4709ecd441d7727b5b88254d63b89672d861cf5b56335cf624a830f72b5e3c61",
+      "matchesObservedHead": false,
+      "scopeNote": "Operator-owned working documentation observed during planning; not attributed to committed HEAD and not mutated by this task."
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/frontend-historical-source.md",
+      "sha256": "e47c4fc2050d58dcaf2f08c6b0ac8e5c3600c0c5b067279b4410bf5834651731",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/p2-historical-provider-live-gates.md",
+      "sha256": "b277468b3d95f77c44d677cdf929e7299d689f4b78ad793800b2afb377fe8874",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/platform/host/release.py",
+      "sha256": "44cbb5436cd57799836608f0abcd92c909a2557abfce6722c67aecee076a2527",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/platform/frontend-role-preparation.mjs",
+      "sha256": "71c67d47500dca535bb2450e59b820bc930ba8740eb791d509f76261b05b134c",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/staging/course-database-roles.sql",
+      "sha256": "bbc1a6b44c496f70b09cc8acbb686d3cce78ceef0f2b5ebe3255783a3223e3e4",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/platform/p2-canonical-browser-origin.mjs",
+      "sha256": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/platform/p2-lifecycle-native.mjs",
+      "sha256": "8626026c5e288aa7c29fc935f6dda2c76b330ef9a41b2d309172649e38ff356c",
+      "matchesObservedHead": true
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/platform/p2-lifecycle-suspension-evidence.mjs",
+      "sha256": "78bb13d36c080bba0c577a6e582ae0a90e8f758bcd57382f4d0dbc457819d736",
+      "matchesObservedHead": true
+    }
+  ],
+  "priorEvidenceInputs": [
+    {
+      "path": "/private/tmp/p2-no-original-config-decision-20261106/decision-memo.md",
+      "sha256": "86d53f58071e7f89178c7ae5a27b4addfd0567ce6205115d7bcb980611db5b78"
+    },
+    {
+      "path": "/private/tmp/p2-vercel-history-feasibility-20261106/feasibility-addendum.md",
+      "sha256": "99cdc49b30fa73c669776fcf6397acc1cdb5226ecf10dad5b1503943ee6f5d8e"
+    },
+    {
+      "path": "/private/tmp/p2-isolated-target-seams-20261106/report.md",
+      "sha256": "1cbad6f9323da37c8ce8768a367e745bfb0008171e953b6c9ae3a3a5eb970c69"
+    },
+    {
+      "path": "/private/tmp/p2-isolated-target-seams-20261106/findings.json",
+      "sha256": "ae7eaed0caabc0cd3d2ab2a72ce10a2b466aa3c53339de58ed8df22aeae32059"
+    }
+  ],
+  "sourceInventoryPolicyCorrections": [
+    "no mandatory GitHub Environment or extra approval job/click",
+    "role OIDs observed by role-preparation receipt, not static pre-creation profile",
+    "existing true-empty migration primitives retained; new virgin composition/qualification required"
+  ],
+  "recommendedDecision": "Explicit revised P2Q/G2-Q amendment with old P2-00/original goal and live retained-history/unconfigured functional integration obligations separately OPEN/unclaimed; mandatory S10 requires existing backend plus new owner entrypoint and actual deployed result",
+  "alternatives": [
+    "Supplemental qualification only: original goal remains blocked",
+    "Strict revised acceptance retaining old live historical subcases: acceptance remains blocked until supported evidence path exists"
+  ],
+  "amendmentApproved": false,
+  "provisioningAuthorized": false,
+  "publicationAuthorized": false,
+  "releaseAuthorized": false,
+  "g2Accepted": false,
+  "oldP200Closed": false,
+  "g1AcceptanceChanged": false,
+  "matrixCases": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S08",
+    "S09",
+    "S10",
+    "S11",
+    "S12",
+    "S13",
+    "S14",
+    "S15",
+    "S16",
+    "S17"
+  ],
+  "staticVerification": {
+    "orderedCasesRetained": 17,
+    "localLinksChecked": 7,
+    "missingLocalLinks": [],
+    "allListedRootSourcesMatchObservedHead": false
+  },
+  "authenticatedServiceCalls": 0,
+  "newPublicWebCalls": 0,
+  "secretReads": 0,
+  "providerMessages": 0,
+  "resourceActions": 0,
+  "rootOrGitMutationsByThisTask": false,
+  "runtimeTestsRun": false,
+  "billingOrCurrentPriceClaims": false,
+  "plan": {
+    "path": "/private/tmp/p2-isolated-lane-plan-20261106/plan.md",
+    "bytes": 40938,
+    "words": 4987,
+    "sha256": "7375857b8d5107f66fec0da723d21cf501f74ca3a5b89e725a4aa108d9daa06b"
+  },
+  "revision": 2,
+  "supersedes": {
+    "planSha256": "021647f5e0dabac0c43cb4d73d02b77e6ee513cf73f311cf8ed17dc9d28a2d5d",
+    "originalPlan": "/private/tmp/p2-isolated-lane-plan-20261106/plan-v1.md",
+    "originalProvenance": "/private/tmp/p2-isolated-lane-plan-20261106/provenance-v1.json",
+    "originalProvenanceSha256": "ab0c7d43e162f745deefb6f9f86fe84645148d5df01d011b21fad1e1c01bf94a"
+  },
+  "rootConfirmedS10SourceReview": {
+    "authority": "Parent-confirmed p2_role_review source findings; not claimed as a new independent source audit by this task",
+    "coursePrimitive": "POST /v1/admin/entitlements/grants",
+    "existingBackendProperties": [
+      "canonical course-support authentication",
+      "audited idempotent orderless manual grant",
+      "null order/payment/provider references",
+      "audit effect",
+      "Community transition"
+    ],
+    "frontendPrimitive": "getCourseClient().grantAccess",
+    "normalFrontendProductionCallers": 0,
+    "missing": "Normal authenticated same-origin owner support action/page/controller",
+    "proposedSourcePackage": "P2Q-S10 owner manual grant entrypoint",
+    "requiredNewGuards": [
+      "owner-only courses:support, no permission broadening",
+      "published PAID selected-course read/assert and actual readback",
+      "retained actual grant/command/effect/audit/Community and financial-null evidence"
+    ],
+    "actualS10Qualified": false
+  },
+  "revisionClarifications": [
+    "source authorization and interface freeze permit schema/current-only registration/consumer/owned-fixture work before allocation; isolated registration/final target artifacts/live use wait for real approved IDs",
+    "real first closed installation A followed by separately intended B establishes an actual rollback anchor; same-candidate result limited to deployment rollback and broader changed-API/schema compatibility stays OPEN unless actually rehearsed",
+    "unconfigured integration denials do not prove functional product/training/Square/Afterpay/shipping/CRM compatibility; functional subcases remain explicitly OPEN/unclaimed only under accepted exact amendment"
+  ]
+}

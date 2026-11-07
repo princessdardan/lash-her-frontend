@@ -2,7 +2,7 @@
 // qualified source pins; this proof never claims a new image candidate.
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
-import {readFileSync,realpathSync} from "node:fs";
+import {lstatSync,readFileSync,realpathSync} from "node:fs";
 import {join} from "node:path";
 import {parse} from "yaml";
 import {assertSourceCheckout} from "./source-checkout.mjs";
@@ -10,6 +10,8 @@ import {REQUIRED_SOURCE_JOBS,SOURCE_OPERATOR_ID,SOURCE_REPOSITORY_IDS} from "./s
 import {sha256} from "./recreation_inputs.mjs";
 
 const repository="princessdardan/lash-her-frontend";
+export const LEGACY_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 512, decodedBytes: 41_000_000 });
+export const PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 544, decodedBytes: 41_500_000 });
 export function verifyExactHeadWorkflow(raw) {
   const workflow=parse(raw.toString("utf8"));
   assert.ok(workflow.jobs&&Object.keys(workflow.jobs).length>0,"Operator CI jobs required");
@@ -60,24 +62,50 @@ export async function verifyOperatorCi({api,sourceCommit,branch,workflowBytes}) 
     ciUrl:`https://github.com/${repository}/actions/runs/${run.id}`,applicationCandidateRebuilt:false};
 }
 
-export function committedOperatorSource(source,sourceCommit) {
+function readBoundedOperatorSourceFiles(source, bounds) {
+  const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
+    stdio:["ignore","pipe","pipe"]});
+  const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
+  // Complete integration includes fixed certification and rotation packages.
+  // Keep source count finite; aggregate and transport bytes are bounded separately.
+  assert.ok(paths.length>0&&paths.length<=bounds.files);
+  let total=0;
+  const canonicalSource = realpathSync(source);
+  return paths.map(path=> {
+    assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));
+    const file=join(canonicalSource,path);
+    const info=lstatSync(file);
+    assert.ok(info.isFile()&&!info.isSymbolicLink()&&realpathSync(file)===file,"Operator source symlink refused");
+    const raw=readFileSync(file);total+=raw.length;
+    // Preserve every immutable historical source profile and complete operator
+    // dependency. This decoded cap still fits the fixed 56 MB public transport.
+    assert.ok(raw.length<=2_000_000&&total<=bounds.decodedBytes);
+    return {path,sha256:sha256(raw),data:raw.toString("base64")};
+  });
+}
+export function readOperatorSourceFiles(source) {
+  return readBoundedOperatorSourceFiles(source, LEGACY_OPERATOR_SOURCE_BOUNDS);
+}
+export function readProfiledCurrentOperatorSourceFiles(source) {
+  return readBoundedOperatorSourceFiles(source, PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS);
+}
+function committedBoundedOperatorSource(source, sourceCommit, readFiles) {
   const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
     stdio:["ignore","pipe","pipe"]});
   assert.equal(git(["remote","get-url","origin"]).trim(),"https://github.com/"+repository+".git");
   assert.equal(realpathSync(git(["rev-parse","--show-toplevel"]).trim()),realpathSync(source));
   assertSourceCheckout(source,sourceCommit);
   const branch=git(["branch","--show-current"]).trim();
-  const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
-  assert.ok(paths.length>0&&paths.length<=400);
-  let total=0;
-  const files=paths.map(path=> {
-    assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));
-    const raw=readFileSync(join(source,path));total+=raw.length;
-    assert.ok(raw.length<=2_000_000&&total<=16_000_000);
-    return {path,sha256:sha256(raw),data:raw.toString("base64")};
-  });
+  const files=readFiles(source);
   // A public source handoff never includes dotenv, dependencies or private
   // retained receipts. Git cleanliness is checked again before returning.
   assertSourceCheckout(source,sourceCommit);
   return {files,branch,workflowBytes:readFileSync(join(source,".github/workflows/ci.yml"))};
+}
+
+export function committedOperatorSource(source, sourceCommit) {
+  return committedBoundedOperatorSource(source, sourceCommit, readOperatorSourceFiles);
+}
+export function committedProfiledCurrentOperatorSource(source, sourceCommit) {
+  return committedBoundedOperatorSource(source, sourceCommit, readProfiledCurrentOperatorSourceFiles);
 }

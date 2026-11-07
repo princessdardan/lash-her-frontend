@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "researchDate": "2026-11-06",
+  "authenticatedAccountCalls": 0,
+  "secretReads": 0,
+  "providerMutations": 0,
+  "sources": [
+    {
+      "id": "lightsail-pricing",
+      "url": "https://aws.amazon.com/lightsail/pricing/",
+      "type": "primary official documentation",
+      "planningFact": "4 GB IPv4 Linux USD24/mo and 8 GB USD44/mo; bundle resources."
+    },
+    {
+      "id": "lightsail-billing",
+      "url": "https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-frequently-asked-questions-faq-billing-and-account-management.html",
+      "type": "primary official documentation",
+      "planningFact": "Hourly capped plan billing, stopped instances bill, detached static IP USD0.005/hr beyond one hour."
+    },
+    {
+      "id": "lightsail-quotas",
+      "url": "https://docs.aws.amazon.com/general/latest/gr/lightsail.html",
+      "type": "primary official documentation",
+      "planningFact": "Published defaults: regional instance vCPUs20/static IPs5, not actual allocation availability."
+    },
+    {
+      "id": "aws-new-account",
+      "url": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_create.html",
+      "type": "primary official documentation",
+      "planningFact": "Organizations-created member accounts get OrganizationAccountAccessRole; no assumed management isolation."
+    },
+    {
+      "id": "aws-cross-account",
+      "url": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html",
+      "type": "primary official documentation",
+      "planningFact": "Role and resource policies can grant cross-account access; inspect actual trust."
+    },
+    {
+      "id": "secrets-pricing",
+      "url": "https://aws.amazon.com/secrets-manager/pricing/",
+      "type": "primary official documentation",
+      "planningFact": "USD0.40/secret-month, USD0.05/10k API calls."
+    },
+    {
+      "id": "kms-pricing",
+      "url": "https://aws.amazon.com/kms/pricing/",
+      "type": "primary official documentation",
+      "planningFact": "USD1/key-month; requests/rotation charges separate."
+    },
+    {
+      "id": "dns-pricing",
+      "url": "https://aws.amazon.com/route53/pricing/",
+      "type": "primary official documentation",
+      "planningFact": "USD0.50/month first25 zones; standard query first tier USD0.40/million; partial months not generally prorated."
+    },
+    {
+      "id": "domain-pricing",
+      "url": "https://d32ze2gidvkk54.cloudfront.net/Amazon_Route_53_Domain_Registration_Pricing_20140731.pdf?v=7KR9MP",
+      "type": "primary official documentation",
+      "planningFact": "Current table .com registration/renewal USD15/year; July2026 updated table checked; availability unknown."
+    },
+    {
+      "id": "neon-pricing",
+      "url": "https://neon.com/pricing",
+      "type": "primary official documentation",
+      "planningFact": "Free100projects/100CUh/project/1GB perproject/5GB public transfer, up to2CU, five-minute idle suspend; Launch0.106/CUh and0.35/GBmonth."
+    },
+    {
+      "id": "neon-create",
+      "url": "https://neon.com/docs/reference/api/projects/create-project",
+      "type": "primary official documentation",
+      "planningFact": "POST api/v2/projects, explicit org/region/PG18; response includes password/URI; wait operations."
+    },
+    {
+      "id": "neon-regions",
+      "url": "https://neon.com/docs/introduction/regions",
+      "type": "primary official documentation",
+      "planningFact": "aws-us-east-1 is a documented Postgres region."
+    },
+    {
+      "id": "vercel-pricing",
+      "url": "https://vercel.com/pricing",
+      "type": "primary official documentation",
+      "planningFact": "Pro USD20/month; USD20 included usage credit; taxes excluded."
+    },
+    {
+      "id": "vercel-pro",
+      "url": "https://vercel.com/docs/plans/pro-plan",
+      "type": "primary official documentation",
+      "planningFact": "One included deploying seat; on-demand billing beyond included allocations/credit."
+    },
+    {
+      "id": "vercel-cron",
+      "url": "https://vercel.com/docs/schedules/cron-jobs/usage-and-pricing",
+      "type": "primary official documentation",
+      "planningFact": "Pro minute cron interval versus daily Hobby; legacy cron contract still documented, no migration selected."
+    },
+    {
+      "id": "vercel-create",
+      "url": "https://vercel.com/docs/rest-api/projects/create-a-new-project",
+      "type": "primary official documentation",
+      "planningFact": "Supported project-create contract; future fixed collector must validate selected deployment/Git controls."
+    },
+    {
+      "id": "resend-pricing",
+      "url": "https://resend.com/pricing",
+      "type": "primary official documentation",
+      "planningFact": "Free3000/mo,100/day,3domains,1hook; Pro20/mo50k and0.90/1000 extra."
+    },
+    {
+      "id": "resend-domain",
+      "url": "https://resend.com/docs/api-reference/domains/create-domain",
+      "type": "primary official documentation",
+      "planningFact": "Sender domain creation supports us-east-1."
+    },
+    {
+      "id": "resend-key",
+      "url": "https://resend.com/docs/api-reference/api-keys/create-api-key",
+      "type": "primary official documentation",
+      "planningFact": "Supported scoped API-key creation, sensitive token response; original permission request/custody needed."
+    },
+    {
+      "id": "resend-webhook",
+      "url": "https://resend.com/docs/api-reference/webhooks/create-webhook",
+      "type": "primary official documentation",
+      "planningFact": "Supported future hook-create contract; no inert-at-create field presumed."
+    },
+    {
+      "id": "sanity-pricing",
+      "url": "https://www.sanity.io/pricing",
+      "type": "primary official documentation",
+      "planningFact": "Free public2datasets/20seats/10kdocs/2hooks/250kAPI/1mCDN; Growth15/seat/month."
+    },
+    {
+      "id": "sanity-projects",
+      "url": "https://www.sanity.io/docs/http-reference/projects-api",
+      "type": "primary official documentation",
+      "planningFact": "Project/control reference, no generic inherited-personal-token exclusion."
+    },
+    {
+      "id": "sanity-tokens",
+      "url": "https://www.sanity.io/docs/content-lake/http-auth",
+      "type": "primary official documentation",
+      "planningFact": "Project/personal/organization capability distinctions also reviewed in local authority spec."
+    },
+    {
+      "id": "mux-pricing",
+      "url": "https://www.mux.com/pricing",
+      "type": "primary official documentation",
+      "planningFact": "Free up to10videos/100k deliveryminutes; PAYG20monthly usagecredit; no actual entitlement assumed."
+    },
+    {
+      "id": "mux-free",
+      "url": "https://www.mux.com/docs/changelog/video-free-plan",
+      "type": "primary official documentation",
+      "planningFact": "Free on-demand video plan and basic features; account-specific System/API preflight still needed."
+    },
+    {
+      "id": "mux-boundaries",
+      "url": "https://www.mux.com/docs/core/mux-fundamentals",
+      "type": "primary official documentation",
+      "planningFact": "Environment-scoped access tokens/assets/keys/hooks; organization administrators remain distinct."
+    },
+    {
+      "id": "mux-hooks",
+      "url": "https://www.mux.com/docs/core/manage-webhooks",
+      "type": "primary official documentation",
+      "planningFact": "POST system/v1/webhooks enables immediately; one-time signing secret; list/readback never reconstructs secret."
+    },
+    {
+      "id": "mux-signed",
+      "url": "https://www.mux.com/docs/guides/secure-video-playback",
+      "type": "primary official documentation",
+      "planningFact": "Signed playback and separate signing key flow."
+    },
+    {
+      "id": "google-oidc",
+      "url": "https://developers.google.com/identity/openid-connect/openid-connect",
+      "type": "primary official documentation",
+      "planningFact": "Normal OAuth/OIDC project/client/redirect setup, no new Identity Platform product."
+    },
+    {
+      "id": "google-clients",
+      "url": "https://developers.google.com/workspace/guides/create-credentials",
+      "type": "primary official documentation",
+      "planningFact": "Normal supported Console OAuth-client creation procedure."
+    },
+    {
+      "id": "google-audience",
+      "url": "https://support.google.com/cloud/answer/15549945",
+      "type": "primary official documentation",
+      "planningFact": "External Testing cap100listedusers; scope/publishing-specific behavior retained."
+    },
+    {
+      "id": "google-policy",
+      "url": "https://developers.google.com/identity/protocols/oauth2/production-readiness/policy-compliance",
+      "type": "primary official documentation",
+      "planningFact": "Separate test/production projects, owned domains and exact secure redirects."
+    },
+    {
+      "id": "vercel-token-scope",
+      "url": "https://examples.vercel.com/kb/guide/how-do-i-use-a-vercel-api-access-token",
+      "type": "primary official documentation",
+      "planningFact": "Personal-account token management and optional team scope; no claim every old token crosses teams."
+    },
+    {
+      "id": "vercel-owner-access",
+      "url": "https://vercel.com/docs/rbac/access-roles",
+      "type": "primary official documentation",
+      "planningFact": "Team owners/members inherently control all projects; per-project fine-grained roles are Enterprise."
+    },
+    {
+      "id": "neon-org-keys",
+      "url": "https://neon.com/docs/manage/orgs-api",
+      "type": "primary official documentation",
+      "planningFact": "Org keys admin-level all org resources; project-scoped keys narrower; current metadata required."
+    },
+    {
+      "id": "neon-personal-keys",
+      "url": "https://neon.com/blog/lessons-from-a-zero-downtime-user-to-org-migration",
+      "type": "primary official documentation",
+      "planningFact": "User keys reach organizations the user belongs to; new org with same old user is insufficient."
+    },
+    {
+      "id": "mux-admin-environments",
+      "url": "https://www.mux.com/docs/guides/dashboard-environment-restrictions",
+      "type": "primary official documentation",
+      "planningFact": "Organization admins access all environments, distinct from environment-scoped API tokens."
+    },
+    {
+      "id": "google-creator",
+      "url": "https://docs.cloud.google.com/resource-manager/docs/access-control-proj",
+      "type": "primary official documentation",
+      "planningFact": "Project creator automatically receives Owner."
+    },
+    {
+      "id": "google-iam-inheritance",
+      "url": "https://docs.cloud.google.com/iam/docs/allow-policies",
+      "type": "primary official documentation",
+      "planningFact": "Default project ownership and effective inherited ancestor grants."
+    },
+    {
+      "id": "google-impersonation",
+      "url": "https://docs.cloud.google.com/docs/authentication/use-service-account-impersonation",
+      "type": "primary official documentation",
+      "planningFact": "Service-account token creation/impersonation can extend principal reach."
+    },
+    {
+      "id": "sanity-global",
+      "url": "https://www.sanity.io/docs/app-sdk/sdk-authentication",
+      "type": "primary official documentation",
+      "planningFact": "Global user tokens include all user organizations/projects."
+    }
+  ],
+  "sourceLimitations": [
+    "No account-specific quotas, grants, prices, domain availability or resource IDs observed.",
+    "Facts are allowlisted research notes, not full page snapshots or provider evidence.",
+    "Do not infer permission/control completeness from the existence of a documented API."
+  ]
+}

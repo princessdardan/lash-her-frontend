@@ -5,6 +5,7 @@ import { HighLevelError } from "./contract";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   CONSENT_VERSION,
   normalizeEmail,
@@ -85,6 +86,11 @@ export async function enqueueCrmEvent(
   await tx.execute(
     sql`insert into highlevel_outbox (event_key, entity_type, entity_id, event_type, historical) values (${input.eventKey}, ${input.entityType}, ${input.entityId}, ${input.eventType ?? `${input.entityType}_changed`}, ${input.historical ?? false}) on conflict (event_key) do nothing`,
   );
+  const receipt = await tx.execute<{ event_key: string }>(
+    sql`select event_key from highlevel_outbox where event_key = ${input.eventKey} and entity_type = ${input.entityType} and entity_id = ${input.entityId}`,
+  );
+  if (receipt.rows.length !== 1 || receipt.rows[0].event_key !== input.eventKey)
+    markWriterOperationUncertain();
 }
 
 export async function claimJobs(limit = 10): Promise<CrmJob[]> {
@@ -102,10 +108,13 @@ export async function finishJob(
   status: "succeeded" | "skipped" | "retry" | "review" | "dead_letter",
   error: string | null = null,
   delay = 60,
+  db: CrmDb = getPrivateDb(),
 ): Promise<void> {
-  await getPrivateDb().execute(
-    sql`update highlevel_outbox set attempts = case when ${error} in ('marketing_journey_busy', 'marketing_paused') then greatest(attempts - 1, 0) else attempts end, status = ${status}, last_error = ${error}, next_run_at = now() + (${delay} * interval '1 second'), completed_at = ${status === "succeeded" || status === "skipped" ? new Date() : null}, locked_by = null, locked_until = null where id = ${job.id}::uuid and status = 'processing' and locked_by = ${job.locked_by}`,
+  const receipt = await db.execute<{ id: string }>(
+    sql`update highlevel_outbox set attempts = case when ${error} in ('marketing_journey_busy', 'marketing_paused') then greatest(attempts - 1, 0) else attempts end, status = ${status}, last_error = ${error}, next_run_at = now() + (${delay} * interval '1 second'), completed_at = ${status === "succeeded" || status === "skipped" ? new Date() : null}, locked_by = null, locked_until = null where id = ${job.id}::uuid and status = 'processing' and locked_by = ${job.locked_by} returning id`,
   );
+  if (receipt.rows.length !== 1 || receipt.rows[0].id !== job.id)
+    markWriterOperationUncertain();
 }
 
 export async function loadSource(
@@ -295,10 +304,8 @@ export async function loadRetainedSource(
       ) retained order by activity_at desc, entity_id limit 1`)
   ).rows[0];
   if (candidate) return loadSource(candidate, db);
-  const [emailConsent, smsConsent] = await Promise.all([
-    channelConsent(email, "email", email, db),
-    channelConsent(email, "sms", contact.phone, db),
-  ]);
+  const emailConsent = await channelConsent(email, "email", email, db);
+  const smsConsent = await channelConsent(email, "sms", contact.phone, db);
   const grant = (
     await db.execute<{ occurred_at: Date }>(sql`
       select occurred_at from highlevel_consent_events where email_normalized = ${email}

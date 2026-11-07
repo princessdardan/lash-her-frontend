@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "status": "MAINTAINED_PRIVATE_PYTHON_BUILD_RELOCATED_AND_OFFLINE_SDK_VERIFIED",
+  "currentVersion": "3.14.10",
+  "sourceArchive": {
+    "version": "3.14.10",
+    "releaseDate": "2026-10-25",
+    "releasePage": "https://www.python.org/downloads/release/python-31410/",
+    "googleSdkSupportPage": "https://docs.cloud.google.com/sdk/docs/install-sdk",
+    "googleSdk592PythonRange": "3.10\u20133.15",
+    "publishedSha256": "de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
+    "sha256Matched": true,
+    "sigstoreMessageDigestMatched": true,
+    "sigstoreSignatureVerified": false,
+    "files": [
+      {
+        "name": "Python-3.14.10.tar.xz",
+        "url": "https://www.python.org/ftp/python/3.14.10/Python-3.14.10.tar.xz",
+        "bytes": 24240392,
+        "sha256": "de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032"
+      },
+      {
+        "name": "Python-3.14.10.tar.xz.sigstore",
+        "url": "https://www.python.org/ftp/python/3.14.10/Python-3.14.10.tar.xz.sigstore",
+        "bytes": 7173,
+        "sha256": "9d7c82682555f5be998a41f90c52b96e8605ba96cab61590a8ee29ebdeb24b0e"
+      }
+    ],
+    "members": 5580,
+    "regularFiles": 5145,
+    "expandedBytes": 118067801,
+    "links": []
+  },
+  "historicalAttemptsRecord": "historical-3.14.2-attempts.json",
+  "originalPrefix": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix",
+  "closedPrefix": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed",
+  "pythonExecutable": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed/bin/python3.14",
+  "build": {
+    "defaultConfigure": 0,
+    "makeJ4": 0,
+    "privateAltinstall": 0,
+    "ensurepip": false,
+    "globalInstall": false,
+    "currentCompatibilityCacheOverrides": false,
+    "upstreamSourceFilesChanged": 0
+  },
+  "physicalClosedPrefix": {
+    "regularFiles": 3030,
+    "regularBytes": 135491062,
+    "maxFileBytes": 31384880,
+    "symlinks": 0,
+    "nonSystemMachOLoadCommandsContained": true,
+    "actualSslHashlibCryptoImagesContained": true,
+    "machOFilesAudited": 63,
+    "externalRpaths": 0,
+    "appleSystemBaselineDeclared": true
+  },
+  "binaryArtifact": {
+    "version": 1,
+    "artifact": "cpython-3.14.10-macos-arm64-prefix-closed.tar.xz",
+    "bytes": 28397792,
+    "sha256": "e8435bc439af49251c118fde07233cc07d9d4d3acb8dba1eb6b9fcc40d77f407",
+    "sourcePrefix": "/private/tmp/p2q-cpython-offline-20261106/current-3.14.10/prefix-closed",
+    "localBuildArtifact": true,
+    "upstreamBinary": false,
+    "archiveMetadataNormalization": "uid/gid0,emptyuser/group,mtime0; regular contents/modes retained; no links admitted",
+    "noCredentialsIncluded": true
+  },
+  "archiveAll3030FileHashesMatched": true,
+  "sdkOfflineEvidence": {
+    "directory": "/private/tmp/p2q-google-sdk-offline-20261106/cpython-3.14.10-closed",
+    "reportSha256": "fd0089560b7fb087911abf4cb0c038e1c1f64aa96e9184aec60542fd6d907517",
+    "manifestSha256": "066b28fec5cc8b61f6afc86226e05cdf91787dfae73ecf37216cd137e744e477",
+    "fiveVersionHelpFormsPassed": true,
+    "sdkAndPythonEntriesChanged": 0,
+    "scope": "Offline version/help/source-env compatibility ONLY"
+  },
+  "limitations": [
+    "No Google authentication/account listing/token issuance/revocation/ResourceManager API ran.",
+    "No live case, principal, project, quota or target profile is selected or registered.",
+    "Source/binary checks do not prove independent administration, recovery, first-use authority, entire OS closure or absence of all vulnerabilities.",
+    "Current CPython source checksum and official Sigstore message digest matched; Sigstore signature was not cryptographically verified.",
+    "OpenSSL copies came from parent-approved installed3.6.3 physical files and were locally relocated/ad-hoc signed, not represented as upstream signatures.",
+    "Source-controlled OpenSSL configuration/provider/CA/netrc environment remains required for any future live SDK context."
+  ]
+}

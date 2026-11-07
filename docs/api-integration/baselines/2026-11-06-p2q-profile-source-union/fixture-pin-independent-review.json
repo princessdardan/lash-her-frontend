@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "status": "NARROW_SOURCE_CHANGE_CLEARED",
+  "baseCommit": "3c2e31c9f1f1d3a316374883421e6682e7c667a8",
+  "scope": "Seven uncommitted ops files only; resource-proposal documentation excluded",
+  "diffSha256": "e60703107363fbf9c9366bf30c0354c16311172f34b1b53eef3f88c4ac882cac",
+  "sourceSha256": {
+    "ops/platform/p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+    "ops/platform/prepare-p2-identity-probe-fixtures.mjs": "7fdc71e0af3734fd4f7bbf126f1a98be4b87b7dcebc9ca54b5f867108ce46797",
+    "ops/platform/prepare-p2-identity-probe-fixtures.test.mjs": "d7487bb1af7ef3e89581457104256e9f230ee81ad9519aa43210d44457ea95ec",
+    "ops/platform/test-p2-known-ack-loss-local.mjs": "cba0d7226ad6eee30d9ac3b5307d06ae258898727fb964fdeb44cb25a8d929a8",
+    "ops/platform/test-p2-lifecycle-persistence-local.mjs": "f037ab6b890d69dde706cd3cf7c520d28d44a3156a6ece3b2e85b93ca377bf06",
+    "ops/platform/test-p2-lifecycle-receivers-local.mjs": "a23390c60c5b9ffc80a2d8e85167baf1f91d395a36cc50483b7653e9fd0a683d",
+    "ops/platform/test-p2-lifecycle-worker-local.mjs": "1eed0e50af65d449d23596b30a8100dce21926c81dffa5c1b25630e61f51d1ec"
+  },
+  "findings": [],
+  "apiPins": {
+    "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+  },
+  "selectorChangesOnlyExactOldToNew": [
+    "ops/platform/p2-lifecycle-owned-source-manifest.mjs",
+    "ops/platform/test-p2-known-ack-loss-local.mjs",
+    "ops/platform/test-p2-lifecycle-persistence-local.mjs",
+    "ops/platform/test-p2-lifecycle-receivers-local.mjs",
+    "ops/platform/test-p2-lifecycle-worker-local.mjs"
+  ],
+  "retainedOriginals": {
+    "retainedInterruptedReceipt": {
+      "literalByteIdentical": true,
+      "originalRawSha256": "758c9690999f214ae438db105e72dcaa9ff0bbf80b93fdbbe23b3d4dec295eec"
+    },
+    "retainedInterruptedNegatives": {
+      "literalByteIdentical": true,
+      "originalRawSha256": "5fedd2f860724846ca2235faf19e9b69c1472c3fa329ff9393481957465629d8"
+    }
+  },
+  "unchangedCode": {
+    "positiveCParser": true,
+    "negativeCParser": true,
+    "transportFailureRetention": true
+  },
+  "parseCallsPassDiagnostic": 6,
+  "successCleanup": [
+    "recoveryFailure",
+    "recoveryQualification"
+  ],
+  "recoveryStartedPreserved": true,
+  "independentVerification": {
+    "nodePassed": 43,
+    "nodeSkipped": 0,
+    "eslintExitCode": 0
+  },
+  "logs": {
+    "lint.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "node.log": {
+      "bytes": 4580,
+      "sha256": "d65de6cfb16e8e7e06b262b8587941a2697fa21fe43ba157ed07e209f32208e2"
+    }
+  },
+  "limitations": [
+    "No owned C/PG/Docker run performed. Root must freeze a clean source and pass shared gates before new-API qualification.",
+    "Old retained source/receipt bytes remain historical; the new current parser refuses them. A modeled synthetic receipt is not new actual evidence.",
+    "The original Linux failure attribution and new source compatibility still need the actual frozen owned C and CI results."
+  ],
+  "ownedCProposal": {
+    "file": "owned-c-command-proposal.md",
+    "sha256": "f0842b30e90860e643b196da7dbdf22dc7fee3dd158bdb8706a04c70ef929e88",
+    "executed": false
+  }
+}

@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import time
 
-RECOVERABLE = {"course-api", "community-api", "course-publisher", "course-snapshot", "community-worker"}
+RECOVERABLE = {"course-api", "community-api", "course-publisher", "course-snapshot", "community-worker", "course-media", "course-export-cleanup"}
 
 
 def recent(values, now):
@@ -84,7 +84,8 @@ def recover(project, history_path, execute=False):
             # A timed-out restart is ambiguous. Commit intent first so a later
             # timer cannot repeat an uncounted operation after a process crash.
             persist_intent(history_path, history)
-            command(["docker", "restart", "--timeout", "30", item["id"]], timeout=40)
+            grace = 60 if item["service"] in ("course-media", "course-export-cleanup") else 30
+            command(["docker", "restart", "--timeout", str(grace), item["id"]], timeout=grace + 10)
         print(("restarted" if execute else "proposed") + " " + item["service"])
 
 

@@ -1,0 +1,122 @@
+{
+  "fixtureOnly": true,
+  "source": "exact official npm archives verified against all historical lockfile SHA-512 integrity values; no installed replacement SDK used",
+  "packages": [
+    {
+      "name": "next-auth",
+      "version": "5.0.0-beta.32",
+      "integrity": "sha512-CGlChIEWZ6LltNVxrE5yiySMID+Idpmry47JYA5lLwgD8Sx02a8M65VL0TWVz9nbnOioS/tCW/rP/0+mE7Qp4Q==",
+      "archiveSha256": "0656a4b1975e26e8155dead41ebc1cbd7acabd1dd8d0d0ca98a2a3413acc2f83",
+      "selectedFiles": [
+        {
+          "archivePath": "package/lib/env.js",
+          "sha256": "b05fc5014ed0ed44a67e9b0a129e70f4da8ee9b8065d17fee514313e4f8e8393"
+        }
+      ]
+    },
+    {
+      "name": "@auth/core",
+      "version": "0.41.3",
+      "integrity": "sha512-sJ3JMHHkXMD3aOjopv7mOBTO1Ocw4b0fAEXJBz6k7YHLpYQI6C40jCUPc5fNvUKxXRXNE1/sRISA15UrwWJBTw==",
+      "archiveSha256": "e2d37f710957a83811c88d65a22cbbcfda89cf811970786c5e33c1d13d2171b2",
+      "selectedFiles": [
+        {
+          "archivePath": "package/lib/utils/env.js",
+          "sha256": "c835e646eca9734e9989c1dbc1658688f9df1b0ccf0acabd5bf6e21101fd143f"
+        },
+        {
+          "archivePath": "package/lib/utils/assert.js",
+          "sha256": "527ccf487d7824c9e17e848ec3648dabf678a509693efc30f015dce217a3e178"
+        }
+      ]
+    },
+    {
+      "name": "google-auth-library",
+      "version": "10.9.1",
+      "integrity": "sha512-i1ydyHrqcIxXkWh/uBmVkzCvIuq5yiK2ATndIe5XxKholrG/MTYP9xGYka4sQhrbIAgGjL2B6NOE7rFaiF3fXw==",
+      "archiveSha256": "499530b85428ea27785a8ea1772458d6b821d2c917cbc1ae8f8843dca9b5327a",
+      "selectedFiles": [
+        {
+          "archivePath": "package/build/src/auth/oauth2client.js",
+          "sha256": "af1aeb78dcd8ac899f157686f07c7b492131605fbf940909890fe9a4eeb90fe1"
+        }
+      ]
+    },
+    {
+      "name": "@sanity/client",
+      "version": "7.22.0",
+      "integrity": "sha512-KqN9cowZwfZNCwCchRaz1B9WrZTThQxX/gfJhJO1uKJBuk/JcbYGBiSK9CSqocWoYDQ/QqANVXy1r7a8zognww==",
+      "archiveSha256": "b02faadee02ab999e17347ac0a2b95b125e3a1dbfe09b2e809896525af991498",
+      "selectedFiles": [
+        {
+          "archivePath": "package/dist/index.js",
+          "sha256": "b542a14b99863cdb3a20be91565d5bbef4510dd701d2aa24fbe8cb4927421d55"
+        }
+      ]
+    },
+    {
+      "name": "sanity-plugin-mux-input",
+      "version": "3.0.5",
+      "integrity": "sha512-Ebx3Kj9AM7/AqEwZT/Edt3PMQAZnMGgrt1Rgfnmu1llaqjuZCBwzp/GvUkvgFd8t3hxdtmEB6FgPEJaMo6kwtA==",
+      "archiveSha256": "068a23e92d163d964127e855f043d4696134d4ca002994c35b642d0c1c3e0f66",
+      "selectedFiles": [
+        {
+          "archivePath": "package/dist/index.js",
+          "sha256": "5ab0a9d9e2f7213004d8434ffa47470cb541acfaad193df1f9ed660f2f3f86cb"
+        }
+      ]
+    },
+    {
+      "name": "next-sanity",
+      "version": "11.6.13",
+      "integrity": "sha512-mKp8iZllsA+znf49cevlMq/CLf10lyeIZHs1kP8i79yKFD6eZFoiASBhb7lQM/BQZnVIUqyiDRIYp1imBqJkRA==",
+      "archiveSha256": "ae9a87b1fa716616e71ff7ae63fd89d137430b51fa40bdc5c90105b7e4c77459",
+      "selectedFiles": [
+        {
+          "archivePath": "package/dist/webhook/index.js",
+          "sha256": "bec058c7dc5fc645cf6026cb0fd4a86177b4ec8ba7a64dae795db33ababd4fe5"
+        }
+      ]
+    },
+    {
+      "name": "@upstash/redis",
+      "version": "1.38.0",
+      "integrity": "sha512-wu+dZBptlLy0+MCUEoHmzrY/TnmgDey3+c7EbIGwrLqAvkP8yi5MWZHYGIFtAygmL4Bkz2TdFu+eU0vFPncIcg==",
+      "archiveSha256": "b194269e043612fabe75196ea15db0797a7911912f8f325e03b565c58b3c6281",
+      "selectedFiles": [
+        {
+          "archivePath": "package/cloudflare.mjs",
+          "sha256": "bf4e501aa9dc3c202a974f6288325eef69eab31063c413f38fd041b2200bbcc3"
+        },
+        {
+          "archivePath": "package/chunk-2X4SLXT7.mjs",
+          "sha256": "e0920d4bb86d5a3ac9501f7bb88bdb1732aceace6eae1824f9bb7a1b1c81ceca"
+        }
+      ]
+    },
+    {
+      "name": "google-auth-library",
+      "version": "10.5.0",
+      "integrity": "sha512-7ABviyMOlX5hIVD60YOfHw4/CxOfBhyduaYB+wbFWCWoni4N7SLcV46hrVRktuBbZjFC9ONyqamZITN7q3n32w==",
+      "archiveSha256": "de232f47f06d9209f06c3153988218c3bee9551d311279ec3601eb966e2d4e08",
+      "selectedFiles": [
+        {
+          "archivePath": "package/build/src/auth/oauth2client.js",
+          "sha256": "af1aeb78dcd8ac899f157686f07c7b492131605fbf940909890fe9a4eeb90fe1"
+        }
+      ]
+    },
+    {
+      "name": "@sanity/client",
+      "version": "7.28.0",
+      "integrity": "sha512-hITQbBmzsECXXd+vJkbpk0sA0Mc31imOcq4MCRRel7aZyQ9CdTZQyJn0y6f9AHg4UQ2d4mitQqke92J6fpqRmQ==",
+      "archiveSha256": "41c7e89e01ffbee2257a47a8e5f47ae4d373867ae4d32220197f04a373fae43f",
+      "selectedFiles": [
+        {
+          "archivePath": "package/dist/index.js",
+          "sha256": "1d461d45119970aec551846e61eb3d6351c15c7456d451ac2fd1745ebb675ddc"
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 // Owns a new loopback TLS/SCRAM cluster. No configured database URL is accepted.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, copyFileSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, copyFileSync, symlinkSync, chmodSync, rmSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { randomUUID, createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -14,6 +14,9 @@ import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
 import { exerciseFrontendAdmission } from "./harness/owned-frontend-admission.mjs";
 import { exerciseHistoricalFrontendLogins } from "./harness/owned-frontend-historical-logins.mjs";
 import { exerciseFrontendWriterRoutes } from "./harness/owned-frontend-writer-routes.mjs";
+import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
+import { runOwnedIdentityChild } from "./harness/owned-frontend-identity-receipt.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile } from "./qualification-target-profile.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -67,11 +70,16 @@ async function main() {
       cli = "ops/platform/frontend-image.mjs";
     } else {
       mkdirSync(app); mkdirSync(join(app, "ops/platform"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
+      mkdirSync(join(app, "scripts"), { recursive: true });
+      for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
+        copyFileSync(join(source, "scripts", name), join(app, "scripts", name));
       mkdirSync(join(app, "contracts/api-integration/v1"), { recursive: true });
-      for (const name of ["frontend-migration.mjs", "frontend-schema.mjs", "source-checkout.mjs", "source-policy.mjs", "release-inputs.mjs", "release.mjs"])
+      for (const name of ["frontend-migration.mjs", "frontend-schema.mjs", "source-checkout.mjs", "source-policy.mjs", "release-inputs.mjs", "release.mjs",
+        "qualification-target-profile.mjs", "qualification-target-profiles.json"])
         copyFileSync(join(source, "ops/platform", name), join(app, "ops/platform", name));
       copyFileSync(join(source, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
       copyFileSync(join(source, "contracts/api-integration/v1/manifest.json"), join(app, "contracts/api-integration/v1/manifest.json"));
+      cpSync(join(source, "contracts/api-integration/p2-candidate"), join(app, "contracts/api-integration/p2-candidate"), { recursive: true });
       cpSync(join(source, "drizzle"), join(app, "drizzle"), { recursive: true });
       symlinkSync(join(source, "node_modules"), join(app, "node_modules"), "dir");
       writeFileSync(join(app, "package.json"), '{"type":"module","private":true}\n'); writeFileSync(join(app, ".gitignore"), "node_modules/\n");
@@ -95,33 +103,75 @@ async function main() {
     const baseline = { version: 1, serverMajor: major, sqlArtifactSha256: artifact.sqlArtifactSha256, catalog: await readMigrationCatalog(baselineClient) };
     await baselineClient.query("rollback"); const schemaFile = join(directory, "schema.json"); writeFileSync(schemaFile, JSON.stringify(baseline), { mode: 0o600 });
     const candidate = { version: 2, environment: "staging", releaseId: "frontend-owned", integration: { state: "passed" },
+      contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256,
       artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${process.env.FRONTEND_MIGRATION_IMAGE_DIGEST ?? `sha256:${"b".repeat(64)}`}` } },
       sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" }, contractManifestSha256: artifact.contractManifestSha256,
       sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit, requiredChecks: "passed" } } };
     const job = { version: 1, operator: "Dardan", releaseId: candidate.releaseId, environment: "staging", sourceCommit: commit,
+      contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256,
       migrationImageDigest: candidate.artifacts.frontendMigration.image.split("@")[1],
       contractManifestSha256: artifact.contractManifestSha256, sqlArtifactSha256: artifact.sqlArtifactSha256, schemaBaselineSha256: hash(JSON.stringify(baseline)), recoveryRef: "owned/recreation",
       target: { host: "127.0.0.1", port, database: "frontend_apply", user: "frontend_migration", runtimeRole: "frontend_runtime", serverMajor: major,
         allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(({ tag }) => tag) } };
     candidate.frontendMigration = { sourceCommit: commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
+      contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256,
       contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { [major]: job.schemaBaselineSha256 } };
     const invoke = (label, selected = job, selectedCandidate = candidate, options = {}) => {
       const jobFile = join(directory, `${label}.job.json`), candidateFile = join(directory, `${label}.candidate.json`), output = join(directory, label); mkdirSync(output, { mode: 0o700 });
       writeFileSync(jobFile, JSON.stringify(selected)); writeFileSync(candidateFile, JSON.stringify(selectedCandidate));
       const named = selected.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL";
       const env = { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, [named]: `postgresql://${selected.target.user}:${password}@127.0.0.1:${port}/${selected.target.database}?sslmode=verify-full`, ...options.env };
-      const result = spawnSync(process.execPath, [cli, "--execute", candidateFile, jobFile, schemaFile,
+      const result = spawnSync(process.execPath, [cli, options.profiledCurrent ? "--execute-profiled-current" : "--execute", candidateFile, jobFile, schemaFile,
         "--confirm", `${selected.environment}/${selected.releaseId}`, output], { cwd: app, env, encoding: "utf8", timeout: 300_000 });
       return { result, output };
     };
     const success = (name, call) => { assert.equal(call.result.status, 0, `${name} failed`); const receipt = JSON.parse(readFileSync(join(call.output,"database-receipt.json"),"utf8")); assert.equal(receipt.status,"DATABASE_VERIFIED"); assert.equal(JSON.parse(readFileSync(join(call.output,"job-outcome.json"),"utf8")).status,"DATABASE_VERIFIED"); records.push(name); return receipt; };
+    phase = "operator-search-path-shadow-control";
+    const shadowOwner = await connect("frontend_apply");
+    await shadowOwner.query('CREATE SCHEMA frontend_shadow AUTHORIZATION frontend_migration');
+    await shadowOwner.query("CREATE FUNCTION frontend_shadow.current_database() RETURNS name LANGUAGE sql AS $$ SELECT 'owned_shadow_database'::name $$");
+    await admin.query('ALTER ROLE frontend_migration SET search_path=frontend_shadow,pg_catalog,public');
+    const shadowed = await connect("frontend_apply", "frontend_migration");
+    assert.equal((await shadowed.query('SELECT current_database() AS database')).rows[0].database, 'owned_shadow_database');
+    await shadowed.end();
     phase = "fresh-cli"; const fresh = invoke("fresh"); const receipt = success("fresh-apply", fresh);
+    records.push("operator-search-path-cannot-shadow-real-catalog-or-redirect-application-ddl");
+    await admin.query('ALTER ROLE frontend_migration RESET search_path');
+    await shadowOwner.query('DROP SCHEMA frontend_shadow CASCADE');
+    await shadowOwner.end();
     phase = "noop-cli"; const current = structuredClone(job); current.target.approvedPendingTags = []; current.target.allowEmptyBootstrap = false;
     const noop = invoke("noop", current), noopReceipt = success("already-current", noop);
     const noopTerminal = JSON.parse(readFileSync(join(noop.output, "job-outcome.json"), "utf8"));
     assert.equal(noopReceipt.migrationMode, "verify-current-only"); assert.equal(noopReceipt.readOnlyVerified, true);
     assert.equal(noopTerminal.migrationMode, "verify-current-only"); assert.equal(noopTerminal.readOnlyVerified, true);
     assert.deepEqual(noopReceipt.applied, []); records.push("server-enforced-current-only-read-session");
+    phase = "profiled-current-readonly-cli";
+    const profiledCandidate = structuredClone(candidate), profiledJob = structuredClone(current);
+    profiledCandidate.version = 3; profiledJob.version = 2;
+    for (const value of [profiledCandidate, profiledCandidate.frontendMigration, profiledJob, profiledJob.target]) value.qualificationTargetProfile = currentProfile;
+    const profileObserver = await connect("frontend_apply", "frontend_migration");
+    assert.equal(profileObserver.connection.stream.encrypted, true); assert.equal(profileObserver.connection.stream.authorized, true);
+    const profileBefore = (await profileObserver.query("SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id")).rows;
+    const profileCall = invoke("profiled-current", profiledJob, profiledCandidate, { profiledCurrent: true });
+    const profileReceipt = success("profiled-current-readonly-cli-v2-receipts-and-physical-lineage", profileCall);
+    const profileTerminal = JSON.parse(readFileSync(join(profileCall.output, "job-outcome.json"), "utf8"));
+    for (const value of [profileReceipt, profileTerminal]) {
+      assert.equal(value.version, 2); assert.deepEqual(value.qualificationTargetProfile, currentProfile);
+      assert.equal(value.readOnlyVerified, true); assert.equal(value.migrationMode, "verify-current-only");
+    }
+    const profileStarted = JSON.parse(readFileSync(join(profileCall.output, "started.json"), "utf8"));
+    assert.equal(Object.hasOwn(profileStarted, "version"), false); assert.deepEqual(profileStarted.qualificationTargetProfile, currentProfile);
+    assert.deepEqual(profileReceipt.applied, []);
+    const profiledPending = structuredClone(profiledJob); profiledPending.target.approvedPendingTags = artifact.migrations.map(value => value.tag);
+    const blockedProfile = invoke("profiled-pending", profiledPending, profiledCandidate, { profiledCurrent: true });
+    assert.equal(blockedProfile.result.status, 1); assert.equal(blockedProfile.result.stdout, "");
+    assert.deepEqual(JSON.parse(blockedProfile.result.stderr).qualificationTargetProfile, currentProfile);
+    assert.equal(existsSync(join(blockedProfile.output, "started.json")), false);
+    assert.equal(existsSync(join(blockedProfile.output, "database-receipt.json")), false);
+    assert.deepEqual((await profileObserver.query("SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id")).rows, profileBefore);
+    assert.deepEqual(await readMigrationCatalog(profileObserver), baseline.catalog);
+    records.push("profiled-current-pending-sql-refused-before-intent");
+    await profileObserver.end();
     phase = "locked-frontend-continuation";
     const component = await import(pathToFileURL(join(app, "ops/platform/frontend-migration.mjs")).href);
     const competing = await connect("frontend_apply", "frontend_migration"), continuationRecords = [];
@@ -233,13 +283,86 @@ async function main() {
     assert.equal(reconciliation.status, 0, `Owned reconciliation route failed: ${reconciliation.stderr}`);
     const reconciliationRoute = JSON.parse(reconciliation.stdout);
     assert.equal(reconciliationRoute.status, "FRONTEND_RECONCILIATION_OWNED_PASS");
+    const runOwnedChild = (module, environment, expectedStatus) => {
+      const child = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs", module], {
+        cwd: source, encoding: "utf8", timeout: 120000,
+        env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, ...environment },
+      });
+      assert.equal(child.status, 0, `Owned child failed (${module}): ${child.stderr}`);
+      const result = JSON.parse(child.stdout);
+      assert.equal(result.status, expectedStatus);
+      return result;
+    };
+    phase = "frontend-interactive-owned-route";
+    const interactiveRoute = runOwnedChild("ops/platform/harness/owned-frontend-interactive-admission.mjs", {
+      FRONTEND_INTERACTIVE_OWNED_TEST: "true", OWNED_INTERACTIVE_PORT: String(port),
+      OWNED_INTERACTIVE_PASSWORD: password, OWNED_INTERACTIVE_MAJOR: String(major),
+    }, "FRONTEND_INTERACTIVE_OWNED_PASS");
+    phase = "frontend-worker-owned-route";
+    const workerRoutes = runOwnedChild("ops/platform/harness/owned-frontend-worker-admission.mjs", {
+      FRONTEND_WORKER_ADMISSION_OWNED_TEST: "true", OWNED_RECONCILIATION_PORT: String(port),
+      OWNED_RECONCILIATION_PASSWORD: password, OWNED_RECONCILIATION_MAJOR: String(major),
+    }, "FRONTEND_WORKER_ADMISSION_OWNED_PASS");
+    phase = "frontend-bootstrap-owned-probe";
+    const bootstrapProbe = runOwnedChild("ops/platform/harness/owned-frontend-bootstrap-probe.mjs", {
+      FRONTEND_BOOTSTRAP_PROBE_OWNED_TEST: "true", OWNED_RECONCILIATION_PORT: String(port),
+      OWNED_RECONCILIATION_PASSWORD: password, OWNED_RECONCILIATION_MAJOR: String(major),
+    }, "FRONTEND_BOOTSTRAP_PROBE_OWNED_PASS");
+    phase = "customer-identity-owned-database";
+    const customerIdentity = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
+      "--test", "--test-concurrency=1", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts", "src/lib/customer-auth/session-issuance.db.test.ts", "src/lib/customer-auth/receipts.db.test.ts"], {
+      cwd: source, encoding: "utf8", timeout: 120000,
+      env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
+        NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+        // Trigger-based fault injection requires the disposable fixture owner;
+        // actual route qualification below still uses the admitted DML role.
+        TEST_DATABASE_URL: `postgresql://frontend_test_admin:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
+    });
+    assert.equal(customerIdentity.status, 0, `Owned customer identity failed: ${customerIdentity.stderr}\n${customerIdentity.stdout}`);
+    const customerTests = Number(/^# tests (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
+    const customerPassed = Number(/^# pass (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
+    assert.ok(customerTests >= 17 && customerTests === customerPassed);
+    assert.match(customerIdentity.stdout, /^# fail 0$/mu);
+    assert.match(customerIdentity.stdout, /^# skipped 0$/mu);
+    const customerIdentityDatabase = { status: "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS", tests: customerTests, passed: customerPassed, failures: 0, skipped: 0 };
+    phase = "customer-lifecycle-owned-database";
+    const lifecycle = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
+      "--test", "--test-concurrency=1", "--test-reporter=tap", "src/lib/customer-lifecycle/store.db.test.ts", "src/lib/customer-lifecycle/faults.db.test.ts"], {
+      cwd: source, encoding: "utf8", timeout: 120000,
+      env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
+        FRONTEND_CUSTOMER_LIFECYCLE_OWNED_TEST: "true",
+        NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+        TEST_DATABASE_URL: `postgresql://frontend_test_admin:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
+    });
+    assert.equal(lifecycle.status, 0, `Owned customer lifecycle failed: ${lifecycle.stderr}\n${lifecycle.stdout}`);
+    const lifecycleTests = Number(/^# tests (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
+    const lifecyclePassed = Number(/^# pass (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
+    assert.ok(lifecycleTests >= 16 && lifecycleTests === lifecyclePassed);
+    assert.match(lifecycle.stdout, /^# fail 0$/mu);
+    assert.match(lifecycle.stdout, /^# skipped 0$/mu);
+    const customerLifecycleDatabase = { status: "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS", tests: lifecycleTests, passed: lifecyclePassed, failures: 0, skipped: 0 };
+    // This child resets its own identity rows and scans lifecycle deliveries.
+    // Run it after all other children and DB regressions, so no later worker
+    // can consume its synthetic commands and no DB regressions are repeated.
+    phase = "frontend-identity-admin-lifecycle-owned-routes";
+    const identityRoutes = runOwnedIdentityChild(runOwnedChild, {
+      port, password, major, sourceManifestSha256: frontendWriterInventory(source).sourceManifestSha256,
+    });
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
+      profiledCurrent:{schemaVersion:2,qualificationTargetProfile:currentProfile,readOnlyVerified:true,pendingSqlRefusedBeforeIntent:true,originalJournalAndSchemaUnchanged:true,trafficAuthorized:false,virginInstallAuthorityIssued:false},
       admissionChecks,
       historicalLoginChecks,
       writerRouteChecks,
       reconciliationRoute,
+      interactiveRoute,
+      workerRoutes,
+      bootstrapProbe,
+      customerIdentityDatabase,
+      customerLifecycleDatabase,
+      identityRoutes,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
-      sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
+      sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,
+      contractPhase:"p2",phase2ContractManifestSha256:artifact.phase2ContractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
     console.log(JSON.stringify(result));
   } finally {
@@ -249,7 +372,7 @@ async function main() {
   }
 }
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
-  fixtureDetail:phase === "frontend-reconciliation-owned-route" ? error.message : undefined,
+  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "frontend-bootstrap-owned-probe", "customer-identity-owned-database", "customer-lifecycle-owned-database", "frontend-identity-admin-lifecycle-owned-routes"].includes(phase) ? error.message : undefined,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
   fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});

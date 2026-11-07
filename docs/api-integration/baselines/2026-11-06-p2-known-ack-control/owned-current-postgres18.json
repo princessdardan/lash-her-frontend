@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "status": "P2_CERTIFICATION_CURRENT_OWNED_PASS",
+  "serverMajor": 18,
+  "frontendMigrations": 83,
+  "checks": [
+    "actual83-current-lineage-schema-prepared-roles-and-old-login-denial",
+    "actual-exclusive-global-and-random-lock-session-lifetime-and-fixed-native-epochs",
+    "initial-and-continuous-runtime-inbound-refusal-and-repair",
+    "initial-and-continuous-runtime-database-setting-refusal-and-repair",
+    "initial-and-continuous-runtime-public-shadow-schema-refusal-and-repair",
+    "actual-fixed-auth-preparation-open-close-epochs-only",
+    "actual-fixed-browser-pending-open-close-epochs-only",
+    "actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal",
+    "actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement",
+    "independent-fence-after-parent-session-loss-and-without-native-credential"
+  ],
+  "skipped": 0,
+  "actualTlsPostgres": true,
+  "noSqlReplay": true,
+  "providerTouched": false,
+  "actualHostDocker": false,
+  "browserQualified": false,
+  "nativeInvocationQualified": false,
+  "fixtureOnly": true
+}
+

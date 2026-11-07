@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "status": "OWNED_FIREFOX_RESPONSE_ORDERING_PASS",
+  "nodeVersion": "v24.18.0",
+  "playwrightVersion": "1.59.1",
+  "browserVersion": "148.0.2",
+  "sourceSha256": "d4d6f24b510ffa3ff2671f8dec8c96cce9d5a9d786815ed2c98147e20b6d3dcf",
+  "actualBrowser": true,
+  "loopbackOnly": true,
+  "handlerDelayControlled": true,
+  "requestEventBeforePayloadCapture": true,
+  "responseWaitPendingUntilHandlerReleased": true,
+  "sourceResponseWaiterUsed": true,
+  "payloadCapturedBeforeResponseAssertions": true,
+  "providerTouched": false,
+  "fullApplicationCaseQualified": false,
+  "historicalFailureTimingProved": false
+}

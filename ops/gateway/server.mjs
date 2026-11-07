@@ -6,6 +6,7 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import { admissionClass, readAdmission } from "./admission.mjs";
+import { createP2CertificationFault } from "./p2-certification-fault.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
@@ -15,6 +16,7 @@ const RESPONSE_HEADERS = new Set(["content-type", "retry-after"]);
 export function createGateway(input, options = {}) {
   const config = validateConfig(input);
   const verify = options.verify ?? createWorkloadVerifier(config);
+  const certification = (options.certificationFault ?? createP2CertificationFault)(config);
   const budgets = new MinuteBudget(options.limits ?? {
     preauth: 2400, webhook: 600, workload: 1200, service: 600,
   });
@@ -65,6 +67,9 @@ export function createGateway(input, options = {}) {
       if (req.headers.host !== config.publicHost || (req.socket.servername && req.socket.servername !== config.publicHost.split(":")[0])) return refuse(421, "invalid_host");
       const route = matchRoute(req.method, req.url);
       if (!route) return refuse(404, "route_not_allowed");
+      const service = route.service ?? "course";
+      const upstreamOrigin = service === "community" ? config.communityOrigin : config.courseOrigin;
+      if (!upstreamOrigin) return refuse(503, "upstream_unavailable");
       const retry = budgets.consume(route.auth === "webhook" ? "webhook" : "preauth");
       if (retry) return refuse(429, "rate_limit_exceeded", retry);
       if (route.auth !== "webhook") {
@@ -101,16 +106,18 @@ export function createGateway(input, options = {}) {
       }
       const body = Buffer.concat(chunks);
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
+      const fault = certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
+      if (certification.beforeUpstream(fault, res, () => refuse(503, "upstream_unavailable", 1))) return;
       const headers = { "x-request-id": requestId, "content-length": String(body.length) };
       for (const [name, value] of Object.entries(req.headers)) {
         if (REQUEST_HEADERS.has(name) && typeof value === "string") headers[name] = value;
       }
       if (route.auth !== "webhook") delete headers["mux-signature"];
       else delete headers.authorization;
-      const upstream = new URL(config.courseOrigin);
+      const upstream = new URL(upstreamOrigin);
       await new Promise((resolve) => {
         const call = httpsRequest(upstream, {
-          agent, method: req.method, path: req.url.slice("/course".length), headers,
+          agent, method: req.method, path: req.url.slice(service.length + 1), headers,
           timeout: 5000,
         }, (reply) => {
           const result = [];
@@ -122,6 +129,11 @@ export function createGateway(input, options = {}) {
           });
           reply.once("end", () => {
             if (res.destroyed) return resolve();
+            const buffered = Buffer.concat(result);
+            // The complete upstream ACK must be checked before any downstream
+            // status, headers or bytes. A deliberate drop retains uncertainty
+            // through the existing admitted-request close accounting.
+            if (certification.afterUpstream(fault, { status: reply.statusCode, body: buffered }, res)) return resolve();
             // Redirects must never expose internal locations or relay credentials.
             if ((reply.statusCode ?? 502) >= 300 && (reply.statusCode ?? 502) < 400) refuse(502, "upstream_redirect_refused");
             else {
@@ -129,7 +141,7 @@ export function createGateway(input, options = {}) {
                 if (RESPONSE_HEADERS.has(name) && typeof value === "string") res.setHeader(name, value);
               }
               res.writeHead(reply.statusCode ?? 502);
-              res.end(Buffer.concat(result));
+              res.end(buffered);
             }
             resolve();
           });

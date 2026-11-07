@@ -1,0 +1,19 @@
+{
+  "before": {
+    "src/lib/admin/auth.ts": "c99c11fbcc7b43a4cdf634d0110d9e62cd8c797848cbf908c4a994e1c2723c73",
+    "src/lib/admin/authorization-operation.ts": "281f265e7521fa6a72671e836234f6d149c4f43cf8309bdfdb158ee65405fb0f",
+    "src/proxy.ts": "f7f07517d8a2c47ec0ba0faa187c09d25c5187add9f00a77d9bd3589b305df68"
+  },
+  "after": {
+    "src/lib/admin/auth.ts": "0870d007fea14dfc30f1886e9484d6e36be4a23b89359aaae0a122e7d33e2a92",
+    "src/lib/admin/authorization-operation.ts": "dc5f614bb9a62912b818c48b273496a6dcb0abf6f85252a787267b5f8c2c8bcf",
+    "src/lib/admin/auth-actor-isolation.test.ts": "d4663e95a4d45721d560be6141536867cf626507a0c2e1527636a3f190c4aa55",
+    "src/lib/admin/authorization-operation.test.ts": "748dcdebe4e5c7c322f4a2f7a772dc9ee2ec0dc11d445c26c5a4aa8c8d553ba0",
+    "src/lib/admin/auth-provider-policy.test.ts": "c7d0271f28ad80f6ffa538e935b9d41840a80128f7cd5ec760334f3f7ad98063",
+    "src/proxy.ts": "f7f07517d8a2c47ec0ba0faa187c09d25c5187add9f00a77d9bd3589b305df68",
+    "package.json": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+    "package-lock.json": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+    "vendor/security/forks.json": "f9bcb1dc4deaa3d431c20eae2ea9dec6a64cbabecac509bb639cf7cf3b9da5f4"
+  },
+  "scenarioSha256": "a39ecc6985b0b3bdd84d99a21dea962ba8d5a7366661057d5b2ad0b814362ff9"
+}

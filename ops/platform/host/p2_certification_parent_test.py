@@ -1,0 +1,417 @@
+"""Actual POSIX scope/receipt tests. Docker/TLS runtime observation is separate."""
+import base64
+import copy
+import fcntl
+import json
+import os
+import re
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+import migrate
+import p2_release_scope_test as scope_fixture
+import p2_certification_parent as parent
+import p2_release_supervisor as supervisor
+from p2_source_closure import TYPES, REQUIRED, verify_source_closure
+
+
+PROFILED_CURRENT_SOURCE_ONLY = frozenset({
+    'ops/platform/host/p2_profiled_current_frontend.py',
+    'ops/platform/host/p2_profiled_current_frontend_test.py',
+    'ops/platform/host/p2_profiled_current_parent.py',
+    'ops/platform/host/p2_profiled_current_parent_test.py',
+    'ops/platform/host/p2_profiled_current_recovery.py',
+    'ops/platform/host/p2_profiled_current_recovery_test.py',
+    'ops/platform/host/p2_profiled_current_scope.py',
+    'ops/platform/host/p2_profiled_current_scope_test.py',
+    'ops/platform/p2-profiled-current-frontend-adapters.mjs',
+    'ops/platform/p2-profiled-current-frontend-adapters.test.mjs',
+    'ops/platform/p2-profiled-current-probe.mjs',
+    'ops/platform/p2-profiled-current-probe.test.mjs',
+    'ops/platform/p2-profiled-current-recovery-transport.mjs',
+    'ops/platform/p2-profiled-current-recovery-transport.test.mjs',
+    'ops/platform/p2-profiled-current-recovery.mjs',
+    'ops/platform/p2-profiled-current-recovery.test.mjs',
+    'ops/platform/p2-profiled-current-release.mjs',
+    'ops/platform/p2-profiled-current-release.test.mjs',
+    'ops/platform/p2-profiled-current-transport.mjs',
+    'ops/platform/p2-profiled-current-transport.test.mjs',
+})
+
+
+def tracked_source_fixture(source, destination, *, exclude=frozenset()):
+    """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
+    environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
+        'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull,'GIT_NO_REPLACE_OBJECTS':'1'}
+    result=subprocess.run(['git','-c','safe.directory='+str(source),'-C',str(source),'ls-files','-z','--','ops'],
+        capture_output=True,check=True,env=environment,timeout=10)
+    selected={name for name in result.stdout.decode('utf-8').split('\0') if name and Path(name).suffix in TYPES}
+    if not exclude.issubset(selected):
+        raise ValueError('OWNED_TRACKED_SOURCE_PROJECTION_REQUIRED')
+    names=sorted(selected-exclude)
+    for name in names:
+        path=Path(name)
+        if path.is_absolute() or '..' in path.parts or path.parts[0]!='ops' or (source/path).is_symlink():
+            raise ValueError('OWNED_TRACKED_SOURCE_PATH_REQUIRED')
+        target=destination/path;target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes((source/path).read_bytes());target.chmod(0o644)
+    return names
+
+
+def legacy_source_fixture(source, destination):
+    """Install only the v1 fixture tree; preserve the strict production bounds."""
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY)
+    if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
+        raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
+    return names
+
+
+class CertificationScopeTests(unittest.TestCase):
+    save=scope_fixture.P2ScopeTests.save
+    add_frontend=scope_fixture.P2ScopeTests.add_frontend
+    setUp=scope_fixture.P2ScopeTests.setUp
+    tearDown=scope_fixture.P2ScopeTests.tearDown
+
+    def certification(self,changes=None):
+        selected,jobs=migrate.make_plan(self.bundle)
+        job=jobs['frontend']['job']
+        target={key:job['target'][key] for key in ('host','port','database','user','serverMajor')}
+        plan={'certificationActionId':'bounded-certification','candidateSha256':'a'*64,'planSha256':'b'*64,'targetSha256':parent.frontend_target_sha256(job['target'])}
+        receipt={**self.receipt,'status':'P2_CERTIFICATION_DATABASE_CURRENT','certificationActionId':plan['certificationActionId'],'target':target,
+            'candidateSha256':plan['candidateSha256'],'planSha256':plan['planSha256'],'targetSha256':plan['targetSha256'],'sqlReplayed':False,'oldLoginsDenied':True,'oldRoleSessions':0}
+        if changes:receipt.update(changes)
+        return parent.P2CertificationScope(self.descriptor,self.path,lambda:None,receipt,'a'*64,release=selected,jobs=jobs,certification_plan=plan)
+
+    def test_actual_descriptor_contends_and_runtime_replacement_has_no_entry(self):
+        scope=self.certification()
+        code='import os,fcntl,sys;fd=os.open(sys.argv[1],os.O_RDWR);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)'
+        self.assertNotEqual(subprocess.run([sys.executable,'-I','-c',code,str(self.path)],capture_output=True).returncode,0)
+        self.assertEqual(scope.require_frontend(scope.release,scope.jobs['frontend'])['status'],'P2_CERTIFICATION_DATABASE_CURRENT')
+        with self.assertRaisesRegex(ValueError,'RUNTIME_REPLACEMENT_FORBIDDEN'):scope.initialize_runtime()
+        scope.revoke()
+        with self.assertRaisesRegex(ValueError,'SCOPE_CLOSED'):scope.verify()
+
+    def test_exact_current_receipt_contract_target_action_and_roles_required(self):
+        for change in ({'status':'DATABASE_VERIFIED'},{'phase2ContractManifestSha256':'sha256:'+'f'*64},{'certificationActionId':'other'},
+            {'candidateSha256':'f'*64},{'targetSha256':'f'*64},{'planSha256':'f'*64},{'oldRoleSessions':1},{'oldLoginsDenied':False},{'sqlReplayed':True}):
+            with self.subTest(change=tuple(change)):
+                with self.assertRaises(ValueError):self.certification(change)
+        scope=self.certification();self.path.rename(self.root/'old-lock');self.path.write_text('replacement');self.path.chmod(0o600)
+        with self.assertRaisesRegex(ValueError,'LOCK_IDENTITY_CHANGED'):scope.verify()
+
+
+class CertificationProtocolTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.directory=Path(self.temporary.name);self.directory.chmod(0o700)
+        self.broker=parent.P2CertificationBroker.__new__(parent.P2CertificationBroker)
+        self.broker.directory=self.directory
+        self.broker.check=lambda:None
+        self.broker.initial={'certificationActionId':'bounded-auth','certificationPlan':{'mode':'auth-preparation','initialEpoch':'7'},'browserPlan':{'sourceCommit':'a'*40},'sourceParentChallenge':'b'*64}
+        self.broker.external_armed=True;self.broker.authentication_issued=False
+        self.broker.known_ack_boundary=None;self.broker.known_ack_new_gateway_process=None;self.broker.known_ack_recorder=None
+        self.broker.observer=type('Physical',(),{'probe':lambda _,op:{'admission':{'epoch':'8','newWork':True,'recovery':False,'uncertain':0}}})()
+        self.gateway={'admission':{'newWork':True,'recovery':False,'uncertain':{'newWork':0,'recovery':0}}}
+        self.broker._gateway_current=lambda:self.gateway
+        self.broker._native_context=lambda:{};self.broker.vercel=object()
+        self.broker._observe_browser_origin=lambda:{'browserOrigin':parent.canonical_browser.ORIGIN}
+
+    def test_authentication_capability_requires_actual_arm_epoch_both_flags_and_native_off(self):
+        value={'bindingSha256':parent._sha(parent._canonical(self.broker.initial['browserPlan']))}
+        with patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':False}):
+            actual=self.broker.authentication_stage(value)
+            self.assertEqual({key:actual[key] for key in ('status','bindingSha256','certificationActionId')},{'status':'P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD','bindingSha256':value['bindingSha256'],'certificationActionId':'bounded-auth'})
+            self.assertEqual(actual['canonicalBrowserObservationSha256'],parent._sha(parent._canonical(actual['canonicalBrowserObservation'])))
+            self.assertEqual(json.loads((self.directory/'p2-canonical-browser-authentication.json').read_text()),actual['canonicalBrowserObservation'])
+            with self.assertRaises(ValueError):self.broker.authentication_stage(value)
+            for bad in ('unarmed','uncertain','wrong-plan','native-on'):
+                self.broker.authentication_issued=False;self.broker.external_armed=bad!='unarmed'
+                self.gateway['admission']['uncertain']['recovery']=1 if bad=='uncertain' else 0
+                request={'bindingSha256':'f'*64} if bad=='wrong-plan' else value
+                with self.subTest(bad=bad),patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':bad=='native-on'}):
+                    with self.assertRaises(ValueError):self.broker.authentication_stage(request)
+
+    def test_finish_requires_exact_p2_pair_and_exact_source_prepared_bytes_before_persistence(self):
+        broker=self.broker;broker.directory=self.directory;broker.selected={'contractPhase':'p2','phase2ContractManifestSha256':'sha256:'+'d'*64}
+        broker.prepared_terminal={**broker.selected,'status':'P2_BOUNDED_CERTIFICATION_CONTAINED'}
+        broker.closing_at=1;broker.finished=False
+        broker.released=type('Event',(),{'set':lambda _:None})()
+        for value in ({'status':'P2_BOUNDED_CERTIFICATION_CONTAINED'},{**broker.prepared_terminal,'phase2ContractManifestSha256':'sha256:'+'e'*64}):
+            with self.assertRaises(ValueError):broker.finish_certification({'certification':base64.b64encode(json.dumps(value).encode()).decode()})
+            self.assertFalse((self.directory/'p2-certification-verification.json').exists())
+        actual=broker.finish_certification({'certification':base64.b64encode(json.dumps(broker.prepared_terminal).encode()).decode()})
+        self.assertEqual(actual,broker.prepared_terminal);self.assertTrue((self.directory/'p2-certification-verification.json').is_file())
+
+    def test_independent_disable_uses_only_metadata_and_attempts_cleanup_after_observer_failure(self):
+        initial={'certificationActionId':'owned-disable','certificationPlan':{'nativePlan':{}},'candidate':{},'vercelToken':'private-test-only'}
+        armed={'plan':initial['certificationPlan']}
+        calls=[]
+        client=type('Client',(),{'request':lambda _,*args:calls.append(args)})()
+        with patch.object(parent.vercel,'Client',return_value=client),patch.object(parent.native,'observe_metadata',side_effect=[{'nativeEnabled':True},{'nativeEnabled':False}]),\
+            patch.object(parent,'_remove_private_probe') as probe,patch.object(parent,'_scrub_suspension_credentials') as suspension:
+            initial['certificationPlan']['nativePlan']['projectId']='prj_owned'
+            actual=parent.contain_certification_native(initial,armed,None)
+            self.assertEqual(actual,{'nativeDisabled':True,'nativeDisableAttempted':True});self.assertEqual(calls,[('PATCH','/v1/projects/prj_owned/crons',{'enabled':False})]);probe.assert_called_once();suspension.assert_called_once()
+        with patch.object(parent.vercel,'Client',side_effect=ValueError('PRIVATE')),patch.object(parent,'_remove_private_probe') as probe,patch.object(parent,'_scrub_suspension_credentials') as suspension:
+            self.assertEqual(parent.contain_certification_native(initial,armed,None),{'nativeDisabled':None,'nativeDisableAttempted':False});probe.assert_called_once();suspension.assert_called_once()
+
+    def test_cached_source_companion_is_readonly_and_replacement_refuses(self):
+        with patch.object(parent,'_core',b'// fixed test source\n'):
+            path=parent._cache_core(self.directory);self.assertEqual(path.stat().st_mode&0o777,0o444)
+            path.chmod(0o600);path.write_text('// changed\n')
+            with self.assertRaises(ValueError):parent._cache_core(self.directory)
+
+    def test_surviving_broker_waits_for_toggle_quiescence_before_independent_disable(self):
+        broker=self.broker;broker.failed=threading.Event();broker.guard_alive=False;broker.native_mutex=threading.Lock()
+        broker.outcome={};broker.armed_probe={};broker.source=self.directory;events=[];entered=threading.Event();release=threading.Event()
+        def toggle():
+            with broker.native_mutex:events.append('toggle-start');entered.set();release.wait(2);events.append('toggle-end')
+        worker=threading.Thread(target=toggle);worker.start();self.assertTrue(entered.wait(1))
+        def failed(_):broker.failed.set()
+        def disable(*_):
+            self.assertTrue(broker.failed.is_set());events.append('disable');return {'nativeDisabled':True,'nativeDisableAttempted':True}
+        with patch.object(parent.Broker,'abort',failed),patch.object(parent,'contain_certification_native',side_effect=disable),\
+            patch('p2_release_supervisor.cleanup_recovery_current_containers'):
+            aborted=threading.Thread(target=broker.abort);aborted.start();time.sleep(0.02);self.assertNotIn('disable',events);release.set()
+            worker.join(2);aborted.join(2);self.assertFalse(aborted.is_alive())
+        self.assertEqual(events,['toggle-start','toggle-end','disable']);self.assertTrue(broker.outcome['nativeDisabled'])
+
+    def test_surviving_broker_cleanup_uses_independent_fixed_namespace_after_scope_revocation(self):
+        owned=CertificationScopeTests();owned.setUp();self.addCleanup(owned.tearDown);scope=owned.certification()
+        broker=self.broker;broker.failed=threading.Event();broker.guard_alive=False;broker.native_mutex=threading.Lock()
+        broker.outcome={};broker.armed_probe={};broker.source=self.directory;broker.scope=scope
+        names={'a'*12:'/lash-p2-certification-observer-'+'1'*32,'b'*12:'/lash-p2-certification-observer-foreign'}
+        def failed(_):broker.failed.set();scope.revoke()
+        def command(args,*_):
+            with self.assertRaisesRegex(ValueError,'SCOPE_CLOSED'):scope.verify()
+            if args[:3]==['docker','rm','--force']:names.pop(args[-1]);return ''
+            pattern=next(value[5:] for value in args if value.startswith('name='))
+            return '\n'.join(identity for identity,name in names.items() if re.fullmatch(pattern,name))
+        with patch.object(parent.Broker,'abort',failed),patch.object(parent,'contain_certification_native',return_value={'nativeDisabled':True,'nativeDisableAttempted':True}),\
+                patch.object(supervisor.runtime,'command',side_effect=command):broker.abort()
+        self.assertEqual(set(names),{'b'*12});self.assertNotIn('recoveryCurrentContainerCleanupUncertain',broker.outcome)
+
+    def test_continuous_boundary_requires_full_features_writer_and_source_selected_native_state(self):
+        broker=self.broker;broker.native_mutex=threading.Lock();broker.native_expected=False
+        broker.scope=type('Scope',(),{'require_frontend':lambda *args:None,'require_configuration':lambda *args:None})()
+        broker.selected={};broker.jobs={'frontend':{}};broker.configuration=self.directory;broker.runtime_current=[];broker.process_snapshot=[]
+        broker._runtime_processes=lambda:[];broker.last_api_verified=time.monotonic();broker.last_boundary=0
+        for mode in ('auth-preparation','browser-pending','direct-worker','native-window','fault-drop-after-ack'):
+            broker.initial['certificationPlan']['mode']=mode
+            with self.subTest(mode=mode),patch.object(parent.runtime,'check_containers',return_value=[]):
+                full=unittest.mock.Mock(return_value={'nativeEnabled':False});broker._native_observe=full
+                broker._verify_boundary();full.assert_called_once();self.assertGreater(broker.last_boundary,0)
+                broker._native_observe=lambda:{'nativeEnabled':True}
+                with self.assertRaisesRegex(ValueError,'NATIVE_STATE_DRIFT'):broker._verify_boundary()
+                broker._native_observe=unittest.mock.Mock(side_effect=ValueError('PROTECTED_BINDING_DRIFT'))
+                with self.assertRaisesRegex(ValueError,'PROTECTED_BINDING_DRIFT'):broker._verify_boundary()
+        broker.initial['certificationPlan']['mode']='contain-native';broker._native_observe=unittest.mock.Mock(side_effect=AssertionError('expired private probe used'))
+        with patch.object(parent.runtime,'check_containers',return_value=[]),patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':True}) as metadata:
+            broker._verify_boundary();metadata.assert_called_once();broker._native_observe.assert_not_called()
+
+    def test_direct_worker_stage_dispatch_is_armed_mode_bound_and_retains_exact_source_bytes(self):
+        broker=self.broker;broker.initial['certificationPlan'].update(mode='direct-worker',workerPlanSha256='c'*64)
+        stage=unittest.mock.Mock();stage.retain_joined_from_source_parent.return_value={'privateRecordSha256':'d'*64}
+        broker.worker_stage=stage
+        self.assertEqual(broker.worker_operation('worker-ready',{}),{'bindingSha256':'c'*64});stage.verify.assert_called_once()
+        for operation,method,key,private in [('worker-credential','preflight_credential','secret','owned-only-private'),
+            ('worker-invoke','invoke_direct','secret','owned-only-private'),('worker-witness','observe_lifecycle_witness','runtimeUrl','owned-only-url')]:
+            broker.worker_operation(operation,{key:private});getattr(stage,method).assert_called_once_with(private)
+        raw=b'{"status":"source-owned-worker-record"}\n';record=json.loads(raw)
+        for source,selected in [(base64.b64encode(raw).decode(),{'status':'changed'}),('not-base64',record)]:
+            with self.assertRaises(ValueError):broker.worker_operation('worker-retain',{'sourceArtifact':source,'record':selected})
+        stage.retain_joined_from_source_parent.assert_not_called()
+        actual=broker.worker_operation('worker-retain',{'sourceArtifact':base64.b64encode(raw).decode(),'record':record})
+        self.assertEqual(actual,{'privateRecordSha256':'d'*64});stage.retain_joined_from_source_parent.assert_called_once_with(record)
+        self.assertEqual(broker.worker_source_sha256,parent._sha(raw))
+        for armed,mode in [(False,'direct-worker'),(True,'native-window')]:
+            broker.external_armed=armed;broker.initial['certificationPlan']['mode']=mode
+            with self.assertRaisesRegex(ValueError,'SOURCE_WORKER_STAGE_REQUIRED'):broker.worker_operation('worker-invoke',{'secret':'unused'})
+        self.assertEqual(stage.invoke_direct.call_count,1)
+
+    def test_direct_worker_terminal_requires_exact_local_source_and_machine_receipts_then_fresh_closed_read(self):
+        broker=self.broker;broker.initial['certificationPlan'].update(mode='direct-worker',workerPlanSha256='c'*64)
+        broker.worker_stage=unittest.mock.Mock();broker.worker_retained={'privateRecordSha256':'d'*64};broker.worker_source_sha256='e'*64
+        valid={'version':1,'status':'P2_CERTIFICATION_DIRECT_WORKER_JOINED','workerPlanSha256':'c'*64,
+            'workerSourceArtifactSha256':'e'*64,'workerMachineArtifactSha256':'d'*64}
+        for change in ({'workerPlanSha256':'f'*64},{'workerSourceArtifactSha256':'f'*64},{'workerMachineArtifactSha256':'f'*64},
+            {'status':'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED'},{'callerCompleted':True}):
+            with self.subTest(change=tuple(change)):
+                with self.assertRaisesRegex(ValueError,'SOURCE_WORKER_JOIN_REQUIRED'):broker._require_worker_outcome({**valid,**change})
+        broker.worker_stage.final_closed_readback.assert_not_called()
+        broker._require_worker_outcome(valid);broker.worker_stage.final_closed_readback.assert_called_once()
+        broker.worker_stage.final_closed_readback.side_effect=ValueError('CURRENT_BOUNDARY_DRIFT')
+        with self.assertRaisesRegex(ValueError,'CURRENT_BOUNDARY_DRIFT'):broker._require_worker_outcome(valid)
+
+
+    def test_canonical_alias_provider_and_four_argument_probe_retain_scope_checks(self):
+        broker=self.broker;events=[]
+        broker.check=lambda:events.append('scope')
+        broker.initial['browserPlan']['browserOrigin']=parent.canonical_browser.ORIGIN
+        broker.vercel=type('Provider',(),{'request':lambda _,method,path,body=None:events.append('provider') or {}})()
+        class Probe:
+            def request(self,origin,secret,bypass,challenge):events.append('probe');return {}
+        def observed(context,client,probe):
+            client.request('GET','/fixed-provider');probe.request(parent.canonical_browser.ORIGIN,'owned-secret','owned-bypass','a'*64)
+            return {'browserOrigin':parent.canonical_browser.ORIGIN}
+        with patch.object(parent.canonical_browser,'observe',side_effect=observed),patch.object(parent.canonical_browser,'CanonicalBrowserProbeClient',return_value=Probe()):
+            actual=parent.P2CertificationBroker._observe_browser_origin(broker)
+        self.assertEqual(actual,{'browserOrigin':parent.canonical_browser.ORIGIN})
+        self.assertEqual(events,['scope','provider','scope','scope','probe','scope'])
+        broker._native_observe=lambda:{'nativeEnabled':False};broker.native_mutex=threading.Lock();broker.native_expected=False
+        broker._observe_browser_origin=lambda:(_ for _ in ()).throw(ValueError('CANONICAL_ALIAS_DRIFT'))
+        broker.scope=type('Scope',(),{'require_frontend':lambda *args:None,'require_configuration':lambda *args:None})()
+        broker.selected={};broker.jobs={'frontend':{}};broker.configuration=self.directory;broker.runtime_current=[];broker.process_snapshot=[];broker._runtime_processes=lambda:[]
+        broker.last_api_verified=time.monotonic()
+        with patch.object(parent.runtime,'check_containers',return_value=[]):
+            with self.assertRaisesRegex(ValueError,'CANONICAL_ALIAS_DRIFT'):broker._verify_boundary()
+
+
+ENTRY_PROGRAM=r'''
+import hashlib,importlib,io,json,runpy,sys,types
+from pathlib import Path
+from unittest.mock import patch
+root=Path(sys.argv[1]);mode=sys.argv[2];flavor=sys.argv[3]
+sys.path.insert(0,str(root/'ops/platform/host'))
+import p2_release_supervisor as guard
+import release,migrate,vercel,frontend_probe,p2_source_closure
+report={'mode':mode,'hostOrProviderCalls':[],'sourceClosureCalls':0,'dispatchCalled':False}
+def forbidden(*args,**kwargs):
+    report['hostOrProviderCalls'].append('forbidden-boundary')
+    raise AssertionError('OWNED_ENTRY_CROSSED_SAFE_BOUNDARY')
+release.command=forbidden;release.assert_host=forbidden;migrate.make_plan=forbidden
+vercel.Client=forbidden;frontend_probe.verify=forbidden;guard.os.fork=forbidden
+verify_closure=p2_source_closure.verify_source_closure
+def actual_closure(*args):
+    report['sourceClosureCalls']+=1
+    return verify_closure(*args)
+p2_source_closure.verify_source_closure=actual_closure
+foreign=None
+if flavor!='normal':
+    foreign=types.ModuleType('p2_certification_parent')
+    if flavor=='foreign-same-file':foreign.__file__=str(root/'ops/platform/host/p2_certification_parent.py')
+    sys.modules['p2_certification_parent']=foreign
+extensions={'.py','.mjs','.json','.yaml','.yml','.service','.timer','.sh','.guard'}
+manifest={} if foreign else {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
+    for p in (root/'ops').rglob('*') if p.is_file() and p.suffix in extensions and '__pycache__' not in p.parts}
+initial={'mode':'p2-bounded-certification','environment':'staging','certificationActionId':'owned-entry',
+ 'sourceCommit':'a'*40,'candidate':{'releaseId':'owned-release'},'sourceSha256':manifest,
+ 'sourceClosureSha256':hashlib.sha256(json.dumps(sorted(manifest.items()),separators=(',',':')).encode()).hexdigest(),
+ 'certificationPlan':{'mode':mode}}
+actual_supervise=guard.supervise
+def observe(value,**options):
+    report['dispatchCalled']=True
+    canonical=importlib.import_module('p2_certification_parent')
+    cls=options['broker_type'];observer=options['observer_type'];callback=options['native_containment']
+    report.update(brokerModule=cls.__module__,canonicalBrokerSame=cls is canonical.P2CertificationBroker,
+      canonicalObserverSame=observer is canonical.P2CertificationPhysicalObserver,
+      canonicalContainmentSame=callback is canonical.contain_certification_native,
+      sameModuleRegistrationIdempotent=importlib.import_module('p2_certification_parent') is canonical,
+      mainOwnsCanonicalModule=sys.modules['__main__'] is canonical,realEntryCallbackName=callback.__name__)
+    if mode=='known-ack-recovery':
+      from p2_known_ack_loss import P2KnownAckLossRecorder,digest,canonical as encode
+      from p2_certification_fault import P2CertificationFaultStage
+      from p2_release_scope import P2ReleaseScope
+      # Actual source classes, deliberately invalid next fault policy and no
+      # live scope. This probe must reject before I/O and issue no authority.
+      broker=cls.__new__(cls);broker.scope=P2ReleaseScope.__new__(P2ReleaseScope)
+      broker.fault_stage=P2CertificationFaultStage.__new__(P2CertificationFaultStage)
+      broker.fault_stage.scope=broker.scope;broker.fault_stage.arm_called=False
+      broker.fault_stage.plan={'mode':'before-upstream'}
+      broker.external_armed=True;broker.native_enable_attempted=False;broker.selected={'releaseId':'owned-release'}
+      broker.initial={'certificationActionId':'owned-entry','nativePlan':{'planSha256':'a'*64,'commandWitnesses':[]},
+        'certificationPlan':{'mode':mode,'knownAckRecovery':{'version':1,'recoveryActionId':'owned-recovery',
+          'intent':{},'intentSha256':digest(encode({}))}}}
+      try:P2KnownAckLossRecorder(broker,'owned-recovery',{})
+      except ValueError as error:report['knownRecorderCheckpoint']=str(error)
+      else:raise AssertionError('INVALID_FAULT_POLICY_WAS_ACCEPTED')
+    try:
+      # The real shared dispatcher and its actual callbacks remain unchanged.
+      # This intentional nonroot guard prevents host/platform/process work.
+      with patch.object(guard.os,'geteuid',return_value=1):actual_supervise(value,**options)
+    except ValueError as error:
+      report['dispatchCheckpoint']=str(error)
+      raise
+guard.supervise=observe
+sys.stdin=io.TextIOWrapper(io.BytesIO((json.dumps(initial)+'\n').encode()))
+sys.argv=[str(root/'ops/platform/host/p2_certification_parent.py'),'--supervisor']
+try:runpy.run_path(sys.argv[0],run_name='__main__')
+except SystemExit as error:report['entryExit']=error.code
+except ValueError as error:report['entryRefusal']=str(error)
+if foreign is not None:report['foreignCanonicalPreserved']=sys.modules.get('p2_certification_parent') is foreign
+print(json.dumps(report))
+'''
+
+
+class ActualCertificationEntryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        temporary=tempfile.TemporaryDirectory();cls.addClassCleanup(temporary.cleanup)
+        cls.source=Path(temporary.name).resolve()
+        cls.source_names=legacy_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source)
+
+    def entry(self,mode,flavor='normal'):
+        root=self.source
+        result=subprocess.run([sys.executable,'-I','-B','-c',ENTRY_PROGRAM,str(root),mode,flavor],capture_output=True,text=True,timeout=20,
+            env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C'})
+        self.assertEqual(result.returncode,0);value=json.loads(result.stdout)
+        self.assertEqual(value['hostOrProviderCalls'],[])
+        self.assertEqual(result.stderr.strip(),'P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW' if flavor=='normal' else '')
+        return value
+
+    def test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard(self):
+        for mode in ('auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'):
+            with self.subTest(mode=mode):
+                value=self.entry(mode)
+                self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                for key in ('canonicalBrokerSame','canonicalObserverSame','canonicalContainmentSame','sameModuleRegistrationIdempotent','mainOwnsCanonicalModule'):
+                    self.assertTrue(value[key])
+                self.assertEqual(value['realEntryCallbackName'],'contain_certification_native')
+                self.assertEqual(value['dispatchCheckpoint'],'P2_LINUX_ROOT_GUARD_REQUIRED');self.assertEqual(value['entryExit'],1)
+                if mode=='known-ack-recovery':self.assertEqual(value['knownRecorderCheckpoint'],'P2_KNOWN_ACK_ONE_SAME_SOURCE_SUSPENSION_REQUIRED')
+
+    def test_foreign_canonical_module_is_refused_without_replacement_before_source_cache_or_dispatch(self):
+        for flavor in ('foreign','foreign-same-file'):
+            with self.subTest(flavor=flavor):
+                value=self.entry('known-ack-recovery',flavor)
+                self.assertEqual(value['entryRefusal'],'P2_CERTIFICATION_CANONICAL_MODULE_REFUSED')
+                self.assertTrue(value['foreignCanonicalPreserved']);self.assertEqual(value['sourceClosureCalls'],0)
+                self.assertFalse(value['dispatchCalled'])
+
+    def test_tracked_copy_excludes_dependency_private_and_generated_files_without_weakening_closure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'checkout';source.mkdir();installed=root/'installed';installed.mkdir()
+            for name in REQUIRED:
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'owned tracked source')
+            environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
+                'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull}
+            for command in (['git','init','--quiet',str(source)],['git','-C',str(source),'add','--','ops']):
+                subprocess.run(command,check=True,capture_output=True,env=environment,timeout=10)
+            excluded=('ops/gateway/node_modules/jose/package.json','ops/gateway/node_modules/.package-lock.json',
+                'ops/platform/private/retained.json','ops/platform/generated-untracked.json')
+            for name in excluded:
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'owned untracked input')
+            names=tracked_source_fixture(source,installed)
+            self.assertEqual(set(names),REQUIRED)
+            for name in excluded:self.assertFalse((installed/name).exists())
+            manifest={name:parent._sha((installed/name).read_bytes()) for name in names}
+            initial={'sourceSha256':manifest,'sourceClosureSha256':parent._sha(json.dumps(sorted(manifest.items()),separators=(',',':')).encode())}
+            self.assertEqual(verify_source_closure(initial,installed),initial['sourceClosureSha256'])
+            extra=installed/excluded[0];extra.parent.mkdir(parents=True,exist_ok=True);extra.write_bytes(b'owned installed extra')
+            with self.assertRaisesRegex(ValueError,'P2_SOURCE_CLOSURE_INCOMPLETE'):verify_source_closure(initial,installed)
+
+    def test_git_inventory_failure_has_no_filesystem_fallback(self):
+        source=Path(parent.__file__).resolve().parents[3]
+        with tempfile.TemporaryDirectory() as temporary,patch('subprocess.run',side_effect=subprocess.CalledProcessError(1,['git'])) as command:
+            destination=Path(temporary)
+            with self.assertRaises(subprocess.CalledProcessError):tracked_source_fixture(source,destination)
+            self.assertEqual(list(destination.iterdir()),[])
+            self.assertEqual(command.call_args.args[0],['git','-c','safe.directory='+str(source),'-C',str(source),'ls-files','-z','--','ops'])
+
+
+if __name__=='__main__':unittest.main()

@@ -1,3 +1,4 @@
+import { runWriterAdmissionWithParent } from "@/lib/writer-admission/action";
 import "server-only";
 
 import { sendBookingConfirmationEmailForOrder } from "@/lib/booking/email";
@@ -39,7 +40,7 @@ const defaultDependencies: TransactionalEmailRetryDependencies = {
   sendTrainingPaymentNotificationEmailsIfNeeded,
 };
 
-export async function retryTransactionalEmail(
+async function retryTransactionalEmailWork(
   input: RetryTransactionalEmailInput,
   dependencies: TransactionalEmailRetryDependencies = defaultDependencies,
 ): Promise<RetryTransactionalEmailResult> {
@@ -55,7 +56,11 @@ export async function retryTransactionalEmail(
       return { flow: input.flow, orderId, status: "processed" };
 
     case "training":
-      return retryTrainingPaymentNotificationEmail({ dependencies, orderId, origin: input.origin });
+      return retryTrainingPaymentNotificationEmail({
+        dependencies,
+        orderId,
+        origin: input.origin,
+      });
   }
 }
 
@@ -64,7 +69,10 @@ async function retryTrainingPaymentNotificationEmail(input: {
   orderId: string;
   origin: string;
 }): Promise<RetryTransactionalEmailResult> {
-  const enrollment = await input.dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(input.orderId);
+  const enrollment =
+    await input.dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
+      input.orderId,
+    );
 
   if (enrollment === null) {
     return { flow: "training", orderId: input.orderId, status: "skipped" };
@@ -76,7 +84,10 @@ async function retryTrainingPaymentNotificationEmail(input: {
     throw new Error("Training program slug is missing");
   }
 
-  const schedulingToken = await input.dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(input.orderId);
+  const schedulingToken =
+    await input.dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(
+      input.orderId,
+    );
 
   if (schedulingToken === null) {
     throw new Error("Training scheduling token could not be issued");
@@ -85,13 +96,21 @@ async function retryTrainingPaymentNotificationEmail(input: {
   await input.dependencies.sendTrainingPaymentNotificationEmailsIfNeeded({
     enrollment,
     paymentProvider: enrollment.checkoutOrder.paymentProvider,
-    schedulingUrl: buildAbsoluteSchedulingUrl(input.origin, programSlug, schedulingToken.schedulingToken),
+    schedulingUrl: buildAbsoluteSchedulingUrl(
+      input.origin,
+      programSlug,
+      schedulingToken.schedulingToken,
+    ),
   });
 
   return { flow: "training", orderId: input.orderId, status: "processed" };
 }
 
-function buildAbsoluteSchedulingUrl(origin: string, programSlug: string, schedulingToken: string): string {
+function buildAbsoluteSchedulingUrl(
+  origin: string,
+  programSlug: string,
+  schedulingToken: string,
+): string {
   return new URL(
     buildTrainingScheduleUrl({
       programSlug,
@@ -109,4 +128,12 @@ function normalizeOrderId(orderId: string): string {
   }
 
   return trimmed;
+}
+
+export async function retryTransactionalEmail(
+  ...args: Parameters<typeof retryTransactionalEmailWork>
+) {
+  return runWriterAdmissionWithParent("recovery", () =>
+    retryTransactionalEmailWork(...args),
+  );
 }

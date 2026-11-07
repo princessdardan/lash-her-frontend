@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "status": "PAIRED_TEMP_ROOT_CORRECTION_SOURCE_QUALIFIED_LINUX_PENDING",
+  "originalSource": "96df28f3eedffa5607637f4f2fa3b48f9489c3f1",
+  "helperCommit": "070eb31ca11cb283fa2db199fe2f720289048ab4",
+  "adapterCommit": "b75da9f39fc507b93e5e32b2e5dfd09af166e495",
+  "rootIntegratedHead": "5ae68a6c",
+  "rootChecks": {
+    "nodePassed": 50,
+    "skipped": 0,
+    "lintPassed": true
+  },
+  "independentReview": {
+    "helperNodePassed": 8,
+    "adapterNodePassed": 39,
+    "actionableFindings": 0
+  },
+  "bounds": {
+    "tmpfsMiB": 512,
+    "numberOfTmpfsMountsChanged": false,
+    "cOnlyMountFrom": "/tmp",
+    "cOnlyMountTo": "/var/tmp",
+    "fixedContainerTmpdir": "/var/tmp",
+    "childTmpdir": "only newly created canonical owned folder",
+    "otherFourDescriptorsChanged": false,
+    "sourceReadonlyChanged": false,
+    "receiverGuardChanged": false,
+    "providerTouched": false,
+    "actualDockerClaimed": false
+  },
+  "localPositive": {
+    "platform": "macOS owned PostgreSQL18",
+    "seconds": 142.5,
+    "migrations": [
+      83,
+      22,
+      11
+    ],
+    "stderrBytes": 0
+  },
+  "fullLinuxResult": "PENDING actual paired rerun",
+  "files": [
+    {
+      "file": "qualification.json",
+      "bytes": 2920,
+      "sha256": "5cc8279cf895260be9db297940c4583c15b7358cf3c3d813256ef4aac042e226"
+    },
+    {
+      "file": "pg18-positive.json",
+      "bytes": 22251,
+      "sha256": "40a4146fe33c688d772f2acd0b1e3be3486eae76cdc16ce03c3edc03dc43573e"
+    },
+    {
+      "file": "original-guard-reproduction.json",
+      "bytes": 449,
+      "sha256": "2d9a68b23aeeb01512957058d4b0bd14e774e15ffc9d0f84290e08a55e7f4b9f"
+    },
+    {
+      "file": "root-node50.log",
+      "bytes": 5874,
+      "sha256": "035d86bc806ca48d5496873e0ef88f96d7132da921c55cab2a3480fc3601981e"
+    }
+  ],
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

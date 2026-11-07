@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "source": "138d01187160d18167376bd2ae8b396423b89284",
+  "runId": 42214656961,
+  "terminalSnapshot": true,
+  "jobs": [
+    {
+      "id": 127881543288,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 127881543527,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127881543552,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 127881543555,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127881543584,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127881543594,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 127881543633,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127881543735,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 127881543790,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 127884980132,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  ],
+  "buildAndWebkitObservedProviderCode": "plan_limit_reached",
+  "sanityBindingAtFailure": "3auncj84/staging-2026-05-10",
+  "forwardFinalPhase": "forward-shared-vercel-observation",
+  "earlierCapturedNodeRefusalWasExpected": true,
+  "actualForwardCauseResolved": false,
+  "releaseAccepted": false
+}

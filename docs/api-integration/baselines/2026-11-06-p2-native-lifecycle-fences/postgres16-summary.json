@@ -1,0 +1,25 @@
+{
+  "status": "P2_LIFECYCLE_NATIVE_OWNED_PASS",
+  "postgresMajor": 16,
+  "migrations": 83,
+  "executedChecks": 9,
+  "checks": [
+    "actual-physical-release-lock-contention",
+    "actual-delayed-after-disable-request-is-fenced-after-closure-with-no-new-ledger-row-or-trace",
+    "actual-postgres-barrier-update-interleaving-acknowledgements-refuse-before-native-enable",
+    "actual-exported-cron-full-runtime-admission-context-and-opaque-trace",
+    "actual-nonempty-and-empty-http-cron-invocations",
+    "actual-course-community-https-service-jwt-idempotency-and-ordered-command-effects",
+    "actual-event-uuid-source-producer-epoch-role-joins-completed-ledger",
+    "actual-source-admission-closure-and-global-active-uncertain-zero",
+    "private-credentials-not-in-common-evidence"
+  ],
+  "skipped": 0,
+  "actualTlsPostgres": true,
+  "actualTlsReceivers": true,
+  "actualAppCron": true,
+  "actualRuntimeTrace": true,
+  "actualProvider": false,
+  "modeledProviderNativeClassification": true,
+  "sourceModuleSha256": "ebe63f6d6a930898f94ed8895934de21fae9ab7088b11a99c34d031e9f3a3b18"
+}

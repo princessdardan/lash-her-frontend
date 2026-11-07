@@ -14,6 +14,21 @@ test("manual dispatch accepts unprotected repositories, records actual protectio
   assert.equal(proof.sources.community.sourceProtection, "operator-dispatch-and-ci");
   assert.equal(proof.sourceApproval.mode, "single-operator-dispatch");
   assert.equal(proof.sources.frontend.ciAttempt, 1);
+  assert.equal(proof.version, 4);
+  assert.equal(proof.contractPhase, "p2");
+  assert.equal(proof.phase2ContractManifestSha256, f.context.phase2ContractManifestSha256);
+});
+
+test("new source proofs require the P2 hash and every API contract revision before provider access", async () => {
+  for (const change of [
+    context => { delete context.phase2ContractManifestSha256; },
+    context => { context.phase2ContractManifestSha256 = `sha256:${"0".repeat(64)}`; },
+    context => { delete context.contractPhase; },
+    ...["course", "community", "enrollmentEvent"].map(name => context => { context.phase2ContractRevisions[name] = "b".repeat(40); }),
+  ]) {
+    const f = sourceFixture(); change(f.context);
+    await assert.rejects(verifyReleaseInputs(f.options)); assert.equal(f.calls.length, 0);
+  }
 });
 
 test("non-operator, fork, PR and substituted frontend refuse before provider access", async () => {

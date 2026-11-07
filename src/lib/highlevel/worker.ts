@@ -6,6 +6,41 @@ import { crmMarketingEnabled, locationId, crmSyncEnabled } from "./config";
 import { HighLevelError } from "./contract";
 import { claimJobs, finishJob, type CrmContact } from "./store";
 import { stopJourneys, syncJob } from "./sync";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
+import {
+  runWriterAdmission,
+  type WriterAdmissionRunner,
+} from "@/lib/writer-admission/runtime";
+
+export interface HighLevelWorkerDependencies {
+  syncEnabled: typeof crmSyncEnabled;
+  marketingEnabled: typeof crmMarketingEnabled;
+  hasLocation: () => boolean;
+  listActiveContacts: () => Promise<CrmContact[]>;
+  stopJourneys: typeof stopJourneys;
+  claimJobs: typeof claimJobs;
+  syncJob: typeof syncJob;
+  finishJob: typeof finishJob;
+  now: () => number;
+}
+
+const processJobs = createHighLevelWorker({
+  syncEnabled: crmSyncEnabled,
+  marketingEnabled: crmMarketingEnabled,
+  hasLocation: () => Boolean(process.env.HIGHLEVEL_LOCATION_ID),
+  listActiveContacts: async () =>
+    (
+      await getPrivateDb().execute<CrmContact>(
+        sql`select c.* from highlevel_contacts c where c.location_id = ${locationId()} and c.deleted_at is null and exists(select 1 from highlevel_effects e where e.contact_id = c.id and e.kind = 'workflow' and e.state <> 'cancelled') limit 10`,
+      )
+    ).rows,
+  stopJourneys,
+  claimJobs,
+  syncJob,
+  finishJob,
+  now: Date.now,
+});
 
 let activeRun: ReturnType<typeof processHighLevelJobs> | undefined;
 
@@ -13,15 +48,22 @@ export function runHighLevelWorker() {
   // Fluid/serverless instances may receive overlapping cron invocations. Share
   // the local run so transaction-held effect locks cannot exhaust its DB pool.
   if (!activeRun)
-    activeRun = processHighLevelJobs().finally(() => {
+    activeRun = processJobs().finally(() => {
       activeRun = undefined;
     });
   return activeRun;
 }
 
-async function processHighLevelJobs() {
+export function createHighLevelWorker(
+  dependencies: HighLevelWorkerDependencies,
+  run: WriterAdmissionRunner = runWriterAdmission,
+) {
+  return () => run("recovery", () => processHighLevelJobs(dependencies));
+}
+
+async function processHighLevelJobs(dependencies: HighLevelWorkerDependencies) {
   const summary = {
-    enabled: crmSyncEnabled(),
+    enabled: dependencies.syncEnabled(),
     processed: 0,
     succeeded: 0,
     skipped: 0,
@@ -31,23 +73,28 @@ async function processHighLevelJobs() {
   };
   // Marketing pause is independent of CRM sync. Cancel known admissions even
   // when new CRM jobs are paused; a provider outage is surfaced as a failed cron.
-  if (process.env.HIGHLEVEL_LOCATION_ID && !crmMarketingEnabled()) {
-    const active = await getPrivateDb().execute<CrmContact>(
-      sql`select c.* from highlevel_contacts c where c.location_id = ${locationId()} and c.deleted_at is null and exists(select 1 from highlevel_effects e where e.contact_id = c.id and e.kind = 'workflow' and e.state <> 'cancelled') limit 10`,
-    );
-    for (const contact of active.rows) await stopJourneys(contact);
+  if (dependencies.hasLocation() && !dependencies.marketingEnabled()) {
+    const active = await dependencies.listActiveContacts();
+    for (const contact of active) await dependencies.stopJourneys(contact);
   }
   if (!summary.enabled) return summary;
-  const started = Date.now();
-  for (let count = 0; count < 20 && Date.now() - started < 180_000; count++) {
-    const [job] = await claimJobs(1);
+  const started = dependencies.now();
+  for (
+    let count = 0;
+    count < 20 && dependencies.now() - started < 180_000;
+    count++
+  ) {
+    const [job] = await dependencies.claimJobs(1);
     if (!job) break;
     summary.processed++;
     try {
-      const status = await syncJob(job);
-      await finishJob(job, status);
+      const status = await dependencies.syncJob(job);
+      await dependencies.finishJob(job, status);
       summary[status]++;
     } catch (error) {
+      // Retry/review persistence does not prove a provider effect did not occur.
+      // Continue the batch, but retain its durable operation for reconciliation.
+      markWriterOperationUncertain();
       const known = error instanceof HighLevelError;
       const status =
         known && !error.retryable
@@ -62,7 +109,7 @@ async function processHighLevelJobs() {
             ? "dead_letter"
             : "retry";
       const code = known ? error.code : "crm_internal_error";
-      await finishJob(
+      await dependencies.finishJob(
         job,
         status,
         code,
@@ -94,8 +141,16 @@ export function createCrmCronHandler(run = runHighLevelWorker) {
         status:
           summary.retry + summary.review + summary.dead_letter ? 503 : 200,
       });
-    } catch {
-      return Response.json({ error: "crm_worker_failed" }, { status: 503 });
+    } catch (error) {
+      return Response.json(
+        { error: "crm_worker_failed" },
+        {
+          status: 503,
+          ...(error instanceof WriterAdmissionError
+            ? { headers: { "cache-control": "no-store", "retry-after": "30" } }
+            : {}),
+        },
+      );
     }
   };
 }

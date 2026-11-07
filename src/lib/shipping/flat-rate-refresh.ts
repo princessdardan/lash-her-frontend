@@ -1,4 +1,9 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import {
+  runWriterAdmission,
+  type WriterAdmissionRunner,
+} from "@/lib/writer-admission/runtime";
 
 import { getChitChatsConfig } from "./config";
 import {
@@ -75,41 +80,47 @@ export interface FlatRateRefreshResult {
 export async function refreshFlatRateCache(deps?: {
   client?: ChitChatsClient;
   now?: () => Date;
+  config?: ReturnType<typeof getChitChatsConfig>;
+  upsert?: typeof upsertFlatRateCacheEntry;
+  runAdmission?: WriterAdmissionRunner;
 }): Promise<FlatRateRefreshResult> {
-  const client = deps?.client ?? createChitChatsClient(getChitChatsConfig());
-  const now = deps?.now ?? (() => new Date());
-  const config = getChitChatsConfig();
-  const policy = await loadShippingPolicyContext(now());
+  return (deps?.runAdmission ?? runWriterAdmission)("new-work", async () => {
+    const config = deps?.config ?? getChitChatsConfig();
+    const client = deps?.client ?? createChitChatsClient(config);
+    const now = deps?.now ?? (() => new Date());
+    const policy = await loadShippingPolicyContext(now());
 
-  const cells: FlatRateRefreshCellResult[] = [];
-  for (const zoneId of SHIPPING_ZONE_IDS) {
-    const destination = REPRESENTATIVE_DESTINATIONS[zoneId];
-    for (const sizeBucketId of SIZE_BUCKET_IDS) {
-      cells.push(
-        await refreshCell({
-          zoneId,
-          sizeBucketId,
-          countryCode: destination.countryCode,
-          recipient: buildRepresentativeRecipient(zoneId),
-          packageSnapshot: buildRepresentativePackage(sizeBucketId),
-          customsLines: buildRepresentativeCustomsLines(sizeBucketId),
-          client,
-          trackedPostageTypes: config.trackedPostageTypes,
-          servicePolicies: policy.servicePolicies,
-          signatureThresholdCents: policy.settings.signatureThresholdCents,
-          now: now(),
-        }),
-      );
+    const cells: FlatRateRefreshCellResult[] = [];
+    for (const zoneId of SHIPPING_ZONE_IDS) {
+      const destination = REPRESENTATIVE_DESTINATIONS[zoneId];
+      for (const sizeBucketId of SIZE_BUCKET_IDS) {
+        cells.push(
+          await refreshCell({
+            zoneId,
+            sizeBucketId,
+            countryCode: destination.countryCode,
+            recipient: buildRepresentativeRecipient(zoneId),
+            packageSnapshot: buildRepresentativePackage(sizeBucketId),
+            customsLines: buildRepresentativeCustomsLines(sizeBucketId),
+            client,
+            upsert: deps?.upsert ?? upsertFlatRateCacheEntry,
+            trackedPostageTypes: config.trackedPostageTypes,
+            servicePolicies: policy.servicePolicies,
+            signatureThresholdCents: policy.settings.signatureThresholdCents,
+            now: now(),
+          }),
+        );
+      }
     }
-  }
 
-  return {
-    attempted: cells.length,
-    updated: cells.filter((cell) => cell.outcome === "updated").length,
-    skipped: cells.filter((cell) => cell.outcome === "skipped").length,
-    failed: cells.filter((cell) => cell.outcome === "failed").length,
-    cells,
-  };
+    return {
+      attempted: cells.length,
+      updated: cells.filter((cell) => cell.outcome === "updated").length,
+      skipped: cells.filter((cell) => cell.outcome === "skipped").length,
+      failed: cells.filter((cell) => cell.outcome === "failed").length,
+      cells,
+    };
+  });
 }
 
 async function refreshCell(input: {
@@ -120,6 +131,7 @@ async function refreshCell(input: {
   packageSnapshot: ProductShipmentPackageSnapshot;
   customsLines: ProductShipmentCustomsLineSnapshot[];
   client: ChitChatsClient;
+  upsert: typeof upsertFlatRateCacheEntry;
   trackedPostageTypes: ReadonlySet<string>;
   servicePolicies: Awaited<
     ReturnType<typeof loadShippingPolicyContext>
@@ -139,6 +151,7 @@ async function refreshCell(input: {
       signatureRequested: false,
     });
     draftId = draft.id;
+    if (!draftId) markWriterOperationUncertain();
 
     const eligible = selectCustomerRates(
       draft.rates ?? [],
@@ -162,7 +175,7 @@ async function refreshCell(input: {
       return { ...base, outcome: "skipped", reason: "no_eligible_rate" };
     }
 
-    await upsertFlatRateCacheEntry(
+    await input.upsert(
       {
         zoneId: input.zoneId,
         sizeBucketId: input.sizeBucketId,
@@ -181,6 +194,7 @@ async function refreshCell(input: {
       postageType: cheapest.postageType,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ...base,
       outcome: "failed",
@@ -190,7 +204,9 @@ async function refreshCell(input: {
     if (draftId) {
       // Best-effort cleanup of the ephemeral rate-probe draft. A leaked draft is
       // harmless (never purchased) and reconciled by the standard cleanup sweep.
-      await input.client.deleteShipment(draftId).catch(() => undefined);
+      await input.client.deleteShipment(draftId).catch(() => {
+        markWriterOperationUncertain();
+      });
     }
   }
 }

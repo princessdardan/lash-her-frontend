@@ -1,0 +1,1 @@
+CREATE INDEX "customer_auth_throttle_expiry_idx" ON "customer_auth_throttle" USING btree ("resets_at");

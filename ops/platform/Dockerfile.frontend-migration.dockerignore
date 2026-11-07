@@ -9,10 +9,16 @@
 !src/lib/
 !src/lib/private-db/
 !src/lib/private-db/migration-lineage.ts
+!scripts/
+!scripts/api-contract-tools.mjs
+!scripts/api-contract-compatibility-review.mjs
 !contracts/
 !contracts/api-integration/
 !contracts/api-integration/v1/
 !contracts/api-integration/v1/manifest.json
+!contracts/api-integration/p2-candidate/
+!contracts/api-integration/p2-candidate/*.json
+!contracts/api-integration/p2-candidate/README.md
 !drizzle/
 !drizzle/*.sql
 !drizzle/meta/

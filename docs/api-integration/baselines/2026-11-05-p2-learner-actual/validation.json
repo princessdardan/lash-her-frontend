@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "component": "P2-10 actual local learner stack",
+  "frontendSource": "6ed7825c192b1652827b64ffe5f51544fc7c8f33",
+  "courseSource": "5c23b8c53f7849426cf8a71703cc6a5c84fef3d7",
+  "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+  "candidateManifestSha256": "38d1d343cc697583977c88f5023845453a986c0637e09afc081045aee41895b1",
+  "nodeVersion": "24.18.0",
+  "migrations": {
+    "frontend": 83,
+    "course": 22
+  },
+  "checks": {
+    "browser": {
+      "desktopPassed": 3,
+      "mobilePassed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "retries": 0,
+      "duration": "45.8s"
+    },
+    "fullTypeScript": {
+      "exitCode": 0,
+      "source": "6ed7825c192b1652827b64ffe5f51544fc7c8f33"
+    },
+    "ownedLint": {
+      "exitCode": 0,
+      "source": "6ed7825c192b1652827b64ffe5f51544fc7c8f33"
+    },
+    "ownedResources": {
+      "serversStopped": true,
+      "postgresStopped": true
+    },
+    "mediaTokenSignatures": {
+      "verification": "independent Node RSA-SHA256 verification with generated owned public key; video/thumbnail audience and maximum600-second expiry checked",
+      "publicKeySha256": "c1f7ada924f368f5da43673bf9d0b2a026491c39b597fe848f29abb3da48207c"
+    }
+  },
+  "boundaries": {
+    "customerSessions": "synthetic customer rows/opaque session hashes in owned frontend SQL; actual frontend session validation and fenced server signer",
+    "courseTraffic": "actual frontend same-origin handlers, actual learner JWT verification, actual Course routes/repositories/PostgreSQL; no synthetic Course API responses",
+    "curriculumSetup": "actual Course admin JWT verification/routes; synthetic authored curriculum",
+    "muxSigning": "actual SDK using freshly generated owned RSA key, not live Mux credentials",
+    "media": "synthetic ready asset rows, intercepted local HLS/captions and thumbnail404",
+    "gatewayWorkloadProof": "fixture only; actual deployed gateway not certified",
+    "sanityFontsTelemetry": "synthetic shell, bundled local font, intercepted no-collection telemetry script",
+    "unexpectedBrowserAndCourseProviderHTTP": "blocked and fails the run",
+    "frontendSuspension": "owned test SQL updates frontend status; proves frontend issuance denial, not cross-service lifecycle command delivery",
+    "liveGoogleResendMuxCertified": false,
+    "stagingActivated": false,
+    "productionActivated": false,
+    "paidCheckoutIncluded": false,
+    "g2Accepted": false
+  },
+  "scenarios": [
+    "Free enrollment, private content/transcript and locally signed playback; server resume restored in independent browser context; zero-score practice completion, graded failure followed by pass, immutable actual SQL attempt receipts",
+    "Concurrent actual progress revision conflict preserves the other device resume and max; authoritative reload required",
+    "Cross-account content/progress/attempt/playback isolation before enrollment, independent state after enrollment, actual audited Course grant revocation denial, frontend suspension blocks further signer issuance"
+  ],
+  "retainedDevelopmentFailures": [
+    {
+      "receipt": "old-source-refusal.txt",
+      "reason": "Exact source guard refused requested2847d953 after Course checkout advanced to5c23b8c; before loopback allocation; corrected pins merged for the passing run."
+    },
+    {
+      "receipt": "initial-harness-type-failure.txt",
+      "reason": "New test helper incorrectly called standard fetch Response.ok as a function. Corrected to the boolean property before committing/executing actual scenarios; no app behavior changed."
+    }
+  ],
+  "frontendSourceSha256": {
+    "scripts/test-course-learning-browser.mjs": "4b239bfe7607b7212e2d623d689cd15a40a7893ad74957e6c453de57bca2db42",
+    "playwright.course-learning.config.ts": "62de403f314c295a4a38df552ca5dc7f909c48d47c9b0080928eb87d4d45844d",
+    "tests/course-learning-browser/learning.spec.ts": "0987896cd6e45f84d3ff92e284501d7186491be769bb86f735abdbf5252563ed",
+    "tests/course-learning-browser/gateway-fixture.cjs": "f03ea9993b2a7626213ef4f3e491acba86aaa81d42aee08d4fb98bbe7ba8b23b",
+    "tests/course-learning-browser/course-provider-guard.cjs": "3124cade1356e5709139fb2587a9894c0183dff8e02b611a9c9294214c264f6b",
+    "tests/course-learning-browser/font-fixture.cjs": "2981b5090ee9b8a5512979f69d2401cd9baba5fcc078695edfb705aee9315a1a",
+    "src/lib/customer-auth/session.ts": "23542816442b2c3f640313b5e11cfd41deb49a61a06ef94cce257ce6b18f6ca5",
+    "src/lib/customer-auth/session-issuance.ts": "1e32f8d9ae543a8a1caf4287e9d939bd385676137e64a07e5c9b491f8782902d",
+    "src/lib/customer-auth/store.ts": "4169a5d1988fdc2ea9c93c161d57d2df01c17aae8e7e1565fcba1db829e8d840",
+    "src/lib/api-integration/application-jwt.ts": "bc2b59a040de413e504f265ff87f269927c46b06bb0992fcd025bf7b92d65dfa",
+    "src/lib/api-integration/course-client.ts": "c8470fd3a0aecf8910f39c043dca0c7960d94fc6a28caf5c05c9f6f5648f60e1",
+    "src/lib/api-integration/academy-handler.ts": "5e81d9be6be526e2e9778fbc1d4d67db7f4cd8d3819166abe9fe21531badf59b",
+    "src/components/learning/lesson-experience.tsx": "67c63a0e44bdae2dfd76af81fa3de9501ad53302f6a3d439528d1bc18fc3b854",
+    "src/components/learning/lesson-quiz.tsx": "fa9635551916a0fd39f53048e41967ef27e97047636aee0300d96ceb0935f763",
+    "src/components/learning/authorized-video.tsx": "099382c7f8f682acb38e8622a75a54f23d8cc3bd4f7757c2945bdabc71962288",
+    "src/lib/learning/progress-sync.ts": "f345af9290fe2cb4ec3e90a9a1e9b5f5f5631a87f4272a041d3d2940a355a58f",
+    "src/lib/learning/playback-lifetime.ts": "f2d70adf065a41859a6b03ae25a80164f40672a57dba49393469aa95693580e0",
+    "package.json": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+    "package-lock.json": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+    "contracts/api-integration/p2-candidate/course-api.json": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "contracts/api-integration/p2-candidate/manifest.json": "38d1d343cc697583977c88f5023845453a986c0637e09afc081045aee41895b1",
+    "contracts/api-integration/p2-candidate/compatibility-review.json": "f7780b51eca3932a56ed3b9e023107abcd3d61ff66fdf38d7293769bb66add3f"
+  },
+  "courseSourceSha256": {
+    "src/server.ts": "06b8382189efab9100ec2da52f8f83eb36c00fde56854d2689a848352e2536c4",
+    "src/auth/first-party.ts": "5d4cc23477185cafdc5adf7fc25a1dc69c3fb99217b93f0760471ec754041bfc",
+    "src/courses/student.routes.ts": "1d37a44688de4bea1d8d5b5269e994b3ac174b7ac5b97e96895bbf4e3d980123",
+    "src/entitlements/free-enrollment.repository.ts": "ede5cc301584807fc82c339c24f5612e9e5fa37bad77fbe65936c08747a385d6",
+    "src/entitlements/effective-access.ts": "90ac8d28fa01d13ac6d3981d470a85c68322b30b81331f26147d7d9435e57015",
+    "src/progress/lesson-progress.repository.ts": "a1b0e6f84e59d6673c064eb9bc0ad66d6ab687049a34dc16027685f61882e422",
+    "src/quizzes/drizzle-quiz.repository.ts": "67b6c850e36f02574ae4845b328b78bf1b5a2e578976ecd002f28bb56c3bfc14",
+    "src/video/video.repository.ts": "bf9633bef701b5f7a770899af494a8a422b2547087c1471a68e92a6e435642a4",
+    "src/video/mux.client.ts": "14a55b1cc6623959b41c0c67d7640e3121e029c1029b31777d9acbaaa7230a56",
+    "openapi/course-api.json": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d"
+  },
+  "receiptSha256": {
+    "actual-course-persistence.json": "6352f3c1db5e356833ac47a305f7149095f137959e672c4897c83d70adeb17ba",
+    "actual-learner-desktop.png": "12d875e8d2ed6d53fe2cb59e9715616ee194f359b2ec1243a01faa0c1cc586a2",
+    "actual-learner-mobile.png": "82fcbbd47a8f321f44d332bd35cf4887fc852a6b30466391cbc8b73f2907403f",
+    "browser-success.txt": "f8e346e8c0e77eb933b7b1d9887c336b9ed0bb17993b7cc22312544d240f4fe8",
+    "initial-harness-type-failure.txt": "fdd381950ff167d43e9c945ea5cfd744e35c320aaae4f3d00837ab6e4318fd19",
+    "lint.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "old-source-refusal.txt": "66b20dc2aee09a49f217807355b6c4e8eb28bb8c320c246634abd82ed55f5e39",
+    "source-evidence.json": "3778d7ff17a001794a91867913468c843f4f4418aca19434a240d0355c4d9f65",
+    "terminal-outcome.json": "c7029ae5bc214676f85c21656d817a31607632df87daf503b093189efee0d401",
+    "typescript.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

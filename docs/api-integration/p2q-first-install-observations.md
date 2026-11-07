@@ -1,0 +1,45 @@
+# P2Q first-install observations
+
+Under the [current owner decision](decisions/2026-11-06-p2q-resource-reuse.md), these are optional empty-target collectors, not prerequisites for P2Q or reuse of existing staging resources. A selected nonempty resource uses its supported current/upgrade path. Independent administration and original creation history are not required for that path.
+
+These collectors observe zero counts in an explicitly scoped set of frontend core catalogs and the held host process/flock/current Docker inventory. Complete database emptiness is not proven. They do not authorize first use, role preparation, migration, deployment, provider access or admission. Full first-install composition remains OPEN within this optional path; its missing allocation/first-use authority is not a prerequisite for ordinary existing-staging qualification.
+
+## Interfaces and selection
+
+`ops/platform/p2q-first-install.mjs` exports:
+
+- `prepareP2qFirstInstallObservation(request)`: resolves only the fixed `qualification-target-profile.mjs` source module, requires identical references on candidate v3/job v2, rejects the current policy and unsupported requests. There is no alternate registry path or `fresh` selector.
+- `withP2qFirstInstallDatabaseObservation(request, {client, verifySession}, task)`: attaches to the already held, actual TLS FE physical connection. The source parent must perform profile/target selection before acquiring that connection.
+- `readP2qFirstInstallDatabaseObservation(handle)`: rereads the live scoped observation; copied/expired handles refuse. A handle is observation-only, not a release capability.
+
+The request has exactly `qualificationTargetProfile`, `candidate`, `job` and `actionId`. The low-level collector observes the job target; it does not establish the future allocated profile's resource-selector relationship. `targetSelectionVerified:false` remains explicit. The future source parent/allocation factory must join registered selectors, original allocation/control/configuration/custody records, source/candidate hashes, actual target and physical scope. A source-resolved profile alone is insufficient.
+
+The fixed registry/helper is not present in the package's `c89b` base. Current/unregistered public calls refuse before collector I/O; the resolved-current policy is additionally tested using an explicitly private interface fixture. Actual registered-consumer integration remains unqualified until root supplies the reviewed registry/helper. The package does not register an isolated profile or invent its selector schema.
+
+## Database facts and continuity
+
+The collector checks actual verified TLS, host/port/database/session user, role/database OIDs, backend PID/start, the existing FE migration advisory lock and a newly generated private nonce lock. It uses qualified PostgreSQL catalog queries and a read-only repeatable-read snapshot. Extra client sessions or non-system schemas, relations, functions, types, additional extensions, foreign servers/user mappings, publications/subscriptions or large objects refuse a zero-count core-catalog observation. Safe role attributes are hashed for drift; passwords and role setting values are never read. This is not a runtime-role least-privilege qualification. The receipt status is `P2Q_FIRST_INSTALL_CORE_CATALOG_OBSERVED_ZERO`, with `catalogObservationScope:frontend-core-counts-v1` and `completeDatabaseEmptyProven:false`.
+
+The source-owned `unobservedCatalogClasses` list retains custom collations (`pg_collation`), default ACLs (`pg_default_acl`), database/role settings (`pg_db_role_setting`), role memberships (`pg_auth_members`), casts, conversions, event triggers, text-search catalogs and other standalone object catalogs. Those facts may exist or change while all observed counts and the selected `pg_roles` projection remain unchanged. An authentic first-use authority factory must supply complete independent proof before first use; this observation cannot substitute for it, and no caller boolean can waive that requirement.
+
+It verifies the physical/parent scope before and after reads and callback work, detects drift in the observed role attributes/core counts/session/locks and connection loss, expires its handle, and releases only its own nonce. The parent's global lock/client remain parent-owned. Failed nonce cleanup or lost physical state cannot return a successful observation. No application DDL, journal/admission installation or role SQL is implemented here. API empty-target proofs must come from the two API owners' existing primitives; FE-shaped observations are not relabeled as API proof.
+
+## Host facts and continuity
+
+`ops/platform/host/p2q_first_install.py` provides `HostObservation` and an observation-only `observe`/`check`/`close` pipe. Policy is checked before opening its fixed host flock or starting Docker. It observes the actual machine ID, process PID, lock inode/device, daemon identity and complete current container ID list; an existing container, changed lock/machine/daemon/metadata or prior gateway lineage refuses. Parent pipe closure/exit releases the actual descriptor.
+
+Retained-root inventory is metadata only. It never reads or hashes configuration/credential file contents and cannot prove immutable configuration or original custody. Empty current Docker inventory or absent lineage never becomes historical zero/first-use evidence. Supported creation/control/surface/configuration/provider-before-use factories and root's new dispatch/coordinator integration are separate prerequisites. No shared Broker/Supervisor/release/migration/profile/workflow file changed.
+
+## Owned qualification and limits
+
+The fixed command is:
+
+```sh
+P2Q_FIRST_INSTALL_OWNED_TEST=true PG_BIN=/absolute/owned/pg18/bin node --import tsx ops/platform/test-p2q-first-install-local.mjs
+```
+
+The source-only fixture creates a disposable PG18 TLS/SCRAM cluster, holds actual FE physical/global/nonce locks and an actual Python flock process. Its eleven checks cover scoped zero-count observations/handle lifetime, actual unobserved collation and database-role-setting controls, contention, foreign table/journal/schema/function refusal and repair, extra sessions, global role drift, lock loss, unverified TLS, actual backend death and actual host guard death. It executes no migrations, role preparation or admission installation. The 83 approved FE tags are read only as source metadata.
+
+The fixture copies the collector under a private owned test root with a private interface resolver and projected Docker command metadata. That resolver is not registered, is not accepted by the production module and does not mint authority. The source root/current-only public path remains unavailable. Actual Docker/provider/SSH/root installation, the real registered isolated target, provider/control/custody/history proof and a complete first install are unqualified.
+
+[The original evidence manifest](baselines/2026-11-06-p2q-first-install-observations/validation.json) preserves the pre-correction source `401a7ef1`, actual PG18 receipt, four Node tests, seven real POSIX host tests and lint. Original fixture setup refusal is retained as a hash-bound private-source reference, not restamped as success. That original receipt overstates the database scope in its status; it remains immutable historical evidence. [The corrected scope evidence](baselines/2026-11-06-p2q-core-catalog-scope/validation.json) pins source `5a6f98f0` and the eleven actual PG18 controls. Neither version qualifies complete emptiness or first use.

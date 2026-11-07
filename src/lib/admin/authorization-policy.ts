@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   assertAdminPermission,
   type AdminPermissionContext,
@@ -37,6 +38,7 @@ export async function requirePermissionWithAudit(input: {
           requestedPermission: input.action,
         });
       } catch {
+        markWriterOperationUncertain();
         // Authorization must preserve the original denial if auditing fails.
       }
     }

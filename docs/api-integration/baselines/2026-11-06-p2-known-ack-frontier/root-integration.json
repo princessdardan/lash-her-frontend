@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "source": "91d44bd24d2df64901f7cb3f243580834707eb98",
+  "integratedCommit": "26845dd0799febb4c039b9403256113a5fed2804",
+  "independentReviewSha256": "be8d48de01e932e4d1fde3fde50cc0080668abf1cd456852170bd31888b86e2f",
+  "rootHostChecks": 61,
+  "rootSkipped": 0,
+  "rootHostLogSha256": "0ffbd64a2fd8740d199dea64d0cc08e74c7e0e47291cb0cb60df0e331202f370",
+  "sourceSizing": {
+    "commit": "91d44bd24d2df64901f7cb3f243580834707eb98",
+    "files": 488,
+    "decodedBytes": 40202944,
+    "publicBytes": 53675254,
+    "maxFileBytes": 1113573,
+    "gatewayRuntimeDiffBytes": 0,
+    "profileDiffBytes": 0
+  },
+  "cQualified": false,
+  "liveEvidence": false,
+  "g2Accepted": false
+}

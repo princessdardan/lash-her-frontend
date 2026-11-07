@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "status": "SOURCE_COMPONENT_QUALIFIED_LIVE_UNQUALIFIED",
+  "date": "2026-11-05",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "baseline": "d52a2fa3357e1d54b788b610973acd786a1060eb",
+  "sourcePredecessor": "56d64fe68c4d207b0eecdc023e54331a548a4cee",
+  "predecessorMerge": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+  "implementationCommits": [
+    "5d822618b8a294d5db4305180dff2e165d63700c",
+    "d4cc5b668ae56e6b95e5c4d7fe88b4ef2a9fec4c"
+  ],
+  "applicationSourceManifestSha256": "433fe22e936b512b868df4d92e42c3a29a33786c61e115f2202e586a8202ee12",
+  "checks": [
+    {
+      "command": "npm run test:unit:src",
+      "status": "passed",
+      "tests": 2406,
+      "failures": 0,
+      "skipped": 0,
+      "outputSha256": "58d0d4a136ff4e68da4ea4ec0dc828222c55fc75609b8865c819ed7d141db153"
+    },
+    {
+      "command": "npx tsc --noEmit --pretty false",
+      "status": "passed"
+    },
+    {
+      "command": "npx eslint <changed source/fixture paths>",
+      "status": "passed",
+      "errors": 0,
+      "warnings": 1,
+      "warning": "Existing unused _input in vacuous finalizeShipmentFundingReservation; unchanged."
+    },
+    {
+      "command": "node --test ops/platform/frontend-shipping-owned.test.mjs",
+      "status": "passed",
+      "tests": 3
+    },
+    {
+      "command": "FRONTEND_SHIPPING_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node --import tsx ops/platform/test-frontend-shipping-local.mjs",
+      "status": "passed",
+      "migrations": 83,
+      "admissionChecks": 14,
+      "shippingChecks": 92,
+      "legacyDatabaseRegressionTests": 8,
+      "failures": 0,
+      "skipped": 0
+    }
+  ],
+  "artifacts": {
+    "postgres16": {
+      "path": "postgres16.json",
+      "sha256": "b80391693f78cad292c13fc0ece49f5d81d2b879b324362876b5acc276ed4174"
+    },
+    "sourceBindings": {
+      "path": "source-bindings.json",
+      "sha256": "8579b963dd14d3edd7caae1008b4326c8d22f76e3cb903683d87cfa1e59a7ebb"
+    }
+  },
+  "observations": {
+    "actualRouteExport": true,
+    "wholeAuthenticatedRouteBoundary": true,
+    "directBatchAndClaimedWorkerBoundaries": true,
+    "manualCallerBoundary": true,
+    "independentPiiNewWorkBoundary": true,
+    "allStartedEffectsAwaited": true,
+    "exactPiiPersistenceRead": true,
+    "providersIntercepted": true,
+    "liveProviderTouched": false,
+    "liveDatabaseTouched": false,
+    "preparationFunctionsUnmodified": true,
+    "predecessorPreparationFilesUnmodified": true
+  },
+  "openConditions": [
+    "Exact integrated candidate CI and PostgreSQL18 checks",
+    "Native deployed Next.js and scheduler behavior",
+    "Real Chit Chats/Square/Resend provider and recovery evidence",
+    "Complete historical/deployment/provider inventory and fences",
+    "Parent release/restoration coordination and real staging certification"
+  ],
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false
+}

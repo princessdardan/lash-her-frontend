@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "status": "COMMUNITY_MERGED_SOURCE_AND_CI_VERIFIED",
+  "repository": "https://github.com/princessdardan/lash-her-community-api.git",
+  "sourceCommit": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+  "reviewedHead": "fd056273f449ede636647092fe4cbbaa927f131e",
+  "baseCommit": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+  "sourceTreeSha1": "d4ef41b5a352151f6eed505b4eb491d09dd156b5",
+  "reviewedTreeEqual": true,
+  "worktreeClean": true,
+  "historicalFixtureSource": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+  "gitArchive": {
+    "format": "git archive --format=tar exact merge commit",
+    "sha256": "723a384555c3266dd08a7294d926e23e1bd99617a98d4430de53171f6aa8ebab"
+  },
+  "qualificationTargetProfile": {
+    "version": 1,
+    "id": "staging-current",
+    "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+  },
+  "migrationArtifact": {
+    "service": "lash-her-community-api",
+    "artifactSha256": "58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851",
+    "journalSha256": "d28dd40d3196b9a317ae5a2317bf03339cb86400433d5e8bbb4c3b6eedebcf8a",
+    "migrations": 11
+  },
+  "sourceFiles": {
+    "path": "source-files.json",
+    "count": 227,
+    "sha256": "0895b7b4ff8f5464a788087b7e23566b5d5dd1d3c25b8ae8235e2ae1c61d6151"
+  },
+  "protectedUnchanged": {
+    "baselineCommit": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+    "path": "unchanged-public-lock-sql-files.json",
+    "count": 59,
+    "sha256": "829470520a9ae28d322f9b9618ab1442cb55b11fd5e8c8313f875db1a2d73e1c"
+  },
+  "localFullSuiteRepeated": false,
+  "scope": {
+    "sourcePublicationOnly": true,
+    "liveResourcesAllocated": false,
+    "candidatePublished": false,
+    "liveRelease": false
+  },
+  "ci": {
+    "runId": 42272021421,
+    "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42272021421",
+    "headSha": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+    "status": "PASS",
+    "jobs": [
+      {
+        "id": 128078713876,
+        "name": "containers",
+        "conclusion": "success",
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42272021421/job/128078713876"
+      },
+      {
+        "id": 128078714124,
+        "name": "postgres",
+        "conclusion": "success",
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42272021421/job/128078714124"
+      },
+      {
+        "id": 128078714427,
+        "name": "quality",
+        "conclusion": "success",
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42272021421/job/128078714427"
+      }
+    ],
+    "compatibility": {
+      "runId": 42272021455,
+      "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42272021455",
+      "headSha": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+      "status": "PASS"
+    }
+  },
+  "githubArtifacts": [
+    {
+      "id": 13531371590,
+      "name": "princessdardan~lash-her-community-api~KYPZEH.dockerbuild",
+      "size_in_bytes": 37948,
+      "digest": "sha256:18082f51aef7201e038e5cf74709a8150312eb155b812436ec7776ebe51e40f4",
+      "expires_at": "2027-02-04T18:35:04Z"
+    },
+    {
+      "id": 13531116734,
+      "name": "princessdardan~lash-her-community-api~JRD9DX.dockerbuild",
+      "size_in_bytes": 62442,
+      "digest": "sha256:de9ae54ad9240ec9368774689bb42e4b1a6c76b9cdacc6b19f450f76e8c3cb59",
+      "expires_at": "2027-02-04T18:35:04Z"
+    },
+    {
+      "id": 13530941785,
+      "name": "princessdardan~lash-her-community-api~4E4DVV.dockerbuild",
+      "size_in_bytes": 46851,
+      "digest": "sha256:256dca1af6de92c5c725bd1f5d6c7eeeaa5dfe708d2081452da7d49d0bb19dff",
+      "expires_at": "2027-02-04T18:35:04Z"
+    },
+    {
+      "id": 13530826934,
+      "name": "community-native-runtime-qualification",
+      "size_in_bytes": 243382,
+      "digest": "sha256:5f61070b49146e5d39c6bdace51be08bcbecf5cd3fce34dc7ccb008145099581",
+      "expires_at": "2026-11-16T18:40:24Z"
+    },
+    {
+      "id": 13529039253,
+      "name": "operator-schema-postgres18",
+      "size_in_bytes": 6739,
+      "digest": "sha256:f3948d671a0f5e2059616130f94481086ed71fe556f665d659f642188df1090c",
+      "expires_at": "2026-11-16T18:38:24Z"
+    }
+  ],
+  "packagedPostgres18": {
+    "path": "postgres18-summary.json",
+    "sha256": "3fa456fdfc1d5bd487653f65005a1595ebc45b60fbfafdaaaae2525a020a1ff9",
+    "migrations": 11,
+    "checkCount": 19,
+    "profiledCurrent": {
+      "schemaVersion": 2,
+      "qualificationTargetProfile": {
+        "version": 1,
+        "id": "staging-current",
+        "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+      },
+      "dirtyNoJournalRefused": true,
+      "emptyPreAppliedCount": 0,
+      "fullChainPostAppliedCount": 11,
+      "currentApplyStarted": false,
+      "readOnlyLineageVerified": true,
+      "trafficAuthorized": false,
+      "virginInstallAuthorityIssued": false
+    },
+    "schemaBaselineSha256": "38f62c85f007cb57f66fec6243cd66fdf6134dd0a8a1d0e9801bdd1e3758da99",
+    "fixtureOnly": true
+  },
+  "nativeRuntime": {
+    "path": "native-summary.json",
+    "sha256": "b1d32d720cc0350de3860b6ff2b9283ad4e4dc2cfc5209ec82ca12bebda15a28",
+    "status": "MERGED_SOURCE_RECORDED_RUNTIME_EVIDENCE_VERIFIED",
+    "imageIds": {
+      "api": "sha256:8361d2e176caead213d5a7b8042ed4d6018f3f9e6847254e6721fa1d1a23d728",
+      "worker": "sha256:9db3ff90513ae8ac4e1c1c0d0ed7a6df9d41b3a16d16fc89e2b7736dd1785f48",
+      "migration": "sha256:6bde11282d881575f3b5c224925a8b0928391844e1ea9462087fd82503e0f374"
+    },
+    "highCriticalScansVerified": true,
+    "offlineNormalizationNote": "offline-reader-note.json",
+    "registryImagesPublished": false
+  },
+  "evidenceFiles": {
+    "path": "artifact-files.json",
+    "sha256": "dde57a5244038ef173c9f8ed37f58f1452f301b624839ead2239713597356cc4",
+    "count": 33
+  }
+}

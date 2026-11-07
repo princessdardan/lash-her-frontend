@@ -1,5 +1,6 @@
 "use server";
 
+import { attemptAdmittedAdminAction } from "@/lib/admin/action-admission";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -592,11 +593,7 @@ async function runAdminAction(input: AdminActionInput): Promise<never> {
 async function attemptAdminAction<T>(
   task: () => Promise<T>,
 ): Promise<{ ok: true; value: T } | { error: string; ok: false }> {
-  try {
-    return { ok: true, value: await task() };
-  } catch (error) {
-    return { error: friendlyActionError(error), ok: false };
-  }
+  return attemptAdmittedAdminAction(task, friendlyActionError);
 }
 
 function friendlyActionError(error: unknown): string {

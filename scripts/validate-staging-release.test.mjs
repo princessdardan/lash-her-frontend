@@ -42,6 +42,16 @@ test("reviewed staging identities, endpoints, role and migration pin validate", 
   const { env, manifest } = fixture();
   assert.deepEqual(checkStagingRelease(env, manifest), []);
 });
+test("a shared Resend account accepts the reviewed staging sender and resources", () => {
+  const { env, manifest } = fixture();
+  manifest.providers.resend.separateAccountVerified = false;
+  assert.deepEqual(checkStagingRelease(env, manifest), []);
+});
+test("Resend account separation evidence is optional for the reviewed staging configuration", () => {
+  const { env, manifest } = fixture();
+  delete manifest.providers.resend.separateAccountVerified;
+  assert.deepEqual(checkStagingRelease(env, manifest), []);
+});
 test("production project, owner credentials, live payments and recipient escape fail closed", () => {
   const { env, manifest } = fixture();
   const bad = { ...env, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
@@ -88,7 +98,7 @@ test("OAuth preflight rejects unreviewed/shared clients and production callbacks
   assert(checkStagingRelease(env, manifest).some(error => error.includes("Distinct reviewed")));
 });
 
-test("staging release rejects added administrators and cross-account email configuration", () => {
+test("staging release rejects added administrators and unreviewed email configuration", () => {
   const { env, manifest } = fixture();
   const errors = checkStagingRelease({ ...env,
     ADMIN_OWNER_EMAILS: `${env.ADMIN_OWNER_EMAILS},unreviewed@example.com`,
@@ -96,8 +106,21 @@ test("staging release rejects added administrators and cross-account email confi
     RESEND_SEGMENT_MARKETING_ID: "production-segment",
   }, manifest);
   for (const name of ["ADMIN_OWNER_EMAILS", "FROM_EMAIL", "RESEND_SEGMENT_MARKETING_ID"]) assert(errors.some(error => error.includes(name)));
+  manifest.providers.resend.separateAccountVerified = false;
   manifest.providers.resend.domainStatus = "pending";
   assert(checkStagingRelease(env, manifest).some(error => error.includes("verified sender")));
+});
+
+test("shared administration does not permit different Sanity, database or Redis targets", () => {
+  const { env, manifest } = fixture();
+  delete manifest.providers.resend.separateAccountVerified;
+  for (const [name, value, expectedError] of [
+    ["NEXT_PUBLIC_SANITY_PROJECT_ID", "unreviewed-project", "NEXT_PUBLIC_SANITY_PROJECT_ID"],
+    ["DATABASE_URL", env.DATABASE_URL.replace(manifest.frontendDatabase.pooledHost, "unreviewed.example.test"), "runtime role"],
+    ["KV_REST_API_URL", "https://unreviewed.example.test", "Redis resource"],
+  ]) {
+    assert(checkStagingRelease({ ...env, [name]: value }, manifest).some(error => error.includes(expectedError)));
+  }
 });
 
 test("runtime database TLS and connection parameters cannot weaken the reviewed target", () => {

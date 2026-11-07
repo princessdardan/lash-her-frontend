@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { getResendMarketingSyncCronSecrets } from "@/lib/env/private-checkout";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import {
   runMarketingContactSyncWorker,
   type MarketingContactSyncRunSummary,
@@ -58,6 +59,14 @@ export function createMarketingContactSyncGetHandler(
     try {
       summary = await dependencies.runWorker({ now: dependencies.getNow() });
     } catch (error) {
+      if (error instanceof WriterAdmissionError)
+        return Response.json(
+          { error: "Marketing contact sync failed" },
+          {
+            status: 503,
+            headers: { "cache-control": "no-store", "retry-after": "30" },
+          },
+        );
       dependencies.logError("[marketing-contact-sync] Worker failed", {
         error:
           error instanceof Error

@@ -1,0 +1,17 @@
+{"status":"OWNED_P2_RECOVERY_PRIVILEGE_FAULT_RESULTS","faults":[{"id":"frontend-runtime-inbound","continuousRefused":false,"initialRefused":false,"restorationEntered":true},{"id":"frontend-owner-inbound","continuousRefused":false,"initialRefused":false,"restorationEntered":true},{"id":"frontend-owner-outbound","continuousRefused":false,"initialRefused":false,"restorationEntered":true},{"id":"frontend-sequence-update","continuousRefused":false,"initialRefused":false,"restorationEntered":true},{"id":"frontend-default-unexpected-grantee","continuousRefused":false,"initialRefused":false,"restorationEntered":true},{"id":"course-runtime-inbound","initialRefused":false},{"id":"course-sequence-update","initialRefused":false},{"id":"course-table-trigger","initialRefused":false},{"id":"course-table-references","initialRefused":false},{"id":"course-default-unexpected-grantee","initialRefused":false},{"id":"course-default-sequence-update","initialRefused":false},{"id":"community-runtime-inbound","initialRefused":false},{"id":"community-sequence-update","initialRefused":false},{"id":"community-table-trigger","initialRefused":false},{"id":"community-table-references","initialRefused":false},{"id":"community-default-unexpected-grantee","initialRefused":false},{"id":"community-default-sequence-update","initialRefused":false}]}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: unsafe privilege fault was accepted
+    at <anonymous> (/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-post-sql-recovery/ops/platform/test-p2-recovery-owned.mjs:134:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.18.0

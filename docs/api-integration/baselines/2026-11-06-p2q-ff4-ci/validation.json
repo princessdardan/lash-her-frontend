@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "status": "EXACT_SOURCE_CI_AND_OWNED_FIXTURE_VERIFIED",
+  "sourceCommit": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "ciRun": 42283615401,
+  "jobsPassed": 10,
+  "apiSourcePins": {
+    "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+  },
+  "files": {
+    "ci-summary.json": {
+      "sha256": "5672e63fe928867a541e7c51e1e22ef6bcdd7028a31de9825b9a80ec8ae1a664",
+      "bytes": 2284
+    },
+    "artifact-safe-projection.json": {
+      "sha256": "33974c1d32d18e4f783247f2eff18f638f3dc5da2e1349a157a06d6b60e5c545",
+      "bytes": 3624
+    },
+    "artifact-manifest.json": {
+      "sha256": "c1b71e9843f7758ec0c6975cf9bf6a8ef3d7b82aba39ff3b1191a80a74510f47",
+      "bytes": 3350
+    },
+    "owned-c-qualification.json": {
+      "sha256": "bf89cdd9aa5f8bcf79a087db48f40f60e52983410dbdb0a60b95ad44d83a9f6d",
+      "bytes": 6959
+    },
+    "source-and-contracts.json": {
+      "sha256": "06439ae1cc7c9400bacf232471efb9d83361f0c4680253bee11c663a46a6472a",
+      "bytes": 697
+    }
+  },
+  "nativeQualification": {
+    "frontendImageId": "sha256:78a4ea457c72e0be9923e31cb6f389c214b279673e0b8b9864fd73db21c903e0",
+    "gatewayImageId": "sha256:dea3026abe4d0d92ded3fb300a28077af92ee74086124fad42dafa2447e8764e",
+    "eachStatus": "PATCHED_RUNTIME_VERIFIED",
+    "rawEach": {
+      "high": 2,
+      "critical": 0
+    },
+    "qualifiedEach": {
+      "activeHigh": 0,
+      "activeCritical": 0
+    },
+    "fixEvidence": "Both raw zlib findings are VEX-modified fixed; actual patched/shared/upstream regressions pass and unpatched control is expected assertion failure."
+  },
+  "ownedC": {
+    "elapsedSeconds": 141.3,
+    "stderrBytes": 0,
+    "migrations": {
+      "frontend": 83,
+      "course": 22,
+      "community": 11
+    },
+    "scope": "macOSownedPG18; Docker/provider/root paths projected, no Linuxsubreaper or actualNodecommittedOperatorSource callback proof"
+  },
+  "linuxC": "ActualCI operatorartifact verifies83/22/11, before/after source readback, positive interrupted restoration, six original causal hashes, all7negative cases and unchangedjournals. Installedruntime scans separately pass.",
+  "durablePriorArchive": {
+    "path": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-reviewed-union-ff4",
+    "manifestSha256": "9b7ca814ef8bc2b13f774dd8483c60be10ed69003c1840c21b8542d6f4f5d34e"
+  },
+  "boundaries": {
+    "sourcePublicationOnly": true,
+    "newResourcesAllocated": false,
+    "independentControlScopes": "UNKNOWN",
+    "allocatedProfileRegistered": false,
+    "wholeFirstInstallationQualified": false,
+    "fullProfiledCoordinatorAvailable": false,
+    "candidatePublished": false,
+    "liveReleaseApproved": false,
+    "oldP2_00": "SeparatelyOPEN outsideamendedclaim",
+    "G2_Q": "OPEN"
+  },
+  "durableCiArchive": {
+    "path": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-ff4-ci-qualified",
+    "manifestSha256": "2c4b943f07b79c28d73f26523ed9e6d54c68e8c0443ec7c52e483f308b59c2b7",
+    "files": 19,
+    "bytes": 1077713
+  }
+}

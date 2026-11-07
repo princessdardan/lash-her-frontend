@@ -1,0 +1,614 @@
+{
+  "liveImage": false,
+  "receipts": [
+    {
+      "bindingSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checks": [
+        {
+          "name": "course-learner.current.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.previous.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-token",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.wrong-issuer",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.wrong-audience",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.array-audience",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.wrong-profile",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.invalid-subject",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.uppercase-subject",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.invalid-jti",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.wrong-version",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.overlong-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.nonpositive-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.expired-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.future-iat-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.fractional-iat",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.extra-pii-claim",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.wrong-signature",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.cross-profile-key",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.cross-service-key",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.wrong-algorithm",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.unsigned-token",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-iss",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-aud",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-sub",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-iat",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-exp",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-jti",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.missing-version",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.service-key-0",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.unexpected-capability",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.fixed-clock-expired-29-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.fixed-clock-expired-31",
+          "status": "passed"
+        },
+        {
+          "name": "course-learner.fixed-clock-future-31",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.current.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.previous.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-token",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.wrong-issuer",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.wrong-audience",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.array-audience",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.wrong-profile",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.invalid-subject",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.uppercase-subject",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.invalid-jti",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.wrong-version",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.overlong-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.nonpositive-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.expired-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.future-iat-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.fractional-iat",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.extra-pii-claim",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.wrong-signature",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.cross-profile-key",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.cross-service-key",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.wrong-algorithm",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.unsigned-token",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-iss",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-aud",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-sub",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-iat",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-exp",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-jti",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-version",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.service-key-0",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.missing-capability",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.unknown-capability",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.duplicate-capability",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.fixed-clock-expired-29-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.fixed-clock-expired-31",
+          "status": "passed"
+        },
+        {
+          "name": "course-admin.fixed-clock-future-31",
+          "status": "passed"
+        }
+      ],
+      "environment": "staging",
+      "keyRemovalVerified": false,
+      "moduleSha256": {
+        "dist/auth/first-party.js": "7f886debb058a1717f8195aa86ebb78cdd2150a11e24c6f07dabe81296c000be",
+        "dist/auth/jwt-profile.js": "bc948c486aa767c4100cb0325b4fb78befa8dbf756dc1c2c2698c9d69f2fe2e1",
+        "dist/config/env.js": "b22bef5638023f0a0c8c596340b11c3a12f76f1dc19000fc3aa88d81ceb70a95"
+      },
+      "oidcVerified": false,
+      "readOnly": true,
+      "releaseAccepted": false,
+      "runtimeConfigurationBindingVerified": true,
+      "scope": "actual-course-image-verifier-only",
+      "status": "P2_IDENTITY_NEGATIVE_PROBE_PASS",
+      "version": 1
+    },
+    {
+      "bindingSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checks": [
+        {
+          "name": "community-member.current.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.previous.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-token",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.wrong-issuer",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.wrong-audience",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.array-audience",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.wrong-profile",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.invalid-subject",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.uppercase-subject",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.invalid-jti",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.wrong-version",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.overlong-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.nonpositive-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.expired-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.future-iat-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.fractional-iat",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.extra-pii-claim",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.wrong-signature",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.cross-profile-key",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.cross-service-key",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.wrong-algorithm",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.unsigned-token",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-iss",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-aud",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-sub",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-iat",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-exp",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-jti",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.missing-version",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.service-key-0",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.unexpected-capability",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.fixed-clock-expired-29-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.fixed-clock-expired-31",
+          "status": "passed"
+        },
+        {
+          "name": "community-member.fixed-clock-future-31",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.current.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.previous.valid-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-token",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.wrong-issuer",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.wrong-audience",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.array-audience",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.wrong-profile",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.invalid-subject",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.uppercase-subject",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.invalid-jti",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.wrong-version",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.overlong-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.nonpositive-lifetime",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.expired-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.future-iat-outside-skew",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.fractional-iat",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.extra-pii-claim",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.wrong-signature",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.cross-profile-key",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.cross-service-key",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.wrong-algorithm",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.unsigned-token",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-iss",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-aud",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-sub",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-iat",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-exp",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-jti",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-version",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.service-key-0",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.missing-capability",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.unknown-capability",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.duplicate-capability",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.fixed-clock-expired-29-baseline",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.fixed-clock-expired-31",
+          "status": "passed"
+        },
+        {
+          "name": "community-admin.fixed-clock-future-31",
+          "status": "passed"
+        }
+      ],
+      "environment": "staging",
+      "keyRemovalVerified": false,
+      "moduleSha256": {
+        "dist/auth/community-user-auth.js": "faf583e71c08402b0a7ec9a9e4cde67b9d32a0ef2636b2d9100792fe259e7975",
+        "dist/config/env.js": "3dcb6ebcbe81b4756e7171788d64bc2c18b904d60f04d10c7380be3a3f0a51d3",
+        "dist/config/runtime.js": "6d89c7b8247149be7dda8d9289aadc366e0a38acc0a5d5cc6f58934fbbbfb917"
+      },
+      "oidcVerified": false,
+      "readOnly": true,
+      "releaseAccepted": false,
+      "runtimeConfigurationBindingVerified": true,
+      "scope": "actual-community-image-verifier-only",
+      "status": "P2_IDENTITY_NEGATIVE_PROBE_PASS",
+      "version": 1
+    }
+  ],
+  "sourceProof": {
+    "community/auth/community-user-auth": "faf583e71c08402b0a7ec9a9e4cde67b9d32a0ef2636b2d9100792fe259e7975",
+    "community/config/env": "3dcb6ebcbe81b4756e7171788d64bc2c18b904d60f04d10c7380be3a3f0a51d3",
+    "community/config/runtime": "6d89c7b8247149be7dda8d9289aadc366e0a38acc0a5d5cc6f58934fbbbfb917",
+    "course/auth/first-party": "7f886debb058a1717f8195aa86ebb78cdd2150a11e24c6f07dabe81296c000be",
+    "course/auth/jwt-profile": "bc948c486aa767c4100cb0325b4fb78befa8dbf756dc1c2c2698c9d69f2fe2e1",
+    "course/config/env": "b22bef5638023f0a0c8c596340b11c3a12f76f1dc19000fc3aa88d81ceb70a95",
+    "course/courses/student.routes": "902bb42872ccb0d7c6d1372f71d47e3fdecfc043486b494456dc383b84857947",
+    "course/quizzes/quiz.routes": "adfedf1457ea61f80542951652ecf53776df6b2e2a8fdbeecff97059989c4b2c"
+  },
+  "status": "OWNED_P2_IDENTITY_MODULES_PASS"
+}

@@ -1,0 +1,7 @@
+# Recovery provider-context correction
+
+The current-only recovery controller omitted bootstrapRuntimeTarget, although the shared P2 provider worker requires it for every observation. The normal coordinator already supplies the reviewed staging/target hash/direct host/port/database/runtime user/server major tuple. This correction supplies that same tuple and preserves original candidate, source, receipt and configuration bindings.
+
+The new regression uses an exact copy of the shared JavaScript adapter and its original transitive source modules. Its private Python test entry imports and calls the actual frontend_release_adapters.execute implementation, with the existing fixed Vercel client restricted to an owned loopback HTTPS server and fixture CA. It asserts the actual forwarded writerTarget tuple, performs real GETs through the normal bounded pagination/identity validators, and returns the real metadata observation. It does not synthesize a successful worker result. A missing-target negative control refuses before any HTTP request. The selected username is the runtime role rather than the migration operator.
+
+All six Node tests passed. The earlier55-group PostgreSQL16 role-closure proof remains unchanged; this correction changes controller context construction and its integration test only. It does not execute SQL, roles, deployment creation, promotion, provider retirement or live actions. The separate forward-build mode remains unimplemented and open at this commit.

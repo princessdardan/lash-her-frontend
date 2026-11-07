@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "source": "b347ca58193252b8863057c7d5a05812edcbc0c3",
+  "files": {
+    "ci-final.json": {
+      "bytes": 1700,
+      "sha256": "e8fa80d472dd12023d45d1e14dda1a9bb337d217687dcc9503d5555c286431d9"
+    },
+    "frontend-schema-summary.json": {
+      "bytes": 30600,
+      "sha256": "d2b1365026bb106f5512483e94f1350be2038ac3c2b3e1f2a830c4dfaf9434dd"
+    },
+    "identity-recovery-lifecycle.json": {
+      "bytes": 9770,
+      "sha256": "851478e8ba36581b7b4a394400446da82db6a46d571e36d41ec29f5f5a163dd4"
+    },
+    "platform-postgres18.json": {
+      "bytes": 6322,
+      "sha256": "5fc053d4190a5bf8be4db65231787f26a6809ebf5df9c94031d3745a18c43e26"
+    }
+  },
+  "originalArtifactSha256": "39856c46c29261716a68669eedfbb7e0ddd01fda2a290c00f1743a2c25f95a42",
+  "originalOperatorLogSha256": "26290e414b86b0b0f4c632c1496df7409ad31193de54f947f7481263e0c469a6",
+  "sourceBoundIdentityRecoveryReceiptSha256": "851478e8ba36581b7b4a394400446da82db6a46d571e36d41ec29f5f5a163dd4",
+  "liveEvidence": false,
+  "g2Accepted": false
+}

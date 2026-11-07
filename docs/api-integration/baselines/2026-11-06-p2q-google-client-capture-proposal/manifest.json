@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "status": "DESIGN_ARTIFACTS_ONLY",
+  "preparedOn": "2026-11-06",
+  "sourceCommitObserved": "ea4d9cd1f78a63063bd94f087565e4962a579b2b",
+  "scope": "Private design retention only; no repository edit, provider or credential action, resource allocation, deployment, or live authority.",
+  "files": {
+    "report.md": {
+      "bytes": 9001,
+      "sha256": "d4d207ce01f8be43dea48343b808850d3ff4ab1ed8e25ce98a927cb885dc41e6"
+    },
+    "contract.json": {
+      "bytes": 2622,
+      "sha256": "7efae89925d2e43e68dd52400a4a0d208928e355e89ef42d1ecf7709a79cbbdb"
+    },
+    "open-inputs.json": {
+      "bytes": 1340,
+      "sha256": "97a1fafb10c5e1a0d40efb61ca00f4f5b041785b5ad94d772ab4169836777d00"
+    }
+  },
+  "implemented": false,
+  "consoleDomValidated": false,
+  "browserTransportValidated": false,
+  "allocationAuthorityIssued": false,
+  "firstInstallAuthorityIssued": false,
+  "liveActionAuthorized": false,
+  "independentReviewClaimed": false
+}

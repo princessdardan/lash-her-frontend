@@ -114,6 +114,32 @@ services:
       mesh: {ipv4_address: 172.29.10.23}
       snapshot_egress: {}
 
+  # Loop enablement belongs to each protected env file; the process parsers
+  # default it to false. Readiness still requires the named Course database.
+  course-media:
+    <<: *runtime
+    image: ${COURSE_RUNTIME_IMAGE}
+    command: [node, dist/mux-media-worker.js]
+    env_file: [{path: "${RELEASE_DIR}/course-media.env", format: raw}]
+    environment: {NODE_ENV: production, PORT: "4003", NODE_OPTIONS: --max-old-space-size=128}
+    mem_limit: 192m
+    cpus: 0.2
+    stop_grace_period: 60s
+    healthcheck: *api-health
+    networks: [course_media_egress]
+
+  course-export-cleanup:
+    <<: *runtime
+    image: ${COURSE_RUNTIME_IMAGE}
+    command: [node, dist/account-export-cleanup-worker.js]
+    env_file: [{path: "${RELEASE_DIR}/course-export-cleanup.env", format: raw}]
+    environment: {NODE_ENV: production, PORT: "4004", NODE_OPTIONS: --max-old-space-size=128}
+    mem_limit: 192m
+    cpus: 0.2
+    stop_grace_period: 60s
+    healthcheck: *api-health
+    networks: [course_export_cleanup_egress]
+
   community-api:
     <<: *runtime
     image: ${COMMUNITY_RUNTIME_IMAGE:?require reviewed Community runtime digest}
@@ -206,5 +232,7 @@ networks:
   course_api_egress: {}
   publisher_egress: {}
   snapshot_egress: {}
+  course_media_egress: {}
+  course_export_cleanup_egress: {}
   community_api_egress: {}
   community_worker_egress: {}

@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "status": "P2Q_HISTORICAL_PROFILE_SOURCE_PREPARATION_TESTED",
+  "sourceBaseCommit": "82ac48366ac8a39701b483819c5773b409d7877a",
+  "sourceCommit": "eaeb43b98579373b79ccba732a22d4fc7d8e83e9",
+  "qualificationTargetProfile": {
+    "version": 1,
+    "id": "staging-current",
+    "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+  },
+  "files": {
+    "ops/platform/frontend-historical-logins.mjs": "3c9f5d25c84278cb4a5c2edd24ecee7e30f453d29f9edf4b04b121f98955774d",
+    "ops/platform/frontend-bootstrap-compatibility.mjs": "9f33265fcff43ecd67c11bb513d6770aa4d4d47642452024fcc22bc44ac59d68",
+    "ops/platform/frontend-historical-logins.test.mjs": "204a1474befec0e6c2e19bbbd33756e6922590fa1017d874611a3d1e16884130",
+    "ops/platform/frontend-bootstrap-compatibility.test.mjs": "6d29560d0f57182fec47797fe7ee2d38c7d529d61696e2ddb9522d3d8a16de91"
+  },
+  "verification": [
+    {
+      "command": "node --test ops/platform/frontend-historical-logins.test.mjs ops/platform/frontend-bootstrap-compatibility.test.mjs ops/platform/frontend-release-coordination.test.mjs",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "npm exec -- eslint ops/platform/frontend-historical-logins.mjs ops/platform/frontend-historical-logins.test.mjs ops/platform/frontend-bootstrap-compatibility.mjs ops/platform/frontend-bootstrap-compatibility.test.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "scope": {
+    "legacyOutputsRemainVersion1AndProfileFree": true,
+    "profiledPlansAndReceiptsUseVersion2": true,
+    "sourceSelectedProfileRequiredBeforeHooksOrDatabaseQueries": true,
+    "migrationArtifactAndSchemaBaselineRemainProfileFree": true,
+    "sqlCatalogChanged": false,
+    "physicalTargetHashChanged": false,
+    "databaseMutationGuardsChanged": false,
+    "fullHistoricalProviderAuthorityEstablished": false,
+    "migrationAuthorized": false,
+    "trafficAuthorized": false,
+    "liveOperationsPerformed": false
+  },
+  "independentReviewPending": true
+}

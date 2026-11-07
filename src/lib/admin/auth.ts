@@ -1,11 +1,13 @@
+import { runAdminIdentityWriter } from "./user-writer-admission";
 import "server-only";
 
-import { cookies, headers } from "next/headers";
-import { after } from "next/server";
+import { cookies } from "next/headers";
 
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 
 import { getAdminUserStore } from "./admin-user-store";
+import { getAdminAuthorizationActor, runAdminAuthorizationOperation } from "./authorization-operation";
+import { assertFreshAdminAuthenticationTimestamp } from "./authentication-freshness";
 import {
   createAdminAuth,
   type AdminAuthService,
@@ -30,26 +32,27 @@ export {
   type AdminPermissionContext,
 } from "./auth-service";
 
-const ADMIN_REQUEST_ID_HEADER = "x-lash-admin-request-id";
-const requestActors = new Map<string, Promise<AdminActor>>();
-
 export function getAdminAuth(): AdminAuthService {
-  return createAdminAuth({
+  const service = createAdminAuth({
     getIdentity: getAuthJsIdentity,
     getOwnerEmails: getAdminOwnerEmails,
     userStore: getAdminUserStore(),
   });
+  return {
+    requireActor: () => runAdminAuthorizationOperation(() => service.requireActor()),
+    requirePermission: (action, context) => runAdminAuthorizationOperation(() => service.requirePermission(action, context)),
+  };
 }
 
 export async function requireAdminActor(): Promise<AdminActor> {
-  return getRequestActor();
+  return runAdminAuthorizationOperation(getRequestActor);
 }
 
 export async function requirePermission(
   action: AdminPermissionAction,
   context: AdminPermissionContext = {},
 ): Promise<AdminActor> {
-  return requirePermissionWithAudit({
+  return runAdminAuthorizationOperation(() => requirePermissionWithAudit({
     action,
     context,
     getActor: getRequestActor,
@@ -57,13 +60,15 @@ export async function requirePermission(
       // The writer does not authorize. The dynamic import avoids the
       // audit-log -> auth read-path dependency becoming a module cycle.
       const { recordAdminAuditBestEffort } = await import("./audit-log");
-      await recordAdminAuditBestEffort({
-        ...ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
-        actor: deniedActor,
-        metadata: { requestedPermission },
-      });
+      await runAdminIdentityWriter("recovery", () =>
+        recordAdminAuditBestEffort({
+          ...ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
+          actor: deniedActor,
+          metadata: { requestedPermission },
+        }),
+      );
     },
-  });
+  }));
 }
 
 export async function requireFreshAdminGoogleAuthentication(
@@ -71,15 +76,7 @@ export async function requireFreshAdminGoogleAuthentication(
 ): Promise<Date> {
   const { auth } = await import("@/auth");
   const session = await auth();
-  const authenticatedAt = session?.user?.authenticatedAt;
-  if (typeof authenticatedAt !== "number" || authenticatedAt <= 0) {
-    throw new Error("Step-up authentication is required");
-  }
-  const authenticatedAtDate = new Date(authenticatedAt * 1_000);
-  if (Date.now() - authenticatedAtDate.getTime() > maxAgeMs) {
-    throw new Error("Step-up authentication has expired");
-  }
-  return authenticatedAtDate;
+  return assertFreshAdminAuthenticationTimestamp(session?.user?.authenticatedAt, Date.now(), maxAgeMs);
 }
 
 export async function requireRecentAdminAuthentication(input: {
@@ -108,25 +105,7 @@ export async function requireRecentAdminAuthentication(input: {
 }
 
 async function getRequestActor(): Promise<AdminActor> {
-  const requestId = (await headers()).get(ADMIN_REQUEST_ID_HEADER);
-
-  if (!requestId) {
-    return resolveRequestActor();
-  }
-
-  const cached = requestActors.get(requestId);
-
-  if (cached) {
-    return cached;
-  }
-
-  const actorPromise = resolveRequestActor();
-  requestActors.set(requestId, actorPromise);
-  after(() => {
-    requestActors.delete(requestId);
-  });
-
-  return actorPromise;
+  return getAdminAuthorizationActor(resolveRequestActor);
 }
 
 async function resolveRequestActor(): Promise<AdminActor> {

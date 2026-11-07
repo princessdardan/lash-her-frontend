@@ -4,12 +4,30 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
 import migrate
 import migrate_test
 import release
+
+
+def historical_runtime_fixture():
+    """Explicit original eight-service P1 evidence, never the current topology."""
+    from contextlib import ExitStack
+    import staging_state
+    import staging_rollback
+    stages = [("community-api", "course-api"), ("community-tls", "course-tls"),
+        ("course-snapshot", "community-worker"), ("course-publisher",), ("gateway",)]
+    stack = ExitStack()
+    stack.enter_context(patch.object(release, "STAGES", stages))
+    stack.enter_context(patch.object(release, "SERVICES", tuple(service for stage in stages for service in stage)))
+    stack.enter_context(patch.object(release, "ENV_FILES", ("course-api", "course-publisher", "course-snapshot", "community-api", "community-worker")))
+    stack.enter_context(patch.object(staging_state, "CONFIGURATION_FILES", ("runtime.json", *release.CONFIG_FILES, *release.TLS_FILES,
+        *(service + ".env" for service in release.ENV_FILES))))
+    stack.enter_context(patch.object(staging_rollback, "RECOVERY_STAGES", [stages[0], stages[1], ("course-publisher",), stages[2], stages[4]]))
+    return stack
 
 
 class RuntimeReleaseTests(unittest.TestCase):
@@ -42,11 +60,206 @@ class RuntimeReleaseTests(unittest.TestCase):
             self.save(name, "owned-fixture-certificate")
         for service in release.ENV_FILES:
             name = service.split("-")[0]
-            self.save(f"{service}.env", f"DATABASE_TARGET=staging\nSTAGING_DATABASE_URL=postgresql://runtime_role:private-fixture@{name}.example.invalid:5432/{name}_test?sslmode=verify-full\nINTERNAL_SERVICE_JWT_SECRET=literal$VALUE\n")
+            self.save(f"{service}.env", f"DATABASE_TARGET=staging\nSTAGING_DATABASE_URL=postgresql://runtime_role:private-fixture@{name}.example.invalid:5432/{name}_test?sslmode=verify-full\n" + ("" if service in ("course-media", "course-export-cleanup") else "INTERNAL_SERVICE_JWT_SECRET=literal$VALUE\n"))
         self.running, self.calls = set(), []
+
+    def test_new_workers_have_closed_credential_scopes_and_independent_config_parsers(self):
+        jobs = {name: {"job": job} for name, job in self.fixture.jobs.items()}
+        for service in ("course-media", "course-export-cleanup"):
+            raw = (self.configuration / (service + ".env")).read_bytes()
+            self.assertEqual(release.environment_values(raw, "staging", service, jobs)["DATABASE_TARGET"], "staging")
+            for field in ("INTERNAL_SERVICE_JWT_SECRET", "COURSE_USER_JWT_PRIVATE_KEY", "COMMUNITY_SIGNING_KEY", "MUX_WEBHOOK_SIGNING_SECRET", "RESEND_API_KEY"):
+                with self.assertRaisesRegex(ValueError, "WORKER_CREDENTIAL_SCOPE_REFUSED"):
+                    release.environment_values(raw + (field + "=private-fixture\n").encode(), "staging", service, jobs)
+        self.assertIn("parseMuxMediaProcessEnv()", release.NODE_CONFIG_CHECKS["course-media"])
+        self.assertIn("parseAccountExportProcessEnv()", release.NODE_CONFIG_CHECKS["course-export-cleanup"])
+        self.assertIn("course-media", release.STAGES[2]); self.assertIn("course-export-cleanup", release.STAGES[2])
 
     def tearDown(self):
         self.fixture.tearDown()
+
+    def test_profiled_runtime_wrapper_plans_without_changing_configuration_file_inventory(self):
+        import staging_state
+        original_files = staging_state.CONFIGURATION_FILES
+        original_gateway = (self.configuration / "gateway.json").read_bytes()
+        ref = self.fixture.profiled()
+        self.target.update(version=2, qualificationTargetProfile=ref)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com")
+        self.save("runtime.json", self.target); self.save("gateway.json", self.gateway)
+        gateway = (self.configuration / "gateway.json").read_bytes()
+        with patch.object(subprocess, "run", side_effect=AssertionError("external IO")):
+            plan = release.execute(self.bundle, self.configuration, self.results, self.compose, expected_profile=ref)
+        self.assertEqual(plan["version"], 2); self.assertEqual(plan["qualificationTargetProfile"], ref)
+        self.assertEqual(staging_state.CONFIGURATION_FILES, original_files)
+        self.assertEqual(len(original_files), 19)
+        self.assertNotEqual(gateway, original_gateway)  # Only this owned fixture's public identity was selected.
+        self.assertNotIn(b"qualificationTargetProfile", gateway)
+        self.assertEqual((self.configuration / "gateway.json").read_bytes(), gateway)
+        selected, jobs, _, compose = release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        # The release hash binds original bytes, including their serialization.
+        # Normalizing a valid reviewed candidate here would break the host join.
+        candidate_raw = (json.dumps(selected, indent=2) + "\n").encode()
+        (self.bundle / "release.candidate.json").write_bytes(candidate_raw)
+        raw_jobs = {name: (json.dumps(info["job"], indent=2) + "\n").encode() for name, info in jobs.items()}
+        for name, raw in raw_jobs.items():
+            (self.bundle / f"jobs/{name}.json").write_bytes(raw)
+        migration_snapshot = self.root / "profiled-migration-snapshot"
+        release.snapshot_bundle(self.bundle, migration_snapshot, selected, jobs, expected_profile=ref)
+        self.assertEqual((migration_snapshot / "release.candidate.json").read_bytes(), candidate_raw)
+        for name, raw in raw_jobs.items():
+            self.assertEqual((migration_snapshot / f"jobs/{name}.json").read_bytes(), raw)
+        snapshot = self.root / "profiled-snapshot"
+        release.snapshot_configuration(self.configuration, snapshot, selected, jobs, compose, expected_profile=ref)
+        for name in original_files:
+            self.assertEqual((snapshot / name).read_bytes(), (self.configuration / name).read_bytes())
+        self.target["graphComplete"] = True; self.save("runtime.json", self.target)
+        with self.assertRaisesRegex(ValueError, "REQUIRED"):
+            release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        self.target.pop("graphComplete")
+        self.target.pop("qualificationTargetProfile"); self.save("runtime.json", self.target)
+        with self.assertRaisesRegex(ValueError, "REQUIRED"):
+            release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+
+    def test_profiled_runtime_apply_and_invalid_context_refuse_before_input_or_scope_hooks(self):
+        ref = self.fixture.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("read input")), \
+             patch.object(release, "assert_host", side_effect=AssertionError("host IO")):
+            with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+                release.execute(self.bundle, self.configuration, self.results, self.compose, True,
+                                _p2_scope=object(), expected_profile=ref)
+            with self.assertRaisesRegex(ValueError, "UNKNOWN"):
+                release.make_plan(self.bundle, self.configuration, self.compose, expected_profile={**ref, "id": "p2q-20261106"})
+        self.assertEqual(list(self.results.iterdir()), [])
+
+    def test_profiled_current_restore_rejects_missing_or_serialized_proof_before_io(self):
+        ref = self.fixture.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("read input")), \
+             patch.object(migrate, "execute", side_effect=AssertionError("migration executor")):
+            for forged in (None, {"status": "CURRENT_DATABASES_READ_ONLY_VERIFIED", "migrationsExecuted": False}):
+                with self.assertRaisesRegex(ValueError, "PROFILED_CURRENT_DATABASE_PROOF_REQUIRED"):
+                    release.restore_profiled_current_runtime(self.bundle, self.configuration, self.results, self.compose,
+                        forged, expected_profile=ref, _profiled_current_scope=object())
+        self.assertEqual(list(self.results.iterdir()), [])
+
+    def test_current_restore_composes_real_readonly_proof_and_runtime_without_migration(self):
+        import current_databases as checks
+        from current_databases_test import CurrentDatabasesTests
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker
+        from p2_profiled_current_scope import COMMON, TARGET, P2ProfiledCurrentScope
+        from staging_state import configuration_hashes
+        from unittest.mock import Mock
+
+        self.root = self.fixture.root = self.root.resolve()
+        self.bundle = self.fixture.bundle = self.bundle.resolve()
+        self.results = self.fixture.results = self.results.resolve()
+        self.configuration, self.compose = self.configuration.resolve(), self.compose.resolve()
+        self.fixture.add_frontend()
+        ref = self.fixture.profiled()
+        self.fixture.jobs["frontend"]["target"].update(approvedPendingTags=[], allowEmptyBootstrap=False)
+        for name in ("course", "community"):
+            self.fixture.jobs[name]["target"]["serverMajor"] = 18
+        for carrier in (self.fixture.release, self.fixture.release["frontendMigration"], *self.fixture.jobs.values()):
+            carrier.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "e" * 64)
+        self.fixture.save()
+        self.target.update(version=2, qualificationTargetProfile=ref)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com")
+        self.save("runtime.json", self.target); self.save("gateway.json", self.gateway)
+        selected, jobs, _, _ = release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        self.assertTrue(all(jobs[name]["job"]["target"]["approvedPendingTags"] for name in ("course", "community")))
+        candidate_sha = migrate.file_hash(migrate.read_input(self.bundle, "release.candidate.json"))
+        job = jobs["frontend"]["job"]
+        journal = [{"hash": "b" * 64, "created_at": "1"}]
+        receipt = {**{key: job[key] for key in COMMON}, "version": 2, "qualificationTargetProfile": ref,
+                   "target": {key: job["target"][key] for key in TARGET}, "status": "DATABASE_VERIFIED", "service": "frontend",
+                   "migrationMode": "verify-current-only", "readOnlyVerified": True, "schemaVerified": True,
+                   "runtimeRoleVerified": True, "trafficAuthorized": False, "before": journal, "after": journal, "applied": []}
+        self.gateway["admission"] = {"file": "/admission/state.json", "releaseId": selected["releaseId"], "candidateSha256": candidate_sha}
+        self.save("gateway.json", self.gateway)
+        parent = object.__new__(P2ProfiledCurrentRecoveryBroker)
+        parent.bundle, parent.selected, parent.jobs = self.bundle, selected, jobs
+        parent.initial = {"recoveryActionId": "owned-current-restore", "disposition": "restore-current-runtime",
+                          "apiJobSha256": migrate.profiled_current_job_hashes(self.bundle)}
+        parent.directory = self.root / "parent"
+        parent.directory.mkdir(mode=0o700)
+        parent.frontend_raw = json.dumps(receipt).encode()
+        parent.continuation_started_raw = b'{"status":"FRONTEND_CONTINUATION_STARTED"}\n'
+        migrate.write_exact_bytes(parent.directory, "frontend-original-database-receipt.json", parent.frontend_raw)
+        migrate.write_exact_bytes(parent.directory, "frontend-continuation-started.json", parent.continuation_started_raw)
+        # Project the container and gateway boundaries. The real checker
+        # produces the in-process proof that the runtime consumer must adopt.
+        db = CurrentDatabasesTests()
+        db.selected, db.jobs, db.output = selected, jobs, self.root / "read-only-result"
+        db.checker = self.root / "checker.mjs"
+        db.checker.write_text("// owned fixture\n")
+        db.checker_hash = migrate.file_hash(db.checker.read_bytes())
+        db.credentials = {name: name + "-private-fixture" for name in ("course", "community")}
+        db.calls, db.bad_frontend, db.bad_api, db.bad_cleanup = [], False, False, False
+        lock_path = self.root / "release.lock"
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        scope = P2ProfiledCurrentScope(fd, lock_path, lambda: None, receipt, candidate_sha, release=selected, jobs=jobs,
+            configuration_sha256=configuration_hashes(self.configuration), recovery_action_id=parent.action_id())
+        parent.lock_fd, parent.scope = fd, scope
+        scope.bind_runtime_parent(parent)
+        def docker(args, **kwargs):
+            if args[1] == "compose" and "up" in args:
+                self.calls.append(args)
+                self.running.update(args[args.index("90") + 1:])
+                self.assertEqual(migrate.read_json(db.output, "current-databases-outcome.json")["status"],
+                                 "CURRENT_DATABASES_READ_ONLY_VERIFIED")
+                with lock_path.open() as lock, self.assertRaises(BlockingIOError):
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return subprocess.CompletedProcess(args, 0, "", "")
+            return self.docker(args, **kwargs)
+        try:
+            with patch.object(scope, "run", side_effect=lambda args, *, env, input=None, **opts: db.run_child(args, env, input)):
+                proof = checks.check_all(selected, jobs, db.output, db.credentials, db.checker, db.checker_hash,
+                                         expected_profile=ref, _profiled_current_scope=scope)
+            boundary = Mock(api_suspension_started=False, api_suspension_finished=False, stopped=False)
+            boundary.before_api_suspension.side_effect = lambda: setattr(boundary, "api_suspension_started", True)
+            boundary.after_api_suspension.side_effect = lambda: setattr(boundary, "api_suspension_finished", True)
+            scope.prior_gateway = boundary
+            with patch.object(scope, "run", side_effect=docker), patch.object(release, "assert_host"), \
+                    patch.object(P2ProfiledCurrentRecoveryBroker, "runtime_ready") as ready, \
+                    patch.object(migrate, "execute", side_effect=AssertionError("recovery invoked the migration executor")):
+                outcome = release.restore_profiled_current_runtime(self.bundle, self.configuration, self.results, self.compose,
+                    proof, expected_profile=ref, _profiled_current_scope=scope)
+            self.assertEqual(outcome["status"], "API_RUNTIME_READY")
+            self.assertFalse(outcome["migrationsExecuted"])
+            self.assertEqual(outcome["currentDatabasesOutcomeSha256"],
+                             migrate.file_hash(migrate.read_input(db.output, "current-databases-outcome.json")))
+            self.assertEqual(ready.call_args.args[2], db.output)
+            self.assertEqual(self.running, set(release.SERVICES))
+            self.assertEqual(len([args for args, _, _ in db.calls if args[1] == "run"]), 2)
+        finally:
+            scope.revoke()
+            os.close(fd)
+
+    def test_profiled_runtime_requires_the_registered_project_and_gateway_origin(self):
+        ref = self.fixture.profiled()
+        self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)
+        with self.assertRaisesRegex(ValueError, "OBSERVATION_MISMATCH"):
+            release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+
+    def test_actual_isolated_profiled_cli_can_only_plan_and_does_not_dispatch_a_scope(self):
+        ref = self.fixture.profiled()
+        self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com"); self.save("gateway.json", self.gateway)
+        real_compose = Path(release.__file__).parents[1] / "compose.yaml"
+        self.fixture.release["runtime"]["composeSha256"] = "sha256:" + hashlib.sha256(real_compose.read_bytes()).hexdigest()
+        self.fixture.save()
+        command = [sys.executable, "-I", str(Path(release.__file__)), str(self.bundle), str(self.configuration), str(self.results), "--profiled-current"]
+        result = subprocess.run(command, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["qualificationTargetProfile"], ref)
+        self.assertFalse(json.loads(result.stdout)["credentialsRead"])
+        refused = subprocess.run([*command, "--apply"], capture_output=True)
+        self.assertEqual(refused.returncode, 1)
+        self.assertEqual(json.loads(refused.stderr)["status"], "API_RELEASE_REFUSED")
+        self.assertEqual(list(self.results.iterdir()), [])
 
     def save(self, relative, value):
         file = self.configuration / relative
@@ -67,7 +280,7 @@ class RuntimeReleaseTests(unittest.TestCase):
         output = ""
         if args[1] == "compose":
             if "config" in args:
-                environment = {service: {"DATABASE_TARGET": "staging", "INTERNAL_SERVICE_JWT_SECRET": "literal$VALUE"} for service in release.ENV_FILES}
+                environment = {service: ({"NODE_ENV": "production", "PORT": "4003" if service == "course-media" else "4004", "NODE_OPTIONS": "--max-old-space-size=128"} if service in ("course-media", "course-export-cleanup") else {"DATABASE_TARGET": "staging", "INTERNAL_SERVICE_JWT_SECRET": "literal$VALUE"}) for service in release.ENV_FILES}
                 output = json.dumps({"services": {service: {"image": self.fixture.release["artifacts"][release.IMAGE_KEYS[service]]["image"],
                                 "environment": environment.get(service, {})} for service in release.SERVICES}})
             elif "up" in args:
@@ -81,18 +294,18 @@ class RuntimeReleaseTests(unittest.TestCase):
             elif "exec" in args:
                 output = json.dumps({"status": "API_RUNTIME_BOUNDARIES_PASS", "checks": sorted(release.PROBE_CHECKS)})
             elif "ps" in args:
-                output = str(release.SERVICES.index(args[-1]) + 1) * 64
+                output = format(release.SERVICES.index(args[-1]) + 1, "064x")
         elif args[1:3] == ["image", "inspect"]:
             output = args[-1].split("@")[1]
         elif args[1] == "inspect":
-            service = release.SERVICES[int(args[-1][0]) - 1]
+            service = release.SERVICES[int(args[-1], 16) - 1]
             image = self.fixture.release["artifacts"][release.IMAGE_KEYS[service]]["image"].split("@")[1]
             output = f'{image}|true|{"none" if service.endswith("-tls") else "healthy"}|lash-her-staging|{service}'
         elif args[1] == "ps":
             if "--format" in args:
-                output = "\n".join(f'{str(release.SERVICES.index(service)+1)*12} {service}' for service in self.running)
+                output = "\n".join(f'{format(release.SERVICES.index(service)+1, "064x")} {service}' for service in self.running)
             else:
-                output = "\n".join(str(release.SERVICES.index(service)+1)*12 for service in self.running)
+                output = "\n".join(format(release.SERVICES.index(service)+1, "064x") for service in self.running)
         elif args[1] == "stop":
             self.running.clear()
         elif "--execute" in args:
@@ -116,6 +329,13 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertFalse(plan["credentialsRead"])
         self.assertFalse(plan["trafficAuthorized"])
         self.assertEqual(list(self.results.iterdir()), [])
+
+    def test_optional_community_origin_is_exactly_the_private_tls_receiver(self):
+        self.save("gateway.json", {**self.gateway, "communityOrigin": "https://community-tls:8443"})
+        release.make_plan(self.bundle, self.configuration, self.compose)
+        self.save("gateway.json", {**self.gateway, "communityOrigin": "https://unreviewed.example.invalid"})
+        with self.assertRaisesRegex(ValueError, "GATEWAY_TARGET"):
+            release.make_plan(self.bundle, self.configuration, self.compose)
 
     def test_confirmation_and_host_checks_precede_private_reads(self):
         with patch.object(release, "assert_host", side_effect=ValueError("WRONG_HOST")), patch.object(release, "snapshot_configuration", side_effect=AssertionError("Credentials read")):
@@ -172,12 +392,12 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertFalse(result["trafficAuthorized"])
         self.assertFalse(result["frontendPromotionAuthorized"])
         self.assertFalse(result["realVercelOidcVerified"])
-        self.assertEqual(len(result["containers"]), 8)
+        self.assertEqual(len(result["containers"]), len(release.SERVICES))
         starts = [tuple(args[args.index("90")+1:]) for args in self.calls if "up" in args]
         self.assertEqual(starts, release.STAGES)
         check_indices = [index for index, args in enumerate(self.calls) if "--eval" in args]
         apply_indices = [index for index, args in enumerate(self.calls) if "--execute" in args]
-        self.assertEqual(len(check_indices), 8)
+        self.assertEqual(len(check_indices), len(release.SERVICES))
         self.assertLess(max(check_indices), min(apply_indices))
         stored = (self.results / "runtime-test-release/runtime-outcome.json").read_text()
         self.assertNotIn("private-fixture", stored)
@@ -311,6 +531,20 @@ class RuntimeReleaseTests(unittest.TestCase):
         with self.patches(), patch.object(subprocess, "run", side_effect=fail), self.assertRaisesRegex(ValueError, "RUNTIME_BOUNDARY"):
             self.execute()
         self.assertFalse(self.running)
+
+    def test_new_worker_compose_cannot_override_loop_flags_or_inject_api_credentials(self):
+        original = self.docker
+        for key, value in (("MUX_MEDIA_RECOVERY_ENABLED", "true"), ("INTERNAL_SERVICE_JWT_SECRET", "private-fixture")):
+            def changed(args, **kwargs):
+                result = original(args, **kwargs)
+                if args[1] == "compose" and "config" in args:
+                    model = json.loads(result.stdout); model["services"]["course-media"]["environment"][key] = value
+                    result.stdout = json.dumps(model)
+                return result
+            with self.patches(), patch.object(subprocess, "run", side_effect=changed), self.assertRaisesRegex(ValueError, "WORKER_PUBLIC_OVERRIDES_REFUSED"):
+                release.preflight(self.fixture.release, self.configuration, {name: {"job": job} for name, job in self.fixture.jobs.items()}, pull=False)
+            for file in self.configuration.glob("*.resolved.env"): file.unlink()
+        self.assertFalse(any("--execute" in args for args in self.calls))
 
     def test_unverified_configuration_container_cleanup_prevents_migration(self):
         original = self.docker

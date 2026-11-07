@@ -1,0 +1,1481 @@
+{
+  "status": "FRONTEND_HISTORICAL_SOURCE_OWNED_PASS",
+  "fixtureOnly": true,
+  "actualOriginalDeploymentConfigurationObserved": false,
+  "postgresMajor": 16,
+  "actualTlsScramCredentialPeers": 4,
+  "actualParentCheckpoints": 207,
+  "checks": [
+    "pure-preflight-identifies-all-four-original-sql-keys",
+    "all-four-actual-tls-scram-readonly-credentials-observed",
+    "source-specific-absence-produces-context-bound-closures",
+    "all-four-original-credentials-read-only-source-store-queries",
+    "empty-configured-sql-does-not-close-historical-google-requests",
+    "alternate-only-sql-peers-cannot-be-read-for-application-discovery",
+    "actual-encrypted-grant-survives-source-predicate",
+    "actual-reference-grant-survives-source-predicate",
+    "foreign-parent-markers-rejected",
+    "wrong-actual-role-oid-rejected",
+    "connected-peer-original-credential-mismatch-rejected",
+    "actual-writable-session-rejected",
+    "serialized-evidence-is-not-an-observer-proof",
+    "private-password-url-and-tokens-not-present-in-evidence",
+    "all-thirty-three-real-git-source-profiles-execute-without-skip"
+  ],
+  "executedChecks": 15,
+  "appliedOwnedMigrations": 83,
+  "skipped": 0,
+  "sourceModuleSha256": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+  "profiles": [
+    {
+      "sourceCommit": "03d850c0512eddc0ef11cbac779e255a7b73bd3b",
+      "treeOid": "a32fd7a72b7d34710870b9b1f11233cd55c1284c",
+      "sourceInventorySha256": "942d920d27183dfdea8e0357676f7c4e704d90f9ef0cdd5573a952c20044906d",
+      "requirementsSha256": "bbebf5dad29c4a0b4dac41bbdc836fc9b13b900dd6b98f87ee6a65662f1619c1",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 86,
+      "deferred": 32,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "0ed09401726ff5f6f5057018ba7125a498d7180c",
+      "treeOid": "42f90f43a2fd7a9c1e053bd785d62919ba07064a",
+      "sourceInventorySha256": "bc9fff97c3d0bfc4efbdae9178e16967449156cc96018145351b41485af93563",
+      "requirementsSha256": "444d129cfd470d453cbd5711c6159ed926fd89721f1d3b487bacdc124291671e",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 87,
+      "deferred": 32,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "13142937adf542e41d0a12807d2503389933f74e",
+      "treeOid": "aa9ccfc57e3e4e6a385dad83aacde571a822bb52",
+      "sourceInventorySha256": "6a6b6a65e875ee4ebb7135b764840ebaea93a91db846e83ed26d40c4ef83fc6b",
+      "requirementsSha256": "f1124c1e99865c9201a53f1bff090b91c1b24cc96625e581247d6415fb1df05d",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 31,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "188af7d78123be519a19bfe8505fc4d6060dda41",
+      "treeOid": "8db61d2e44782476188912fb9bf8d09ae4e7495d",
+      "sourceInventorySha256": "fd3498159903cbc197bb3db6c3d86451309964b8e276da2854dd4bfd7a89410e",
+      "requirementsSha256": "27a52a0531ab8b57e4d1a13b20de3b735390f3a1b30f24533684a35fccf67e6f",
+      "providerFamilies": 36,
+      "routes": 48,
+      "manual": 25,
+      "deferred": 23,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "18feb565b4b1bd8bc3e9658d2eb3de7523594488",
+      "treeOid": "b92a69e2e279a5404a7911b2829f7827f60d2fcb",
+      "sourceInventorySha256": "fe466f611dda0f25edd31183f0211c37a798cf0433c62f2358d50c555a2b5a67",
+      "requirementsSha256": "fe1db1e7964268411f760642eb41ec8dd649d9910b7754695844152c2eea06c8",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 29,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+      "treeOid": "7ee5cdb0ce0eca84f7707e95e687514c5b217482",
+      "sourceInventorySha256": "67283c23beb7927322f670afec74f6ba634f46ea4d6e1a9704c87e3783e70b70",
+      "requirementsSha256": "3aab3875eb0894362cae89afc353102a258f2bab65f1b3c74c24ade5e9b87b7f",
+      "providerFamilies": 36,
+      "routes": 48,
+      "manual": 25,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "treeOid": "42b6ff7b5cff1aba69e20981af0880036d77947d",
+      "sourceInventorySha256": "2f0bfbf245b9e27838b832abd0fb5b64141af43d6c59843aa0e2763c3ec96eca",
+      "requirementsSha256": "3677870b2ad46e7dcf01e4a2ca6fc5d381092c7361ba70d1f7785a11a78ca499",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 43,
+      "deferred": 24,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "24a3fd334209177797a128bd67d07fe805d539f5",
+      "treeOid": "ac5b651650a83af66e227f80911c33a74dfbd3af",
+      "sourceInventorySha256": "119356c0285bbbdc422539e39d37892210b7ef2e08b16e2b592f392f16443eb0",
+      "requirementsSha256": "b9091dbe01d6536e636356cb698d18416c8928334229546baf20b1748d7f2b0f",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 28,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "treeOid": "3df4a3f67d1315df5336d4f345385962629c8662",
+      "sourceInventorySha256": "6ff7a32f1cbbebefc8ba6fdac23221e2ca5a248d23db6a946ec94f48fb77fdbe",
+      "requirementsSha256": "47b4164c551edf3d6059ca7af5116201658508d68d4ba557c2fa65222c9721c1",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 91,
+      "deferred": 32,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+      "treeOid": "1741d96a9466ccee1c4a9ebb8ff70adae95fe335",
+      "sourceInventorySha256": "263512ed6c9e96d4035de9463bdcc13553edb640a13d40cea39d4abab4971de7",
+      "requirementsSha256": "793684b1ae8a224c8a4320602dba76013adbf10a321e82b1db71c3ba941c3192",
+      "providerFamilies": 36,
+      "routes": 48,
+      "manual": 25,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+      "treeOid": "eca5b5ead0d026822a68788f9332ae550f6fbfe0",
+      "sourceInventorySha256": "cdc492cc5bda9d332bd68b42a65f718b1680a2f5ad175f7f8e0619e913f97cfb",
+      "requirementsSha256": "37bd3f75d32cdc66d0b897789aecad0fe64072404b7b50114bc206fb8fa19241",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 31,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "669f2978722a431c3f11cd8f68f59dfde9fe3d76",
+      "treeOid": "40ff8b54aa6e2b8d2a11e0ef79712d5e31713b42",
+      "sourceInventorySha256": "b4d58dcd93d9bfa41e5da052810de5bc1cf54184b8f88517fe90f65fab0de136",
+      "requirementsSha256": "75b10fe95304f684034702b3317a19e4178f1b84c382cfa2f758f49fdf34485e",
+      "providerFamilies": 36,
+      "routes": 46,
+      "manual": 24,
+      "deferred": 21,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "treeOid": "7b22db3ad93a77b0c840613a737396e0bcdf89dc",
+      "sourceInventorySha256": "f1e883ac69651d2cea9981d349829e7458c2113ca861c8858b8a484b8ce4481f",
+      "requirementsSha256": "03570104a0f054e2682a3417011b7593eee62f84be09beffdd094e33a5a6d7d3",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 43,
+      "deferred": 24,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "6d5845a8b6d5ff8f27ac7512d72075328233d0ec",
+      "treeOid": "018682cf10f5bf938b66cd0d885f0b5b0f5a2286",
+      "sourceInventorySha256": "4d6d3fba3506fe443bdcacfeceb03ecd823e6ffb745f3807edb03cd694d0952a",
+      "requirementsSha256": "2fe66c3f91ed80506b6c94961116823eb900a3bafed5928dbad43dd9d5ae95e0",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 31,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+      "treeOid": "31b019df96a5986d06ff32a3d72d53c278ad7b51",
+      "sourceInventorySha256": "5c4492fa0ebd5a7e3e6cca52e8cc0a3ff56109b79490659fbf8080729180dcc6",
+      "requirementsSha256": "6f77714f44e3e0b4281d56a7ae7c1d4023767c5002fd2f522c31eb7cc69faf7a",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 31,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "73beea0db10099c3b45cff6fac5dcd9a31f12762",
+      "treeOid": "00fbdc67c20fd225f0ed79a64f9d7cf70c73deb5",
+      "sourceInventorySha256": "d7c63e69b6d4f8ed1e0477eeb057c2462e8c51c8d71a46655393952372f0d7e2",
+      "requirementsSha256": "b96afd4ce66a172e959b5ea7bd329f82c9b9928abf9c728ab272e9f4d2a191e6",
+      "providerFamilies": 36,
+      "routes": 46,
+      "manual": 24,
+      "deferred": 21,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "treeOid": "b38d32730d01f0fcc86df00fd09302923e64aa6f",
+      "sourceInventorySha256": "3bf4e28f439b276a05e035cf3984cac56a851330d0c0fe49f8c2eadbb87fdfd8",
+      "requirementsSha256": "4f0a25b83582425815d180c98b52158de062cf006e2f1cd52d4258f1f9df9c73",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 89,
+      "deferred": 32,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+      "treeOid": "04ed775afdb4eccfd9f1cfb99ff31539511dff27",
+      "sourceInventorySha256": "67bfba4dcd32a7f03618e8d2fcd54402d0ff9963dc0cf2565393a2c6a3396138",
+      "requirementsSha256": "ff116db2d8ec7762cb73dee9bdc5235a25875c722cec30760d4a4a7bc4d2a997",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 86,
+      "deferred": 32,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "9b899e4e02afe787f25315a5ef1912d4d32d6080",
+      "treeOid": "39b58c331bcba718354cb4b5cecacc1fe3c63cc9",
+      "sourceInventorySha256": "05a1ef87e2022a744259ca9f0e2d3204bc2ee1c7d077601f28d927e4e8c2cc0c",
+      "requirementsSha256": "e17147c12f968a560b0a0a8f9bd352381fb78404cb2ddcb6e2d01f91b3737205",
+      "providerFamilies": 36,
+      "routes": 47,
+      "manual": 25,
+      "deferred": 23,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "a05f38d4d9452be6ee80c9b51d1b2f9188c54242",
+      "treeOid": "42f90f43a2fd7a9c1e053bd785d62919ba07064a",
+      "sourceInventorySha256": "2d32b522ef268b486d359fa6fcc2f287feeb376f561acb03e513f992c7b9ea68",
+      "requirementsSha256": "3512ed883d84a6c9a7f8da92ff22b2fac29849ca0bfcdd76ec83b16d36da9491",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 87,
+      "deferred": 32,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "b1f46feadab04e5e0934f5c63b9333837b48f56c",
+      "treeOid": "6f3e765ccb66a375f962466585ccd1ea6aefa884",
+      "sourceInventorySha256": "2839bbef81e194054bcb1bb03757ac45b235c4292bb3ef2199ea27cb803e91bb",
+      "requirementsSha256": "a3bd58ae6508c38aeac22528243d309b4cd06a9667ff4e4db7d1c592722c3827",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 29,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "b2ce650791fca81674f10bd4f9dd768d53efd185",
+      "treeOid": "e05e49fa001204d93f1467736c44602d68311ed6",
+      "sourceInventorySha256": "286a43be75fd0f6ef299e0558550b9272cc75ac63474c54b753ba9af35c23384",
+      "requirementsSha256": "0d1438eb4d4c0194278da65b2a1490f9c5829872144624bf8d951c1b7edc055d",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 31,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "treeOid": "4f63ed9c0288b410b64a1f41d7cb70c5d5546364",
+      "sourceInventorySha256": "d3d2015ab6ad46151c3dd93f2a322318988aa85d8c5060e0f4cc16957f84ae9e",
+      "requirementsSha256": "cb58c72a7a8c812f09b7c9e82f2507ece61c893cef3ccc032aa5d6498b1caa88",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 43,
+      "deferred": 24,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+      "treeOid": "dee14e1844868d2692c013daec66bee229dda7e7",
+      "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+      "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 157,
+      "deferred": 39,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "c5e61fcd8ef0ac1e055c5f98ffb98bc6857d44e2",
+      "treeOid": "5d30243bb0b464aba1007a7efb17fcd32a6dbba5",
+      "sourceInventorySha256": "7959a1001b179cd0033abfd2458155e760ee6dfa6ff447d90c9704099f524141",
+      "requirementsSha256": "0386702550c55a5ddc222507081a95123d77738931ba4ee37da16b4c3a96e825",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 29,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "d632773365867a979084876426d74f6a584e6f2c",
+      "treeOid": "5ead75d605c1a1e41951665f00b770e4771c002a",
+      "sourceInventorySha256": "8eb0a6d89356f4c7a21b871650bd6ec827eea9e9002ed1805f7803b3032aaf20",
+      "requirementsSha256": "849f3b40778a26bf1e894a65aead43de2c6fe3e99013bb379581d3e8cde21f4f",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 86,
+      "deferred": 32,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "treeOid": "ffbf617bd75974ae1d345325e77e0f0ca69fbe5b",
+      "sourceInventorySha256": "8d10d3b080b9db9edf7d4b6b48a19eb02199d07e94e7f0b0a5c4133f90d829d3",
+      "requirementsSha256": "6531bf0766a27c4e7f321bb4b183c8313adc0bb3b3d25a1f6d9ddbab2881db55",
+      "providerFamilies": 36,
+      "routes": 55,
+      "manual": 91,
+      "deferred": 32,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "treeOid": "6cedd5073b8d82fe730b8e4558bb3cc0b01f5498",
+      "sourceInventorySha256": "f101b6e47a8af046be7dde9c3d639166e0ecc99537c4a50a5cc0a8ca28b87570",
+      "requirementsSha256": "d8d965b6dc4a0c0772356b84030d16d3f4bbe836e2ccb9f5f255ad72ee4abc86",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 43,
+      "deferred": 24,
+      "unknownCapabilityProviders": []
+    },
+    {
+      "sourceCommit": "e01ad6b6e6e319d63440f84b836f22594897b1d4",
+      "treeOid": "6399666aa67c666c52130aec93f2c6be95efbc20",
+      "sourceInventorySha256": "a1d5c64c5e78ddaceab1cb4ad2fbadefa8b3c5ab15492a2a5789518701524402",
+      "requirementsSha256": "ab1a39bb634cbfeca5ce08b4b36ed3a5b2f0e4cc63d725b631a4d06c94ce964c",
+      "providerFamilies": 36,
+      "routes": 46,
+      "manual": 24,
+      "deferred": 21,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "e4040282b708d632bb4d45a45180905525b4da8a",
+      "treeOid": "ec01b34a72a3e1d417917a320f2dea239768ba23",
+      "sourceInventorySha256": "be233e3cf9dae12303625302b42e939b16ff2cc3b045b1a966ddb87b2d43ffbd",
+      "requirementsSha256": "b157eb7acd625e35a9e88640e53b5626e57a5dcb9cbd415fcc3f1d776d75e72d",
+      "providerFamilies": 36,
+      "routes": 46,
+      "manual": 24,
+      "deferred": 21,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "e6ee380122131505583a106437542591badf2172",
+      "treeOid": "59938d0dd865fbd80bd56b9b2dd8a3a322221a52",
+      "sourceInventorySha256": "96e8020519ff2586c9eb6548564346d8f35fe7e1266e90d1504784909e1db2da",
+      "requirementsSha256": "95eb49dd8de0168747d61bb01f824bbbb9be7c06f73076d7ab4d984af12f829d",
+      "providerFamilies": 36,
+      "routes": 51,
+      "manual": 28,
+      "deferred": 24,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+      "treeOid": "87087786f4795b67eb4781efc0c8dc5a1c71c937",
+      "sourceInventorySha256": "c25a2430c546d4cef24fcbe6f9d215b510a0c0f19d120cf8057aa24a7b41e723",
+      "requirementsSha256": "a4e8f18d1f5e18e2a1adb16e37a1184f0eeec5982d795d0ad53048ede8295bce",
+      "providerFamilies": 36,
+      "routes": 47,
+      "manual": 25,
+      "deferred": 23,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    },
+    {
+      "sourceCommit": "fd08fe169b529f7d9edde3197873136a991ce863",
+      "treeOid": "96428ec3cb30f98f6809fab459e6172eb043f534",
+      "sourceInventorySha256": "c6171c042fd917ab5836fd41f70ef51f57dc3e9ccfdce39014bd6800b92ec0f0",
+      "requirementsSha256": "3cbe0bbcc3daa3a6b0fbf95cdd59a083c0427c4c9c33fdf72cbe2ec2acd39c9b",
+      "providerFamilies": 36,
+      "routes": 46,
+      "manual": 24,
+      "deferred": 21,
+      "unknownCapabilityProviders": [
+        "square",
+        "highlevel",
+        "chitchats",
+        "resend",
+        "google",
+        "sanity",
+        "mux"
+      ]
+    }
+  ],
+  "sqlObservation": {
+    "version": 1,
+    "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+    "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+    "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+    "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+    "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+    "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+    "databaseRolesSha256": "df7c3b43d16b022ad3a0abc0c1c1ec8b53f01ea92ef1ea8d23253028b1629a27",
+    "facts": [
+      {
+        "requirementId": "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+        "key": "BACKUP_RESTORE_DATABASE_URL",
+        "disposition": "original-credential-bound-to-physical-database",
+        "role": {
+          "name": "historical_reader",
+          "oid": "16384"
+        },
+        "database": "frontend_historical_owned",
+        "major": 16
+      },
+      {
+        "requirementId": "sql-credentials.DATABASE_URL",
+        "key": "DATABASE_URL",
+        "disposition": "original-credential-bound-to-physical-database",
+        "role": {
+          "name": "historical_reader",
+          "oid": "16384"
+        },
+        "database": "frontend_historical_owned",
+        "major": 16
+      },
+      {
+        "requirementId": "sql-credentials.STAGING_DATABASE_URL",
+        "key": "STAGING_DATABASE_URL",
+        "disposition": "original-credential-bound-to-physical-database",
+        "role": {
+          "name": "historical_reader",
+          "oid": "16384"
+        },
+        "database": "frontend_historical_owned",
+        "major": 16
+      },
+      {
+        "requirementId": "sql-credentials.TEST_DATABASE_URL",
+        "key": "TEST_DATABASE_URL",
+        "disposition": "original-credential-bound-to-physical-database",
+        "role": {
+          "name": "historical_reader",
+          "oid": "16384"
+        },
+        "database": "frontend_historical_owned",
+        "major": 16
+      }
+    ],
+    "evidenceSha256": "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3"
+  },
+  "sourceCapabilityResult": {
+    "version": 1,
+    "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+    "treeOid": "dee14e1844868d2692c013daec66bee229dda7e7",
+    "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+    "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+    "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+    "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+    "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+    "capabilityClosures": [
+      {
+        "familyId": "square.payments",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.payments.accepted-request-completeness",
+          "square.payments.durable-intents",
+          "square.payments.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.refunds",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.refunds.accepted-request-completeness",
+          "square.refunds.durable-intents",
+          "square.refunds.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.orders",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.orders.accepted-request-completeness",
+          "square.orders.durable-intents",
+          "square.orders.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.customers",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.customers.accepted-request-completeness",
+          "square.customers.durable-intents",
+          "square.customers.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.cards",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.cards.accepted-request-completeness",
+          "square.cards.durable-intents",
+          "square.cards.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.invoices",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.invoices.accepted-request-completeness",
+          "square.invoices.durable-intents",
+          "square.invoices.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.checkout",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.checkout.accepted-request-completeness",
+          "square.checkout.durable-intents",
+          "square.checkout.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "square.webhooks",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL",
+          "square.webhooks.accepted-request-completeness",
+          "square.webhooks.callback-persistence",
+          "square.webhooks.durable-intents",
+          "square.webhooks.original-configuration"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.contacts",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.contacts.accepted-request-completeness",
+          "highlevel.contacts.durable-intents",
+          "highlevel.contacts.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.workflows",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.workflows.accepted-request-completeness",
+          "highlevel.workflows.durable-intents",
+          "highlevel.workflows.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.tasks",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.tasks.accepted-request-completeness",
+          "highlevel.tasks.durable-intents",
+          "highlevel.tasks.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.opportunities",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.opportunities.accepted-request-completeness",
+          "highlevel.opportunities.durable-intents",
+          "highlevel.opportunities.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.conversations",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.conversations.accepted-request-completeness",
+          "highlevel.conversations.durable-intents",
+          "highlevel.conversations.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.messages",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.messages.accepted-request-completeness",
+          "highlevel.messages.durable-intents",
+          "highlevel.messages.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.webhooks",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.webhooks.accepted-request-completeness",
+          "highlevel.webhooks.callback-persistence",
+          "highlevel.webhooks.durable-intents",
+          "highlevel.webhooks.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "highlevel.oauth",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "highlevel.oauth.accepted-request-completeness",
+          "highlevel.oauth.durable-intents",
+          "highlevel.oauth.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "chitchats.drafts",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "chitchats.drafts.accepted-request-completeness",
+          "chitchats.drafts.durable-intents",
+          "chitchats.drafts.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "chitchats.postage",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "chitchats.postage.accepted-request-completeness",
+          "chitchats.postage.durable-intents",
+          "chitchats.postage.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "chitchats.refunds",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "chitchats.refunds.accepted-request-completeness",
+          "chitchats.refunds.durable-intents",
+          "chitchats.refunds.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "chitchats.tracking",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "chitchats.tracking.accepted-request-completeness",
+          "chitchats.tracking.durable-intents",
+          "chitchats.tracking.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.emails",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.emails.accepted-request-completeness",
+          "resend.emails.durable-intents",
+          "resend.emails.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.contacts",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.contacts.accepted-request-completeness",
+          "resend.contacts.durable-intents",
+          "resend.contacts.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.segments",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.segments.accepted-request-completeness",
+          "resend.segments.durable-intents",
+          "resend.segments.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.topics",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.topics.accepted-request-completeness",
+          "resend.topics.durable-intents",
+          "resend.topics.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.events",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.events.accepted-request-completeness",
+          "resend.events.durable-intents",
+          "resend.events.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.broadcasts",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.broadcasts.accepted-request-completeness",
+          "resend.broadcasts.durable-intents",
+          "resend.broadcasts.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.templates",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.templates.accepted-request-completeness",
+          "resend.templates.durable-intents",
+          "resend.templates.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.automations",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.automations.accepted-request-completeness",
+          "resend.automations.durable-intents",
+          "resend.automations.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "resend.webhooks",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "resend.webhooks.accepted-request-completeness",
+          "resend.webhooks.callback-persistence",
+          "resend.webhooks.durable-intents",
+          "resend.webhooks.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "sanity.editorial",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sanity.editorial.accepted-request-completeness",
+          "sanity.editorial.durable-intents",
+          "sanity.editorial.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "effectScope": "frontend-private-sql-and-protected-continuations",
+        "sourcePredicate": "sanity-editorial-private-sql-scope-v1",
+        "externalProviderCapability": "not-declared-absent",
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "sanity.callbacks",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "sanity.callbacks.accepted-request-completeness",
+          "sanity.callbacks.durable-intents",
+          "sanity.callbacks.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "effectScope": "frontend-private-sql-and-protected-continuations",
+        "sourcePredicate": "sanity-signed-private-sql-ingress-v1",
+        "externalProviderCapability": "not-a-provider-retirement-receipt",
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "mux.studio",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "no-capability-observed",
+        "requirementIds": [
+          "mux.studio.accepted-request-completeness",
+          "mux.studio.original-configuration",
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "effectScope": "frontend-private-sql-and-protected-continuations",
+        "sourcePredicate": "mux-public-editorial-private-sql-scope-v1",
+        "externalProviderCapability": "not-declared-absent",
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      },
+      {
+        "familyId": "mux.course-media",
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "surfaceSha256": "6fd1643a41ace9f1e4a59997c1be7eb84cf5d4a8ac3aaa0b6e0e3f7f3737899a",
+        "configurationRecordSha256": "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+        "provenanceSha256": "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1",
+        "disposition": "absent-from-verified-source",
+        "requirementIds": [
+          "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+          "sql-credentials.DATABASE_URL",
+          "sql-credentials.STAGING_DATABASE_URL",
+          "sql-credentials.TEST_DATABASE_URL"
+        ],
+        "evidenceIds": [
+          "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+          "4a884a7ec9f429da260ae1f19d226c041bcd74a08aa36549fb8ef74faab94ab9",
+          "9d61cda64ffdb5137bc51f4fc68d6dffcc3edbbb06554339df44c66f56fd32e3",
+          "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+          "fa8cb2beb3285e66efb4edda7c4a00da5568b0ca856483237e6071885dcbfac1"
+        ]
+      }
+    ],
+    "unresolvedFrontendSqlFamilyIds": [
+      "google.calendar",
+      "google.identity",
+      "google.oauth"
+    ],
+    "unresolvedExternalCapabilityFamilyIds": [
+      "mux.studio",
+      "sanity.editorial"
+    ],
+    "unresolvedFamilyIds": [
+      "google.calendar",
+      "google.identity",
+      "google.oauth",
+      "mux.studio",
+      "sanity.editorial"
+    ]
+  },
+  "providerCalls": 0,
+  "migrationAuthorized": false
+}

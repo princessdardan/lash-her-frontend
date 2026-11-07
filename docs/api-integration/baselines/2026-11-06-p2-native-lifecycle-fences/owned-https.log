@@ -1,0 +1,12 @@
+test_actual_https_enable_toggle_retains_intent_and_exact_readback_once (p2_lifecycle_native_test.LifecycleNativeControlTests.test_actual_https_enable_toggle_retains_intent_and_exact_readback_once) ... ok
+test_actual_https_p2_profile_observes_ten_controls_and_immutable_writer_binding (p2_lifecycle_native_test.LifecycleNativeControlTests.test_actual_https_p2_profile_observes_ten_controls_and_immutable_writer_binding) ... ok
+test_disable_is_metadata_only_and_does_not_depend_on_probe_or_cron_secret (p2_lifecycle_native_test.LifecycleNativeControlTests.test_disable_is_metadata_only_and_does_not_depend_on_probe_or_cron_secret) ... ok
+test_disable_record_loss_still_removes_temporary_native_capability (p2_lifecycle_native_test.LifecycleNativeControlTests.test_disable_record_loss_still_removes_temporary_native_capability) ... ok
+test_lost_enable_ack_keeps_unknown_and_does_not_retry (p2_lifecycle_native_test.LifecycleNativeControlTests.test_lost_enable_ack_keeps_unknown_and_does_not_retry) ... ok
+test_off_profile_or_missing_admission_binding_is_not_p2_configuration_proof (p2_lifecycle_native_test.LifecycleNativeControlTests.test_off_profile_or_missing_admission_binding_is_not_p2_configuration_proof) ... ok
+test_production_and_wrong_schedule_are_refused (p2_lifecycle_native_test.LifecycleNativeControlTests.test_production_and_wrong_schedule_are_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 3.655s
+
+OK

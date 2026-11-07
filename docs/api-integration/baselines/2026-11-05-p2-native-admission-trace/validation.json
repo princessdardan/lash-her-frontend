@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "status": "NATIVE_ADMISSION_CORRELATION_AND_WRITER_BINDING_SOURCE_VERIFIED",
+  "sourceCommit": "b4dfee795bfd1a87576cf75c622b0c1b7ea5563b",
+  "checks": {
+    "focusedSourceTests": 30,
+    "ownedHttpsTests": 20,
+    "typeCheck": "passed",
+    "lint": "passed",
+    "ownedPostgresMajor": 16,
+    "migrations": 83,
+    "workerScenarios": 11
+  },
+  "actualExportedCronLedgerUuidJoin": true,
+  "closedPolicyEmitsNoTrace": true,
+  "providerNativeInvocationVerified": false,
+  "stagingChanged": false,
+  "files": [
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sha256": "79999820266972cbe58881ce58099198c5d47de8461808ffa002e99b8d3dee38"
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sha256": "b3939e6cc76c028137b7e28cb21c0bf89e36a8d67c2b5e6503c20aebb032c376"
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.test.ts",
+      "sha256": "9ff1809f1f596a4472722b3b4b969d5cfe65c4af07a5b3ca8416a2f58cad95fe"
+    },
+    {
+      "file": "src/lib/customer-lifecycle/native-trace.ts",
+      "sha256": "3c88d9f7e81e9951b3e0df67f2401bdbe8c973c63823ceb9eea2b58ec3a3bf08"
+    },
+    {
+      "file": "src/lib/customer-lifecycle/native-trace.test.ts",
+      "sha256": "428008e62b57b2ba8a12220c14c5a027f82727fe9f8d18b67ae28ae22bcb8145"
+    },
+    {
+      "file": "src/lib/customer-lifecycle/cron.ts",
+      "sha256": "a5c122cd7e8bb1ac663a1b36e628d24b44fe01407fac43674c992cc5a705d4f1"
+    },
+    {
+      "file": "src/app/api/internal/release-probe/handler.ts",
+      "sha256": "b480f6e4dbcc1b6349c2f6078f29837bbc55650b7f0ebf86fd219fae9c9ad12d"
+    },
+    {
+      "file": "src/app/api/internal/release-probe/handler.test.ts",
+      "sha256": "da5a62cbaf64e1ce38c7410ec96a2c42b28bcd475355040e0296548ebf8adacc"
+    },
+    {
+      "file": "ops/platform/host/frontend_probe.py",
+      "sha256": "08e5d6cc60b2f71d8438cb54779c0592ae96c822dbb998ec41739a67edbcd2ce"
+    },
+    {
+      "file": "ops/platform/host/frontend_probe_test.py",
+      "sha256": "219c76f9bda6e602fec5b536affa7035c2aba762aca65a6b956fc14554bff6e0"
+    },
+    {
+      "file": "ops/platform/harness/owned-frontend-worker-admission.mjs",
+      "sha256": "d4e4acd3524cb628622a19895e75197d4d74d99f104fa99c51a514160a793b02"
+    }
+  ],
+  "scope": "Opaque internal admission identity only; exact staging lifecycle certification mode. Provider native classification/cancellation and final source CI remain required."
+}

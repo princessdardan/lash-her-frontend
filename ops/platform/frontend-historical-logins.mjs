@@ -1,6 +1,11 @@
 // Database-side component only. No credential acquisition, live CLI, provider
 // fence, operation-drain assertion, migration authorization or automatic LOGIN.
 import { FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
+import {
+  parseQualificationTargetProfileRef,
+  requireQualificationTargetProfile,
+  resolveQualificationTargetProfile,
+} from "./qualification-target-profile.mjs";
 
 const demand = (ok) => { if (!ok) throw new Error("FRONTEND_HISTORICAL_LOGIN_FENCE_REFUSED"); };
 const name = value => typeof value === "string" && /^[a-z][a-z0-9_]{0,62}$/u.test(value);
@@ -15,8 +20,24 @@ const rolesSql = `SELECT oid::text,rolname,rolcanlogin,rolsuper,rolcreatedb,rolc
 const sessionsSql = `SELECT pid,usesysid::text AS role_oid,datname,backend_start::text AS backend_start
   FROM pg_stat_activity WHERE usesysid=ANY($1::oid[]) ORDER BY pid`;
 
-export function prepareHistoricalFrontendLogins(input) {
-  demand(input?.version === 1 && input.environment === "staging" &&
+const hasProfile = value => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
+function profileContext(expectedQualificationTargetProfile) {
+  if (expectedQualificationTargetProfile === undefined) return undefined;
+  const expected = parseQualificationTargetProfileRef(expectedQualificationTargetProfile);
+  const profile = resolveQualificationTargetProfile(expected);
+  demand(profile.id === "staging-current" && profile.kind === "existing-staging" &&
+    profile.selectionPolicy === "existing-staging-v1" && profile.environment === "staging");
+  return expected;
+}
+
+export function prepareHistoricalFrontendLogins(input, expectedQualificationTargetProfile = undefined) {
+  const expected = profileContext(expectedQualificationTargetProfile);
+  const profiled = expected !== undefined;
+  if (profiled) {
+    demand(input?.version === 2);
+    requireQualificationTargetProfile(expected, input, input?.target);
+  } else demand(input?.version === 1 && !hasProfile(input) && !hasProfile(input?.target));
+  demand(input.environment === "staging" &&
     typeof input.actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) &&
     sha(input.sourceCommit, 40) && sha(input.clusterScopeSha256, 64));
   const target = input.target;
@@ -30,14 +51,16 @@ export function prepareHistoricalFrontendLogins(input) {
     new Set(input.retiredLogins.map(role => role.name)).size === input.retiredLogins.length &&
     new Set(input.retiredLogins.map(role => role.oid)).size === input.retiredLogins.length);
   // Pick known fields only: receipt data must never copy arbitrary input secrets.
-  return { version: 1, environment: input.environment, actionId: input.actionId, sourceCommit: input.sourceCommit,
+  return { version: profiled ? 2 : 1, ...(profiled ? { qualificationTargetProfile: expected } : {}),
+    environment: input.environment, actionId: input.actionId, sourceCommit: input.sourceCommit,
     clusterScopeSha256: input.clusterScopeSha256,
-    target: Object.fromEntries(["host", "port", "database", "user", "serverMajor", "currentRuntimeRole", "admissionOwnerRole"].map(key => [key, target[key]])),
+    target: { ...Object.fromEntries(["host", "port", "database", "user", "serverMajor", "currentRuntimeRole", "admissionOwnerRole"].map(key => [key, target[key]])),
+      ...(profiled ? { qualificationTargetProfile: expected } : {}) },
     retiredLogins: input.retiredLogins.map(({ name, oid }) => ({ name, oid })).sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
-export async function retireHistoricalFrontendLogins(input, client, dependencies) {
-  const plan = prepareHistoricalFrontendLogins(input), target = plan.target;
+export async function retireHistoricalFrontendLogins(input, client, dependencies, expectedQualificationTargetProfile = undefined) {
+  const plan = prepareHistoricalFrontendLogins(input, expectedQualificationTargetProfile), target = plan.target;
   demand(dependencies?.confirmation === `staging/${plan.actionId}` && typeof dependencies.record === "function");
   const base = { ...plan, historicalWritersFenced: false, providerEffectsDrained: false, migrationAuthorized: false };
   const names = plan.retiredLogins.map(role => role.name), oids = plan.retiredLogins.map(role => role.oid);

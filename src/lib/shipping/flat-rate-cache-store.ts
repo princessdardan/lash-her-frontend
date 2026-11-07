@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { and, eq, sql } from "drizzle-orm";
 
@@ -59,7 +60,7 @@ export async function upsertFlatRateCacheEntry(
   input: FlatRateCacheUpsert,
   now: Date,
 ): Promise<void> {
-  await getPrivateDb()
+  const receipts = await getPrivateDb()
     .insert(shippingRateCache)
     .values({
       zoneId: input.zoneId,
@@ -86,7 +87,17 @@ export async function upsertFlatRateCacheEntry(
         computedAt: now,
         updatedAt: now,
       },
+    })
+    .returning({
+      zoneId: shippingRateCache.zoneId,
+      sizeBucketId: shippingRateCache.sizeBucketId,
     });
+  if (
+    receipts.length !== 1 ||
+    receipts[0].zoneId !== input.zoneId ||
+    receipts[0].sizeBucketId !== input.sizeBucketId
+  )
+    markWriterOperationUncertain();
 }
 
 /** Total cached entries (a health signal — the cron should keep this full). */

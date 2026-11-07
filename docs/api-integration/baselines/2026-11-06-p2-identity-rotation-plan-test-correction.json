@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "status": "P2_IDENTITY_ROTATION_PLAN_TEST_CORRECTED",
+  "baseCommit": "f47ae1de39ee9cabb7ecd4e954a391bdaecb3a62",
+  "scope": [
+    "ops/platform/host/p2_identity_key_rotation_test.py"
+  ],
+  "verified": {
+    "sourceParentAdapterReady": true,
+    "planUsesPublicExecuteBoundary": true,
+    "applyRemainsRefused": true,
+    "liveEligible": false,
+    "keyRemovalVerified": false,
+    "releaseAccepted": false,
+    "providerCalled": false,
+    "credentialValuesRead": false
+  },
+  "checks": {
+    "command": "PYTHONPATH=ops/platform/host python3 -m unittest ops/platform/host/p2_identity_key_rotation_test.py",
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  }
+}

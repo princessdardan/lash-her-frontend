@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "status": "SOURCE_INTEGRATION_FIXTURE_QUALIFIED_LIVE_UNQUALIFIED",
+  "date": "2026-11-05",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "scope": "Serialized shared reconciliation harness integration; no application source change",
+  "source": {
+    "worktreeBaselineCommit": "0930f632a58b0032ecaa2fc267f4b7ded5198487",
+    "applicationImplementationCommit": "d4cc5b668ae56e6b95e5c4d7fe88b4ef2a9fec4c",
+    "applicationSourceManifestSha256": "433fe22e936b512b868df4d92e42c3a29a33786c61e115f2202e586a8202ee12",
+    "files": {
+      "ops/platform/harness/owned-frontend-reconciliation.mjs": "a82383bb35d58cb216c4d774bb792dbcc46448a622aaf991d74a12d00cfd4954",
+      "ops/platform/test-frontend-migration-local.mjs": "aae214a57b8592ee0897a73d1e731fc73e34effbe1fa3f4b2b0df8f1af8cf934",
+      "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation-review/postgres16.json": "170ced2661c36a326dfe04015ec70c56400b249fd8c780870e143f049585945b",
+      "docs/api-integration/baselines/2026-11-05-p2-00-shipping-whole-operation/source-bindings.json": "8579b963dd14d3edd7caae1008b4326c8d22f76e3cb903683d87cfa1e59a7ebb"
+    },
+    "parentReceiptSourceCommit": {
+      "value": "f547301c9903adb04dc7d36093e22e1a31c53c1b",
+      "meaning": "Synthetic partial migration-fixture checkout, not the application release commit"
+    },
+    "parentReceiptMigrationImageDigest": {
+      "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "meaning": "Synthetic local fixture input, not a deployed image"
+    },
+    "protectedPreparationFunctionsUnmodified": true,
+    "preparationSourceUnitTestsUnmodified": true,
+    "originalPreparationEvidenceUnmodified": true
+  },
+  "checks": [
+    {
+      "command": "node --check ops/platform/harness/owned-frontend-reconciliation.mjs",
+      "status": "passed"
+    },
+    {
+      "command": "npx eslint ops/platform/harness/owned-frontend-reconciliation.mjs",
+      "status": "passed",
+      "errors": 0,
+      "warnings": 0
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "FRONTEND_MIGRATION_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node --import tsx ops/platform/test-frontend-migration-local.mjs",
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "migrations": 83,
+      "parentChecks": 15,
+      "admissionChecks": 14,
+      "historicalLoginChecks": 11,
+      "writerRouteChecks": 8,
+      "reconciliationChecks": 75,
+      "preservedReconciliationChecks": 72,
+      "interactiveChecks": 12,
+      "workerChecks": 10,
+      "customerIdentityTests": 7,
+      "customerLifecycleTests": 6
+    }
+  ],
+  "addedReconciliationChecks": [
+    "shipping-whole-parent-awaits-real-blocked-execution-claim-and-retains-unknown-claim-without-provider-or-pii",
+    "shipping-whole-parent-awaits-real-blocked-pii-close-with-exact-redaction-and-independent-ledger-receipts",
+    "shipping-whole-parent-awaits-real-blocked-pii-ledger-backend-death-with-exact-redaction-and-independent-ledger-receipts"
+  ],
+  "assertions": {
+    "authenticationBeforeWholeAdmission": true,
+    "enclosingOperationObservedActiveDuring": [
+      "refund-provider",
+      "refund-settlement",
+      "preparation-transaction",
+      "execution-claim",
+      "pii-transaction"
+    ],
+    "wholeAndStageLedgerOutcomesIndependentlyAsserted": true,
+    "stageBackendDeathRetainsUnresolvedOperation": true,
+    "knownPreEntryPiiRefusalExplicitlySkipped": true,
+    "exactPiiPersistenceReceipt": true,
+    "providersIntercepted": true,
+    "liveProviderTouched": false,
+    "liveDatabaseTouched": false,
+    "historicalWritersFenced": false,
+    "migrationAuthorized": false
+  },
+  "artifacts": {
+    "postgres16": {
+      "path": "postgres16.json",
+      "sha256": "c3b5bf9fa16aae6eb940039255a3b5078b074f17d140b4cae3ef01a78393b982"
+    }
+  },
+  "openConditions": [
+    "Exact integrated candidate checks and source-inventory binding",
+    "PostgreSQL 18 qualification",
+    "Deployed Next.js and native scheduler behavior",
+    "Real provider and historical bypass/fencing evidence",
+    "Parent release/restoration coordination and staging certification"
+  ],
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false
+}

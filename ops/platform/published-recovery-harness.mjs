@@ -4,9 +4,10 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { build } from "esbuild";
-import { generateKeyPair, exportJWK, exportPKCS8, SignJWT } from "../gateway/node_modules/jose/dist/webapi/index.js";
+import { generateKeyPair, exportJWK, exportPKCS8, SignJWT } from "jose";
 import { parseArgs } from "node:util";
 import { localImageId } from "./local-images.mjs";
+import { courseHarnessAuth, disabledCourseWorkerEnvironment, phase2Workers } from "./phase2-harness-profile.mjs";
 import { verifyRecoveredWork } from "./host/staging_work.mjs";
 
 // Supplemental owned test; never deploys or connects to a staging database.
@@ -18,6 +19,9 @@ if (Object.values(args).length !== 5 || !args["docker-host"]?.startsWith("unix:/
 const root = resolve(args["source-root"]);
 const selected = JSON.parse(readFileSync(args.candidate, "utf8"));
 const previous = JSON.parse(readFileSync(args["rollback-candidate"], "utf8"));
+const phase = selected.contractPhase === "p2" ? "p2" : "p1";
+if ((previous.contractPhase === "p2" ? "p2" : "p1") !== phase) throw new Error("Compatible harness contract phases required");
+const additionalWorkers = phase === "p2" ? phase2Workers : [];
 if (execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim() !== selected.sources.frontend) throw new Error("Exact qualified frontend source required");
 execFileSync("git", ["-C", root, "diff", "--quiet", "HEAD"]);
 const { privateTlsPolicies } = await import(join(root, "ops/platform/configuration.mjs"));
@@ -33,7 +37,7 @@ chmodSync(directory, 0o755);
 const output = join(directory, "out");
 mkdirSync(output, { mode: 0o777 }); chmodSync(output, 0o777);
 const secret = () => randomBytes(32).toString("hex");
-const password = secret(), frontendSecret = secret(), publisherSecret = secret(), readerSecret = secret(), muxSecret = secret(), firstPartySecret = secret();
+const password = secret(), frontendSecret = secret(), publisherSecret = secret(), readerSecret = secret(), muxSecret = secret(), firstPartySecret = secret(), learnerSecret = secret();
 const courseId = randomUUID(), userId = randomUUID();
 const cached = (reference) => localImageId((command, commandArgs) => execFileSync(command,
   ["--host", args["docker-host"], ...commandArgs], { encoding: "utf8" }), reference);
@@ -51,7 +55,7 @@ const logPath = join(directory, "harness.log");
 const log = openSync(logPath, "a", 0o600);
 let started = false;
 const rounds = [], sqlReceipts = [], transitions = [];
-let resultReceipt = { status: "PUBLISHED_RECOVERY_HARNESS_FAILED", runId, currentRelease: selected.releaseId, rollbackRelease: previous.releaseId };
+let resultReceipt = { status: "PUBLISHED_RECOVERY_HARNESS_FAILED", runId, currentRelease: selected.releaseId, rollbackRelease: previous.releaseId, contractPhase: phase };
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, command === "docker" ? ["--host", environment.OWNED_DOCKER_SOCKET, ...args] : args, { cwd: root, env: environment, stdio: ["ignore", log, log], timeout: 180_000, ...options });
@@ -105,27 +109,28 @@ try {
   copyFileSync(join(import.meta.dirname, "host/staging_fixture.mjs"), join(directory, "staging-fixture.mjs"));
   copyFileSync(join(import.meta.dirname, "host/staging_work.mjs"), join(directory, "staging-work.mjs"));
   write("compose.env", "");
-  write("transport-entry.mjs", `export { createGatewayTransport } from ${JSON.stringify(join(root, "src/lib/api-integration/gateway-transport.ts"))};\nexport { runGatewaySmoke } from ${JSON.stringify(join(root, "src/lib/api-integration/gateway-smoke.ts"))};\n`);
+  write("transport-entry.mjs", `export { createGatewayTransport } from ${JSON.stringify(join(root, "src/lib/api-integration/gateway-transport.ts"))};\nexport { ${phase === "p2" ? "runPhase2GatewaySmoke as runGatewaySmoke" : "runGatewaySmoke"} } from ${JSON.stringify(join(root, `src/lib/api-integration/${phase === "p2" ? "phase2-gateway-smoke" : "gateway-smoke"}.ts`))};\n`);
   await build({ entryPoints: [join(directory, "transport-entry.mjs")], outfile: join(directory, "transport.mjs"), bundle: true,
     platform: "node", format: "esm", tsconfig: join(root, "tsconfig.json"),
     alias: { "server-only": join(root, "node_modules/server-only/empty.js") },
     banner: { js: 'import { createRequire as harnessCreateRequire } from "node:module"; const require = harnessCreateRequire(import.meta.url);' } });
   const database = (name) => ({ DATABASE_TARGET: "test", TEST_DATABASE_URL: `postgresql://postgres:${password}@postgres:5432/lash_her_${name}_p1_test?sslmode=disable` });
   const muxPair = await generateKeyPair("RS256", { extractable: true });
-  envFile("course-api.env", { ...database("course"), FIRST_PARTY_AUTH_SECRET: firstPartySecret, INTERNAL_SERVICE_JWT_SECRET: frontendSecret,
-    INTERNAL_SERVICE_JWT_ISSUER: "lash-her-frontend", INTERNAL_SERVICE_JWT_AUDIENCE: "lash-her-course-api", INTERNAL_SERVICE_JWT_ALLOWED_SUBJECTS: "lash-her-frontend",
-    COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret, MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
+  envFile("course-api.env", { ...database("course"), ...courseHarnessAuth(phase, { frontendSecret, adminSecret: firstPartySecret, learnerSecret }),
+    COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret,
+    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: "owned-fixture", MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
     MUX_SIGNING_KEY_ID: "isolated-fixture", MUX_SIGNING_PRIVATE_KEY: Buffer.from(await exportPKCS8(muxPair.privateKey)).toString("base64") });
   envFile("course-publisher.env", { ...database("course"), COMMUNITY_ENROLLMENT_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret });
   envFile("course-snapshot.env", database("course"));
+  for (const worker of phase2Workers) envFile(`${worker}.env`, disabledCourseWorkerEnvironment(database("course").TEST_DATABASE_URL, worker));
   envFile("community-api.env", { ...database("community"), COURSE_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret, COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("community-worker.env", { ...database("community"), COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
-  envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret,
-    HARNESS_FIRST_PARTY_SECRET: firstPartySecret, OWNED_RECOVERY_FIXTURE: "1", NODE_ENV: "test" });
+  envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_CONTRACT_PHASE: phase, HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret,
+    HARNESS_FIRST_PARTY_SECRET: firstPartySecret, HARNESS_COURSE_ADMIN_SECRET: firstPartySecret, OWNED_RECOVERY_FIXTURE: "1", NODE_ENV: "test" });
   envFile("postgres.env", { POSTGRES_PASSWORD: password });
   const mounts = `      - ${directory}:/test:ro\n      - ${output}:/test/out:rw\n`;
   const appOverride = (name) => `  ${name}:\n    environment: {NODE_ENV: development}\n    networks: {test_database: {}}\n    volumes:\n${mounts}`;
-  write("override.yaml", `services:\n  postgres:\n    image: ${postgresImage}\n    user: "999:999"\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    tmpfs: ["/var/lib/postgresql:rw,uid=999,gid=999"]\n    mem_limit: 768m\n    cpus: 1\n    env_file: [${directory}/postgres.env]\n    networks: [test_database]\n  gateway:\n    restart: "no"\n    ports: !reset []\n    command: [node, /test/driver.mjs]\n    env_file: [${directory}/driver.env]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    networks:\n      mesh: {aliases: [gateway.test]}\n    volumes:\n${mounts}  observer:\n    restart: "no"\n    read_only: true\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    pids_limit: 64\n    mem_limit: 128m\n    cpus: 0.25\n    networks: {mesh: {ipv4_address: 172.29.10.60}}\n    image: ${images.gateway}\n    user: "65532:65532"\n    command: [node, /test/observer.mjs]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    volumes:\n${mounts}${["course-api", "course-publisher", "course-snapshot", "community-api", "community-worker"].map(appOverride).join("")}networks:\n  test_database: {internal: true}\n${["gateway_egress", "course_api_egress", "publisher_egress", "snapshot_egress", "community_api_egress", "community_worker_egress"].map((name) => `  ${name}: {internal: true}\n`).join("")}`);
+  write("override.yaml", `services:\n  postgres:\n    image: ${postgresImage}\n    user: "999:999"\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    tmpfs: ["/var/lib/postgresql:rw,uid=999,gid=999"]\n    mem_limit: 768m\n    cpus: 1\n    env_file: [${directory}/postgres.env]\n    networks: [test_database]\n  gateway:\n    restart: "no"\n    ports: !reset []\n    command: [node, /test/driver.mjs]\n    env_file: [${directory}/driver.env]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    networks:\n      mesh: {aliases: [gateway.test]}\n    volumes:\n${mounts}  observer:\n    restart: "no"\n    read_only: true\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    pids_limit: 64\n    mem_limit: 128m\n    cpus: 0.25\n    networks: {mesh: {ipv4_address: 172.29.10.60}}\n    image: ${images.gateway}\n    user: "65532:65532"\n    command: [node, /test/observer.mjs]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    volumes:\n${mounts}${["course-api", "course-publisher", "course-snapshot", "community-api", "community-worker", ...additionalWorkers].map(appOverride).join("")}networks:\n  test_database: {internal: true}\n${["gateway_egress", "course_api_egress", "publisher_egress", "snapshot_egress", "community_api_egress", "community_worker_egress", "course_media_egress", "course_export_cleanup_egress"].map((name) => `  ${name}: {internal: true}\n`).join("")}`);
   started = true;
   // Refuse a topology with any host publication before starting a container.
   const config = JSON.parse(compose(["config", "--format", "json"], { stdio: ["ignore", "pipe", log] }).stdout);
@@ -143,7 +148,8 @@ try {
   }
   const seed = (fixture) => compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "lash_her_course_p1_test", "-v", "ON_ERROR_STOP=1", "-c",
     `INSERT INTO users(id) VALUES('${fixture.userId}'); INSERT INTO courses(id,slug,title,status,price_cents,currency) VALUES('${fixture.courseId}','fixture-${fixture.courseId}','P1 fixture','published',0,'CAD');`]);
-  const services = ["gateway", "course-api", "course-tls", "course-publisher", "course-snapshot", "community-api", "community-tls", "community-worker"];
+  const workerProbe = "Promise.all([fetch('http://127.0.0.1:'+process.env.PORT+'/ready'),fetch('http://127.0.0.1:'+process.env.PORT+'/metrics')]).then(async([r,m])=>{if(!r.ok||!m.ok||!/_enabled 0\\b/u.test(await m.text()))process.exit(1)}).catch(()=>process.exit(1))";
+  const services = ["gateway", "course-api", "course-tls", "course-publisher", "course-snapshot", "community-api", "community-tls", "community-worker", ...additionalWorkers];
   const snapshots = () => ({
     course: sql("course", `SELECT json_build_object('users',(SELECT coalesce(json_agg(t),'[]') FROM (SELECT id FROM users ORDER BY id) t),'courses',(SELECT coalesce(json_agg(t),'[]') FROM (SELECT id,slug,status FROM courses ORDER BY id) t),'enrollments',(SELECT coalesce(json_agg(t),'[]') FROM (SELECT id,user_id,course_id,status,source FROM enrollments ORDER BY id) t),'grants',(SELECT coalesce(json_agg(t),'[]') FROM (SELECT * FROM entitlement_grants ORDER BY id) t))`),
     community: sql("community", `SELECT json_build_object('projections',(SELECT coalesce(json_agg(t),'[]') FROM (SELECT stream_id,user_id,course_id,state,applied_version,highest_observed_version,status FROM course_enrollment_projections ORDER BY stream_id) t),'inbox',(SELECT coalesce(json_agg(t),'[]') FROM (SELECT event_id,canonical_digest,status FROM course_enrollment_inbox ORDER BY event_id) t))`),
@@ -157,7 +163,8 @@ try {
     environment.COMMUNITY_RUNTIME_IMAGE = candidate.images.communityRuntime;
     write("fixture.json", { ...fixture, claims });
     for (const name of ["results.json", "grant.json", "authority.json", "restart-ready.json", "restarted.json"]) rmSync(join(output, name), { force: true });
-    compose(["up", "--pull", "never", "-d", "--force-recreate", "observer", "course-publisher", "course-snapshot", "gateway"]);
+    compose(["up", "--pull", "never", "-d", "--force-recreate", "observer", "course-publisher", "course-snapshot", ...additionalWorkers, "gateway"]);
+    for (const worker of additionalWorkers) await waitFor(`${worker} disabled readiness`, () => spawnSync("docker", [...composeArgs, "exec", "-T", worker, "node", "-e", workerProbe], { env: environment, stdio: "ignore" }).status === 0, 90_000);
     await waitFor("grant", () => existsSync(join(output, "grant.json")), 90_000);
     // Initial reconciliation can otherwise populate the projection before the
     // publisher, changing its valid outcome to superseded. Start that worker
@@ -278,7 +285,7 @@ try {
   closeSync(log);
   resultReceipt.fixtureDirectory = directory;
   // All credentials are synthetic, but still discard them after owned cleanup.
-  for (const name of ["tls", "oidc-private.pem", "oidc.token", "driver.env", "postgres.env", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env", "community-worker.env"]) rmSync(join(directory, name), { recursive: true, force: true });
+  for (const name of ["tls", "oidc-private.pem", "oidc.token", "driver.env", "postgres.env", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env", "community-worker.env", "course-media.env", "course-export-cleanup.env"]) rmSync(join(directory, name), { recursive: true, force: true });
 }
 
 resultReceipt.fixtureHashes = Object.fromEntries(["owned-image-migrate", "owned-grant-seed", "owned-publisher-leases", "owned-admin-fixture", "owned-staging-work"].map((name) => [name, createHash("sha256").update(readFileSync(join(import.meta.dirname, `harness/${name}.mjs`))).digest("hex")]));

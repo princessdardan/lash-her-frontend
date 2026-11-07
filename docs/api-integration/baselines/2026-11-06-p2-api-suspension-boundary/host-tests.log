@@ -1,0 +1,9 @@
+......................................................................................................................./Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_release_guard_test.py:49: DeprecationWarning: This process (pid=53302) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  supervisor = os.fork()
+./Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_release_guard_test.py:84: DeprecationWarning: This process (pid=53302) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  guardian = os.fork()
+........
+----------------------------------------------------------------------
+Ran 128 tests in 25.404s
+
+OK

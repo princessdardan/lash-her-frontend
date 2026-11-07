@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "sourceCommit": "ea4d9cd1f78a63063bd94f087565e4962a579b2b",
+  "runId": 42295968068,
+  "observedAt": "2026-11-06T21:37:28.182Z",
+  "jobs": [
+    {
+      "id": 128161155237,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155483,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155585,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155608,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155647,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155674,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155719,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155825,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128161155968,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 128166908615,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  ],
+  "latestAllTenCiSource": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c"
+}

@@ -1,0 +1,36 @@
+(node:16916) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ public current and unregistered first-install requests refuse before client or parent work (1.985ms)
+✔ JSON fresh/zero/authority flags and forged observation handles cannot select a path (0.2065ms)
+✔ owned fixture resolver only models selection and emits no install permission (2.626958ms)
+✔ resolved current policy still refuses before transport in the private interface fixture (1.457584ms)
+✔ Google public empty registry and fresh import refuse before filesystem/child/network/credential IO (33.621125ms)
+✔ Google private protocol creates once after durable intent and captures original ACK/current/IAM without authority (94.197167ms)
+✔ Google lost ACK is never re-POSTed; GET-only reconciliation distinguishes current evidence and timeout UNKNOWN (441.854834ms)
+✔ Google same-process lost ACK can GET current state while retaining UNKNOWN creation outcome (88.533584ms)
+✔ Google preflight existing/wrong or multiple principals and source drift permit zero creation (120.541083ms)
+✔ Google ALREADY_EXISTS, foreign operation/project/parent/owner and operation errors require review without retries (541.77425ms)
+✔ Google clean child environment rejects ambient auth/ADC/impersonation/Python/browser/proxy overrides (28.078708ms)
+✔ Google raw truncation/symlink and cleanup uncertainty retain private evidence (99.031875ms)
+✔ Google actual file-write/fsync faults preserve burn and never replay CREATE (292.86475ms)
+✔ Google principal claims serialize cases and never expire or clear an unknown holder (19.476167ms)
+✔ Google tool closure pins only exact internal vendor symlinks and actual target bytes (5.844125ms)
+✔ Google private HTTPS adapter fixes host/TLS/routes/body and refuses incomplete or oversized responses (5.8965ms)
+✔ Google reconciliation preserves exact original source, plan and raw ACK context (312.2725ms)
+✔ Google acknowledged operation can be reobserved without creation; complete ACK retained on operation error (253.385792ms)
+✔ Google exact child umask wrapper creates0600/0700 without changing Node umask or invoking SDK (303.515167ms)
+✔ Google private root permission drift and response-parent symlink refuse before write (28.880333ms)
+✔ Google missing original ACK stays review-required and cannot release the principal claim (142.098292ms)
+✔ Google source drift during CREATE token command is refused before HTTP or attempt marking (55.854291ms)
+✔ Google cleanup drift after identity read prevents SDK revoke and retains credential custody (100.997333ms)
+✔ Google tool files include empty SDK modules and larger binaries without changing private/source bounds (9.588458ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3116.431417

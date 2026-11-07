@@ -1,0 +1,31 @@
+(node:8452) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ pure inventory requires complete exact-source coverage, all external surface classes and exact protected targets (19.296333ms)
+✔ bootstrap preparation binds the selected SQL, owner/OIDs, target and source without copying secrets (4.098917ms)
+✔ bootstrap installs only the independent ledger in one transaction with both controls closed (4.29125ms)
+✔ bootstrap intent/target/role refusal happens before installation and never resumes an existing schema (21.35975ms)
+✔ lost bootstrap commit acknowledgement preserves the installed schema without retry or reopening (3.2695ms)
+✔ external fence checks require retained exact bytes for every surface and fresh action/target/nonce (3.906292ms)
+✔ native flock serializes with other contenders, stays held through asynchronous continuation and refuses inode replacement (86.497708ms)
+✔ private receipt store preserves original exact evidence, rejects reuse/symlinks and cannot write inside checkout (12.474667ms)
+✔ an unbound fixed adapter hash refuses rather than converting component receipts into SQL authority (0.22675ms)
+(node:8453) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ fixed P2 profile excludes checkout, member access and native schedule activation (0.839417ms)
+✔ Node and fixed host enforce identical closed certification and runtime profiles (24.335042ms)
+✔ host settings cannot override source, candidate, credentials or staging scope (0.338291ms)
+✔ actual guardian pipe retains host flock, joins receipts and never places credentials in SSH args/env (60.282417ms)
+✔ guardian process death during API stage aborts continuation before frontend mutation (21.0605ms)
+✔ missing frontend terminal receipt refuses the parent join without a replay (26.207375ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 346.700708

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": {
+    "README.md": "fb2ab52c7208a79f52608f9fdef3e93e665b66086af35c0c0838f3dff02fa285",
+    "community-runtime-credential-log-receipt.json": "6600f28fac5fe2297fc7b6963ea8920043b8613a940f15e1a964fc44e9a3bd17",
+    "course-initial-login-log-receipt.json": "f4f58a15eebb61248574f2c5acc04be9d465e64fd3bbce7a2dcda8013f0f4af5",
+    "frontend-runtime-verification.json": "074a2e56129f77dc530ab129766d203afd4026932f04a9c14e4cefba3e502acc",
+    "frontend-schema-summary.json": "bb585d3ce392a4b08eed713641bfe02429b8a125f74a56d85276e86f89eb7676",
+    "identity-recovery-log-receipt.json": "23011a8d903f44baf50c863e7de56ce008fe4cd8680944125fb8fdcd94bfe5fe",
+    "native-scan-summary.json": "8a2e5186a6503954048048abaa9623bd3490755d8933859a9f0fb3ed139597ff",
+    "p2-platform-postgres18.json": "c78e45064148de7cb4d93270ba74379df5831b94da6f67f41e1181b6ae5bde0a",
+    "provenance.json": "400d92637dec32288d3c5dc4c8c7284588d615a9242e3aa60df5694109eb4138",
+    "validation.json": "2d9d8b9cf83299d6d8e093dba3e98657b89370966f2219c103d4ee07ecb99a20"
+  },
+  "rawOriginalsPrivate": true,
+  "artifactZipDigestsVerified": true
+}

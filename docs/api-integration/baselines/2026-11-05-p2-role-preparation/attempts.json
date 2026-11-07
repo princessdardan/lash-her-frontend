@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "attempts": [
+    {
+      "result": "refused",
+      "phase": "real-parent-locks",
+      "reason": "owned temporary path used noncanonical macOS alias; fixture canonicalized before native flock"
+    },
+    {
+      "result": "refused-and-rolled-back",
+      "phase": "role-grant-verification",
+      "reason": "actual PostgreSQL non-superuser creator ADMIN membership differs from initial single-row expectation; documented mandatory grants explicitly verified"
+    },
+    {
+      "result": "refused-and-rolled-back",
+      "phase": "role-grant-verification",
+      "sqlState": "42725",
+      "reason": "internal catalog char-to-text ACL label concatenation was ambiguous; made explicit text cast"
+    },
+    {
+      "result": "pass",
+      "unitTests": 5,
+      "ownedPostgresChecks": 22,
+      "skipped": 0
+    }
+  ]
+}

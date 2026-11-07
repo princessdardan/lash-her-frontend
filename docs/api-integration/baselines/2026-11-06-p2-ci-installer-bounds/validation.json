@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "workflowSha256": "2338ec11f04b79589d7253a8c4aedfebeca2e690b0368af9bbf70ca80ea45f93",
+  "yamlParsed": true,
+  "diffCheckPassed": true,
+  "independentReview": "clear-no-findings",
+  "browserRunnerUnchanged": "ubuntu-24.04",
+  "playwrightInstallCommandUnchanged": true,
+  "browserTestsRemoved": false,
+  "aptRetries": 1,
+  "aptHttpTimeoutSeconds": 15,
+  "aptHttpsTimeoutSeconds": 15,
+  "installStepTimeoutMinutes": 20,
+  "gatewayLockInstall": "npm ci --ignore-scripts --prefix ops/gateway",
+  "localHostAptChanged": false,
+  "deployedEvidence": false
+}

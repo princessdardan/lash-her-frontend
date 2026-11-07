@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { runManualWriterAdmission } from "../src/lib/writer-admission/manual";
 
 import { createClient } from "@sanity/client";
 
@@ -56,7 +57,7 @@ const QUERY = `{
   }
 }`;
 
-async function main(): Promise<void> {
+async function mainWork(): Promise<void> {
   const execute = process.argv.includes("--execute");
   assertPreCutoverMode(execute);
   if (execute) assertSafeWriteTarget();
@@ -174,6 +175,14 @@ function assertSafeWriteTarget(): void {
       "Production import requires BOOKING_CUTOVER_CONFIRM=production after backup and dry-run review.",
     );
   }
+}
+
+async function main(): Promise<void> {
+  return runManualWriterAdmission(
+    process.argv.includes("--execute"),
+    "new-work",
+    mainWork,
+  );
 }
 
 main()

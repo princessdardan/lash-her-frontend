@@ -1,3 +1,5 @@
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { nanoid } from "nanoid";
 
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
@@ -155,6 +157,7 @@ export function createCardOnFileCalendarFinalizer(
           }
         }
       } catch (error) {
+        markWriterOperationUncertain();
         return {
           ok: false,
           status: "manual_followup",
@@ -232,6 +235,7 @@ export function createCardOnFileCalendarFinalizer(
 
         return { ok: true, googleEventId: eventId };
       } catch (error) {
+        markWriterOperationUncertain();
         return {
           ok: false,
           status: "manual_followup",
@@ -242,6 +246,7 @@ export function createCardOnFileCalendarFinalizer(
           try {
             await operationalStore.releaseCalendarLock(calendarLockId);
           } catch {
+            markWriterOperationUncertain();
             // Best-effort release; the lock will expire on its own.
           }
         }
@@ -318,7 +323,7 @@ async function finalizeOperationalCalendarBooking(input: {
         input.hold.occupiedStart ?? input.hold.selectedStart;
       const occupiedEnd = input.hold.occupiedEnd ?? input.hold.selectedEnd;
       const busyWindows = (
-        await Promise.all(
+        await settleWriterEffects(
           routing.busyCalendars.map((calendar) =>
             listEvents({
               calendarId: calendar.calendarId,
@@ -368,11 +373,13 @@ async function finalizeOperationalCalendarBooking(input: {
       try {
         await releaseLock({ key: lockKey, lockId });
       } catch {
+        markWriterOperationUncertain();
         // Best-effort release; the scoped lock expires and event correlation
         // makes the retry idempotent.
       }
     }
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       status: "manual_followup",

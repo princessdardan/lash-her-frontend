@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "sourceCommit": "dcea40053ed51e7ffe59649279097a0701d672e7",
+  "files": {
+    "README.md": {
+      "sha256": "2cda2e24edad36bcaafb13128d1c93174dbc361df42ec3a1080f411cbb10f66a",
+      "bytes": 3414
+    },
+    "initial-draft-budget-failure.log": {
+      "sha256": "9357eb2d508babe23f1ac1493008bed70bb98c4a3baaf5bfc1dc47b305997f55",
+      "bytes": 2741
+    },
+    "joint-interface-manifest.json": {
+      "sha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f",
+      "bytes": 528
+    },
+    "joint-schemas.json": {
+      "sha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+      "bytes": 14160
+    },
+    "lint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "proposal-interface-manifest.json": {
+      "sha256": "58aa846dd76f3a457d69a12bdd3e6c9a4b0473033c4bb35f312547015483200c",
+      "bytes": 2197
+    },
+    "tests.log": {
+      "sha256": "86eb595a3e6b3145a69bccabf6c4a87f9b130092067a11d9b06c750cb297d375",
+      "bytes": 1087
+    },
+    "validation.json": {
+      "sha256": "ba6229e012b6aad75e6d97ed03f3ce8bbc7095bac3a3a20615bbbeeefa364f8d",
+      "bytes": 2672
+    }
+  }
+}

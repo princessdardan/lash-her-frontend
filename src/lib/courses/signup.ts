@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { validateMarketingChoices } from "@/lib/highlevel/contract";
 import type { FormActionResult } from "@/app/actions/form";
 import type { TShortCourseSummary } from "@/types";
@@ -116,6 +117,14 @@ export async function signupForCourse(
     await dependencies.setCookie(course._id, token, grant);
     return { success: true };
   } catch (error) {
+    // A caught limiter/write/cookie failure must not acknowledge a drained operation.
+    if (
+      stage === "rate_limit" ||
+      stage === "persistence" ||
+      stage === "cookie"
+    ) {
+      markWriterOperationUncertain();
+    }
     // Drizzle wraps database errors. Log only a SQLSTATE code and our own stage;
     // exception messages/queries may contain contact details or credentials.
     const cause = error instanceof Error ? error.cause : undefined;

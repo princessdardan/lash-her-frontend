@@ -1,3 +1,5 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
@@ -38,7 +40,7 @@ export interface ServicePromotionMutationInput {
 export async function listAdminServicePromotions() {
   await requirePermission("service-promotions:view");
   const db = getPrivateDb();
-  const [promotions, eligibility, offerings] = await Promise.all([
+  const [promotions, eligibility, offerings] = await settleWriterEffects([
     db
       .select()
       .from(bookingServicePromotionCodes)
@@ -90,7 +92,7 @@ export async function listAdminServicePromotions() {
   };
 }
 
-export async function createServicePromotion(
+async function createServicePromotionWork(
   input: ServicePromotionMutationInput,
 ) {
   const actor = await requirePermission("service-promotions:manage");
@@ -132,7 +134,7 @@ export async function createServicePromotion(
   });
 }
 
-export async function updateServicePromotion(
+async function updateServicePromotionWork(
   input: ServicePromotionMutationInput & { promotionId: string },
 ) {
   const actor = await requirePermission("service-promotions:manage");
@@ -181,7 +183,7 @@ export async function updateServicePromotion(
   });
 }
 
-export async function setServicePromotionStatus(input: {
+async function setServicePromotionStatusWork(input: {
   promotionId: string;
   status: BookingConfigurationStatus;
 }) {
@@ -343,4 +345,28 @@ function requireUuid(value: string, label: string): string {
     throw new Error(`${label} is invalid`);
   }
   return normalized;
+}
+
+export async function createServicePromotion(
+  ...args: Parameters<typeof createServicePromotionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createServicePromotionWork(...args),
+  );
+}
+
+export async function updateServicePromotion(
+  ...args: Parameters<typeof updateServicePromotionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    updateServicePromotionWork(...args),
+  );
+}
+
+export async function setServicePromotionStatus(
+  ...args: Parameters<typeof setServicePromotionStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setServicePromotionStatusWork(...args),
+  );
 }

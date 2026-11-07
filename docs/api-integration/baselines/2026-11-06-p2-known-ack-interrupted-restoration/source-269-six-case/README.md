@@ -1,0 +1,1 @@
+These three historical fixture helpers match the SHA-256 values recorded by the actual six-case PG16/18 receipts. Their bytes were reconstructed from local Git and edit history, then verified against all three recorded hashes. They are retained for audit and are not the current driver. Execute the current helpers at their documented repository paths.

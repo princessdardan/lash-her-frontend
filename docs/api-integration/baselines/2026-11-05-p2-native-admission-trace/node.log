@@ -1,0 +1,38 @@
+✔ release probe requires a live bounded credential and the reviewed Production-target project/source (0.876209ms)
+✔ missing configuration, wrong bearer and malformed challenge cannot trigger outbound work (12.891625ms)
+✔ successful probe binds a fresh challenge and hosted source without relaying incoming tokens or private data (1.122542ms)
+✔ SDK, gateway and configuration errors return non-success without leaking diagnostics (0.705958ms)
+✔ bootstrap mode is staging-only, requires its real admission reader and rejects unknown modes before outbound work (0.2855ms)
+✔ bootstrap response binds the ordinary workload proof and actual read-only admission observation to one challenge (0.273625ms)
+✔ private Resend mode retains bootstrap checks, staging scope and challenge without forwarding incoming credentials (0.524041ms)
+✔ Square mode requires staging admission plus deployed sandbox reader and retains challenge (0.481958ms)
+✔ explicit P2 mode uses only its current catalog parser and requires no bootstrap or disabled feature controls (0.252125ms)
+✔ P2 probe reports only actual runtime feature booleans and ignores caller feature claims (0.417458ms)
+✔ P2 admission binding comes only from actual validated runtime configuration without credentials (0.545541ms)
+✔ P2 mode authenticates before work, refuses missing/production configuration and never falls back after parser failure (0.359791ms)
+✔ Google binding requires staging bootstrap and issues transient runtime proofs for only the authenticated challenge (0.644ms)
+✔ lifecycle recovery is independently disabled and authenticated before any database or receiver work (8.261875ms)
+✔ unavailable receivers, rejected commands and unexpected errors return sanitized retryable responses (0.67425ms)
+✔ native correlation emits only opaque internally scoped fields after admission (0.803416ms)
+✔ production, previews, disabled qualification, different source and ordinary new work emit no trace (0.207208ms)
+✔ concurrent contexts do not share operation IDs and unavailable logging cannot authorize qualification (0.191083ms)
+✔ off mode preserves responses and exceptions without configuration or database work (9.070333ms)
+✔ configuration binds dedicated hosted identity, source, producer, direct target and verified TLS (0.567292ms)
+✔ closed new-work admission returns retryable 503 before handler or raw body is consumed (0.937333ms)
+✔ recovery reads the current epoch and commits admission before passing the original request (0.890541ms)
+✔ opaque identity is the admitted ledger UUID, scoped to the active task and cleared after completion (0.517291ms)
+✔ the real Square handler validates the untouched signature and persists recovery only after admission (1.346083ms)
+✔ lost admission or settlement acknowledgements never invoke or replay effects (0.622166ms)
+✔ 5xx, handler exceptions and idle connection loss cannot acknowledge a successful recovery (0.534541ms)
+✔ TLS, actual target, policy lookup and disconnect failures remain sanitized and fail closed (0.4915ms)
+✔ caught Square charge errors retain uncertainty even behind successful or payment-rejected responses (1.384959ms)
+✔ uncertainty is sticky across awaits and isolated between simultaneous requests (0.24575ms)
+✔ application database must share the admitted direct target, login and strict TLS before effects (0.590833ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 334.241125

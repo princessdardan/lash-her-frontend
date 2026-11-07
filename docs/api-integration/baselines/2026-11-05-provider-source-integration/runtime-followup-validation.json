@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "status": "OWNED_PROVIDER_SOURCE_RUNTIME_FOLLOWUP_PASS",
+  "liveMutations": false,
+  "wholeP2CertificationClaimed": false,
+  "node": {
+    "tests": 53,
+    "failures": 0,
+    "skipped": 0,
+    "registeredSourceProfiles": 33,
+    "elapsedSeconds": 7.717,
+    "single33ProfileScanSeconds": 2.367
+  },
+  "ownedHttpsWorker": {
+    "tests": 48,
+    "failures": 0,
+    "skipped": 0,
+    "elapsedSeconds": 31.438,
+    "actualMandatoryWriterExpectationThroughDeploymentProbePromotionObservation": true,
+    "existingAdmissionExplicitReviewedProducer": true,
+    "retainedFields": [
+      "featureControls",
+      "certificationSchedule",
+      "writerAdmissionBinding",
+      "configurationRecordSha256",
+      "workloadReceiptSha256"
+    ],
+    "configurationRecordEqualsRawWorkloadReceiptSha256": true,
+    "bootstrapTenControlsRemainFalse": true,
+    "nativeSchedulesRemainDisabled": true
+  },
+  "ownedPostgres": {
+    "status": "FRONTEND_PROVIDER_INVENTORY_OWNED_POSTGRES_PASS",
+    "major": 16,
+    "migrations": 83,
+    "tables": 13,
+    "actualC07SourceFamilies": 36,
+    "completeOwnedSourceAbsenceJoin": true,
+    "providerIngressFixtureOnly": true,
+    "originalSourceSqlPeers": 4,
+    "alternateMetadataPeers": 1,
+    "scopedResendQueries": 6,
+    "googleCredentialAndEventQueries": 5,
+    "crmShippingQueries": 8,
+    "providerTouched": false,
+    "liveQualified": false
+  },
+  "sourceResidualContract": {
+    "requiredChannels": [
+      "unresolvedFrontendSqlFamilyIds",
+      "unresolvedExternalCapabilityFamilyIds",
+      "unresolvedFamilyIds"
+    ],
+    "ownedC07FrontendSqlResiduals": [],
+    "ownedC07ExternalCapabilityResiduals": [
+      "mux.studio",
+      "sanity.editorial"
+    ],
+    "ownedC07GeneralResiduals": [
+      "mux.studio",
+      "sanity.editorial"
+    ],
+    "effectScope": "frontend-private-sql-and-protected-continuations",
+    "globalProviderAbsenceClaimed": false
+  },
+  "negativeChecks": [
+    "Missing or contradictory per-source residual channels refuse",
+    "Foreign preview credential equality without reviewed original staging principal/environment refuses",
+    "Extra ordinary native cron definitions refuse",
+    "Immutable original SQL intent disappearance remains uncertain",
+    "Current admitted replacement objects do not erase historical proof or current uncertainty"
+  ],
+  "evidenceBoundaries": [
+    "All provider HTTPS responses and ingress metadata in these checks are explicitly owned fixtures; no live provider was contacted",
+    "Actual immutable original deployment/direct-caller configuration and all selected historical source/capability/effect receipts remain required at release time",
+    "Configured Google grant/Redis history, signed Sanity ingress, and reachable untracked accepted-request history remain unresolved without positive supported observations",
+    "Public Mux/Sanity editorial residuals are retained outside the frontend private-SQL barrier; no unrelated credential or media retirement is asserted",
+    "No live release, deployment, credential retirement, production activation, remote push, or native enablement performed"
+  ],
+  "sourceSha256": {
+    "ops/platform/frontend-historical-source.mjs": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+    "ops/platform/frontend-historical-source-observer.mjs": "166e6f5f2932c3073652b5169d45abe3a64a8432ae19aa8758900879556369e4",
+    "ops/platform/frontend-provider-effect-scopes.mjs": "ff0e774cf8b06d68d8313b035cc8528a76cef06366aff6bf0086431ede34ac5b",
+    "ops/platform/frontend-provider-fence-join.mjs": "db97536d711b0286306c30b780eb2ae9dde5936b34e4051243284a6545f20719",
+    "ops/platform/frontend-release-adapters.mjs": "40e102e272b637f848b8d2c4be1907d199c8dba1bb3d31a55a91f8b1a339247c",
+    "ops/platform/host/frontend_release_adapters.py": "e9667315cca8d7ce1c7c3b8150cba83b35b336e9340e20688aa00bff3fa0bfec",
+    "ops/platform/host/frontend_probe.py": "08e5d6cc60b2f71d8438cb54779c0592ae96c822dbb998ec41739a67edbcd2ce",
+    "ops/platform/host/frontend_release_adapters_test.py": "ba63f61c8bd17447d62056b33dfb6608dcba6ebddc1b8b37f66222718bb1f9b9",
+    "ops/platform/test-frontend-provider-inventory-local.mjs": "528ca411a40f1c0b76a0061890ca9ff1c15d7c9b75d4324ad007ad595ac2f161"
+  }
+}

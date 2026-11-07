@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "source": "93a8c8217908b8db74e6f61c73ff90deee18e110",
+  "cProduction": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7",
+  "cEvidence": "4698ae486d8728aa31052add4c94935844b941a8",
+  "ciAdapter": "07f309a5e85c876e3b653db21be55d437b2f86bb",
+  "canonicalParent": "72539602c01ea5d71f9c2befab3402a0d0d85e68",
+  "rootTests": {
+    "host": 86,
+    "node": 46,
+    "skipped": 0,
+    "lintPassed": true
+  },
+  "sourceSizing": {
+    "commit": "93a8c8217908b8db74e6f61c73ff90deee18e110",
+    "files": 492,
+    "decodedBytes": 40448700,
+    "publicBytes": 54003564,
+    "maxFileBytes": 1113573,
+    "gatewayRuntimeDiffBytes": 0,
+    "fullProfilesDiffBytes": 0
+  },
+  "rootHostLogSha256": "71c847ca89c9ac99952f8aea0e91c4ab2a6ccd9c89836bd08ced4705910f5cde",
+  "rootNodeLogSha256": "ddf9ddbe4c51c36d46da6ec66e71d340444ba38d4337721ad4e36a6d524adcfa",
+  "compositionReviewSha256": "64ac6b7c6a329446249056d47278706d3b8975fc82185abeb05fae04882bf2b9",
+  "finalCReviewSha256": "27701e21eaa0d4eba740fac3bb2e24b18f98aefe6c329aec28a96dda8efb5a74",
+  "linuxIntegratedQualification": false,
+  "stagingCertified": false,
+  "g2Accepted": false
+}

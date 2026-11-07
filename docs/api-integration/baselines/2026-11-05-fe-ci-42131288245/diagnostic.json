@@ -1,0 +1,14 @@
+{
+  "revision": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+  "directory": "/private/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/fe-ci42131288245-import-pOLUWn",
+  "manifestOnly": {
+    "status": 1,
+    "diagnostic": "Error: Cannot find module '../../../contracts/api-integration/v1/course-api.json'"
+  },
+  "completeV1": {
+    "status": 0,
+    "stdout": "V1_RESPONSE_VALIDATION_IMPORT_PASS"
+  },
+  "productionFilesModified": false,
+  "databaseOrProviderCalls": false
+}

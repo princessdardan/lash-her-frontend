@@ -5,6 +5,35 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/app/api/internal/release-probe/handler.test.ts",
+  "src/app/api/internal/release-scheduler-probe/handler.test.ts",
+  "src/lib/api-integration/phase2-gateway-smoke.test.ts",
+  "src/lib/writer-admission/google-binding-probe.test.ts",
+  "src/lib/admin/read-operation.test.ts",
+  "src/lib/admin/calendar-discovery-result.test.ts",
+  "src/lib/writer-admission/square-binding-probe.test.ts",
+  "src/lib/course-authoring/page-data.test.ts",
+  "src/lib/course-support/manual-grant-handler.test.ts",
+  "src/lib/admin/authorization-operation.test.ts",
+  "src/lib/writer-admission/resend-binding-probe.test.ts",
+  "src/lib/customer-lifecycle/worker.test.ts",
+  "src/lib/customer-lifecycle/cron.test.ts",
+  "src/lib/customer-lifecycle/native-trace.test.ts",
+  "src/lib/learning/rollout.test.ts",
+  "src/lib/api-integration/course-admin-handler.test.ts",
+  "src/lib/writer-admission/shipping-execution.test.ts",
+  "src/lib/api-integration/request-origin.test.ts",
+  "src/lib/customer-lifecycle/handler.test.ts",
+  "src/lib/api-integration/lifecycle-service-jwt.test.ts",
+  "src/lib/api-integration/account-lifecycle-client.test.ts",
+  "src/lib/api-integration/course-client.test.ts",
+  "src/lib/api-integration/application-jwt.test.ts",
+  "src/lib/writer-admission/public-forms.test.ts",
+  "src/lib/writer-admission/remaining-workers.test.ts",
+  "src/lib/writer-admission/admin-identity.test.ts",
+  "src/lib/writer-admission/admin-interactive.test.ts",
+  "src/lib/writer-admission/booking-interactive.test.ts",
+  "src/lib/customer-auth/handler.test.ts",
   "src/lib/writer-admission/shipping-preparation.test.ts",
   "src/lib/writer-admission/product-refund-worker.test.ts",
   "src/lib/writer-admission/stock-sweep.test.ts",
@@ -63,6 +92,11 @@ const SERVER_ONLY_TEST_FILES = new Set([
 ]);
 
 const DB_TEST_FILES = new Set([
+  "src/lib/customer-lifecycle/faults.db.test.ts",
+  "src/lib/customer-lifecycle/store.db.test.ts",
+  "src/lib/customer-auth/store.db.test.ts",
+  "src/lib/customer-auth/receipts.db.test.ts",
+  "src/lib/customer-auth/session-issuance.db.test.ts",
   "src/lib/highlevel/retention.db.test.ts",
   "src/lib/highlevel/highlevel.db.test.ts",
   "src/lib/courses/signup.db.test.ts",
@@ -106,6 +140,11 @@ const DB_TEST_FILES = new Set([
 ]);
 
 const mode = process.argv[2] ?? "--no-db";
+// These tests pass synthetic environment records to pure policy functions;
+// mentioning TEST_DATABASE_URL does not open or mutate a database.
+const PURE_ENV_POLICY_TEST_FILES = new Set([
+  "src/lib/private-db/isolated-commerce-fixture.test.ts",
+]);
 if (!new Set(["--no-db", "--db-only"]).has(mode)) {
   throw new Error(`Unsupported test mode: ${mode}`);
 }
@@ -114,6 +153,7 @@ const testFiles = (await listTestFiles("src")).sort();
 const registeredTestFiles = new Set([
   ...SERVER_ONLY_TEST_FILES,
   ...DB_TEST_FILES,
+  ...PURE_ENV_POLICY_TEST_FILES,
 ]);
 const missingRegisteredFiles = [...registeredTestFiles].filter(
   (file) => !testFiles.includes(file),
@@ -129,7 +169,7 @@ const dbAwareTestFiles = (
   await Promise.all(
     testFiles.map(async (file) => ({
       file,
-      usesTestDatabase: (await readFile(file, "utf8")).includes(
+      usesTestDatabase: !PURE_ENV_POLICY_TEST_FILES.has(file) && (await readFile(file, "utf8")).includes(
         "TEST_DATABASE_URL",
       ),
     })),

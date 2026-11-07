@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "status": "P2_CERTIFICATION_FAULT_OWNED_COMPONENT_CHECKS_RETAINED",
+  "stageCommit": "ddde16544cc10c8702ffd2f3615b77463f864389",
+  "moduleCommit": "ecc9b8ab",
+  "rootWiringCommit": "508158a1",
+  "rootCapDependencies": [
+    "b92c1496",
+    "3f0fcdb7"
+  ],
+  "tests": {
+    "node": 36,
+    "gatewayModule": 10,
+    "gatewayActualHttps": 18,
+    "sourceStageProtocolModel": 8,
+    "hostOwnedFdFilesystem": 7,
+    "skipped": 0,
+    "lintWarnings": 0
+  },
+  "logs": {
+    "owned-node.log": {
+      "sha256": "16c141d0d3e16e61823e71ded6df3b649371c4e6721d7aba506a78a2e56e7f6a",
+      "bytes": 4440
+    },
+    "owned-host.log": {
+      "sha256": "4c7645623549796aa4b4f11e9bb28bffbec9ce8fa45c09d5ea4b744aebe06640",
+      "bytes": 105
+    },
+    "eslint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "sandbox-bind-failure.log": {
+      "sha256": "6944a0e8727e02beee004f6fa39a9a94476637d5716b061dccdd0d1d49eb6bbc",
+      "bytes": 14569
+    }
+  },
+  "sourceSha256": {
+    "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+    "ops/gateway/p2-certification-fault.test.mjs": "06fa66c99b378db376f2e08dd14780e215f8255d3fbed0f33e567763c0f4b16b",
+    "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+    "ops/gateway/Dockerfile": "e6b814e04ab30e2f3da2925e453d092e2f1ccb8497055904c279d835b74220c7",
+    "ops/gateway/server.test.mjs": "e7edf01ecc7cfa1f06946211af62de7688821c3338bee6a61d4f764747e9717f",
+    "ops/platform/host/p2_certification_fault.py": "90944108d831df52c53313456491aaccf3905872fbd9eb5d5afe216d495a08eb",
+    "ops/platform/host/p2_certification_fault_test.py": "d4e40f6aea22157f9773bb479da81e40141440e8c57b167a44ab794e902e07bb",
+    "ops/platform/p2-lifecycle-transport-fault.mjs": "d1205fa24c655f4f7efdb5cd68aa698b897a553380e6f42553ee5292971c8f92",
+    "ops/platform/p2-lifecycle-transport-fault.test.mjs": "a27c18b9a86cb90a5e9e219d1e4ecf5ae9804e683fa9e098e3cbb4f4ed3b6dc8",
+    "ops/platform/prepare-p2-transport-fault.mjs": "2d7329d316b9db6670805bb188f52c6a8508290b27cf9241e84ebf42735cc234"
+  },
+  "fixtureOnly": true,
+  "liveProviderCalled": false,
+  "actualFrontendBoundParentQualified": false,
+  "linuxRootDockerIssuerQualified": false,
+  "actualPostgresStageQualified": false,
+  "nativeInvocationQualified": false,
+  "muxProviderRetryObserved": false,
+  "releaseAccepted": false,
+  "open": [
+    "concrete source certification parent and fixed host RPC adapter",
+    "actual FE/PG plus Linux/Docker issuer joined qualification",
+    "real frontend worker/provider invocation and private S12 artifact authority",
+    "source business-fault reconciliation/recovery authorization",
+    "managed Mux private row witness/parent and genuine provider retry/order evidence"
+  ],
+  "initialFailure": "sandbox loopback bind EPERM; unchanged suite passed with owned-loopback permission"
+}

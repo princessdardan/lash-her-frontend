@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: offline plan binds qualified P2 candidate/job/target/recovery and fixed NOINHERIT replacement names without inventing OIDs
+ok 1 - offline plan binds qualified P2 candidate/job/target/recovery and fixed NOINHERIT replacement names without inventing OIDs
+  ---
+  duration_ms: 1.563083
+  type: 'test'
+  ...
+# Subtest: role plan refuses wrong candidate/source/target/environment/name/producer and accidental credential material
+ok 2 - role plan refuses wrong candidate/source/target/environment/name/producer and accidental credential material
+  ---
+  duration_ms: 0.439834
+  type: 'test'
+  ...
+# Subtest: reuse requires actual explicitly reviewed distinct OIDs and retained proof reference
+ok 3 - reuse requires actual explicitly reviewed distinct OIDs and retained proof reference
+  ---
+  duration_ms: 0.145042
+  type: 'test'
+  ...
+# Subtest: serialized plans and missing parent lock/session hooks cannot reach SQL
+ok 4 - serialized plans and missing parent lock/session hooks cannot reach SQL
+  ---
+  duration_ms: 0.392875
+  type: 'test'
+  ...
+# Subtest: standalone defaults to offline planning and never reads configured migration credentials
+ok 5 - standalone defaults to offline planning and never reads configured migration credentials
+  ---
+  duration_ms: 1.202208
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 61.129

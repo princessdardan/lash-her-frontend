@@ -53,7 +53,7 @@ async function main() {
   console.log = console.warn = console.error = () => { logCount++; };
   try {
     let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
-    const change = async (recovery) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork: false, recovery })).epoch; };
+    const change = async (recovery, newWork = false) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork, recovery })).epoch; };
     const drain = () => observeFrontendDrain(operator, target, epoch);
     const operations = async () => (await operator.query("SELECT id,kind,state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
     const since = async (before) => (await operations()).filter(row => !before.some(old => old.id === row.id));
@@ -96,8 +96,8 @@ async function main() {
       const active = (await operations()).filter(row => row.state === "active");
       if (process.env.FRONTEND_WRITER_ADMISSION_MODE === "enforce") {
         try {
-          assert.equal(active.length, 1, `${stage}: provider effect requires one durable active entry`);
-          assert.equal(active[0].kind, "recovery");
+          assert.equal(active.length, stage === "refund-worker" ? 2 : 1, `${stage}: provider effect requires its enclosing and stage entries`);
+          assert.ok(active.every(row => row.kind === "recovery"));
           const sessions = (await operator.query(`SELECT ssl FROM pg_stat_ssl JOIN pg_stat_activity USING(pid)
             WHERE usename=$1`, [target.user])).rows;
           assert.ok(sessions.length >= 2 && sessions.every(row => row.ssl === true));
@@ -486,6 +486,33 @@ async function main() {
     await assertStockReceipt(); assertReconciliationProviderCalls(assert, activeCalls, ["stock"]); await reconcile();
     checks.push("stock-ledger-backend-death-retains-unresolved-entry-without-replaying-committed-cleanup");
     const refundRequest = (authorized = true) => request(authorized, "/api/cron/chitchats-shipping");
+    const assertShippingEntries = async (before, states, kinds = states.map(() => "recovery")) => {
+      const rows = await since(before);
+      assert.deepEqual(rows.map(row => row.state), states);
+      assert.deepEqual(rows.map(row => row.kind), kinds);
+      return rows;
+    };
+    const assertShippingAwaited = async (before, states, kinds) => {
+      const rows = await assertShippingEntries(before, states, kinds);
+      assert.equal(rows[0].state, "active", "enclosing shipping operation must await the current stage");
+      assert.equal((await drain()).ledgerDrained, false);
+      // A later observation must identify the same unresolved parent, rather
+      // than another independent stage entry substituting for whole ownership.
+      await delay(25);
+      const observed = await since(before);
+      assert.equal(observed[0].id, rows[0].id);
+      assert.equal(observed[0].state, "active");
+      return rows;
+    };
+    const killShippingStageSession = async () => {
+      const sessions = (await operator.query(`SELECT pid FROM pg_stat_activity WHERE usename=$1
+        AND application_name='lash-her-frontend-writer-admission' ORDER BY backend_start,pid`, [target.user])).rows;
+      assert.equal(sessions.length, 2, "whole operation and current stage own separate ledger sessions");
+      // The stage session starts after its enclosing operation. Preserve the
+      // parent's session so its own uncertainty settlement is independently seen.
+      await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[1].pid]);
+      await delay(25);
+    };
     const seedRefund = async (mode = "settled") => {
       await seedReconciliationRows(operator, []);
       await operator.query("TRUNCATE customer_email_outbox CASCADE");
@@ -537,7 +564,7 @@ async function main() {
 
     phase = "refund-worker-empty";
     await seedRefund("empty"); await change(true); before = await operations();
-    assert.equal((await refundRequest()).status, 200); assert.deepEqual((await since(before)).map(row => row.state), ["completed", "completed"]);
+    assert.equal((await refundRequest()).status, 200); await assertShippingEntries(before, ["completed", "completed", "completed"]);
     assert.deepEqual(activeCalls, []); await reconcile(); checks.push("refund-worker-empty-batch-completes-independent-recovery-entry");
 
     for (const mode of ["settled", "pending", "provider-failure", "rejected", "mismatched-payment", "missing-payment-id", "expired-lease",
@@ -554,7 +581,7 @@ async function main() {
       try { result = await refundRequest(); }
       finally { failProvider = undefined; if (suppress) await operator.query(`DROP TRIGGER owned_missing_refund_receipt ON ${suppress[0]}`); }
       assert.equal(result.status, mode === "settled" ? 200 : 503);
-      assert.deepEqual((await since(before)).map(row => row.state), mode === "settled" ? ["completed", "completed"] : ["uncertain"]);
+      assert.deepEqual((await since(before)).map(row => row.state), mode === "settled" ? ["completed", "completed", "completed"] : ["uncertain", "uncertain"]);
       await assertRefundReceipt(mode);
       if (mode === "expired-lease") assert.deepEqual(activeCalls, []);
       else assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]);
@@ -568,10 +595,11 @@ async function main() {
     try {
       await refundHeld.entered(); await change(false);
       await operator.query("UPDATE product_order_refunds SET lease_expires_at=now()-interval '1 hour'");
-      assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
-      assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 1);
+      assert.equal((await drain()).active, 2); await assertShippingAwaited(before, ["active", "active"]);
+      assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 2);
     } finally { refundHeld.release(); }
-    assert.equal((await refundPending).status, 503); gate = undefined; await assertRefundReceipt();
+    assert.equal((await refundPending).status, 503); gate = undefined;
+    await assertShippingEntries(before, ["uncertain", "completed"]); await assertRefundReceipt();
     assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
     checks.push("refund-worker-close-retains-admitted-provider-call-and-expired-business-lease-never-drains-ledger");
 
@@ -585,10 +613,11 @@ async function main() {
       await refundReceiptHeld.entered(); await refundBlocker.query("BEGIN");
       await refundBlocker.query("SELECT id FROM product_order_refunds FOR UPDATE"); refundReceiptHeld.release();
       await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
-      await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
-      assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 1);
+      await change(false); assert.equal((await drain()).active, 2); await assertShippingAwaited(before, ["active", "active"]);
+      assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 2);
     } finally { refundReceiptHeld.release(); await refundBlocker.query("ROLLBACK"); }
-    assert.equal((await refundPending).status, 503); gate = undefined; await assertRefundReceipt();
+    assert.equal((await refundPending).status, 503); gate = undefined;
+    await assertShippingEntries(before, ["uncertain", "completed"]); await assertRefundReceipt();
     assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
     checks.push("refund-worker-close-retains-active-entry-through-actually-blocked-settlement-transaction");
 
@@ -597,15 +626,15 @@ async function main() {
     const refundDeath = holdProvider("refund-worker"); refundPending = refundRequest();
     try {
       await refundDeath.entered(); await change(false);
-      const sessions = (await operator.query("SELECT pid FROM pg_stat_activity WHERE usename=$1 AND application_name='lash-her-frontend-writer-admission'", [target.user])).rows;
-      assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]); await delay(25);
+      await assertShippingAwaited(before, ["active", "active"]);
+      await killShippingStageSession();
     } finally { refundDeath.release(); }
     assert.equal((await refundPending).status, 503); gate = undefined;
-    assert.deepEqual((await since(before)).map(row => row.state), ["active"]); await assertRefundReceipt();
+    await assertShippingEntries(before, ["uncertain", "active"]); await assertRefundReceipt();
     assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
     checks.push("refund-worker-ledger-backend-death-retains-unresolved-entry-without-replaying-settled-refund");
     // Qualify preparation through the actual route. Future-dated jobs keep the
-    // separate, still-unqualified executor out of these synthetic cases.
+    // executor out of these preparation-specific synthetic cases.
     Object.assign(process.env, {
       CHITCHATS_SHIPPING_ENABLED: "true", SQUARE_COMMERCE_ENABLED: "false",
       CHITCHATS_ENVIRONMENT: "staging", CHITCHATS_CLIENT_ID: "owned-unused-client",
@@ -718,10 +747,12 @@ async function main() {
       if (result.status === 200) {
         const summary = JSON.parse(result.text);
         assert.deepEqual(summary.operations, { claimed: 0, succeeded: 0, retried: 0, deadLettered: 0, fenced: 0 });
-        assert.equal(summary.redacted, 0); assert.equal(summary.queued, mode === "empty" ? 0 : 1);
+        if (off) assert.equal(summary.redacted, 0);
+        else { assert.equal(summary.redactionSkipped, true); assert.equal("redacted" in summary, false); }
+        assert.equal(summary.queued, mode === "empty" ? 0 : 1);
         assert.equal(summary.abandoned, mode === "empty" ? 0 : 2);
       }
-      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["completed", ["empty", "normal"].includes(mode) ? "completed" : "uncertain"]);
+      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["empty", "normal"].includes(mode) ? ["completed", "completed", "completed"] : ["uncertain", "completed", "uncertain"]);
       if (mode === "empty") assert.deepEqual((await preparationReceipts()).jobs, []);
       else await assertPreparationReceipts(ids, receiptMode);
       if (["normal", "mutated-tracking"].includes(mode)) {
@@ -781,7 +812,7 @@ async function main() {
         assert.equal(row.state_version, mutation.endsWith("version") ? 1 : 2);
       }
       assert.equal(result.status, off ? 200 : 503, mode);
-      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["completed", "uncertain"]);
+      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["uncertain", "completed", "uncertain"]);
       await reconcile(); checks.push(`shipping-preparation-mutated-${mode}-retains-receipt-uncertainty`);
     }
 
@@ -795,20 +826,105 @@ async function main() {
       const pending = refundRequest();
       try {
         await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
-        await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
+        await change(false); assert.equal((await drain()).active, 2);
+        await assertShippingAwaited(before, ["active", "completed", "active"]);
         assert.equal((await refundRequest()).status, 503);
-        assert.deepEqual((await since(before)).map(row => row.state), ["completed", "active"]);
+        await assertShippingEntries(before, ["active", "completed", "active"]);
         if (fault === "ledger-backend-death") {
-          const sessions = (await operator.query("SELECT pid FROM pg_stat_activity WHERE usename=$1 AND application_name='lash-her-frontend-writer-admission'", [target.user])).rows;
-          assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]); await delay(25);
+          await killShippingStageSession();
         }
       } finally { await blocker.query("ROLLBACK"); }
-      assert.equal((await pending).status, fault === "close" ? 200 : 503);
-      assert.deepEqual((await since(before)).map(row => row.state), ["completed", fault === "close" ? "completed" : "active"]);
+      const result = await pending;
+      assert.equal(result.status, fault === "close" ? 200 : 503);
+      if (fault === "close") {
+        const summary = JSON.parse(result.text);
+        assert.equal(summary.redactionSkipped, true); assert.equal("redacted" in summary, false);
+      }
+      await assertShippingEntries(before, fault === "close" ? ["completed", "completed", "completed"] : ["uncertain", "completed", "active"]);
       await assertPreparationReceipts(ids); await reconcile();
       checks.push(`shipping-preparation-blocked-transaction-${fault}-retains-entry-without-replaying-committed-work`);
     }
     await operator.query("DROP TRIGGER owned_delay_preparation ON product_shipment_jobs");
+
+    // These integration cases observe the same enclosing entry after both
+    // preserved stage entries have settled. Domain-specific execution/provider
+    // fault coverage remains in the separate shipping-owned fixture.
+    phase = "shipping-whole-awaits-blocked-execution-claim";
+    await seedPreparation("empty"); await change(true); before = await operations();
+    const executionShipment = (await operator.query(`INSERT INTO product_shipments(public_reference,quote_token_hash,quote_fingerprint,
+      status,destination,package_snapshot,customs_lines,rates,quote_expires_at)
+      VALUES('owned-whole-execution','owned-whole-execution','owned-whole-execution',
+      'abandoned','{}','{}','[]','[]',now()+interval '1 day') RETURNING id`)).rows[0].id;
+    const { hashOperationPayload } = await import("../../../src/lib/shipping/shipment-store.ts");
+    const executionPayload = { expectedShipmentStateVersion: 1 };
+    const executionJob = (await operator.query(`INSERT INTO product_shipment_jobs(shipment_id,type,status,idempotency_key,operation_payload_hash,payload)
+      VALUES($1,'cleanup','queued','owned-whole-execution',$2,$3) RETURNING id`,
+      [executionShipment, hashOperationPayload(executionPayload), executionPayload])).rows[0].id;
+    const executionBlocker = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
+      password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
+    connections.push(executionBlocker); await executionBlocker.connect();
+    await executionBlocker.query("SELECT pg_advisory_lock(904710008)");
+    await operator.query(`CREATE FUNCTION pg_temp.block_owned_execution_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM pg_advisory_xact_lock(904710008); RETURN NULL; END $$`);
+    await operator.query(`CREATE TRIGGER owned_block_execution_claim BEFORE UPDATE ON product_shipment_jobs
+      FOR EACH ROW WHEN (NEW.status='processing') EXECUTE FUNCTION pg_temp.block_owned_execution_claim()`);
+    const executionPending = refundRequest();
+    try {
+      await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+      await assertShippingAwaited(before, ["active", "completed", "completed"]);
+      await change(false); assert.equal((await drain()).active, 1);
+      assert.equal((await refundRequest()).status, 503);
+      await assertShippingEntries(before, ["active", "completed", "completed"]);
+    } finally { await executionBlocker.query("SELECT pg_advisory_unlock(904710008)"); }
+    try {
+      assert.equal((await executionPending).status, 503);
+      await assertShippingEntries(before, ["uncertain", "completed", "completed"]);
+      assert.deepEqual((await operator.query("SELECT status,attempt_count,state_version FROM product_shipment_jobs WHERE id=$1", [executionJob])).rows,
+        [{ status: "queued", attempt_count: 0, state_version: 1 }]);
+      assert.deepEqual(activeCalls, []);
+    } finally { await operator.query("DROP TRIGGER owned_block_execution_claim ON product_shipment_jobs"); }
+    await reconcile();
+    checks.push("shipping-whole-parent-awaits-real-blocked-execution-claim-and-retains-unknown-claim-without-provider-or-pii");
+
+    for (const fault of ["close", "ledger-backend-death"]) {
+      phase = `shipping-whole-awaits-blocked-pii-${fault}`;
+      await seedPreparation("empty"); await change(true, true); before = await operations();
+      const shipment = (await operator.query(`INSERT INTO product_shipments(public_reference,quote_token_hash,quote_fingerprint,
+        status,destination,package_snapshot,customs_lines,rates,quote_expires_at,updated_at,raw_shipment,tracking_url)
+        VALUES('owned-whole-pii','owned-whole-pii','owned-whole-pii','abandoned',
+        '{"line1":"Owned fixture"}','{}','[{"description":"Owned fixture"}]','[{"owned":true}]',
+        now()+interval '1 day',now()-interval '31 days','{"owned":true}','https://owned.invalid/tracking') RETURNING id`)).rows[0].id;
+      const blocker = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
+        password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
+      connections.push(blocker); await blocker.connect(); await blocker.query("BEGIN");
+      await blocker.query("SELECT id FROM product_shipments WHERE id=$1 FOR UPDATE", [shipment]);
+      const pending = refundRequest();
+      try {
+        await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+        await assertShippingAwaited(before, ["active", "completed", "completed", "active"], ["recovery", "recovery", "recovery", "new-work"]);
+        await change(false); assert.equal((await drain()).active, 2);
+        assert.equal((await refundRequest()).status, 503);
+        await assertShippingEntries(before, ["active", "completed", "completed", "active"], ["recovery", "recovery", "recovery", "new-work"]);
+        if (fault === "ledger-backend-death") await killShippingStageSession();
+      } finally { await blocker.query("ROLLBACK"); }
+      const result = await pending;
+      assert.equal(result.status, fault === "close" ? 200 : 503);
+      await assertShippingEntries(before, fault === "close" ? ["completed", "completed", "completed", "completed"] : ["uncertain", "completed", "completed", "active"],
+        ["recovery", "recovery", "recovery", "new-work"]);
+      if (fault === "close") {
+        const summary = JSON.parse(result.text);
+        assert.equal(summary.redacted, 1); assert.equal("redactionSkipped" in summary, false);
+      }
+      const receipt = (await operator.query(`SELECT destination,customs_lines,rates,raw_shipment,quote_token_hash,tracking_url,
+        redacted_at,updated_at FROM product_shipments WHERE id=$1`, [shipment])).rows[0];
+      assert.deepEqual(receipt.destination, { line1: "[redacted]", city: "[redacted]", province: "--", postalCode: "[redacted]", country: "[redacted]" });
+      assert.deepEqual(receipt.customs_lines, []); assert.deepEqual(receipt.rates, []);
+      assert.equal(receipt.raw_shipment, null); assert.equal(receipt.tracking_url, null);
+      assert.equal(receipt.quote_token_hash, `redacted:${shipment}`);
+      assert.ok(receipt.redacted_at); assert.equal(receipt.redacted_at.getTime(), receipt.updated_at.getTime());
+      assert.deepEqual(activeCalls, []); await reconcile();
+      checks.push(`shipping-whole-parent-awaits-real-blocked-pii-${fault}-with-exact-redaction-and-independent-ledger-receipts`);
+    }
     assert.equal(unexpectedFetches, 0);
     if (providerInvariantFailure) throw providerInvariantFailure;
     return { status: "FRONTEND_RECONCILIATION_OWNED_PASS", postgresMajor: major, checks, reconciliationEvidence,

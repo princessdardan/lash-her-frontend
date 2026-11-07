@@ -1,0 +1,38 @@
+{
+  "kind": "source-manifest-interface-check",
+  "actualGitVerifiedSourceManifest": true,
+  "manifestStatus": "FRONTEND_HISTORICAL_SOURCE_VERIFIED",
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "sourceInventorySha256": "56b63e8e322e328c00079ffb038633ceb7b23e602ff83c914865598fa87c50fe",
+  "requirementsSha256": "204083bda168dfa318edfa689dd0858d16587d148778a3ef4e70e5e4ddb4bf8a",
+  "manifestPinsProvisional": true,
+  "provider": "owned-in-memory-empty-lists",
+  "actualOriginalConfiguration": false,
+  "actualSourceCapabilityClosures": false,
+  "moduleCompletesWithoutUntrackedProof": false,
+  "missingRequirementIds": [
+    "resend.broadcasts.accepted-request-completeness",
+    "resend.broadcasts.durable-intents",
+    "resend.broadcasts.original-configuration",
+    "resend.contacts.accepted-request-completeness",
+    "resend.contacts.durable-intents",
+    "resend.contacts.original-configuration",
+    "resend.events.accepted-request-completeness",
+    "resend.events.durable-intents",
+    "resend.events.original-configuration",
+    "resend.segments.accepted-request-completeness",
+    "resend.segments.durable-intents",
+    "resend.segments.original-configuration",
+    "resend.topics.accepted-request-completeness",
+    "resend.topics.durable-intents",
+    "resend.topics.original-configuration"
+  ],
+  "families": [
+    "resend.contacts",
+    "resend.segments",
+    "resend.topics",
+    "resend.broadcasts",
+    "resend.events"
+  ],
+  "passed": true
+}

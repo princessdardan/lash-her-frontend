@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "status": "OWNED_EXACT_TREE_ALIAS_VALIDATION_PASS",
+  "recordedAt": "2026-11-06",
+  "baseCommit": "442b6163a0c8df03d28438708617582986226f97",
+  "supportedExactSourceRevisions": 35,
+  "storedProfileFiles": 33,
+  "aliases": [
+    {
+      "sourceCommit": "e82645b6c045ce88dbaacf3c32cff8606a8592a8",
+      "sourceProfileCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+      "treeOid": "eca5b5ead0d026822a68788f9332ae550f6fbfe0",
+      "sourceInventorySha256": "63950a977dec675ff21b1c1d41b8763e96dfb08f83b6c8e66ab2949ce140217d",
+      "materializedProfileSha256": "c746ac0183027a202f932c3c47465743799ceed3f26815ec090403a1f3182b13"
+    },
+    {
+      "sourceCommit": "85dea97b0deae17cff19e345268bddafeba9fe28",
+      "sourceProfileCommit": "13142937adf542e41d0a12807d2503389933f74e",
+      "treeOid": "aa9ccfc57e3e4e6a385dad83aacde571a822bb52",
+      "sourceInventorySha256": "d9a2b1cc0a6a9e684fde632193393378f0f5e74d33b2f49752dacfbb5178a56b",
+      "materializedProfileSha256": "5c1c39650e35589f95bdedea22a39ff3023659cbb98bf423986d585483d0c98d"
+    }
+  ],
+  "ownedSourceSha256": {
+    "ops/platform/frontend-historical-source.mjs": "55c9922bc43c9de1792c32277af8586128ea77dc8ff17b6bb5226104253ece31",
+    "ops/platform/frontend-historical-source.test.mjs": "3d497d3d2ce7d4ea350618bfa04f7a6c6e5b48ca4a917a6eff05097208b7fa94"
+  },
+  "verification": {
+    "node": "24.18.0",
+    "combinedSourceObserverAndInstallationTests": {
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0
+    },
+    "eslint": "pass",
+    "diffCheck": "pass",
+    "actualGitTreeBlobAndExcerptVerification": "pass",
+    "wrongBaseRefTreeAndMutatedProfileRefusal": "pass",
+    "emptyAndConfiguredCatalogTwinEquivalence": "pass"
+  },
+  "constraints": {
+    "genericAliasSelection": false,
+    "ancestryBasedProfileBorrowing": false,
+    "effectOrAdmissionReuse": false,
+    "configurationReuse": false,
+    "failedDeploymentStatusUsedAsAbsenceProof": false,
+    "liveQualified": false,
+    "providerTouched": false,
+    "independentReviewPending": true
+  }
+}

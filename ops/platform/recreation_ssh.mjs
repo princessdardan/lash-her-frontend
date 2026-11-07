@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {spawn} from "node:child_process";
 import {lstat, realpath, writeFile} from "node:fs/promises";
 import {isAbsolute, dirname, join} from "node:path";
+import { LEGACY_OPERATOR_SOURCE_BOUNDS, PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS } from "./recreation_source.mjs";
 
 const quote = value => "'" + value.replace(/'/gu, "'\"'\"'") + "'";
 const header = "import json,os,pathlib,sys\n";
@@ -22,7 +23,7 @@ new=root/'p1-recreate-access-20261103-c3'
 if any(p.exists() or p.is_symlink() for p in (old,new)) or shutil.which('docker') is not None: raise ValueError('BARE_RUNTIME_RESTORE_REQUIRED')
 print(json.dumps({'status':'BARE_RUNTIME_RESTORE_VERIFIED','hostMachineId':pathlib.Path('/etc/machine-id').read_text().strip(),'failedActionInputsPresent':False,'newActionPresent':False,'dockerInstalled':False,'readOnly':True}))
 `;
-const sourceInstall = header + `
+const sourceInstall = bounds => header + `
 import base64,hashlib
 if os.geteuid()!=0: raise ValueError('ROOT_REQUIRED')
 p=json.load(sys.stdin)
@@ -32,14 +33,14 @@ root=pathlib.Path('/opt/lash-her/operators')/commit
 if any(p.is_symlink() for p in (root,*root.parents)): raise ValueError('SOURCE_PARENT_SYMLINK_REFUSED')
 if any(p.exists() and (p.stat().st_uid!=0 or p.stat().st_mode & 0o022) for p in root.parents): raise ValueError('ROOT_OWNED_SOURCE_PARENTS_REQUIRED')
 files=p['files']
-if not isinstance(files,list) or not 1<=len(files)<=400: raise ValueError('SOURCE_FILES_REQUIRED')
+if not isinstance(files,list) or not 1<=len(files)<=${bounds.files}: raise ValueError('SOURCE_FILES_REQUIRED')
 seen=set(); verified=[]; total=0
 for f in files:
  name=f['path']; rel=pathlib.PurePosixPath(name)
  if not name.startswith('ops/') or rel.is_absolute() or '..' in rel.parts or name in seen: raise ValueError('SOURCE_PATH_REFUSED')
  if not name.endswith(('.py','.mjs','.json','.yaml','.yml','.service','.timer','.sh','.guard')): raise ValueError('SOURCE_TYPE_REFUSED')
  raw=base64.b64decode(f['data'],validate=True); total+=len(raw)
- if len(raw)>2000000 or total>16000000 or hashlib.sha256(raw).hexdigest()!=f['sha256']: raise ValueError('SOURCE_HASH_REFUSED')
+ if len(raw)>2000000 or total>${bounds.decodedBytes} or hashlib.sha256(raw).hexdigest()!=f['sha256']: raise ValueError('SOURCE_HASH_REFUSED')
  seen.add(name); verified.append((rel,raw))
 if root.exists():
  if not root.is_dir() or root.stat().st_uid!=0 or root.stat().st_mode & 0o022: raise ValueError('ROOT_OWNED_EXISTING_SOURCE_REQUIRED')
@@ -113,10 +114,10 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   }
   const env=Object.fromEntries(["PATH","HOME","TMPDIR","LANG"].filter(k=>environment[k]!==undefined).map(k=>[k,environment[k]]));
   let sequence=0;
-  async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false) {
+  async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false,maxInput=24_000_000) {
     assert.ok(timeout>=1000 && timeout<=3_600_000);
     const raw=payload===undefined?Buffer.alloc(0):Buffer.from(JSON.stringify(payload));
-    assert.ok(raw.length<=24_000_000,"Bounded SSH input required");
+    assert.ok(raw.length<=maxInput,"Bounded SSH input required");
     // Persist a public command identifier before an uncertain remote mutation;
     // neither the caller nor transport automatically repeats it.
     const id=String(++sequence).padStart(3,"0");
@@ -139,7 +140,10 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   return {
     machine:()=>run(["sudo","-n","/usr/bin/python3","-c",inspect]),
     bareRuntime:()=>run(["sudo","-n","/usr/bin/python3","-c",bareRuntime]),
-    installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall],payload),
+    // Fixed named source modes. Neither payload can select its own cap.
+    // Public encoded and private-action transport limits remain unchanged.
+    installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(LEGACY_OPERATOR_SOURCE_BOUNDS)],payload,120_000,4_000_000,false,56_000_000),
+    installProfiledCurrentSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS)],payload,120_000,4_000_000,false,56_000_000),
     phase:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
       assert.ok(["rollback","retire","restore"].includes(payload.operation));

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "scope": "Existing staging Google OAuth setup; metadata and unsubmitted form only",
+  "project": {
+    "id": "lash-her-staging-20261022",
+    "number": "185770842371",
+    "name": "Lash Her Staging"
+  },
+  "account": "Existing retained staging administrator; private account label omitted",
+  "providerRequiredTwoStepVerification": {
+    "completedBy": "owner",
+    "ownerReply": "Completed \u2014 continue",
+    "accessRestoredVerified": true
+  },
+  "existingClientsObserved": [
+    {
+      "purpose": "administrator identity",
+      "clientId": "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com"
+    },
+    {
+      "purpose": "operational Calendar",
+      "clientId": "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com"
+    }
+  ],
+  "preparedCustomerClient": {
+    "name": "Lash Her Staging Customer Identity",
+    "type": "Web application",
+    "javascriptOrigins": [
+      "https://staging.lashher.com"
+    ],
+    "redirectUris": [
+      "https://staging.lashher.com/api/customer-auth/callback/google"
+    ],
+    "formSubmittedByAgent": false,
+    "creationVerified": false,
+    "nextAction": "Owner creates client and retains generated ID/secret in private staging handoff as CUSTOMER_AUTH_GOOGLE_ID/CUSTOMER_AUTH_GOOGLE_SECRET; no credential in chat"
+  },
+  "credentialsRead": false,
+  "accountSecurityOrProviderConfigurationChangedByAgent": false,
+  "existingAdminOrCalendarClientReusedForCustomer": false,
+  "independentAccountOrRecoveryChannelRequired": false,
+  "runtimeConfigurationOrDeploymentChanged": false,
+  "actualCustomerSignInCertified": false,
+  "priorReceipt": "../2026-11-06-p2q-reuse-qualified/google-authentication-followup.json"
+}

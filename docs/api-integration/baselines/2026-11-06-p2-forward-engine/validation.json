@@ -1,0 +1,53 @@
+{
+  "status": "P2_FORWARD_RECOVERY_OWNED_COMPONENTS_VERIFIED",
+  "sourceBaseCommit": "61d9fcb0c0a42aa248232a6649c69f8f85ca8295",
+  "serverMajor": 16,
+  "controlTests": 12,
+  "hostTests": 29,
+  "forwardNamedChecks": 17,
+  "currentOnlyRegressionChecks": 55,
+  "skipped": 0,
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "actualRuntimeContainers": false,
+  "frontendSqlReplay": false,
+  "originalTerminalRecreated": false,
+  "apiSources": {
+    "course": {
+      "commit": "76716c537b5cd3049f0653ed3596c4f547ce3584",
+      "operatorSha256": "898bd9565dd5316ed526339981dcb9a32200d4485534a9464ccad3db612648a3"
+    },
+    "community": {
+      "commit": "e3bfffe295c7f0b7d029d6a7c9deb495ac418289",
+      "operatorSha256": "e80b9fceb5e44099b8f21ffc789b7d73d3bebe9757032e696d83f83e9eb3fa65"
+    }
+  },
+  "open": [
+    "postgres18-forward-ci",
+    "independent-final-commit-review",
+    "actual-all-service-host-restoration",
+    "actual-vercel-and-private-probe",
+    "reviewed-staging-start-and-restoration"
+  ],
+  "files": {
+    "ops/platform/p2-post-sql-recovery.mjs": "6ff171355be42a65bd254ac2b73872521f46afc3c7b574daebabeeb692a09812",
+    "ops/platform/p2-recovery.mjs": "468f1d3d0788becc59b18f6d8328394973aa078526ac4a17c08f3addd13f65a9",
+    "ops/platform/p2-recovery-transport.mjs": "97a602ed9462364f3a6cc176a4e448120685e1e8b7c46be453b5778f9e9f8f55",
+    "ops/platform/p2-recovery-current-probe.mjs": "dfa258f938aa6f3a69a082e94384c928d617e653c614c9f06e43006c862c7ffb",
+    "ops/platform/p2-recovery-frontend-observation.mjs": "bb18ee7811e80b1966cbe054c97076b8045f841a245ac05def62a78b777e41e8",
+    "ops/platform/host/p2_recovery_broker.py": "4f221aa0efb8056e1a6d73b2f772f7a2ddd215c72a6e9d8199c00c3ccff23794",
+    "ops/platform/host/p2_recovery_frontend_observation.py": "2b0e2d44bd20dcda506adeed1bf844e3f1c0c492b4dda8799ff2aca2d20fd480",
+    "ops/platform/host/p2_recovery_test.py": "c64f0defaceaf4ccf0a17366075a3ff1f605da7a2757a304b5318f4f51eeff32",
+    "ops/platform/test-p2-recovery-owned.py": "4b7b38bd81b175242f469b8305acb3b567defb3ed93770fb2d89fa53af9d3b96",
+    "ops/platform/test-p2-recovery-owned.mjs": "d789d318d63339d85c15fb8d04039aa61c7b2fbc88353752c8190ffc499c1cdc",
+    "ops/platform/p2-post-sql-recovery.test.mjs": "ec07996051541207a2e5e0d8be2553383968cbd7e043cb8503b436e190b09a01",
+    "ops/platform/p2-recovery-transport.test.mjs": "7a8fd01cc128f02d40d6febe9dd2eab81440a6afbb2ecbe12b930a201bb8816a",
+    "docs/api-integration/operator-p2-post-sql-recovery.md": "8db37ea2b9b3394b0ea259185d0947721c5057a174e0cc658f5052153912f7ee",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine/README.md": "e4692b15e7668e43ebb01246ce0f21c71690c5a31d152652b80acfd875e1b238",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine/control-integrated-tests.log": "5728b90daac969a5829ebfc7e83f825428c73f15a6a8812d6bf8a68fae13fefa",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine/current-only-regression-postgres16.json": "7f11da44be21c92641598ba97aa3d7a26a3fae717f757e0ed266ba22cfa4327f",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine/host-integrated-tests.log": "c405289a35a15b03b6318795ec7dedf888a09691df678fc4c5421ba360aa3765",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine/host-tests.log": "85e158976316eaccdf97a060c2bdeca685c323698d48bfbecc5dc30d673e1364",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine/owned-forward-postgres16.json": "a0f0c9d78b21ca07789574b71e693c4ffdf2992b8d202de4182ffda43336760c"
+  }
+}

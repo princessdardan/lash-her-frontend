@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "status": "OWNED_ACK_FIXTURE_SETUP_REFUSED",
+  "dropAfterAckQualified": false,
+  "observed": {
+    "http": 503,
+    "frontendLedgerStates": ["completed"],
+    "gatewayEffectCount": 0,
+    "gatewayUncertain": {"newWork": 0, "recovery": 0},
+    "courseAccepted": 0,
+    "communityAccepted": 0,
+    "gatewayRequests": 4,
+    "gatewayRejected": 4,
+    "fetchResponses": [
+      {"status": 421, "code": "invalid_host"},
+      {"status": 421, "code": "invalid_host"}
+    ]
+  },
+  "correction": "Owned TLS transport uses the reviewed Host and TLS servername with a matching owned certificate SAN.",
+  "fixtureOnly": true,
+  "providerTouched": false
+}

@@ -1,5 +1,10 @@
 import "server-only";
 import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import {
+  runWriterAdmission,
+  type WriterAdmissionRunner,
+} from "@/lib/writer-admission/runtime";
 
 import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 
@@ -94,6 +99,7 @@ const BACKOFF_MAX_MS = 60 * 60_000;
 
 export function createMarketingContactSyncWorker(
   dependencies: MarketingContactSyncWorkerDependencies,
+  runAdmission: WriterAdmissionRunner = runWriterAdmission,
 ): {
   run(input?: {
     batchSize?: number;
@@ -101,120 +107,129 @@ export function createMarketingContactSyncWorker(
   }): Promise<MarketingContactSyncRunSummary>;
 } {
   return {
-    async run(input): Promise<MarketingContactSyncRunSummary> {
-      const now = dependencies.getNow();
-      const batchSize = input?.batchSize ?? DEFAULT_BATCH_SIZE;
-      const lockTtlSeconds = input?.lockTtlSeconds ?? DEFAULT_LOCK_TTL_SECONDS;
-      const apiKey = dependencies.getApiKey();
+    run(input): Promise<MarketingContactSyncRunSummary> {
+      return runAdmission("recovery", async () => {
+        const now = dependencies.getNow();
+        const batchSize = input?.batchSize ?? DEFAULT_BATCH_SIZE;
+        const lockTtlSeconds =
+          input?.lockTtlSeconds ?? DEFAULT_LOCK_TTL_SECONDS;
+        const apiKey = dependencies.getApiKey();
 
-      if (!apiKey) {
-        dependencies.logWarn(
-          "[marketing-contact-sync] RESEND_API_KEY is not configured; skipping run without claiming jobs",
-        );
+        if (!apiKey) {
+          dependencies.logWarn(
+            "[marketing-contact-sync] RESEND_API_KEY is not configured; skipping run without claiming jobs",
+          );
 
-        return buildSummary({ now, processed: 0 });
-      }
+          return buildSummary({ now, processed: 0 });
+        }
 
-      let jobs: MarketingContactSyncJob[];
+        let jobs: MarketingContactSyncJob[];
 
-      try {
-        jobs = await dependencies.repository.claimDueJobs({
-          batchSize,
-          lockTtlSeconds,
-          now,
-          workerId: getWorkerId(),
-        });
-      } catch (error) {
-        dependencies.logError("[marketing-contact-sync] Failed to claim jobs", {
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-
-        return buildSummary({ now, processed: 0, failedToClaim: batchSize });
-      }
-
-      const summary = buildSummary({ now, processed: jobs.length });
-
-      const unsubscribeContact =
-        dependencies.unsubscribeContact ?? unsubscribeResendMarketingContact;
-
-      for (const job of jobs) {
         try {
-          if (job.kind === "unsubscribe_sync") {
-            await unsubscribeContact({ email: job.payload.email });
-          } else if (!highLevelOwnsMarketing()) {
-            await dependencies.syncContact(
-              toResendMarketingContactInput(job.payload),
-            );
-            await compensateForConcurrentUnsubscribe(dependencies, {
-              email: job.payload.email,
-              unsubscribeContact,
-            });
-          }
-          const updated = await dependencies.repository.markJobSucceeded({
-            jobId: job.id,
-            lockedBy: job.lockedBy,
-            now: dependencies.getNow(),
+          jobs = await dependencies.repository.claimDueJobs({
+            batchSize,
+            lockTtlSeconds,
+            now,
+            workerId: getWorkerId(),
           });
-
-          if (updated > 0) {
-            summary.succeeded += 1;
-          } else {
-            dependencies.logWarn(
-              "[marketing-contact-sync] Stale lock or status mismatch; mark succeeded ignored",
-              { jobId: job.id },
-            );
-          }
         } catch (error) {
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : "Unknown Resend sync error";
-          const errorContext = buildErrorContext(error);
-
+          markWriterOperationUncertain();
           dependencies.logError(
-            "[marketing-contact-sync] Resend contact sync failed",
+            "[marketing-contact-sync] Failed to claim jobs",
             {
-              error: errorMessage,
-              jobId: job.id,
-              source: job.payload.source,
+              error: error instanceof Error ? error.message : "Unknown error",
             },
           );
 
-          if (job.attempts >= job.maxAttempts) {
-            const updated = await safeMarkJobDeadLetter(dependencies, {
-              error: errorMessage,
-              errorContext,
-              job,
+          return buildSummary({ now, processed: 0, failedToClaim: batchSize });
+        }
+
+        const summary = buildSummary({ now, processed: jobs.length });
+
+        const unsubscribeContact =
+          dependencies.unsubscribeContact ?? unsubscribeResendMarketingContact;
+
+        for (const job of jobs) {
+          try {
+            if (job.kind === "unsubscribe_sync") {
+              await unsubscribeContact({ email: job.payload.email });
+            } else if (!highLevelOwnsMarketing()) {
+              await dependencies.syncContact(
+                toResendMarketingContactInput(job.payload),
+              );
+              await compensateForConcurrentUnsubscribe(dependencies, {
+                email: job.payload.email,
+                unsubscribeContact,
+              });
+            }
+            const updated = await dependencies.repository.markJobSucceeded({
+              jobId: job.id,
+              lockedBy: job.lockedBy,
+              now: dependencies.getNow(),
             });
 
             if (updated > 0) {
-              summary.deadLettered += 1;
+              summary.succeeded += 1;
             } else {
+              markWriterOperationUncertain();
               dependencies.logWarn(
-                "[marketing-contact-sync] Stale lock or status mismatch; mark dead_letter ignored",
+                "[marketing-contact-sync] Stale lock or status mismatch; mark succeeded ignored",
                 { jobId: job.id },
               );
             }
-          } else {
-            const updated = await safeMarkJobRetryableFailed(dependencies, {
-              error: errorMessage,
-              errorContext,
-              job,
-            });
+          } catch (error) {
+            markWriterOperationUncertain();
+            const errorMessage =
+              error instanceof Error
+                ? error.message
+                : "Unknown Resend sync error";
+            const errorContext = buildErrorContext(error);
 
-            if (updated > 0) {
-              summary.retryableFailed += 1;
+            dependencies.logError(
+              "[marketing-contact-sync] Resend contact sync failed",
+              {
+                error: errorMessage,
+                jobId: job.id,
+                source: job.payload.source,
+              },
+            );
+
+            if (job.attempts >= job.maxAttempts) {
+              const updated = await safeMarkJobDeadLetter(dependencies, {
+                error: errorMessage,
+                errorContext,
+                job,
+              });
+
+              if (updated > 0) {
+                summary.deadLettered += 1;
+              } else {
+                dependencies.logWarn(
+                  "[marketing-contact-sync] Stale lock or status mismatch; mark dead_letter ignored",
+                  { jobId: job.id },
+                );
+              }
             } else {
-              dependencies.logWarn(
-                "[marketing-contact-sync] Stale lock or status mismatch; mark retryable_failed ignored",
-                { jobId: job.id },
-              );
+              const updated = await safeMarkJobRetryableFailed(dependencies, {
+                error: errorMessage,
+                errorContext,
+                job,
+              });
+
+              if (updated > 0) {
+                summary.retryableFailed += 1;
+              } else {
+                dependencies.logWarn(
+                  "[marketing-contact-sync] Stale lock or status mismatch; mark retryable_failed ignored",
+                  { jobId: job.id },
+                );
+              }
             }
           }
         }
-      }
 
-      return summary;
+        return summary;
+      });
     },
   };
 }

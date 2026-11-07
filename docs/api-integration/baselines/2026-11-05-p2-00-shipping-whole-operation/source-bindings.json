@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "applicationSourceCommit": "d4cc5b668ae56e6b95e5c4d7fe88b4ef2a9fec4c",
+  "applicationSourceManifestSha256": "433fe22e936b512b868df4d92e42c3a29a33786c61e115f2202e586a8202ee12",
+  "files": {
+    "src/lib/writer-admission/context.ts": "61b548df8095afeae550dad31cc37b276d6a5709b61fa8f54077cda440025aec",
+    "src/lib/shipping/admission.ts": "10df0baa9b04ea17d5860309610c25ae0a9caa502ba537bf9b790ff6e6543137",
+    "src/lib/shipping/email-receipt.ts": "dfc72130719e5bdd3c374c106608bda4de404e36d9b3c87be9567bf10330fd5d",
+    "src/lib/shipping/chitchats-client.ts": "d02ddc3166f6be645bc23c9b12420a6bd1b7592c98560a88d0ef5a365d40c13e",
+    "src/lib/shipping/customer-refunds.ts": "d3bfb1d556a2f0ee950aff3fd7470d3221267a948481315c2674f907ab80bee6",
+    "src/lib/shipping/policy-alerts.ts": "f0e7c5cf36c31d2aa76c54175ba2aa9514e0aaa22a83ae1054abf8a980edb005",
+    "src/lib/shipping/operation-worker.ts": "417d94f8320d34907a15160c84a4408cfa5cf2b48e1d08fcef9ebfc4452bb79d",
+    "src/lib/shipping/shipment-store.ts": "4c4f5cb52472b373fcc8f4844e3aba4a4bfa1e63ba88d6cc6e88a34561abc6c3",
+    "src/app/api/cron/chitchats-shipping/handler.ts": "b8dc8d54b16c4c5dc1229f4d2e5d9d4be23f051e9362db343bde058f8265f842",
+    "src/app/api/cron/chitchats-shipping/route.ts": "d782af6519b22495cca9cbfc367ef77ee2a533cf9766f81f3fc7ef8ccc4da888",
+    "src/lib/writer-admission/shipping-execution.test.ts": "bb6e59708a241192f7ea57db0218c7e07aad6632d8146925cbff5ed3e97cca9f",
+    "scripts/run-source-unit-tests.mjs": "7d0ec6f3d25280450e9d43029faf76977a060e5f9bca3cefe373e6e0e98aea07",
+    "ops/platform/frontend-shipping-owned.test.mjs": "dbcbdf168f5a88a61b70fa013a580fd6f661491151884b7178cd3aa858cebced",
+    "ops/platform/test-frontend-shipping-local.mjs": "cf5f431e6c85def4c0cd74a10cefe13286a649f5481e1a3132ae66aeed78f672",
+    "ops/platform/harness/owned-frontend-shipping-admission.mjs": "d2cefc79e292113d4044642e18c28fde849af0b8786fae0eaf2c491ba89dcf98",
+    "ops/platform/harness/owned-shipping-execution.mjs": "073deaf52ef5d2cd808ce2f6b1595f015ecf46bbfee06af4de8e182d9ce9d2db",
+    "package.json": "a0020180ef90aae5e8c9285974fd7048822562cc1ffcf0cf585ea96ec9bf1adc",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1"
+  },
+  "protectedPreparationFunctions": {
+    "enqueueShipmentJob": "2eb96ff061928e219ae62b0440eae43672fd4913beb471cc7c3bfcd35faf1411",
+    "abandonExpiredQuotes": "cc8ec753872eacbd2d95ef45f2f14aa3ad2215c4c868dd07bca37479f63e2a85",
+    "verifyQuoteCleanupReceipts": "2e1443cd8bad453f8f6ecb3a5ce6c7ca5d34d5315134d04d184343f52f98dba5"
+  },
+  "protectedPredecessorFiles": {
+    "src/lib/writer-admission/shipping-preparation.test.ts": "848258b653498702b7c2f4daff148d2964aa82a1103fca8e6c6a89ec03bebf16",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "6660cb2c51ac91f160115dece6b0688ca0bff78654789d255fb7ed718178f59c",
+    "docs/api-integration/frontend-shipping-preparation-recovery-admission.md": "71d786496407936082dd1804a2c385c9afd195b3b4d9efc555444ae808a88571"
+  }
+}

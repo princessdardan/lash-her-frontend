@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "baseCommit": "39c87f1bdde88ad687ccd3a1dcbd201689b78f97",
+  "actualTracePrerequisiteCommit": "b4dfee795bfd1a87576cf75c622b0c1b7ea5563b",
+  "kind": "bounded-lifecycle-only-native-qualification-component",
+  "actualLiveNativeQualification": false,
+  "migrationAuthorized": false,
+  "files": [
+    {
+      "file": "ops/platform/p2-lifecycle-native.mjs",
+      "sha256": "e816005b16d76d7f8cf86f46e352ffce0e4c2bc3c8422e2c738bb5ec2656f016"
+    },
+    {
+      "file": "ops/platform/p2-lifecycle-native.test.mjs",
+      "sha256": "52837a31e5ef8f8c0dbcbbddf659b6b3ce231ab6ff4226fd86ef9b4fd8f7b9b4"
+    },
+    {
+      "file": "ops/platform/host/p2_lifecycle_native.py",
+      "sha256": "455d1f3520d2d04f5b1d23fc2ebec5bd05ae159909addba006564d004c22d143"
+    },
+    {
+      "file": "ops/platform/host/p2_lifecycle_native_test.py",
+      "sha256": "5868a4ee0b0237f0b922abe6c66d0f57240732fe7b83dc70b55cd203555361eb"
+    },
+    {
+      "file": "ops/platform/harness/p2-native-unit-fixture.mjs",
+      "sha256": "1f4bf8484a7e12b6101726e16b1004fd5e920b2da18fc261246f68dcb4d6e9b2"
+    },
+    {
+      "file": "ops/platform/harness/p2-native-death-fixture.mjs",
+      "sha256": "1c5e87db393846e2b9e1cf5ce9f43aba8ed44a68e677d76491432500d8999163"
+    },
+    {
+      "file": "ops/platform/harness/owned-p2-native-lifecycle.mjs",
+      "sha256": "8dc059f5d0db116d718437d57eb13f563ca9a09e957bb6f263f47feeb80febd9"
+    },
+    {
+      "file": "ops/platform/test-p2-lifecycle-native-local.mjs",
+      "sha256": "e598bf56df7438a0c8e5251e1967208fa0a7ec5a41a157daf635ae726b800c37"
+    },
+    {
+      "file": "docs/api-integration/p2-lifecycle-native-qualification.md",
+      "sha256": "3c81cf7cfdf15aba6125d467ee8aea508a6d9195839e5f2a953490242524548c"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/attempts.json",
+      "sha256": "ffb08bc363eaa6d3e5f1e77d713d826f54872cb784e42de51d23eccf7b6a1715"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/https.txt",
+      "sha256": "886b152d9a5ce8400fef5f0e094265c7dcaa673802fc0c39040a573d4a4b3833"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/postgres16-initial.json",
+      "sha256": "eeb7cbe55e92927e6c6ec0484031bb91df045e8fcc39438993f848af36fc3200"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/postgres16-pre-final-readback.json",
+      "sha256": "30aada3bf15b0d45b3f327e0d483492608aa5cfe35a32755b3880535a14f25ab"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/postgres16-summary.json",
+      "sha256": "fe7f9d683ce7eb959229ff7b24a5242bfa9ee5959c70674e88d515701df769dd"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/postgres16.json",
+      "sha256": "d75198673ee8c56f9c912f41a8a166406cd5bec86676642c4d560f8daee00656"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-native-lifecycle/unit.tap",
+      "sha256": "fb113ee8e1eaf38f3885d0fa3a83a4f5897387d22124520cc68db375452aa9e2"
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "reviewedCommit": "889a774a7b8cf5954f9a46bc3d9b6eed717f3a49",
+  "status": "SOURCE_PREPARATION_CLEARED_LINUX_RETRY_REQUIRED",
+  "source": {
+    "ops/platform/test-p2-recovery-owned.mjs": {
+      "sha256": "cc1530562316b8aaa46004dbe11fb89e20b8b1a211863217d44535c889a66cc9",
+      "currentEqualsFrozen": true
+    },
+    "ops/platform/test-p2-recovery-owned.py": {
+      "sha256": "f4e14505832eee431ed5639a053fc452f5e55178ac1740cb35aad8ec7e7b4739",
+      "currentEqualsFrozen": true
+    },
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": {
+      "sha256": "0374531bf53eee89b29fa386fdf2d363bdc1a37c13c7016c9c7cf9922b32c66f",
+      "currentEqualsFrozen": true
+    }
+  },
+  "independentTests": {
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "initialSandboxSocketBindRefusal": true,
+    "authorizedOwnedLoopbackRerunPassed": true
+  },
+  "actualRetainedLateEnvelopes": [
+    {
+      "mode": "post-callback-verifier",
+      "counts": {
+        "seen": 2,
+        "accepted": 2,
+        "rejected": 0
+      },
+      "emission": {
+        "status": "OWNED_P2_NODE_EMISSION_SUMMARY",
+        "attempted": 2,
+        "emitted": 2,
+        "projectionFailures": 0,
+        "uncaughtMonitor": 1,
+        "origin": "unhandledRejection"
+      },
+      "guardCodes": [
+        "P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW"
+      ]
+    },
+    {
+      "mode": "session-finally",
+      "counts": {
+        "seen": 2,
+        "accepted": 2,
+        "rejected": 0
+      },
+      "emission": {
+        "status": "OWNED_P2_NODE_EMISSION_SUMMARY",
+        "attempted": 2,
+        "emitted": 2,
+        "projectionFailures": 0,
+        "uncaughtMonitor": 1,
+        "origin": "unhandledRejection"
+      },
+      "guardCodes": [
+        "P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN"
+      ]
+    }
+  ],
+  "normalOwnedPg18": {
+    "checks": 19,
+    "status": "OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS",
+    "major": 18,
+    "skipped": 0,
+    "noSqlReplay": true,
+    "providerTouched": false,
+    "stderrBytes": 0
+  },
+  "retainedFlatControls": 6,
+  "artifactSha256": {
+    "p2-forward-47-late-envelopes.json": "d546060d6c98f0537b918fe9a7beda2dbf129573553d82103bfed6fa61a0d918",
+    "p2-forward-47-final-pg18.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "p2-forward-47-flat-envelopes.json": "fd6fbc2fb793dd24ddef0a66950e209cbe5af6921827097f9062d59eba3ac226"
+  },
+  "reviewed": [
+    "Flat generated module root canonically maps only allowed relative source frames; guard code requires literal at the matched source line.",
+    "Uncaught monitor preserves default termination and catches late post-callback/finally refusals.",
+    "Closed phases/stages/kinds/guard/system codes/frame coordinates; rejected projections expose counts/reasons only.",
+    "Expected assert.rejects errors are operation scoped and do not become final causes.",
+    "Normal19 assertions/API/physical identity/role/runtime authority source untouched; new diagnostic controls invoke actual session verifier/finally with owned PG."
+  ],
+  "pending": [],
+  "primaryReference": "https://nodejs.org/docs/latest-v24.x/api/process.html#a-note-on-process-io",
+  "limits": [
+    "No original Linuxcause attribution; actualLinux retry remains needed.",
+    "Composed flat provider/catalogue/physical controls are modeled; late2 and normal19 are owner actual owned PG18/TLS evidence.",
+    "Reviewer reran14 units only, not fullPG18.",
+    "No repository edits/livequeries/provider/SSH/secret-store calls."
+  ],
+  "releaseAccepted": false,
+  "g2Accepted": false,
+  "reviewedFinalCommit": "889a774a7b8cf5954f9a46bc3d9b6eed717f3a49",
+  "findings": [],
+  "syncCorrection": {
+    "fixedFd": 2,
+    "writeFileSyncRecordsAndExitSummary": true,
+    "defaultExceptionTerminationUnchanged": true,
+    "closedPipeSummaryExceptionCaught": true,
+    "independentUnitsRerun": 14
+  },
+  "retainedEvidence": {
+    "commit": "15ac08b6",
+    "filesVerified": 12,
+    "source0cHashesVerified": 3,
+    "scope": "Owned PG18 receipts bind original0c; ce30 sync delta units rerun only; owner exactPG rerun pending."
+  },
+  "retentionCorrection": {
+    "retainsLastAcceptedRecords": 8,
+    "totalAcceptedStillReported": 9,
+    "terminalUncaughtRetained": true,
+    "independentNewRegressionPassed": true,
+    "initialReviewerWrongTestNameCorrected": true
+  },
+  "ce30ActualOwnedEvidence": {
+    "normalPg18Checks": 19,
+    "lateActualControls": 2,
+    "stderrBytes": 0,
+    "normalSha256": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "lateSha256": "d546060d6c98f0537b918fe9a7beda2dbf129573553d82103bfed6fa61a0d918",
+    "reviewerFullPgRerun": false,
+    "scope": "owner exactce30 runtime;889 parser-only delta has newunit rerun"
+  },
+  "initialReviewedCommit": "0ccec707ffd4ccf074bec2a4acdcbb8e379f3898",
+  "sourceHashCommit": "889a774a7b8cf5954f9a46bc3d9b6eed717f3a49",
+  "final889ActualOwnedEvidence": {
+    "sourceCommit": "889a774a7b8cf5954f9a46bc3d9b6eed717f3a49",
+    "normalPg18Checks": 19,
+    "lateActualControls": 2,
+    "stderrBytes": 0,
+    "normalSha256": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "lateSha256": "d546060d6c98f0537b918fe9a7beda2dbf129573553d82103bfed6fa61a0d918",
+    "reviewerFullPgRerun": false
+  }
+}

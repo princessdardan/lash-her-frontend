@@ -1,0 +1,214 @@
+
+> frontend@0.1.0 prebuild
+> node scripts/validate-sanity-env.mjs
+
+[sanity-env] Local environment validated
+
+> frontend@0.1.0 build
+> next build --webpack
+
+▲ Next.js 16.4.3 (webpack)
+⚠ React 18 support is deprecated in Next.js 16 and will be removed in Next.js 17. Please upgrade to React 19. Learn more: https://nextjs.org/docs/messages/react-version
+✓ Running next.config.ts took 1297ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 33.9s
+  Running TypeScript ...
+  Finished TypeScript in 13.5s ...
+  Collecting page data using 10 workers ...
+  Generating static pages using 10 workers (0/74) ...
+  Generating static pages using 10 workers (18/74) 
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.232Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+  Generating static pages using 10 workers (36/74) 
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.511Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.512Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.512Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.529Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+  Generating static pages using 10 workers (55/74) 
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.757Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.762Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.768Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.769Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.769Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.771Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.787Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+{"level":"warn","message":"[product-stock] availability lookup failed; showing untracked","timestamp":"2026-11-05T23:04:40.976Z","service":"lash-her-frontend","environment":"production","error":"Missing env var: DATABASE_URL"}
+✓ Generating static pages using 10 workers (74/74) in 1430ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)                                                                Revalidate  Expire
+┌ ○ /                                                                             30m      1y
+├ ○ /_not-found
+├ ƒ /academy
+├ ƒ /academy/courses/[courseId]
+├ ƒ /academy/courses/[courseId]/lessons/[lessonId]
+├ ƒ /account
+├ ƒ /account/sign-in-methods
+├ ƒ /admin
+├ ƒ /admin/analytics
+├ ƒ /admin/appointments
+├ ƒ /admin/appointments/[id]
+├ ƒ /admin/audit
+├ ƒ /admin/booking-issues
+├ ƒ /admin/booking-settings
+├ ƒ /admin/calendar-connections
+├ ƒ /admin/courses
+├ ƒ /admin/courses/[courseId]
+├ ƒ /admin/customer-accounts
+├ ƒ /admin/inquiries
+├ ƒ /admin/integrations
+├ ƒ /admin/inventory
+├ ƒ /admin/marketing
+├ ƒ /admin/marketing/highlevel
+├ ƒ /admin/my-calendar
+├ ƒ /admin/not-authorized
+├ ƒ /admin/offerings
+├ ƒ /admin/orders
+├ ƒ /admin/payments
+├ ƒ /admin/schedules
+├ ƒ /admin/service-promotions
+├ ƒ /admin/setup
+├ ƒ /admin/shipping-packages
+├ ƒ /admin/sign-in
+├ ƒ /admin/staff
+├ ƒ /admin/step-up
+├ ƒ /admin/step-up/complete
+├ ƒ /admin/training
+├ ƒ /api/academy/catalog
+├ ƒ /api/academy/catalog/[slug]
+├ ƒ /api/academy/courses
+├ ƒ /api/academy/courses/[courseId]
+├ ƒ /api/academy/courses/[courseId]/enrollments
+├ ƒ /api/academy/courses/[courseId]/lessons
+├ ƒ /api/academy/lessons/[lessonId]
+├ ƒ /api/academy/lessons/[lessonId]/playback
+├ ƒ /api/academy/lessons/[lessonId]/progress
+├ ƒ /api/academy/lessons/[lessonId]/quiz
+├ ƒ /api/academy/lessons/[lessonId]/quiz/attempts
+├ ƒ /api/academy/progress
+├ ƒ /api/account
+├ ƒ /api/account/commands
+├ ƒ /api/account/exports/[commandId]
+├ ƒ /api/account/preferences
+├ ƒ /api/admin/appointments/[id]/no-show
+├ ƒ /api/admin/calendar-connections/[id]/oauth/start
+├ ƒ /api/admin/courses
+├ ƒ /api/admin/courses/[courseId]
+├ ƒ /api/admin/courses/[courseId]/modules
+├ ƒ /api/admin/courses/[courseId]/modules/reorder
+├ ƒ /api/admin/courses/[courseId]/publication-readiness
+├ ƒ /api/admin/customer-accounts/[userId]/commands
+├ ƒ /api/admin/customer-accounts/[userId]/exports/[commandId]
+├ ƒ /api/admin/email-retries
+├ ƒ /api/admin/gateway-smoke
+├ ƒ /api/admin/highlevel/callback
+├ ƒ /api/admin/lessons/[lessonId]
+├ ƒ /api/admin/lessons/[lessonId]/quiz
+├ ƒ /api/admin/lessons/[lessonId]/video
+├ ƒ /api/admin/lessons/[lessonId]/video-upload
+├ ƒ /api/admin/lessons/[lessonId]/video/[videoAssetId]/captions
+├ ƒ /api/admin/lessons/[lessonId]/video/[videoAssetId]/captions/[trackId]
+├ ƒ /api/admin/lessons/[lessonId]/video/[videoAssetId]/refresh
+├ ƒ /api/admin/marketing-contact-sync
+├ ƒ /api/admin/modules/[moduleId]
+├ ƒ /api/admin/modules/[moduleId]/lessons
+├ ƒ /api/admin/modules/[moduleId]/lessons/reorder
+├ ƒ /api/admin/my-calendar/connections/[id]/oauth/start
+├ ƒ /api/admin/orders/[orderId]/manual-fulfillment
+├ ƒ /api/admin/orders/[orderId]/refund
+├ ƒ /api/admin/orders/[orderId]/shipping/buy
+├ ƒ /api/admin/orders/[orderId]/shipping/label
+├ ƒ /api/admin/orders/[orderId]/shipping/operations/[operationId]
+├ ƒ /api/admin/orders/[orderId]/shipping/refund
+├ ƒ /api/admin/payment-reconciliation
+├ ƒ /api/admin/private-data-retention
+├ ƒ /api/admin/shipping/package-profiles
+├ ƒ /api/admin/shipping/package-profiles/[id]
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/booking/availability
+├ ƒ /api/booking/card-on-file
+├ ƒ /api/booking/checkout
+├ ƒ /api/booking/create
+├ ƒ /api/booking/holds
+├ ƒ /api/booking/oauth/callback
+├ ƒ /api/booking/oauth/start
+├ ƒ /api/booking/payment/confirm
+├ ƒ /api/booking/payment/promotion-code
+├ ƒ /api/booking/square/config
+├ ƒ /api/booking/square/return
+├ ƒ /api/cart/preview
+├ ƒ /api/checkout
+├ ƒ /api/checkout/square/config
+├ ƒ /api/cron/account-lifecycle
+├ ƒ /api/cron/backup-validation
+├ ƒ /api/cron/chitchats-shipping
+├ ƒ /api/cron/customer-email-outbox
+├ ƒ /api/cron/gateway-smoke
+├ ƒ /api/cron/highlevel-sync
+├ ƒ /api/cron/product-stock-reservations
+├ ƒ /api/cron/shipping-rate-cache-refresh
+├ ƒ /api/customer-auth/[...nextauth]
+├ ƒ /api/draft-mode/disable
+├ ƒ /api/draft-mode/enable
+├ ƒ /api/internal/release-probe
+├ ƒ /api/internal/release-scheduler-probe
+├ ƒ /api/marketing/unsubscribe
+├ ƒ /api/promotion-code
+├ ƒ /api/revalidate
+├ ƒ /api/shipping/quotes
+├ ƒ /api/training-checkout
+├ ƒ /api/training-checkout/split-status
+├ ƒ /api/training-checkout/square-invoice
+├ ƒ /api/webhooks/highlevel
+├ ƒ /api/webhooks/resend
+├ ƒ /api/webhooks/sanity/inventory-sync
+├ ƒ /api/webhooks/square
+├ ƒ /booking
+├ ƒ /booking/confirmation
+├ ○ /checkout
+├ ○ /contact                                                                      30m      1y
+├ ƒ /courses
+├ ƒ /courses/[slug]
+├ ○ /gallery                                                                      30m      1y
+├   /policies/[slug]
+│ ├ ● /policies/privacy-policy                                                    30m      1y
+│ ├ ● /policies/accessibility                                                     30m      1y
+│ ├ ● /policies/shipping-and-returns                                              30m      1y
+│ └ ● [+3 more paths]
+├ ƒ /products
+├   /products/[slug]
+│ ├ ● /products/lint-free-wipes                                                    5m      1y
+│ ├ ● /products/bamboo-spoolies                                                    5m      1y
+│ ├ ● /products/3m-tape                                                            5m      1y
+│ └ ● [+11 more paths]
+├ ƒ /products/confirmation
+├ ƒ /services
+├   /services/[slug]
+│ ├ ● /services/mini-fill                                                          5m      1y
+│ ├ ● /services/mobile-appointment                                                 5m      1y
+│ ├ ● /services/lash-removal                                                       5m      1y
+│ └ ● [+6 more paths]
+├ ƒ /services/[slug]/booking
+├ ƒ /services/[slug]/booking/confirmation
+├ ƒ /services/[slug]/booking/payment
+├ ƒ /services/booking/confirmation
+├ ƒ /sign-in
+├ ○ /studio/[[...tool]]
+├ ○ /training                                                                     30m      1y
+├ ○ /training-programs                                                            30m      1y
+├   /training-programs/[slug]
+│ ├ ● /training-programs/advanced-private-training                                30m      1y
+│ ├ ● /training-programs/online-mentorship                                        30m      1y
+│ └ ● /training-programs/beginner-private-training                                30m      1y
+├ ƒ /training-programs/[slug]/checkout
+├ ƒ /training-programs/[slug]/confirmation
+└ ƒ /training-programs/[slug]/schedule
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+●  (SSG)      prerendered as static HTML (uses generateStaticParams)
+ƒ  (Dynamic)  server-rendered on demand
+

@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "status": "PHASE2_LIFECYCLE_OWNED_POSTGRES_FAILED",
+  "postgresMajor": 16,
+  "tlsVerified": true,
+  "runtimeAuthentication": "SCRAM-SHA-256",
+  "harnessFiles": {
+    "test-phase2-lifecycle-local.mjs": "4560cf4cb391b75b8e6ca7c95c5311e7dd64f441c1976402329dd48b52f2cae4",
+    "harness/owned-phase2-lifecycle-frontend.mjs": "6cfcaed9c6d3d83098121b3a689556743f29e00c3bf9b620c38ae4363ec98e23",
+    "harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"
+  },
+  "sourcePins": {
+    "frontend": {
+      "commit": "632ee97e6eee87b795ba07cfaa77f97c233a4c34",
+      "archiveSha256": "41f4b9d7869b6cf924f41f66ca764eda0c0b5a862f7a1985eb845bcf79150861",
+      "lockSha256": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1"
+    },
+    "course": {
+      "commit": "05ff0694349aa0ae606997b1338618b9fc73134f",
+      "archiveSha256": "2659595bea9a4a1e96d318c55d3e8b4404cc1b62047ddb7b7a4f1cbb4faa0982",
+      "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+    },
+    "community": {
+      "commit": "610a581e0a16b20602d944bcdff4e0b3a43f90d0",
+      "archiveSha256": "774611fbb7e6798625d1ea8d94462c1cb093681fcdf1fe4827d36c4e279167d8",
+      "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+    }
+  },
+  "apiArtifacts": {
+    "course": {
+      "sourceSha256": "798d9b721a9140113c5a8149b042b6dbf93848f50fdfcdf4ceb586f67c1d7f9a",
+      "frontendCandidateSha256": "798d9b721a9140113c5a8149b042b6dbf93848f50fdfcdf4ceb586f67c1d7f9a",
+      "lifecycleOperationsSha256": "e66953bdd46b5ca5c5e1cdab9fb9a421687d621ac1780d62ff204e20be5ecb5e"
+    },
+    "community": {
+      "sourceSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+      "frontendCandidateSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+      "lifecycleOperationsSha256": "7df30b91e17da53ce70d6fa02cc6a6e3ab58161baf201be57d4cf95994e744d5"
+    }
+  },
+  "contractQualification": "Actual typed lifecycle command/export operations match source artifacts; learning prerequisites use actual API routes",
+  "migrations": {
+    "frontend": {
+      "count": 83,
+      "appliedSha256": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+      "journalSha256": "466a9e19076eb90bbf680f879393d73e35393576c76cab2baa8164bfd2423c70"
+    },
+    "course": {
+      "count": 22,
+      "appliedSha256": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+      "journalSha256": "733047196af8a592ecbbbc8069075eeca32274e2b13fe8daae8df3d9f88b610f"
+    },
+    "community": {
+      "count": 11,
+      "appliedSha256": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a",
+      "journalSha256": "d28dd40d3196b9a317ae5a2317bf03339cb86400433d5e8bbb4c3b6eedebcf8a"
+    }
+  },
+  "admission": [
+    {
+      "state": "completed",
+      "count": 24
+    },
+    {
+      "state": "uncertain",
+      "count": 3
+    }
+  ],
+  "checks": [
+    "runtime-wrong-password-and-plaintext-refused-before-business-work",
+    "real-admin-authoring-free-ledger-grant-progress-quiz-and-Course-publisher-to-Community-receiver",
+    "real-dedicated-JWTs-and-runtime-validated-export-aggregation-after-lost-committed-receipt",
+    "private-UUID-owner-export-and-cross-profile-service-credential-isolation",
+    "exact-24-hour-expiry-physical-cleanup-and-export-replay-never-renews-private-data",
+    "suspension-revokes-sessions-and-existing-protected-operation-authority",
+    "receiver-outage-keeps-frontend-suspended-until-both-ordered-predecessor-and-restore-acknowledgments",
+    "customer-fresh-session-deletion-removes-progress-profile-links-preferences-and-private-artifacts",
+    "quiz-results-deidentified-once-with-immutable-grant-audit-history-retained",
+    "terminal-tombstones-deny-delayed-grants-assessment-and-member-access-while-exact-replay-cannot-restore"
+  ],
+  "findings": [
+    {
+      "service": "course",
+      "method": "GET",
+      "path": "/v1/student/courses/{uuid}",
+      "expectedStatus": 403,
+      "actualStatus": 500,
+      "code": "FST_ERR_FAILED_ERROR_SERIALIZATION"
+    },
+    {
+      "service": "course",
+      "method": "POST",
+      "path": "/v1/student/lessons/{uuid}/progress",
+      "expectedStatus": 403,
+      "actualStatus": 500,
+      "code": "FST_ERR_FAILED_ERROR_SERIALIZATION"
+    }
+  ],
+  "providerTouched": false,
+  "liveCertification": false,
+  "productionActivation": false
+}

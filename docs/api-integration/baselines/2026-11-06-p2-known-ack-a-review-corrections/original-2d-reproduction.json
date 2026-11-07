@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "2d905186c8a0a8d278ff657b16bd00f65e0697d3",
+  "result": {
+    "concurrentCapabilityConsumes": [
+      "accepted",
+      "accepted"
+    ],
+    "extraOperation": {
+      "domainAccepted": true,
+      "requestCountAccepted": 3,
+      "settlementOperationCountAccepted": 3
+    }
+  },
+  "providerTouched": false,
+  "databaseTouched": false
+}

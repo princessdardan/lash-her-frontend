@@ -1,0 +1,34 @@
+
+> frontend@0.1.0 lint
+> eslint
+
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/platform/test-phase2-platform-local.mjs
+   7:56  warning  'writeFileSync' is defined but never used  @typescript-eslint/no-unused-vars
+  11:16  warning  'resolve' is defined but never used        @typescript-eslint/no-unused-vars
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/components/booking/service-booking-payment-shell.tsx
+  70:7  warning  Do not use `window.location.assign()` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/components/custom/layouts/cta-section-image.tsx
+  14:11  warning  'heading' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  14:20  warning  'description' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  14:33  warning  'image' is assigned a value but never used        @typescript-eslint/no-unused-vars
+  14:40  warning  'link' is assigned a value but never used         @typescript-eslint/no-unused-vars
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/commerce/training-enrollment-store.ts
+  782:10  warning  'isTrainingPaymentNotificationComplete' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/shipping/readiness.ts
+  211:3  warning  '_tx' is defined but never used            @typescript-eslint/no-unused-vars
+  217:3  warning  '_now' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/shipping/shipment-store.ts
+  1648:58  warning  '_input' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/tests/gallery.spec.ts
+   56:13  warning  'loading' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  104:13  warning  'initialImageCount' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+✖ 13 problems (0 errors, 13 warnings)
+

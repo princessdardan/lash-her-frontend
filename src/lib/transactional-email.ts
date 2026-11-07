@@ -114,7 +114,10 @@ export async function sendTransactionalEmail(
     throw new Error(result.error.message);
   }
 
-  if (result.data === null) {
+  if (
+    typeof result.data?.id !== "string" ||
+    result.data.id.trim().length === 0
+  ) {
     throw new Error("Resend did not return an email id");
   }
 
@@ -177,7 +180,12 @@ export function telHref(phone: string): string {
 }
 
 export function getTransactionalEmailEnvironment(): string {
-  return process.env.APP_ENV ?? process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "development";
+  return (
+    process.env.APP_ENV ??
+    process.env.VERCEL_ENV ??
+    process.env.NODE_ENV ??
+    "development"
+  );
 }
 
 function getRequiredEnv(name: string): string {

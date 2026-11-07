@@ -1,0 +1,14 @@
+{
+  "commit": "790cac3727310d9e4efbd4c3a7e79a28cbbd70e2",
+  "files": 511,
+  "decodedBytes": 40857723,
+  "publicBytes": 54551607,
+  "gatewayRuntimeDiffBytes": 0,
+  "historicalProfileDiffBytes": 0,
+  "contracts": {
+    "reviewSha256": "300057a9cf68c78e3ad9dfc4f5c6e141345abca6e2bc1b850f5204dcc5955e5a",
+    "reviewRevision": "790cac3727310d9e4efbd4c3a7e79a28cbbd70e2",
+    "baselineRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "manifestSha256": "41be13b4727d453ee1fb059ee8071c9483c079d4cdd57971bb38a00885acb431"
+  }
+}

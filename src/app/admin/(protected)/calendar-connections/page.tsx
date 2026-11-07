@@ -18,7 +18,9 @@ import {
 } from "@/lib/admin/calendar-discovery-result";
 import { listAdminCalendarConnections } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
-import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { requirePermission } from "@/lib/admin/auth";
+import { loadAdmittedCalendarPage } from "@/lib/admin/calendar-discovery-page";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import {
   getBookingConfigurationStatusPresentation,
   getCalendarAssignmentStatusPresentation,
@@ -45,32 +47,36 @@ export default async function AdminCalendarConnectionsPage({
   }>;
 }) {
   const feedback = await searchParams;
-  const actor = await requireAdminPagePermission("calendar-connections:view");
-  const data = await listAdminCalendarConnections();
-  const canManage = canAdmin({
-    action: "calendar-connections:manage",
-    bookingProviderResourceIds: actor.bookingProviderResourceIds,
-    bookingResourceIds: actor.bookingResourceIds,
-    role: actor.user.role,
-  });
-  const discoveredEntries: Array<
-    readonly [string, CalendarDiscoveryResult<AdminGoogleCalendarOption>]
-  > = await Promise.all(
-    data.connections.map(async (connection) => {
-      if (connection.status !== "active") {
-        return [
-          connection.id,
-          { calendars: [], kind: "ready" } as const,
-        ] as const;
-      }
-      return [
-        connection.id,
-        await loadCalendarDiscoveryResult(() =>
-          listConnectedGoogleCalendars(connection.id),
-        ),
-      ] as const;
-    }),
-  );
+  const { data, canManage, discoveredEntries } =
+    await loadAdmittedCalendarPage(async () => {
+      const actor = await requirePermission("calendar-connections:view");
+      const data = await listAdminCalendarConnections();
+      const canManage = canAdmin({
+        action: "calendar-connections:manage",
+        bookingProviderResourceIds: actor.bookingProviderResourceIds,
+        bookingResourceIds: actor.bookingResourceIds,
+        role: actor.user.role,
+      });
+      const discoveredEntries: Array<
+        readonly [string, CalendarDiscoveryResult<AdminGoogleCalendarOption>]
+      > = await settleWriterEffects(
+        data.connections.map(async (connection) => {
+          if (connection.status !== "active") {
+            return [
+              connection.id,
+              { calendars: [], kind: "ready" } as const,
+            ] as const;
+          }
+          return [
+            connection.id,
+            await loadCalendarDiscoveryResult(() =>
+              listConnectedGoogleCalendars(connection.id),
+            ),
+          ] as const;
+        }),
+      );
+      return { data, canManage, discoveredEntries };
+    });
   const discoveryByConnection = new Map(discoveredEntries);
   const connectionById = new Map(
     data.connections.map((connection) => [connection.id, connection]),

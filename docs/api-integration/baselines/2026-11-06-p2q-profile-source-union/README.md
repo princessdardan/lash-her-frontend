@@ -1,0 +1,11 @@
+# Reviewed profile source union
+
+The frontend, historical/bootstrap, candidate and host profile components are integrated. Independent reviews close the pending-SQL callback bypass and private/public role-receipt pairing findings. Profiled pending application SQL and the complete release/coordinator graph remain explicitly unavailable; read-only checks and reviewed typed leaf components confer no first-use or deployment authority.
+
+Root gateway/platform verification passes 673 of 690 tests, with 17 conditional database cases skipped; the full host run records 854 passes and eight conditional skips across 862 tests. Full lint exits 0 with 13 warnings. The application-unit 2,563/0skip result remains scoped to the earlier 5e checkpoint; final exact CI is still required. See validation.json for component sources, actual PG16/18 records, independent reviews and immutable original log hashes.
+
+The 82ac CI failures have distinct causes. Gateway tests missed copied helper dependencies. The operator had already parsed its forward result successfully, then refused mismatched current API revisions during lifecycle input construction. Its reported forward/receipt-invalid fields were stale diagnostics. Current selectors now identify the exact manifest API 0bb/859 sources and successful parse clears only those completed-qualification diagnostic fields. The actual old C positive/negative bytes and all original D5 snapshots/readers remain untouched; current source refuses them as certification. Synthetic current unit fixtures are explicitly separate.
+
+The scope amendment is merged in all three repositories, with exact reviewed-tree equality and passing actual push CI. The selected frontend artifact pins deliberately remain the already-qualified API 0bb/859 commits; the later API mains differ only in the plan document.
+
+The allocation proposal is independently reviewed planning. Existing independent administrative scopes remain UNKNOWN; no allocation, spending, candidate publication or live release was approved. The owner remains the sole operator. Old P2-00 and accepted S17 exclusions remain separately OPEN. New target IDs/profile registration, authentic creation/control/custody and full installation, affected G1, live providers/learning/lifecycle/export expiry and G2-Q remain required.

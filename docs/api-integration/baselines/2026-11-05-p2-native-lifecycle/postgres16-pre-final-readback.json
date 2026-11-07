@@ -1,0 +1,100 @@
+{
+  "status": "P2_LIFECYCLE_NATIVE_OWNED_PASS",
+  "actualTlsPostgres": true,
+  "actualTlsReceivers": true,
+  "actualAppCron": true,
+  "actualRuntimeTrace": true,
+  "actualProvider": false,
+  "modeledProviderNativeClassification": true,
+  "executedChecks": 8,
+  "skipped": 0,
+  "checks": [
+    "actual-physical-release-lock-contention",
+    "actual-delayed-after-disable-request-is-fenced-after-closure-with-no-new-ledger-row-or-trace",
+    "actual-exported-cron-full-runtime-admission-context-and-opaque-trace",
+    "actual-nonempty-and-empty-http-cron-invocations",
+    "actual-course-community-https-service-jwt-idempotency-and-ordered-command-effects",
+    "actual-event-uuid-source-producer-epoch-role-joins-completed-ledger",
+    "actual-source-admission-closure-and-global-active-uncertain-zero",
+    "private-credentials-not-in-common-evidence"
+  ],
+  "result": {
+    "version": 1,
+    "actionId": "owned-native",
+    "sourceCommit": "b4dfee795bfd1a87576cf75c622b0c1b7ea5563b",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "deploymentId": "dpl_ownedNative",
+    "planSha256": "b47645b5c51b8af254cbe5018d72d890cbef13070c4578967201335212247d43",
+    "status": "P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED",
+    "phase": "provider-request-correlation",
+    "windowEpoch": "3",
+    "nativeEnableAttempted": true,
+    "nativeDisableAttempted": true,
+    "nativeEnabled": false,
+    "finalAdmission": {
+      "epoch": "4",
+      "newWork": false,
+      "recovery": false,
+      "active": 0,
+      "uncertain": 0
+    },
+    "nativeInvocationObserved": true,
+    "nativeLedgerCorrelationVerified": true,
+    "orderedReceiverPersistenceVerified": true,
+    "sourceAdmissionFenceVerified": true,
+    "providerQueuedInvocations": null,
+    "providerActiveInvocations": null,
+    "providerCancellationVerified": false,
+    "admissionMutationUnknown": false,
+    "automaticReplayAllowed": false,
+    "finalDisposition": "disabled-and-admission-closed",
+    "wholeReleaseAccepted": false,
+    "migrationAuthorized": false
+  },
+  "operations": [
+    {
+      "id": "41280a8a-7ea7-4191-84f3-cb4ccc19d3dc",
+      "kind": "recovery",
+      "state": "completed",
+      "epoch": "3"
+    },
+    {
+      "id": "2a9a0bbd-7c3b-491f-9a7f-5fead58c7bf5",
+      "kind": "recovery",
+      "state": "completed",
+      "epoch": "3"
+    }
+  ],
+  "receiverCalls": [
+    {
+      "receiver": "community",
+      "commandId": "45f39794-babf-4075-8f62-ba960edb57ad",
+      "accountVersion": 1,
+      "operationId": "41280a8a-7ea7-4191-84f3-cb4ccc19d3dc"
+    },
+    {
+      "receiver": "course",
+      "commandId": "45f39794-babf-4075-8f62-ba960edb57ad",
+      "accountVersion": 1,
+      "operationId": "41280a8a-7ea7-4191-84f3-cb4ccc19d3dc"
+    },
+    {
+      "receiver": "community",
+      "commandId": "738f0895-0ea3-4d3c-8f33-bec25e51ccf5",
+      "accountVersion": 2,
+      "operationId": "41280a8a-7ea7-4191-84f3-cb4ccc19d3dc"
+    },
+    {
+      "receiver": "course",
+      "commandId": "738f0895-0ea3-4d3c-8f33-bec25e51ccf5",
+      "accountVersion": 2,
+      "operationId": "41280a8a-7ea7-4191-84f3-cb4ccc19d3dc"
+    }
+  ],
+  "sourceModuleSha256": "c7f56b1dbd93798ab161372f2f9c0422e0646c7a41bbda180c9ae0c2c9d3ac1b",
+  "migrations": 83,
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "fixtureOnly": true,
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false
+}

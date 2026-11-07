@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "status": "PASS",
+  "postgresSentinelExecuted": false,
+  "cases": [
+    {
+      "case": "unknown-argument",
+      "exitCode": 1,
+      "stdoutBytes": 0,
+      "refusal": {
+        "version": 1,
+        "status": "P2_INTERRUPTED_OWNED_REFUSED",
+        "code": "P2_INTERRUPTED_OWNED_ARGUMENTS_REFUSED"
+      }
+    },
+    {
+      "case": "known-negative-without-ownership",
+      "exitCode": 1,
+      "stdoutBytes": 0,
+      "refusal": {
+        "version": 1,
+        "status": "P2_INTERRUPTED_OWNED_REFUSED",
+        "code": "P2_INTERRUPTED_OWNED_SCOPE_REQUIRED"
+      }
+    }
+  ]
+}

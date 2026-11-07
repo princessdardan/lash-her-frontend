@@ -13,15 +13,21 @@ export const config = {
   tlsKeyFile: "/fixture/key", tlsCertFile: "/fixture/cert", upstreamCaFile: "/fixture/ca",
 };
 
-test("gateway exposes only existing exact Course methods; private Community traffic stays private", () => {
-  const contract = JSON.parse(readFileSync(new URL("../../contracts/api-integration/v1/course-api.json", import.meta.url)));
+test("gateway exposes exact reviewed service methods; enrollment/authority traffic stays private", () => {
+  const documents = Object.fromEntries(["course", "community"].map(service => [service,
+    JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${service}-api.json`, import.meta.url)))]));
   for (const route of routes) {
-    assert.ok(contract.paths[route.path]?.[route.method.toLowerCase()]);
-    assert.equal(matchRoute(route.method, `/course${route.path.replace(/\{[^}]+\}/gu, "valid-id")}`), route);
+    const service = route.service ?? "course";
+    // Course11 reserves these exact aliases against the published lifecycle
+    // boundary; it is not enabled by reserving gateway transport here.
+    const reservedCourseLifecycle = service === "course" && ["POST /v1/internal/accounts/commands", "GET /v1/internal/accounts/exports/{commandId}"].includes(`${route.method} ${route.path}`);
+    assert.ok(documents[service].paths[route.path]?.[route.method.toLowerCase()] || reservedCourseLifecycle);
+    assert.equal(matchRoute(route.method, `/${service}${route.path.replace(/\{[^}]+\}/gu, "valid-id")}`), route);
   }
   for (const path of [
     "/metrics", "/ready", "/health", "/course/health", "/course/metrics", "/course/ready",
     "/community/v1/internal/course/enrollment-events",
+    "/community/v1/courses", "/community/v1/admin/courses", "/community/v1/webhooks/mux",
     "/course/v1/internal/community/entitlements/check",
     "/course/v1/internal/community/enrollment-snapshots",
     "/course/v1/internal/entitlements/unknown", "/course/v1/courses/../admin/courses",
@@ -43,6 +49,8 @@ test("configuration pins Vercel identity, production target and TLS upstream", (
     { publicHost: "gateway.test/path" }, { courseOrigin: "http://course.test" },
     { courseOrigin: "https://user:secret@course.test" }, { courseOrigin: "https://course.test/path" },
     { upstreamCaFile: "relative" },
+    { communityOrigin: "http://community.test" }, { communityOrigin: "https://user:secret@community.test" },
+    { communityOrigin: "https://community.test/path" },
   ]) assert.throws(() => validateConfig({ ...config, ...override }));
 });
 

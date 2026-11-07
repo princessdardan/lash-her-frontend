@@ -1,5 +1,10 @@
 import { createShippingWorkerCronHandler } from "./handler";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
+import {
+  runShippingCronAdmission,
+  runShippingExecutionAdmission,
+  runShippingPiiAdmission,
+} from "@/lib/shipping/admission";
 
 export const runtime = "nodejs";
 
@@ -12,4 +17,7 @@ export const GET = createShippingWorkerCronHandler(
         result.refunds.some((refund) => refund.status !== "succeeded"),
     }),
   (task) => runWriterAdmission("recovery", task),
+  (task) => runShippingExecutionAdmission(task),
+  (task) => runShippingCronAdmission(task),
+  (task) => runShippingPiiAdmission(task),
 );

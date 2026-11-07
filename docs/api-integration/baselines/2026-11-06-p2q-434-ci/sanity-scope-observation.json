@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "observedAt": "2026-11-06T21:51:23.451Z",
+  "connector": {
+    "operation": "Sanity list_projects",
+    "result": "Unauthorized - Session not found",
+    "reconfigured": false
+  },
+  "browser": {
+    "url": "https://www.sanity.io/manage",
+    "view": "Overview / All organizations",
+    "visibleOrganizationCount": 2,
+    "visibleProjectCount": 8,
+    "p2qNamedProjectVisible": false,
+    "relatedProjects": [
+      {
+        "id": "3auncj84",
+        "name": "Lash Her Production"
+      },
+      {
+        "id": "hbi1s7t7",
+        "name": "Lash Her Staging"
+      },
+      {
+        "id": "7o23yrvk",
+        "name": "Lash Her Staging"
+      }
+    ],
+    "scope": "Current signed-in browser principal only; no global inventory, administrative/recovery isolation or historical credential exclusion proof."
+  },
+  "secretsRead": false,
+  "providerMutationPerformed": false,
+  "temporaryBrowserTabClosed": true,
+  "independentScopes": "UNKNOWN"
+}

@@ -51,10 +51,13 @@ export function createWriterAdmissionRunner(dependencies: {
         typeof policy.new_work !== "boolean" || typeof policy.recovery !== "boolean" ||
         (kind === "new-work" ? !policy.new_work : !policy.recovery) || connectionLost) throw new Error();
       phase = "outcome";
-      output = await runFrontendWriterOperation(client, target, { id: randomUUID(), kind, epoch: policy.epoch,
+      const operationId = randomUUID();
+      const epoch = policy.epoch;
+      output = await runFrontendWriterOperation(client, target, { id: operationId, kind, epoch,
         producerSha256: configuration.producerSha256, sourceSha: configuration.sourceSha }, async () => {
         if (connectionLost) throw new Error();
-        const result = await withWriterOperationContext(task);
+        const result = await withWriterOperationContext(task, { operationId, kind, epoch,
+          producerSha256: configuration.producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 });
         // A 5xx may describe an uncertain provider result. Preserve an unresolved
         // operation even when a domain handler catches its own exception.
         if (connectionLost || options?.uncertainResult?.(result)) throw new Error();

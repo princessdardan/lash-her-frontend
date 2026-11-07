@@ -1,0 +1,245 @@
+{
+  "config": {
+    "configFile": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/courses-mux.playwright.config.ts",
+    "rootDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/tmp/phase2-learner-legacy-46e97473",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "courses-mux.spec.ts"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/private/tmp/phase2-learner-legacy-46e97473",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "courses-mux.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": {
+      "command": "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3108",
+      "cwd": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner",
+      "url": "http://127.0.0.1:3108/courses/course-mux-e2e",
+      "reuseExistingServer": false,
+      "timeout": 120000,
+      "env": {
+        "COURSE_E2E_FIXTURE": "1",
+        "DATABASE_URL": "postgresql://fixture:fixture@127.0.0.1:1/course_mux_fixture",
+        "COURSE_ACCESS_SIGNING_SECRET": "course-mux-test-secret-012345678901234567890123456789",
+        "NEXT_PUBLIC_SANITY_DATASET": "staging-2026-05-10",
+        "NEXT_PUBLIC_SANITY_PROJECT_ID": "3auncj84",
+        "SANITY_API_READ_TOKEN": "",
+        "SANITY_WRITE_TOKEN": "",
+        "VERCEL_ENV": "",
+        "VERCEL": "",
+        "RESEND_API_KEY": "",
+        "KV_REST_API_URL": "https://course-redis.example.invalid",
+        "KV_REST_API_TOKEN": "fixture",
+        "NODE_OPTIONS": "--require=/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/support/course-fetch-fixture.cjs"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "courses-mux.spec.ts",
+      "file": "courses-mux.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "gate hides Mux playback IDs until access is granted",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 505,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:23:33.683Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b63eacc37d09a6c4f10-13e83b2460c5faacb636",
+          "file": "courses-mux.spec.ts",
+          "line": 83,
+          "column": 5
+        },
+        {
+          "title": "Mux HLS playback, captions, saved position, and legacy module switching",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2141,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:23:34.268Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b63eacc37d09a6c4f10-cfed17c02fafca2aeb7f",
+          "file": "courses-mux.spec.ts",
+          "line": 101,
+          "column": 5
+        },
+        {
+          "title": "processing, signed-only and deleted Mux assets show usable lesson pages",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 504,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:23:36.415Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b63eacc37d09a6c4f10-bf0a3792afd428dcc992",
+          "file": "courses-mux.spec.ts",
+          "line": 163,
+          "column": 5
+        },
+        {
+          "title": "Mux network failure retries the stream successfully",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 929,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:23:36.924Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b63eacc37d09a6c4f10-fb6917358c9f45a57a98",
+          "file": "courses-mux.spec.ts",
+          "line": 187,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-05T22:23:30.659Z",
+    "duration": 7252.627,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

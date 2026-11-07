@@ -561,6 +561,27 @@
       "when": 1792530952883,
       "tag": "0079_highlevel_marketing_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793907202941,
+      "tag": "0080_customer_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1793908371084,
+      "tag": "0081_customer_auth_throttle_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1793910009844,
+      "tag": "0082_customer_account_lifecycle",
+      "breakpoints": true
     }
   ]
 }

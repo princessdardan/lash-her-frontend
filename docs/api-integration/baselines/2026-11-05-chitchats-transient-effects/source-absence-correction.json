@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "status": "OWNED_CHITCHATS_SOURCE_ABSENCE_CORRECTION_PASS",
+  "tests": {
+    "command": "CRM_SHIPPING_OWNED_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin NODE_BINARY=<Node24> python3 -m unittest frontend_chitchats_transient_effects_test",
+    "total": 21,
+    "failures": 0,
+    "skipped": 0,
+    "ownedHttps": true,
+    "isolatedPostgresql": 16,
+    "repositoryMigrations": 83,
+    "actualC07GetterCollectorDeriver": true
+  },
+  "positiveScope": [
+    "All4 exact family+all global SQL closures match source/surface/configuration/provenance",
+    "Both immutable original and current complete4-table snapshots empty",
+    "No clientId or provider token/client/request required"
+  ],
+  "refusals": [
+    "Partial closures",
+    "Peer context transplant",
+    "Missing global SQL credential requirement",
+    "Any contradictory current or original SQL intent/lease/provider receipt",
+    "Missing immutable original snapshot"
+  ],
+  "knownDraftAndPurchasePositivesPreserved": true,
+  "sourceSha256": {
+    "ops/platform/host/frontend_chitchats_transient_effects.py": "c4f68b789e9350947d00aad93364ed6ed8f5a623ee8a51b8f4a3546f5d23f042",
+    "ops/platform/host/frontend_chitchats_transient_effects_test.py": "7727dd3a065eb2efe15610a49ff9d0c76aa6efa8e0538e345d47571ddf775e81"
+  },
+  "liveQualification": false
+}

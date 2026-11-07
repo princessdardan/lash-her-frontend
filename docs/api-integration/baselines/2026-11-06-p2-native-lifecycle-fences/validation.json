@@ -1,0 +1,82 @@
+{
+  "actualPostgres18Execution": false,
+  "actualProviderNativeQualification": false,
+  "baselineCommit": "cee1a263293cf2992b94f0a2c94007997ad0cf67",
+  "codeCommit": "49ad7ef05ab55e6b87cd1e36581b72f52c1de3d4",
+  "containmentScenarios": [
+    "stable",
+    "enabled",
+    "source",
+    "deployment",
+    "url",
+    "schedule",
+    "metadata-unavailable",
+    "lost-lock"
+  ],
+  "fileSha256": {
+    "README.md": "4902d8cf9f1754b26bdd7aa00dee52fe9d14b285a4e96054e1a542a19630abc5",
+    "focused-eslint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "major-mismatch-stderr.log": "126f98a11b7afa4d040dd21c3d514a89c57f4f52acb79c6d0ccbd9e2eeb11947",
+    "owned-https.log": "54d2413f9ba81633c47c604c27c314d8a92af52e879c3c08f0ceac344c12ba64",
+    "postgres16-stderr.log": "a857aee01dddef4d9d623b95cf7a762bfd4d89a745ebfd64c8da88f5724dabd9",
+    "postgres16-summary.json": "7b38239e311490c71df25f161da8835cdfca9abfd02dc123c51761d30139943a",
+    "postgres16.json": "f41d107b5db58c983419e17f9cb3a31506c9e2407e9476546a6d04877b0ab74c",
+    "protocol-after-fixes.log": "6f30c5d00e6ec3302d10d7005b86485445bed8eac9a1bd359d77500f5c97052c",
+    "protocol-before-fixes.log": "02bf249bbea072be67c1135e1c319182d919657e0c16510290e6f32314c9d44d",
+    "protocol-before-fixes.log.raw.gz": "5f520d4cf941c711468aaffb3a25da80b922e2e4bc93b06777edbcf5359e22d0"
+  },
+  "kind": "owned-post-barrier-effects-and-final-native-fence-regressions",
+  "logNormalization": {
+    "operation": "trailing horizontal whitespace only; exact raw output retained in .raw.gz when changed",
+    "originalRawSha256": {
+      "protocol-before-fixes.log": "9aa8437d5f4967d087a37fcfc9759647ad109911bfd5c52f7bde32bd3f213cd7"
+    }
+  },
+  "major18SelectionWith16Binary": {
+    "exitCode": 1,
+    "expected": "refused-before-listener",
+    "phase": "ownership",
+    "status": "P2_LIFECYCLE_NATIVE_OWNED_FAILED"
+  },
+  "observedAt": "2026-11-06T03:09:53+00:00",
+  "providerCancellationVerified": false,
+  "providerTouched": false,
+  "sourceFiles": {
+    "docs/api-integration/p2-lifecycle-native-qualification.md": "d5400180b936aaf4aa188a313a843a27eb93a0ed0c6cd66a2b01da30145067e5",
+    "ops/platform/harness/owned-p2-native-lifecycle.mjs": "e9b416fcfdea09cfbbc6f7e7e9355f7e6645ffa0562513a098c82030fb063baf",
+    "ops/platform/p2-lifecycle-native.mjs": "ebe63f6d6a930898f94ed8895934de21fae9ab7088b11a99c34d031e9f3a3b18",
+    "ops/platform/p2-lifecycle-native.test.mjs": "ba72f7851af6eaeb936128e15746ad6084cd653a368df295600832b802c59458",
+    "ops/platform/test-p2-lifecycle-native-local.mjs": "cab0f0b5502726894d33f2e9e5335945ae016b591132cec725768d8ca38161df"
+  },
+  "sourceModuleHashMatchesCodeCommit": true,
+  "testedAppSourceCommit": "cee1a263293cf2992b94f0a2c94007997ad0cf67",
+  "tests": {
+    "focusedEslint": "passed",
+    "ownedHttps": {
+      "failed": 0,
+      "passed": 7,
+      "tests": 7
+    },
+    "ownedPostgres": {
+      "checks": 9,
+      "failed": 0,
+      "major": 16,
+      "migrations": 83,
+      "skipped": 0
+    },
+    "protocolAfterFixes": {
+      "failed": 0,
+      "passed": 16,
+      "skipped": 0,
+      "tests": 16
+    },
+    "protocolBeforeFixes": {
+      "failed": 5,
+      "passed": 11,
+      "skipped": 0,
+      "tests": 16
+    }
+  },
+  "version": 1,
+  "wholeReleaseAccepted": false
+}

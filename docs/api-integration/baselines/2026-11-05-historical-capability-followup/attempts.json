@@ -1,0 +1,30 @@
+[
+  {
+    "file": "owned-https-first.stderr",
+    "result": "FAIL",
+    "fixtureOnly": true,
+    "cause": "Child exited status 1 while profile regeneration was in progress. Detailed child diagnostic not captured; no successful observation. Serialized rerun passed."
+  },
+  {
+    "file": "owned-pg16-first.stderr",
+    "result": "FAIL",
+    "fixtureOnly": true,
+    "cause": "Owned fixture failed during cluster/setup; detailed cause not captured. Revised runner adds phase diagnostics and splits actual migration statement breakpoints. Serialized rerun passed; owned cluster/peers cleaned."
+  },
+  {
+    "file": "owned-https-final.json",
+    "result": "PASS",
+    "checks": 10
+  },
+  {
+    "file": "owned-pg16-second.json",
+    "result": "PASS",
+    "checks": 15,
+    "actualOwnedMigrations": 83
+  },
+  {
+    "file": "unit-qualified.tap",
+    "result": "PASS",
+    "checks": 20
+  }
+]

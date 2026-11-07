@@ -1,0 +1,27 @@
+✔ private probe rejects unknown fields, production, malformed subjects/resources and missing current keys (0.94475ms)
+✔ fixed HTTP plan starts and ends with real positive baselines and includes completed-attempt isolation (1.543ms)
+✔ actual Node HTTP plans match the independent host protocol for current-only and overlapping keys (85.937166ms)
+✔ deployed HTTP selection is a fixed source check, not an arbitrary path or proxy (0.9475ms)
+✔ fixed TLS client rejects all unreviewed paths before issuing a request (0.317625ms)
+✔ actual verifier observation rejects foreign runtime targets and mismatched private configuration before importing modules (0.32625ms)
+✔ private CLI payload failures print only bounded JSON and never raw error, token or input bytes (89.339208ms)
+﹣ owned actual API module/TLS fixture: verifiers (0.046791ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: verifiers-current-only (0.049708ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: https (0.079917ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: https-current-only (0.041917ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: single-check (0.037041ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: all-401 (0.034541ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: all-404 (0.029709ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: redirect (0.018125ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: oversized (0.02425ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: untrusted-ca (0.02125ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: missing-attempt (0.027083ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: leak-attempt (0.025125ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+ℹ tests 19
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 12
+ℹ todo 0
+ℹ duration_ms 221.769

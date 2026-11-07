@@ -1,0 +1,66 @@
+✖ an empty exit flush cannot strand a position queued in the same turn (1.997416ms)
+✖ a position queued while a completed drain settles is acknowledged before its caller resolves (0.27225ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 96.951708
+
+✖ failing tests:
+
+test at ../../../../../../private/tmp/phase2-learner-empty-flush-before-44ef8f2/progress-sync.test.ts:2:8461
+✖ an empty exit flush cannot strand a position queued in the same turn (1.997416ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   {
+  -     expectedProgressRevision: 1,
+  -     keepalive: true,
+  -     resumePositionSeconds: 2
+  -   }
+  - ]
+  
+      at TestContext.<anonymous> (/private/tmp/phase2-learner-empty-flush-before-44ef8f2/progress-sync.test.ts:290:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ { resumePositionSeconds: 2, expectedProgressRevision: 1, keepalive: true } ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../../../private/tmp/phase2-learner-empty-flush-before-44ef8f2/progress-sync.test.ts:2:9122
+✖ a position queued while a completed drain settles is acknowledged before its caller resolves (0.27225ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+      {
+        expectedProgressRevision: 1,
+        keepalive: false,
+        resumePositionSeconds: 1
+      },
+  -   {
+  -     expectedProgressRevision: 2,
+  -     keepalive: true,
+  -     resumePositionSeconds: 2
+  -   }
+    ]
+  
+      at TestContext.<anonymous> (/private/tmp/phase2-learner-empty-flush-before-44ef8f2/progress-sync.test.ts:318:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ { resumePositionSeconds: 1, expectedProgressRevision: 1, keepalive: false } ],
+    expected: [ { resumePositionSeconds: 1, expectedProgressRevision: 1, keepalive: false }, { resumePositionSeconds: 2, expectedProgressRevision: 2, keepalive: true } ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

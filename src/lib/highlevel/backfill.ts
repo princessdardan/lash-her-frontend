@@ -2,6 +2,10 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
+  runWriterAdmission,
+  type WriterAdmissionRunner,
+} from "@/lib/writer-admission/runtime";
+import {
   normalizeEmail,
   normalizePhone,
   validIdentity,
@@ -10,7 +14,16 @@ import {
 import { enqueueCrmEvent } from "./store";
 
 /** Inventory is read-only by default; output contains aggregate counts only. */
-export async function backfillHighLevel(apply = false) {
+export async function backfillHighLevel(
+  apply = false,
+  run: WriterAdmissionRunner = runWriterAdmission,
+) {
+  return apply
+    ? run("new-work", () => processHighLevelBackfill(true))
+    : processHighLevelBackfill(false);
+}
+
+async function processHighLevelBackfill(apply: boolean) {
   const db = getPrivateDb();
   const rows = await db.execute<{
     id: string;

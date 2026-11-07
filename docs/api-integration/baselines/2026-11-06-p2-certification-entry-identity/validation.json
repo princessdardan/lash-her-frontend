@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "status": "P2_CERTIFICATION_ACTUAL_ENTRY_IDENTITY_SOURCE_PREPARED",
+  "baseCommit": "e7ab752e604ba43bc5b6443a9197a56e2a6e0cad",
+  "scope": "actual-isolated-Python-runpy-main-and-production-dispatch-before-Linux-root-guard",
+  "normalModes": 8,
+  "foreignRefusals": 2,
+  "actualSourceClosureVerified": true,
+  "productionClassesAndCallbacks": true,
+  "hostOrProviderOrForkCalls": 0,
+  "knownBeforeCheckpoint": "P2_KNOWN_ACK_BEFORE_FAULT_SOURCE_PARENT_REQUIRED",
+  "knownAfterCheckpoint": "P2_KNOWN_ACK_ONE_SAME_SOURCE_SUSPENSION_REQUIRED",
+  "tests": {
+    "host": 71,
+    "skipped": 0,
+    "compile": true,
+    "diff": true
+  },
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "databaseTouched": false,
+  "actualHost": false,
+  "deployedCertificationQualified": false,
+  "newOpsFiles": 0,
+  "changedOpsFiles": 2,
+  "sourceDeltaBytes": 7328,
+  "unchangedSharedFiles": [
+    "ops/platform/host/p2_release_supervisor.py",
+    "ops/platform/host/p2_release_scope.py",
+    "ops/platform/host/p2_recovery_scope.py",
+    "ops/platform/host/p2_recovery_runtime.py",
+    "ops/platform/host/p2_known_ack_loss.py",
+    "ops/platform/host/p2_prior_gateway.py"
+  ],
+  "open": [
+    "independent-exact-commit-review",
+    "integration-CI",
+    "actual-installed-Linux-SSH-host-beyond-guard",
+    "physical-provider-native-staging-qualification",
+    "C-restoration",
+    "G2-S14"
+  ],
+  "sha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-certification-entry-identity/README.md": "35b61c538c6d0392e1721bc6a542fbd1b51b3670eec8090884e9bc5a4ca9195d",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-entry-identity/corrected-same-harness.json": "5cee39e3720965f01e2fad4e0931c4029123e26ab016e8554d197a2d29e7bcf9",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-entry-identity/entry-matrix.json": "6e5b00d37a4b79a6a3984afaac5b58c3a709608bfcd1f1de8d67700890451a28",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-entry-identity/host-tests.log": "292c7dc48b4169e10277a2ed169eb4b47c4ec04d86f56032ec111f66c6f3ac51",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-entry-identity/original-e7.json": "24586c7e5729e6a7c0105fd4dd56d7f67512d347533178252f7c0622f5156f95",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-entry-identity/original-reproduce.py": "ecdb5190ecf496ee592ada7ed1867e00313873db492318cdbc3d56af829b3072",
+    "ops/platform/host/p2_certification_parent.py": "3c3da23c998d687b5fb3785adf10b15734893343076f146a64f5eaaa0b1d834a",
+    "ops/platform/host/p2_certification_parent_test.py": "acaf46a8979e1223861bc9d1a2f7ab92f64242983ff1c5555285697a79bb5504"
+  }
+}

@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./handler";
+import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
+import { createFrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
+import { RELEASE_FEATURE_CONTROL_NAMES, readReleaseFeatureControls } from "@/lib/api-integration/release-feature-controls";
 
 const now = 1_794_000_000_000;
 const secret = "b".repeat(64), challenge = "c".repeat(64);
@@ -67,4 +70,207 @@ test("SDK, gateway and configuration errors return non-success without leaking d
     assert.equal(response.status, 503); assert.equal(response.headers.get("cache-control"), "no-store");
     assert.ok(!(await response.text()).includes("private-credential"));
   }
+});
+
+test("bootstrap mode is staging-only, requires its real admission reader and rejects unknown modes before outbound work", async () => {
+  let calls = 0;
+  const run = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const missing = createReleaseProbeHandler({ configuration, run });
+  assert.equal((await missing(request({ "x-lash-release-mode": "admission-bootstrap" }))).status, 503);
+  assert.equal((await missing(request({ "x-lash-release-mode": "other" }))).status, 400);
+  const production = createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run,
+    admission: async () => { throw new Error("must-not-read-production"); } });
+  assert.equal((await production(request({ "x-lash-release-mode": "admission-bootstrap" }))).status, 503);
+  assert.equal(calls, 0);
+});
+
+test("bootstrap response binds the ordinary workload proof and actual read-only admission observation to one challenge", async () => {
+  const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(environment(), now),
+    run: async () => ({ ok: true, service: "course", durationMs: 1 }),
+    admission: async source => { assert.deepEqual(source, { environment: "staging", sourceCommit: "a".repeat(40) }); return observation; } });
+  const response = await handler(request({ "x-lash-release-mode": "admission-bootstrap" }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.challenge, challenge);
+  assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap"]);
+  assert.deepEqual(body.admission, observation.admission); assert.equal(body.schemaCatalogSha256, observation.schemaCatalogSha256);
+  assert.equal("appliedLineageSha256" in body, false);
+});
+
+test("private Resend mode retains bootstrap checks, staging scope and challenge without forwarding incoming credentials", async () => {
+  const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };
+  const domain = { resendBinding: { domainId: "d7371c9b-b16d-41d8-b9e8-3286b58eb432", domainName: "mail.staging.lashher.com" as const, domainStatus: "verified" as const } };
+  let calls = 0;
+  const dependencies = { configuration: () => readReleaseProbeConfiguration(environment(), now),
+    run: async () => ({ ok: true as const, service: "course" as const, durationMs: 1 }), admission: async () => observation,
+    resend: async (...args: unknown[]) => { assert.deepEqual(args, [{ environment: "staging", sourceCommit: "a".repeat(40) }]); calls++; return domain; } };
+  const handler = createReleaseProbeHandler(dependencies);
+  assert.equal((await handler(request({ "x-lash-release-mode": "resend-binding", authorization: "Bearer invalid" }))).status, 401);
+  const response = await handler(request({ "x-lash-release-mode": "resend-binding", cookie: "private-cookie" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json(); assert.equal(body.challenge, challenge); assert.deepEqual(body.resendBinding, domain.resendBinding);
+  assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap", "resend-binding"]); assert.deepEqual(body.admission, observation.admission);
+  assert.equal(calls, 1); assert.equal(JSON.stringify(body).includes("private-cookie"), false);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, resend: undefined })(request({ "x-lash-release-mode": "resend-binding" }))).status, 503);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, configuration: () => ({ ...dependencies.configuration()!, environment: "production" }) })(request({ "x-lash-release-mode": "resend-binding" }))).status, 503);
+  assert.equal(calls, 1);
+});
+
+test("Square mode requires staging admission plus deployed sandbox reader and retains challenge", async () => {
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const run = async () => ({ ok: true as const, service: "course" as const, durationMs: 1 });
+  assert.equal((await createReleaseProbeHandler({ configuration, run })(request({ "x-lash-release-mode": "square-binding" }))).status, 503);
+  const square = async () => ({ squareBinding: { environment: "sandbox" as const, locationId: "LE2H76M5V90AM" as const, merchantId: "ownedMerchant",
+    applicationId: "sandbox-sq0idb-owned", currency: "CAD" as const, country: "CA" as const, locationStatus: "ACTIVE" as const } });
+  const admission = async (): Promise<FrontendBootstrapProbe> => ({ admission: { environment: "staging" as const, targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] });
+  const handler = createReleaseProbeHandler({ configuration, run, admission, square });
+  const response = await handler(request({ "x-lash-release-mode": "square-binding", "x-square-token": "forged" }));
+  assert.equal(response.status, 200); const body = await response.json();
+  assert.equal(body.challenge, challenge); assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap", "square-binding"]);
+  assert.deepEqual(body.squareBinding, (await square()).squareBinding);
+  assert.equal((await createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run, admission, square })(request({ "x-lash-release-mode": "square-binding" }))).status, 503);
+});
+
+test("explicit P2 mode uses only its current catalog parser and requires no bootstrap or disabled feature controls", async () => {
+  let calls = 0;
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(environment(), now),
+    run: async () => assert.fail("legacy parser called"), admission: async () => assert.fail("bootstrap called"),
+    square: async () => assert.fail("Square called"), resend: async () => assert.fail("Resend called"),
+    phase2: async (...args) => { assert.deepEqual(args, ["https://gateway.example.invalid"]); calls++; return { ok: true, service: "course", durationMs: 2 }; } });
+  const response = await handler(request({ "x-lash-release-mode": "phase2", "x-lash-workload-token": "forged", cookie: "private-cookie" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await response.json(), { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge, environment: "staging",
+    projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, sourceCommit: "a".repeat(40), gatewayOrigin: "https://gateway.example.invalid",
+    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", featureControls: readReleaseFeatureControls(environment()), writerAdmissionBinding: null, durationMs: 2 });
+  assert.equal(calls, 1);
+});
+
+test("P2 probe reports only actual runtime feature booleans and ignores caller feature claims", async () => {
+  const env: Record<string, string | undefined> = { ...environment(), PRIVATE_ENV_CREDENTIAL: "private-value" };
+  for (const name of RELEASE_FEATURE_CONTROL_NAMES) env[name] = "false";
+  for (const name of ["INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_LEARNING_ROUTES_ENABLED",
+    "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED"]) env[name] = "true";
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(env, now),
+    run: async () => assert.fail("legacy parser called"), phase2: async () => ({ ok: true, service: "course", durationMs: 1 }) });
+  const response = await handler(request({ "x-lash-release-mode": "phase2", "x-lash-feature-controls": "all-enabled" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json();
+  assert.deepEqual(body.featureControls, readReleaseFeatureControls(env));
+  assert.equal(Object.values(body.featureControls).filter(Boolean).length, 6);
+  assert.equal(JSON.stringify(body).includes("private-value"), false);
+  env.CUSTOMER_AUTH_ENABLED = "TRUE";
+  delete env.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED;
+  const changed = await (await handler(request({ "x-lash-release-mode": "phase2" }))).json();
+  assert.equal(changed.featureControls.CUSTOMER_AUTH_ENABLED, false);
+  assert.equal(changed.featureControls.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED, false);
+});
+
+test("P2 admission binding comes only from actual validated runtime configuration without credentials", async () => {
+  const env = { ...environment(), FRONTEND_WRITER_ADMISSION_MODE: "enforce", FRONTEND_WRITER_PRODUCER_SHA256: "b".repeat(64),
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ environment: "staging", host: "db.owned.invalid", port: 5432,
+      database: "owned", user: "protocol_runtime", serverMajor: 18, targetSha256: "d".repeat(64) }),
+    DATABASE_URL: "postgresql://protocol_runtime:private-business-password@db.owned.invalid/owned?sslmode=verify-full",
+    FRONTEND_WRITER_ADMISSION_DATABASE_URL: "postgresql://protocol_runtime:private-ledger-password@db.owned.invalid/owned?sslmode=verify-full" };
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(env, now),
+    run: async () => assert.fail("legacy parser called"), phase2: async () => ({ ok: true, service: "course", durationMs: 1 }) });
+  const response = await handler(request({ "x-lash-release-mode": "phase2", "x-lash-writer-admission-binding": "forged" }));
+  const body = await response.json(); assert.equal(response.status, 200);
+  assert.deepEqual(body.writerAdmissionBinding, { mode: "enforce", targetSha256: "d".repeat(64), producerSha256: "b".repeat(64),
+    sourceCommit: "a".repeat(40), roleName: "protocol_runtime" });
+  for (const privateValue of ["private-business-password", "private-ledger-password", "db.owned.invalid", "postgresql:", "forged"]) {
+    assert.equal(JSON.stringify(body).includes(privateValue), false);
+  }
+  assert.equal(readReleaseProbeConfiguration({ ...env, FRONTEND_WRITER_ADMISSION_DATABASE_URL: env.FRONTEND_WRITER_ADMISSION_DATABASE_URL.replace("verify-full", "require") }, now), null);
+});
+
+test("P2 mode authenticates before work, refuses missing/production configuration and never falls back after parser failure", async () => {
+  let calls = 0;
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const run = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  const phase2 = async () => { calls++; throw new Error("private-parser-diagnostic"); };
+  assert.equal((await createReleaseProbeHandler({ configuration, run })(request({ "x-lash-release-mode": "phase2" }))).status, 503);
+  const handler = createReleaseProbeHandler({ configuration, run, phase2 });
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2", authorization: "Bearer wrong" }))).status, 401);
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2", "x-lash-release-challenge": "wrong" }))).status, 400);
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2-other" }))).status, 400);
+  assert.equal((await createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run, phase2 })(request({ "x-lash-release-mode": "phase2" }))).status, 503);
+  assert.equal(calls, 0);
+  const failed = await handler(request({ "x-lash-release-mode": "phase2" }));
+  assert.equal(failed.status, 503); assert.deepEqual(await failed.json(), { error: "Release probe failed" });
+  assert.equal(calls, 1);
+});
+
+test("authentication-origin mode reports only actual validated canonical configuration behind the existing challenge", async () => {
+  const canonical = "https://staging.lashher.com";
+  const env = { ...environment(), CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true",
+    AUTH_URL: canonical, CUSTOMER_AUTH_URL: canonical, CUSTOMER_AUTH_SECRET: "customer-private-secret-value-32-characters",
+    CUSTOMER_AUTH_GOOGLE_ID: "customer-google-id", CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google-private-value",
+    CUSTOMER_AUTH_RESEND_KEY: "customer-private-resend-value", CUSTOMER_AUTH_EMAIL_FROM: "academy@example.invalid" };
+  let calls = 0;
+  const phase2 = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(env, now), run: phase2, phase2 });
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2-auth-origins", authorization: "Bearer wrong" }))).status, 401);
+  assert.equal(calls, 0);
+  const response = await handler(request({ "x-lash-release-mode": "phase2-auth-origins" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json();
+  assert.equal(body.challenge, challenge); assert.equal(body.sourceCommit, env.VERCEL_GIT_COMMIT_SHA);
+  assert.equal(body.projectId, VERCEL_PROJECT_BINDINGS.stagingProjectId); assert.equal(body.contractPhase, "p2");
+  assert.deepEqual(body.authenticationOrigins, { customerOrigin: canonical, adminOrigin: canonical,
+    adminRedirectProxyOrigin: null, customerRedirectProxyEnabled: false });
+  for (const value of [env.CUSTOMER_AUTH_SECRET, env.CUSTOMER_AUTH_GOOGLE_SECRET, env.CUSTOMER_AUTH_RESEND_KEY, env.CUSTOMER_AUTH_GOOGLE_ID, env.CUSTOMER_AUTH_EMAIL_FROM, secret]) {
+    assert.equal(JSON.stringify(body).includes(value), false);
+  }
+  const ordinary = await (await handler(request({ "x-lash-release-mode": "phase2" }))).json();
+  assert.equal(Object.hasOwn(ordinary, "authenticationOrigins"), false);
+});
+
+test("authentication-origin mode refuses mismatched, missing, proxied or disabled auth before upstream work", async () => {
+  const canonical = "https://staging.lashher.com";
+  const env = { ...environment(), CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true",
+    AUTH_URL: canonical, CUSTOMER_AUTH_URL: canonical, CUSTOMER_AUTH_SECRET: "customer-private-secret-value-32-characters",
+    CUSTOMER_AUTH_GOOGLE_ID: "customer-google-id", CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google-private-value",
+    CUSTOMER_AUTH_RESEND_KEY: "customer-private-resend-value", CUSTOMER_AUTH_EMAIL_FROM: "academy@example.invalid" };
+  let calls = 0;
+  const phase2 = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  for (const changed of [{ AUTH_URL: "https://production.example.invalid" }, { AUTH_URL: "" },
+    { AUTH_URL: canonical + "/other-auth" }, { AUTH_URL: canonical + "?private=value" },
+    { CUSTOMER_AUTH_URL: "https://other.vercel.app" }, { CUSTOMER_AUTH_SECRET: "" },
+    { NEXTAUTH_URL: "https://production.example.invalid" }, { AUTH_REDIRECT_PROXY_URL: canonical + "/api/auth" },
+    { AUTH_REDIRECT_PROXY_URL: "https://production.example.invalid/api/auth" }, { CUSTOMER_AUTH_ENABLED: "false" }]) {
+    const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration({ ...env, ...changed }, now), run: phase2, phase2 });
+    const response = await handler(request({ "x-lash-release-mode": "phase2-auth-origins" }));
+    assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: "Release probe failed" });
+  }
+  assert.equal(calls, 0);
+  const fallback = { ...env, AUTH_URL: undefined, NEXTAUTH_URL: canonical + "/api/auth" };
+  assert.equal((await createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(fallback, now), run: phase2, phase2 })(request({ "x-lash-release-mode": "phase2-auth-origins" }))).status, 200);
+});
+
+test("Google binding requires staging bootstrap and issues transient runtime proofs for only the authenticated challenge", async () => {
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };
+  const binding = createFrontendGoogleBindingProbe({ environment: () => ({ APP_ENV: "staging", VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
+    AUTH_GOOGLE_ID: "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com", AUTH_GOOGLE_SECRET: "synthetic-identity".repeat(3),
+    GOOGLE_CLIENT_ID: "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "synthetic-calendar".repeat(3) }) });
+  let calls = 0;
+  const dependencies = { configuration, run: async () => ({ ok: true as const, service: "course" as const, durationMs: 1 }),
+    admission: async () => observation, google: async (...args: Parameters<typeof binding>) => {
+      assert.deepEqual(args, [{ environment: "staging", sourceCommit: "a".repeat(40) }, challenge]); calls++; return binding(...args);
+    } };
+  const handler = createReleaseProbeHandler(dependencies);
+  assert.equal((await handler(request({ "x-lash-release-mode": "google-binding", authorization: "Bearer invalid" }))).status, 401);
+  const response = await handler(request({ "x-lash-release-mode": "google-binding", "x-lash-workload-token": "forged", cookie: "private-cookie" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json(); assert.equal(body.challenge, challenge);
+  assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap", "google-binding"]);
+  assert.deepEqual(body.admission, observation.admission); assert.match(body.googleBinding.identity.proof, /^[a-f0-9]{64}$/u);
+  assert.match(body.googleBinding.calendar.proof, /^[a-f0-9]{64}$/u);
+  assert.equal(JSON.stringify(body).includes("synthetic-identity"), false); assert.equal(JSON.stringify(body).includes("private-cookie"), false);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, google: undefined })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, admission: undefined })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, configuration: () => ({ ...configuration()!, environment: "production" }) })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
+  assert.equal(calls, 1);
 });

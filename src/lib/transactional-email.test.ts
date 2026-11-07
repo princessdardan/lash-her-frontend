@@ -134,6 +134,18 @@ test("transactional email forwards custom message headers for raw HTML", () => {
   `);
 });
 
+test("transactional email rejects missing, blank and malformed provider receipt ids", () => {
+  runTransactionalEmailScenario(`
+    process.env.ADMIN_EMAIL = "owned@example.invalid";
+    process.env.FROM_EMAIL = "owned@example.invalid";
+    process.env.RESEND_API_KEY = "re_owned_unused";
+    for (const body of [{}, { id: "" }, { id: "   " }, { id: 123 }]) {
+      globalThis.fetch = async () => Response.json(body);
+      await assert.rejects(sendTransactionalEmail({ html: "<p>Owned</p>", subject: "Owned", to: "owned@example.invalid" }), /did not return an email id/);
+    }
+  `);
+});
+
 function runTransactionalEmailScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
   const env = { ...process.env };

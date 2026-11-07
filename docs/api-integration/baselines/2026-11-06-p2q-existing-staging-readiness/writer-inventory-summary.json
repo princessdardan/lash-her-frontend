@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "sourceManifestSha256": "4c8ff7694a769948876d1ebe6cb4b9df4686fd12b194a284be9a8ed04e7e5216",
+  "previousManifestSha256": "d5452af0e7bb0e583e2ce7073d6e47dafa4b6b2fe01973a3432cdeaaed1479b6",
+  "counts": {
+    "routes": 91,
+    "actionModules": 7,
+    "renderEntries": 65,
+    "manualEntries": 38,
+    "inlineActions": 0,
+    "deferredSites": 1,
+    "databaseConstructors": 15,
+    "schedules": 11
+  },
+  "entryPathsUnchanged": true,
+  "changedManualEntry": "scripts/validate-staging-release.mjs",
+  "entryScope": "Read-only configuration preflight; no new SQL/provider writer or public route",
+  "writerFenceVerified": false,
+  "drainVerified": false
+}

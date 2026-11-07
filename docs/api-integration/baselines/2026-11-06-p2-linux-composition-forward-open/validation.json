@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "status": "ACTUAL_LINUX_COMPOSITION_PASS_FORWARD_FAILED",
+  "source": "c7ae8e9fd16c1332d520e08e0b052bded019a934",
+  "runId": 42210725374,
+  "operatorJobId": 127868425433,
+  "actualLinuxDockerPostgresMajor": 18,
+  "fixtureChecks": {
+    "roles": 24,
+    "release": 18,
+    "nativeFixture": 9,
+    "certificationScope": 9
+  },
+  "skipped": 0,
+  "providerTouched": false,
+  "actualProviderNativeEvidence": false,
+  "composedReceiptSha256": "a5177fa9ed432243126a19ef06c3c06b5399be190fb84f17a241b15bc0d68c54",
+  "forwardFailure": {
+    "phase": "forward-new-build-probe-promote",
+    "errorKind": "Error",
+    "errorCode": "unknown",
+    "frames": [],
+    "bridgeErrors": [],
+    "innerStderrBytes": 1545,
+    "innerStdoutBytes": 0,
+    "underlyingCauseResolved": false,
+    "diagnosticPropagationQualified": false
+  },
+  "originalArtifact": {
+    "id": 13499790528,
+    "bytes": 3925,
+    "sha256": "965678488af9be4074b6eff05e6e6e36d0345899a12ad4e18213813cb7a93e58",
+    "expiresAt": "2026-11-09T11:36:00Z"
+  },
+  "privateRetention": {
+    "files": 6,
+    "bytes": 240817,
+    "manifestSha256": "d753fba300ef85248122e8821560119740c4d58b7c30f8f7ad02df10a072dd32",
+    "originalsPreserved": true
+  },
+  "knownAckRuntimeIntegrated": false,
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

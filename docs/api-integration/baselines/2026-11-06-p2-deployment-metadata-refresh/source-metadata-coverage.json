@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "status": "UNKNOWN_SOURCE_CLI_DEPLOYMENT_METADATA_PARTIAL",
+  "observedAt": "2026-11-06T13:48:35Z",
+  "scope": {
+    "deploymentCount": 5,
+    "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+    "source": "cli",
+    "contentsDownloaded": false,
+    "environmentValuesRead": false,
+    "configurationRead": false,
+    "mutationsPerformed": false
+  },
+  "providerSchema": {
+    "deploymentMetadataFieldsUsed": [
+      "id",
+      "project.id",
+      "source",
+      "state",
+      "target",
+      "createdAt",
+      "buildingAt",
+      "ready"
+    ],
+    "sourceTreeNodeFields": [
+      "name",
+      "type",
+      "mode",
+      "uid",
+      "children"
+    ],
+    "uidFormat": "40-lowercase-hex",
+    "fileSizeFieldAvailable": false,
+    "sourceArchiveHashAvailable": false,
+    "gitSourceAvailable": false,
+    "functionInventoryAvailable": false,
+    "routeInventoryAvailable": false,
+    "buildRecordAvailable": false
+  },
+  "deployments": [
+    {
+      "deploymentId": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL",
+      "createdAt": "2026-10-29T19:04:10.975Z",
+      "buildingAt": "2026-10-29T19:04:13.537Z",
+      "readyAt": "2026-10-29T19:05:51.551Z",
+      "buildDurationMs": 98014,
+      "parsedTreeNodes": 1000,
+      "parsedDirectories": 182,
+      "parsedFilesWithUid": 726,
+      "treeComplete": false
+    },
+    {
+      "deploymentId": "dpl_7mG5ncqdKCBhpxNJ281Amqw9upe4",
+      "createdAt": "2026-10-29T18:25:00.270Z",
+      "buildingAt": "2026-10-29T18:25:02.877Z",
+      "readyAt": "2026-10-29T18:26:49.362Z",
+      "buildDurationMs": 106485,
+      "parsedTreeNodes": 1000,
+      "parsedDirectories": 182,
+      "parsedFilesWithUid": 726,
+      "treeComplete": false
+    },
+    {
+      "deploymentId": "dpl_7odqGL3divDTEMqdBbkZWu2FzqX4",
+      "createdAt": "2026-10-29T17:21:09.166Z",
+      "buildingAt": "2026-10-29T17:21:11.473Z",
+      "readyAt": "2026-10-29T17:23:38.405Z",
+      "buildDurationMs": 146932,
+      "parsedTreeNodes": 1000,
+      "parsedDirectories": 182,
+      "parsedFilesWithUid": 726,
+      "treeComplete": false
+    },
+    {
+      "deploymentId": "dpl_BYQiXkALFy2hjG2KVKUG7XEgYpyE",
+      "createdAt": "2026-10-29T19:19:24.076Z",
+      "buildingAt": "2026-10-29T19:19:26.394Z",
+      "readyAt": "2026-10-29T19:21:01.938Z",
+      "buildDurationMs": 95544,
+      "parsedTreeNodes": 1000,
+      "parsedDirectories": 182,
+      "parsedFilesWithUid": 726,
+      "treeComplete": false
+    },
+    {
+      "deploymentId": "dpl_rzM1LuvDQzn4N1hKouWRymhPqf7j",
+      "createdAt": "2026-10-29T18:59:14.952Z",
+      "buildingAt": "2026-10-29T18:59:17.684Z",
+      "readyAt": "2026-10-29T19:00:59.347Z",
+      "buildDurationMs": 101663,
+      "parsedTreeNodes": 1000,
+      "parsedDirectories": 182,
+      "parsedFilesWithUid": 726,
+      "treeComplete": false
+    }
+  ],
+  "coverage": {
+    "treeEndpointAvailableForAllFive": true,
+    "treeResponseTruncatedByConnectorForAllFive": true,
+    "completeTreePaginationAvailable": false,
+    "individualFileBlobUidsObserved": true,
+    "completeDeployedFunctionInventoryObserved": false,
+    "completeRouteInventoryObserved": false,
+    "authoritativeOriginalArchiveHashObserved": false,
+    "authoritativeSourceCommitObserved": false
+  },
+  "interpretation": {
+    "partialPathAndBlobUidComparisonPossible": true,
+    "exactSourceAttributionPossible": false,
+    "emptyUnsupportedListingTreatedAsCapabilityAbsence": false,
+    "unknownSourceIdentityRemainsOpen": true
+  }
+}
