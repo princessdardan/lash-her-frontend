@@ -1005,6 +1005,10 @@ test("paid archive preserves a real manual grant and validated republish restore
       .getByRole("button", { name: "Archive course", exact: true })
       .click();
     await expect(warning).toBeVisible();
+    expect(await warning.evaluate((section) => {
+      const bounds = section.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
+    })).toBe(true);
     await page.screenshot({
       path: test.info().outputPath("paid-archive-warning.png"),
       fullPage: true,
@@ -1114,11 +1118,6 @@ test("paid archive preserves a real manual grant and validated republish restore
     expect(await publicPage.content()).not.toContain(
       "PRIVATE_PAID_LESSON_FIXTURE",
     );
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
   } finally {
     await learner.close().catch(() => {});
     await context.close().catch(() => {});
