@@ -177,7 +177,7 @@ def validate_profiled_interrupted_packet(initial):
     frontend = {'version':2,'qualificationTargetProfile':expected,'mode':MODE,'environment':'staging','startState':'already-closed',
         'certificationActionId':initial['restorationActionId'],'originalCertificationActionId':selection['originalCertificationActionId'],
         'originalReleaseId':candidate['releaseId'],'sourceCommit':plan['sourceCommit'],'candidateSha256':initial['candidateSha256'],
-        'targetSha256':initial['targetSha256'],**migrate.contract_identity(candidate),
+        'targetSha256':initial['targetSha256'],'apiJobSha256':api,**migrate.contract_identity(candidate),
         'configurationCanonicalSha256':_sha(_canonical(hashes)), 'nativePlan':native,'initialEpoch':str(int(native['initialEpoch'])+2),
         'operationId':initial['operationId'],'reconciliationSha256':selection['causalReceiptSha256']['settlement.json']}
     require(plan['frontendPlan'] == {**frontend,'planSha256':_sha(_canonical(frontend))},
@@ -358,6 +358,7 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
                 self.safety_write is not None and self.guard_read is not None and os.geteuid() == 0 and
                 self.observer_type is certification.P2CertificationPhysicalObserver and self.observer_source == CERTIFICATION_OBSERVER,
                 'P2_PROFILED_INTERRUPTED_FIXED_GUARDED_START_REQUIRED')
+        self.start_parent_watch()
         self.source = Path(__file__).resolve().parents[3]
         review = {key: initial[key] for key in INITIAL_FIELDS}
         self.plan, _, self.selected, self.jobs = prepare_profiled_interrupted_input(review, self.source)

@@ -220,8 +220,10 @@ class ProfiledInterruptedKnownAckBoundary(KnownAckLossBoundary):
         if identifier == observed.get('containerId'):
             completed = {name for stage in self.retained['completedStages'] for name in stage}
             return self.replacement_configuration if service in completed else self.old_configuration
-        return (self.replacement_configuration if self._reading_starting_processes
-                else self.snapshot)
+        starting = (getattr(self, 'old_metadata', {}).get(service) or {}).get('containerId')
+        if self._reading_starting_processes or identifier == starting:
+            return self.replacement_configuration
+        return self.snapshot
 
     def _validate_actual(self, value, service, *, healthy):
         configuration = self._configuration_for(service, value['Id'])
@@ -238,7 +240,8 @@ class ProfiledInterruptedKnownAckBoundary(KnownAckLossBoundary):
                 require(len(ids) == 1, 'P2_PROFILED_INTERRUPTED_STOPPED_GATEWAY_INVENTORY_REQUIRED')
                 value = self._inspect(ids[0])
                 actual = self._validate_actual(value, service, healthy=False)
-                require(actual == self.stopped_gateway['process'] and actual['running'] is False and actual['pid'] == 0,
+                stopped = {**self.stopped_gateway['process'], 'running': False, 'pid': 0}
+                require(actual == stopped and actual['running'] is False and type(actual['pid']) is int,
                         'P2_PROFILED_INTERRUPTED_STOPPED_GATEWAY_PROCESS_REQUIRED')
                 result[service] = actual
                 continue
@@ -248,8 +251,10 @@ class ProfiledInterruptedKnownAckBoundary(KnownAckLossBoundary):
                 result[service] = None
                 continue
             value = self._inspect(ids[0])
-            actual = self._validate_actual(value, service, healthy=service not in active)
-            retained = self.retained['observedProcesses'][service]
+            actual = self._validate_actual(value, service, healthy=False)
+            require(actual['running'] is False and type(actual['pid']) is int and actual['pid'] == 0,
+                    'P2_PROFILED_INTERRUPTED_SOURCE_RUNTIME_NOT_STOPPED')
+            retained = {**self.retained['observedProcesses'][service], 'running': False, 'pid': 0}
             if service not in active:
                 require(actual == retained, 'P2_PROFILED_INTERRUPTED_RETAINED_PROCESS_CHANGED')
             else:
@@ -313,7 +318,7 @@ class ProfiledInterruptedKnownAckBoundary(KnownAckLossBoundary):
                         continue
                     require(len(ids) == 1 and (ids[0] == expected['containerId'] or
                             expected['containerId'].startswith(ids[0])), 'P2_PROFILED_INTERRUPTED_PROCESS_SET_CHANGED')
-                    healthy = not (service == 'gateway' and not self.finished)
+                    healthy = service in self.new_metadata
                     require(self._validate_actual(self._inspect(ids[0]), service, healthy=healthy) == expected,
                             'P2_PROFILED_INTERRUPTED_PROCESS_CHANGED')
             if self.finished:
@@ -364,7 +369,7 @@ class ProfiledInterruptedKnownAckBoundary(KnownAckLossBoundary):
                     'restorationActionId': self.action,
                     'candidateSha256': self.initial['candidateSha256'],
                     'frontier': self.retained['frontier'],
-                    'stoppedProcess': self.stopped_gateway['process'],
+                    'stoppedProcess': self.old_metadata['gateway'],
                     'pendingLineage': self.pending_lineage,
                 })
 
@@ -551,7 +556,7 @@ class ProfiledInterruptedKnownAckRuntime(P2RecoveryRuntime):
             'status': 'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED',
             'restorationActionId': self.scope.recovery_action_id,
             'frontier': boundary.retained['frontier'],
-            'stoppedGateway': boundary.stopped_gateway,
+            'stoppedGateway': {**boundary.stopped_gateway, 'process': boundary.old_metadata['gateway']},
             'newGateway': boundary.new_gateway,
             'currentApiDatabasesAfter': after['databases'],
             'frontendJournalSha256': self.scope.receipt['journalSha256'],

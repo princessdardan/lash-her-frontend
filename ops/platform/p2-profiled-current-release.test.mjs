@@ -273,6 +273,9 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.equal(cPlan.configurationInputDirectory, knownInput.configurationInputDirectory);
     assert.equal(cPlan.frontendPlan.initialEpoch, '4');
     assert.equal(cPlan.frontendPlan.reconciliationSha256, selection.causalReceiptSha256['settlement.json']);
+    const { planSha256: cFrontendSha, ...cFrontendBody } = cPlan.frontendPlan;
+    assert.deepEqual(cFrontendBody.apiJobSha256, cPlan.apiJobSha256);
+    assert.equal(cFrontendSha, p2NativeHash(cFrontendBody));
     assert.equal(cPlan.requestedFrontier, 'original-stopped-one');
     assert.equal(cPlan.liveExecutionEligible, false);
     const complete = Object.fromEntries(REPLACEMENT_FILES.map(name => [name, '8'.repeat(64)]));

@@ -1600,6 +1600,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 self.shared_lock_fd is not None and self.shared_lock_fd == initial['_guardLockDescriptor'] and
                 self.safety_write is not None and self.guard_read is not None and os.geteuid() == 0,
                 'P2_PROFILED_CERTIFICATION_FIXED_GUARDED_START_REQUIRED')
+        self.start_parent_watch()
         self.source = Path(__file__).resolve().parents[3]
         review = {key: initial[key] for key in review_fields}
         verified = prepare_profiled_current_certification_input(review, self.source)

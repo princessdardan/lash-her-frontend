@@ -2,10 +2,13 @@
 import base64
 import copy
 import json
+import os
 from pathlib import Path
+import select
 import subprocess
 import threading
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 import p2_known_ack_interrupted_restoration as c
@@ -34,6 +37,25 @@ class ProfiledInterruptedBrokerTests(unittest.TestCase):
             item = patch.object(self.broker, method)
             item.start()
             self.addCleanup(item.stop)
+
+    def test_sends_guard_health_and_aborts_when_controller_stops(self):
+        read, write = os.pipe()
+        self.addCleanup(os.close, write)
+        self.addCleanup(os.close, read)
+        broker = profiled_c.P2ProfiledInterruptedKnownAckBroker(
+            {'restorationActionId': 'restore-owned'}, self.sent.append, safety_write=write,
+        )
+        broker.guard_alive = True
+        broker.start_parent_watch()
+        self.addCleanup(broker.parent_watch.join, 2)
+        self.addCleanup(broker.committed.set)
+        self.assertTrue(select.select([read], [], [], 4)[0])
+        self.assertEqual(json.loads(os.read(read, 4096)), {'operation': 'alive'})
+        broker.last_command = time.monotonic() - 46
+        self.assertTrue(broker.failed.wait(4))
+        broker.parent_watch.join(2)
+        self.assertEqual([json.loads(line) for line in os.read(read, 4096).splitlines()],
+                         [{'operation': 'alive'}, {'operation': 'abort'}])
 
     def test_restoration_authority_is_exact_one_use_and_poisoned_before_verification(self):
         broker = self.broker

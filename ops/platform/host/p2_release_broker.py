@@ -162,6 +162,23 @@ class Broker:
                     self.guard_alive = False; self.abort(); return
         threading.Thread(target=guard_health, daemon=True).start()
 
+    def start_parent_watch(self):
+        def parent_watch():
+            while not self.committed.wait(1):
+                if self.failed.is_set():
+                    return
+                try:
+                    self.safety({'operation': 'alive'})
+                except BaseException:
+                    self.guard_alive = False
+                    self.abort()
+                    return
+                if time.monotonic() - self.last_command > 45:
+                    self.abort()
+                    return
+        self.parent_watch = threading.Thread(target=parent_watch, daemon=True)
+        self.parent_watch.start()
+
     def action_id(self):
         return self.initial['candidate']['releaseId']
 
@@ -233,19 +250,7 @@ class Broker:
         self.prior_gateway = None
         self.prior_gateway_preflight = self.preflight_prior_gateway()
         migrate.write_json(self.directory, 'prior-gateway-preflight.json', self.prior_gateway_preflight)
-        def parent_watch():
-            while not self.committed.wait(1):
-                if self.failed.is_set():
-                    return
-                try:
-                    self.safety({'operation': 'alive'})
-                except BaseException:
-                    self.guard_alive = False; self.abort(); return
-                if time.monotonic() - self.last_command > 45:
-                    self.abort()
-                    return
-        self.parent_watch = threading.Thread(target=parent_watch, daemon=True)
-        self.parent_watch.start()
+        self.start_parent_watch()
 
     def check(self):
         require(not self.failed.is_set(), 'P2_BROKER_FAILED')

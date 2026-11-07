@@ -113,18 +113,44 @@ class ProfiledInterruptedRuntimeTests(unittest.TestCase):
         boundary.retained = copy.deepcopy(self.retained)
         boundary.retained['activeStage'] = runtime.STAGES[0]
         boundary.stopped_gateway = copy.deepcopy(self.retained['stoppedGateway'])
+        boundary.stopped_gateway['process'].update(running=True, pid=4321)
         inventory = {service: [row['containerId']] for service, row in self.processes.items()}
         inventory['community-api'] = []
+        stopped = {service: {**row, 'running': False, 'pid': 0} for service, row in self.processes.items()}
         boundary._inventory = lambda: copy.deepcopy(inventory)
-        boundary._inspect = lambda identifier: next(copy.deepcopy(row) for row in self.processes.values()
+        boundary._inspect = lambda identifier: next(copy.deepcopy(row) for row in stopped.values()
                                                       if row['containerId'] == identifier)
         boundary._validate_actual = lambda value, _service, healthy: copy.deepcopy(value)
         actual = boundary._read_actual_starting_processes()
         self.assertIsNone(actual['community-api'])
-        self.assertEqual(actual['course-api'], self.processes['course-api'])
+        self.assertEqual(actual['course-api'], stopped['course-api'])
+        self.assertEqual(actual['gateway'], stopped['gateway'])
         inventory['course-snapshot'] = []
         with self.assertRaisesRegex(ValueError, 'EXACT_STARTING_INVENTORY'):
             boundary._read_actual_starting_processes()
+        inventory['course-snapshot'] = [stopped['course-snapshot']['containerId']]
+        stopped['course-api'] = self.processes['course-api']
+        with self.assertRaisesRegex(ValueError, 'SOURCE_RUNTIME_NOT_STOPPED'):
+            boundary._read_actual_starting_processes()
+        stopped['course-api'] = {**stopped['course-api'], 'running': False, 'pid': 0}
+        stopped['course-snapshot']['restartCount'] = 1
+        with self.assertRaisesRegex(ValueError, 'RETAINED_PROCESS_CHANGED'):
+            boundary._read_actual_starting_processes()
+
+    def test_interrupted_stage_process_keeps_its_original_snapshot_until_replaced(self):
+        boundary = object.__new__(source.ProfiledInterruptedKnownAckBoundary)
+        boundary.retained = copy.deepcopy(self.retained)
+        boundary.retained['activeStage'] = runtime.STAGES[0]
+        boundary.old_configuration = self.retained['oldMountedDirectory']
+        boundary.replacement_configuration = self.retained['replacementSnapshot']
+        boundary.snapshot = self.root / 'current-snapshot'
+        boundary._reading_starting_processes = True
+        interrupted_id, fresh_id = '7' * 64, '8' * 64
+        self.assertEqual(boundary._configuration_for('community-api', interrupted_id), boundary.replacement_configuration)
+        boundary._reading_starting_processes = False
+        boundary.old_metadata = {'community-api': {'containerId': interrupted_id}}
+        self.assertEqual(boundary._configuration_for('community-api', interrupted_id), boundary.replacement_configuration)
+        self.assertEqual(boundary._configuration_for('community-api', fresh_id), boundary.snapshot)
 
     def typed_scope(self):
         from p2_certification_parent import P2CertificationScope
@@ -187,6 +213,7 @@ class ProfiledInterruptedRuntimeTests(unittest.TestCase):
         boundary.selected, boundary.jobs = parent.release, parent.jobs
         boundary.retained = copy.deepcopy(self.retained)
         boundary.stopped_gateway = copy.deepcopy(self.retained['stoppedGateway'])
+        boundary.old_metadata = {'gateway': copy.deepcopy(boundary.stopped_gateway['process'])}
         boundary.new_gateway = {'process': {'containerId': '9' * 64}, 'binding': {'owned': 'new'}}
         boundary.finished, boundary.stage_index = True, len(runtime.STAGES)
         boundary.runtime_attempted = False

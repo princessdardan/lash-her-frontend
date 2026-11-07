@@ -159,6 +159,7 @@ export function prepareProfiledInterruptedKnownAckOperator(settings){
     certificationActionId:selection.restorationActionId,originalCertificationActionId:selection.originalCertificationActionId,
     originalReleaseId:release.releaseId,sourceCommit:release.sourceCommit,
     candidateSha256:release.candidateSha256,targetSha256:release.targetSha256,contractPhase:release.contractPhase,
+    apiJobSha256:release.apiJobSha256,
     phase2ContractManifestSha256:release.phase2ContractManifestSha256,configurationCanonicalSha256:p2NativeHash(release.configurationSha256),
     nativePlan,initialEpoch:(BigInt(nativePlan.initialEpoch)+2n).toString(),operationId:settings.operationId,
     reconciliationSha256:selection.causalReceiptSha256['settlement.json']};
