@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, verify as verifySignature } from "node:crypto";
+import { createHash, createHmac, randomUUID, verify as verifySignature } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +12,7 @@ import {
   type BrowserContext,
   type Page,
   type Request,
+  type Response,
 } from "@playwright/test";
 import { setRequiredOnlyCookieConsent } from "../support/required-only-cookie-consent";
 
@@ -22,6 +23,7 @@ type Scenario = {
   slug: string;
   lessonIds: { practice: string; graded: string };
   users: Record<"learner" | "other", { id: string; storage: State }>;
+  secondDevice?: State;
 };
 type Fixture = {
   origin: string;
@@ -40,13 +42,14 @@ const storagePath = process.env.COURSE_LEARNING_STORAGE_PATH;
 const fixture: Fixture | null =
   enabled && storagePath ? JSON.parse(readFileSync(storagePath, "utf8")) : null;
 const production = process.env.COURSE_LEARNING_BROWSER_MODE === "production";
+const ownedBrowserArguments = (spki: string) => [
+  `--ignore-certificate-errors-spki-list=${spki}`,
+  "--host-resolver-rules=MAP localhost 127.0.0.1, MAP * ~NOTFOUND",
+];
 if (production && fixture) {
   if (!/^[A-Za-z0-9+/]{43}=$/u.test(fixture.browserCertificateSpki ?? ""))
     throw new Error("Owned loopback browser certificate required");
-  test.use({ launchOptions: { args: [
-    `--ignore-certificate-errors-spki-list=${fixture.browserCertificateSpki}`,
-    "--host-resolver-rules=MAP localhost 127.0.0.1, MAP * ~NOTFOUND",
-  ] } });
+  test.use({ launchOptions: { args: ownedBrowserArguments(fixture.browserCertificateSpki!) } });
 }
 function owned(): Fixture {
   if (!fixture || !(production ? /^https:\/\/localhost:\d+$/u : /^http:\/\/localhost:\d+$/u).test(fixture.origin))
@@ -109,7 +112,7 @@ test.afterAll(async () => {
   for (const result of results)
     if (result.status === "rejected") throw result.reason;
 });
-async function contextFor(browser: Browser, state: State) {
+async function contextFor(browser: Browser, state: State, longerMedia = false) {
   const { viewport, deviceScaleFactor, isMobile, hasTouch, userAgent } =
     devices[
       test.info().project.name === "mobile" ? "iPhone 13" : "Desktop Chrome"
@@ -136,7 +139,7 @@ async function contextFor(browser: Browser, state: State) {
         await route.fulfill({
           contentType: "application/vnd.apple.mpegurl",
           headers: { "access-control-allow-origin": "*" },
-          body: readFileSync("tests/fixtures/course-mux.m3u8"),
+          body: readFileSync(longerMedia ? "tests/fixtures/course-mux-long.m3u8" : "tests/fixtures/course-mux.m3u8"),
         });
       else if (/^course-mux-\d+\.mpegts$/u.test(name))
         await route.fulfill({
@@ -259,6 +262,203 @@ async function readyPlayer(page: Page) {
     .toBeGreaterThan(0);
   return player;
 }
+
+type ResumeProgress = {
+  id: string;
+  enrollmentId: string;
+  revision: number;
+  resumePositionSeconds: number;
+  maxPositionSeconds: number;
+  completedAt: string | null;
+};
+
+test("production Academy native playback, rewind and separate-session resume", async ({ browser }, info) => {
+  test.skip(!production, "Requires the owned Next production build.");
+  const value = scenario(info.project.name, "resume");
+  if (!value.secondDevice) throw new Error("A separately seeded device session is required");
+  const learner = value.users.learner;
+  const lessonId = value.lessonIds.practice;
+  const pathname = lessonPath(value);
+  const api = `/api/academy/lessons/${lessonId}`;
+  const upstream = `/course/v1/student/lessons/${lessonId}`;
+  const upstreamReads = [
+    `/course/v1/student/courses/${value.courseId}`, upstream,
+    `/course/v1/student/progress?lessonId=${lessonId}`, upstream + "/quiz", upstream + "/quiz/attempts", upstream + "/playback",
+  ];
+  const firstToken = learner.storage.cookies[0].value;
+  const secondToken = value.secondDevice.cookies[0].value;
+  expect(secondToken).not.toBe(firstToken);
+  const { rows: sessionRows } = await frontendPool!.query(
+    "select user_id from customer_sessions where token_hash=any($1::text[]) and expires>now()",
+    [[firstToken, secondToken].map(token => createHash("sha256").update(token).digest("hex"))],
+  );
+  expect(sessionRows).toEqual([{ user_id: learner.id }, { user_id: learner.id }]);
+  const persisted = async () => (await coursePool!.query(
+    "select id, enrollment_id, revision, resume_position_seconds, max_position_seconds, completed_at from lesson_progress where user_id=$1 and lesson_id=$2",
+    [learner.id, lessonId],
+  )).rows;
+  const capture = (page: Page) => {
+    const requests: Request[] = [];
+    const media = new Set<string>();
+    page.on("request", request => {
+      if (request.method() === "POST" && request.url() === owned().origin + api + "/progress") requests.push(request);
+    });
+    page.on("response", response => {
+      const url = new URL(response.url());
+      if (url.hostname === "stream.mux.com" && response.ok()) {
+        if (url.pathname.endsWith(".m3u8")) media.add("playlist");
+        if (url.pathname.endsWith(".mpegts")) media.add("segment");
+      }
+    });
+    return {
+      requests, media,
+      write: (expected: number) => page.waitForResponse(response => response.url() === owned().origin + api + "/progress" &&
+        response.request().method() === "POST" && response.request().postDataJSON()?.expectedProgressRevision === expected,
+      { timeout: 20_000 }),
+      playback: () => page.waitForResponse(response => response.url() === owned().origin + api + "/playback" &&
+        response.request().method() === "GET"),
+    };
+  };
+  const receipt = async (response: Response, expected: number) => {
+    expect(response.status()).toBe(200);
+    expect(response.headers()["cache-control"]).toBe("private, no-store");
+    const progress = (await response.json()).progress as ResumeProgress;
+    const requestId = response.headers()["x-request-id"];
+    const body = response.request().postDataJSON();
+    const canonical = body.event === "lesson_started" ?
+      { event: body.event, expectedProgressRevision: expected } :
+      { resumePositionSeconds: body.resumePositionSeconds, maxPositionSeconds: body.maxPositionSeconds, expectedProgressRevision: expected };
+    expect(response.request().postData()).toBe(JSON.stringify(canonical));
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(progress).toMatchObject({ revision: expected + 1, completedAt: null });
+    return {
+      requestId,
+      body,
+      progress,
+    };
+  };
+  const verifyGateway = (offset: number, playback: Response, writes: Awaited<ReturnType<typeof receipt>>[]) => {
+    const rows = readOwnedGatewayJournal().slice(offset).filter(row =>
+      upstreamReads.includes(row.target) || row.target === upstream + "/progress");
+    expect(rows).toHaveLength(6 + writes.length);
+    expect(rows.every(row => row.status === 200)).toBe(true);
+    const indexes = rows.map(row => row.method === "POST" ? 6 + writes.findIndex(write => write.requestId === row.requestId)
+      : upstreamReads.indexOf(row.target));
+    expect(indexes.slice(0, 5).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(indexes.slice(5, 7).sort()).toEqual([5, 6]);
+    expect(indexes.slice(7)).toEqual(writes.slice(1).map((_write, index) => index + 7));
+    expect(rows.find(row => row.target === upstream + "/playback")?.requestId).toBe(playback.headers()["x-request-id"]);
+    return indexes;
+  };
+  const first = await contextFor(browser, learner.storage, true);
+  let secondBrowser: Browser | undefined;
+  let second: BrowserContext | undefined;
+  try {
+    expect(await persisted()).toEqual([]);
+    const page = await first.newPage();
+    const observed = capture(page);
+    const initialOffset = readOwnedGatewayJournal().length;
+    const [opened, playback, document] = await Promise.all([observed.write(0), observed.playback(), page.goto(pathname)]);
+    expect(document?.status()).toBe(200);
+    expect(playback.status()).toBe(200);
+    const started = await receipt(opened, 0);
+    expect(started.body).toEqual({ event: "lesson_started", expectedProgressRevision: 0 });
+    expect(started.progress).toMatchObject({ resumePositionSeconds: 0, maxPositionSeconds: 0 });
+    const player = await readyPlayer(page);
+    const mediaSample = () => player.evaluate((element: HTMLElement & {
+      currentTime: number; duration: number; paused: boolean; readyState: number;
+    }) => ({ currentTime: element.currentTime, duration: element.duration, paused: element.paused, readyState: element.readyState }));
+    expect((await mediaSample()).duration).toBe(32);
+    const button = (name: string) => player.getByRole("button", { name, exact: true }).filter({ visible: true }).first();
+    const [played] = await Promise.all([observed.write(1), button("play").click()]);
+    const heartbeat = await receipt(played, 1);
+    expect(heartbeat.progress.resumePositionSeconds).toBeGreaterThanOrEqual(10);
+    expect(heartbeat.progress.resumePositionSeconds).toBeLessThanOrEqual(12);
+    expect(heartbeat.progress.maxPositionSeconds).toBe(heartbeat.progress.resumePositionSeconds);
+    await expect.poll(async () => (await mediaSample()).currentTime, { intervals: [25, 50, 75] }).toBeGreaterThanOrEqual(14);
+    const [stopped] = await Promise.all([observed.write(2), button("pause").press("Enter")]);
+    const paused = await receipt(stopped, 2);
+    expect(paused.progress.resumePositionSeconds).toBeGreaterThanOrEqual(14);
+    expect(paused.progress.resumePositionSeconds).toBeLessThanOrEqual(17);
+    expect(paused.progress.maxPositionSeconds).toBeGreaterThanOrEqual(heartbeat.progress.maxPositionSeconds);
+    expect(paused.body.maxPositionSeconds).toBeGreaterThanOrEqual(heartbeat.progress.maxPositionSeconds);
+    expect(paused.body.maxPositionSeconds).toBeLessThanOrEqual(paused.body.resumePositionSeconds);
+    const pauseSample = await mediaSample();
+    expect(pauseSample.paused).toBe(true);
+    // The native player keyboard shortcut is available even when the responsive
+    // layout hides the visible seek-back button.
+    const [sought] = await Promise.all([observed.write(3), button("play").press("ArrowLeft")]);
+    const rewound = await receipt(sought, 3);
+    const rewindSample = await mediaSample();
+    expect(rewindSample.paused).toBe(true);
+    expect(rewound.progress.resumePositionSeconds).toBe(paused.progress.resumePositionSeconds - 10);
+    expect(rewound.progress.maxPositionSeconds).toBe(paused.progress.maxPositionSeconds);
+    expect(observed.requests.map(request => request.postDataJSON())).toEqual([
+      started.body, heartbeat.body, paused.body, rewound.body,
+    ]);
+    expect([...observed.media].sort()).toEqual(["playlist", "segment"]);
+    const firstWrites = [started, heartbeat, paused, rewound];
+    const firstIndexes = verifyGateway(initialOffset, playback, firstWrites);
+    expect(await persisted()).toEqual([{
+      id: rewound.progress.id, enrollment_id: rewound.progress.enrollmentId, revision: 4,
+      resume_position_seconds: rewound.progress.resumePositionSeconds, max_position_seconds: rewound.progress.maxPositionSeconds,
+      completed_at: null,
+    }]);
+
+    // Separate browser processes keep the paused first device visible while the second device starts.
+    secondBrowser = await browser.browserType().launch({ args: ownedBrowserArguments(owned().browserCertificateSpki!) });
+    second = await contextFor(secondBrowser, value.secondDevice, true);
+    const restoredPage = await second.newPage();
+    const resumed = capture(restoredPage);
+    const restoreOffset = readOwnedGatewayJournal().length;
+    const [resumedStart, resumedPlayback, resumedSeek, resumedDocument] = await Promise.all([
+      resumed.write(4), resumed.playback(), resumed.write(5), restoredPage.goto(pathname),
+    ]);
+    expect(resumedDocument?.status()).toBe(200);
+    expect(resumedPlayback.status()).toBe(200);
+    const restarted = await receipt(resumedStart, 4);
+    const restored = await receipt(resumedSeek, 5);
+    expect(restarted.body).toEqual({ event: "lesson_started", expectedProgressRevision: 4 });
+    for (const next of [restarted.progress, restored.progress]) {
+      expect(next).toMatchObject({
+        id: rewound.progress.id, enrollmentId: rewound.progress.enrollmentId,
+        resumePositionSeconds: rewound.progress.resumePositionSeconds, maxPositionSeconds: rewound.progress.maxPositionSeconds,
+      });
+    }
+    const restoredPlayer = await readyPlayer(restoredPage);
+    const restoredSample = await restoredPlayer.evaluate((element: HTMLElement & {
+      currentTime: number; duration: number; paused: boolean; readyState: number;
+    }) => ({ currentTime: element.currentTime, duration: element.duration, paused: element.paused, readyState: element.readyState }));
+    expect(restoredSample.paused).toBe(true);
+    expect(restoredSample.currentTime).toBeCloseTo(rewound.progress.resumePositionSeconds, 1);
+    expect(resumed.requests.map(request => request.postDataJSON())).toEqual([restarted.body, restored.body]);
+    expect(observed.requests).toHaveLength(4);
+    expect([...resumed.media].sort()).toEqual(["playlist", "segment"]);
+    const restoreWrites = [restarted, restored];
+    const restoreIndexes = verifyGateway(restoreOffset, resumedPlayback, restoreWrites);
+    expect(await persisted()).toEqual([{
+      id: rewound.progress.id, enrollment_id: rewound.progress.enrollmentId, revision: 6,
+      resume_position_seconds: rewound.progress.resumePositionSeconds, max_position_seconds: rewound.progress.maxPositionSeconds,
+      completed_at: null,
+    }]);
+    const compact = (entry: Awaited<ReturnType<typeof receipt>>) => ({
+      requestId: entry.requestId, body: entry.body,
+      progress: {
+        revision: entry.progress.revision, resumePositionSeconds: entry.progress.resumePositionSeconds,
+        maxPositionSeconds: entry.progress.maxPositionSeconds,
+      },
+    });
+    await writeFile(info.outputPath("resume.json"), JSON.stringify({
+      syntheticHls: true, distinctDatabaseSessions: true,
+      deviceOne: { writes: firstWrites.map(compact), gatewayIndexes: firstIndexes, pauseSample, rewindSample },
+      deviceTwo: { writes: restoreWrites.map(compact), gatewayIndexes: restoreIndexes, restoredSample },
+    }, null, 2) + "\n", { mode: 0o600 });
+  } finally {
+    await close(first, second);
+    await secondBrowser?.close();
+  }
+});
+
 async function progress(page: Page, lessonId: string) {
   const response = await page.request.get(
     `/api/academy/progress?lessonId=${lessonId}`,

@@ -20,6 +20,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidRepublishBaseline, observeP2InteractivePaidRepublishCase, validateP2InteractivePaidRepublish,
   captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
   captureP2InteractiveLessonEntryBaseline, observeP2InteractiveLessonEntryCase,
+  captureP2InteractiveResumeBaseline, observeP2InteractiveResumeCase,
   captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
   captureP2InteractiveAssessmentBaseline, observeP2InteractiveAssessmentCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
@@ -291,6 +292,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
       "course-lesson-entry-exact-first-start-and-monotonic-playback-expiry-with-pinned-repositories",
       "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
+      "course-lesson-resume-pinned-playback-heartbeat-pause-rewind-and-monotonic-maximum",
+      "course-lesson-resume-refuses-stale-cas-foreign-receipts-and-persistence-drift",
       "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
       "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
       "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
@@ -1443,7 +1446,7 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
   const video = createDrizzleVideoRepository(db), quiz = createDrizzleQuizRepository(db);
   const quizDocument = { version: 1, mode: "graded", passingPercent: 80, questions: [{ id: "question", prompt: "Which answer matches?",
     options: [{ id: "a", text: "First" }, { id: "b", text: "Second" }], correctOptionId: "b", feedback: "Review the material." }] };
-  const seed = async (name, { priorExpiry = null, preview = false, managed = true, withQuiz = true, withCanaries = false } = {}) => {
+  const seed = async (name, { priorExpiry = null, preview = false, managed = true, withQuiz = true, withCanaries = false, durationSeconds = 32 } = {}) => {
     const fixture = input(`entry-${name}`, { status: "published", accessMode: "free", priceCents: 0 });
     await create(fixture);
     const { courseId } = fixture, actorId = randomUUID(), lessonId = randomUUID(), moduleId = randomUUID(), assetId = randomUUID();
@@ -1459,8 +1462,8 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
     if (withQuiz) await course.query("INSERT INTO public.quiz_revisions(lesson_id,revision,document,created_by) VALUES($1,1,$2::jsonb,$3)",
       [lessonId, quizSeed, randomUUID()]);
     await course.query(`INSERT INTO public.video_assets(id,lesson_id,mux_asset_id,mux_playback_id,status,managed_by_course,provider_environment_id,
-      is_current,last_token_expires_at) VALUES($1,$2,$3,$4,'ready',$5,'owned-mux',true,$6)`,
-    [assetId, lessonId, `owned-asset-${assetId}`, `owned-playback-${assetId}`, managed, priorExpiry]);
+      is_current,last_token_expires_at,duration_seconds) VALUES($1,$2,$3,$4,'ready',$5,'owned-mux',true,$6,$7)`,
+    [assetId, lessonId, `owned-asset-${assetId}`, `owned-playback-${assetId}`, managed, priorExpiry, durationSeconds]);
     const grant = await enrollment.enrollFree({ userId: actorId, courseId, idempotencyKey: randomUUID() });
     assert.equal(grant.isReplay, false);
     return { selection: { actorId, courseId, lessonId, grantId: grant.record.id }, enrollmentId: grant.record.enrollmentId, assetId };
@@ -1525,6 +1528,104 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
   await runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz,
     entitlement: createDrizzleEntitlementRepository(db), admin: createDrizzleAdminEntitlementCommandRepository(db) });
   await runOwnedAssessmentWitness({ course, job, dependencies, input, create, enrollment, progress, video, quiz });
+  await runOwnedLessonResumeWitness({ course, job, dependencies, seed, enter, progress, quiz });
+}
+
+async function runOwnedLessonResumeWitness({ course, job, dependencies, seed, enter, progress, quiz }) {
+  const capture = ({ selection }) => captureP2InteractiveResumeBaseline(job, selection, dependencies);
+  const observe = ({ selection }, baseline, receipt) => observeP2InteractiveResumeCase(job, selection, baseline, receipt, dependencies);
+  const write = (test, expectedProgressRevision, resumePositionSeconds, maxPositionSeconds) => progress.recordProgress({
+    userId: test.selection.actorId, courseId: test.selection.courseId, lessonId: test.selection.lessonId,
+    enrollmentId: test.enrollmentId, expectedProgressRevision, resumePositionSeconds, maxPositionSeconds,
+  });
+  const play = async (test, pauseWatched = 13) => {
+    const entry = await enter(test), writes = [];
+    for (const [index, [resume, submittedMax, savedMax]] of [[10, 10, 10], [14, pauseWatched, 14], [4, 14, 14]].entries()) {
+      const expectedProgressRevision = index + 1, result = await write(test, expectedProgressRevision, resume, submittedMax);
+      assert.deepEqual({
+        id: result.id, enrollmentId: result.enrollmentId, revision: result.revision,
+        resumePositionSeconds: result.resumePositionSeconds, maxPositionSeconds: result.maxPositionSeconds,
+        completedAt: result.completedAt, completedQuizRevision: result.completedQuizRevision,
+      }, { id: entry.progress.progressId, enrollmentId: test.enrollmentId, revision: index + 2,
+        resumePositionSeconds: resume, maxPositionSeconds: savedMax, completedAt: null, completedQuizRevision: null });
+      writes.push({ requestId: randomUUID(), expectedProgressRevision, revision: result.revision, resumePositionSeconds: resume,
+        submittedMaxPositionSeconds: submittedMax, maxPositionSeconds: savedMax });
+    }
+    return { page: { pathname: entry.page.pathname, status: 200 },
+      playback: { ...entry.playback, playbackIdSha256: hash(`owned-playback-${test.assetId}`) },
+      started: entry.progress, writes, media: { durationSeconds: 32, videoWidth: 320,
+        heartbeatSeconds: 11, pausedSeconds: 14, rewoundSeconds: 4, manifestObserved: true, segmentObserved: true } };
+  };
+
+  for (const name of ["fresh-expiry", "prior-longer-expiry"]) {
+    const longer = name === "prior-longer-expiry";
+    const test = await seed(`resume-${name}`, { priorExpiry: longer ? new Date(Date.now() + 900_000).toISOString() : null });
+    const baseline = await capture(test), receipt = await play(test, longer ? 14 : 13);
+    assert.equal(JSON.stringify(baseline), "{}");
+    await assert.rejects(write(test, 3, 9, 14), { name: "ProgressRevisionConflictError" });
+    await assert.rejects(observe(test, {}, receipt), { check: "course-lesson-resume-receipt" });
+    for (const mutate of [
+      ({ playback }) => { playback.playbackIdSha256 = hash("foreign-playback"); },
+      ({ playback }) => { playback.token = "owned-private-value"; },
+      ({ started }) => { started.enrollmentId = randomUUID(); },
+      ({ writes }) => { writes[1].requestId = writes[0].requestId; },
+      ({ writes }) => { writes[1].submittedMaxPositionSeconds = 12; },
+      ({ writes }) => { writes[2].expectedProgressRevision = 2; },
+      ({ writes }) => { writes[2].maxPositionSeconds = 4; },
+      ({ writes, media }) => { writes[2].resumePositionSeconds = 5; media.rewoundSeconds = 5; },
+      ({ media }) => { media.durationSeconds = 21; },
+      ({ media }) => { media.heartbeatSeconds = 12; },
+      ({ media }) => { media.segmentObserved = false; },
+    ]) {
+      const malformed = structuredClone(receipt);
+      mutate(malformed);
+      await assert.rejects(observe(test, baseline, malformed), { check: "course-lesson-resume-receipt" });
+    }
+    assert.deepEqual(await observe(test, baseline, receipt), { ...test.selection, enrollmentId: test.enrollmentId,
+      progressId: receipt.started.progressId, revision: 4, resumePositionSeconds: 4, maxPositionSeconds: 14,
+      playbackExpiresAt: receipt.playback.thumbnailExpiresAt, playbackIdSha256: receipt.playback.playbackIdSha256, readOnly: true });
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-lesson-resume-receipt" });
+    await assert.rejects(capture(test), { check: "course-lesson-resume-baseline" });
+  }
+
+  const ineligible = await seed("resume-ineligible");
+  await assert.rejects(capture({ selection: { ...ineligible.selection, grantId: randomUUID() } }), { check: "course-lesson-resume-grant" });
+  for (const [name, options] of [["preview", { preview: true }], ["unmanaged", { managed: false }], ["no-quiz", { withQuiz: false }],
+    ["short-asset", { durationSeconds: 21 }], ["unknown-duration", { durationSeconds: null }]]) {
+    await assert.rejects(capture(await seed(`resume-${name}`, options)), { check: "course-lesson-resume-lesson" });
+  }
+  const attempted = await seed("resume-prior-attempt");
+  await quiz.submitAttempt({ userId: attempted.selection.actorId, lessonId: attempted.selection.lessonId, quizRevision: 1, requestId: randomUUID(),
+    answers: [{ questionId: "question", optionId: "b" }] });
+  await assert.rejects(capture(attempted), { check: "course-lesson-resume-attempt" });
+
+  for (const [name, check] of [["progress", "course-lesson-resume-progress"], ["progress-id", "course-lesson-resume-progress"],
+    ["asset", "course-lesson-resume-media"], ["expiry", "course-lesson-resume-media"], ["outbox", "course-lesson-resume-history"]]) {
+    const test = await seed(`resume-${name}`), eventId = randomUUID();
+    if (name === "outbox") {
+      // Own a preexisting event independently of the two pinned enrollment producers.
+      const { courseId } = test.selection, streamId = randomUUID(), userId = randomUUID(), at = new Date().toISOString();
+      const body = JSON.stringify({ data: { courseId, effectiveAt: at, state: "active", userId }, eventId, eventType: "enrollment.activated",
+        occurredAt: at, producer: "lash-her-course-api", schemaVersion: 1, stream: { id: streamId, version: 1 } });
+      await course.query("INSERT INTO public.users(id) VALUES($1)", [userId]);
+      await course.query("INSERT INTO public.community_enrollment_streams(id,user_id,course_id,version,state,effective_at) VALUES($1,$2,$3,1,'active',$4)",
+        [streamId, userId, courseId, at]);
+      await course.query(`INSERT INTO public.community_enrollment_outbox(event_id,stream_id,stream_version,canonical_body,canonical_digest)
+        VALUES($1,$2,1,$3,$4)`, [eventId, streamId, body, hash(body)]);
+    }
+    const baseline = await capture(test), receipt = await play(test);
+    if (name === "progress") await write(test, 4, 5, 14);
+    if (name === "progress-id") receipt.started.progressId = randomUUID();
+    if (name === "asset") await course.query("UPDATE public.video_assets SET mux_playback_id=$2 WHERE id=$1::uuid",
+      [test.assetId, `owned-replaced-${test.assetId}`]);
+    if (name === "expiry") receipt.playback.thumbnailExpiresAt = new Date(Date.parse(receipt.playback.thumbnailExpiresAt) + 500).toISOString();
+    if (name === "outbox") {
+      const update = await course.query("UPDATE public.community_enrollment_outbox SET updated_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid", [eventId]);
+      assert.equal(update.rowCount, 1);
+    }
+    await assert.rejects(observe(test, baseline, receipt), { check });
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-lesson-resume-receipt" });
+  }
 }
 
 async function runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz, entitlement, admin }) {

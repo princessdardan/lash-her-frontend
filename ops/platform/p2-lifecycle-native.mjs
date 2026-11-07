@@ -238,6 +238,17 @@ const reviewedLessonAssessmentDependencies = {
   "src/lib/learning/progress-sync.ts": "f345af9290fe2cb4ec3e90a9a1e9b5f5f5631a87f4272a041d3d2940a355a58f",
   "ops/gateway/assessment-attempt.mjs": "bf21612801e40da986dbcd073436ed470227bfff037969dcc7441f6af8853799"
 };
+const reviewedLessonResumeSource = {
+  ...reviewedLessonAssessmentSource,
+  "src/lib/writer-admission/runtime.ts": "3131eb33b3a9dd6c00b9126c679849428e3bf430a3929225dc2ea3711be3a1fe"
+};
+const reviewedLessonResumeDependencies = {
+  ...reviewedLessonAssessmentDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "bf2323618c4a5be6a5373308f805ba0dd22a7d81e6500a12d57be52d8ed54776",
+  "src/lib/api-integration/course-client.ts": "e256c6085e310270ebc14f870516a98cd94efb599af36aa731255279e3fbe920",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "335229bbad3facdcb7b4331e38cb8ac93b3deb4c39d0b5c45afc92f4a4d61e5e",
+  "ops/gateway/lesson-resume-position.mjs": "8ce4ee36a31b5a8efbff60e51251103bb9376ef1a40cac0a28560f55fc2d1ce0"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -270,7 +281,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]],
     [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies]],
     [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]],
-    [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]]]
+    [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]],
+    [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { parse } from "yaml";
-import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
+import { P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS, p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2ForwardRecoveryPostgres18Receipt, parseP2IdentityProbeTap, parseP2LifecyclePersistencePostgres18Receipt,
   parseP2LifecycleReceiversPostgres18Receipt, buildP2InterruptedRestorationExpected, parseP2InterruptedRestorationPostgres18Receipt, parseP2InterruptedNegativesPostgres18Receipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
@@ -148,11 +148,7 @@ function lifecyclePersistenceReceipt(manifestBytes, changes = {}) {
   return JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS", postgresMajor: 18,
     frontendMigrations: 83, courseMigrations: 22, communityMigrations: 11,
     sourceCommits: Object.fromEntries(Object.entries(manifest.sources).map(([service, source]) => [service, source.revision])),
-    checks: ["actual-three-domain-export-ready-observed", "actual-24-hour-schema-bound-export-scrub-observed",
-      "actual-delete-field-removal-and-retention-observed", "wrong-original-email-refused", "missing-receiver-ack-refused",
-      "identified-attempt-refused", "retained-community-export-refused", "common-output-private-values-absent",
-      "requested-command-version-refused", "unlisted-account-attempt-refused", "expired-ready-export-refused",
-      "missing-export-history-refused", "cross-bound-prior-refused"],
+    checks: P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS,
     skipped: 0, readOnly: true, fixtureOnly: true, providerTouched: false, liveCertification: false,
     sourceMode: "parent-issued-manifest-and-mounted-readback", sourceManifestSha256: sha(manifestBytes), sourceSha256, ...changes }) + "\n";
 }
@@ -264,6 +260,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.mjs"), "// owned fixture\n");
   writeFileSync(join(root, "ops/gateway/routes.json"), "{}\n");
   writeFileSync(join(root, "ops/gateway/assessment-attempt.mjs"), "// owned assessment dependency fixture\n");
+  writeFileSync(join(root, "ops/gateway/lesson-resume-position.mjs"), "// owned lesson resume dependency fixture\n");
   writeFileSync(join(root, "ops/gateway/package.json"), JSON.stringify({ name: "lash-her-gateway", dependencies: { jose: "6.2.3" } }));
   writeFileSync(join(root, "ops/gateway/package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/jose": { version: "6.2.3" } } }));
   mkdirSync(join(root, "ops/gateway/node_modules/jose"), { recursive: true });
@@ -459,8 +456,9 @@ test("recovery mode runs current and forward PostgreSQL 18 fixtures after all id
     assert.equal(docker.args.includes("--forward-brand"), false);assert.equal(forwardDocker.args.at(-1), "--forward-brand");
     assert.deepEqual(forwardDocker.args.slice(0,-1),docker.args);
     const mounts = docker.args.filter((argument, index) => docker.args[index - 1] === "--mount");
-    assert.equal(mounts.length, 13); assert.equal(mounts.every(value => value.endsWith(",readonly")), true);
+    assert.equal(mounts.length, 14); assert.equal(mounts.every(value => value.endsWith(",readonly")), true);
     assert.equal(mounts.some(value => value.includes("dst=/source/ops/gateway/assessment-attempt.mjs,")), true);
+    assert.equal(mounts.some(value => value.includes("dst=/source/ops/gateway/lesson-resume-position.mjs,")), true);
     assert.equal(mounts.some(value => value.includes("dst=/exact-sources/lash-her-course-api")), true);
     assert.equal(mounts.some(value => value.includes("dst=/exact-sources/lash-her-community-api")), true);
     assert.equal(mounts.some(value => value.includes(`src=${value.workspace},`)), false);
@@ -482,7 +480,7 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.equal(result.lifecyclePersistence.status, "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS");
     assert.equal(result.lifecyclePersistence.postgresMajor, 18); assert.equal(result.lifecyclePersistence.frontendMigrations, 83);
     assert.equal(result.lifecyclePersistence.courseMigrations, 22); assert.equal(result.lifecyclePersistence.communityMigrations, 11);
-    assert.equal(result.lifecyclePersistence.checks.length, 13); assert.equal(result.lifecyclePersistence.skipped, 0);
+    assert.equal(result.lifecyclePersistence.checks.length, 50); assert.equal(result.lifecyclePersistence.skipped, 0);
     assert.equal(result.lifecyclePersistence.sourceMode, "parent-issued-manifest-and-mounted-readback");
     assert.match(result.lifecyclePersistence.parentProofSha256, /^[a-f0-9]{64}$/u);
     assert.match(result.lifecyclePersistence.sourceManifestSha256, /^[a-f0-9]{64}$/u);
@@ -906,6 +904,8 @@ test("lifecycle receipt parser refuses missing, extra, drifted, skipped and part
     const valid = JSON.parse(lifecyclePersistenceReceipt(input));
     assert.equal(parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(valid), expected).skipped, 0);
     const changes = [receipt => { receipt.postgresMajor = 16; }, receipt => { receipt.skipped = 1; },
+      receipt => { receipt.checks = receipt.checks.slice(0, 13); },
+      receipt => { [receipt.checks[30], receipt.checks[31]] = [receipt.checks[31], receipt.checks[30]]; },
       receipt => { receipt.checks = receipt.checks.slice(0, -1); }, receipt => { receipt.sourceManifestSha256 = "1".repeat(64); },
       receipt => { receipt.sourceCommits.course = "1".repeat(40); }, receipt => { delete receipt.sourceSha256["p2-lifecycle-state-witness.mjs"]; },
       receipt => { receipt.unreviewed = true; }];

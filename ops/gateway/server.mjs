@@ -6,7 +6,8 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
-  admissionClass, createAdmissionReader, isScopedMuxRoute, lessonAssessmentPhasePermits, scopedAssessmentAcknowledged,
+  admissionClass, createAdmissionReader, isScopedMuxRoute, lessonAssessmentPhasePermits, lessonResumePhasePermits,
+  scopedAssessmentAcknowledged, scopedResumeAcknowledged,
   scopedInteractiveAcknowledged, scopedMuxAcknowledged,
   selectScopedInteractiveRequest, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
@@ -149,7 +150,8 @@ export function createGateway(input, options = {}) {
         }
         const used = interactiveEvidence.used.get(interactiveSelection.requestIndex) ?? 0;
         if (interactiveEvidence.ids.has(interactiveSelection.requestId) || used >= interactiveSelection.uses ||
-            (assessment && !lessonAssessmentPhasePermits(interactiveSelection, interactiveEvidence))) {
+            (assessment && !lessonAssessmentPhasePermits(interactiveSelection, interactiveEvidence)) ||
+            (current.interactive.stage === "lesson-resume" && !lessonResumePhasePermits(interactiveSelection, interactiveEvidence))) {
           return refuse(503, "release_maintenance", 30);
         }
         interactiveEvidence.ids.add(interactiveSelection.requestId);
@@ -210,21 +212,24 @@ export function createGateway(input, options = {}) {
             }
             if (interactiveSelection) {
               const stage = interactiveAdmission.interactive.stage;
-              const assessment = stage === "lesson-assessment";
-              const acknowledged = assessment
+              const strictInteractive = ["lesson-denial", "lesson-assessment", "lesson-resume"].includes(stage);
+              const acknowledged = stage === "lesson-resume"
+                ? scopedResumeAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,
+                  interactiveSelection, interactiveEvidence, interactiveAdmission.interactive.actorId, admissionNow())
+                : stage === "lesson-assessment"
                 ? scopedAssessmentAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,
                   interactiveSelection, interactiveEvidence, interactiveAdmission.interactive.actorId)
                 : scopedInteractiveAcknowledged(route, req.url, reply.statusCode, reply.headers["content-type"], buffered, stage);
               if (!acknowledged) {
                 markUncertain();
-                if (stage === "lesson-denial" || assessment) {
+                if (strictInteractive) {
                   refuse(502, "upstream_unavailable");
                   return resolve();
                 }
               } else {
                 interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
                   requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
-                if (stage === "lesson-denial" || assessment) {
+                if (strictInteractive) {
                   res.writeHead(reply.statusCode, { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" });
                   res.end(buffered);
                   return resolve();

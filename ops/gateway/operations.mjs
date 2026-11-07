@@ -93,14 +93,16 @@ export function interactiveCourseStagePermits(stage, method, target) {
     return !!lookup && lookup.slice(1).every(id => courseUuid.test(id));
   }
   if (stage === group && stage !== "catalog") return true;
-  if (stage === "lesson-entry" && group === "learning" && method === "POST") return path === target && lessonEntryProgress.test(path);
+  if ((stage === "lesson-entry" || stage === "lesson-resume") && group === "learning" && method === "POST") {
+    return path === target && lessonEntryProgress.test(path);
+  }
   if (stage === "lesson-assessment" && group === "learning" && method === "POST") {
     return path === target && (lessonEntryProgress.test(path) || lessonAssessmentAttempt.test(path));
   }
   if (method !== "GET") return false;
   if (stage === "media") return group === "authoring";
   if (stage === "learning") return group === "catalog";
-  if ((stage === "lesson-denial" || stage === "lesson-assessment") && group === "learning") {
+  if ((stage === "lesson-denial" || stage === "lesson-assessment" || stage === "lesson-resume") && group === "learning") {
     const lessonId = selectedLessonProgress.exec(target)?.[1];
     return path === target && learnerAccessPath.test(path) || lessonId !== undefined && courseUuid.test(lessonId);
   }

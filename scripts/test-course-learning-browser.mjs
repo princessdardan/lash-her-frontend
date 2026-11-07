@@ -56,7 +56,7 @@ const temporary = await mkdtemp(join(tmpdir(), "lash-learning-browser-"));
 const cluster = join(temporary, "postgres"),
   courseExport = join(temporary, "course");
 const frontendApp = production ? join(temporary, "frontend") : root;
-const scenarios = production ? ["flight", "assessment"] : ["journey", "conflict", "boundaries"];
+const scenarios = production ? ["flight", "assessment", "resume"] : ["journey", "conflict", "boundaries"];
 const signingKey = randomBytes(32).toString("hex"),
   learnerKey = randomBytes(32).toString("hex"),
   authKey = randomBytes(32).toString("hex");
@@ -208,41 +208,42 @@ try {
   const client = new pg.Client({ connectionString: frontendUrl });
   await client.connect();
   try {
+    const createSessionStorage = async (id) => {
+      const token = randomUUID();
+      await client.query(
+        "insert into customer_sessions(token_hash,user_id,expires) values($1,$2,now()+interval '1 hour')",
+        [createHash("sha256").update(token).digest("hex"), id],
+      );
+      return {
+        cookies: [{
+          name: `${production ? "__Host-" : ""}lash-customer.session-token`,
+          value: token,
+          domain: "localhost",
+          path: "/",
+          expires: Math.floor(Date.now() / 1000) + 3600,
+          httpOnly: true,
+          secure: production,
+          sameSite: "Lax",
+        }],
+        origins: [],
+      };
+    };
     for (const project of ["chromium", "mobile"]) {
       fixture.scenarios[project] = {};
       for (const scenario of scenarios) {
         const users = {};
         for (const name of ["learner", "other"]) {
-          const id = randomUUID(),
-            token = randomUUID();
+          const id = randomUUID();
           await client.query(
             "insert into customer_users(id,email,email_verified) values($1,$2,now())",
             [id, `owned-${id}@example.invalid`],
           );
-          await client.query(
-            "insert into customer_sessions(token_hash,user_id,expires) values($1,$2,now()+interval '1 hour')",
-            [createHash("sha256").update(token).digest("hex"), id],
-          );
-          users[name] = {
-            id,
-            storage: {
-              cookies: [
-                {
-                  name: `${production ? "__Host-" : ""}lash-customer.session-token`,
-                  value: token,
-                  domain: "localhost",
-                  path: "/",
-                  expires: Math.floor(Date.now() / 1000) + 3600,
-                  httpOnly: true,
-                  secure: production,
-                  sameSite: "Lax",
-                },
-              ],
-              origins: [],
-            },
-          };
+          users[name] = { id, storage: await createSessionStorage(id) };
         }
-        fixture.scenarios[project][scenario] = { users };
+        fixture.scenarios[project][scenario] = {
+          users,
+          ...(scenario === "resume" ? { secondDevice: await createSessionStorage(users.learner.id) } : {}),
+        };
       }
     }
   } finally {
@@ -420,11 +421,12 @@ try {
             },
           });
           if (scenario !== "assessment") await mediaClient.query(
-            "insert into video_assets(lesson_id,generation,is_current,managed_by_course,provider_environment_id,status,mux_asset_id,mux_playback_id,caption_tracks) values($1,1,true,true,'learning-owned-fixture','ready',$2,$3,'[]'::jsonb)",
+            "insert into video_assets(lesson_id,generation,is_current,managed_by_course,provider_environment_id,status,mux_asset_id,mux_playback_id,caption_tracks,duration_seconds) values($1,1,true,true,'learning-owned-fixture','ready',$2,$3,'[]'::jsonb,$4)",
             [
               lesson.id,
               `owned-asset-${randomUUID()}`,
               `ownedPlayback${randomUUID().replaceAll("-", "")}`,
+              scenario === "resume" ? 32 : null,
             ],
           );
         }
@@ -433,7 +435,7 @@ try {
           status: "published",
         });
         const selected = fixture.scenarios[project][scenario];
-        if (scenario === "assessment") await courseRequest(
+        if (scenario === "assessment" || scenario === "resume") await courseRequest(
           "POST", `/v1/student/courses/${course.id}/enrollments`, { idempotencyKey: randomUUID() },
           { audience: "lash-her-course-api:learner", subject: selected.users.learner.id, secret: learnerKey },
         );

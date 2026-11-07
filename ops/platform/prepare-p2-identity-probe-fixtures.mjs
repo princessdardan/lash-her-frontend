@@ -70,6 +70,7 @@ const RECOVERY_MOUNTS = Object.freeze([
   Object.freeze({ source: "ops/platform", target: "/source/ops/platform", kind: "directory" }),
   Object.freeze({ source: "ops/gateway/routes.json", target: "/source/ops/gateway/routes.json", kind: "file" }),
   Object.freeze({ source: "ops/gateway/assessment-attempt.mjs", target: "/source/ops/gateway/assessment-attempt.mjs", kind: "file" }),
+  Object.freeze({ source: "ops/gateway/lesson-resume-position.mjs", target: "/source/ops/gateway/lesson-resume-position.mjs", kind: "file" }),
   Object.freeze({ source: "drizzle", target: "/source/drizzle", kind: "directory" }),
   Object.freeze({ source: "node_modules", target: "/source/node_modules", kind: "directory" }),
   Object.freeze({ source: "src", target: "/source/src", kind: "directory" }),
@@ -96,12 +97,57 @@ const LIFECYCLE_API_MOUNTS = Object.freeze([
   Object.freeze({ source: "contracts", kind: "directory" }), Object.freeze({ source: "node_modules", kind: "directory" }),
   Object.freeze({ source: "package.json", kind: "file" }), Object.freeze({ source: "package-lock.json", kind: "file" }),
 ]);
-const LIFECYCLE_CHECKS = Object.freeze([
-  "actual-three-domain-export-ready-observed", "actual-24-hour-schema-bound-export-scrub-observed",
-  "actual-delete-field-removal-and-retention-observed", "wrong-original-email-refused", "missing-receiver-ack-refused",
-  "identified-attempt-refused", "retained-community-export-refused", "common-output-private-values-absent",
-  "requested-command-version-refused", "unlisted-account-attempt-refused", "expired-ready-export-refused",
-  "missing-export-history-refused", "cross-bound-prior-refused",
+export const P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS = Object.freeze([
+  "actual-three-domain-export-ready-observed",
+  "actual-24-hour-schema-bound-export-scrub-observed",
+  "actual-delete-field-removal-and-retention-observed",
+  "wrong-original-email-refused",
+  "missing-receiver-ack-refused",
+  "identified-attempt-refused",
+  "retained-community-export-refused",
+  "common-output-private-values-absent",
+  "requested-command-version-refused",
+  "unlisted-account-attempt-refused",
+  "expired-ready-export-refused",
+  "missing-export-history-refused",
+  "cross-bound-prior-refused",
+  "course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields",
+  "course-draft-wrong-row-field-role-or-unheld-session-refused",
+  "course-draft-edit-held-winning-fields-single-revision-and-stale-unchanged",
+  "course-draft-edit-wrong-baseline-winner-stale-and-replay-refused",
+  "course-module-and-lesson-full-reorder-archived-siblings-and-stale-zero-writes",
+  "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift",
+  "course-curriculum-create-normal-module-and-lesson-fields-with-single-revision-and-preserved-siblings",
+  "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift",
+  "course-rich-lesson-pinned-post-structure-safe-links-and-exact-stored-portable-text",
+  "course-publication-held-status-revision-metadata-and-public-catalog-predicate",
+  "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift",
+  "course-quiz-save-initial-and-revised-exact-document-editor-and-preserved-private-history",
+  "course-quiz-save-refuses-private-shape-scope-and-database-history-drift",
+  "course-free-enrollment-orderless-grant-joins-settled-activation-to-actual-community-inbox",
+  "course-free-enrollment-refuses-ineligible-occupied-and-persisted-outcome-drift",
+  "course-free-enrollment-exact-key-replay-preserves-original-course-and-community-history",
+  "course-paid-grant-orderless-audited-effect-joins-settled-activation-to-actual-community-inbox",
+  "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
+  "course-paid-second-grant-preserves-reviewed-existing-enrollment-history-and-community-activation",
+  "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
+  "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift",
+  "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
+  "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history",
+  "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
+  "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
+  "course-lesson-entry-exact-first-start-and-monotonic-playback-expiry-with-pinned-repositories",
+  "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
+  "course-lesson-resume-pinned-playback-heartbeat-pause-rewind-and-monotonic-maximum",
+  "course-lesson-resume-refuses-stale-cas-foreign-receipts-and-persistence-drift",
+  "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
+  "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
+  "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
+  "course-assessment-refuses-ineligible-plans-mismatched-receipts-and-persistence-drift",
+  "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
+  "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
+  "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
+  "course-paid-revoke-refuses-missing-outbox-with-pinned-foreign-expiry-predicate-defect",
 ]);
 const LIFECYCLE_RECEIVER_CHECKS = Object.freeze([
   "actual-source-both-receivers-accept-canonical-suspend-over-verified-tls",
@@ -516,7 +562,7 @@ export function parseP2LifecyclePersistencePostgres18Receipt(output, expected) {
   demand(exactKeys(receipt, LIFECYCLE_RECEIPT_KEYS) && receipt.version === 1 &&
     receipt.status === "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS" && receipt.postgresMajor === 18 &&
     receipt.frontendMigrations === 83 && receipt.courseMigrations === 22 && receipt.communityMigrations === 11 &&
-    JSON.stringify(receipt.checks) === JSON.stringify(LIFECYCLE_CHECKS) && receipt.skipped === 0 && receipt.readOnly === true &&
+    JSON.stringify(receipt.checks) === JSON.stringify(P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS) && receipt.skipped === 0 && receipt.readOnly === true &&
     receipt.fixtureOnly === true && receipt.providerTouched === false && receipt.liveCertification === false &&
     receipt.sourceMode === "parent-issued-manifest-and-mounted-readback" &&
     receipt.sourceManifestSha256 === expected.sourceManifestSha256 &&

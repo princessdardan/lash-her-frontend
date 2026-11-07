@@ -1,0 +1,17 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:8
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXTINF:8.000000,
+course-mux-0.mpegts?segment=0
+#EXT-X-DISCONTINUITY
+#EXTINF:8.000000,
+course-mux-0.mpegts?segment=1
+#EXT-X-DISCONTINUITY
+#EXTINF:8.000000,
+course-mux-0.mpegts?segment=2
+#EXT-X-DISCONTINUITY
+#EXTINF:8.000000,
+course-mux-0.mpegts?segment=3
+#EXT-X-ENDLIST

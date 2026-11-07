@@ -939,6 +939,139 @@ test("scoped lesson assessment enforces the exact phase and allows only new brow
   assert.deepEqual(forwarded.filter(row => row.method === "POST").map(row => row.body), [start, ...attempts]);
 });
 
+function lessonResumeFixtureRequests() {
+  const courseId = "20000000-0000-4000-8000-000000000001";
+  const lessonId = "20000000-0000-4000-8000-000000000002";
+  const actorId = "10000000-0000-4000-8000-000000000001";
+  const lesson = `/course/v1/student/lessons/${lessonId}`;
+  const write = `${lesson}/progress`;
+  const targets = [`/course/v1/student/courses/${courseId}`, lesson, `/course/v1/student/progress?lessonId=${lessonId}`,
+    `${lesson}/quiz`, `${lesson}/quiz/attempts`, `${lesson}/playback`, write, write, write, write];
+  const start = '{"event":"lesson_started","expectedProgressRevision":0}';
+  const requests = targets.map((target, index) => ({ method: index >= 6 ? "POST" : "GET", target,
+    bodySha256: certificationHash(index < 6 ? "" : index === 6 ? start : JSON.stringify({ expectedProgressRevision: index - 6 })), uses: 1 }));
+  const reads = [{ course: { id: courseId } }, { lesson: { id: lessonId, isPreview: false } }, { progress: [] }, { quiz: { lessonId } }, { attempts: [] }];
+  return { courseId, lessonId, actorId, write, start, targets, requests, reads };
+}
+
+function resumeFixturePlayback(wall, { foreignThumbnail = false } = {}) {
+  const playbackId = "owned-playback", expiry = Math.floor(wall / 1000) + 600;
+  const expiresAt = new Date(expiry * 1000).toISOString();
+  const token = (aud, sub) => [
+    Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url"),
+    Buffer.from(JSON.stringify({ kid: "owned-mux-key", sub, aud, exp: expiry })).toString("base64url"),
+    Buffer.from("owned fixture signature").toString("base64url"),
+  ].join(".");
+  return { playbackId, playbackToken: token("v", playbackId), expiresAt,
+    thumbnailToken: token("t", foreignThumbnail ? "foreign-playback" : playbackId), thumbnailExpiresAt: expiresAt };
+}
+
+test("scoped lesson resume binds native position bytes and waits for each Course acknowledgement", async t => {
+  const { courseId, lessonId, actorId, write, start, targets, requests, reads } = lessonResumeFixtureRequests();
+  const date = "2026-11-07T15:00:00.000Z";
+  const bodies = [start, '{"resumePositionSeconds":10,"maxPositionSeconds":10,"expectedProgressRevision":1}',
+    '{"resumePositionSeconds":14,"maxPositionSeconds":13,"expectedProgressRevision":2}',
+    '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":3}'];
+  const forwarded = [];
+  const heartbeatEntered = Promise.withResolvers(), heartbeatAck = Promise.withResolvers();
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString();
+    const target = `/course${req.url}`;
+    forwarded.push({ target, body, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    let response;
+    if (req.method === "POST") {
+      const { expectedProgressRevision, resumePositionSeconds = 0, maxPositionSeconds = 0 } = JSON.parse(body);
+      if (expectedProgressRevision === 1) {
+        heartbeatEntered.resolve();
+        await heartbeatAck.promise;
+      }
+      response = { progress: { id: "30000000-0000-4000-8000-000000000001", userId: actorId, lessonId,
+        enrollmentId: "40000000-0000-4000-8000-000000000001", resumePositionSeconds,
+        maxPositionSeconds: Math.max(resumePositionSeconds, maxPositionSeconds), revision: expectedProgressRevision + 1,
+        completedQuizRevision: null, completedAt: null, lastWatchedAt: date, createdAt: date, updatedAt: date } };
+    } else {
+      const index = targets.indexOf(target);
+      response = index === 5 ? resumeFixturePlayback(f.start) : reads[index];
+    }
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "public", "retry-after": "11" });
+    res.end(JSON.stringify(response));
+  }, "lesson-resume");
+  t.after(heartbeatAck.resolve);
+  for (const changed of [
+    requests.slice(0, -1), requests.map((row, index) => index === 2 ? { ...row, uses: 2 } : row),
+    requests.map((row, index) => index === 7 ? { ...row, bodySha256: certificationHash(bodies[1]) } : row),
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: changed } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const send = body => f.signed({ method: "POST", path: write, body });
+  const refused = async input => assert.equal((await f.send(input)).status, 503);
+  const acknowledged = async input => {
+    const result = await f.send(input);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers["cache-control"], "private, no-store");
+    assert.equal(result.headers["retry-after"], undefined);
+    return JSON.parse(result.body);
+  };
+  await refused(send(start));
+  await refused(f.signed({ path: targets[5] }));
+  await refused(f.signed({ path: targets[0], actor: courseId }));
+  await refused(f.signed({ path: targets[2].replace(lessonId, courseId) }));
+  await Promise.all([4, 3, 2, 1, 0].map(index => acknowledged(f.signed({ path: targets[index] }))));
+  await refused(send(bodies[1]));
+  await Promise.all([acknowledged(send(start)), acknowledged(f.signed({ path: targets[5] }))]);
+  for (const body of [
+    '{"resumePositionSeconds":9,"maxPositionSeconds":9,"expectedProgressRevision":1}',
+    '{"resumePositionSeconds":10,"maxPositionSeconds":9,"expectedProgressRevision":1}',
+    '{"resumePositionSeconds":10,"maxPositionSeconds":10,"expectedProgressRevision":1,"event":"lesson_completed"}',
+    '{"resumePositionSeconds":10,"maxPositionSeconds":9,"maxPositionSeconds":10,"expectedProgressRevision":1}',
+    '{"resumePositionSeconds":10,"maxPositionSeconds":10,"expectedProgressRevision":2}',
+  ]) await refused(send(body));
+  await refused({ ...send(bodies[1]), body: bodies[1].replaceAll("10", "11") });
+  await refused(f.signed({ method: "POST", path: write, body: bodies[1], idempotency: "owned" }));
+  const first = send(bodies[1]);
+  const heartbeat = acknowledged(first);
+  await heartbeatEntered.promise;
+  try { await refused(send(bodies[2])); } finally { heartbeatAck.resolve(); }
+  assert.equal((await heartbeat).progress.revision, 2);
+  await refused(first);
+  assert.equal((await acknowledged(send(bodies[2]))).progress.maxPositionSeconds, 14);
+  await refused(send(bodies[3].replace('"maxPositionSeconds":14', '"maxPositionSeconds":13')));
+  await refused(send(bodies[3].replace('"resumePositionSeconds":4', '"resumePositionSeconds":5')));
+  assert.equal((await acknowledged(send(bodies[3]))).progress.resumePositionSeconds, 4);
+  await refused(send(bodies[3]));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 10);
+  const indices = observed.interactiveEvidence.acknowledged.map(row => row.requestIndex);
+  assert.deepEqual(indices.slice(0, 5).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual(indices.slice(5, 7).sort(), [5, 6]);
+  assert.deepEqual(indices.slice(7), [7, 8, 9]);
+  assert.deepEqual(forwarded.filter(row => row.target === write).map(row => row.body), bodies);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+});
+
+test("scoped lesson resume withholds playback data when the thumbnail names another asset", async t => {
+  const { targets, requests, reads } = lessonResumeFixtureRequests();
+  const f = await interactiveFixture(t, requests, (req, res) => {
+    const index = targets.indexOf(`/course${req.url}`);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(index === 5 ? resumeFixturePlayback(f.start, { foreignThumbnail: true }) : reads[index]));
+  }, "lesson-resume");
+  for (const path of targets.slice(0, 5)) assert.equal((await f.send(f.signed({ path }))).status, 200);
+  const result = await f.send(f.signed({ path: targets[5] }));
+  assert.equal(result.status, 502);
+  assert.match(result.body, /upstream_unavailable/u);
+  assert.doesNotMatch(result.body, /owned-playback|thumbnailToken/u);
+  const observed = f.admissionState();
+  assert.deepEqual(observed.uncertain, { newWork: 1, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.acknowledged.length, 5);
+});
+
 test("scoped lesson assessment fences unexpected playback instead of forwarding upstream private output", async t => {
   const { requests, targets } = lessonAssessmentFixtureRequests();
   const f = await interactiveFixture(t, requests, (req, res) => {

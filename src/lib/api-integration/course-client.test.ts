@@ -212,6 +212,47 @@ test("lesson assessment binds the enrolled customer and canonical progress and q
   ]);
 });
 
+test("lesson resume binds the learner and only writes the selected native position body", async () => {
+  const courseId = adminId, token = "scoped.learner.jwt";
+  const scope = { actorId: customerId, courseId, lessonId };
+  const position = { resumePositionSeconds: 10, maxPositionSeconds: 10, expectedProgressRevision: 1 };
+  const started = { event: "lesson_started", expectedProgressRevision: 0 } as const;
+  let issued = { customerId: adminId, token }, admissions = 0;
+  const calls: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getLessonResume: async () => scope,
+    issueCustomerToken: async () => issued,
+    run: async (kind, task) => { assert.equal(kind, "new-work"); admissions++; return task(); },
+    getTransport: () => async request => {
+      calls.push(request);
+      if (request.method === "GET") return Response.json({ progress: [] });
+      return Response.json({ progress: { ...progress, resumePositionSeconds: request.body === JSON.stringify(started) ? 0 : 10 } });
+    },
+  });
+  const forbidden = { code: "forbidden", status: 403 };
+  await assert.rejects(client.listProgress({ lessonId }), forbidden);
+  issued = { customerId, token };
+  for (const call of [
+    () => client.getMyCourse(customerId), () => client.getLesson(courseId), () => client.listProgress({ courseId }),
+    () => client.enrollFree(courseId, { idempotencyKey: lessonId }),
+    () => client.recordProgress(courseId, position), () => client.recordProgress(lessonId, { ...position, resumePositionSeconds: 9 }),
+    () => client.recordProgress(lessonId, { ...position, expectedProgressRevision: 4 }),
+    () => client.recordProgress(lessonId, { ...position, event: "lesson_completed" }),
+    () => client.recordProgress(lessonId, { ...started, expectedProgressRevision: 1 }),
+  ]) await assert.rejects(call(), forbidden);
+  assert.equal(admissions, 0);
+  assert.deepEqual(calls, []);
+  await client.listProgress({ lessonId });
+  await client.recordProgress(lessonId, started);
+  await client.recordProgress(lessonId, position);
+  assert.equal(admissions, 2);
+  const lesson = `/v1/student/lessons/${lessonId}`;
+  assert.deepEqual(calls.map(({ method, path, body, applicationToken }) => [method, path, body, applicationToken]), [
+    ["GET", `/v1/student/progress?lessonId=${lessonId}`, undefined, token],
+    ["POST", `${lesson}/progress`, JSON.stringify(started), token],
+    ["POST", `${lesson}/progress`, JSON.stringify(position), token],
+  ]);
+});
+
 test("lesson denial binds the selected customer and returns only safe protected read denials", async () => {
   const courseId = adminId, token = "scoped.denied.jwt", requestId = "44444444-4444-4444-8444-444444444444";
   const selected = { actorId: customerId, courseId, lessonId };

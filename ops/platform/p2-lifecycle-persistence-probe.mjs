@@ -237,8 +237,8 @@ const SQL = Object.freeze({
       JOIN public.video_assets v ON v.lesson_id=l.id AND v.is_current AND v.deleted_at IS NULL AND v.status='ready'
         AND v.mux_asset_id<>'' AND v.mux_playback_id<>''
       WHERE c.id=$1::uuid AND l.id=$2::uuid AND l.archived_at IS NULL AND m.archived_at IS NULL AND NOT l.is_preview`,
-    lessonEntryLesson: `SELECT v.id::text AS asset_id,v.last_token_expires_at::text,pg_catalog.clock_timestamp()::text AS observed_at,
-      ${jsonbSha("pg_catalog.to_jsonb(c)")} AS course_fingerprint
+    lessonEntryLesson: `SELECT v.id::text AS asset_id,v.duration_seconds,v.last_token_expires_at::text,pg_catalog.clock_timestamp()::text AS observed_at,
+      ${jsonbSha("pg_catalog.to_jsonb(c)")} AS course_fingerprint,${jsonbSha("v.mux_playback_id")} AS playback_id_sha256
       FROM public.lessons l JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
       JOIN LATERAL (SELECT q.document FROM public.quiz_revisions q WHERE q.lesson_id=l.id ORDER BY q.revision DESC LIMIT 1) quiz
         ON pg_catalog.jsonb_array_length(quiz.document->'questions') BETWEEN 1 AND 100
@@ -254,6 +254,8 @@ const SQL = Object.freeze({
         AND g.provider IS NULL AND g.revoked_at IS NULL AND g.revoke_reason IS NULL AND g.revoke_idempotency_key IS NULL AND g.revoke_request_hash IS NULL
         AND e.status='active' AND e.source='free' AND e.revoked_at IS NULL AND e.refunded_at IS NULL AND e.granted_at=g.granted_at`,
     lessonEntryProgress: `SELECT id::text AS progress_id,enrollment_id::text,created_at::text,
+      revision,resume_position_seconds,max_position_seconds,updated_at::text,
+      (completed_at IS NULL AND completed_quiz_revision IS NULL AND last_watched_at=updated_at) AS incomplete,
       (revision=1 AND resume_position_seconds=0 AND max_position_seconds=0 AND completed_at IS NULL AND completed_quiz_revision IS NULL
         AND last_watched_at=created_at AND created_at=updated_at) AS started
       FROM public.lesson_progress WHERE user_id=$1::uuid AND lesson_id=$2::uuid LIMIT 2`,
@@ -659,6 +661,7 @@ const paidArchiveBaselines = new WeakMap();
 const paidRepublishBaselines = new WeakMap();
 const paidLearnerAccessBaselines = new WeakMap();
 const lessonEntryBaselines = new WeakMap();
+const lessonResumeBaselines = new WeakMap();
 const lessonDenialBaselines = new WeakMap();
 const assessmentBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
@@ -1639,21 +1642,22 @@ function validateLessonEntrySelection(selection) {
   demand(closed(selection, lessonEntrySelectionFields) && lessonEntrySelectionFields.every(key => courseUuid(selection[key])), "course-lesson-entry-selection");
 }
 
-async function readLessonEntry(client, { actorId, courseId, lessonId, grantId }) {
+async function readLessonEntry(client, { actorId, courseId, lessonId, grantId },
+  { check = "course-lesson-entry", historyQueries = lessonEntryHistoryQueries } = {}) {
   const lessons = await read(client, "course", "lessonEntryLesson", [courseId, lessonId]), lesson = lessons[0];
   demand(lessons.length === 1 && courseUuid(lesson.asset_id) && SHA.test(lesson.course_fingerprint)
     && Number.isFinite(Date.parse(lesson.observed_at)) && (lesson.last_token_expires_at === null || Number.isFinite(Date.parse(lesson.last_token_expires_at))),
-  "course-lesson-entry-lesson");
+  `${check}-lesson`);
   const requestHash = sha(JSON.stringify({ command: "free_grant", userId: actorId, courseId }));
   const grants = await read(client, "course", "lessonEntryFreeGrant", [grantId, actorId, courseId, requestHash]), grant = grants[0];
-  demand(grants.length === 1 && courseUuid(grant.enrollment_id) && SHA.test(grant.key_fingerprint), "course-lesson-entry-grant");
+  demand(grants.length === 1 && courseUuid(grant.enrollment_id) && SHA.test(grant.key_fingerprint), `${check}-grant`);
   const access = await read(client, "course", "paidCourseAccess", [courseId, actorId]);
-  demand(access.length === 1 && access[0].eligible === true, "course-lesson-entry-access");
+  demand(access.length === 1 && access[0].eligible === true, `${check}-access`);
   const attempts = await read(client, "course", "lessonEntryAttemptAbsent", [lessonId, actorId, grant.enrollment_id]);
-  demand(attempts.length === 1 && attempts[0].absent === true, "course-lesson-entry-attempt");
+  demand(attempts.length === 1 && attempts[0].absent === true, `${check}-attempt`);
   const progress = await read(client, "course", "lessonEntryProgress", [actorId, lessonId]);
   const history = [lesson.course_fingerprint, grant.key_fingerprint,
-    ...await readPaidArchiveDigests(client, [courseId], lessonEntryHistoryQueries),
+    ...await readPaidArchiveDigests(client, [courseId], historyQueries),
     ...await readPaidArchiveDigests(client, [courseId, actorId, lessonId], ["lessonEntryOtherProgress"]),
     ...await readPaidArchiveDigests(client, [actorId], ["paidCourseAccount"]),
   ];
@@ -1666,10 +1670,16 @@ function lessonEntryBrowserExpiry(receipt, courseId, lessonId) {
   demand(closed(receipt, ["page", "playback", "progress"]), check);
   const { page, playback, progress } = receipt;
   demand(closed(page, ["pathname", "flight"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.flight === true
-    && closed(playback, ["requestId", "expiresAt", "thumbnailExpiresAt", "lifetimeMs"])
     && closed(progress, ["requestId", "progressId", "enrollmentId", "revision"])
-    && [playback.requestId, progress.requestId, progress.progressId, progress.enrollmentId].every(courseUuid)
-    && playback.requestId !== progress.requestId && progress.revision === 1, check);
+    && [progress.requestId, progress.progressId, progress.enrollmentId].every(courseUuid)
+    && playback?.requestId !== progress.requestId && progress.revision === 1, check);
+  return reviewedPlaybackExpiry(playback, check);
+}
+
+function reviewedPlaybackExpiry(playback, check, withPlaybackId = false) {
+  demand(closed(playback, ["requestId", "expiresAt", "thumbnailExpiresAt", "lifetimeMs",
+    ...(withPlaybackId ? ["playbackIdSha256"] : [])]) && courseUuid(playback.requestId)
+    && (!withPlaybackId || typeof playback.playbackIdSha256 === "string" && SHA.test(playback.playbackIdSha256)), check);
   const dates = [playback.expiresAt, playback.thumbnailExpiresAt];
   const timestamps = dates.map(value => typeof value === "string" ? Date.parse(value) : NaN);
   demand(timestamps.every((value, index) => Number.isFinite(value) && date(value) === dates[index])
@@ -1711,6 +1721,99 @@ export async function observeP2InteractiveLessonEntryCase(courseJob, selection, 
   demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
     && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-entry-media");
   return { courseId, lessonId, grantId, actorId, enrollmentId, progressId, revision: 1, playbackExpiresAt: date(playbackExpiry), readOnly: true };
+}
+
+const lessonResumeHistoryQueries = [...lessonEntryHistoryQueries.filter(query => query !== "paidArchiveEvents"), "assessmentOutbox"];
+
+function validateLessonResumeSelection(selection) {
+  demand(closed(selection, lessonEntrySelectionFields) && lessonEntrySelectionFields.every(key => courseUuid(selection[key])),
+    "course-lesson-resume-selection");
+}
+
+async function readLessonResume(client, selection) {
+  const { actorId } = selection;
+  const result = await readLessonEntry(client, selection, { check: "course-lesson-resume", historyQueries: lessonResumeHistoryQueries });
+  demand(Number.isInteger(result.lesson.duration_seconds) && result.lesson.duration_seconds >= 22, "course-lesson-resume-lesson");
+  const account = await read(client, "course", "paidLearnerActiveAccount", [actorId]);
+  demand(account.length === 1 && account[0].active === true, "course-lesson-resume-access");
+  demand(typeof result.lesson.playback_id_sha256 === "string" && SHA.test(result.lesson.playback_id_sha256), "course-lesson-resume-media");
+  return { ...result, history: [...result.history,
+    ...await readPaidArchiveDigests(client, [[actorId]], ["lessonDenialIdentity", "lessonDenialCommands"]),
+  ] };
+}
+
+function validateLessonResumeReceipt(receipt, { courseId, lessonId }, before) {
+  const check = "course-lesson-resume-receipt";
+  demand(closed(receipt, ["page", "playback", "started", "writes", "media"]), check);
+  const { page, playback, started, writes, media } = receipt;
+  const playbackExpiry = reviewedPlaybackExpiry(playback, check, true);
+  demand(closed(page, ["pathname", "status"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.status === 200
+    && playback.playbackIdSha256 === before.lesson.playback_id_sha256
+    && closed(started, ["requestId", "progressId", "enrollmentId", "revision"])
+    && [started.requestId, started.progressId, started.enrollmentId].every(courseUuid)
+    && started.enrollmentId === before.enrollmentId && started.revision === 1 && Array.isArray(writes) && writes.length === 3, check);
+  for (const [index, write] of writes.entries()) {
+    demand(closed(write, ["requestId", "expectedProgressRevision", "revision", "resumePositionSeconds",
+      "submittedMaxPositionSeconds", "maxPositionSeconds"]) && courseUuid(write.requestId)
+      && write.expectedProgressRevision === index + 1 && write.revision === index + 2
+      && [write.resumePositionSeconds, write.submittedMaxPositionSeconds, write.maxPositionSeconds].every(Number.isSafeInteger)
+      && write.maxPositionSeconds === Math.max(write.resumePositionSeconds, write.submittedMaxPositionSeconds), check);
+  }
+  const [heartbeat, pause, rewind] = writes;
+  demand(new Set([playback.requestId, started.requestId, ...writes.map(write => write.requestId)]).size === 5
+    && heartbeat.resumePositionSeconds >= 10 && heartbeat.resumePositionSeconds <= 12
+    && heartbeat.submittedMaxPositionSeconds === heartbeat.resumePositionSeconds
+    && pause.resumePositionSeconds >= 13 && pause.resumePositionSeconds <= 16 && pause.resumePositionSeconds >= heartbeat.resumePositionSeconds
+    && pause.submittedMaxPositionSeconds >= heartbeat.maxPositionSeconds && pause.submittedMaxPositionSeconds <= pause.resumePositionSeconds
+    && pause.resumePositionSeconds - pause.submittedMaxPositionSeconds <= 1
+    && rewind.resumePositionSeconds === pause.resumePositionSeconds - 10
+    && rewind.submittedMaxPositionSeconds === pause.maxPositionSeconds && rewind.maxPositionSeconds === pause.maxPositionSeconds, check);
+  demand(closed(media, ["durationSeconds", "videoWidth", "heartbeatSeconds", "pausedSeconds", "rewoundSeconds", "manifestObserved", "segmentObserved"])
+    && [media.durationSeconds, media.videoWidth, media.heartbeatSeconds, media.pausedSeconds, media.rewoundSeconds].every(Number.isSafeInteger)
+    && media.durationSeconds >= 22 && media.videoWidth > 0 && media.manifestObserved === true && media.segmentObserved === true
+    && media.heartbeatSeconds >= heartbeat.resumePositionSeconds && media.heartbeatSeconds <= heartbeat.resumePositionSeconds + 1
+    && media.pausedSeconds === pause.resumePositionSeconds && media.rewoundSeconds === rewind.resumePositionSeconds, check);
+  return playbackExpiry;
+}
+
+export async function captureP2InteractiveResumeBaseline(courseJob, selection, dependencies) {
+  validateLessonResumeSelection(selection);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const before = await readLessonResume(client, selected);
+    demand(before.progress.length === 0, "course-lesson-resume-baseline");
+    return before;
+  });
+  const baseline = Object.freeze({});
+  lessonResumeBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveResumeCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonResumeSelection(selection);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonResumeBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && lessonEntrySelectionFields.every(key => selection[key] === saved.selected[key]),
+  "course-lesson-resume-receipt");
+  const before = saved.result, playbackExpiry = validateLessonResumeReceipt(browserReceipt, saved.selected, before);
+  lessonResumeBaselines.delete(baseline);
+  const { progressId, enrollmentId } = browserReceipt.started;
+  const { revision, resumePositionSeconds, maxPositionSeconds } = browserReceipt.writes[2];
+  const { result: after } = await readHeldCourseDraft(target, dependencies, saved.roleOid, client => readLessonResume(client, saved.selected));
+  const progress = after.progress[0], createdAt = Date.parse(progress?.created_at), updatedAt = Date.parse(progress?.updated_at);
+  demand(after.enrollmentId === enrollmentId && after.progress.length === 1 && progress.progress_id === progressId
+    && progress.enrollment_id === enrollmentId && progress.revision === revision && progress.resume_position_seconds === resumePositionSeconds
+    && progress.max_position_seconds === maxPositionSeconds && progress.incomplete === true
+    && createdAt >= Date.parse(before.lesson.observed_at) && updatedAt >= createdAt && updatedAt <= Date.parse(after.lesson.observed_at),
+  "course-lesson-resume-progress");
+  demand(sameIds(after.history, before.history), "course-lesson-resume-history");
+  const baselineExpiry = before.lesson.last_token_expires_at === null ? 0 : Date.parse(before.lesson.last_token_expires_at);
+  demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
+    && after.lesson.playback_id_sha256 === browserReceipt.playback.playbackIdSha256
+    && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-resume-media");
+  return { ...saved.selected, enrollmentId, progressId, revision, resumePositionSeconds, maxPositionSeconds,
+    playbackExpiresAt: date(playbackExpiry), playbackIdSha256: after.lesson.playback_id_sha256, readOnly: true };
 }
 
 const lessonDenialSelectionFields = [...lessonEntrySelectionFields, "enrolledActorId"];

@@ -476,6 +476,7 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \
@@ -492,6 +493,7 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \
