@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "sourceCommit": "f78cf3af38665acca73d111fe1241e0a3d99bfe0",
+  "legacyNativeControlPassed": true,
+  "release": {
+    "candidateVersion": 3,
+    "frontendJobVersion": 2,
+    "operation": "profiled-current-api-runtime-and-compatible-frontend",
+    "planningSucceeded": true,
+    "trafficAuthorized": false
+  },
+  "outcomes": {
+    "certificationWithVersion2Settings": {
+      "error": "P2_CERTIFICATION_PARENT_REFUSED",
+      "blockedAt": "prepareP2CertificationOperator"
+    },
+    "legacySettingsWithProfiledCandidate": {
+      "error": "QUALIFICATION_TARGET_PROFILE_REFUSED",
+      "blockedAt": "prepareFrontendMigration"
+    },
+    "nativePlanWithProfiledCandidate": {
+      "error": "P2_LIFECYCLE_NATIVE_PLAN_REFUSED",
+      "blockedAt": "prepareP2LifecycleNativePlan"
+    }
+  },
+  "providerTouched": false,
+  "stagingTouched": false
+}

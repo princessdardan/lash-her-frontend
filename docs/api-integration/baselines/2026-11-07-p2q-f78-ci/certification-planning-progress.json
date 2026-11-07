@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "planning": {
+    "sourceCommit": "5bdd9051d8910bf35915bfcca58709db6615b826",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    },
+    "profiledPlan": 2,
+    "sourceFiles": 532,
+    "decodedBytes": 41627126,
+    "publicSourceBytes": 55580623,
+    "originalReadyReceipts": 6,
+    "hostPacketContainsCredentials": false,
+    "legacyApplyRefused": true,
+    "sourceFixtureOnly": true
+  },
+  "planningOutputSha256": "40cb19a021a05baaa6dd101d8d9c7ea9fc0a1ff605e8d0e4bf7a35fc495f850d",
+  "ownedRestoration": {
+    "status": "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS",
+    "allThreeJournalsUnchanged": true,
+    "providerTouched": false,
+    "actualDocker": false,
+    "runtimeTransportProjected": true
+  },
+  "ownedRestorationOutputSha256": "46df2d859d9323aadd31dd2a2b0410fcdbea76f5bc41ac1eab4167820adad73e",
+  "checks": {
+    "combinedNode": {
+      "sourceCommit": "b038b95fc5eb865351b8457bae0700eb6efa8273",
+      "passed": 71
+    },
+    "combinedHost": {
+      "sourceCommit": "5bdd9051d8910bf35915bfcca58709db6615b826",
+      "passed": 93
+    },
+    "disposableTlsPostgres": {
+      "majors": [
+        16,
+        18
+      ],
+      "checksEach": 11,
+      "frontendMigrations": 83,
+      "providerTouched": false
+    },
+    "parentLockContinuity": {
+      "sourceCommit": "9df89d8e",
+      "postgresMajor": 18,
+      "checksPassed": 11,
+      "actualNonceReleaseRefused": true,
+      "providerTouched": false
+    }
+  },
+  "hostExecutionEligible": false,
+  "actualStagingTouched": false,
+  "releaseAccepted": false,
+  "guardedHostIntegration": {
+    "sourceCommit": "5625269be1e53d7d66042b2ac561e015b4dc8ef7",
+    "node": {
+      "passed": 74,
+      "logSha256": "77257464cd0c6d8f9faa37a1ee781abc414ebe2e4e271127893342b250575755"
+    },
+    "host": {
+      "passed": 196,
+      "logSha256": "ba33fd808bd7c832a58d1a6d929b3b854c89a69ab1d899842bb7c754d8c707cb"
+    },
+    "crossLanguage": {
+      "sourceCommit": "5625269be1e53d7d66042b2ac561e015b4dc8ef7",
+      "sourceFiles": 532,
+      "decodedBytes": 41836705,
+      "publicSourceBytes": 55860055,
+      "modes": [
+        "contain-native",
+        "auth-preparation",
+        "browser-pending",
+        "direct-worker"
+      ],
+      "actualNodePlanCli": true,
+      "actualPythonWireVerifier": true,
+      "ownedReceipts": true,
+      "liveProviderTouched": false,
+      "executionAuthorized": false
+    },
+    "disposableGuardClosure": {
+      "serverMajor": 18,
+      "checks": 12,
+      "receiptSha256": "335779269f08438ab79d25955802c218682233487341b8854ea96df2d17f5431",
+      "heldLockRefused": true,
+      "idempotentClosure": true,
+      "frontendJournalUnchanged": true
+    },
+    "ownerControllerApplyWired": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "profiledOperatorController": {
+    "sourceCommit": "ff12c19bf4d91d5e28d21406d21ecb116799ca07",
+    "controllerCommit": "0fa1e8f1515f75a3c3c47db17dc0a5e6228ec41a",
+    "node": {
+      "passed": 59,
+      "logSha256": "ef605d8b8abdb8db88180a0c76fcff6bdf81658fb2a444275430a27068798128"
+    },
+    "host": {
+      "passed": 114,
+      "logSha256": "26881e71d22226dd0ad4ae51e3e0cb5e87eff4a22fd2c44abb2ee84a36d85158"
+    },
+    "crossLanguage": {
+      "modes": ["contain-native", "auth-preparation", "browser-pending", "direct-worker"],
+      "sourceFiles": 532,
+      "decodedBytes": 41848845,
+      "publicSourceBytes": 55876243,
+      "logSha256": "e5af6135a8b8e8aaaeabeb49a8d7a047eecfa4c4f71606694551abab786a691b"
+    },
+    "disposablePostgres18": {
+      "passed": 12,
+      "observerRefusedWhileOriginalSessionHeldBothLocks": true,
+      "observerConfirmedOriginalSessionAndBothLocksGone": true,
+      "closedZeroAdmissionVerified": true,
+      "receiptSha256": "335779269f08438ab79d25955802c218682233487341b8854ea96df2d17f5431"
+    },
+    "ownerControllerApplyWired": true,
+    "liveApplyExecuted": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "profiledReceiverOutage": {
+    "sourceCommit": "8850d95b81deebf5dfd02445e4a2aa9cb5f1b1dc",
+    "controllerCommit": "f68a7b4ec062d6e15fc7576e06eeceb349ad0cf6",
+    "integratedFaultAdapter": "43dbeb50",
+    "integratedMountIdentity": "3d692b6e",
+    "integratedKnownAckRecorder": "5ef7ed7c",
+    "historicalFrontierFixture": "34e4f135",
+    "node": {
+      "passed": 83,
+      "logSha256": "57934d9c8a91502665ed99174322823c905dcf41a6bfa06c2034877839c9c728"
+    },
+    "host": {
+      "passed": 192,
+      "logSha256": "87f50454902da7a9e4ee7ff9ae52bb9b069fcf975b9f2fc955f345f177f132aa"
+    },
+    "loopbackGateway": {
+      "passed": 18,
+      "preUpstream503Verified": true,
+      "lostAckUncertaintyPreserved": true,
+      "logSha256": "426940c1f56829d8d41a07282f6f7abe49784c5e6638b774aef3f9cd2731bcc3"
+    },
+    "disposablePostgres18": {
+      "passed": 12,
+      "receiptSha256": "335779269f08438ab79d25955802c218682233487341b8854ea96df2d17f5431"
+    },
+    "crossLanguage": {
+      "modes": ["fault-before-upstream", "contain-native", "auth-preparation", "browser-pending", "direct-worker"],
+      "sourceFiles": 532,
+      "decodedBytes": 41922843,
+      "publicSourceBytes": 55974907,
+      "logSha256": "84067c353d666cd5989903f7cc806c9ac0e13446328ab21a85a6e0968ceaa0da"
+    },
+    "admitted503JoinedToCompletedOperation": true,
+    "guardPreservedWrongMountAndForeignLease": true,
+    "knownAckReplacementEnabled": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  }
+}

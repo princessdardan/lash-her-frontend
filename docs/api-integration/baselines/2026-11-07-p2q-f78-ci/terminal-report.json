@@ -1,0 +1,200 @@
+{
+  "version": 1,
+  "repository": "princessdardan/lash-her-frontend",
+  "pullRequest": 93,
+  "sourceCommit": "f78cf3af38665acca73d111fe1241e0a3d99bfe0",
+  "run": 42339874540,
+  "attempt": 1,
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "build",
+      "databaseId": 128304965170,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "audit",
+      "databaseId": 128304965235,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "gateway-and-platform",
+      "databaseId": 128304965285,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "database",
+      "databaseId": 128304965299,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser (chromium)",
+      "databaseId": 128304965331,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser (firefox)",
+      "databaseId": 128304965341,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "frontend-operator-migrations",
+      "databaseId": 128304965342,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "quality-and-unit",
+      "databaseId": 128304965352,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser (webkit)",
+      "databaseId": 128304965423,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser",
+      "databaseId": 128308472300,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "artifactDigests": [
+    {
+      "name": "playwright-report",
+      "id": 13561821482,
+      "sha256": "187c47001e5aa1b85c82e651fff2f20cd35c592dce65c060e9f1f4f29076b09b"
+    },
+    {
+      "name": "frontend-operator-schema-summary",
+      "id": 13561821271,
+      "sha256": "40d821b7afbf793847793ed3c1d5b96b1409b0d581ddbd3f331ed38211b369c2"
+    },
+    {
+      "name": "playwright-blob-chromium",
+      "id": 13561587034,
+      "sha256": "77be77d5815ceee871243b2b12f860786044666110381e193461de0bcebeaf7c"
+    },
+    {
+      "name": "playwright-blob-webkit",
+      "id": 13561502593,
+      "sha256": "aa97fdf1adf68072f3e691ee691733d6263a323323f557ee1dd3b5494711bfa3"
+    },
+    {
+      "name": "frontend-runtime-qualification",
+      "id": 13561333543,
+      "sha256": "694653bd44e44d239cfbaa32292c2832fa3e419e5683e33562d3ddb84db776c0"
+    },
+    {
+      "name": "princessdardan~lash-her-frontend~892BD5.dockerbuild",
+      "id": 13561079098,
+      "sha256": "f7d4a2e6cf250c75612863ba371c778366cb728100c00b17f24761a628786179"
+    },
+    {
+      "name": "playwright-blob-firefox",
+      "id": 13561043325,
+      "sha256": "3431cd7c35b58c3487dabe14a048b491b56de0d41aef4bb81efed87804a0369f"
+    },
+    {
+      "name": "princessdardan~lash-her-frontend~UD2JJ7.dockerbuild",
+      "id": 13561017241,
+      "sha256": "c4e6b80a1ceb5878ec69fa9cfa37c357149c5cb3c3d18226ff8c4e12b76c8172"
+    },
+    {
+      "name": "gateway-runtime-qualification",
+      "id": 13560574504,
+      "sha256": "c52aef1c582547855c8c34e45636df6227f0a43b7bbd8f1239f1542eb95f53f4"
+    }
+  ],
+  "criticalLogDigests": {
+    "gateway-and-platform": "e3a9836a4f0b4282848bf10f847dff1b3456d5b5c41201f483c90d293a9e81af",
+    "frontend-operator-migrations": "03529380479b1ceec7b60d279ac4d0aedc48be9c169723c00a8a8f0f31ff6cb4",
+    "browser": "8db0fd2d431264e4bab57e9b7406c8fcf3a155b8769281da24f3d5aa2d704122"
+  },
+  "operator": {
+    "postgresMajor": 18,
+    "migrations": 83,
+    "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+    "schemaBaselineSha256": "0157a7991480f737b231e870d5f88b12e675eb7ba4da2f55cdeaaf91759c64da",
+    "migrationImageDigest": "sha256:d9e22073ba4f2a2194be2b2051b91aa459fd4001d64e47dca333914ebcb7168d",
+    "platformChecks": {
+      "roles": 29,
+      "release": 18,
+      "native": 9,
+      "certification": 10
+    },
+    "identityTestsPassed": 19,
+    "interruptedRestorationNegatives": 7,
+    "allThreeJournalsUnchanged": true,
+    "fixtureOnly": true,
+    "stagingTouched": false
+  },
+  "linuxHostTests": {
+    "total": 940,
+    "passed": 932,
+    "skipped": 8
+  },
+  "linuxOfflineReceiver": {
+    "status": "OWNED_RECREATION_CONTROLS_PASS",
+    "checks": [
+      "fresh-public-source-installed",
+      "identical-public-source-reused-read-only",
+      "changed-source-refused-without-overwrite",
+      "unreviewed-source-refused",
+      "owned-python-cache-permitted",
+      "source-symlink-refused",
+      "writable-source-directory-refused",
+      "bounded-public-source-above-sixteen-megabytes-installed-and-rechecked",
+      "public-source-over-forty-megabytes-refused-before-installation",
+      "profiled-source-installs-and-rechecks-above-legacy-count",
+      "four-systemd-units-verified-with-owned-docker-dependency"
+    ],
+    "passed": 11,
+    "publicReceiverSha256": "503b5b63280d85fae73ec417e820c5b8966489194fb55be754fe186af25144ac",
+    "providerContacted": false,
+    "actualStagingChanged": false,
+    "ownedDockerDependencyFixture": true
+  },
+  "runtimeQualification": {
+    "frontend": {
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "image": "sha256:d9e22073ba4f2a2194be2b2051b91aa459fd4001d64e47dca333914ebcb7168d",
+      "rawFindings": {
+        "MEDIUM": 35,
+        "LOW": 8,
+        "HIGH": 2
+      },
+      "qualifiedFindings": 0
+    },
+    "gateway": {
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "image": "sha256:a7a80fbe84ceaeec3a8714609f4d210beaef25dda8f2389094878833f8049f1f",
+      "rawFindings": {
+        "MEDIUM": 35,
+        "LOW": 8,
+        "HIGH": 2
+      },
+      "qualifiedFindings": 0
+    }
+  },
+  "browser": {
+    "expected": 582,
+    "skipped": 159,
+    "unexpected": 0,
+    "flaky": 0,
+    "requiredScenariosPerProject": 7,
+    "retries": []
+  },
+  "providerTouched": false,
+  "stagingTouched": false,
+  "releaseAccepted": false
+}
