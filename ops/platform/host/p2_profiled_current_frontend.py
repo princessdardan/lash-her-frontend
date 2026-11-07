@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import secrets
 import sys
+import time
 from pathlib import Path
 
 import frontend_probe
@@ -334,6 +336,22 @@ def matching_deployments(client, project_id, source_commit, release_id):
     raise ValueError("PROFILED_CURRENT_DEPLOYMENT_INVENTORY_REFUSED")
 
 
+def verify_current_workload(deployment, staged, private, project, workload, verify):
+    bypass = frontend_probe._automation_bypass(project)
+    challenge = secrets.token_hex(32)
+    verify()
+    observed = frontend_probe.ProbeClient().request(deployment["url"], private["secret"], bypass, challenge, mode="phase2")
+    verify()
+    demand(type(observed.get("version")) is int and observed["version"] == 1 and
+           observed.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS" and observed.get("challenge") == challenge and
+           observed.get("checks") == ["gateway-course-catalog-p2"] and observed.get("contractPhase") == "p2" and
+           observed.get("featureControls") == workload.get("featureControls") and
+           observed.get("writerAdmissionBinding") == workload.get("writerAdmissionBinding") and
+           observed.get("gatewayOrigin") == private.get("gatewayOrigin") and
+           all(observed.get(key) == staged[key] for key in ("environment", "projectId", "sourceCommit")) and
+           int(time.time() * 1000) < private["expiresAt"], "PROFILED_CURRENT_RECOVERY_LIVE_WORKLOAD_UNVERIFIED")
+
+
 def observe_recovery(initial, provider, verify=checkpoint):
     """GET-first recovery selected only by a source-owned broker carrier.
 
@@ -361,7 +379,7 @@ def observe_recovery(initial, provider, verify=checkpoint):
            alias.get("jobStatus") == "succeeded" and alias.get("type") == "promote" and
            alias.get("toDeploymentId") == staged["deploymentId"] and alias.get("requestedAt") > intent.get("previousAliasRequestedAt", 0),
            "PROFILED_CURRENT_RECOVERY_EFFECT_UNVERIFIED")
-    frontend_probe._private_input(private_directory(parent / "vercel-private"), staged, expected_profile=expected)
+    private = frontend_probe._private_input(private_directory(parent / "vercel-private"), staged, expected_profile=expected)
     raw = migrate.read_input(attempt, "frontend-workload-outcome.json")
     workload = migrate.read_json(attempt, "frontend-workload-outcome.json", expected_profile=expected)
     require_qualification_target_profile(expected, workload)
@@ -371,6 +389,7 @@ def observe_recovery(initial, provider, verify=checkpoint):
            frontend_probe.valid_writer_admission_binding(workload.get("writerAdmissionBinding")),
            "PROFILED_CURRENT_RECOVERY_WORKLOAD_UNVERIFIED")
     project = vercel._project(client, project_id)
+    verify_current_workload(deployment, staged, private, project, workload, verify)
     cron = project.get("crons") or {}
     demand((project.get("targets") or {}).get("production", {}).get("id") == staged["deploymentId"] and
            cron.get("deploymentId") == staged["deploymentId"] and cron.get("disabledAt") is not None,

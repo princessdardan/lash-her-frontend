@@ -99,8 +99,17 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                     "gitSource": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID, "sha": SOURCE},
                     "meta": {"lashReleaseId": "owned-release"}}], "pagination": {"count": 1, "next": None}}
 
-        project = {"targets": {"production": {"id": DEPLOYMENT}}, "crons": {"disabledAt": 1, "deploymentId": DEPLOYMENT,
+        project = {"targets": {"production": {"id": DEPLOYMENT}}, "protectionBypass": {"private-bypass": {"scope": "automation-bypass"}},
+            "crons": {"disabledAt": 1, "deploymentId": DEPLOYMENT,
             "definitions": [{"path": "/api/cron/account-lifecycle", "schedule": "* * * * *", "host": "owned.vercel.app"}]}}
+        class Probe:
+            def request(self, _url, _secret, _bypass, challenge, mode=None):
+                self.assert_mode = mode
+                return {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": challenge,
+                    "checks": ["gateway-course-catalog-p2"], "contractPhase": "p2",
+                    "featureControls": workload["featureControls"], "writerAdmissionBinding": workload["writerAdmissionBinding"],
+                    "gatewayOrigin": "https://api-staging.lashher.com", "environment": "staging", "projectId": PROJECT,
+                    "sourceCommit": SOURCE}
         with mock.patch.object(subject.vercel, "Client", Provider), \
              mock.patch.object(subject.vercel, "release_identity", return_value=("staging", PROJECT, SOURCE)), \
              mock.patch.object(subject.vercel, "_staged_identity", return_value=staged), \
@@ -108,7 +117,9 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
              mock.patch.object(subject.vercel, "promotion_state", return_value={"cronsEnabled": False, "productionDeploymentId": DEPLOYMENT,
                  "aliasJob": {"jobStatus": "succeeded", "type": "promote", "toDeploymentId": DEPLOYMENT, "requestedAt": 11}}), \
              mock.patch.object(subject.vercel, "_project", return_value=project), \
-             mock.patch.object(subject.frontend_probe, "_private_input", return_value={"expiresAt": int(time.time() * 1000) + 1_000}):
+             mock.patch.object(subject.frontend_probe, "_private_input", return_value={"expiresAt": int(time.time() * 1000) + 1_000,
+                 "secret": "private", "gatewayOrigin": "https://api-staging.lashher.com"}), \
+             mock.patch.object(subject.frontend_probe, "ProbeClient", Probe):
             result = subject.observe_recovery(initial, provider, lambda: None)
         self.assertEqual(result["observation"]["status"], "P2_PROFILED_CURRENT_FRONTEND_CURRENT")
         self.assertTrue(result["observation"]["originalEffectReconciled"])
