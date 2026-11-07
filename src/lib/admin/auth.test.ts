@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { withWriterOperationContext } from "@/lib/writer-admission/context";
 
 import type { AdminUserStore } from "./admin-user-store";
 import { createAdminAuth } from "./auth-service";
@@ -114,6 +115,39 @@ test("owner bootstrap is limited to verified allowlisted identities", async () =
     () => unverifiedAuth.requireActor(),
     "unverified_email",
   );
+});
+
+test("scoped authoring refreshes only the exact active owner with an established provider binding", async () => {
+  const selectedOwnerId = "8e2280dc-0389-4248-b21c-f87427f9e85c";
+  const owner = { ...employee, id: selectedOwnerId, role: "owner" as const };
+  const withinAuthoring = <T>(work: () => Promise<T>) =>
+    withWriterOperationContext(work, undefined, undefined, undefined, undefined, selectedOwnerId);
+  const cases = [
+    { rows: [owner], refreshes: 1 },
+    { rows: [{ ...owner, id: "wrong-owner" }], code: "forbidden" },
+    { rows: [{ ...owner, role: "admin" }], code: "forbidden" },
+    { rows: [{ ...owner, status: "disabled" }], code: "disabled" },
+    { rows: [{ ...owner, providerUserId: "pending:owner" }], code: "forbidden" },
+    { rows: [{ ...owner, email: "former@example.com", emailNormalized: "former@example.com" }], code: "forbidden" },
+    { rows: [], code: "forbidden" },
+  ] as const satisfies readonly { rows: readonly AdminUserRecord[]; code?: AdminAuthErrorCode; refreshes?: number }[];
+  for (const entry of cases) {
+    const store = createStore([...entry.rows]);
+    let refreshes = 0;
+    const auth = createAdminAuth({
+      getIdentity: async () => identity,
+      getOwnerEmails: () => new Set([identity.email]),
+      userStore: {
+        ...store,
+        async recordSignIn(input) { refreshes++; return store.recordSignIn(input); },
+        async bindIdentity() { assert.fail("scoped authoring cannot bind an admin identity"); },
+        async createBootstrapOwner() { assert.fail("scoped authoring cannot bootstrap an owner"); },
+      },
+    });
+    if ("code" in entry) await rejectsWithCode(() => withinAuthoring(() => auth.requireActor()), entry.code);
+    else assert.equal((await withinAuthoring(() => auth.requirePermission("courses:edit"))).user.id, selectedOwnerId);
+    assert.equal(refreshes, "refreshes" in entry ? entry.refreshes : 0);
+  }
 });
 
 function createStore(

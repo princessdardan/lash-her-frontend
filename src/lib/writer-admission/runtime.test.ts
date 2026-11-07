@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
+import { currentWriterAuthoringActorId, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -144,9 +144,6 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
     cookie.replace(customerIdentitySelector, selector("admin"))]) {
     assert.equal(attestInteractiveRequest({ ...google, cookie: invalid }, env, now), null);
   }
-  const authoring = { ...google, path: "/api/admin/courses" };
-  assert.ok(attestInteractiveRequest({ ...authoring, cookie: cookieFor("authoring") }, env, now));
-  assert.equal(attestInteractiveRequest({ ...authoring, cookie: cookieFor("authoring", selector("admin")) }, env, now), null);
   const paidCookie = cookieFor("paid-grant"), course = "10000000-0000-4000-8000-000000000001";
   const paid = { ...google, cookie: paidCookie, method: "POST", path: `/api/admin/courses/${course}/manual-grants` };
   assert.ok(attestInteractiveRequest(paid, env, now));
@@ -171,6 +168,58 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
   assert.equal(await outsideSelection, undefined);
   assert.equal(currentWriterIdentityCustomerId(), undefined);
   assert.equal(JSON.stringify(f.calls).includes(selectedCustomerId), false);
+});
+
+test("authoring binds an exact owner UUID to the draft route and clears it after admission", async () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const authoringActorId = "8e2280dc-0389-4248-b21c-f87427f9e85c";
+  const prefix = "7032712d617574686f72696e672d7631";
+  const issue = (stage: string, selector?: string) => {
+    const body = [selector ? "v2" : "v1", "12", stage, now, now + 120, "ab".repeat(16), ...(selector ? [selector] : [])].join(".");
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = issue("authoring", prefix + authoringActorId.replaceAll("-", ""));
+  const attest = (method: string, path: string, permit = cookie) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie: permit }, env, now);
+  const proof = attest("POST", "/api/admin/courses")!;
+  const verified = readInteractiveRequest(proof, cookie, env, now);
+  assert.equal(verified?.authoringActorId, authoringActorId);
+  assert.equal(verified?.identityCustomerId, undefined);
+  assert.equal(readInteractiveRequest(attest("GET", "/admin/courses")!, cookie, env, now)?.authoringActorId, authoringActorId);
+  assert.equal(readInteractiveRequest(proof, issue("authoring", prefix + "6" + authoringActorId.replaceAll("-", "").slice(1)), env, now), null);
+  for (const invalid of [issue("authoring"), issue("authoring", customerIdentitySelector), issue("authoring", prefix + "0".repeat(32))]) {
+    assert.equal(attest("POST", "/api/admin/courses", invalid), null);
+  }
+  const courseDetail = `/admin/courses/${authoringActorId}`;
+  for (const [method, path] of [["GET", courseDetail], ["GET", "/api/admin/courses"], ["POST", "/admin/courses"], ["PATCH", "/api" + courseDetail]]) {
+    assert.equal(attest(method, path), null);
+  }
+  assert.ok(attest("GET", courseDetail, issue("media")));
+  const wrongRoute = `${now}.${Buffer.from(`GET ${courseDetail}`).toString("base64url")}`;
+  const wrongMac = createHmac("sha256", env.CRON_SECRET)
+    .update(`lash-her:p2q:interactive:request:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${cookie}\n${wrongRoute}`).digest("hex");
+  assert.equal(readInteractiveRequest(`${wrongRoute}.${wrongMac}`, cookie, env, now), null);
+
+  const f = fixture();
+  f.state.epoch = "12";
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+    createClient: () => f.client,
+    getInteractiveWriter: async () => verified,
+  });
+  let observeAfterCompletion!: () => void;
+  let outsideSelection: Promise<string | undefined> | undefined;
+  await run("new-work", async () => {
+    assert.equal(currentWriterAuthoringActorId(), authoringActorId);
+    outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterAuthoringActorId);
+  });
+  observeAfterCompletion();
+  assert.equal(await outsideSelection, undefined);
+  assert.equal(currentWriterAuthoringActorId(), undefined);
+  assert.equal(JSON.stringify(f.calls).includes(authoringActorId), false);
 });
 
 test("interactive writer uses only its certified producer and refuses a changed ledger epoch before effects", async () => {

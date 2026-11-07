@@ -10,7 +10,7 @@ export type WriterOperationIdentity = Readonly<{
 export type WriterIdentityEnrollment = Readonly<{ provider: "google" | "resend"; nonce: string; emailDigest: string }>;
 const operationContext = new AsyncLocalStorage<{
   uncertain: boolean; identity?: WriterOperationIdentity; lifecycleSelectionSha256?: string; identityCustomerId?: string;
-  identityEnrollment?: WriterIdentityEnrollment;
+  identityEnrollment?: WriterIdentityEnrollment; authoringActorId?: string;
 }>();
 
 export function currentWriterOperationIdentity(): WriterOperationIdentity | undefined {
@@ -27,6 +27,10 @@ export function currentWriterIdentityCustomerId(): string | undefined {
 
 export function currentWriterIdentityEnrollment(): WriterIdentityEnrollment | undefined {
   return operationContext.getStore()?.identityEnrollment;
+}
+
+export function currentWriterAuthoringActorId(): string | undefined {
+  return operationContext.getStore()?.authoringActorId;
 }
 
 export function matchesWriterIdentityEnrollment(selection: WriterIdentityEnrollment, normalizedEmail: string): boolean {
@@ -49,9 +53,9 @@ export function assertWriterOperationCertain(): void {
 }
 
 export async function withWriterOperationContext<T>(task: () => Promise<T>, identity?: WriterOperationIdentity,
-  lifecycleSelectionSha256?: string, identityCustomerId?: string, identityEnrollment?: WriterIdentityEnrollment): Promise<T> {
+  lifecycleSelectionSha256?: string, identityCustomerId?: string, identityEnrollment?: WriterIdentityEnrollment, authoringActorId?: string): Promise<T> {
   const operation = { uncertain: false, identity: identity ? Object.freeze({ ...identity }) : undefined,
-    lifecycleSelectionSha256, identityCustomerId,
+    lifecycleSelectionSha256, identityCustomerId, authoringActorId,
     identityEnrollment: identityEnrollment ? Object.freeze({ ...identityEnrollment }) : undefined };
   return operationContext.run(operation, async () => {
     try {
@@ -62,6 +66,7 @@ export async function withWriterOperationContext<T>(task: () => Promise<T>, iden
       operation.lifecycleSelectionSha256 = undefined;
       operation.identityCustomerId = undefined;
       operation.identityEnrollment = undefined;
+      operation.authoringActorId = undefined;
     }
   });
 }

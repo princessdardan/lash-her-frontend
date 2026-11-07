@@ -89,6 +89,17 @@ const reviewedFirstIdentityDependencies = {
   "src/lib/customer-auth/handler.ts": "c73fcb0de69521e6bff7a1a1ffc6e57269cd6ce7423869b742f20fe20eae4dff",
   "src/lib/customer-auth/store.ts": "af6961f2961bf9cc2ecc63663d85e48f06fbf0d6d343767dcc1d7861437be942"
 };
+const reviewedAuthoringSource = {
+  ...reviewedFirstIdentitySource,
+  "src/lib/writer-admission/runtime.ts": "3709464c90ea99de3fc493920adb7a7e384840db5c2038166c0f9a007866bb75",
+  "src/lib/writer-admission/context.ts": "9f7df174f4d630dde83d7f7ed259910431b1a6a083d674936418c9e434c6274b"
+};
+const reviewedAuthoringDependencies = {
+  ...reviewedFirstIdentityDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "0417618605b72763acdf1b6f1a4287405d1793c0a5ea580fd577448aa7f9ac17",
+  "src/lib/admin/auth-service.ts": "9563bef87fe5eb0d7a9d4c329ed0ce5d2f748f617fbe5a423e3d79fca6f2661a",
+  "src/lib/api-integration/course-admin-handler.ts": "1ef72cf36cd0ef5bdc18706af734b378feec4f50a55f31deb8bc41ec68d57a38"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -110,10 +121,11 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
-  const customerPolicy = [[reviewedCustomerIdentitySource, reviewedCustomerIdentityDependencies],
-    [reviewedFirstIdentitySource, reviewedFirstIdentityDependencies]].find(([source]) => same(selected, source));
-  if (customerPolicy) {
-    const [, expected] = customerPolicy;
+  const browserPolicy = [[reviewedCustomerIdentitySource, reviewedCustomerIdentityDependencies],
+    [reviewedFirstIdentitySource, reviewedFirstIdentityDependencies],
+    [reviewedAuthoringSource, reviewedAuthoringDependencies]].find(([source]) => same(selected, source));
+  if (browserPolicy) {
+    const [, expected] = browserPolicy;
     const dependencies = Object.fromEntries(Object.keys(expected).map(file => [file, readSourceHash(file)]));
     demand(same(dependencies, expected));
     return { ...selected, ...dependencies };

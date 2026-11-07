@@ -80,6 +80,8 @@ initial=json.loads(sys.stdin.readline())
 plan=initial['certificationPlan'];binding=initial['interactiveController'];profile=initial['qualificationTargetProfile']
 action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpoch'])+1);behavior=sys.argv[1]
 enrollment=action.get('identityEnrollment')
+authoring=stage=='authoring';gateway_observation=None
+post_request='12345678-1234-4123-8123-000000000004'
 initial_time=int(time.time());expires=initial_time+120
 def iso(seconds):return datetime.fromtimestamp(seconds,timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -102,11 +104,15 @@ for raw in sys.stdin:
    value['receipt']={**base,'status':status('PREPARED'),'ingressSha256':'d'*64}
   elif op=='interactive-open':
    assert phase=='prepared';phase='opened'
-   value['receipt']={**base,'status':status('OPENED'),'epoch':epoch,'expiresAt':iso(expires),'gatewayScoped':False}
+   value['receipt']={**base,'status':status('OPENED'),'epoch':epoch,'expiresAt':iso(expires),'gatewayScoped':authoring}
   elif op=='interactive-permit':
    assert phase=='opened';phase='issued'
    selector='f'*64;nonce='e'*32
-   if enrollment:
+   if authoring:
+    owner_id=action['actorId']
+    if behavior=='wrong-owner':owner_id='12345678-1234-4123-8123-000000000002'
+    selector='7032712d617574686f72696e672d7631'+owner_id.replace('-','')
+   elif enrollment:
     provider=enrollment['provider'];nonce=enrollment['nonce'];email_digest=enrollment['emailSha256']
     if behavior=='wrong-nonce':nonce='8'+nonce[1:]
     if behavior=='wrong-provider':provider='resend' if provider=='google' else 'google'
@@ -120,15 +126,38 @@ for raw in sys.stdin:
      selector='7032712d637573746f6d65722d763100'+customer_id.replace('-','')
      if behavior=='wrong-kind':selector=digest(['identity','admin'])
     else:selector=digest(['identity','admin'])
-   cookie='.'.join(('v2',epoch,stage,str(initial_time),str(expires),nonce,selector,'a'*64))
+   version='v1' if behavior=='legacy-permit' else 'v2'
+   cookie='.'.join((version,epoch,stage,str(initial_time),str(expires),nonce,*(() if version=='v1' else (selector,)),'a'*64))
    value.update(status='CERTIFICATION_INTERACTIVE_PRIVATE',permit={'stage':stage,'epoch':epoch,'expires':expires,'cookie':cookie})
+  elif op=='interactive-observe':
+   assert authoring and phase=='issued';phase='observed'
+   if behavior=='observe-refused':
+    value['receipt']={**base,'status':status('GATEWAY_OBSERVATION_REFUSED')}
+   else:
+    acks=[
+     {'requestId':'12345678-1234-4123-8123-000000000011','proofRequestId':'12345678-1234-4123-8123-000000000013','requestIndex':0,'upstreamStatus':200},
+     {'requestId':post_request,'proofRequestId':'12345678-1234-4123-8123-000000000012','requestIndex':1,'upstreamStatus':201},
+    ]
+    if behavior=='wrong-observe-ack':acks[1]['upstreamStatus']=200
+    gateway_observation={**base,'status':status('GATEWAY_OBSERVED'),'epoch':epoch,'gatewayStateSha256':'4'*64,
+     'gatewayAcknowledgements':acks,'gatewayActive':0,'gatewayUncertain':0}
+    gateway_observation['gatewayEvidenceSha256']='0'*64 if behavior=='wrong-observe-hash' else digest(gateway_observation)
+    value['receipt']=gateway_observation
   elif op=='interactive-fence':
-   assert phase in ('opened','issued');phase='fenced'
+   assert phase in ('opened','issued','observed');phase='fenced'
    value['receipt']={**base,**fence,'status':status('FENCED')}
   elif op=='interactive-retain':
    assert phase=='fenced';phase='retained'
    evidence=p['caseEvidence']
-   if stage=='identity':
+   if authoring:
+    assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
+    response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
+    assert response['requestId']==post_request and witness=={**body,'readOnly':True}
+    joined={'actorId':action['actorId'],'operation':'create-draft','courseId':body['courseId'],'slug':body['slug'],
+     'browserResponseSha256':digest(response),'courseWitnessSha256':digest(witness),
+     'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256'],'gatewayPostRequestId':post_request}
+    if behavior=='wrong-join':joined['gatewayPostRequestId']='12345678-1234-4123-8123-000000000011'
+   elif stage=='identity':
     actor={'actorKind':'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment else action['identityActor']
     assert set(evidence)=={'browserIdentity','identityWitness'}
     assert evidence['browserIdentity']=={**actor,'sessionVerified':True}
@@ -164,6 +193,7 @@ for raw in sys.stdin:
 
 const interactiveHarness=String.raw`
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {mock} from 'node:test';
 import * as childProcess from 'node:child_process';
 import {readFileSync,writeFileSync,existsSync} from 'node:fs';
@@ -175,16 +205,24 @@ const sourceCommit='a'.repeat(40),planSha256='c'.repeat(64),actionId='interactiv
 const actor='12345678-1234-4123-8123-000000000001',target='12345678-1234-4123-8123-000000000002';
 const commandId='12345678-1234-4123-8123-000000000003',requestId='12345678-1234-4123-8123-000000000004';
 const {certificationStage,actorKind,behavior,provider}=fixture;
-const identity=certificationStage==='identity',context=actorKind==='admin'?'owner':'learner';
+const identity=certificationStage==='identity',authoring=certificationStage==='authoring';
+const context=actorKind==='admin'?'owner':'learner';
 const status=disposition=>'P2_INTERACTIVE_'+certificationStage.toUpperCase()+'_'+disposition;
-const refusedSelector=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider','wrong-email'].includes(behavior);
-const installFailure=behavior==='install-failure'||refusedSelector;
+const refusedPermit=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider','wrong-email','wrong-owner','legacy-permit'].includes(behavior);
+const installFailure=behavior==='install-failure'||refusedPermit;
+const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack'].includes(behavior);
+const skipObserve=behavior==='fence-without-observe';
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor};
 const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'.repeat(32)}:null;
 const observedActor=identityEnrollment?{actorKind:'customer',actorId:'12345678-1234-4123-8123-000000000005'}:identityActor;
-const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests:[],windowSeconds:120,
-  ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:{frontendAction:selection})};
+const authoringAction={operation:'create-draft',slug:'p2q-course-draft'};
+const requests=authoring?[
+  {method:'GET',target:'/course/v1/admin/courses?limit=100',bodySha256:createHash('sha256').digest('hex'),uses:1},
+  {method:'POST',target:'/course/v1/admin/courses',bodySha256:'8'.repeat(64),uses:1},
+]:[];
+const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests,windowSeconds:120,
+  ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:{frontendAction:selection})};
 const plan={mode:'interactive-browser',version:2,environment:'staging',qualificationTargetProfile:profile,certificationActionId:actionId,
   initialEpoch:'7',maximumSeconds:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
   nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},
@@ -234,6 +272,14 @@ for(const changed of [
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,provider:'github'}}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,emailSha256:'6'.repeat(62)}}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,nonce:'9'.repeat(31)}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,emailSha256:'0'.repeat(64)}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,nonce:'0'.repeat(32)}}}},
+ ]:[]),
+ ...(authoring?[
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[...requests].reverse()}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],{...requests[1],uses:2}]}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],{...requests[1],bodySha256:requests[0].bodySha256}]}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,slug:'invalid/slug'}}}},
  ]:[]),
 ]) assert.throws(()=>start(changed),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
 assert.equal(starts,0);
@@ -245,11 +291,15 @@ const witness={version:1,status:'P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED',actorId
  baselineSha256:'3'.repeat(64),frontendStatus:'suspended',accountVersion:2,sessionsBefore:1,sessionsAfter:0,learningUpdates:false,commandId,
  deliveries:['course','community'].map(receiver=>({receiver,status:'pending',attempts:0})),pendingOrDeliveringCount:2,
  observedAt:new Date().toISOString(),readOnly:true};
-const evidence=identity?{browserIdentity:{...observedActor,sessionVerified:true},
+const draft={courseId:commandId,slug:authoringAction.slug,revision:1,status:'draft'};
+const evidence=authoring?{browserResponse:{method:'POST',pathname:'/api/admin/courses',status:200,requestId,body:draft},
+ courseWitness:{...draft,readOnly:true}}
+ :identity?{browserIdentity:{...observedActor,sessionVerified:true},
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
   ...(identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
-const invalidEvidence=identity?{...evidence,identityWitness:{...evidence.identityWitness,actorId:target}}
+const invalidEvidence=authoring?{...evidence,browserResponse:{...evidence.browserResponse,requestId:target}}
+ :identity?{...evidence,identityWitness:{...evidence.identityWitness,actorId:target}}
  :{...evidence,browserResponse:{...response,unexpected:'fixture-forbidden'}};
 let handle;
 const result=start()(async(_verify,_signal,host)=>{
@@ -259,6 +309,8 @@ const result=start()(async(_verify,_signal,host)=>{
  assert.deepEqual(Object.keys(handle),[]);
  assert.throws(()=>readP2CertificationInteractiveStage(handle,{...plan}));
  const stage=readP2CertificationInteractiveStage(handle,plan);
+ if(authoring) await assert.rejects(stage.observe());
+ else assert.equal(stage.observe,undefined);
  await assert.rejects(host.interactiveStage(browser));
  await assert.rejects(host.gatewayStage('browser'));
  await assert.rejects(host.nativeControl.setEnabled(plan.nativePlan,true));
@@ -279,9 +331,27 @@ const result=start()(async(_verify,_signal,host)=>{
  assert.equal(ack.context,context);
  await assert.rejects(stage.installPermit());
  await assert.rejects(stage.retain(evidence));
+ if(authoring&&!skipObserve){
+  if(observeFailure) await assert.rejects(stage.observe(),{message:'P2_CERTIFICATION_INTERACTIVE_AUTHORING_OBSERVE_FAILED'});
+  else {
+   const observed=await stage.observe();
+   assert.equal(observed.status,status('GATEWAY_OBSERVED'));
+   assert.equal(observed.gatewayAcknowledgements[1].requestId,requestId);
+   observed.gatewayAcknowledgements[1].requestId=target;
+  }
+  await assert.rejects(stage.observe());
+ }
  assert.deepEqual(await stage.fence(),fenced);
  await assert.rejects(stage.fence());
+ if(observeFailure||skipObserve){
+  await assert.rejects(stage.retain(evidence));
+  throw new Error('fixture-stop-after-fence');
+ }
  await assert.rejects(stage.retain(invalidEvidence));
+ if(authoring){
+  await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,revision:2}}));
+  await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
+ }
  if(identityEnrollment){
   for(const changed of [
    {provider:provider==='google'?'resend':'google'},
@@ -296,6 +366,10 @@ const result=start()(async(_verify,_signal,host)=>{
  }
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
+ if(authoring){
+  assert.equal(retained.gatewayPostRequestId,requestId);
+  assert.equal(retained.courseId,draft.courseId);
+ }
  if(identity){
   assert.equal(retained.context,context);
   assert.equal(retained.actorId,observedActor.actorId);
@@ -312,12 +386,13 @@ if(behavior!=='joined'){
  assert.equal(await result,'fixture-joined');
  assert.deepEqual(JSON.parse(readFileSync(join(directory,'p2-host-certification-outcome.json'))),outcome);
 }
-assert.equal(starts,1);assert.equal(installCount,refusedSelector?0:1);
+assert.equal(starts,1);assert.equal(installCount,refusedPermit?0:1);
 if(privatePacket) assert.ok(!Object.hasOwn(privatePacket,'cookie'));
 assert.throws(()=>readP2CertificationInteractiveStage(handle,plan));
 assert.deepEqual(writes.filter(row=>row.operation?.startsWith('interactive-')).map(row=>row.operation),
- ['interactive-prepare','interactive-open','interactive-permit','interactive-fence',...(installFailure?[]:['interactive-retain'])]);
-assert.ok(!JSON.stringify(writes).includes('v2.8.')&&!JSON.stringify(writes).includes('fixture-forbidden'));
+ ['interactive-prepare','interactive-open','interactive-permit',...(authoring&&!installFailure&&!skipObserve?['interactive-observe']:[]),
+  'interactive-fence',...(installFailure||observeFailure||skipObserve?[]:['interactive-retain'])]);
+assert.ok(!/v[12]\.8\.|fixture-forbidden/u.test(JSON.stringify(writes)));
 `;
 
 for(const [certificationStage,actorKind,behavior,provider] of [
@@ -334,6 +409,14 @@ for(const [certificationStage,actorKind,behavior,provider] of [
  ['identity','customer','wrong-provider','resend'],
  ['identity','customer','wrong-email','resend'],
  ['identity','customer','wrong-join','google'],
+ ['authoring','admin','joined'],
+ ['authoring','admin','wrong-owner'],
+ ['authoring','admin','legacy-permit'],
+ ['authoring','admin','fence-without-observe'],
+ ['authoring','admin','observe-refused'],
+ ['authoring','admin','wrong-observe-hash'],
+ ['authoring','admin','wrong-observe-ack'],
+ ['authoring','admin','wrong-join'],
 ]){
  test(`fixed interactive transport handles ${certificationStage} ${provider??actorKind} ${behavior} over the guarded pipe`,()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-interactive-wire-')));chmodSync(directory,0o700);

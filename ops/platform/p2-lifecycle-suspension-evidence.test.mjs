@@ -12,7 +12,8 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
-  validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2AuthoringMutationReceipt, validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt,
+  watchP2AuthoringMutation, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -200,6 +201,12 @@ function interactiveInput(overrides = {}) {
   return value;
 }
 const identityHash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const ownedDraft = { title: "Owned draft title", slug: "owned-draft", description: "Owned draft text", introduction: null,
+  currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null, status: "draft" };
+const ownedAuthoring = { actorId: adminId, slug: ownedDraft.slug, bodySha256: identityHash(ownedDraft) };
+const authoringSelector = actorId => "7032712d617574686f72696e672d7631" + actorId.replaceAll("-", "");
+const ownedCourseId = randomUUID();
+const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
 const customerIdentitySelector = "7032712d637573746f6d65722d763100" + userId.replaceAll("-", "");
 const enrollmentEmail = "owned-new-customer@example.invalid", enrollmentId = randomUUID();
 function ownedEnrollment(provider) {
@@ -213,6 +220,7 @@ function interactivePermit(input) {
   if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
+  else if (input.stage === "authoring") selector = authoringSelector(input.authoring.actorId);
   const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
@@ -282,6 +290,30 @@ function interactiveChild() {
   const close = async () => { clearTimeout(timer); if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL"); await exited; };
   return { child, records, output, exited, command, close };
 }
+
+test("authoring input and receipt bind the selected draft slug, revision and canonical course ID", () => {
+  const input = interactiveInput({ stage: "authoring", authoring: ownedAuthoring });
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  const permit = interactivePermit(input), parts = permit.cookie.split(".");
+  assert.equal(parts[6], authoringSelector(adminId));
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit({ ...input, authoring: { ...ownedAuthoring, actorId: randomUUID() } }), input));
+  parts[0] = "v1";
+  parts.splice(6, 1);
+  assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+  assert.equal(p2InteractiveBrowserPath("authoring", "owner"), "/admin/courses");
+  assert.throws(() => p2InteractiveBrowserPath("authoring", "learner"));
+  for (const authoring of [{ ...ownedAuthoring, slug: "Unreviewed" }, { ...ownedAuthoring, bodySha256: "0" },
+    { ...ownedAuthoring, actorId: "wrong-id" }, { ...ownedAuthoring, title: "Extra" }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring }));
+  }
+  const receipt = { method: "POST", pathname: "/api/admin/courses", status: 200, requestId: randomUUID(),
+    body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 1, status: "draft" } };
+  assert.deepEqual(validateP2AuthoringMutationReceipt(receipt, ownedAuthoring), receipt);
+  for (const change of [{ slug: "foreign-draft" }, { revision: 2 }, { status: "published" }, { courseId: "wrong-id" }, { title: "Private" }]) {
+    assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, body: { ...receipt.body, ...change } }, ownedAuthoring));
+  }
+});
 
 test("actual interactive child refuses secret-bearing IPC before browser launch and emits only a generic failure", async () => {
   const input = interactiveInput(), permit = interactivePermit(input), runner = interactiveChild();
@@ -391,6 +423,22 @@ test("identity session refuses wrong or expired identity and waits for a newly a
 });
 
 const ownedInteractiveBrowser = process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST === "true";
+test("owned Chromium child refuses an authoring phase after clearing an unverified owner identity",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const first = interactiveInput(), permit = interactivePermit(first), runner = interactiveChild();
+    const selection = { context: "owner", expires: permit.expires };
+    const next = interactiveInput({ stage: "authoring", authoring: ownedAuthoring, epoch: "11", actionId: "owned-authoring", bindingSha256: "d".repeat(64) });
+    try {
+      assert.equal((await runner.command("initialize-interactive", first)).type, "interactive-initialized");
+      assert.equal((await runner.command("interactive-install", { ...binding(first), ...selection }, privateFrame(first, selection.context, permit))).type,
+        "interactive-permit-installed");
+      assert.equal((await runner.command("interactive-clear", { ...binding(first), ...selection })).type, "interactive-permit-cleared");
+      assert.deepEqual(await runner.command("interactive-select", { ...binding(first), next }), { type: "failed" });
+      assert.deepEqual(await runner.exited, [1, null]);
+      assert.deepEqual(runner.output, []);
+    } finally { await runner.close(); }
+  });
+
 test("owned Chromium child refuses phase selection into or out of first enrollment",
   { skip: !ownedInteractiveBrowser }, async () => {
     const enrollment = interactiveInput({ identityEnrollment: ownedEnrollment("google") });
@@ -411,10 +459,10 @@ test("owned Chromium child refuses phase selection into or out of first enrollme
     }
   });
 
-test("owned Chromium observes a new customer and keeps the reviewed known session through lifecycle permit rotation",
+test("owned Chromium observes a new customer and keeps reviewed sessions through lifecycle and authoring permit rotation",
   { skip: !ownedInteractiveBrowser, timeout: 15_000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "owned-p2-identity-tls-"));
-    const sockets = new Set(), hits = [], lifecycleRequestId = randomUUID();
+    const sockets = new Set(), hits = [], lifecycleRequestId = randomUUID(), authoringRequestId = randomUUID();
     const lifecycle = p2LifecycleMutationTarget({ actorKind: "customer", userId, operation: "preferences-on" });
     const enrollment = ownedEnrollment("resend"), enrollmentSelector = "a2" + enrollment.emailSha256.slice(0, 62);
     const bind = async server => {
@@ -438,6 +486,7 @@ test("owned Chromium observes a new customer and keeps the reviewed known sessio
         const customerPermit = cookies.includes("__Host-lash-p2q-window=v2.9.identity.") && cookies.includes("." + customerIdentitySelector + ".");
         const enrollmentPermit = cookies.includes("__Host-lash-p2q-window=v2.9.identity.") && cookies.includes("." + enrollment.nonce + "." + enrollmentSelector + ".");
         const lifecyclePermit = cookies.includes("__Host-lash-p2q-window=v2.11.lifecycle.");
+        const authoringPermit = cookies.includes("__Host-lash-p2q-window=v2.11.authoring.") && cookies.includes("." + authoringSelector(adminId) + ".");
         if (request.method === "GET" && ["/sign-in", "/admin/sign-in"].includes(request.url)) {
           response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><main>Owned identity</main>
             <form method="POST" action="/api/customer-auth/signin/resend"><button>Sign in</button></form>`);
@@ -465,6 +514,28 @@ test("owned Chromium observes a new customer and keeps the reviewed known sessio
           const body = '{"saved":true}';
           response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-store",
             "content-length": Buffer.byteLength(body), "x-request-id": lifecycleRequestId }).end(body);
+          return;
+        }
+        if (request.method === "GET" && request.url === "/admin/courses" && ownerCookie && !customerCookie && !enrollmentCookie && authoringPermit) {
+          response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><form>
+            <label>Title<input name="title"></label><label>Slug<input name="slug"></label><button>Create draft</button></form><script>
+            document.querySelector("form").onsubmit = async event => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget), draft = ${JSON.stringify(ownedDraft)};
+              const result = await fetch("/api/admin/courses", {
+                method: "POST", headers: { "content-type": "application/json", "x-lash-csrf": "1" },
+                body: JSON.stringify({ ...draft, title: form.get("title"), slug: form.get("slug") })
+              });
+              const { course } = await result.json();
+              history.pushState(null, "", "/admin/courses/" + course.id);
+            };</script>`);
+          return;
+        }
+        if (request.method === "POST" && request.url === "/api/admin/courses" && ownerCookie && !customerCookie && !enrollmentCookie && authoringPermit) {
+          request.resume();
+          const body = JSON.stringify(ownedDraftResponse);
+          response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-store",
+            "content-length": Buffer.byteLength(body), "x-request-id": authoringRequestId }).end(body);
           return;
         }
         const owner = request.url === "/api/auth/session", customer = request.url === "/api/customer-auth/session";
@@ -519,6 +590,26 @@ test("owned Chromium observes a new customer and keeps the reviewed known sessio
             { ...(input.identity ?? { actorKind: "customer", actorId: enrollmentId }), sessionVerified: true });
           await expireP2InteractiveBrowserCookie(owned);
           await page.close();
+          if (context === "owner") {
+            assert.deepEqual((await owned.cookies([input.browserOrigin])).map(cookie => cookie.name), ["owned-owner"]);
+            const next = interactiveInput({ stage: "authoring", authoring: ownedAuthoring, epoch: "11",
+              actionId: "owned-authoring", bindingSha256: "d".repeat(64) });
+            const nextPermit = interactivePermit(next);
+            await installP2InteractiveBrowserCookie(owned, nextPermit, next);
+            const authoring = await owned.newPage(), watch = watchP2AuthoringMutation(owned, authoring, next);
+            try {
+              await authoring.goto(input.browserOrigin + "/admin/courses");
+              await authoring.getByLabel("Title").fill(ownedDraft.title);
+              await authoring.getByLabel("Slug").fill(ownedDraft.slug);
+              await authoring.getByRole("button", { name: "Create draft" }).click();
+              await watch.wait(Math.min(nextPermit.expires, Math.floor(Date.now() / 1000) + 5));
+              await authoring.waitForURL(input.browserOrigin + "/admin/courses/" + ownedCourseId);
+              await expireP2InteractiveBrowserCookie(owned);
+              await authoring.close();
+              assert.deepEqual(watch.finish(), { method: "POST", pathname: "/api/admin/courses", status: 200, requestId: authoringRequestId,
+                body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 1, status: "draft" } });
+            } finally { watch.close(); }
+          }
           if (context === "learner" && !input.identityEnrollment) {
             assert.deepEqual((await owned.cookies([input.browserOrigin])).map(cookie => cookie.name), ["owned-customer"]);
             const next = interactiveInput({ stage: "lifecycle", lifecycle, epoch: "11", actionId: "owned-lifecycle", bindingSha256: "d".repeat(64) });
@@ -616,20 +707,20 @@ test("lifecycle response requires the reviewed path, method, action and exact st
   }
 });
 
-async function ownedLifecyclePage(browser, lifecycle, response, document = "<!doctype html><main>Owned fixture</main>") {
-  const input = interactiveInput({ stage: "lifecycle", lifecycle }), context = await browser.newContext();
+async function ownedMutationPage(browser, input, pathname, contextName, response, watchMutation, document = "<!doctype html><main>Owned fixture</main>") {
+  const context = await browser.newContext();
   await context.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url());
     if (request.method() === "GET") return route.fulfill({ status: 200, contentType: "text/html", body: document });
     if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*",
       "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type" } });
-    if (url.origin !== input.browserOrigin || url.pathname !== lifecycle.pathname) return route.fulfill({
+    if (url.origin !== input.browserOrigin || url.pathname !== pathname) return route.fulfill({
       status: 200, headers: { "access-control-allow-origin": "*" }, body: "owned unrelated response",
     });
     return route.fulfill(response);
   });
-  const page = await context.newPage(), watch = watchP2LifecycleMutation(context, page, input);
-  await page.goto(input.browserOrigin + p2InteractiveBrowserPath(input.stage, lifecycle.context));
+  const page = await context.newPage(), watch = watchMutation(context, page, input);
+  await page.goto(input.browserOrigin + p2InteractiveBrowserPath(input.stage, contextName));
   const post = (target, body) => page.evaluate(async ({ target, body }) => {
     const result = await fetch(target, { method: "POST", redirect: "manual", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     await result.arrayBuffer();
@@ -637,6 +728,54 @@ async function ownedLifecyclePage(browser, lifecycle, response, document = "<!do
   const close = async () => { watch.close(); await context.close(); };
   return { input, page, watch, post, close, expires: Math.floor(Date.now() / 1000) + 60 };
 }
+
+function ownedLifecyclePage(browser, lifecycle, response, document) {
+  return ownedMutationPage(browser, interactiveInput({ stage: "lifecycle", lifecycle }), lifecycle.pathname, lifecycle.context,
+    response, watchP2LifecycleMutation, document);
+}
+
+test("owned Chromium authoring watcher refuses digest changes, mismatched draft responses and duplicate success",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch(), input = interactiveInput({ stage: "authoring", authoring: ownedAuthoring });
+    const pathname = "/api/admin/courses", requestId = randomUUID();
+    const headers = { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId };
+    const response = { status: 200, headers, body: JSON.stringify(ownedDraftResponse) };
+    const open = result => ownedMutationPage(browser, input, pathname, "owner", result, watchP2AuthoringMutation);
+    try {
+      const owner = await open(response);
+      try {
+        await owner.post(pathname, ownedDraft);
+        await owner.watch.wait(owner.expires);
+        const receipt = owner.watch.finish();
+        assert.deepEqual(receipt, { method: "POST", pathname, status: 200, requestId,
+          body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 1, status: "draft" } });
+        assert.equal(JSON.stringify(receipt).includes(ownedDraft.title), false);
+        await owner.post(pathname, ownedDraft);
+        assert.throws(() => owner.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+      } finally { await owner.close(); }
+      const { title, ...fields } = ownedDraft;
+      for (const [result, payload] of [
+        [response, { ...fields, title }],
+        [{ ...response, status: 503 }, ownedDraft],
+        [{ ...response, body: JSON.stringify({ course: { ...ownedDraftResponse.course, slug: "wrong-draft" } }) }, ownedDraft],
+        [{ ...response, body: JSON.stringify({ course: { ...ownedDraftResponse.course, revision: 2 } }) }, ownedDraft],
+      ]) {
+        const rejected = await open(result);
+        try {
+          await rejected.post(pathname, payload);
+          await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+      const foreignPage = await open(response);
+      try {
+        await foreignPage.page.goto(input.browserOrigin + "/admin/other");
+        await foreignPage.post(pathname, ownedDraft);
+        await assert.rejects(foreignPage.watch.wait(foreignPage.expires), /AUTHORING_RESPONSE_REFUSED/u);
+      } finally { await foreignPage.close(); }
+    } finally { await browser.close(); }
+  });
 
 test("owned Chromium lifecycle watcher captures only selected command and preference responses",
   { skip: !ownedInteractiveBrowser }, async () => {

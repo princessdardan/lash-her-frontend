@@ -14,7 +14,8 @@ const PROFILES = Object.freeze({ "capture-export-ready": "export-ready-v1", "cap
 const sha = value => createHash("sha256").update(typeof value === "string" || Buffer.isBuffer(value) ? value : canonical(value)).digest("hex");
 const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
   ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a.localeCompare(b))) : child);
-const closed = (value, fields) => Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join() === [...fields].sort().join());
+const closed = (value, fields) => Boolean(value && typeof value === "object" && !Array.isArray(value)
+  && Object.keys(value).length === fields.length && fields.every(key => Object.hasOwn(value, key)));
 export class P2LifecyclePersistenceError extends Error { constructor(check) { super("P2_LIFECYCLE_PERSISTENCE_REFUSED"); this.check = check; } }
 const demand = (condition, check) => { if (!condition) throw new P2LifecyclePersistenceError(check); };
 const hasProfile = value => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
@@ -101,6 +102,16 @@ const SQL = Object.freeze({
   }),
   course: Object.freeze({
     identity: "SELECT current_database() AS database,current_user AS role,current_user::regrole::oid::text AS role_oid,(current_setting('server_version_num')::int/10000)::int AS major,current_setting('transaction_read_only') AS read_only",
+    draftIdentity: `SELECT pg_catalog.current_database() AS database,current_user AS role,session_user AS session_role,
+      current_user::regrole::oid::text AS role_oid,(pg_catalog.current_setting('server_version_num')::int/10000)::int AS major,
+      pg_catalog.current_setting('transaction_read_only') AS read_only`,
+    draftAbsent: "SELECT NOT EXISTS(SELECT 1 FROM public.courses WHERE slug=$1::text) AS absent",
+    draft: `SELECT id::text AS course_id,slug,revision,status,
+      (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
+        AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
+        AND cover IS NOT DISTINCT FROM $8::jsonb AND seo IS NOT DISTINCT FROM $9::jsonb
+        AND tax_classification IS NOT DISTINCT FROM $10::text) AS fields_match
+      FROM public.courses WHERE slug=$1::text`,
     account: "SELECT user_id::text,status,account_version::text,updated_at FROM account_lifecycle_states WHERE user_id=$1::uuid",
     command: "SELECT command_id::text,user_id::text,account_version::text,action,canonical_digest,issued_at,accepted_at FROM account_lifecycle_commands WHERE command_id=$1::uuid AND user_id=$2::uuid",
     commands: "SELECT command_id::text,account_version::text,action,canonical_digest,issued_at,accepted_at FROM account_lifecycle_commands WHERE user_id=$1::uuid ORDER BY account_version",
@@ -133,6 +144,12 @@ async function read(client, service, name, values = []) {
   return (await client.query(statement, values)).rows;
 }
 
+function requireReadOnlyDatabaseIdentity(identity, target, role, roleOid) {
+  demand(identity?.database === target.database && identity.role === role
+    && (roleOid === undefined || identity.role_oid === roleOid)
+    && Number(identity.major) === target.serverMajor && identity.read_only === "on", "database-identity");
+}
+
 export async function observePersistenceDomain(service, input, target, client, expectedProfile = undefined) {
   const profile = profileContext(expectedProfile, target);
   demand(["frontend", "course", "community"].includes(service), "service"); validatePersistenceWitnessInput(input, input.stage); validateTarget(service, target, profile);
@@ -141,8 +158,7 @@ export async function observePersistenceDomain(service, input, target, client, e
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); begun = true;
     await client.query("SET LOCAL statement_timeout='10s'");
     const identity = (await read(client, service, "identity"))[0];
-    demand(identity?.database === target.database && identity.role === target.runtimeRole && identity.role_oid === target.runtimeRoleOid
-      && Number(identity.major) === target.serverMajor && identity.read_only === "on", "database-identity");
+    requireReadOnlyDatabaseIdentity(identity, target, target.runtimeRole, target.runtimeRoleOid);
     const selectedCommand = input.stage === "lifecycle-account" ? input.selectedCommand : input.stage === "verify-delete" ? input.deleteCommand : input.exportCommand;
     const user = input.userId;
     const account = await read(client, service, "account", [user]);
@@ -326,16 +342,139 @@ export function qualifyPersistenceStage(input, observations, witness, priorWitne
     providerTouched: false, releaseAccepted: false };
 }
 
-async function clientFromInput(input) {
-  const connectionUrl = input.connectionUrl ?? process.env.STAGING_DATABASE_URL;
+function privateReadOnlyOptions(connectionUrl, target, role, ca) {
   demand(typeof connectionUrl === "string", "private-database-credential");
-  const url = new URL(connectionUrl); demand(["postgres:", "postgresql:"].includes(url.protocol) && url.hostname === input.target.host && Number(url.port || 5432) === input.target.port
-    && decodeURIComponent(url.pathname) === `/${input.target.database}` && decodeURIComponent(url.username) === input.target.runtimeRole && url.password && url.search === "?sslmode=verify-full", "credential-target");
+  const url = new URL(connectionUrl); demand(["postgres:", "postgresql:"].includes(url.protocol) && url.hostname === target.host && Number(url.port || 5432) === target.port
+    && decodeURIComponent(url.pathname) === `/${target.database}` && decodeURIComponent(url.username) === role && url.password && url.search === "?sslmode=verify-full" && !url.hash, "credential-target");
+  return { host: target.host, port: target.port, database: target.database, user: role, password: decodeURIComponent(url.password),
+    ssl: { rejectUnauthorized: true, servername: target.host, ...(ca === undefined ? {} : { ca }) }, enableChannelBinding: true,
+    connectionTimeoutMillis: 10_000, options: "-c default_transaction_read_only=on -c search_path=pg_catalog,public -c statement_timeout=10000" };
+}
+
+async function clientFromInput(input) {
+  const options = privateReadOnlyOptions(input.connectionUrl ?? process.env.STAGING_DATABASE_URL, input.target, input.target.runtimeRole, rootCertificates);
   const pgModule = await import("/app/node_modules/pg/esm/index.mjs");
-  const client = new pgModule.Client({ host: input.target.host, port: input.target.port, database: input.target.database, user: input.target.runtimeRole,
-    password: decodeURIComponent(url.password), ssl: { rejectUnauthorized: true, servername: input.target.host, ca: rootCertificates }, enableChannelBinding: true,
-    connectionTimeoutMillis: 10_000, options: "-c default_transaction_read_only=on -c search_path=pg_catalog,public -c statement_timeout=10000" });
+  const client = new pgModule.Client(options);
   delete input.connectionUrl; return client;
+}
+
+const draftBaselines = new WeakMap();
+const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
+const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
+const draftText = (value, maximum) => typeof value === "string" && value.length > 0 && value.length <= maximum && value === value.trim() && !value.includes("\0");
+const draftCover = value => {
+  if (value === null) return true;
+  if (!orderedDraftFields(value, ["url", "alt"]) || !draftText(value.url, 2048) || !draftText(value.alt, 500) || /[\u0000-\u0020\\]/u.test(value.url)) return false;
+  try { const url = new URL(value.url); return url.protocol === "https:" && !url.username && !url.password; }
+  catch { return false; }
+};
+
+export function validateP2InteractiveCourseDraft(selection, draft) {
+  demand(closed(selection, ["slug", "bodySha256"]) && draftSlug(selection.slug)
+    && typeof selection.bodySha256 === "string" && SHA.test(selection.bodySha256), "course-draft-selection");
+  let raw;
+  try { raw = JSON.stringify(draft); } catch { throw new P2LifecyclePersistenceError("course-draft-body"); }
+  demand(typeof raw === "string" && Buffer.byteLength(raw) <= 1_048_576 && sha(raw) === selection.bodySha256, "course-draft-body-hash");
+  const body = JSON.parse(raw);
+  demand(orderedDraftFields(body, ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification", "status"])
+    && body.slug === selection.slug && body.status === "draft" && draftText(body.title, 300)
+    && [body.description, body.introduction].every(value => value === null || draftText(value, 100_000))
+    && body.currency === "CAD" && ["free", "paid"].includes(body.accessMode) && Number.isInteger(body.priceCents)
+    && body.priceCents <= 2_147_483_647 && (body.accessMode === "free" ? body.priceCents === 0 : body.priceCents > 0)
+    && draftCover(body.cover)
+    && orderedDraftFields(body.seo, [...["title", "description"].filter(key => body.seo && Object.hasOwn(body.seo, key)), "noIndex"])
+    && typeof body.seo.noIndex === "boolean" && (!Object.hasOwn(body.seo, "title") || draftText(body.seo.title, 200))
+    && (!Object.hasOwn(body.seo, "description") || draftText(body.seo.description, 1000))
+    && (body.taxClassification === null || typeof body.taxClassification === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/u.test(body.taxClassification)),
+  "course-draft-body");
+  return body;
+}
+
+function selectedCourseDraftJob(job) {
+  const target = job?.target;
+  const profile = profileContext(job?.qualificationTargetProfile, job, target);
+  demand(profile && job.schemaVersion === 2 && job.kind === "operator-migration" && job.operator === "Dardan"
+    && job.environment === "staging" && job.contractPhase === "p2" && COMMIT.test(job.sourceCommit)
+    && typeof job.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(job.releaseId)
+    && target?.schemaVersion === 2 && target.environment === "staging" && target.service === "lash-her-course-api"
+    && typeof target.host === "string" && /^[a-z0-9.-]+$/u.test(target.host) && !target.host.includes("..")
+    && Number.isInteger(target.port) && target.port > 0 && target.port <= 65535 && ROLE.test(target.database)
+    && ROLE.test(target.user) && ROLE.test(job.runtimeRole) && job.runtimeRole !== target.user && [16, 18].includes(target.serverMajor),
+  "course-draft-job");
+  return { target: { host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor },
+    jobSha256: sha(job) };
+}
+
+async function readHeldCourseDraft(target, dependencies, roleOid, task) {
+  const { verifyEnvironment, verifySession, readCourseDatabaseUrl } = dependencies;
+  demand([verifyEnvironment, verifySession, readCourseDatabaseUrl].every(value => typeof value === "function"), "course-draft-held-session");
+  const verify = async () => { await verifyEnvironment(); await verifySession(); };
+  await verify();
+  let client, begun = false, lost = false;
+  try {
+    const options = privateReadOnlyOptions(await readCourseDatabaseUrl(), target, target.user);
+    const { Client } = await import("pg");
+    client = new Client(options);
+    client.on("error", () => { lost = true; });
+    await verify(); await client.connect(); await verify();
+    const requireTls = () => demand(!lost && client.connection?.stream?.encrypted === true
+      && client.connection.stream.authorized === true, "verified-node-tls");
+    requireTls();
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); begun = true;
+    const [identity] = await read(client, "course", "draftIdentity");
+    requireReadOnlyDatabaseIdentity(identity, target, target.user, roleOid);
+    demand(identity.session_role === target.user && /^[1-9][0-9]{0,9}$/u.test(identity.role_oid), "database-identity");
+    await verify();
+    const result = await task(client);
+    requireTls(); await verify();
+    await client.query("ROLLBACK"); begun = false;
+    await client.end(); client = undefined;
+    await verify();
+    return { result, roleOid: identity.role_oid };
+  } catch (error) {
+    if (error instanceof P2LifecyclePersistenceError) throw error;
+    throw new P2LifecyclePersistenceError("course-draft-observation");
+  } finally {
+    if (client) {
+      let closeFailed = false;
+      try { if (begun) await client.query("ROLLBACK"); } catch { closeFailed = true; }
+      try { await client.end(); } catch { closeFailed = true; }
+      demand(!closeFailed, "course-draft-close");
+    }
+  }
+}
+
+export async function captureP2InteractiveCourseDraftBaseline(courseJob, selection, draft, dependencies) {
+  const selected = Object.freeze({ ...selection }), expected = validateP2InteractiveCourseDraft(selected, draft);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const rows = await read(client, "course", "draftAbsent", [selected.slug]);
+    demand(rows.length === 1 && rows[0].absent === true, "course-draft-already-present");
+  });
+  const baseline = Object.freeze({});
+  draftBaselines.set(baseline, { selected, expected, jobSha256, roleOid, verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveCourseDraftCase(courseJob, selection, baseline, browserDraft, dependencies) {
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = draftBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && closed(selection, ["slug", "bodySha256"])
+    && saved.verifyEnvironment === dependencies?.verifyEnvironment && saved.verifySession === dependencies?.verifySession
+    && selection.slug === saved.selected.slug && selection.bodySha256 === saved.selected.bodySha256
+    && closed(browserDraft, ["courseId", "slug", "revision", "status"]) && typeof browserDraft.courseId === "string"
+    && UUID.test(browserDraft.courseId) && browserDraft.slug === selection.slug && browserDraft.revision === 1
+    && browserDraft.status === "draft", "course-draft-receipt");
+  draftBaselines.delete(baseline);
+  const { slug, title, description, introduction, currency, accessMode, priceCents, cover, seo, taxClassification } = saved.expected;
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const rows = await read(client, "course", "draft", [slug, title, description, introduction, currency, accessMode, priceCents,
+      cover, seo, taxClassification]);
+    const row = rows[0];
+    demand(rows.length === 1 && row.course_id === browserDraft.courseId && row.slug === slug && row.revision === 1
+      && row.status === "draft" && row.fields_match === true, "course-draft-persistence");
+    return { courseId: row.course_id, slug: row.slug, revision: 1, status: "draft", readOnly: true };
+  });
+  return result;
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

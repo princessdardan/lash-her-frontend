@@ -432,6 +432,58 @@ test("scoped interactive v3 joins exact signed requests, including GETs, to boun
     proofRequestId: input.headers["x-request-id"], requestIndex, upstreamStatus: response.status })) });
 });
 
+test("scoped authoring acknowledges the catalog page and draft create under their returned gateway request IDs", async t => {
+  const createTarget = "/course/v1/admin/courses";
+  const listTarget = `${createTarget}?limit=100`;
+  const id = "20000000-0000-4000-8000-000000000002";
+  const draft = { title: "P2Q gateway fixture", slug: "p2q-gateway-fixture", description: null, introduction: null,
+    currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null, status: "draft" };
+  const body = JSON.stringify(draft);
+  const catalogResponse = { courses: [], nextCursor: null };
+  const createResponse = { course: { ...draft, id, revision: 1, modules: [] } };
+  const requests = [
+    { method: "GET", target: listTarget, bodySha256: certificationHash(""), uses: 1 },
+    { method: "POST", target: createTarget, bodySha256: certificationHash(body), uses: 1 },
+  ];
+  const backendRequestId = "30000000-0000-4000-8000-000000000003";
+  const forwarded = [];
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    forwarded.push({ method: req.method, target: req.url, body: Buffer.concat(chunks).toString(),
+      requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    res.writeHead(req.method === "GET" ? 200 : 201, { "content-type": "application/json; charset=utf-8", "x-request-id": backendRequestId });
+    res.end(JSON.stringify(req.method === "GET" ? catalogResponse : createResponse));
+  }, "authoring");
+  const read = f.signed({ path: listTarget });
+  const create = f.signed({ method: "POST", path: createTarget, body });
+  for (const denied of [f.signed({ path: createTarget }), f.signed({ path: `${createTarget}?limit=99` }),
+    f.signed({ method: "POST", path: createTarget, body: JSON.stringify({ ...draft, status: "published" }) })]) {
+    assert.equal((await f.send(denied)).status, 503);
+  }
+  const listResult = await f.send(read);
+  const createResult = await f.send(create);
+  assert.deepEqual([listResult.status, createResult.status], [200, 201]);
+  assert.deepEqual([JSON.parse(listResult.body), JSON.parse(createResult.body)], [catalogResponse, createResponse]);
+  assert.equal((await f.send(f.signed({ path: `${createTarget}/${id}` }))).status, 503);
+  assert.equal((await f.send(read)).status, 503);
+  assert.equal((await f.send(create)).status, 503);
+  const acknowledgements = [[read, listResult], [create, createResult]].map(([input, output], requestIndex) => {
+    const requestId = output.headers["x-request-id"];
+    const proofRequestId = input.headers["x-request-id"];
+    assert.match(requestId, /^[a-f0-9-]{36}$/u);
+    assert.notEqual(requestId, proofRequestId);
+    assert.notEqual(requestId, backendRequestId);
+    return { requestId, proofRequestId, requestIndex, upstreamStatus: output.status };
+  });
+  assert.deepEqual(forwarded, requests.map((row, index) => ({ method: row.method, target: row.target.slice("/course".length),
+    body: index === 0 ? "" : body, requestId: acknowledgements[index].requestId, proof: undefined })));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.interactiveEvidence, { admitted: 2, acknowledged: acknowledgements });
+});
+
 function mediaRefreshReceipt(lessonId, id) {
   return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };

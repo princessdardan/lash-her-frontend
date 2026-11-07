@@ -31,6 +31,7 @@ import {interactiveCourseStagePermits} from '../gateway/operations.mjs';
 import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,captureP2InteractiveEnrollmentBaseline,
   observeP2InteractiveEnrollmentCase,validateP2InteractiveEnrollmentEmail,
   captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
+import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftCase,validateP2InteractiveCourseDraft} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -51,13 +52,15 @@ const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
+const pairedBrowserStages=new Set(['lifecycle','authoring']);
+const emptyRequestSha256=rawHash(Buffer.alloc(0));
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
 function interactiveActionValid(value){
-  const lifecycle=value?.stage==='lifecycle',identity=value?.stage==='identity';
+  const lifecycle=value?.stage==='lifecycle',identity=value?.stage==='identity',authoring=value?.stage==='authoring';
   const enrollment=identity&&Object.hasOwn(value,'identityEnrollment');
-  const selectionKey=lifecycle?'frontendAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
+  const selectionKey=lifecycle?'frontendAction':authoring?'authoringAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
@@ -81,13 +84,21 @@ function interactiveActionValid(value){
     return value.requests.length===0&&exactKeys(selected,['actorKind','actorId'])&&
       ['admin','customer'].includes(selected.actorKind)&&uuid(selected.actorId);
   }
+  if(authoring){
+    const selected=value.authoringAction,[list,create]=value.requests;
+    return exactKeys(selected,['operation','slug'])&&selected.operation==='create-draft'&&typeof selected.slug==='string'&&
+      selected.slug.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(selected.slug)&&value.requests.length===2&&
+      isDeepStrictEqual(list,{method:'GET',target:'/course/v1/admin/courses?limit=100',bodySha256:emptyRequestSha256,uses:1})&&
+      exactKeys(create,['method','target','bodySha256','uses'])&&create.method==='POST'&&create.target==='/course/v1/admin/courses'&&
+      create.uses===1&&sha(create.bodySha256)&&create.bodySha256!==emptyRequestSha256;
+  }
   if(!value.requests.length||value.requests.length>16)return false;
-  const selected=new Set(), empty=rawHash(Buffer.alloc(0));
+  const selected=new Set();
   for(const row of value.requests){
     if(!exactKeys(row,['method','target','bodySha256','uses'])||
        typeof row.target!=='string'||row.target.length>512||
        !/^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?@\[\]_~A-Za-z0-9-]+)?$/u.test(row.target)||
-       !sha(row.bodySha256)||(row.method==='GET'&&row.bodySha256!==empty)||
+       !sha(row.bodySha256)||(row.method==='GET'&&row.bodySha256!==emptyRequestSha256)||
        !Number.isInteger(row.uses)||row.uses<1||row.uses>4||!interactiveCourseStagePermits(value.stage,row.method,row.target))return false;
     const key=JSON.stringify([row.method,row.target,row.bodySha256]);
     if(selected.has(key))return false;
@@ -367,32 +378,36 @@ async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,cl
 }
 
 export async function runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,verifySession,verifyEnvironment,
-  target,ordinaryProducers,signal,controllerChallenge,identityEnrollmentEmail,record=()=>{}}){
+  target,ordinaryProducers,signal,controllerChallenge,identityEnrollmentEmail,courseDraft,record=()=>{}}){
   const action=plan.scopedAction;
-  demand(plan.mode==='interactive-browser'&&['identity','lifecycle'].includes(action?.stage)&&interactiveActionValid(action)&&
+  demand(plan.mode==='interactive-browser'&&(action?.stage==='identity'||pairedBrowserStages.has(action?.stage))&&interactiveActionValid(action)&&
     plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
-  const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined;
-  const statusPrefix=identity?'P2_INTERACTIVE_IDENTITY':'P2_INTERACTIVE_LIFECYCLE';
+  const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,authoring=action.stage==='authoring';
+  if(authoring)demand(courseDraft?.job&&courseDraft.draft&&typeof courseDraft.readCourseDatabaseUrl==='function');
+  const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase()}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
-  const selection=enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
-  const context=!enrollment&&selection.actorKind==='admin'?'owner':'learner';
+  const selection=authoring?{slug:action.authoringAction.slug,bodySha256:action.requests[1].bodySha256}:
+    enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
+  const context=authoring||!enrollment&&selection.actorKind==='admin'?'owner':'learner';
   const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
   const runtimeProducer=plan.nativePlan.producer;
   const producerSha256=rawHash(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`);
   const reviewed={sourceCommit:plan.sourceCommit,ordinaryProducers,runtimeProducer,
     interactiveProducer:{producerSha256,role:runtimeProducer.role}};
   const observations={verifySession,verifyEnvironment};
+  const courseObservations=authoring?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl}:undefined;
   const cancelBrowser=()=>{void Promise.resolve().then(()=>controller.close()).catch(()=>{});};
   signal?.addEventListener('abort',cancelBrowser,{once:true});
   try{
     signal?.throwIfAborted();
     const prepared=await stage.prepare();
     demand(prepared.status===statusPrefix+'_PREPARED');
-    const baseline=enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
+    const baseline=authoring?await captureP2InteractiveCourseDraftBaseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
+      enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
       identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
         await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
-    if(!identity)record('p2-interactive-lifecycle-baseline.json',baseline);
+    if(action.stage==='lifecycle')record('p2-interactive-lifecycle-baseline.json',baseline);
     const registered=await withOwner(()=>prepareFrontendInteractiveProducer(client,policy,plan.initialEpoch,reviewed));
     demand(registered.epoch===plan.initialEpoch&&registered.producerSha256===producerSha256&&
       registered.newWork===false&&registered.recovery===false);
@@ -401,14 +416,20 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       const opened=await stage.open();
       gatewayOpened=true;
       demand(opened.status===statusPrefix+'_OPENED');
+      if(authoring)demand(opened.gatewayScoped===true);
       frontendOpened=await withOwner(()=>openFrontendInteractiveAdmission(client,policy,plan.initialEpoch,reviewed));
       demand(frontendOpened.epoch===expectedOpen&&frontendOpened.newWork===true&&frontendOpened.recovery===true);
       const installed=await stage.installPermit();
       demand(installed.context===context&&installed.epoch===expectedOpen&&installed.stage===action.stage);
       await controller.open(context);
-      browserEvidence=identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
+      browserEvidence=authoring?await controller.captureAuthoringResponse(context):identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
         await controller.captureLifecycleResponse(context);
       record(`p2-interactive-${action.stage}-browser.json`,browserEvidence);
+      if(authoring){
+        const gateway=await stage.observe();
+        demand(gateway.status==='P2_INTERACTIVE_AUTHORING_GATEWAY_OBSERVED');
+        record('p2-interactive-authoring-gateway.json',gateway);
+      }
     }finally{
       if(gatewayOpened)try{
         const fenced=await stage.fence();
@@ -430,12 +451,13 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       if(closureFailed)throw new Error(statusPrefix+'_CLOSURE_REQUIRES_REVIEW');
     }
     signal?.throwIfAborted();
-    const witness=enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
+    const witness=authoring?await observeP2InteractiveCourseDraftCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
+      enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
       identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
         await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
     record(`p2-interactive-${action.stage}-witness.json`,witness);
-    const joined=await stage.retain(identity?{browserIdentity:browserEvidence,identityWitness:witness}:
-      {browserResponse:browserEvidence,lifecycleWitness:witness});
+    const joined=await stage.retain(authoring?{browserResponse:browserEvidence,courseWitness:witness}:
+      identity?{browserIdentity:browserEvidence,identityWitness:witness}:{browserResponse:browserEvidence,lifecycleWitness:witness});
     demand(joined.status===statusPrefix+'_JOINED');
     return joined;
   }catch(error){
@@ -455,7 +477,7 @@ async function runBoundedCertification(plan,dependencies,profile){
   if(profile)requireQualificationTargetProfile(currentProfile,plan);
   const context=p2CertificationParentContext(plan),{prepared}=context;
   demand(dependencies.confirmation==='staging/'+plan.certificationActionId&&typeof dependencies.withEnvironmentLock==='function'&&typeof dependencies.getUrl==='function');
-  if(plan.mode==='interactive-browser')demand(profile&&['identity','lifecycle'].includes(plan.scopedAction.stage)&&dependencies.interactiveController);
+  if(plan.mode==='interactive-browser')demand(profile&&(plan.scopedAction.stage==='identity'||pairedBrowserStages.has(plan.scopedAction.stage))&&dependencies.interactiveController);
   const store=frontendReleaseReceiptStore(dependencies.directory);store.record('p2-certification-started.json',plan);
   if(dependencies.sourceCi)store.record('operator-source-ci.json',dependencies.sourceCi);
   bindP2CertificationReadyReceipts(context.frontendReceipts,plan);
@@ -478,7 +500,7 @@ async function runBoundedCertification(plan,dependencies,profile){
         const stage=readP2CertificationInteractiveStage(await host.interactiveStage(controller),plan);
         const joined=await runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,controllerChallenge:challenge,
           verifySession:verify,verifyEnvironment:environment,target:prepared.migration.job.target,
-          ordinaryProducers:prepared.plan.producers,signal,identityEnrollmentEmail:dependencies.identityEnrollmentEmail,
+          ordinaryProducers:prepared.plan.producers,signal,identityEnrollmentEmail:dependencies.identityEnrollmentEmail,courseDraft:dependencies.courseDraft,
           record:(name,receipt)=>store.record(name,receipt)});
         requireQualificationTargetProfile(currentProfile,joined);
         terminal=await host.prepareClose(joined);
@@ -662,7 +684,7 @@ function privateObject(path,maximum){const value=JSON.parse(privateBytes(path,ma
 function prepareProfiledCertification(settings){
   const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
     :settings?.certification?.mode==='direct-worker'?['worker']
-      :settings?.certification?.mode==='interactive-browser'&&settings.certification.scopedAction?.stage==='lifecycle'?['interactiveIdentity']:[];
+      :settings?.certification?.mode==='interactive-browser'&&pairedBrowserStages.has(settings.certification.scopedAction?.stage)?['interactiveIdentity']:[];
   demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra])&&
     settings.version===2&&settings.environment==='staging');
   requireQualificationTargetProfile(currentProfile,settings);
@@ -697,8 +719,11 @@ function prepareProfiledCertification(settings){
 
 export function prepareP2ProfiledCertificationOperator(settings){
   const {plan,authPlan,identityPlan}=prepareProfiledCertification(settings);
-  if(identityPlan)return {version:2,qualificationTargetProfile:currentProfile,status:'P2_INTERACTIVE_LIFECYCLE_ACTIONS_PLANNED',
-    identity:identityPlan,lifecycle:plan};
+  if(identityPlan){
+    const stage=plan.scopedAction.stage;
+    return {version:2,qualificationTargetProfile:currentProfile,status:`P2_INTERACTIVE_${stage.toUpperCase()}_ACTIONS_PLANNED`,
+      identity:identityPlan,[stage]:plan};
+  }
   return authPlan?{version:2,qualificationTargetProfile:currentProfile,status:'P2_BROWSER_CERTIFICATION_ACTIONS_PLANNED',authentication:authPlan,browser:plan}:plan;
 }
 
@@ -776,13 +801,14 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
     authPlan=prepareP2BoundedCertification(prepared,{...input,...auth,mode:'auth-preparation'},candidateBytes,options);
   }else demand(input.mode!=='auth-preparation');
   const plan=prepareP2BoundedCertification(prepared,input,candidateBytes,options);
-  if(input.mode==='interactive-browser'&&input.scopedAction.stage==='lifecycle'){
+  if(input.mode==='interactive-browser'&&pairedBrowserStages.has(input.scopedAction.stage)){
     const identity=settings.interactiveIdentity;
     demand(profile&&exactKeys(identity,['certificationActionId','initialEpoch','windowSeconds'])&&
       typeof identity.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(identity.initialEpoch)&&
       BigInt(identity.initialEpoch)+2n===BigInt(plan.initialEpoch)&&identity.certificationActionId!==plan.certificationActionId&&
       settings.authPreparation===undefined&&settings.browser===undefined&&settings.worker===undefined);
-    const {actorId,frontendAction:{actorKind}}=input.scopedAction;
+    const {actorId}=input.scopedAction;
+    const actorKind=input.scopedAction.stage==='authoring'?'admin':input.scopedAction.frontendAction.actorKind;
     identityPlan=prepareP2BoundedCertification(prepared,{...input,certificationActionId:identity.certificationActionId,initialEpoch:identity.initialEpoch,
       scopedAction:{stage:'identity',actorId:null,requests:[],windowSeconds:identity.windowSeconds,identityActor:{actorKind,actorId}}},candidateBytes,options);
   }else demand(settings.interactiveIdentity===undefined);
@@ -807,15 +833,21 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const {execution,...selection}=settings;
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
-  const interactive=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='lifecycle'&&identityPlan!==undefined;
+  const interactive=plan.mode==='interactive-browser'&&pairedBrowserStages.has(plan.scopedAction.stage)&&identityPlan!==undefined;
+  const authoring=interactive&&plan.scopedAction.stage==='authoring';
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment;
   demand(confirmation==='staging/'+plan.certificationActionId&&
     (scoped||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
-  let identityEnrollmentEmail;
+  let identityEnrollmentEmail,authoringDraft;
   if(enrollment){
     demand(exactKeys(execution,['identityEnrollmentEmail']));
     identityEnrollmentEmail=validateP2InteractiveEnrollmentEmail(enrollment,execution.identityEnrollmentEmail);
+  }
+  if(authoring){
+    demand(exactKeys(execution,['authoringDraft']));
+    authoringDraft=structuredClone(execution.authoringDraft);
+    validateP2InteractiveCourseDraft({slug:plan.scopedAction.authoringAction.slug,bodySha256:plan.scopedAction.requests[1].bodySha256},authoringDraft);
   }
   demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
   const releaseSettings=selection.releaseSettings;
@@ -853,7 +885,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       const reviewed=plan.mode==='browser-pending'?selection.browser.input.persistencePlan:selection.worker.suspensionInput.persistencePlan;
       demand(isDeepStrictEqual(persistenceReviewed.plan,reviewed));
     }
-  }else if(!enrollment)demand(execution===undefined);
+  }else if(!enrollment&&!authoring)demand(execution===undefined);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
     sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
   const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
@@ -893,6 +925,8 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       }}:{})};
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
       interactiveController,...(enrollment?{identityEnrollmentEmail}:{}),
+      ...(action.scopedAction?.stage==='authoring'?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,
+        readCourseDatabaseUrl:()=>credentials.COURSE_STAGING_DATABASE_URL}}:{}),
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),
       assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),

@@ -1667,15 +1667,16 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.failure_lock = threading.RLock()
         self.scoped_gate_lock = threading.RLock()
         self.scoped_stage = self.scoped_case = self.scoped_mux_sha256 = None
+        self.authoring_observation_attempted = False
         initial = self.initial
         plan = initial['certificationPlan']
         mode = plan['mode']
         require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
                 'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
         if mode == 'interactive-browser':
-            from p2_interactive_window import CLOSED_BROWSER_STAGES
+            from p2_interactive_window import EXECUTABLE_BROWSER_STAGES
             stage = plan.get('scopedAction', {}).get('stage')
-            require(type(stage) is str and stage in CLOSED_BROWSER_STAGES, 'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
+            require(type(stage) is str and stage in EXECUTABLE_BROWSER_STAGES, 'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
         review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
         if mode in SCOPED_MODES:
@@ -1798,7 +1799,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def _verify_gateway_boundary(self):
         mode = self.initial['certificationPlan']['mode']
         if mode == 'interactive-browser':
-            return self.scoped_stage.verify_ordinary_gateway()
+            with self.scoped_gate_lock:
+                return self.scoped_stage.verify_gateway_boundary()
         if mode != 'mux-callback-recovery':
             return super()._verify_gateway_boundary()
         with self.scoped_gate_lock:
@@ -1837,14 +1839,14 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 release_evidence=self._release_evidence(),**self.profile_arguments())
 
     def interactive_operation(self, operation, value):
-        from p2_interactive_window import CLOSED_BROWSER_STAGES, P2InteractiveWindow, browser_artifact, browser_case_evidence, browser_receipt
+        from p2_interactive_window import EXECUTABLE_BROWSER_STAGES, P2InteractiveWindow, browser_artifact, browser_case_evidence, browser_receipt
         self.check()
         plan, stage = self.initial['certificationPlan'], self.scoped_stage
         fields = {'id', 'operation', 'controllerChallenge'}
         if operation == 'interactive-retain':
             fields.add('caseEvidence')
         require(plan['mode'] == 'interactive-browser' and type(stage) is P2InteractiveWindow and
-                stage.action['stage'] in CLOSED_BROWSER_STAGES and stage.action == plan['scopedAction'] and
+                stage.action['stage'] in EXECUTABLE_BROWSER_STAGES and stage.action == plan['scopedAction'] and
                 self.external_armed and self.guard_arm_verified and
                 self.scoped_case is None and self.closing_at is None and set(value) == fields and
                 value['controllerChallenge'] == self.initial['interactiveController']['challenge'],
@@ -1854,16 +1856,32 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             migrate.write_json(self.directory, browser_artifact(plan, 'ingress'), ingress)
             return {**browser_receipt(plan, 'PREPARED'), 'ingressSha256': _sha(_canonical(ingress))}
         if operation == 'interactive-open':
-            opened = stage.open_gateway()
+            with self.scoped_gate_lock:
+                opened = stage.open_gateway()
             return {**browser_receipt(plan, 'OPENED'), **opened}
         if operation == 'interactive-permit':
             return stage.take_private_browser_permit()
+        if operation == 'interactive-observe':
+            require(stage.action['stage'] == 'authoring' and not self.authoring_observation_attempted,
+                    'P2_INTERACTIVE_FIXED_AUTHORING_OBSERVATION_REQUIRED')
+            self.authoring_observation_attempted = True
+            try:
+                return stage.observe_authoring_gateway()
+            except ValueError:
+                # A rejected observation grants no receipt but still permits the fixed fence.
+                return browser_receipt(plan, 'GATEWAY_OBSERVATION_REFUSED')
         if operation == 'interactive-fence':
-            stage.fence_gateway()
-            return {**browser_receipt(plan, 'FENCED'), **stage.verify_gateway_fenced()}
+            with self.scoped_gate_lock:
+                stage.fence_gateway()
+                fenced = stage.verify_gateway_fenced()
+            return {**browser_receipt(plan, 'FENCED'), **fenced}
         require(operation == 'interactive-retain', 'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
         evidence = value['caseEvidence']
-        bindings = browser_case_evidence(plan, evidence)
+        gateway_artifact = None
+        if stage.action['stage'] == 'authoring':
+            from qualification_target_profile import decode_qualification_target_json
+            gateway_artifact = decode_qualification_target_json(migrate.read_input(self.directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
+        bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
         fenced = stage.verify_fenced(retain=True)
         result = {**browser_receipt(plan, 'JOINED'), **bindings, **fenced,
                   'browserProgramSha256': self.initial['interactiveController']['browserProgramSha256']}

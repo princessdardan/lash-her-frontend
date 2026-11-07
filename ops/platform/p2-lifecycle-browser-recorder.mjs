@@ -16,6 +16,7 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
   && /(?:^|,)\s*no-store\s*(?:,|$)/iu.test(headers["cache-control"] ?? "");
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
+const authoringPath = "/api/admin/courses";
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
   authoring: { owner: "/admin/courses" },
@@ -65,11 +66,17 @@ function enrollmentSelector(enrollment) {
   return (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
 }
 
+function authoringSelector(actorId) {
+  demand(uuid(actorId));
+  return "7032712d617574686f72696e672d7631" + actorId.replaceAll("-", "");
+}
+
 export function validateP2InteractiveBrowserInput(input) {
   const enrollment = input?.stage === "identity" && Object.hasOwn(input, "identityEnrollment");
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",
     "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds",
-    ...(input?.stage === "lifecycle" ? ["lifecycle"] : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : [])])
+    ...(input?.stage === "lifecycle" || input?.stage === "authoring" ? [input.stage]
+      : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
     && matches(input.deploymentId, /^dpl_[A-Za-z0-9]+$/u) && matches(input.deploymentUrl, /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u)
@@ -77,6 +84,8 @@ export function validateP2InteractiveBrowserInput(input) {
     && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
+  if (input.stage === "authoring") demand(closed(input.authoring, ["actorId", "slug", "bodySha256"]) && uuid(input.authoring.actorId)
+    && matches(input.authoring.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && input.authoring.slug.length <= 120 && sha(input.authoring.bodySha256));
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
   return input;
@@ -90,12 +99,13 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
     && Number(issued) <= now && Number(expires) === permit.expires && permit.expires - Number(issued) <= input.windowSeconds
     && /^[a-f0-9]{32}$/u.test(nonce ?? "")
-    && (stage === "lifecycle" || stage === "identity" ? version === "v2" && parts.length === 8 && sha(parts[6]) && sha(parts[7])
+    && (["lifecycle", "identity", "authoring"].includes(stage) ? version === "v2" && parts.length === 8 && sha(parts[6]) && sha(parts[7])
       : version === "v1" && parts.length === 7 && sha(parts[6])));
   if (stage === "identity") {
     const enrollment = input.identityEnrollment;
     demand(enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
   }
+  if (stage === "authoring") demand(parts[6] === authoringSelector(input.authoring.actorId));
   return permit;
 }
 
@@ -153,10 +163,11 @@ export async function expireP2InteractiveBrowserCookie(context) {
 }
 
 const maxLifecycleBody = 4096;
+const maxAuthoringBody = 1024 * 1024;
 const preferences = target => target.pathname === "/api/account/preferences";
 
-function exactLifecycleJson(bytes) {
-  demand(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= maxLifecycleBody);
+function exactBrowserJson(bytes, maximum = maxLifecycleBody) {
+  demand(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= maximum);
   const text = bytes.toString("utf8"), value = JSON.parse(text);
   demand(JSON.stringify(value) === text);
   return value;
@@ -228,7 +239,7 @@ export async function observeP2InteractiveIdentitySession(page, input, { context
     demand(lengths.length === 0 || bytes.length === Number(lengths[0]));
     const now = Date.now();
     demand(now < expires * 1000);
-    return readIdentitySession(exactLifecycleJson(bytes), input, ownerSubjectSha256, openedAt, now);
+    return readIdentitySession(exactBrowserJson(bytes), input, ownerSubjectSha256, openedAt, now);
   } catch {
     throw identityRefused();
   } finally {
@@ -257,9 +268,18 @@ export function validateP2LifecycleMutationReceipt(receipt, target) {
   return receipt;
 }
 
-async function readLifecycleResponse(response, request, input) {
-  const target = input.lifecycle;
-  demand(response.url() === input.browserOrigin + target.pathname && response.status() === (preferences(target) ? 200 : 202)
+export function validateP2AuthoringMutationReceipt(receipt, target) {
+  demand(closed(receipt, ["method", "pathname", "status", "requestId", "body"]) && receipt.method === "POST"
+    && receipt.pathname === authoringPath && receipt.status === 200 && uuid(receipt.requestId)
+    && closed(receipt.body, ["courseId", "slug", "revision", "status"]) && uuid(receipt.body.courseId)
+    && receipt.body.slug === target.slug && receipt.body.revision === 1 && receipt.body.status === "draft");
+  return receipt;
+}
+
+async function readMutationResponse(response, request, input, pathname) {
+  const authoring = input.stage === "authoring", maximum = authoring ? maxAuthoringBody : maxLifecycleBody;
+  const status = authoring || preferences(input.lifecycle) ? 200 : 202;
+  demand(response.url() === input.browserOrigin + pathname && response.status() === status
     && !response.fromServiceWorker() && request.redirectedTo() === null);
   const [ids, contentTypes, cache, encodings, lengths, size] = await Promise.all([
     response.headerValues("x-request-id"), response.headerValues("content-type"), response.headerValues("cache-control"),
@@ -268,24 +288,28 @@ async function readLifecycleResponse(response, request, input) {
   demand(ids.length === 1 && uuid(ids[0]) && contentTypes.length === 1 && /^application\/json(?:;\s*charset=utf-8)?$/iu.test(contentTypes[0])
     && cache.length === 1 && privateNoStore({ "cache-control": cache[0] })
     && (encodings.length === 0 || encodings.length === 1 && encodings[0].toLowerCase() === "identity")
-    && lengths.length <= 1 && (lengths.length === 0 || /^[1-9][0-9]{0,3}$/u.test(lengths[0]))
-    && Number.isSafeInteger(size.responseBodySize) && size.responseBodySize <= maxLifecycleBody);
+    && lengths.length <= 1 && (lengths.length === 0 || /^[1-9][0-9]{0,6}$/u.test(lengths[0]))
+    && Number.isSafeInteger(size.responseBodySize) && size.responseBodySize <= maximum);
   const declared = lengths.length === 1 ? Number(lengths[0]) : undefined;
-  demand(declared === undefined ? size.responseBodySize > 0 : declared <= maxLifecycleBody);
+  demand(declared === undefined ? size.responseBodySize > 0 : declared <= maximum);
   const bytes = await response.body();
   try {
     demand(declared === undefined || bytes.length === declared);
-    const body = exactLifecycleJson(bytes);
-    return validateP2LifecycleMutationReceipt({ method: "POST", pathname: target.pathname, status: response.status(), requestId: ids[0], body }, target);
+    const body = exactBrowserJson(bytes, maximum), receipt = { method: "POST", pathname, status, requestId: ids[0] };
+    if (!authoring) return validateP2LifecycleMutationReceipt({ ...receipt, body }, input.lifecycle);
+    demand(closed(body, ["course"]) && body.course && typeof body.course === "object" && !Array.isArray(body.course));
+    const { id: courseId, slug, revision, status: courseStatus } = body.course;
+    return validateP2AuthoringMutationReceipt({ ...receipt, body: { courseId, slug, revision, status: courseStatus } }, input.authoring);
   } finally { bytes.fill(0); }
 }
 
 // Attach before navigation. A second selected request, even one whose response
 // is lost while closing the page, invalidates the first accepted response.
-export function watchP2LifecycleMutation(context, page, input) {
+function watchMutation(context, page, input) {
   validateP2InteractiveBrowserInput(input);
-  demand(input.stage === "lifecycle");
-  const target = input.lifecycle, refusal = () => new Error("P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED");
+  const authoring = input.stage === "authoring", target = input.lifecycle;
+  const pathname = authoring ? authoringPath : target.pathname;
+  const refusal = () => new Error(authoring ? "P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED" : "P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED");
   let selected, receipt, accept, reject, failed = false, responseStarted = false;
   const observed = new Promise((resolve, fail) => { accept = resolve; reject = fail; });
   observed.catch(() => {});
@@ -293,12 +317,18 @@ export function watchP2LifecycleMutation(context, page, input) {
   const onRequest = request => {
     const url = URL.parse(request.url());
     if (!url) return;
-    if (url.origin !== input.browserOrigin || url.pathname !== target.pathname || request.method() !== "POST") return;
+    if (url.origin !== input.browserOrigin || url.pathname !== pathname || request.method() !== "POST") return;
     try {
-      demand(!selected && !url.search && !url.hash && request.redirectedFrom() === null && request.frame() === page.mainFrame());
+      const frame = request.frame();
+      demand(!selected && !url.search && !url.hash && request.redirectedFrom() === null && frame === page.mainFrame());
       selected = request;
-      const posted = exactLifecycleJson(request.postDataBuffer());
-      if (preferences(target)) demand(closed(posted, ["learningUpdates"]) && posted.learningUpdates === (target.operation === "preferences-on"));
+      const bytes = request.postDataBuffer(), posted = exactBrowserJson(bytes, authoring ? maxAuthoringBody : maxLifecycleBody);
+      if (authoring) {
+        const source = URL.parse(frame.url());
+        demand(source?.origin === input.browserOrigin && source.pathname === interactivePages.authoring.owner
+          && createHash("sha256").update(bytes).digest("hex") === input.authoring.bodySha256
+          && posted?.slug === input.authoring.slug && posted.status === "draft");
+      } else if (preferences(target)) demand(closed(posted, ["learningUpdates"]) && posted.learningUpdates === (target.operation === "preferences-on"));
       else demand(closed(posted, ["action", "idempotencyKey"]) && posted.action === target.operation && uuid(posted.idempotencyKey));
     } catch { fail(); }
   };
@@ -306,7 +336,7 @@ export function watchP2LifecycleMutation(context, page, input) {
     if (response.request() !== selected) return;
     if (failed || responseStarted) return fail();
     responseStarted = true;
-    void readLifecycleResponse(response, selected, input).then(value => {
+    void readMutationResponse(response, selected, input, pathname).then(value => {
       if (!failed) { receipt = value; accept(value); }
     }, fail);
   };
@@ -335,6 +365,16 @@ export function watchP2LifecycleMutation(context, page, input) {
       fail();
     },
   };
+}
+
+export function watchP2LifecycleMutation(context, page, input) {
+  demand(input.stage === "lifecycle");
+  return watchMutation(context, page, input);
+}
+
+export function watchP2AuthoringMutation(context, page, input) {
+  demand(input.stage === "authoring");
+  return watchMutation(context, page, input);
 }
 
 export function validateP2LifecycleBrowserInput(input) {
@@ -458,7 +498,7 @@ async function runInteractiveBrowser(first) {
     pending.catch(() => {}); // An IPC send can fail before the caller awaits this receive.
     return pending;
   };
-  let browser, context, page, selection, lifecycleWatch, identityOpenedAt, opened = false, cleared = false;
+  let browser, context, page, selection, mutationWatch, identityOpenedAt, verifiedIdentity, opened = false, cleared = false;
   const contexts = new Map(), actions = new Set([input.actionId]);
   const lost = () => { if (browser) void browser.close().catch(() => {}); };
   const terminate = () => { if (process.connected) process.disconnect(); else lost(); };
@@ -482,10 +522,13 @@ async function runInteractiveBrowser(first) {
         demand(!selectedInput.identityEnrollment && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
           && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
           && BigInt(selectedInput.epoch) > BigInt(input.epoch));
+        if (selectedInput.stage === "authoring") demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
+          && verifiedIdentity.actorId === selectedInput.authoring.actorId
+          && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
         binding = interactiveBinding(input);
-        selection = context = page = identityOpenedAt = undefined;
+        selection = context = page = identityOpenedAt = verifiedIdentity = undefined;
         opened = cleared = false;
         pending = next();
         await send("interactive-selected");
@@ -523,29 +566,30 @@ async function runInteractiveBrowser(first) {
         opened = true;
         if (binding.stage === "identity") identityOpenedAt = Date.now();
         page = await context.newPage();
-        if (binding.stage === "lifecycle") lifecycleWatch = watchP2LifecycleMutation(context, page, input);
+        if (binding.stage === "lifecycle") mutationWatch = watchP2LifecycleMutation(context, page, input);
+        if (binding.stage === "authoring") mutationWatch = watchP2AuthoringMutation(context, page, input);
         const response = await page.goto(input.browserOrigin + path, { waitUntil: "domcontentloaded", timeout: 30_000 });
         demand(response && Number.isInteger(response.status()));
         pending = next();
         await send("interactive-page-opened", { ...selection, path, httpStatus: response.status() });
       } else {
-        const captureLifecycle = command.type === "interactive-capture-lifecycle";
-        demand(command.type === "interactive-clear" || captureLifecycle && opened && lifecycleWatch
+        const captureMutation = ["lifecycle", "authoring"].includes(binding.stage) && command.type === "interactive-capture-" + binding.stage;
+        demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
-        if (captureLifecycle) await lifecycleWatch.wait(selection.expires);
-        const identity = captureIdentity ? await waitForInteractiveIdentity(page, input,
-          { ...selection, openedAt: identityOpenedAt, ownerSubjectSha256: received.ownerSubjectSha256 }) : undefined;
+        if (captureMutation) await mutationWatch.wait(selection.expires);
+        if (captureIdentity) verifiedIdentity = await waitForInteractiveIdentity(page, input,
+          { ...selection, openedAt: identityOpenedAt, ownerSubjectSha256: received.ownerSubjectSha256 });
         await expireP2InteractiveBrowserCookie(context);
         await Promise.all(context.pages().map(page => page.close()));
         cleared = true;
         if (input.identityEnrollment) await context.close();
-        if (captureLifecycle || captureIdentity) demand(Date.now() < selection.expires * 1000);
-        const response = captureLifecycle ? lifecycleWatch.finish() : undefined;
-        lifecycleWatch?.close();
-        lifecycleWatch = undefined;
+        if (captureMutation || captureIdentity) demand(Date.now() < selection.expires * 1000);
+        const response = captureMutation ? mutationWatch.finish() : undefined;
+        mutationWatch?.close();
+        mutationWatch = undefined;
         pending = next();
-        if (captureLifecycle) await send("interactive-lifecycle-captured", { ...selection, response });
-        else if (captureIdentity) await send("interactive-identity-captured", { ...selection, identity });
+        if (captureMutation) await send("interactive-" + binding.stage + "-captured", { ...selection, response });
+        else if (captureIdentity) await send("interactive-identity-captured", { ...selection, identity: verifiedIdentity });
         else await send("interactive-permit-cleared", selection);
       }
     }
@@ -553,7 +597,7 @@ async function runInteractiveBrowser(first) {
     process.off("disconnect", lost);
     process.off("SIGTERM", terminate);
     process.stdin.destroy();
-    lifecycleWatch?.close();
+    mutationWatch?.close();
     try { if (context && !cleared) await expireP2InteractiveBrowserCookie(context); }
     finally { await browser?.close(); }
   }

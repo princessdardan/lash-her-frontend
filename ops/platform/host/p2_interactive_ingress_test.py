@@ -8,6 +8,7 @@ from pathlib import Path
 import ssl
 import stat
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 import unittest
@@ -267,6 +268,19 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(len(urls), 11)
         self.assertEqual(self.fixture.responses, [])
 
+    def test_authoring_probes_only_reviewed_page_and_endpoint_on_both_origins(self):
+        paths = ("/admin/courses", "/api/admin/courses")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            receipt = ingress.observe_authoring_protection(self.base.context, self.fixture.client, expected_profile=self.profile)
+        self.assertEqual(receipt["endpointDenials"], [
+            {"path": path, "aliasUnauthenticatedStatus": 401, "deploymentUnauthenticatedStatus": 403} for path in paths
+        ])
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertFalse(receipt["interactiveNewWorkAuthorized"])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -297,6 +311,82 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_authoring_observation_refusal_preserves_fence_and_nonzero_drain(self):
+        from p2_certification_parent import P2ProfiledCertificationBroker
+
+        actor = "10000000-0000-4000-8000-000000000001"
+        action = {"stage": "authoring", "actorId": actor, "windowSeconds": 60,
+                  "authoringAction": {"operation": "create-draft", "slug": "owned-draft"},
+                  "requests": [{"method": "GET", "target": "/course/v1/admin/courses?limit=100",
+                                "bodySha256": window._EMPTY, "uses": 1},
+                               {"method": "POST", "target": "/course/v1/admin/courses",
+                                "bodySha256": "b" * 64, "uses": 1}]}
+        window.validate_interactive_action(action)
+        selector = window._selection_sha(action)
+        self.assertEqual(selector, "7032712d617574686f72696e672d763110000000000040008000000000000001")
+        selected = window._selection_sha({**action, "actorId": "10000000-0000-4000-8000-000000000002"})
+        self.assertNotEqual(selected, selector)
+        secret = "fixture" * 8
+        permit_args = (secret, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                       "8", "authoring", 1_794_009_600, 60, "c" * 32)
+        with self.assertRaisesRegex(ValueError, "FRONTEND_BINDING_REQUIRED"):
+            window._material(*permit_args)
+        cookie, gateway_key, _, _ = window._material(*permit_args, selector)
+        fields = cookie.split(".")
+        self.assertEqual((fields[0], fields[2], fields[6]), ("v2", "authoring", selector))
+        signed = "\n".join(("lash-her:p2q:interactive:browser:v1", "owned.vercel.app", "a" * 40, "b" * 64, ".".join(fields[:-1])))
+        self.assertEqual(fields[7], hmac.digest(secret.encode(), signed.encode(), "sha256").hex())
+        self.assertRegex(gateway_key, r"^[a-f0-9]{64}$")
+        for changed in ({**action, "requests": list(reversed(action["requests"]))},
+                        {**action, "authoringAction": {**action["authoringAction"], "slug": "non-Canonical"}},
+                        {**action, "requests": [action["requests"][0], {**action["requests"][1], "uses": 2}]}):
+            with self.assertRaisesRegex(ValueError, "AUTHORING_DRAFT_REQUIRED"):
+                window.validate_interactive_action(changed)
+        with tempfile.TemporaryDirectory() as directory:
+            broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
+            stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
+            plan = {"mode": "interactive-browser", "initialEpoch": "7", "scopedAction": action, "certificationActionId": "owned-action",
+                    "planSha256": "c" * 64, "qualificationTargetProfile": {}}
+            broker.initial = {"certificationPlan": plan, "certificationActionId": "owned-action",
+                              "candidateSha256": "d" * 64, "interactiveController": {"challenge": "e" * 64}}
+            broker.scoped_stage, broker.directory, broker.scoped_gate_lock = stage, Path(directory), threading.RLock()
+            broker.external_armed = broker.guard_arm_verified = True
+            broker.authoring_observation_attempted = False
+            broker.scoped_case = broker.closing_at = None
+            broker.check, stage._check = lambda: None, lambda: None
+            broker.selected = {"releaseId": "owned-release"}
+            stage.broker, stage.plan, stage.action = broker, plan, action
+            stage._state, stage._private_cookie, stage._permit_issued = "opened", None, True
+            stage._expires = int(time.time()) + 60
+            stage._original = (b"ordinary state", 0o644, 0)
+            current = [(b"scoped state", 0o640, window._GATEWAY_GID)]
+            stage._scoped_sha = window._hash(current[0][0])
+            stage._read = lambda: current[0]
+            stage._replace = lambda *args: current.__setitem__(0, args)
+            uncertainty = {"newWork": 1, "recovery": 0}
+
+            def gateway():
+                scoped = current[0] != stage._original
+                return {"version": 3 if scoped else 1, "valid": not scoped,
+                        "interactiveActive": scoped, "newWork": None if scoped else False, "recovery": None if scoped else False,
+                        "sha256": window._hash(current[0][0]), "actionId": "owned-action",
+                        "releaseId": "owned-release", "candidateSha256": "d" * 64,
+                        "active": window._ZERO, "uncertain": uncertainty,
+                        "interactiveEvidence": {"admitted": 2, "acknowledged": []}}
+
+            stage._gateway = gateway
+            self.assertEqual(broker._verify_gateway_boundary()["version"], 3)
+            request = {"id": 1, "controllerChallenge": "e" * 64}
+            result = broker.interactive_operation("interactive-observe", {**request, "operation": "interactive-observe"})
+            self.assertEqual(result["status"], "P2_INTERACTIVE_AUTHORING_GATEWAY_OBSERVATION_REFUSED")
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            with self.assertRaisesRegex(ValueError, "GATEWAY_DRAIN_REQUIRED"):
+                broker.interactive_operation("interactive-fence", {**request, "operation": "interactive-fence"})
+            self.assertEqual(current[0], stage._original)
+            self.assertEqual(gateway()["uncertain"], uncertainty)
+            with self.assertRaisesRegex(ValueError, "ORDINARY_GATEWAY_CHANGED"):
+                broker._verify_gateway_boundary()
+
     def test_identity_permit_signs_reviewed_selection_with_no_gateway_write(self):
         first = "10000000-0000-4000-8000-000000000001"
         second = "10000000-0000-4000-8000-000000000002"

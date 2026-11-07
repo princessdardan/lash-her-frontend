@@ -1,17 +1,20 @@
 // Disposable PostgreSQL 16 proof only. No external URL, provider or live service.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
-import { p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
+import { captureP2InteractiveCourseDraftBaseline, observeP2InteractiveCourseDraftCase, p2LifecyclePersistenceTargetSha256,
+  validateP2InteractiveCourseDraft } from "./p2-lifecycle-persistence-probe.mjs";
 import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apiPins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
@@ -100,8 +103,11 @@ async function main() {
     phase = "actual-three-domain-observer";
     const plan = { candidateSha256: hash("owned-candidate"), configurationSha256: hash("owned-configuration"), sources: commits, targets };
     const result = await runOwnedPersistenceScenario({ admin, runtime, plan });
+    phase = "actual-interactive-course-draft";
+    const draftChecks = await runOwnedDraftWitness({ control, course: admin.course, frontend: runtime.frontend,
+      target: targets.course, sourceCommit: commits.course, ca });
     const receipt = { version: 1, status: `P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES${postgresMajor}_PASS`, postgresMajor, frontendMigrations: 83,
-      courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: result.checks, skipped: 0, readOnly: true,
+      courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: [...result.checks, ...draftChecks], skipped: 0, readOnly: true,
       fixtureOnly: true, providerTouched: false, liveCertification: false, sourceMode: containerMode ? "parent-issued-manifest-and-mounted-readback" : "clean-git-checkouts",
       sourceManifestSha256,
       sourceSha256: Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs", "p2-lifecycle-owned-source-manifest.mjs", "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs"]
@@ -111,6 +117,97 @@ async function main() {
     for (const client of clients.reverse()) { try { await client.end(); } catch {} }
     if (running) { try { run(join(pgBin, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); } catch {} }
     rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, ca }) {
+  const user = "owned_course_draft_migration", password = randomBytes(32).toString("hex"), database = target.database;
+  await control.query(`CREATE ROLE ${user} LOGIN NOINHERIT PASSWORD '${password}'`);
+  await control.query(`GRANT CONNECT ON DATABASE ${database} TO ${user}`);
+  await course.query(`GRANT USAGE ON SCHEMA public TO ${user}`);
+  await course.query(`GRANT SELECT ON public.courses TO ${user}`);
+  const job = { schemaVersion: 2, qualificationTargetProfile: profile, kind: "operator-migration", operator: "Dardan",
+    environment: "staging", contractPhase: "p2", releaseId: "owned-draft-read", sourceCommit, runtimeRole: target.runtimeRole,
+    target: { schemaVersion: 2, qualificationTargetProfile: profile, environment: "staging", service: "lash-her-course-api",
+      host: target.host, port: target.port, database, user, serverMajor: target.serverMajor } };
+  const dependencies = {
+    verifyEnvironment: async () => {},
+    verifySession: async () => assert.equal((await frontend.query(`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks
+      WHERE pid=pg_catalog.pg_backend_pid() AND locktype='advisory' AND granted AND mode='ExclusiveLock') AS held`)).rows[0].held, true),
+    readCourseDatabaseUrl: () => `postgresql://${user}:${password}@${target.host}:${target.port}/${database}?sslmode=verify-full`,
+  };
+  const input = (name, changes = {}) => {
+    const draft = { title: "Owned draft é", slug: `owned-draft-${name}`, description: "Description", introduction: "Introduction",
+      currency: "CAD", accessMode: "paid", priceCents: 12000, cover: { url: "https://example.invalid/cover", alt: "Cover" },
+      seo: { title: "SEO title", description: "SEO description", noIndex: true }, taxClassification: "txcd_10103000", status: "draft",
+      ...changes };
+    return { draft, selection: { slug: draft.slug, bodySha256: hash(JSON.stringify(draft)) }, courseId: randomUUID() };
+  };
+  const create = ({ draft, courseId }) => course.query(`INSERT INTO public.courses
+    (id,slug,title,description,introduction,currency,access_mode,price_cents,cover,seo,tax_classification,status)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+  [courseId, draft.slug, draft.title, draft.description, draft.introduction, draft.currency, draft.accessMode, draft.priceCents,
+    draft.cover, draft.seo, draft.taxClassification, draft.status]);
+  const browser = ({ selection, courseId }) => ({ courseId, slug: selection.slug, revision: 1, status: "draft" });
+  const capture = ({ selection, draft }) => captureP2InteractiveCourseDraftBaseline(job, selection, draft, dependencies);
+  const observe = (fixture, baseline, receipt = browser(fixture)) =>
+    observeP2InteractiveCourseDraftCase(job, fixture.selection, baseline, receipt, dependencies);
+  const lock = () => frontend.query("SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))", ["lash-her:private-db:migrations"]);
+  const unlock = () => frontend.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))", ["lash-her:private-db:migrations"]);
+  const trust = getCACertificates("default");
+  setDefaultCACertificates([...trust, ca]);
+  await lock();
+  try {
+    const draft = input("rich"), reversed = Object.fromEntries(Object.entries(draft.draft).reverse());
+    assert.deepEqual(validateP2InteractiveCourseDraft(draft.selection, draft.draft), draft.draft);
+    assert.throws(() => validateP2InteractiveCourseDraft(draft.selection, reversed), { check: "course-draft-body-hash" });
+    assert.throws(() => validateP2InteractiveCourseDraft({ ...draft.selection, bodySha256: hash(JSON.stringify(reversed)) }, reversed),
+      { check: "course-draft-body" });
+    for (const invalid of [input("cover-order", { cover: { alt: "Cover", url: "https://example.invalid/cover" } }),
+      input("seo-order", { seo: { noIndex: true, title: "SEO title" } })]) {
+      assert.throws(() => validateP2InteractiveCourseDraft(invalid.selection, invalid.draft), { check: "course-draft-body" });
+    }
+    const changedShape = input("foreign", { expectedRevision: 1 });
+    assert.throws(() => validateP2InteractiveCourseDraft(changedShape.selection, changedShape.draft), { check: "course-draft-body" });
+    await assert.rejects(captureP2InteractiveCourseDraftBaseline(job, draft.selection, draft.draft,
+      { ...dependencies, readCourseDatabaseUrl: () => dependencies.readCourseDatabaseUrl().replace(user, target.runtimeRole) }),
+    { check: "credential-target" });
+    for (const fixture of [draft, input("free", { accessMode: "free", priceCents: 0, description: null, introduction: null,
+      cover: null, seo: { noIndex: false }, taxClassification: null })]) {
+      const baseline = await capture(fixture);
+      assert.equal(JSON.stringify(baseline), "{}");
+      await create(fixture);
+      await assert.rejects(observe(fixture, {}), { check: "course-draft-receipt" });
+      await assert.rejects(observe(fixture, baseline, { ...browser(fixture), revision: 2 }), { check: "course-draft-receipt" });
+      await assert.rejects(observeP2InteractiveCourseDraftCase({ ...job, sourceCommit: "c".repeat(40) }, fixture.selection,
+        baseline, browser(fixture), dependencies), { check: "course-draft-receipt" });
+      assert.deepEqual(await observe(fixture, baseline), { ...browser(fixture), readOnly: true });
+      await assert.rejects(observe(fixture, baseline), { check: "course-draft-receipt" });
+      await assert.rejects(capture(fixture), { check: "course-draft-already-present" });
+    }
+    for (const [field, value] of Object.entries({ title: "Wrong title", description: null, introduction: null, currency: "USD",
+      priceCents: 12001, cover: { url: "https://example.invalid/other", alt: "Other" }, seo: { noIndex: false },
+      taxClassification: "txcd_other", status: "archived", courseId: randomUUID() })) {
+      const fixture = input(field.toLowerCase()), baseline = await capture(fixture);
+      await create(field === "courseId" ? { ...fixture, courseId: value } : { ...fixture, draft: { ...fixture.draft, [field]: value } });
+      await assert.rejects(observe(fixture, baseline), { check: "course-draft-persistence" });
+    }
+    const access = input("access"), accessBaseline = await capture(access);
+    await create({ ...access, draft: { ...access.draft, accessMode: "free", priceCents: 0 } });
+    await assert.rejects(observe(access, accessBaseline), { check: "course-draft-persistence" });
+    const revision = input("revision"), revisionBaseline = await capture(revision);
+    await create(revision);
+    await course.query("UPDATE public.courses SET revision=2 WHERE id=$1", [revision.courseId]);
+    await assert.rejects(observe(revision, revisionBaseline), { check: "course-draft-persistence" });
+    const missing = input("missing");
+    await assert.rejects(observe(missing, await capture(missing)), { check: "course-draft-persistence" });
+    await unlock();
+    try { await assert.rejects(capture(input("unheld"))); }
+    finally { await lock(); }
+    return ["course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields", "course-draft-wrong-row-field-role-or-unheld-session-refused"];
+  } finally {
+    try { await unlock(); }
+    finally { setDefaultCACertificates(trust); }
   }
 }
 

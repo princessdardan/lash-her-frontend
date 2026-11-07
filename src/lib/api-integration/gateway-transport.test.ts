@@ -97,7 +97,8 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   });
 
   function evidence(stage: string, route: string, timestamp = issued) {
-    const selector = stage === "identity" ? "7032712d637573746f6d65722d7631008d680a9280714fd09da2c4d350aa729d" : undefined;
+    const selector = stage === "identity" ? "7032712d637573746f6d65722d7631008d680a9280714fd09da2c4d350aa729d"
+      : stage === "authoring" ? "7032712d617574686f72696e672d76318e2280dc03894248b21cf87427f9e85c" : undefined;
     const body = [selector ? "v2" : "v1", epoch, stage, issued - 90, issued + 90, nonce, ...(selector ? [selector] : [])].join(".");
     const browserMac = createHmac("sha256", secret)
       .update(["lash-her:p2q:interactive:browser:v1", deployment, source, frontendTarget, body].join("\n")).digest("hex");
@@ -149,9 +150,16 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(grant.cookie, grant.proxyProof, () => send({
     method: "POST", path: "/v1/admin/entitlements/grants", body, idempotencyKey, applicationToken: "owned.admin.jwt",
   }), grantRoute);
+  const draftRoute = "POST /api/admin/courses";
+  const authoring = evidence("authoring", draftRoute);
+  const draftBody = '{"slug":"owned-draft","status":"draft"}';
+  await inBrowser(authoring.cookie, authoring.proxyProof, () => send({
+    method: "POST", path: "/v1/admin/courses", body: draftBody, applicationToken: "owned.admin.jwt",
+  }), draftRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
+    { stage: "authoring", method: "POST", target: "/course/v1/admin/courses", bytes: [draftBody, "owned.admin.jwt", ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -189,6 +197,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 13);
-  assert.ok(captured.slice(2).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, 14);
+  assert.ok(captured.slice(3).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

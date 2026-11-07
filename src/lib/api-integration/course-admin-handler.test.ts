@@ -22,6 +22,21 @@ test("admin boundaries require configured origin/CSRF before invoking staff auth
   assert.equal(calls, 0);
 });
 
+test("scoped authoring refuses non-drafts before invoking the authenticated Course client", async () => {
+  const path = "/api/admin/courses", statuses: unknown[] = [];
+  const makeHandler = (authoringActorId?: string) => createCourseAdminHandler("create-course", {
+    enabled: () => true, origin: () => origin,
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, authoringActorId),
+    client: () => ({ async createCourse(input: { status: unknown }) { statuses.push(input.status); return {}; } }) as never,
+  });
+  const scoped = makeHandler(id);
+  for (const body of [{ status: "published" }, {}, null, []]) assert.equal((await scoped(req(path, "POST", body))).status, 400);
+  assert.deepEqual(statuses, []);
+  assert.equal((await scoped(req(path, "POST", { status: "draft" }))).status, 200);
+  assert.equal((await makeHandler()(req(path, "POST", { status: "published" }))).status, 200);
+  assert.deepEqual(statuses, ["draft", "published"]);
+});
+
 test("admin paginated reads are private, validated and authorized through the real named client", async () => {
   let calls = 0;
   const client = createCourseClient({ enabled: () => true, getAdmin: async permission => { assert.equal(permission, "courses:edit"); return actor; }, mintToken: () => "server.admin.jwt", getTransport: () => async input => {

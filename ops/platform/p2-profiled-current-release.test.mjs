@@ -234,12 +234,38 @@ test('fixed current certification plan joins the original release plan, terminal
     const userId = '10000000-0000-4000-8000-000000000004';
     const selectedLifecycle = { stage: 'lifecycle', actorId: selectedInteractive.actorId, requests: [], windowSeconds: 90,
       frontendAction: { actorKind: 'admin', userId, operation: 'suspend' } };
+    const authoringDraft = { title: 'Owned reviewed draft', slug: 'owned-reviewed-draft', description: null, introduction: null,
+      currency: 'CAD', accessMode: 'free', priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null, status: 'draft' };
+    const selectedAuthoring = { stage: 'authoring', actorId: selectedInteractive.actorId, windowSeconds: 90,
+      authoringAction: { operation: 'create-draft', slug: authoringDraft.slug }, requests: [
+        { method: 'GET', target: '/course/v1/admin/courses?limit=100', bodySha256: rawHash(Buffer.alloc(0)), uses: 1 },
+        { method: 'POST', target: '/course/v1/admin/courses', bodySha256: rawHash(JSON.stringify(authoringDraft)), uses: 1 },
+      ] };
     const paired = (scope, identity = { certificationActionId: 'owned-identity-action', initialEpoch: '7', windowSeconds: 240 }) => {
       const selected = scoped('interactive-browser', scope);
       return { ...selected, interactiveIdentity: identity, certification: { ...selected.certification, initialEpoch: '9' } };
     };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
+    const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
+    assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+    assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
+    assert.deepEqual(draftPair.identity.scopedAction.identityActor, { actorKind: 'admin', actorId: selectedAuthoring.actorId });
+    assert.equal(BigInt(draftPair.authoring.initialEpoch) - BigInt(draftPair.identity.initialEpoch), 2n);
+    assert.equal(JSON.stringify(draftPair).includes(authoringDraft.title), false);
+    const draftHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(draftPair.authoring), encoding: 'utf8' });
+    assert.equal(draftHostPlan.status, 0, draftHostPlan.stderr);
+    const draftSettings = paired(selectedAuthoring);
+    await assert.rejects(p2ProfiledCertificationOperator(draftSettings, { confirmation: 'staging/owned-scoped-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+    await assert.rejects(p2ProfiledCertificationOperator({ ...draftSettings, execution: { authoringDraft: { ...authoringDraft, title: 'Other title' } } },
+      { confirmation: 'staging/owned-scoped-action' }), error => error.code !== 'ENOENT');
+    await assert.rejects(p2ProfiledCertificationOperator({ ...draftSettings, execution: { authoringDraft } },
+      { confirmation: 'staging/owned-scoped-action' }), { code: 'ENOENT' });
+    for (const requests of [selectedAuthoring.requests.toReversed(), [selectedAuthoring.requests[0]],
+      [{ ...selectedAuthoring.requests[0], target: '/course/v1/admin/courses?limit=99' }, selectedAuthoring.requests[1]],
+      [selectedAuthoring.requests[0], { ...selectedAuthoring.requests[1], uses: 2 }]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedAuthoring, requests })));
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);
@@ -339,6 +365,7 @@ test('fixed current certification plan joins the original release plan, terminal
     ]);
     for (const [selection, selector] of [
       [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
+      [selectedAuthoring, '7032712d617574686f72696e672d7631' + selectedAuthoring.actorId.replaceAll('-', '')],
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },
@@ -353,8 +380,10 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
+      const selectedGatewayKey = selection.stage === 'authoring'
+        ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
-        `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, null, host, expires,
+        `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,
       ]);
     }
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('contain-native', selectedCommand)));

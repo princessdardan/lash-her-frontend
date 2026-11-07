@@ -18,6 +18,7 @@ const knownAckStages=new WeakMap();
 const interactiveStages=new WeakMap();
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 const sha256=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value);
+const nonzeroSha256=value=>sha256(value)&&!/^0+$/u.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
 const canonicalUuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
@@ -25,6 +26,9 @@ const utc=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&ne
 const interactiveReceiptKeys=['version','qualificationTargetProfile','status','certificationActionId','planSha256','stage'];
 const gatewayFenceKeys=['gatewayAdmissionClosed','gatewayActive','gatewayUncertain'];
 const closedGateway=value=>value.gatewayAdmissionClosed===true&&value.gatewayActive===0&&value.gatewayUncertain===0;
+const authoringCourseTarget='/course/v1/admin/courses';
+const emptyBodySha256=p2NativeHash(Buffer.alloc(0));
+const authoringGatewayKeys=['epoch','gatewayStateSha256','gatewayAcknowledgements','gatewayActive','gatewayUncertain','gatewayEvidenceSha256'];
 const scopedOperations={
   'export-cleanup':['scoped-export-preflight','scoped-export-invoke','scoped-export-join'],
   'mux-callback-recovery':['scoped-mux-open','scoped-mux-observe','scoped-mux-close'],
@@ -43,21 +47,31 @@ export function readP2CertificationInteractiveStage(handle,plan){
 
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
-  const identity=action?.stage==='identity';
+  const identity=action?.stage==='identity',authoring=action?.stage==='authoring';
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
-    (identity||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
-      enrollment?'identityEnrollment':identity?'identityActor':'frontendAction'])&&
-    Array.isArray(action.requests)&&action.requests.length===0&&Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
+    (identity||authoring||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
+      enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':'frontendAction'])&&
+    Array.isArray(action.requests)&&action.requests.length===(authoring?2:0)&&
+    Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
     binding.bindingSha256===plan.planSha256&&sha256(binding.browserProgramSha256));
+  if(authoring){
+    const selected=action.authoringAction,[list,create]=action.requests;
+    demand(canonicalUuid(action.actorId)&&exact(selected,['operation','slug'])&&selected.operation==='create-draft'&&
+      typeof selected.slug==='string'&&selected.slug.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(selected.slug)&&
+      isDeepStrictEqual(list,{method:'GET',target:authoringCourseTarget+'?limit=100',bodySha256:emptyBodySha256,uses:1})&&
+      exact(create,['method','target','bodySha256','uses'])&&create.method==='POST'&&create.target===authoringCourseTarget&&
+      nonzeroSha256(create.bodySha256)&&create.bodySha256!==emptyBodySha256&&create.uses===1);
+    return {selection:{...selected,actorKind:'admin',actorId:action.actorId,bodySha256:create.bodySha256}};
+  }
   if(enrollment){
     const selected=action.identityEnrollment;
     demand(action.actorId===null&&exact(selected,['provider','emailSha256','nonce'])&&
-      ['google','resend'].includes(selected.provider)&&sha256(selected.emailSha256)&&
-      typeof selected.nonce==='string'&&/^[a-f0-9]{32}$/u.test(selected.nonce));
+      ['google','resend'].includes(selected.provider)&&nonzeroSha256(selected.emailSha256)&&
+      typeof selected.nonce==='string'&&/^[a-f0-9]{32}$/u.test(selected.nonce)&&!/^0+$/u.test(selected.nonce));
     return {selection:{actorKind:'customer'},enrollment:{...selected}};
   }
   if(identity){
@@ -114,6 +128,29 @@ function identityJoinedEvidence(evidence,selected,context,enrollment){
     demand(owner?witness.ownerMappingVerified===true:Number.isSafeInteger(witness.liveSessionCount)&&witness.liveSessionCount>0);
   }
   return {...actor,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
+}
+
+function requireAuthoringGatewayObservation(receipt,epoch){
+  const {gatewayEvidenceSha256,...observed}=receipt;
+  const acks=receipt.gatewayAcknowledgements;
+  demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
+    Array.isArray(acks)&&acks.length===2&&acks.every((row,index)=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
+      canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId)&&row.requestIndex===index&&row.upstreamStatus===[200,201][index])&&
+    acks[0].requestId!==acks[1].requestId&&acks[0].proofRequestId!==acks[1].proofRequestId&&gatewayEvidenceSha256===p2NativeHash(observed));
+}
+
+function authoringJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const gatewayPostRequestId=observed.gatewayAcknowledgements[1].requestId;
+  const body=response?.body;
+  demand(exact(response,['method','pathname','status','requestId','body'])&&response.method==='POST'&&response.pathname==='/api/admin/courses'&&
+    response.status===200&&response.requestId===gatewayPostRequestId&&
+    exact(body,['courseId','slug','revision','status'])&&canonicalUuid(body.courseId)&&body.slug===selected.slug&&
+    body.revision===1&&body.status==='draft'&&isDeepStrictEqual(witness,{...body,readOnly:true}));
+  return {actorId:selected.actorId,operation:selected.operation,courseId:body.courseId,slug:body.slug,
+    browserResponseSha256:p2NativeHash(response),courseWitnessSha256:p2NativeHash(witness),
+    gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPostRequestId};
 }
 
 export function readP2CertificationWorkerStage(handle,plan){
@@ -193,12 +230,13 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const requireRecorder=()=>demand(alive()&&isDeepStrictEqual(readP2InteractiveBrowserControllerBinding(interactivePlan,browserController),binding));
           requireRecorder();
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
-          const stage=snapshot.scopedAction.stage,identity=stage==='identity';
+          const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring';
           const {selection,enrollment}=selectedInteractive;
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
-            ...(enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
-          let phase='new',expiresAt,installed=false;
+            ...(authoring?{authoring:{actorId:selection.actorId,slug:selection.slug,bodySha256:selection.bodySha256}}:
+              enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
+          let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
             demand(alive());
             const packet=await request(operation,'CERTIFICATION_INTERACTIVE_OBSERVED',{controllerChallenge,...data},timeout);
@@ -218,7 +256,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async open(){
               demand(phase==='prepared');requireRecorder();phase='opening';
               const receipt=await call('interactive-open','OPENED',['epoch','expiresAt','gatewayScoped']);
-              demand(receipt.epoch===epoch&&utc(receipt.expiresAt)&&receipt.gatewayScoped===false);
+              demand(receipt.epoch===epoch&&utc(receipt.expiresAt)&&receipt.gatewayScoped===authoring);
               expiresAt=Date.parse(receipt.expiresAt);phase='opened';return receipt;
             },
             async installPermit(){
@@ -239,17 +277,28 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               }catch{phase='install-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_PERMIT_INSTALL_FAILED');}
               finally{if(packet){if(packet.permit&&typeof packet.permit==='object')delete packet.permit.cookie;delete packet.permit;}}
             },
+            ...(authoring?{
+              async observe(){
+                demand(phase==='installed');requireRecorder();phase='observing';
+                try{
+                  const receipt=await call('interactive-observe','GATEWAY_OBSERVED',authoringGatewayKeys);
+                  requireAuthoringGatewayObservation(receipt,epoch);
+                  gatewayObservation=structuredClone(receipt);phase='observed';return receipt;
+                }catch{phase='observe-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_AUTHORING_OBSERVE_FAILED');}
+              },
+            }:{}),
             async fence(){
               // The gateway fence must remain available when the recorder dies
-              // or refuses the permit after the host has opened the stage.
-              demand(['opened','installed','install-failed'].includes(phase));phase='fencing';
+              // or an observation fails after the host has opened the stage.
+              demand(['opened','installed','install-failed','observed','observe-failed'].includes(phase));phase='fencing';
               const receipt=await call('interactive-fence','FENCED',gatewayFenceKeys);
               demand(closedGateway(receipt));phase='fenced';return receipt;
             },
             async retain(caseEvidence){
-              demand(phase==='fenced'&&installed);requireRecorder();
+              demand(phase==='fenced'&&installed&&(!authoring||gatewayObservation));requireRecorder();
               const evidence=structuredClone(caseEvidence);
-              const expected=identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);
+              const expected=authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
+                identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);
               phase='retaining';
               const receipt=await call('interactive-retain','JOINED',
                 ['browserProgramSha256',...Object.keys(expected),

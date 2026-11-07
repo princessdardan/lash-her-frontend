@@ -11,7 +11,7 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { p2InteractiveBrowserPath, p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2InteractiveBrowserInput,
+import { p2InteractiveBrowserPath, p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2AuthoringMutationReceipt, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
@@ -206,13 +206,17 @@ async function reviewedInteractiveInput(plan, challenge) {
   demand(plan.mode === "interactive-browser" && plan.version === 2 && plan.maximumSeconds === 300
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
     && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
+  const action = plan.scopedAction;
+  if (action.stage === "authoring") demand(action.authoringAction?.operation === "create-draft"
+    && action.requests[1]?.method === "POST" && action.requests[1]?.target === "/course/v1/admin/courses");
   return validateP2InteractiveBrowserInput({ version: 2, environment: "staging", actionId: plan.certificationActionId,
-    challenge, bindingSha256: plan.planSha256, stage: plan.scopedAction.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
+    challenge, bindingSha256: plan.planSha256, stage: action.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
-    browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: plan.scopedAction.windowSeconds,
-    ...(plan.scopedAction.stage === "identity" ? Object.hasOwn(plan.scopedAction, "identityEnrollment")
-      ? { identityEnrollment: plan.scopedAction.identityEnrollment } : { identity: plan.scopedAction.identityActor } : {}),
-    ...(plan.scopedAction.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(plan.scopedAction.frontendAction) } : {}) });
+    browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: action.windowSeconds,
+    ...(action.stage === "identity" ? Object.hasOwn(action, "identityEnrollment")
+      ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
+    ...(action.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(action.frontendAction) } : {}),
+    ...(action.stage === "authoring" ? { authoring: { actorId: action.actorId, slug: action.authoringAction.slug, bodySha256: action.requests[1].bodySha256 } } : {}) });
 }
 
 // A dedicated stdin pipe carries one permit per reviewed phase. All IPC data
@@ -250,17 +254,19 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
   child.stdin.on("error", fail);
   child.on("message", message => {
     try {
-      const capture = pending?.type === "interactive-lifecycle-captured";
+      const lifecycle = pending?.type === "interactive-lifecycle-captured";
+      const authoring = pending?.type === "interactive-authoring-captured";
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
-        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []), ...(capture ? ["response"] : identity ? ["identity"] : [])])
+        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []), ...(lifecycle || authoring ? ["response"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserPath(pending.binding.stage, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599);
       }
-      if (capture) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
+      if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
+      if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
       if (identity) validateP2InteractiveIdentityReceipt(message.identity, input);
       const waiter = pending;
       pending = undefined;
@@ -292,6 +298,18 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
   const requireSelection = context => {
     demand(!failed && !ended && selected?.context === context);
     return selected;
+  };
+  const captureMutation = async (context, stage, expectedContext) => {
+    const selection = requireSelection(context);
+    const remaining = selection.expires * 1000 - Date.now();
+    demand(phase === "opened" && !closing && binding.stage === stage && context === expectedContext
+      && remaining > 0 && remaining <= input.windowSeconds * 1000);
+    phase = "capturing";
+    const receipt = await command("interactive-capture-" + stage, { ...binding, ...selection },
+      "interactive-" + stage + "-captured", selection, remaining + 5000);
+    phase = "cleared";
+    clearTimeout(phaseTimer);
+    return receipt.response;
   };
   const controller = Object.freeze({
     initialized: () => ready,
@@ -329,17 +347,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       phase = "opened";
       return receipt;
     },
-    async captureLifecycleResponse(context) {
-      const selection = requireSelection(context);
-      const remaining = selection.expires * 1000 - Date.now();
-      demand(phase === "opened" && !closing && binding.stage === "lifecycle" && input.lifecycle.context === context
-        && remaining > 0 && remaining <= input.windowSeconds * 1000);
-      phase = "capturing";
-      const receipt = await command("interactive-capture-lifecycle", { ...binding, ...selection }, "interactive-lifecycle-captured", selection, remaining + 5000);
-      phase = "cleared";
-      clearTimeout(phaseTimer);
-      return receipt.response;
-    },
+    captureLifecycleResponse: context => captureMutation(context, "lifecycle", input.lifecycle?.context),
+    captureAuthoringResponse: context => captureMutation(context, "authoring", "owner"),
     async captureIdentity(context, ownerSubjectSha256) {
       const selection = requireSelection(context);
       const remaining = selection.expires * 1000 - Date.now();
@@ -373,9 +382,12 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
           && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
           && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
-        if (input.stage === "identity") demand(verifiedIdentity?.sessionVerified === true && next.stage === "lifecycle"
-          && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
-          && BigInt(next.epoch) === BigInt(input.epoch) + 2n);
+        if (input.stage === "identity" || next.stage === "authoring") {
+          demand(input.stage === "identity" && verifiedIdentity?.sessionVerified === true
+            && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && BigInt(next.epoch) === BigInt(input.epoch) + 2n
+            && (next.stage === "lifecycle" && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
+              || next.stage === "authoring" && verifiedIdentity.actorKind === "admin"));
+        }
         const receipt = await command("interactive-select", { ...binding, next }, "interactive-selected", {}, 30_000, nextBinding);
         actions.add(next.actionId);
         activePlan = nextPlan;

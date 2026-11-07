@@ -34,6 +34,7 @@ _BROWSER_PATHS = (
     "/api/customer-auth/callback/resend",
     "/api/auth/callback/google",
 )
+_AUTHORING_PATHS = ("/admin/courses", "/api/admin/courses")
 
 
 def _digest(value):
@@ -69,7 +70,7 @@ class UnauthenticatedIngressClient:
     def request(self, origin, path="/"):
         demand(type(origin) is str and (origin == canonical.ORIGIN or _DIRECT_DEPLOYMENT.fullmatch(origin)),
                "P2_INTERACTIVE_INGRESS_ORIGIN_REFUSED")
-        demand(type(path) is str and path in _BROWSER_PATHS, "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
+        demand(type(path) is str and path in _BROWSER_PATHS + _AUTHORING_PATHS, "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
         request = urllib.request.Request(url, method="GET", headers={
             "accept": "text/html,application/xhtml+xml", "cache-control": "no-cache"})
@@ -157,7 +158,12 @@ def observe_browser_protection(context, client, *, expected_profile):
     return _observe_selected_protection(context, client, expected_profile, browser=True)
 
 
-def _observe_selected_protection(context, client, expected_profile, *, browser):
+def observe_authoring_protection(context, client, *, expected_profile):
+    """Check the protected authoring page and its exact same-origin endpoint."""
+    return _observe_selected_protection(context, client, expected_profile, browser=True, authoring=True)
+
+
+def _observe_selected_protection(context, client, expected_profile, *, browser, authoring=False):
     expected = migrate.profile_context(expected_profile)
     demand(expected is not None, "QUALIFICATION_TARGET_PROFILE_REQUIRED")
     plan = native.identity(context, expected_profile=expected)
@@ -170,7 +176,8 @@ def _observe_selected_protection(context, client, expected_profile, *, browser):
     protection = _protection(before)
     requester = UnauthenticatedIngressClient()
     observations = []
-    for path in _BROWSER_PATHS if browser else ("/",):
+    paths = _AUTHORING_PATHS if authoring else _BROWSER_PATHS if browser else ("/",)
+    for path in paths:
         alias_denial = requester.request(canonical.ORIGIN, path)
         deployment_denial = requester.request(plan["deploymentUrl"], path)
         demand(all(denial in ({"status": 401, "redirected": False}, {"status": 403, "redirected": False})

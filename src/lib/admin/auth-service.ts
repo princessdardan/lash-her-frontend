@@ -1,4 +1,4 @@
-import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterAuthoringActorId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import type { AdminUserStore } from "./admin-user-store";
 import { canAdmin, type AdminPermissionAction } from "./permissions";
@@ -54,6 +54,11 @@ export function createAdminAuth(
 
     if (providerUser && emailUser && providerUser.id !== emailUser.id) {
       throw new AdminAuthError("identity_conflict");
+    }
+
+    const authoringActorId = currentWriterAuthoringActorId();
+    if (authoringActorId && (providerUser?.id !== authoringActorId || providerUser.role !== "owner" || emailUser?.id !== authoringActorId)) {
+      throw new AdminAuthError("forbidden");
     }
 
     let user: AdminUserRecord;

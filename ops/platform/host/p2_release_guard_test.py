@@ -162,7 +162,7 @@ class IndependentGuardTests(unittest.TestCase):
                 supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw))
 
     def test_profiled_interactive_terminal_joins_private_dispatch_and_physical_ledger(self):
-        cases = (('lifecycle', 'admin', None), ('identity', 'admin', None), ('identity', 'customer', None),
+        cases = (('lifecycle', 'admin', None), ('authoring', 'admin', None), ('identity', 'admin', None), ('identity', 'customer', None),
                  ('identity', 'customer', 'google'), ('identity', 'customer', 'resend'))
         for stage, actor_kind, provider in cases:
             with self.subTest(stage=stage, actor_kind=actor_kind, provider=provider):
@@ -177,6 +177,7 @@ class IndependentGuardTests(unittest.TestCase):
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
         actor, user, request, command, *ledger_ids = ids
         identity = stage_name == 'identity'
+        authoring = stage_name == 'authoring'
         reviewed = {'actorKind': actor_kind, 'actorId': actor}
         selection = {'actorKind': actor_kind, 'userId': user, 'operation': 'delete'}
         action = {'stage': stage_name, 'actorId': None if identity else actor, 'requests': [], 'windowSeconds': 60}
@@ -184,6 +185,11 @@ class IndependentGuardTests(unittest.TestCase):
             action['identityEnrollment'] = {'provider': provider, 'emailSha256': '7' * 64, 'nonce': '8' * 32}
         elif identity:
             action['identityActor'] = reviewed
+        elif authoring:
+            action['authoringAction'] = {'operation': 'create-draft', 'slug': 'owned-draft'}
+            action['requests'] = [
+                {'method': 'GET', 'target': '/course/v1/admin/courses?limit=100', 'bodySha256': window._EMPTY, 'uses': 1},
+                {'method': 'POST', 'target': '/course/v1/admin/courses', 'bodySha256': '9' * 64, 'uses': 1}]
         else:
             action['frontendAction'] = selection
         plan.update(mode='interactive-browser', scopedAction=action, nativePlan={'producer': {'role': {'oid': '22222'}}})
@@ -212,6 +218,16 @@ class IndependentGuardTests(unittest.TestCase):
             if provider is not None:
                 domain.update(provider=provider, providerLinkCount=1 if provider == 'google' else 0)
             browser_key, domain_key = 'browserIdentity', 'identityWitness'
+        elif authoring:
+            draft = {'courseId': command, 'slug': 'owned-draft', 'revision': 1, 'status': 'draft'}
+            browser = {'method': 'POST', 'pathname': '/api/admin/courses', 'status': 200, 'requestId': request, 'body': draft}
+            domain = {**draft, 'readOnly': True}
+            browser_key, domain_key = 'browserResponse', 'courseWitness'
+            gateway_artifact = {**window.browser_receipt(plan, 'GATEWAY_OBSERVED'), 'epoch': '2', 'gatewayActive': 0,
+                                'gatewayUncertain': 0, 'gatewayStateSha256': '7' * 64, 'gatewayAcknowledgements': [
+                {'requestId': user, 'proofRequestId': actor, 'requestIndex': 0, 'upstreamStatus': 200},
+                {'requestId': request, 'proofRequestId': ledger_ids[0], 'requestIndex': 1, 'upstreamStatus': 201}]}
+            migrate.write_json(directory, window.browser_artifact(plan, 'gateway'), gateway_artifact)
         else:
             browser_key, domain_key = 'browserResponse', 'lifecycleWitness'
         evidence = {browser_key: browser, domain_key: domain}
@@ -240,7 +256,8 @@ class IndependentGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, f'{stage_name.upper()}_PERMIT_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         stage._permit_issued = True
-        with self.assertRaisesRegex(ValueError, f'{stage_name.upper()}_WITNESS_REQUIRED'):
+        witness_error = 'AUTHORING_COURSE_WITNESS_REQUIRED' if authoring else f'{stage_name.upper()}_WITNESS_REQUIRED'
+        with self.assertRaisesRegex(ValueError, witness_error):
             broker.command({**envelope, 'operation': 'interactive-retain',
                             'caseEvidence': {**evidence, domain_key: {**domain, 'actorId': user}}})
         if identity:
@@ -259,6 +276,10 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'IDENTITY_ENROLLMENT_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+        if authoring:
+            with self.assertRaisesRegex(ValueError, 'AUTHORING_BROWSER_RESPONSE_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain',
+                                'caseEvidence': {**evidence, browser_key: {**browser, 'requestId': user}}})
         with patch.object(stage, 'verify_gateway_fenced', side_effect=ValueError('P2_INTERACTIVE_FENCE_REQUIRED')):
             with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -276,6 +297,9 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['context'], 'owner' if actor_kind == 'admin' else 'learner')
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
             self.assertEqual(case['identityWitnessSha256'], supervisor._canonical_sha(domain))
+        if authoring:
+            self.assertEqual(case['gatewayPostRequestId'], request)
+            self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         for retained in directory.iterdir():
@@ -304,13 +328,21 @@ class IndependentGuardTests(unittest.TestCase):
             guard({**terminal, 'frontendAdmission': {**closed, 'epoch': '2'}})
         with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):
             guard({**terminal, 'witnessSha256': '0' * 64})
+        if authoring:
+            bad = copy.deepcopy(gateway_artifact)
+            bad['gatewayAcknowledgements'][1]['upstreamStatus'] = 200
+            (directory / window.browser_artifact(plan, 'gateway')).write_text(json.dumps(bad))
+            with self.assertRaisesRegex(ValueError, 'AUTHORING_ACKNOWLEDGEMENTS_REQUIRED'):
+                guard(terminal)
+            (directory / window.browser_artifact(plan, 'gateway')).write_text(json.dumps(gateway_artifact))
         change = {'baselineSha256': '3' * 64}
         if identity:
             change = {'ownerMappingVerified': False} if actor_kind == 'admin' else {'liveSessionCount': 0}
         changed = {**domain, **change}
         (directory / window.browser_artifact(plan, 'evidence')).write_text(json.dumps({**evidence, domain_key: changed}))
         error = ('IDENTITY_ENROLLMENT_WITNESS_REQUIRED' if provider is not None else
-                 'IDENTITY_WITNESS_REQUIRED' if identity else 'INTERACTIVE_CASE_REFUSED')
+                 'IDENTITY_WITNESS_REQUIRED' if identity else
+                 'AUTHORING_COURSE_WITNESS_REQUIRED' if authoring else 'INTERACTIVE_CASE_REFUSED')
         with self.assertRaisesRegex(ValueError, error):
             guard(terminal)
 

@@ -5,6 +5,7 @@ import { readSameOriginJson } from "./same-origin-json";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
 import { runCourseAdminOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
+import { currentWriterAuthoringActorId } from "@/lib/writer-admission/context";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 type Client = ReturnType<typeof createCourseClient>;
@@ -43,7 +44,12 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
             case "list-courses": result = await course.listAdminCourses(query); break;
             case "get-course": result = await course.getAdminCourse(params.courseId); break;
             case "publication-readiness": result = await course.getPublicationReadiness(params.courseId); break;
-            case "create-course": result = await course.createCourse(body as Parameters<Client["createCourse"]>[0]); break;
+            case "create-course": {
+              const input = body as Parameters<Client["createCourse"]>[0];
+              if (currentWriterAuthoringActorId() && input?.status !== "draft") throw new IntegrationServiceError("invalid_request", 400);
+              result = await course.createCourse(input);
+              break;
+            }
             case "update-course": result = await course.updateCourse(params.courseId, body as Parameters<Client["updateCourse"]>[1]); break;
             case "create-module": result = await course.createModule(params.courseId, body as Parameters<Client["createModule"]>[1]); break;
             case "update-module": result = await course.updateModule(params.moduleId, body as Parameters<Client["updateModule"]>[1]); break;
