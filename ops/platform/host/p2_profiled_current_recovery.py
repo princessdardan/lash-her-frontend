@@ -100,7 +100,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         if initial['disposition'] == 'resume-approved-api-suffix':
             require(type(suffix) is dict and set(suffix) == {'course', 'community'} and
                     all(type(value) is list and all(type(tag) is str and re.fullmatch(r'\d{4}_[a-z0-9_]+', tag)
-                                                    for tag in value) for value in suffix.values()),
+                                                    for tag in value) for value in suffix.values()) and
+                    sum(len(value) for value in suffix.values()) > 0,
                     'P2_PROFILED_CURRENT_API_SUFFIX_REQUIRED')
         else:
             require(suffix is None, 'P2_PROFILED_CURRENT_API_SUFFIX_REFUSED')

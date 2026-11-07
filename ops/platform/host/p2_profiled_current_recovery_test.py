@@ -67,6 +67,9 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
                 changed = initial(); change(changed)
                 with self.assertRaises(Exception):
                     broker.select_release(changed)
+            empty = initial('resume-approved-api-suffix'); empty['approvedApiSuffix'] = {'course': [], 'community': []}
+            with self.assertRaises(Exception):
+                broker.select_release(empty)
 
     def test_scope_is_constructed_only_with_the_source_recovery_action(self):
         broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)

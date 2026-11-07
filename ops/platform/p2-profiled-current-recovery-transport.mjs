@@ -49,6 +49,12 @@ function validateInitial(initial) {
   demand(initial.originalReceiptSha256 && !Array.isArray(initial.originalReceiptSha256)
     && isDeepStrictEqual(Object.keys(initial.originalReceiptSha256), [...originalReceiptNames])
     && Object.values(initial.originalReceiptSha256).every(digest));
+  const suffix = initial.approvedApiSuffix;
+  if (initial.disposition === "resume-approved-api-suffix") {
+    demand(suffix && !Array.isArray(suffix) && isDeepStrictEqual(Object.keys(suffix).sort(), ["community", "course"])
+      && Object.values(suffix).every(value => Array.isArray(value)) && Object.values(suffix).flat().length > 0
+      && Object.values(suffix).flat().every(tag => typeof tag === "string" && /^\d{4}_[a-z0-9_]+$/u.test(tag)));
+  } else demand(suffix === undefined);
   return initial;
 }
 

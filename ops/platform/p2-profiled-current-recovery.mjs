@@ -72,6 +72,7 @@ function validateSettings(settings) {
     demand(settings.approvedApiSuffix && !Array.isArray(settings.approvedApiSuffix)
       && ["course", "community"].every(service => Array.isArray(settings.approvedApiSuffix[service]))
       && Object.keys(settings.approvedApiSuffix).length === 2
+      && Object.values(settings.approvedApiSuffix).flat().length > 0
       && Object.values(settings.approvedApiSuffix).flat().every(tag => typeof tag === "string" && /^\d{4}_[a-z0-9_]+$/u.test(tag)));
   } else demand(settings.approvedApiSuffix === undefined);
   return settings;

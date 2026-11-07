@@ -42,6 +42,8 @@ test("closed recovery dispositions require exact matching carriers and only the 
     value => { value.approvedApiSuffix = { course: [], community: [] }; }]) {
     const changed = fixture(); mutate(changed); assert.throws(() => prepareP2ProfiledCurrentRecovery(changed));
   }
+  const empty = fixture("resume-approved-api-suffix"); empty.approvedApiSuffix = { course: [], community: [] };
+  assert.throws(() => prepareP2ProfiledCurrentRecovery(empty));
 });
 
 test("a materialized leaf plan cannot be submitted as the source operator settings packet", async () => {
