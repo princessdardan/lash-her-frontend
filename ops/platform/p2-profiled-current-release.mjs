@@ -150,6 +150,12 @@ function verifyConfiguration(prepared, settings) {
   }
 }
 
+export function verifyP2ProfiledCurrentReleaseConfiguration(prepared) {
+  const original = preparations.get(prepared);
+  demand(original);
+  verifyConfiguration(prepared, original.settings);
+}
+
 export async function verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify) {
   demand(/^[a-z][a-z0-9_]{0,62}$/u.test(inventory?.owner?.name ?? ""));
   await verify(); await client.query('BEGIN READ ONLY');

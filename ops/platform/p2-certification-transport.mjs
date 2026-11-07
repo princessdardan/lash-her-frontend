@@ -149,7 +149,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           return{verify:async()=>{await call('fault-verify');},observe:()=>call('fault-observe'),arm:(_plan,record)=>call('fault-arm',{record}),effects:()=>call('fault-effects'),
             disarm:()=>call('fault-disarm'),closeGateway:()=>call('fault-close-gateway')};},
         async prepareClose(caseOutcome,requestEvidence){demand(armed&&!prepared);const value=await request('certification-prepare-close','CERTIFICATION_CLOSE_PREPARED',{caseOutcome,requestEvidence},240_000);prepared=true;return value.receipt;},
-        async finish(outcome){demand(prepared);const bytes=readFrontendReleaseEvidence(directory,'p2-certification-outcome.json');demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(outcome));
+        async finish(outcome){demand(prepared);const name=profiled?'p2-certification-close-prepared.json':'p2-certification-outcome.json';
+          const bytes=readFrontendReleaseEvidence(directory,name);demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(outcome));
           joined=await request('finish','P2_CERTIFICATION_JOINED',{certification:bytes.toString('base64')});return joined.receipt;},
         failClosed:fail,
       };

@@ -166,10 +166,17 @@ async function child(){
       assert.equal(observed.releaseId,receipt.releaseId);assert.equal(observed.targetSha256,receipt.targetSha256);
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps));
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'fence'},deps,profile));
+      await assert.rejects(observeP2CertificationPhysical({...probe,operation:'verify-closed'},deps,profile));
       await assert.rejects(observeP2CertificationPhysical({...probe,marker:'f'.repeat(64),operation:'observe'},deps,profile));
       await assert.rejects(containP2ProfiledCertificationAdmission(probe,deps),error=>error.checkpoint==='guard-physical-lock');
       return probe;
     },profile);
+    const lateProof=await observeP2CertificationPhysical({...guardProbe,operation:'verify-closed'},deps,profile);
+    assert.equal(lateProof.status,'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED');
+    assert.equal(lateProof.backendPid,guardProbe.backendPid);
+    assert.equal(lateProof.backendStart,guardProbe.backendStart);
+    assert.equal(lateProof.backendAbsent&&lateProof.migrationLockReleased&&lateProof.nonceLockReleased,true);
+    assert.deepEqual(lateProof.admission,{epoch:'3',newWork:false,recovery:false,active:0,uncertain:0});
     await assert.rejects(withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({client,probe,verify})=>{
       assert.equal((await client.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS unlocked',[probe.marker])).rows[0].unlocked,true);
       await assert.rejects(verify);

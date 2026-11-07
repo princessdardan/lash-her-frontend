@@ -677,8 +677,9 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
         super().verify()
 
     def probe(self,operation):
-        require(operation in ('observe','verify-schema','witness','fence'),'P2_CERTIFICATION_OBSERVATION_REQUIRED')
         profiled = self._expected_profile is not None
+        require(operation in ('observe','verify-schema','witness','fence') or profiled and operation=='verify-closed',
+                'P2_CERTIFICATION_OBSERVATION_REQUIRED')
         if profiled:
             require(operation != 'fence' and _sha(_profiled_compact(self.request)) == self._request_sha256,
                     'P2_PROFILED_CERTIFICATION_READ_ONLY_OBSERVER_REQUIRED')
@@ -720,7 +721,11 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
                   'targetSha256', 'marker', 'backendPid', 'backendStart', 'admission', 'journalSha256', 'witnessSha256'}
         if operation == 'witness':
             fields.add('witness')
-        require(set(value) == fields and value['status'] == 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED' and
+        closed = operation == 'verify-closed'
+        if closed:
+            fields.update(('backendAbsent','migrationLockReleased','nonceLockReleased'))
+        expected_status = 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED' if closed else 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED'
+        require(set(value) == fields and value['status'] == expected_status and
                 all(value[key] == request[key] for key in ('marker', 'backendPid', 'backendStart')) and
                 type(value['backendPid']) is int and value['environment'] == 'staging' and
                 all(value[key] == request['job'][key] for key in ('releaseId', 'sourceCommit')) and
@@ -734,6 +739,10 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
                 all(type(admission[key]) is bool for key in ('newWork', 'recovery')) and
                 all(type(admission[key]) is int and admission[key] >= 0 for key in ('active', 'uncertain')),
                 'P2_PROFILED_CERTIFICATION_PHYSICAL_ADMISSION_REQUIRED')
+        if closed:
+            require(all(value[key] is True for key in ('backendAbsent','migrationLockReleased','nonceLockReleased')) and
+                    admission['newWork'] is False and admission['recovery'] is False and admission['active'] == admission['uncertain'] == 0,
+                    'P2_PROFILED_CERTIFICATION_SESSION_CLOSE_REQUIRED')
         if operation == 'verify-schema':
             require(admission == receipt['admission'] == {'epoch': request['plan']['initialEpoch'], 'newWork': False,
                     'recovery': False, 'active': 0, 'uncertain': 0} and value['witnessSha256'] == receipt['witnessSha256'],
@@ -1607,6 +1616,15 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.prepared_terminal['configurationSha256'] = self.initial['configurationSha256']
         if self.authority_timing_sha256 is not None:
             self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
+
+    def finish_certification(self,value):
+        self.check()
+        require(self.closing_at is not None and not self.finished, 'P2_PROFILED_CERTIFICATION_CLOSE_NOT_PREPARED')
+        observed = self.observer.probe('verify-closed')
+        require(observed['admission'] == self.prepared_terminal['frontendAdmission'],
+                'P2_PROFILED_CERTIFICATION_LATE_FRONTEND_STATE_CHANGED')
+        migrate.write_json(self.directory,'p2-certification-frontend-session-closed.json',observed)
+        return super().finish_certification(value)
 
     def abort(self):
         # The independent guard owns provider and FE containment after reap.

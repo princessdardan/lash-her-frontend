@@ -13,7 +13,7 @@ import { frontendAdmissionTargetSha256 } from './frontend-admission-bootstrap.mj
 import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
 import { prepareP2ProfiledCurrentRelease, runP2ProfiledCurrentRelease, p2ProfiledCurrentReleaseOperator,
   openP2ProfiledCurrentSource, readP2ProfiledCurrentSource, P2_PROFILED_CURRENT_CONFIGURATION_FILES } from './p2-profiled-current-release.mjs';
-import { prepareP2ProfiledCertificationOperator, runP2BoundedCertification } from './p2-certification.mjs';
+import { p2ProfiledCertificationOperator, prepareP2ProfiledCertificationOperator, runP2BoundedCertification } from './p2-certification.mjs';
 import { nativeSourceCommit } from './harness/p2-native-unit-fixture.mjs';
 import { p2NativeHash } from './p2-lifecycle-native.mjs';
 import { p2LifecyclePersistenceTargetSha256, prepareP2LifecyclePersistencePlan } from './p2-lifecycle-persistence-probe.mjs';
@@ -212,6 +212,10 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.equal(output.originalReleasePlanSha256, hash(plan));
     assert.equal(output.originalReleaseReceiptSha256, rawHash(readFileSync(terminalPath)));
     await assert.rejects(runP2BoundedCertification(output, {}), /P2_CERTIFICATION_PARENT_REFUSED/);
+    await assert.rejects(p2ProfiledCertificationOperator(settings, { confirmation: 'staging/another-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+    await assert.rejects(p2ProfiledCertificationOperator(settings, { confirmation: 'staging/owned-certification' }), { code: 'ENOENT' });
+    assert.equal(existsSync(join(f.settings.results, 'owned-certification-ssh')), false);
+    assert.equal(existsSync(join(f.settings.results, 'owned-certification')), false);
 
     const targets = Object.fromEntries(Object.entries({ frontend: migration.job, ...f.apiJobs }).map(([service, job]) => {
       const { host, port, database, serverMajor } = job.target;

@@ -72,6 +72,16 @@ These commands are prepared reruns, not results on the final frontend/API pair. 
 
 The [read-only deployed identity probe](../../ops/platform/p2-identity-negative-probes.md) uses its fixed current-stage host entry and a fresh host lease after S07/S09 have created the exact enrolled/completed-attempt records. It has no SQL, restart, account-mutation or key-rotation action. Its original-release hashes are provenance; `frontendSqlVerified` remains false. The [lifecycle native qualifier](p2-lifecycle-native-qualification.md) separately joins an actual provider-attached trace UUID to the admission ledger and ordered receiver effects. Its final disposition is native scheduling off and both frontend admissions closed with zero active/uncertain work; explicit restoration is required before further mutating cases. Neither tool has deployed evidence yet. Other fault/rotation scenarios without a supported procedure remain OPEN.
 
+For an already-current staging frontend, prepare the bounded certification action from the original profiled release plan, terminal receipt and READY deployment receipts. Review the action and its pinned host input before any apply.
+
+```sh
+node ops/platform/p2-certification.mjs plan-profiled-current /absolute/private/certification-plan.json
+node ops/platform/p2-certification.mjs host-plan-profiled-current /absolute/private/certification-plan.json
+node ops/platform/p2-certification.mjs apply-profiled-current /absolute/private/certification-apply.json --confirm staging/CERTIFICATION_ACTION_ID
+```
+
+The operator entry supports native containment, a native recovery window, paired browser authentication and suspension, and direct worker certification. Browser and direct-worker apply settings include the reviewed persistence input. All modes except native containment require the original unexpired private release probe. The apply entry requires exact passing source CI, the original configuration, and the reviewed host and staging bindings. Its success receipt records bounded containment after an independent PostgreSQL read verifies the session and locks are gone. Fault injection, lost acknowledgments and interrupted restoration require their own qualification before use. Dardan starts each reviewed apply under the single-operator policy.
+
 ## Reviewed capability and interface profile
 
 Flags are server configuration, separately reviewed and deployed; they do not replace frontend admission, gateway authorization, provider readiness, or receiver policy. Evidence records their nonsecret disposition and the exact deployed source/configuration. [Rollout controls](../../src/lib/api-integration/rollout-flags.ts) remain independent.

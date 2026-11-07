@@ -15,7 +15,8 @@ import {withP2CertificationFrontendSession,readP2CertificationCurrent} from './p
 import {collectP2CertificationRequestDetails} from './p2-certification-request-evidence.mjs';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {prepareP2OperatorRelease} from './p2-release.mjs';
-import {prepareP2ProfiledCurrentRelease} from './p2-profiled-current-release.mjs';
+import {prepareP2ProfiledCurrentRelease,verifyP2ProfiledCurrentReleaseConfiguration} from './p2-profiled-current-release.mjs';
+import {assertSourceCheckout} from './source-checkout.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
@@ -218,14 +219,22 @@ async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,v
 
 export async function runP2BoundedCertification(plan,dependencies){
   demand(plan?.version===1);
+  return runBoundedCertification(plan,dependencies);
+}
+
+async function runBoundedCertification(plan,dependencies,profile){
+  const mode=profile?'p2-bounded-certification-profiled-current':'p2-bounded-certification';
+  const terminalStatus=profile?'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED':'P2_BOUNDED_CERTIFICATION_CONTAINED';
+  const versionFields={version:profile?2:1,...(profile?{qualificationTargetProfile:profile}:{})};
+  if(profile)requireQualificationTargetProfile(currentProfile,plan);
   const context=p2CertificationParentContext(plan),{prepared}=context;
   demand(dependencies.confirmation==='staging/'+plan.certificationActionId&&typeof dependencies.withEnvironmentLock==='function'&&typeof dependencies.getUrl==='function');
   const store=frontendReleaseReceiptStore(dependencies.directory);store.record('p2-certification-started.json',plan);
   if(dependencies.sourceCi)store.record('operator-source-ci.json',dependencies.sourceCi);
   bindP2CertificationReadyReceipts(context.frontendReceipts,plan);
   let phase='host-serialization';
-  try{return await dependencies.withEnvironmentLock(async(verifyEnvironment,signal,host)=>{
-    demand(host.mode==='p2-bounded-certification'&&host.certificationActionId===plan.certificationActionId);
+  try{const outcome=await dependencies.withEnvironmentLock(async(verifyEnvironment,signal,host)=>{
+    demand(host.mode===mode&&host.certificationActionId===plan.certificationActionId);
     const environment=async()=>{await dependencies.assertSource?.();demand(!signal.aborted);bindP2CertificationReadyReceipts(context.frontendReceipts,plan);await verifyEnvironment();};
     let terminal;
     await withP2CertificationFrontendSession(prepared,plan,{getUrl:dependencies.getUrl,verifyEnvironment:environment},async({client,verify,receipt,probe})=>{
@@ -254,9 +263,9 @@ export async function runP2BoundedCertification(plan,dependencies){
         const artifact=readP2DirectWorkerSourceArtifact(workerPlan,joined);
         const methods=(await import('./p2-certification-transport.mjs')).readP2CertificationWorkerStage(stage,workerPlan);
         const retained=await methods.retainJoined(joined);demand(retained.status==='P2_DIRECT_WORKER_JOINED_RETAINED');
-        terminal=await host.prepareClose({version:1,status:'P2_CERTIFICATION_DIRECT_WORKER_JOINED',workerPlanSha256:p2NativeHash(workerPlan),
+        terminal=await host.prepareClose({...versionFields,status:'P2_CERTIFICATION_DIRECT_WORKER_JOINED',workerPlanSha256:p2NativeHash(workerPlan),
           workerSourceArtifactSha256:artifact.recordSha256,workerMachineArtifactSha256:retained.privateRecordSha256});
-        demand(terminal.status==='P2_BOUNDED_CERTIFICATION_CONTAINED'&&terminal.planSha256===plan.planSha256);
+        demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256);
         store.record('p2-certification-close-prepared.json',terminal);return;
       }
       if(['auth-preparation','browser-pending'].includes(plan.mode)){
@@ -264,7 +273,7 @@ export async function runP2BoundedCertification(plan,dependencies){
         demand(source&&source.active&&source[plan.mode==='auth-preparation'?'authPlan':'browserPlan']===plan);
         const binding=readP2LifecycleBrowserControllerBinding(source.suspensionPlan,source.controller);
         demand(binding.challenge===source.challenge);
-        validateP2CanonicalBrowserObservation(source.suspensionPlan,current.browserOrigin);
+        validateP2CanonicalBrowserObservation(source.suspensionPlan,current.browserOrigin,profile);
         if(plan.mode==='browser-pending')demand(source.authenticationCompleted===true&&plan.startState==='already-closed');
         phase=plan.mode==='auth-preparation'?'bounded-normal-authentication':'bounded-browser-pending';
         const opened=await withOwner(()=>changeFrontendAdmission(client,policy,plan.initialEpoch,{newWork:true,recovery:false}));
@@ -313,7 +322,7 @@ export async function runP2BoundedCertification(plan,dependencies){
             demand(performance.now()<deadline);await pause(250);
           }
         }
-        terminal=await host.prepareClose(caseOutcome);demand(terminal.status==='P2_BOUNDED_CERTIFICATION_CONTAINED'&&terminal.planSha256===plan.planSha256);
+        terminal=await host.prepareClose(caseOutcome);demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256);
         store.record('p2-certification-close-prepared.json',terminal);
         return;
       }
@@ -371,14 +380,19 @@ export async function runP2BoundedCertification(plan,dependencies){
         await host.gatewayStage('closed');
       }
       phase='fresh-contained-terminal';await verify();
-      terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status==='P2_BOUNDED_CERTIFICATION_CONTAINED'&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===(plan.mode==='known-ack-recovery'));
+      terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status===terminalStatus&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===(plan.mode==='known-ack-recovery'));
       store.record('p2-certification-close-prepared.json',terminal);
-    });
+    },profile);
+    if(profile)requireQualificationTargetProfile(currentProfile,terminal);
     // The physical session is now actually closed. The host retains its real
     // environment lock while joining these exact immutable terminal bytes.
-    store.record('p2-certification-outcome.json',terminal);await host.finish(terminal);return terminal;
-  });}catch{
-    try{store.record('p2-certification-outcome.json',{version:1,status:'P2_BOUNDED_CERTIFICATION_REQUIRES_REVIEW',planSha256:plan.planSha256,phase,
+    if(!profile)store.record('p2-certification-outcome.json',terminal);
+    await host.finish(terminal);return terminal;
+  });
+    if(profile)store.record('p2-certification-outcome.json',outcome);
+    return outcome;
+  }catch{
+    try{store.record('p2-certification-outcome.json', {...versionFields,status:'P2_BOUNDED_CERTIFICATION_REQUIRES_REVIEW',planSha256:plan.planSha256,phase,
       certificationActionId:plan.certificationActionId,nativeDisabled:null,frontendAdmissionClosed:null,gatewayAdmissionClosed:null,runtimeStopped:null,trafficAuthorized:null,sqlReplayed:false});}catch{/* Preserve exclusive prior evidence. */}
     throw new Error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');
   }
@@ -434,11 +448,16 @@ export function prepareP2ProfiledCertificationOperator(settings){
 }
 
 function profiledCertificationHostPlan(settings,authentication=false){
-  const {plan:primary,authPlan,suspensionPlan,original,frontendReceipts,originalReleaseReceipt}=prepareProfiledCertification(settings);
-  const plan=authentication?authPlan:primary;
+  const checked=prepareProfiledCertification(settings);
+  const plan=authentication?checked.authPlan:checked.plan;
   demand(plan);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
+  return bindProfiledCertificationHostPlan(settings,checked,source,plan);
+}
+
+function bindProfiledCertificationHostPlan(settings,checked,source,plan){
+  const {suspensionPlan,original,frontendReceipts,originalReleaseReceipt}=checked;
   const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
   const sourceClosureSha256=rawHash(JSON.stringify(Object.entries(sourceSha256).sort(([a],[b])=>a<b?-1:a>b?1:0)));
   demand(sourceClosureSha256===plan.operatorSourceClosureSha256);
@@ -518,6 +537,87 @@ export function prepareP2CertificationOperator(settings){
   return{plan,authPlan,suspensionPlan,original,candidateBytes};
 }
 
+export async function p2ProfiledCertificationOperator(settings,{confirmation}={}){
+  demand(process.versions.node.split('.')[0]==='24');
+  const {execution,...selection}=settings;
+  const checked=prepareProfiledCertification(selection);
+  const {plan,authPlan,suspensionPlan,original}=checked;
+  demand(confirmation==='staging/'+plan.certificationActionId&&
+    ['contain-native','native-window','browser-pending','direct-worker'].includes(plan.mode));
+  const releaseSettings=selection.releaseSettings;
+  const directory=releaseSettings.results;
+  frontendPrivateReceiptDirectory(directory);
+  for(const action of [plan,...(authPlan?[authPlan]:[])]){
+    demand(lstatSync(join(directory,action.certificationActionId),{throwIfNoEntry:false})===undefined);
+  }
+  verifyP2ProfiledCurrentReleaseConfiguration(original);
+  const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
+  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
+  const packet=bindProfiledCertificationHostPlan(selection,checked,source,plan);
+  const authPacket=authPlan?bindProfiledCertificationHostPlan(selection,checked,source,authPlan):null;
+  const needsPersistence=['browser-pending','direct-worker'].includes(plan.mode);
+  let persistenceReviewed;
+  if(needsPersistence){
+    demand(exactKeys(execution,['persistenceReviewed']));
+    persistenceReviewed=execution.persistenceReviewed;
+    requireQualificationTargetProfile(currentProfile,persistenceReviewed,persistenceReviewed?.plan);
+    const reviewed=plan.mode==='browser-pending'?selection.browser.input.persistencePlan:selection.worker.suspensionInput.persistencePlan;
+    demand(persistenceReviewed.version===2&&persistenceReviewed.environment==='staging'&&
+      isDeepStrictEqual(persistenceReviewed.plan,reviewed)&&isDeepStrictEqual(persistenceReviewed.operatorSourceFiles,packet.sourceSha256)&&
+      p2NativeHash(persistenceReviewed.containers)===plan.runtimeInventorySha256);
+  }else demand(execution===undefined);
+  const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
+    sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
+  const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
+  requireQualificationTargetProfile(currentProfile,provider);
+  demand(provider.version===2&&typeof provider.vercelToken==='string'&&provider.vercelToken.length>0&&provider.vercelToken.length<=8192&&
+    (plan.mode!=='direct-worker'||typeof provider.frontendRuntimeDatabaseUrl==='string'&&provider.frontendRuntimeDatabaseUrl.length>0));
+  const credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
+    const value=process.env[key];demand(typeof value==='string'&&value.length>0&&value.length<=16384);return[key,value];}));
+  let privateProbe;
+  if(plan.mode!=='contain-native'){
+    const path=join(directory,plan.originalReleaseId,'frontend','vercel-private','frontend-probe-private.json');
+    privateProbe=decodeQualificationTargetJson(privateBytes(path,8192),'carrier');
+    requireQualificationTargetProfile(currentProfile,privateProbe);
+    demand(privateProbe.version===2&&privateProbe.environment==='staging'&&privateProbe.releaseId===plan.originalReleaseId&&
+      privateProbe.sourceCommit===plan.sourceCommit&&privateProbe.projectId===packet.candidate.workload.projectId&&
+      typeof privateProbe.secret==='string'&&/^[a-f0-9]{64}$/u.test(privateProbe.secret)&&
+      Number.isSafeInteger(privateProbe.expiresAt)&&Date.now()<privateProbe.expiresAt&&privateProbe.expiresAt<=Date.now()+3_600_000);
+  }
+  const diagnostics=join(directory,plan.certificationActionId+'-ssh');mkdirSync(diagnostics,{mode:0o700});
+  const ssh=await recreationSsh({knownHosts:releaseSettings.knownHosts,keyFile:releaseSettings.sshKey,diagnostics});
+  demand((await ssh.machine()).machineId===releaseSettings.host.machineId);
+  const installed=await ssh.installProfiledCurrentSource({commit:plan.operatorSourceCommit,files:source.files});
+  demand(installed.status==='EXACT_OPERATOR_SOURCE_INSTALLED'&&installed.commit===plan.operatorSourceCommit);
+  const execute=async(action,reviewedPacket,browserSource)=>{
+    const results=join(directory,action.certificationActionId);mkdirSync(results,{mode:0o700});
+    const actionConfirmation='staging/'+action.certificationActionId;
+    const initial={...reviewedPacket,confirmation:actionConfirmation,credentials,vercelToken:provider.vercelToken,
+      ...(privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
+      ...(action.mode==='browser-pending'?{persistenceReviewed,browserResources:selection.browser.input.resources}:{}),
+      ...(action.mode==='direct-worker'?{persistenceReviewed}:{})};
+    return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
+      getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
+      ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),
+      assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),
+      withEnvironmentLock:p2CertificationEnvironmentLock(releaseSettings,initial,results,{expectedProfile:currentProfile})},currentProfile);
+  };
+  if(!authPlan)return execute(plan,packet);
+  const browserDirectory=join(directory,plan.certificationActionId+'-browser-source');mkdirSync(browserDirectory,{mode:0o700});
+  const controller=launchP2LifecycleBrowserRecorder(suspensionPlan,browserDirectory),binding=readP2LifecycleBrowserControllerBinding(suspensionPlan,controller);
+  const handle=Object.freeze({}),browserSource={handle,controller,challenge:binding.challenge,suspensionPlan,authPlan,browserPlan:plan,active:true,authenticationCompleted:false};
+  browserSessions.set(handle,browserSource);
+  try{
+    await controller.initialized();
+    const authenticated=await execute(authPlan,authPacket,browserSource);
+    demand(authenticated.caseStatus==='P2_CERTIFICATION_AUTHENTICATION_PREPARED'&&authenticated.frontendAdmission.epoch===plan.initialEpoch&&
+      authenticated.frontendAdmission.active===0&&authenticated.frontendAdmission.uncertain===0&&
+      authenticated.frontendAdmission.newWork===false&&authenticated.frontendAdmission.recovery===false);
+    browserSource.authenticationCompleted=true;
+    return await execute(plan,packet,browserSource);
+  }finally{browserSource.active=false;await controller.close();}
+}
+
 export async function p2CertificationOperator(settings,{apply=false,confirmation}={}){
   demand(process.versions.node.split('.')[0]==='24');const checked=prepareP2CertificationOperator(settings);
   if(!apply)return checked.authPlan?{version:1,status:'P2_BROWSER_CERTIFICATION_ACTIONS_PLANNED',authentication:checked.authPlan,browser:checked.plan}:checked.plan;
@@ -573,13 +673,16 @@ export async function p2CertificationOperator(settings,{apply=false,confirmation
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply'].includes(operation)&&typeof path==='string'&&
-    (operation==='apply'?flag==='--confirm'&&typeof confirmation==='string':confirmation===undefined&&
+  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply','apply-profiled-current'].includes(operation)&&typeof path==='string'&&
+    (operation.startsWith('apply')?flag==='--confirm'&&typeof confirmation==='string':confirmation===undefined&&
       (flag===undefined||operation==='host-plan-profiled-current'&&flag==='--authentication')));
-    if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'){
+    if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'||operation==='apply-profiled-current'){
       const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
-      const plan=operation==='plan-profiled-current'?prepareP2ProfiledCertificationOperator(settings):profiledCertificationHostPlan(settings,flag==='--authentication');
-      console.log(JSON.stringify(plan));
+      if(operation==='apply-profiled-current')console.log(JSON.stringify(await p2ProfiledCertificationOperator(settings,{confirmation})));
+      else {
+        const plan=operation==='plan-profiled-current'?prepareP2ProfiledCertificationOperator(settings):profiledCertificationHostPlan(settings,flag==='--authentication');
+        console.log(JSON.stringify(plan));
+      }
     }else console.log(JSON.stringify(await p2CertificationOperator(privateObject(resolve(path)),{apply:operation==='apply',confirmation})));
   }catch{console.error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');process.exitCode=1;}
 }
