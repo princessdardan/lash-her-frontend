@@ -273,11 +273,16 @@ def runtime_environment(release, snapshot, *, expected_profile=None):
 
 
 def configuration_container(arguments):
-    name = "lash-config-" + uuid4().hex
+    from p2_profiled_current_scope import P2ProfiledCurrentScope
+    scope = _command_scope.get()
+    profiled = type(scope) is P2ProfiledCurrentScope
+    name = ("lash-p2-profiled-current-image-check-" if profiled else "lash-config-") + uuid4().hex
     try:
-        return command([*arguments[:2], "--name", name, *arguments[2:]], SAFE_ENV)
+        image_options = ["--pull", "never", "--platform", "linux/amd64"] if profiled else []
+        return command([*arguments[:2], "--name", name, *image_options, *arguments[2:]], SAFE_ENV)
     finally:
-        subprocess.run(["docker", "rm", "--force", name], env=SAFE_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        runner = scope.run if profiled else subprocess.run
+        runner(["docker", "rm", "--force", name], env=SAFE_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
         remaining = command(["docker", "container", "ls", "--all", "--filter", f"name=^/{name}$", "--format", "{{.ID}}"], SAFE_ENV)
         demand(not remaining, "CONFIGURATION_CONTAINER_CLEANUP_UNVERIFIED")
 
@@ -474,11 +479,16 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             if outcome["phase"] == "completed":
                 outcome["phase"] = "retain-runtime-receipt"
             outcome["status"] = "FAILED_REQUIRES_REVIEW"
-            try:
-                migrate.suspend_runtime(release["environment"], SAFE_ENV)
-                outcome["runtimeStopped"] = True
-            except BaseException:
-                outcome["runtimeStopped"] = False
+            if _profiled_current_scope is not None:
+                # The source guard stops runtime after revoking and reaping
+                # this worker. Starting a second stop here would race it.
+                outcome["runtimeStopped"] = None
+            else:
+                try:
+                    migrate.suspend_runtime(release["environment"], SAFE_ENV)
+                    outcome["runtimeStopped"] = True
+                except BaseException:
+                    outcome["runtimeStopped"] = False
             raise
 
     try:
@@ -501,9 +511,7 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             current_directory, current_outcome = current_databases.read_profiled_current_proof(
                 _current_database_proof, _profiled_current_scope, release, jobs, expected_profile=expected)
             outcome["phase"] = "suspend-runtime-for-current-restore"
-            active_scope.before_api_suspension()
-            migrate.suspend_runtime(release["environment"], SAFE_ENV)
-            active_scope.after_api_suspension()
+            active_scope.suspend_api_runtime(release["environment"], SAFE_ENV)
             return start_runtime(current_directory, release, current_outcome)
         outcome["phase"] = "migrations"
         continuation_token = _profiled_current_migration.set((_profiled_current_scope, start_runtime)) if _profiled_current_scope is not None else None

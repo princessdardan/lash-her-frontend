@@ -1,5 +1,6 @@
 """Typed current-only staging scope. JSON receipts never construct this object."""
 import copy
+from contextvars import ContextVar
 import fcntl
 import os
 import re
@@ -18,6 +19,7 @@ COMMON = ('environment', 'releaseId', 'sourceCommit', 'migrationImageDigest',
           'sqlArtifactSha256', 'schemaBaselineSha256', 'contractManifestSha256',
           'contractPhase', 'phase2ContractManifestSha256')
 TARGET = ('host', 'port', 'database', 'user', 'serverMajor')
+_suspending_runtime = ContextVar('profiled_current_suspending_runtime', default=None)
 
 
 def require_profiled(*carriers):
@@ -44,7 +46,27 @@ class P2ProfiledCurrentScope(P2ReleaseScope):
 
     def verify(self):
         migrate.demand(self.close_deadline is None, 'P2_PROFILED_CURRENT_CLOSE_ONLY')
+        if _suspending_runtime.get() is self:
+            boundary = self.prior_gateway
+            migrate.demand(boundary is not None and boundary.api_suspension_started and
+                           not boundary.api_suspension_finished, 'P2_PROFILED_CURRENT_STOP_STAGE_REQUIRED')
+            # The old gateway is being stopped, so its normal live probe
+            # cannot succeed. Keep the physical frontend and host checks.
+            super()._verify_session()
+            return
         super().verify()
+
+    def suspend_api_runtime(self, environment, env):
+        migrate.demand(environment == self.release['environment'] == 'staging' and
+                       _suspending_runtime.get() is None, 'P2_PROFILED_CURRENT_STOP_STAGE_REQUIRED')
+        self.before_api_suspension()
+        token = _suspending_runtime.set(self)
+        try:
+            stopped = migrate.suspend_runtime(environment, env, _runner=self.run)
+        finally:
+            _suspending_runtime.reset(token)
+        self.after_api_suspension()
+        return stopped
 
     def require_frontend(self, release, info):
         self.verify()

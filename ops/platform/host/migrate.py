@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from uuid import uuid4
 
 SERVICES = {
     "course": ("lash-her-course-api", "courseMigration", "courseRuntime"),
@@ -400,9 +401,10 @@ def docker_arguments(image, input_directory, receipt_directory, environment, rel
     return args
 
 
-def suspend_runtime(environment, env):
+def suspend_runtime(environment, env, *, _runner=None):
+    runner = subprocess.run if _runner is None else _runner
     project = f"lash-her-{environment}"
-    inventory = subprocess.run(["docker", "ps", "--filter", f"label=com.docker.compose.project={project}",
+    inventory = runner(["docker", "ps", "--filter", f"label=com.docker.compose.project={project}",
                                 "--format", '{{.ID}} {{.Label "com.docker.compose.service"}}'],
                                check=True, capture_output=True, text=True, env=env, timeout=30)
     allowed = {"gateway", "course-api", "course-tls", "course-publisher", "course-snapshot", "community-api", "community-tls", "community-worker", "course-media", "course-export-cleanup"}
@@ -417,12 +419,18 @@ def suspend_runtime(environment, env):
         long_grace = long_grace or parts[1] in ("course-media", "course-export-cleanup")
     if ids:
         grace = 60 if long_grace else 30
-        subprocess.run(["docker", "stop", "--timeout", str(grace), *ids], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=grace + 30)
-    remaining = subprocess.run(["docker", "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"],
+        runner(["docker", "stop", "--timeout", str(grace), *ids], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=grace + 30)
+    remaining = runner(["docker", "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"],
                                check=True, capture_output=True, text=True, env=env, timeout=30)
     demand(not remaining.stdout.strip(), "WRITERS_NOT_SUSPENDED")
     return ids
 
+
+def cleanup_migration_container(runner, name, env):
+    runner(["docker", "rm", "--force", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=30)
+    inventory = runner(["docker", "container", "ls", "--all", "--filter", f"name=^/{name}$", "--format", "{{.ID}}"],
+                       check=True, capture_output=True, text=True, env=env, timeout=30)
+    demand(not inventory.stdout.strip(), "MIGRATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
 def profiled_current_action_id(scope, selected):
@@ -556,8 +564,16 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 prepared.append((name, info, inputs, receipts))
                 runner = active_scope.run if active_scope is not None else subprocess.run
                 runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
-                args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", f"lash-check-{name}-{release_id}", True, info.get("frontend", False), expected_profile=expected)
-                runner(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
+                preflight_name = (f"lash-p2-profiled-current-image-check-{uuid4().hex}"
+                                  if _profiled_current_scope is not None else f"lash-check-{name}-{release_id}")
+                args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", preflight_name, True, info.get("frontend", False), expected_profile=expected)
+                if _profiled_current_scope is not None:
+                    args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
+                try:
+                    runner(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
+                finally:
+                    if _profiled_current_scope is not None:
+                        cleanup_migration_container(runner, preflight_name, base_env)
             # Validate every job in its exact migration image before database credentials are read.
             outcome["phase"] = "credential-validation"
             credentials = {name: os.environ.get(credential_names(name, environment)[0]) for name in jobs
@@ -585,11 +601,14 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 # An empty reviewed list alone never establishes a no-op.
                 prepared.sort(key=lambda item: item[0] != "frontend")
             outcome["phase"] = "suspend-runtime"
-            if active_scope is not None:
-                active_scope.before_api_suspension()
-            outcome["stoppedRuntimeContainers"] = suspend_runtime(environment, base_env)
-            if active_scope is not None:
-                active_scope.after_api_suspension()
+            if _profiled_current_scope is not None:
+                outcome["stoppedRuntimeContainers"] = active_scope.suspend_api_runtime(environment, base_env)
+            else:
+                if active_scope is not None:
+                    active_scope.before_api_suspension()
+                outcome["stoppedRuntimeContainers"] = suspend_runtime(environment, base_env)
+                if active_scope is not None:
+                    active_scope.after_api_suspension()
             outcome["runtimeResumed"] = False
             for name, info, inputs, receipts in prepared:
                 if active_scope is not None:
@@ -634,6 +653,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 action = profiled_current_action_id(_profiled_current_scope, release) if _profiled_current_scope is not None else release_id
                 container_name = f"lash-migrate-{name}-{action}"
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", container_name, frontend=info.get("frontend", False), expected_profile=expected)
+                if _profiled_current_scope is not None:
+                    args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
                 log_fd = os.open(receipts / "container.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
                     runner = active_scope.run if active_scope is not None else subprocess.run
@@ -641,10 +662,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 finally:
                     os.close(log_fd)
                     # Also cleans up a container left running by a timed-out/interrupted Docker CLI.
-                    subprocess.run(["docker", "rm", "--force", container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
-                    inventory = subprocess.run(["docker", "container", "ls", "--all", "--filter", f"name=^/{container_name}$", "--format", "{{.ID}}"],
-                                               check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    demand(not inventory.stdout.strip(), "MIGRATION_CONTAINER_CLEANUP_UNVERIFIED")
+                    cleanup = active_scope.run if _profiled_current_scope is not None else subprocess.run
+                    cleanup_migration_container(cleanup, container_name, base_env)
                 receipt = read_json(receipts, "database-receipt.json", expected_profile=expected)
                 terminal = read_json(receipts, "job-outcome.json", expected_profile=expected)
                 require_receipt_profile(expected, info["service"], receipt, terminal)

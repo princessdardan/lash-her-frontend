@@ -29,6 +29,11 @@ class P2ReleaseScope:
         self.verify()
 
     def verify(self):
+        self._verify_session()
+        if self.prior_gateway is not None:
+            self.prior_gateway.verify()
+
+    def _verify_session(self):
         if self.closed or self.revoked.is_set():
             raise ValueError("P2_RELEASE_SCOPE_CLOSED")
         current, opened = os.lstat(self.path), os.fstat(self.descriptor)
@@ -41,8 +46,6 @@ class P2ReleaseScope:
         # Rechecking the same open file description never acquires a second lock.
         fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.verify_frontend()
-        if self.prior_gateway is not None:
-            self.prior_gateway.verify()
 
     def bind_prior_gateway(self, boundary):
         from p2_prior_gateway import PriorGatewayBoundary

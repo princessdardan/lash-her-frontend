@@ -72,7 +72,8 @@ def _profile_kwargs(initial):
 
 def cleanup_profiled_current_readonly_containers():
     patterns = ('^/lash-p2-profiled-current-observer-[a-f0-9]{32}$',
-                '^/lash-p2-profiled-current-api-check-(course|community)-[a-f0-9]{32}$')
+                '^/lash-p2-profiled-current-api-check-(course|community)-[a-f0-9]{32}$',
+                '^/lash-p2-profiled-current-image-check-[a-f0-9]{32}$')
     failed = None
     for pattern in patterns:
         query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
