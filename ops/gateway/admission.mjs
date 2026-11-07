@@ -15,8 +15,9 @@ const INTERACTIVE_TARGET = /^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,255}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "paid-grant", "paid-revoke"]);
+const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "paid-grant", "paid-revoke"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
+const INITIAL_LESSON_PROGRESS = Buffer.from('{"event":"lesson_started","expectedProgressRevision":0}');
 const MAX_ORDINARY_STATE = 4096;
 const MAX_INTERACTIVE_STATE = 16_384;
 const ASSET_TYPES = new Set(["video.asset.created", "video.asset.ready", "video.asset.errored", "video.asset.deleted"]);
@@ -147,6 +148,7 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   const requestIndex = scope.requests.findIndex(row => row.method === method && row.target === target && row.bodySha256 === bodySha256);
   if (requestIndex < 0) return null;
   if (scope.stage === "paid-revoke" && method === "POST" && !scopedPaidRevocation(body, idempotency)) return null;
+  if (scope.stage === "lesson-entry" && (idempotency !== "" || (method === "POST" && !body.equals(INITIAL_LESSON_PROGRESS)))) return null;
   const message = ["lash-her:p2q:interactive:gateway-request:v1", issued, requestId, method, target, bodySha256,
     digest(applicationToken), digest(idempotency)].join("\n");
   const expected = createHmac("sha256", Buffer.from(scope.key, "hex")).update(message).digest();

@@ -5,7 +5,7 @@ import { AdminAuthError } from "@/lib/admin/types";
 import type { AdminPermissionAction } from "@/lib/admin/permissions";
 import { getCustomerActor, issueCustomerApplicationToken } from "@/lib/customer-auth/session";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
-import { readInteractiveBrowserRequest, type LearnerAccessSelection } from "@/lib/writer-admission/interactive-proof";
+import { permitsLessonEntryCourseRequest, readInteractiveBrowserRequest, type LearnerAccessSelection, type LessonEntrySelection } from "@/lib/writer-admission/interactive-proof";
 import { runWriterAdmission, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { mintApplicationToken, type ApplicationPrincipal } from "./application-jwt";
 import { type CandidateBody, type CandidateQuery, type CandidateSuccess, validateCandidateRequest, validateCandidateResponse } from "./candidate-validation";
@@ -29,6 +29,7 @@ export function createCourseClient(dependencies: {
   getCustomer?: typeof getCustomerActor;
   issueCustomerToken?: () => ReturnType<typeof issueCustomerApplicationToken>;
   getLearnerAccess?: () => Promise<LearnerAccessSelection | undefined>;
+  getLessonEntry?: () => Promise<LessonEntrySelection | undefined>;
   getAdmin?: typeof requirePermission;
   mintToken?: (principal: ApplicationPrincipal) => string;
   enabled?: (feature: IntegrationFeature) => boolean;
@@ -46,17 +47,27 @@ export function createCourseClient(dependencies: {
   } : () => issueCustomerApplicationToken("course-learner"));
   const enabled = dependencies.enabled ?? isIntegrationFeatureEnabled;
   const run = dependencies.run ?? runWriterAdmission;
-  const getLearnerAccess = dependencies.getLearnerAccess ?? (async () => (await readInteractiveBrowserRequest())?.learnerAccess);
 
   async function request<P extends keyof paths, M extends Method>(path: P, method: M, access: Access, input: Input = {}): Promise<Success<P, M>> {
     if (!enabled("courseReads") || access === "learner" && !enabled("customerAccess")) throw new IntegrationServiceError("feature_disabled", 404);
     if (Object.entries(input.params ?? {}).some(([name, value]) => !new RegExp(`^[A-Za-z0-9_-]{1,${name === "trackId" ? 255 : 160}}$`, "u").test(value))) throw new IntegrationServiceError("invalid_request", 400);
     if (input.idempotencyKey && !/^[A-Za-z0-9._:-]{1,255}$/u.test(input.idempotencyKey)) throw new IntegrationServiceError("invalid_request", 400);
     validateCandidateRequest("course", path, method, input);
-    const selectedLearner = access === "learner" ? await getLearnerAccess() : undefined;
+    const signedScope = access === "learner" ? await readInteractiveBrowserRequest() : null;
+    const selectedLearner = access === "learner" && dependencies.getLearnerAccess ? await dependencies.getLearnerAccess() : signedScope?.learnerAccess;
+    const lessonEntry = access === "learner" && dependencies.getLessonEntry ? await dependencies.getLessonEntry() : signedScope?.lessonEntry;
     if (selectedLearner && (method !== "get" || input.params?.lessonId !== undefined && input.params.lessonId !== selectedLearner.lessonId)) {
       throw new IntegrationServiceError("forbidden", 403);
     }
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(input.query ?? {})) if (value !== undefined) query.set(key, String(value));
+    const pathname = path.replace(/\{([^}]+)\}/gu, (_match, name: string) => input.params![name]);
+    const target = `${pathname}${query.size ? `?${query}` : ""}`;
+    const requestMethod = method.toUpperCase() as GatewayRequest["method"];
+    const scopedBody = lessonEntry && input.body !== undefined ? JSON.stringify(input.body) : undefined;
+    if (lessonEntry && !permitsLessonEntryCourseRequest(lessonEntry, {
+      method: requestMethod, target: `/course${target}`, body: scopedBody, idempotencyKey: input.idempotencyKey,
+    })) throw new IntegrationServiceError("forbidden", 403);
     const execute = async (): Promise<{ value: Success<P, M> } | { failure: IntegrationServiceError }> => {
       let outboundStarted = false;
       let requestId: string | undefined;
@@ -69,7 +80,8 @@ export function createCourseClient(dependencies: {
         if (access === "learner") {
           const issued = await issueCustomerToken();
           if (!issued) throw new IntegrationServiceError("sign_in_required", 401);
-          if (selectedLearner && issued.customerId !== selectedLearner.actorId) throw new IntegrationServiceError("forbidden", 403);
+          const selectedActor = lessonEntry?.actorId ?? selectedLearner?.actorId;
+          if (selectedActor !== undefined && issued.customerId !== selectedActor) throw new IntegrationServiceError("forbidden", 403);
           customerId = issued.customerId;
           applicationToken = issued.token;
         } else if (access === "editor" || access === "support") {
@@ -79,14 +91,10 @@ export function createCourseClient(dependencies: {
           if (!capabilities.includes(access === "editor" ? "course-editor" : "course-support")) throw new IntegrationServiceError("forbidden", 403);
           applicationToken = mintToken({ profile: "course-admin", adminId: actor.user.id, capabilities });
         }
-        const query = new URLSearchParams();
-        for (const [key, value] of Object.entries(input.query ?? {})) if (value !== undefined) query.set(key, String(value));
-        const pathname = path.replace(/\{([^}]+)\}/gu, (_match, name: string) => input.params![name]);
         const transport = getTransport();
         outboundStarted = true;
-        const response = await transport({ service: "course", method: method.toUpperCase() as GatewayRequest["method"],
-          path: `${pathname}${query.size ? `?${query}` : ""}`, applicationToken,
-          ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }), ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}) });
+        const response = await transport({ service: "course", method: requestMethod, path: target, applicationToken,
+          ...(input.body === undefined ? {} : { body: scopedBody ?? JSON.stringify(input.body) }), ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}) });
         requestId = safeIntegrationRequestId(response.headers.get("x-request-id"));
         dependencies.onResponse?.(requestId);
         if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") throw new Error("INVALID_INTEGRATION_RESPONSE");

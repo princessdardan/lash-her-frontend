@@ -237,6 +237,33 @@ const SQL = Object.freeze({
       JOIN public.video_assets v ON v.lesson_id=l.id AND v.is_current AND v.deleted_at IS NULL AND v.status='ready'
         AND v.mux_asset_id<>'' AND v.mux_playback_id<>''
       WHERE c.id=$1::uuid AND l.id=$2::uuid AND l.archived_at IS NULL AND m.archived_at IS NULL AND NOT l.is_preview`,
+    lessonEntryLesson: `SELECT v.id::text AS asset_id,v.last_token_expires_at::text,pg_catalog.clock_timestamp()::text AS observed_at,
+      ${jsonbSha("pg_catalog.to_jsonb(c)")} AS course_fingerprint
+      FROM public.lessons l JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
+      JOIN LATERAL (SELECT q.document FROM public.quiz_revisions q WHERE q.lesson_id=l.id ORDER BY q.revision DESC LIMIT 1) quiz
+        ON pg_catalog.jsonb_array_length(quiz.document->'questions') BETWEEN 1 AND 100
+      JOIN public.video_assets v ON v.lesson_id=l.id AND v.is_current AND v.status='ready' AND v.deleted_at IS NULL
+        AND v.superseded_at IS NULL AND v.managed_by_course AND v.provider_environment_id<>'' AND v.mux_asset_id<>'' AND v.mux_playback_id<>''
+      WHERE c.id=$1::uuid AND l.id=$2::uuid AND c.status='published' AND c.access_mode='free' AND c.currency='CAD' AND c.price_cents=0
+        AND l.archived_at IS NULL AND m.archived_at IS NULL AND NOT l.is_preview`,
+    lessonEntryFreeGrant: `SELECT e.id::text AS enrollment_id,${jsonbSha("pg_catalog.to_jsonb(k)")} AS key_fingerprint
+      FROM public.entitlement_grants g JOIN public.enrollments e ON e.id=g.enrollment_id AND e.user_id=g.user_id AND e.course_id=g.course_id
+      JOIN public.entitlement_idempotency_keys k ON k.idempotency_key=g.idempotency_key AND k.request_hash=g.request_hash
+      WHERE g.id=$1::uuid AND g.user_id=$2::uuid AND g.course_id=$3::uuid AND g.request_hash=$4::text AND k.command_type='free_grant'
+        AND g.status='active' AND g.grant_reason='free' AND g.expires_at IS NULL AND g.external_order_id IS NULL AND g.external_payment_id IS NULL
+        AND g.provider IS NULL AND g.revoked_at IS NULL AND g.revoke_reason IS NULL AND g.revoke_idempotency_key IS NULL AND g.revoke_request_hash IS NULL
+        AND e.status='active' AND e.source='free' AND e.revoked_at IS NULL AND e.refunded_at IS NULL AND e.granted_at=g.granted_at`,
+    lessonEntryProgress: `SELECT id::text AS progress_id,enrollment_id::text,created_at::text,
+      (revision=1 AND resume_position_seconds=0 AND max_position_seconds=0 AND completed_at IS NULL AND completed_quiz_revision IS NULL
+        AND last_watched_at=created_at AND created_at=updated_at) AS started
+      FROM public.lesson_progress WHERE user_id=$1::uuid AND lesson_id=$2::uuid LIMIT 2`,
+    lessonEntryAttemptAbsent: `SELECT NOT EXISTS(SELECT 1 FROM public.quiz_attempts
+      WHERE lesson_id=$1::uuid AND (user_id=$2::uuid OR enrollment_id=$3::uuid)) AS absent`,
+    lessonEntryOtherProgress: paidArchiveDigest(`FROM public.lesson_progress r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid AND (r.user_id<>$2::uuid OR r.lesson_id<>$3::uuid)`),
+    lessonEntryMediaHistory: paidArchiveDigest(`FROM public.video_assets r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`, "r.id",
+    "CASE WHEN r.id=$2::uuid THEN pg_catalog.to_jsonb(r)-'last_token_expires_at' ELSE pg_catalog.to_jsonb(r) END"),
     paidArchiveModules: paidArchiveDigest("FROM public.modules r WHERE r.course_id=$1::uuid"),
     paidArchiveLessons: paidArchiveDigest(`FROM public.lessons r JOIN public.modules m ON m.id=r.module_id
       WHERE m.course_id=$1::uuid`),
@@ -571,6 +598,7 @@ const paidGrantBaselines = new WeakMap();
 const paidArchiveBaselines = new WeakMap();
 const paidRepublishBaselines = new WeakMap();
 const paidLearnerAccessBaselines = new WeakMap();
+const lessonEntryBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
@@ -1540,6 +1568,87 @@ export async function observeP2InteractivePaidLearnerAccessCase(courseJob, selec
   demand(result.slug === saved.result.slug && result.updatedAt === saved.result.updatedAt && result.accountSha256 === saved.result.accountSha256
     && result.mediaSha256 === saved.result.mediaSha256, "course-paid-learner-state-drift");
   return { courseId, lessonId, outcome, actorId, grantId, revision, effectiveAccess: outcome === "allowed", readOnly: true };
+}
+
+const lessonEntrySelectionFields = ["actorId", "courseId", "lessonId", "grantId"];
+const lessonEntryHistoryQueries = [...paidArchiveHistory.filter(query => query !== "paidArchiveProgress"), ...paidArchiveProjection];
+
+function validateLessonEntrySelection(selection) {
+  demand(closed(selection, lessonEntrySelectionFields) && lessonEntrySelectionFields.every(key => courseUuid(selection[key])), "course-lesson-entry-selection");
+}
+
+async function readLessonEntry(client, { actorId, courseId, lessonId, grantId }) {
+  const lessons = await read(client, "course", "lessonEntryLesson", [courseId, lessonId]), lesson = lessons[0];
+  demand(lessons.length === 1 && courseUuid(lesson.asset_id) && SHA.test(lesson.course_fingerprint)
+    && Number.isFinite(Date.parse(lesson.observed_at)) && (lesson.last_token_expires_at === null || Number.isFinite(Date.parse(lesson.last_token_expires_at))),
+  "course-lesson-entry-lesson");
+  const requestHash = sha(JSON.stringify({ command: "free_grant", userId: actorId, courseId }));
+  const grants = await read(client, "course", "lessonEntryFreeGrant", [grantId, actorId, courseId, requestHash]), grant = grants[0];
+  demand(grants.length === 1 && courseUuid(grant.enrollment_id) && SHA.test(grant.key_fingerprint), "course-lesson-entry-grant");
+  const access = await read(client, "course", "paidCourseAccess", [courseId, actorId]);
+  demand(access.length === 1 && access[0].eligible === true, "course-lesson-entry-access");
+  const attempts = await read(client, "course", "lessonEntryAttemptAbsent", [lessonId, actorId, grant.enrollment_id]);
+  demand(attempts.length === 1 && attempts[0].absent === true, "course-lesson-entry-attempt");
+  const progress = await read(client, "course", "lessonEntryProgress", [actorId, lessonId]);
+  const history = [lesson.course_fingerprint, grant.key_fingerprint,
+    ...await readPaidArchiveDigests(client, [courseId], lessonEntryHistoryQueries),
+    ...await readPaidArchiveDigests(client, [courseId, actorId, lessonId], ["lessonEntryOtherProgress"]),
+    ...await readPaidArchiveDigests(client, [actorId], ["paidCourseAccount"]),
+  ];
+  const [mediaSha256] = await readPaidArchiveDigests(client, [courseId, lesson.asset_id], ["lessonEntryMediaHistory"]);
+  return { lesson, enrollmentId: grant.enrollment_id, progress, history, mediaSha256 };
+}
+
+function lessonEntryBrowserExpiry(receipt, courseId, lessonId) {
+  const check = "course-lesson-entry-receipt";
+  demand(closed(receipt, ["page", "playback", "progress"]), check);
+  const { page, playback, progress } = receipt;
+  demand(closed(page, ["pathname", "flight"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.flight === true
+    && closed(playback, ["requestId", "expiresAt", "thumbnailExpiresAt", "lifetimeMs"])
+    && closed(progress, ["requestId", "progressId", "enrollmentId", "revision"])
+    && [playback.requestId, progress.requestId, progress.progressId, progress.enrollmentId].every(courseUuid)
+    && playback.requestId !== progress.requestId && progress.revision === 1, check);
+  const dates = [playback.expiresAt, playback.thumbnailExpiresAt];
+  const timestamps = dates.map(value => typeof value === "string" ? Date.parse(value) : NaN);
+  demand(timestamps.every((value, index) => Number.isFinite(value) && date(value) === dates[index])
+    && Number.isSafeInteger(playback.lifetimeMs) && playback.lifetimeMs >= 590_000
+    && playback.lifetimeMs + Math.abs(timestamps[0] - timestamps[1]) <= 601_000, check);
+  return Math.max(...timestamps);
+}
+
+export async function captureP2InteractiveLessonEntryBaseline(courseJob, selection, dependencies) {
+  validateLessonEntrySelection(selection);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const before = await readLessonEntry(client, selected);
+    demand(before.progress.length === 0, "course-lesson-entry-baseline");
+    return before;
+  });
+  const baseline = Object.freeze({});
+  lessonEntryBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveLessonEntryCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonEntrySelection(selection);
+  const { courseId, lessonId, grantId, actorId } = selection, { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const saved = lessonEntryBaselines.get(baseline), playbackExpiry = lessonEntryBrowserExpiry(browserReceipt, courseId, lessonId);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && lessonEntrySelectionFields.every(key => selection[key] === saved.selected[key])
+    && browserReceipt.progress.enrollmentId === saved.result.enrollmentId, "course-lesson-entry-receipt");
+  lessonEntryBaselines.delete(baseline);
+  const { progressId, enrollmentId } = browserReceipt.progress, before = saved.result;
+  const { result: after } = await readHeldCourseDraft(target, dependencies, saved.roleOid, client => readLessonEntry(client, saved.selected));
+  const progress = after.progress[0], startedAt = Date.parse(progress?.created_at);
+  demand(after.enrollmentId === enrollmentId && after.progress.length === 1 && progress.progress_id === progressId
+    && progress.enrollment_id === enrollmentId && progress.started === true && startedAt >= Date.parse(before.lesson.observed_at)
+    && startedAt <= Date.parse(after.lesson.observed_at), "course-lesson-entry-progress");
+  demand(sameIds(after.history, before.history), "course-lesson-entry-history");
+  const baselineExpiry = before.lesson.last_token_expires_at === null ? 0 : Date.parse(before.lesson.last_token_expires_at);
+  demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
+    && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-entry-media");
+  return { courseId, lessonId, grantId, actorId, enrollmentId, progressId, revision: 1, playbackExpiresAt: date(playbackExpiry), readOnly: true };
 }
 
 const paidRevokeSelectionFields = ["courseId", "userId", "grantId", "actorId", "revision", "idempotencyKey", "reason", "remainingAccess"];

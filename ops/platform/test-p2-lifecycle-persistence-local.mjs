@@ -19,6 +19,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidArchiveBaseline, observeP2InteractivePaidArchiveCase, validateP2InteractivePaidArchive,
   captureP2InteractivePaidRepublishBaseline, observeP2InteractivePaidRepublishCase, validateP2InteractivePaidRepublish,
   captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
+  captureP2InteractiveLessonEntryBaseline, observeP2InteractiveLessonEntryCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
@@ -257,6 +258,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidLearnerAccessWitness({ course, job, dependencies, input, create, courseSource });
+    await runOwnedLessonEntryWitness({ course, job, dependencies, input, create, courseSource });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -283,6 +285,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history",
       "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
       "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
+      "course-lesson-entry-exact-first-start-and-monotonic-playback-expiry-with-pinned-repositories",
+      "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
       "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
       "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
       "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
@@ -1418,6 +1422,88 @@ async function runOwnedPaidLearnerAccessWitness({ course, job, dependencies, inp
     if (independent) await repository.updateCourse(independent.selection.courseId, { expectedRevision: 1, status: "archived" });
     await assert.rejects(observe(test, baseline), { check });
     await assert.rejects(observe(test, baseline), { check: "course-paid-learner-receipt" });
+  }
+}
+
+async function runOwnedLessonEntryWitness({ course, job, dependencies, input, create, courseSource }) {
+  const { db, importSource } = await ownedCourseRepository(course, courseSource);
+  const [{ createDrizzleFreeEnrollmentRepository }, { createDrizzleLessonProgressRepository }, { createDrizzleVideoRepository },
+    { createDrizzleQuizRepository }] = await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/free-enrollment.repository.ts",
+    "src/progress/lesson-progress.repository.ts", "src/video/video.repository.ts", "src/quizzes/drizzle-quiz.repository.ts");
+  const enrollment = createDrizzleFreeEnrollmentRepository(db), progress = createDrizzleLessonProgressRepository(db);
+  const video = createDrizzleVideoRepository(db), quiz = createDrizzleQuizRepository(db);
+  const quizDocument = { version: 1, mode: "graded", passingPercent: 80, questions: [{ id: "question", prompt: "Which answer matches?",
+    options: [{ id: "a", text: "First" }, { id: "b", text: "Second" }], correctOptionId: "b", feedback: "Review the material." }] };
+  const seed = async (name, { priorExpiry = null, preview = false, managed = true, withQuiz = true } = {}) => {
+    const fixture = input(`entry-${name}`, { status: "published", accessMode: "free", priceCents: 0 });
+    await create(fixture);
+    const { courseId } = fixture, actorId = randomUUID(), lessonId = randomUUID(), moduleId = randomUUID(), assetId = randomUUID();
+    await course.query("INSERT INTO public.modules(id,course_id,slug,title,position) VALUES($1,$2,'module','Module',1)", [moduleId, courseId]);
+    await course.query("INSERT INTO public.lessons(id,module_id,slug,title,position,is_preview) VALUES($1,$2,'lesson','Lesson',1,$3)", [lessonId, moduleId, preview]);
+    if (withQuiz) await course.query("INSERT INTO public.quiz_revisions(lesson_id,revision,document,created_by) VALUES($1,1,$2::jsonb,$3)",
+      [lessonId, quizDocument, randomUUID()]);
+    await course.query(`INSERT INTO public.video_assets(id,lesson_id,mux_asset_id,mux_playback_id,status,managed_by_course,provider_environment_id,
+      is_current,last_token_expires_at) VALUES($1,$2,$3,$4,'ready',$5,'owned-mux',true,$6)`,
+    [assetId, lessonId, `owned-asset-${assetId}`, `owned-playback-${assetId}`, managed, priorExpiry]);
+    const grant = await enrollment.enrollFree({ userId: actorId, courseId, idempotencyKey: randomUUID() });
+    assert.equal(grant.isReplay, false);
+    return { selection: { actorId, courseId, lessonId, grantId: grant.record.id }, enrollmentId: grant.record.enrollmentId, assetId };
+  };
+  const begin = ({ selection: { actorId: userId, courseId, lessonId }, enrollmentId }, patch) => progress.recordProgress({
+    userId, courseId, lessonId, enrollmentId, expectedProgressRevision: 0, markStarted: true, ...patch,
+  });
+  const enter = async (test, progressPatch) => {
+    const { selection: { actorId: userId, courseId, lessonId }, assetId } = test, at = Date.now();
+    const expiresAt = new Date(at + 599_500).toISOString(), thumbnailExpiresAt = new Date(at + 600_000).toISOString();
+    await video.withPlaybackAuthorization({ userId, lessonId }, async media => {
+      assert.equal(media.id, assetId);
+      return { playbackId: media.muxPlaybackId, token: "owned-fixture-token", expiresAt, thumbnailExpiresAt };
+    });
+    const started = await begin(test, progressPatch);
+    return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, flight: true },
+      playback: { requestId: randomUUID(), expiresAt, thumbnailExpiresAt, lifetimeMs: 599_500 },
+      progress: { requestId: randomUUID(), progressId: started.id, enrollmentId: started.enrollmentId, revision: started.revision } };
+  };
+  const capture = ({ selection }) => captureP2InteractiveLessonEntryBaseline(job, selection, dependencies);
+  const observe = (test, baseline, receipt) => observeP2InteractiveLessonEntryCase(job, test.selection, baseline, receipt, dependencies);
+
+  for (const name of ["first", "prior-longer"]) {
+    const priorExpiry = name === "prior-longer" ? new Date(Date.now() + 900_000).toISOString() : null;
+    const test = await seed(name, { priorExpiry });
+    await assert.rejects(capture({ ...test, selection: { ...test.selection, grantId: randomUUID() } }), { check: "course-lesson-entry-grant" });
+    const baseline = await capture(test), receipt = await enter(test);
+    assert.equal(JSON.stringify(baseline), "{}");
+    await assert.rejects(observe(test, {}, receipt), { check: "course-lesson-entry-receipt" });
+    await assert.rejects(observe(test, baseline, { ...receipt, page: { ...receipt.page, flight: false } }), { check: "course-lesson-entry-receipt" });
+    await assert.rejects(observe(test, baseline, { ...receipt, playback: { ...receipt.playback, lifetimeMs: 601_000 } }), { check: "course-lesson-entry-receipt" });
+    await assert.rejects(observe(test, baseline, { ...receipt, progress: { ...receipt.progress, enrollmentId: randomUUID() } }), { check: "course-lesson-entry-receipt" });
+    await assert.rejects(observeP2InteractiveLessonEntryCase(job, test.selection, baseline, receipt,
+      { ...dependencies, verifySession: async () => {} }), { check: "course-lesson-entry-receipt" });
+    assert.deepEqual(await observe(test, baseline, receipt), { ...test.selection, enrollmentId: test.enrollmentId,
+      progressId: receipt.progress.progressId, revision: 1, playbackExpiresAt: receipt.playback.thumbnailExpiresAt, readOnly: true });
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-lesson-entry-receipt" });
+    await assert.rejects(capture(test), { check: "course-lesson-entry-baseline" });
+  }
+
+  for (const [name, options] of [["preview", { preview: true }], ["unmanaged", { managed: false }], ["no-quiz", { withQuiz: false }]]) {
+    await assert.rejects(capture(await seed(name, options)), { check: "course-lesson-entry-lesson" });
+  }
+  const attempted = await seed("prior-attempt");
+  await quiz.submitAttempt({ userId: attempted.selection.actorId, lessonId: attempted.selection.lessonId, quizRevision: 1, requestId: randomUUID(),
+    answers: [{ questionId: "question", optionId: "b" }] });
+  await assert.rejects(capture(attempted), { check: "course-lesson-entry-attempt" });
+
+  for (const [name, check] of [["position", "course-lesson-entry-progress"], ["progress-id", "course-lesson-entry-progress"],
+    ["expiry", "course-lesson-entry-media"], ["generation", "course-lesson-entry-media"], ["metadata", "course-lesson-entry-history"]]) {
+    const test = await seed(name), baseline = await capture(test);
+    const receipt = await enter(test, name === "position" ? { resumePositionSeconds: 7 } : undefined);
+    if (name === "progress-id") receipt.progress.progressId = randomUUID();
+    if (name === "expiry") receipt.playback.thumbnailExpiresAt = new Date(Date.parse(receipt.playback.thumbnailExpiresAt) + 500).toISOString();
+    if (name === "generation") await course.query(`INSERT INTO public.video_assets(lesson_id,generation,status,managed_by_course,provider_environment_id)
+      VALUES($1,2,'pending',true,'owned-mux')`, [test.selection.lessonId]);
+    if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [test.selection.courseId]);
+    await assert.rejects(observe(test, baseline, receipt), { check });
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-lesson-entry-receipt" });
   }
 }
 

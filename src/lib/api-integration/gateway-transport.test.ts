@@ -199,6 +199,17 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(readiness.cookie, readiness.proxyProof, () => send({
     method: "GET", path: readinessPath, applicationToken: "owned.admin.jwt",
   }), readinessRoute);
+  const lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const lessonSelector = ["8d680a92-8071-4fd0-9da2-c4d350aa729d", learnerCourse, lessonId].map(id => id.replaceAll("-", "")).join("");
+  const lessonEntryRoute = `${learningRoute}/lessons/${lessonId}`;
+  const lessonEntry = evidence("lesson-entry", lessonEntryRoute, issued, lessonSelector);
+  const selectedLesson = `/v1/student/lessons/${lessonId}`;
+  const lessonProgress = `${selectedLesson}/progress`;
+  const startRoute = `POST /api/academy/lessons/${lessonId}/progress`;
+  const start = evidence("lesson-entry", startRoute, issued, lessonSelector);
+  const startBody = '{"event":"lesson_started","expectedProgressRevision":0}';
+  await inBrowser(lessonEntry.cookie, lessonEntry.proxyProof, () => send({ method: "GET", path: selectedLesson, applicationToken }), lessonEntryRoute);
+  await inBrowser(start.cookie, start.proxyProof, () => send({ method: "POST", path: lessonProgress, body: startBody, applicationToken }), startRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "learning", method: "POST", target: "/course" + enrollmentPath, bytes: [enrollmentBody, applicationToken, enrollmentKey] },
@@ -209,6 +220,8 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     { stage: "authoring", method: "POST", target: "/course" + curriculumPath, bytes: [curriculumBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [publishBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "GET", target: "/course" + readinessPath, bytes: ["", "owned.admin.jwt", ""] },
+    { stage: "lesson-entry", method: "GET", target: "/course" + selectedLesson, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-entry", method: "POST", target: "/course" + lessonProgress, bytes: [startBody, applicationToken, ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -231,6 +244,9 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   const identity = evidence("identity", "GET /api/customer-auth/session");
   const stale = evidence("learning", learningRoute, issued - 30, learningSelector);
   const legacy = evidence("learning", learningRoute);
+  await inBrowser(lessonEntry.cookie, lessonEntry.proxyProof, () => send({ method: "GET", path: `${selectedLesson}?limit=2`, applicationToken }), lessonEntryRoute);
+  await inBrowser(start.cookie, start.proxyProof, () => send({ method: "POST", path: lessonProgress,
+    body: '{"event":"lesson_started","expectedProgressRevision":1}', applicationToken }), startRoute);
   await request();
   await inBrowser(learning.cookie, undefined, request);
   await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
@@ -250,6 +266,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 22);
-  assert.ok(captured.slice(9).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, expected.length + 15);
+  assert.ok(captured.slice(expected.length).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

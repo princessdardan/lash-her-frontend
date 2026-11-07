@@ -426,6 +426,40 @@ test("learner-access v2 admits only read routes and binds the exact lesson", () 
   }
 });
 
+test("lesson-entry v2 binds all three canonical UUIDs and only normal Academy entry paths", () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const actorId = selectedCustomerId, lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const courseId = "10000000-0000-4000-8000-000000000001";
+  const selector = [actorId, courseId, lessonId].map(value => value.replaceAll("-", "")).join("");
+  const issue = (selection: string, version = "v2") => {
+    const body = [version, "9".repeat(18), "lesson-entry", now, now + 120, "ab".repeat(16), selection].join(".");
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = issue(selector), page = `/academy/courses/${courseId}`, lesson = `${page}/lessons/${lessonId}`;
+  const api = `/api/academy/lessons/${lessonId}`;
+  const attest = (method: string, path: string, permit = cookie, search = "") =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie: permit }, env, now);
+  assert.ok(cookie.length <= 256);
+  for (const [method, path] of [["GET", page], ["GET", lesson], ["GET", `${api}/playback`], ["POST", `${api}/progress`]]) {
+    const proof = attest(method, path);
+    assert.ok(proof);
+    const verified = readInteractiveRequest(proof, cookie, env, now);
+    assert.deepEqual(verified?.lessonEntry, { actorId, courseId, lessonId });
+    assert.equal(verified?.learnerAccess, undefined);
+    assert.equal(readInteractiveRequest(proof, issue(selector.slice(32, 64) + selector.slice(0, 32) + selector.slice(64)), env, now), null);
+    assert.equal(attest(method, path, cookie, "?course=preview"), null);
+  }
+  for (const [method, path] of [["GET", "/academy"], ["GET", `/academy/courses/${actorId}`], ["GET", `${page}/lessons/${actorId}`],
+    ["GET", `/api/academy/lessons/${actorId}/playback`], ["GET", `${api}/progress`], ["GET", `${api}/quiz`], ["POST", `${api}/quiz/attempts`],
+    ["POST", `/api/academy/lessons/${actorId}/progress`], ["HEAD", page]]) assert.equal(attest(method, path), null);
+  for (const invalid of [issue(selector, "v1"), issue(selector.slice(32)), issue(selector.toUpperCase()),
+    issue("0".repeat(32) + selector.slice(32)), issue(selector.slice(0, 32) + "0".repeat(32) + selector.slice(64)),
+    issue(selector.slice(0, 64) + "0".repeat(32))]) assert.equal(attest("GET", page, invalid), null);
+});
+
 test("paid grant and revoke v2 permit only their fresh mutation and owner page, and clear owner scope", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };

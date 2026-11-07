@@ -102,6 +102,73 @@ test("learner access requires the issued customer in direct page reads and same-
   assert.deepEqual(await client.getMyCourse(courseId), { course });
 });
 
+test("lesson entry binds the active customer, exact reads and first progress write before Course transport", async () => {
+  const courseId = adminId, origin = "https://site.example.com", token = "scoped.learner.jwt";
+  const scope = { actorId: customerId, courseId, lessonId };
+  const course = { id: courseId, slug: "owned-entry", title: "Owned course", description: null, priceCents: 0, currency: "CAD",
+    introduction: null, cover: null, seo: null, accessMode: "free", modules: [] };
+  const lesson = { id: lessonId, moduleId: courseId, slug: "lesson", title: "Lesson", content: null, contentDocument: null,
+    transcript: null, captions: [], isPreview: false, position: 1 };
+  const initialProgress = { ...progress, maxPositionSeconds: 0, resumePositionSeconds: 0 };
+  const quiz = { id: customerId, lessonId, revision: 1, document: { version: 1, mode: "graded", passingPercent: 80,
+    questions: [{ id: "q", prompt: "What comes first?", options: [{ id: "a", text: "Preparation" }, { id: "b", text: "Review" }] }] } };
+  const playback = { playbackId: "owned-playback", playbackToken: "fixture-playback", thumbnailToken: "fixture-thumbnail", expiresAt: at, thumbnailExpiresAt: at };
+  const lessonTarget = `/v1/student/lessons/${lessonId}`;
+  const progressTarget = `${lessonTarget}/progress`;
+  const expected = new Map<string, object>([
+    [`/v1/student/courses/${courseId}`, { course }], [`/v1/student/progress?courseId=${courseId}`, { progress: [] }],
+    [lessonTarget, { lesson }], [`/v1/student/progress?lessonId=${lessonId}`, { progress: [] }], [`${lessonTarget}/quiz`, { quiz }],
+    [`${lessonTarget}/quiz/attempts`, { attempts: [] }], [`${lessonTarget}/playback`, playback], [progressTarget, { progress: initialProgress }],
+  ]);
+  let issued = { customerId: adminId, token };
+  let issuances = 0, admitted = 0;
+  const calls: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getLessonEntry: async () => scope,
+    issueCustomerToken: async () => { issuances++; return issued; },
+    run: async (kind, work) => { assert.equal(kind, "new-work"); admitted++; return work(); },
+    getTransport: () => async input => {
+      calls.push(input);
+      const result = expected.get(input.path);
+      assert.ok(result, input.path);
+      return Response.json(result);
+    },
+  });
+  const denied = { code: "forbidden", status: 403 };
+  await assert.rejects(client.getMyCourse(courseId), denied);
+  issued = { customerId, token };
+  const before = issuances;
+  for (const request of [() => client.listMyCourses(), () => client.getMyCourse(customerId), () => client.getLesson(courseId),
+    () => client.listProgress({ lessonId: courseId }), () => client.listProgress(),
+    () => client.recordProgress(lessonId, { event: "lesson_started", expectedProgressRevision: 1 }),
+    () => client.recordProgress(lessonId, { event: "lesson_started", expectedProgressRevision: 0, resumePositionSeconds: 0 }),
+    () => client.recordProgress(lessonId, { expectedProgressRevision: 0, event: "lesson_started" })]) {
+    await assert.rejects(request(), denied);
+  }
+  assert.equal(issuances, before);
+  assert.equal(admitted, 0);
+  assert.equal(calls.length, 0);
+  await client.getMyCourse(courseId);
+  await client.listProgress({ courseId });
+  await client.getLesson(lessonId);
+  await client.listProgress({ lessonId });
+  await client.getQuiz(lessonId);
+  await client.listQuizAttempts(lessonId);
+  await client.authorizePlayback(lessonId);
+  const handle = createAcademyHandler("record-progress", { client: () => client, origin: () => origin });
+  const headers = { "content-type": "application/json", "x-lash-csrf": "1", origin };
+  const startBody = '{"event":"lesson_started","expectedProgressRevision":0}';
+  const route = `${origin}/api/academy/lessons/${lessonId}/progress`;
+  const crossOrigin = await handle(new Request(route, { method: "POST", headers: { ...headers, origin: "https://foreign.example.test" }, body: startBody }), { lessonId });
+  assert.equal(crossOrigin.status, 403);
+  const response = await handle(new Request(route, { method: "POST", headers, body: startBody }), { lessonId });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await response.json(), { progress: initialProgress });
+  assert.equal(admitted, 1);
+  assert.deepEqual(calls.map(request => [request.method, request.path, request.applicationToken, request.body]),
+    [...expected.keys()].map(path => path === progressTarget ? ["POST", path, token, startBody] : ["GET", path, token, undefined]));
+});
+
 test("request/response validation rejects unknown fields and accepts composed learner curriculum objects", () => {
   assert.throws(() => validateCandidateRequest("course", "/v1/student/lessons/{lessonId}/progress", "post", { params: { lessonId }, body: { event: "lesson_started", userId: adminId } }));
   assert.throws(() => validateCandidateResponse("course", "/v1/courses", "get", 200, { courses: [], nextCursor: null, privateToken: "must-not-leak" }));

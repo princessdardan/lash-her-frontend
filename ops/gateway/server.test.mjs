@@ -648,6 +648,81 @@ for (const [scenario, status] of [["allowed", 200], ["archived", 410], ["draft",
   });
 }
 
+test("scoped lesson entry acknowledges the normal reads, playback and one first-start write", async t => {
+  const courseId = "20000000-0000-4000-8000-000000000001";
+  const lessonId = "20000000-0000-4000-8000-000000000002";
+  const foreignId = "20000000-0000-4000-8000-000000000003";
+  const userId = "10000000-0000-4000-8000-000000000001";
+  const course = `/course/v1/student/courses/${courseId}`;
+  const lesson = `/course/v1/student/lessons/${lessonId}`;
+  const progress = "/course/v1/student/progress";
+  const write = `${lesson}/progress`;
+  const startBody = '{"event":"lesson_started","expectedProgressRevision":0}';
+  const targets = [course, `${progress}?courseId=${courseId}`, lesson, `${progress}?lessonId=${lessonId}`, `${lesson}/quiz`,
+    `${lesson}/quiz/attempts`, `${lesson}/playback`, write];
+  const requests = targets.map((target, index) => ({ method: index === 7 ? "POST" : "GET", target,
+    bodySha256: certificationHash(index === 7 ? startBody : ""), uses: index === 0 ? 2 : 1 }));
+  const expiresAt = "2026-11-07T16:10:00.000Z";
+  const values = [{ course: { id: courseId } }, { progress: [] }, { lesson: { id: lessonId } }, { progress: [] },
+    { quiz: { lessonId, revision: 1 } }, { attempts: [] }, { playbackId: "owned-playback", playbackToken: "fixture-playback",
+      thumbnailToken: "fixture-thumbnail", expiresAt, thumbnailExpiresAt: expiresAt },
+    { progress: { userId, lessonId, revision: 1, maxPositionSeconds: 0, resumePositionSeconds: 0, completedAt: null } }];
+  const forwarded = [];
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    forwarded.push({ method: req.method, target: `/course${req.url}`, body: Buffer.concat(chunks).toString(),
+      requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER], authorization: req.headers.authorization });
+    const index = targets.indexOf(`/course${req.url}`);
+    res.writeHead(index === -1 ? 400 : 200, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(values[index] ?? { error: { code: "BAD_REQUEST", message: "Unexpected fixture request" } }));
+  }, "lesson-entry");
+  const start = (body = startBody, path = write) => f.signed({ method: "POST", path, body });
+  for (const input of [f.signed({ path: course, actor: foreignId }), f.signed({ path: course.replace(courseId, foreignId) }),
+    f.signed({ path: `${progress}?lessonId=${foreignId}` }), f.signed({ path: `${lesson}/quiz?limit=2` }),
+    f.signed({ path: "/course/v1/courses/example", catalog: true }), f.signed({ method: "POST", path: `${lesson}/quiz/attempts`, body: "{}" }),
+    start(startBody, write.replace(lessonId, foreignId)), start('{"event":"lesson_started","expectedProgressRevision":1}'),
+    start('{"event":"lesson_started","expectedProgressRevision":0,"resumePositionSeconds":0}'),
+    f.signed({ method: "POST", path: write, body: startBody, idempotency: foreignId })]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  const groups = [[0, 1], [0, 2, 3, 4, 5], [6, 7]].map(indices => indices.map(requestIndex => ({
+    input: requestIndex === 7 ? start() : f.signed({ path: targets[requestIndex] }), requestIndex,
+  })));
+  async function complete({ input, requestIndex }) {
+    const output = await f.send(input);
+    assert.equal(output.status, 200);
+    assert.deepEqual(JSON.parse(output.body), values[requestIndex]);
+    const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+    assert.match(requestId, /^[a-f0-9-]{36}$/u);
+    assert.notEqual(requestId, proofRequestId);
+    return { requestId, proofRequestId, requestIndex, upstreamStatus: 200 };
+  }
+  const acknowledged = [];
+  for (const group of groups) {
+    acknowledged.push(await Promise.all(group.map(complete)));
+    for (const { input } of group) assert.equal((await f.send(input)).status, 503);
+  }
+  for (const input of [...targets.slice(0, 7).map(path => f.signed({ path })), start()]) assert.equal((await f.send(input)).status, 503);
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 9);
+  let offset = 0;
+  for (const [groupIndex, group] of groups.entries()) {
+    const rows = observed.interactiveEvidence.acknowledged.slice(offset, offset + group.length);
+    assert.deepEqual(rows.sort((a, b) => a.requestIndex - b.requestIndex), acknowledged[groupIndex]);
+    const byTarget = (a, b) => a.target.localeCompare(b.target);
+    assert.deepEqual(forwarded.slice(offset, offset + group.length).sort(byTarget), group.map(({ input }, index) => ({
+      method: input.method, target: input.path, body: input.body ?? "", requestId: acknowledged[groupIndex][index].requestId,
+      proof: undefined, authorization: input.headers.authorization,
+    })).sort(byTarget));
+    offset += group.length;
+  }
+  assert.equal(new Set(acknowledged.flat().map(row => row.requestId)).size, 9);
+  assert.equal(new Set(acknowledged.flat().map(row => row.proofRequestId)).size, 9);
+});
+
 test("scoped paid grant acknowledges the reviewed owner mutation and exact command and grant readbacks", async t => {
   const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
   const [courseId, userId, key, commandId, grantId, enrollmentId, foreignId] = [1, 2, 3, 4, 5, 6, 7].map(fixtureId);

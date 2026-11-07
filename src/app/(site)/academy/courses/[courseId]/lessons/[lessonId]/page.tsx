@@ -20,6 +20,7 @@ import {
   LearningShell,
 } from "@/components/learning/shared";
 import { LessonExperience } from "@/components/learning/lesson-experience";
+import { readInteractiveBrowserRequest } from "@/lib/writer-admission/interactive-proof";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -47,6 +48,7 @@ export default async function LessonPage({
   const path =
     lessonHref(courseId, lessonId) +
     (typeof query.course === "string" ? `?course=${query.course}` : "");
+  const prefetch = (await readInteractiveBrowserRequest())?.lessonEntry ? false : undefined;
   const result = await readLearningPage(async () => {
     const client = getCourseClient();
     const [
@@ -162,6 +164,7 @@ export default async function LessonPage({
         href={
           preview ? `/courses/${course.slug}` : `/academy/courses/${courseId}`
         }
+        prefetch={prefetch}
         className="text-sm underline underline-offset-4"
       >
         {course.title}
@@ -188,6 +191,7 @@ export default async function LessonPage({
             {previous ? (
               <Link
                 href={href(previous.id)}
+                prefetch={prefetch}
                 className="underline underline-offset-4"
               >
                 Previous: {previous.title}
@@ -198,6 +202,7 @@ export default async function LessonPage({
             {next ? (
               <Link
                 href={href(next.id)}
+                prefetch={prefetch}
                 className="underline underline-offset-4"
               >
                 Next: {next.title}
@@ -205,6 +210,7 @@ export default async function LessonPage({
             ) : (
               <Link
                 href={preview ? `/courses/${course.slug}` : "/academy"}
+                prefetch={prefetch}
                 className="underline underline-offset-4"
               >
                 {preview ? "Return to course" : "Return to my academy"}
@@ -229,6 +235,7 @@ export default async function LessonPage({
                       <li key={row.id}>
                         <Link
                           href={href(row.id)}
+                          prefetch={prefetch}
                           aria-current={
                             row.id === lessonId ? "page" : undefined
                           }
