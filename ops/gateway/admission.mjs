@@ -18,6 +18,7 @@ const SHA = /^[a-f0-9]{64}$/u;
 const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
 const INITIAL_LESSON_PROGRESS = Buffer.from('{"event":"lesson_started","expectedProgressRevision":0}');
+const LESSON_DENIAL_RESPONSE = Buffer.from('{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"Active enrollment required"}}');
 const MAX_ORDINARY_STATE = 4096;
 const MAX_INTERACTIVE_STATE = 16_384;
 const ASSET_TYPES = new Set(["video.asset.created", "video.asset.ready", "video.asset.errored", "video.asset.deleted"]);
@@ -187,8 +188,11 @@ function acknowledgedMediaRefresh(target, value) {
 }
 
 export function scopedInteractiveAcknowledged(route, target, status, contentType, body, stage) {
+  if (stage === "lesson-denial") {
+    return status === 403 && typeof contentType === "string" && contentType.split(";", 1)[0] === "application/json" &&
+      body.equals(LESSON_DENIAL_RESPONSE);
+  }
   const refresh = route.method === "POST" && route.path === "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh";
-  if (stage === "lesson-denial" && status !== 403) return false;
   if (status === 204) return !refresh && body.length === 0;
   if (!((status >= 200 && status < 300) || (status >= 400 && status < 500)) ||
       typeof contentType !== "string" || contentType.split(";", 1)[0] !== "application/json" || !isUtf8(body)) return false;
@@ -197,7 +201,6 @@ export function scopedInteractiveAcknowledged(route, target, status, contentType
     if (status >= 400) {
       return keys(value) === "error" && keys(value.error) === "code,message" &&
         matches(/^[A-Z][A-Z0-9_]{0,127}$/u, value.error.code) && typeof value.error.message === "string" &&
-        (stage !== "lesson-denial" || value.error.code === "ACTIVE_ENROLLMENT_REQUIRED") &&
         !UNCERTAIN_MEDIA_ERRORS.has(value.error.code);
     }
     if (refresh) return status === 200 && acknowledgedMediaRefresh(target, value);

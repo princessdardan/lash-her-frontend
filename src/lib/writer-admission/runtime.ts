@@ -50,6 +50,8 @@ export function createWriterAdmissionRunner(dependencies: {
         current_setting('server_version_num')::int/10000 AS major`)).rows[0];
       if (identity?.username !== target.user || identity.database !== target.database || identity.major !== target.serverMajor) throw new Error();
       const interactive = await getInteractiveWriter(configuration);
+      // A denial witness can reach protected reads without opening a writer.
+      if (interactive?.lessonDenial) throw new Error();
       if (interactive && (interactive.source !== configuration.sourceSha || interactive.target !== target.targetSha256)) throw new Error();
       const producerSha256 = interactive?.producerSha256 ?? configuration.producerSha256;
       // Read the current epoch for every request. Closing new work must not

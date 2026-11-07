@@ -339,6 +339,7 @@ try {
         );
         const lessonIds = {};
         for (const [index, mode] of ["practice", "graded"].entries()) {
+          const denialFixture = production && mode === "practice";
           const { lesson } = await courseAdmin(
             "POST",
             `/v1/admin/modules/${module.id}/lessons`,
@@ -347,7 +348,8 @@ try {
               title: mode === "practice" ? "Practice lesson" : "Graded lesson",
               slug: mode,
               position: index + 1,
-              transcript: "A gentle approach protects the natural lash.",
+              transcript: "A gentle approach protects the natural lash." +
+                (denialFixture ? " p2q-s07-private-transcript" : ""),
               contentDocument: {
                 version: 1,
                 blocks: [
@@ -362,6 +364,11 @@ try {
                       },
                     ],
                   },
+                  ...(denialFixture ? [{
+                    _type: "block",
+                    _key: "lesson-denial-canary",
+                    children: [{ _type: "span", _key: "lesson-denial-canary-text", text: "p2q-s07-private-content" }],
+                  }] : []),
                 ],
               },
               captions: [
@@ -383,7 +390,8 @@ try {
               questions: [
                 {
                   id: "q1",
-                  prompt: "Which approach protects the natural lash?",
+                  prompt: "Which approach protects the natural lash?" +
+                    (denialFixture ? " p2q-s07-private-quiz" : ""),
                   options: [
                     { id: "gentle", text: "Use gentle care" },
                     { id: "pull", text: "Pull the extensions" },

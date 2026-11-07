@@ -740,7 +740,8 @@ test("scoped lesson denial binds one course, lesson and customer to fifteen exac
   const forwarded = [];
   const f = await interactiveFixture(t, requests, (req, res) => {
     forwarded.push({ method: req.method, target: `/course${req.url}`, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
-    res.writeHead(403, { "content-type": "application/json; charset=utf-8" });
+    res.writeHead(403, { "content-type": "application/json; fixture=private", "retry-after": "10",
+      "cache-control": "public, max-age=3600", "x-request-id": "upstream-request" });
     res.end(JSON.stringify(denial));
   }, "lesson-denial");
   for (const rows of [
@@ -770,6 +771,10 @@ test("scoped lesson denial binds one course, lesson and customer to fifteen exac
     const result = await f.send(input);
     assert.equal(result.status, 403);
     assert.deepEqual(JSON.parse(result.body), denial);
+    assert.equal(result.headers["content-type"], "application/json; charset=utf-8");
+    assert.equal(result.headers["cache-control"], "private, no-store");
+    assert.equal(result.headers["retry-after"], undefined);
+    assert.match(result.headers["x-request-id"], /^[a-f0-9-]{36}$/u);
     acknowledged.push({ requestIndex, requestId: result.headers["x-request-id"],
       proofRequestId: input.headers["x-request-id"], upstreamStatus: 403 });
     assert.equal((await f.send(input)).status, 503);
@@ -783,14 +788,18 @@ test("scoped lesson denial binds one course, lesson and customer to fifteen exac
   assert.deepEqual(forwarded, acknowledged.map(({ requestIndex }) => ({ method: "GET", target: targets[requestIndex], proof: undefined })));
 });
 
-test("scoped lesson denial fences unexpected upstream success and wrong-code denial without exposing their bodies", async t => {
+test("scoped lesson denial fences every noncanonical upstream response without exposing its body", async t => {
   const { targets, requests } = lessonDenialFixtureRequests();
-  for (const [name, status, body] of [["unexpected success", 200, { lesson: { transcript: "private fixture detail" } }],
-    ["wrong-code denial", 403, { error: { code: "ENTITLEMENT_REVOKED", message: "private fixture detail" } }]]) {
+  for (const [name, status, body] of [
+    ["unexpected success", 200, '{"lesson":{"transcript":"private fixture detail"}}'],
+    ["wrong-code denial", 403, '{"error":{"code":"ENTITLEMENT_REVOKED","message":"private fixture detail"}}'],
+    ["wrong message", 403, '{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"private fixture detail"}}'],
+    ["duplicate message", 403, '{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"private fixture detail","message":"Active enrollment required"}}'],
+  ]) {
     await t.test(name, async testContext => {
       const f = await interactiveFixture(testContext, requests, (_req, res) => {
         res.writeHead(status, { "content-type": "application/json", "retry-after": "10" });
-        res.end(JSON.stringify(body));
+        res.end(body);
       }, "lesson-denial");
       const output = await f.send(f.signed({ path: targets[1] }));
       assert.equal(output.status, 502);

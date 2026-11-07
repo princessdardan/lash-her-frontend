@@ -215,6 +215,11 @@ export function createGateway(input, options = {}) {
               } else {
                 interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
                   requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
+                if (stage === "lesson-denial") {
+                  res.writeHead(403, { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" });
+                  res.end(buffered);
+                  return resolve();
+                }
               }
             }
             // The complete upstream ACK must be checked before any downstream

@@ -209,6 +209,10 @@ const reviewedLessonEntryDependencies = {
   "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "c22f7041c8f1dd6d98cfc4c2a678403fba3e9a54179fe4e8ed8aa00d5acc74a1",
   "src/app/api/academy/lessons/[lessonId]/progress/route.ts": "87d879299cb039985b7b49e9f2d0f9e0b70f233d8d357fd85ebc3f40c0610cfd"
 };
+const reviewedLessonDenialSource = {
+  ...reviewedPaidRevokeSource,
+  "src/lib/writer-admission/runtime.ts": "93226fc3e0f26dd257e005a87a676bcc33047dff0e8b3f1c2918f2038b88d082"
+};
 const reviewedLessonDenialDependencies = {
   ...reviewedLessonEntryDependencies,
   "src/lib/writer-admission/interactive-proof.ts": "8c4d47bf14055c277d707682bcf076c0b22e2decfe2bb9eb738fc8cf6ef74d44",
@@ -249,7 +253,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
     [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
     [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]],
-    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies, reviewedLessonDenialDependencies]]]
+    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies]],
+    [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

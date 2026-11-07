@@ -56,9 +56,14 @@ if (process.env.COURSE_LEARNING_BROWSER_FIXTURE === "1") {
         new URL(`${url.pathname.slice(7)}${url.search}`, course),
         { ...options, redirect: "error" },
       );
-      if (journal && /^\/course\/v1\/(?:courses\/[a-z0-9-]+|student\/(?:courses\/[0-9a-f-]+(?:\/enrollments)?|progress))$/u.test(url.pathname)) {
+      if (journal && /^\/course\/v1\/(?:courses\/[a-z0-9-]+|student\/(?:courses\/[0-9a-f-]+(?:\/enrollments)?|lessons\/[0-9a-f-]+(?:\/(?:playback|quiz(?:\/attempts)?))?|progress))$/u.test(url.pathname)) {
+        const denial = mode === "production" && response.status === 403 ? {
+          requestId: response.headers.get("x-request-id"),
+          canonicalDenial: (await response.clone().text()) ===
+            '{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"Active enrollment required"}}',
+        } : {};
         appendFileSync(journal, JSON.stringify({
-          method: options?.method ?? "GET", target: url.pathname + url.search, status: response.status,
+          method: options?.method ?? "GET", target: url.pathname + url.search, status: response.status, ...denial,
         }) + "\n", { mode: 0o600 });
       }
       return response;

@@ -187,7 +187,7 @@ const lessonPath = (
   mode: "practice" | "graded" = "practice",
 ) => `/academy/courses/${value.courseId}/lessons/${value.lessonIds[mode]}`;
 const readOwnedGatewayJournal = () => readFileSync(owned().gatewayJournal, "utf8").trim().split("\n").filter(Boolean)
-  .map(line => JSON.parse(line) as { method: string; target: string; status: number });
+  .map(line => JSON.parse(line) as { method: string; target: string; status: number; requestId?: string; canonicalDenial?: boolean });
 async function enroll(page: Page, value: Scenario) {
   const start = readOwnedGatewayJournal().length;
   const catalog = `/course/v1/courses/${value.slug}`;
@@ -378,6 +378,10 @@ async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
     expect(document?.headers()["cache-control"]).toMatch(/\bprivate\b.*\bno-store\b/u);
     await expect(page.getByRole("heading", { name: "Enrollment required", exact: true })).toBeVisible();
     await expect(page.locator("mux-player")).toHaveCount(0);
+    const referencePattern = /^Reference: ([a-f0-9-]{36})$/u;
+    const documentRequestId = referencePattern.exec(await page.getByText(referencePattern).innerText())?.[1];
+    const documentBody = await document!.text();
+    expect(documentBody).toContain(documentRequestId);
 
     const evidence = await page.evaluate(async ({ pathname, targets }) => {
       const request = (path: string, headers?: HeadersInit) => fetch(path, {
@@ -397,7 +401,6 @@ async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
         });
       }
       return {
-        documentBody: window.document.documentElement.textContent ?? "",
         flight: {
           status: flight.status,
           type: flight.headers.get("content-type"),
@@ -415,9 +418,13 @@ async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
       vary: expect.stringMatching(/(?:^|,\s*)rsc(?:,|$)/iu),
     });
     expect(evidence.flight.body).toContain("Enrollment required");
-    for (const body of [evidence.documentBody, evidence.flight.body]) {
+    expect(evidence.flight.body).toContain("learning-unavailable-title");
+    expect(evidence.flight.body).toContain("Open the course page to enroll or check your access.");
+    const flightRequestId = /"Reference: ","([a-f0-9-]{36})"/u.exec(evidence.flight.body)?.[1];
+    for (const body of [documentBody, evidence.flight.body]) {
       for (const privateText of ["Private actual practice lesson content.", "A gentle approach protects the natural lash.",
-        "Which approach protects the natural lash?", before.media[0].mux_playback_id])
+        "Which approach protects the natural lash?", "p2q-s07-private-content", "p2q-s07-private-transcript",
+        "p2q-s07-private-quiz", before.media[0].mux_playback_id])
         expect(body).not.toContain(privateText);
     }
     const reads = evidence.reads.map(({ status, cache, requestId, body }) => {
@@ -432,12 +439,17 @@ async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
     expect(mediaRequests).toEqual([]);
     const gatewayRows = readOwnedGatewayJournal().slice(gatewayOffset).filter(row => upstream.includes(row.target));
     expect(gatewayRows).toHaveLength(15);
-    expect(gatewayRows.every(row => row.method === "GET" && row.status === 403)).toBe(true);
+    expect(gatewayRows.every(row => row.method === "GET" && row.status === 403 && row.canonicalDenial)).toBe(true);
     const indexes = gatewayRows.map(row => upstream.indexOf(row.target));
     for (const start of [0, 5]) expect(indexes.slice(start, start + 5).sort()).toEqual([0, 1, 2, 3, 4]);
     expect(indexes.slice(10)).toEqual([1, 5, 2, 3, 4]);
+    expect(documentRequestId).toBe(gatewayRows[indexes.indexOf(0)].requestId);
+    expect(flightRequestId).toBe(gatewayRows[indexes.indexOf(0, 5)].requestId);
+    expect(reads.map(read => read.requestId)).toEqual(gatewayRows.slice(10).map(row => row.requestId));
+    expect(new Set([documentRequestId, flightRequestId, ...reads.map(read => read.requestId)]).size).toBe(7);
     expect(await readState()).toEqual(before);
-    return { documentStatus: document?.status(), flightStatus: evidence.flight.status, reads, gatewayIndexes: indexes, unchanged: true };
+    return { documentStatus: document?.status(), flightStatus: evidence.flight.status, documentRequestId, flightRequestId,
+      reads, gatewayIndexes: indexes, unchanged: true };
   } finally {
     await close(context);
   }

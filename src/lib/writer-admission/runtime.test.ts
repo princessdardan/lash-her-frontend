@@ -460,7 +460,7 @@ test("lesson-entry v2 binds all three canonical UUIDs and only normal Academy en
     issue(selector.slice(0, 64) + "0".repeat(32))]) assert.equal(attest("GET", page, invalid), null);
 });
 
-test("lesson denial v2 signs only the selected document and exact read-only BFF targets", () => {
+test("lesson denial v2 signs only the selected document and exact read-only BFF targets", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
   const actorId = selectedCustomerId, lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
@@ -495,6 +495,23 @@ test("lesson denial v2 signs only the selected document and exact read-only BFF 
     ["GET", progress, `${query}&extra=1`], ["HEAD", page], ["POST", `${api}/progress`], ["POST", `${api}/quiz/attempts`],
   ]) assert.equal(attest(method, path, search), null);
   assert.equal(attest("GET", page, "", issue(selector.slice(32))), null);
+  const proof = attest("GET", progress, query);
+  assert.ok(proof);
+  const f = fixture();
+  f.state.epoch = "9".repeat(18);
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(env),
+    createClient: () => f.client,
+    getInteractiveWriter: async () => readInteractiveRequest(proof, cookie, env, now),
+  });
+  let effects = 0;
+  for (const kind of ["new-work", "recovery"] as const) {
+    await assert.rejects(run(kind, async () => { effects++; }), { name: "WriterAdmissionError", code: "unavailable" });
+  }
+  assert.equal(effects, 0);
+  assert.equal(f.calls.length, 2);
+  assert.ok(f.calls.every(call => call.sql.startsWith("SELECT current_user")));
+  assert.equal(f.state.ended, true);
 });
 
 test("paid grant and revoke v2 permit only their fresh mutation and owner page, and clear owner scope", async () => {
