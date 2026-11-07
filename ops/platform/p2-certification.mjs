@@ -931,6 +931,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
   const interactive=plan.mode==='interactive-browser'&&pairedBrowserStages.has(plan.scopedAction.stage)&&identityPlan!==undefined;
   const authoring=interactive&&plan.scopedAction.stage==='authoring';
+  if(interactive&&plan.scopedAction.stage==='learning')demand(execution===undefined);
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment;
   demand(confirmation==='staging/'+plan.certificationActionId&&
