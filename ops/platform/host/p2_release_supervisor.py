@@ -447,6 +447,62 @@ def capture_gateway_before_stop(initial, selected, directory, source):
                                                 **_profile_kwargs(initial))
 
 
+def remove_profiled_certification_fault_lease(initial, source):
+    from p2_certification_fault import LEASE
+    plan, configuration = initial['certificationPlan'], Path(initial['configuration'])
+    require(plan['mode'] == 'fault-before-upstream', 'P2_PROFILED_CERTIFICATION_GUARD_FAULT_MODE_REQUIRED')
+    verify_guard_boundary(initial, source)
+    require(staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
+            'P2_PROFILED_CERTIFICATION_GUARD_CONFIGURATION_CHANGED')
+    admission = configuration / 'admission'
+    directory = os.open(admission, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        mount = os.fstat(directory)
+        require(mount.st_uid == os.getuid() and not mount.st_mode & 0o022,
+                'P2_PROFILED_CERTIFICATION_GUARD_FAULT_MOUNT_REFUSED')
+        try:
+            fd = os.open(LEASE, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        except FileNotFoundError:
+            return
+        try:
+            existing = os.fstat(fd)
+            require(stat.S_ISREG(existing.st_mode) and existing.st_uid == os.getuid() and 0 < existing.st_size <= 8192,
+                    'P2_PROFILED_CERTIFICATION_GUARD_FAULT_LEASE_REFUSED')
+            raw = os.read(fd, 8193)
+            fault = _profiled_certification_directory(initial) / 'fault'
+            migrate.private_directory(fault)
+            intent = migrate.read_json(fault, 'fault-arm-intent.json', **_profile_kwargs(initial))
+            migrate.require_profile(_guard_profile(initial), intent)
+            lease = intent['lease']
+            require(intent['version'] == 2 and intent['stageId'] == plan['faultSelection']['stageId'] and
+                    type(intent['admissionDirectoryDevice']) is int and type(intent['admissionDirectoryInode']) is int and
+                    (intent['admissionDirectoryDevice'], intent['admissionDirectoryInode']) == (mount.st_dev, mount.st_ino) and
+                    lease['version'] == 1 and lease['stageId'] == intent['stageId'] and
+                    lease['releaseId'] == initial['candidate']['releaseId'] and lease['candidateSha256'] == initial['candidateSha256'] and
+                    lease['configurationSha256'] == plan['configurationCanonicalSha256'] and
+                    lease['gatewayProcessSha256'] == plan['gatewayProcessSha256'] and lease['mode'] == '503-before-upstream' and
+                    lease['receiver'] == plan['faultSelection']['receiver'] and lease['sourceWitnessSha256'] == plan['faultSelection']['commandSha256'] and
+                    len(raw) == existing.st_size and migrate.file_hash(raw) == intent['leaseSha256'] and
+                    _canonical_sha(json.loads(raw)) == _canonical_sha(lease), 'P2_PROFILED_CERTIFICATION_GUARD_FOREIGN_FAULT_LEASE')
+            verify_guard_boundary(initial, source)
+            current_mount = admission.lstat()
+            current = os.stat(LEASE, dir_fd=directory, follow_symlinks=False)
+            require((current_mount.st_dev, current_mount.st_ino) == (mount.st_dev, mount.st_ino) and
+                    (current.st_dev, current.st_ino) == (existing.st_dev, existing.st_ino),
+                    'P2_PROFILED_CERTIFICATION_GUARD_FAULT_LEASE_CHANGED')
+            os.unlink(LEASE, dir_fd=directory)
+            os.fsync(directory)
+            try:
+                os.stat(LEASE, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                return
+            raise ValueError('P2_PROFILED_CERTIFICATION_GUARD_FAULT_LEASE_REMAINS')
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)
+
+
 def _fail_profiled_certification(initial, armed, source, result, record_name, native_containment, frontend_containment):
     result.update(certificationActionId=action_id(initial), targetSha256=initial['targetSha256'],
                   planSha256=initial['certificationPlan']['planSha256'], runtimeStopAttempted=False,
@@ -480,6 +536,14 @@ def _fail_profiled_certification(initial, armed, source, result, record_name, na
             result['profiledCertificationContainerCleanupUncertain'] = True
         if armed is not None:
             _stop_profiled_certification_runtime(initial, source, result, record_name)
+            if initial['certificationPlan'].get('mode') == 'fault-before-upstream':
+                result['faultLeaseDisabled'] = None
+                if result['runtimeStopped'] is True:
+                    try:
+                        remove_profiled_certification_fault_lease(initial, source)
+                        result['faultLeaseDisabled'] = True
+                    except BaseException:
+                        result['faultLeaseContainmentUncertain'] = True
     try:
         directory = _profiled_certification_directory(initial)
         migrate.write_json(directory, record_name, result)

@@ -256,6 +256,13 @@ def _profiled_initial(initial, expected):
                 type(native_plan['windowSeconds']) is int and 60 <= native_plan['windowSeconds'] <= 180 and
                 type(native_plan['drainSeconds']) is int and 1 <= native_plan['drainSeconds'] <= 180,
                 'P2_PROFILED_CERTIFICATION_NATIVE_CONTROL_REQUIRED')
+    if mode == 'fault-before-upstream':
+        fault = plan['faultSelection']
+        require(type(fault) is dict and set(fault) == {'stageId','receiver','commandIndex','commandSha256'} and
+                type(fault['stageId']) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', fault['stageId']) and
+                fault['receiver'] in ('course','community') and type(fault['commandIndex']) is int and fault['commandIndex'] == 0 and
+                _profiled_digest(fault['commandSha256']) and len(native_plan['commandWitnesses']) == 1 and
+                _profiled_digest(plan['requestEvidenceDescriptorSha256']), 'P2_PROFILED_CERTIFICATION_FAULT_SELECTION_REQUIRED')
     require(type(initial['readyReceipts']) is dict and set(initial['readyReceipts']) == set(READY_FILES) and
             type(plan['readyReceiptSha256']) is dict and set(plan['readyReceiptSha256']) == set(READY_FILES),
             'P2_PROFILED_CERTIFICATION_READY_RECEIPTS_REQUIRED')
@@ -1081,9 +1088,12 @@ class P2CertificationBroker(Broker):
                 current=self.observer.probe('witness');admission=current['admission'];plan=self.initial['nativePlan']
                 require(admission=={'epoch':str(int(plan['initialEpoch'])+1),'newWork':False,'recovery':True,'active':0,'uncertain':0},'P2_CERTIFICATION_NATIVE_EPOCH_BARRIER_REQUIRED')
                 require(any(row['status']!='acknowledged' for row in current['witness']['deliveries']),'P2_CERTIFICATION_ACTUAL_PENDING_DELIVERY_REQUIRED')
-                gateway=self._gateway_current()['admission']
+                gateway_current=self._gateway_current();gateway=gateway_current['admission']
                 require(gateway.get('newWork') is False and gateway.get('recovery') is True and all(gateway[category][key]==0 for category in ('active','uncertain') for key in ('newWork','recovery')),
                     'P2_CERTIFICATION_NATIVE_GATEWAY_BARRIER_REQUIRED')
+                if self.certification_profile() is not None and self.initial['certificationPlan']['mode']=='fault-before-upstream':
+                    require(self.fault_stage is not None and self.fault_stage.lease_sha256 is not None and gateway_current['faultLeasePresent'] is True,
+                        'P2_PROFILED_CERTIFICATION_NATIVE_FAULT_ARM_REQUIRED')
                 self.native_enable_attempted=True
             elif native.observe_metadata(context,client,**self.profile_arguments())['nativeEnabled'] is False:
                 self.native_expected=False
@@ -1177,7 +1187,8 @@ class P2CertificationBroker(Broker):
             'P2_CERTIFICATION_REVIEWED_FAULT_SELECTION_CHANGED')
         if operation=='fault-initialize':
             require(self.fault_stage is None,'P2_CERTIFICATION_FAULT_ALREADY_SELECTED')
-            self.fault_stage=P2CertificationFaultStage(self.scope,self.selected,self.jobs,self.configuration,self.source,plan,self.directory/'fault',source_files=self.initial['sourceSha256'])
+            self.fault_stage=P2CertificationFaultStage(self.scope,self.selected,self.jobs,self.configuration,self.source,plan,self.directory/'fault',
+                source_files=self.initial['sourceSha256'],**self.profile_arguments())
             return {'status':'P2_CERTIFICATION_FAULT_READY'}
         require(self.fault_stage is not None and self.fault_stage.plan==plan,'P2_CERTIFICATION_FAULT_STAGE_CHANGED')
         if operation=='fault-verify':self.fault_stage.verify();return {'verified':True}
@@ -1221,10 +1232,12 @@ class P2CertificationBroker(Broker):
             require(re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}',event.get('operationId','')),'P2_CERTIFICATION_OPERATION_ID_REQUIRED')
             events.append((event,row['httpStatus']))
         operations=witness['operations']
+        known_503 = self.certification_profile() is not None and self.initial['certificationPlan']['mode']=='fault-before-upstream'
+        expected_statuses = (200,503) if known_503 else (200,)
         matched=bool(events and len(operations)==len(events) and len({event['operationId'] for event,_ in events})==len(events) and all(
             row['kind']=='recovery' and row['state']=='completed' and row['completed_at'] is not None and row['reconciliation_sha256'] is None and row['epoch']==window and
             row['producer_sha256']==plan['producer']['producerSha256'] and row['source_sha']==plan['sourceCommit'] and row['role_oid']==plan['producer']['role']['oid'] and
-            any(event['operationId']==row['id'] and status==200 for event,status in events) for row in operations))
+            any(event['operationId']==row['id'] and status in expected_statuses for event,status in events) for row in operations))
         name='p2-certification-operator-request-details.json'
         descriptor=os.open(self.directory/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
         try:
@@ -1232,7 +1245,8 @@ class P2CertificationBroker(Broker):
             while remaining:remaining=remaining[os.write(descriptor,remaining):]
             os.fsync(descriptor)
         finally:os.close(descriptor)
-        return {'qualified':matched,'authority':'operator-recorded-request-details','artifactSha256':_sha(raw),'requestCount':len(ids),'automaticProviderEvidence':False}
+        return {'qualified':matched,'authority':'operator-recorded-request-details','artifactSha256':_sha(raw),'requestCount':len(ids),'automaticProviderEvidence':False,
+            **({'retryableFailureCorrelated':matched and sum(status==503 for _,status in events)==1} if known_503 else {})}
 
     def authentication_stage(self,value):
         self.check();cert=self.initial['certificationPlan'];plan=self.initial['browserPlan']
@@ -1367,6 +1381,8 @@ class P2CertificationBroker(Broker):
             self.suspension_stage.scrub_controlled_credentials()
         if cert['mode']=='direct-worker':
             self._require_worker_outcome(case)
+        if cert['mode']=='fault-before-upstream' and self.certification_profile() is not None:
+            self._require_profiled_before_upstream(case,evidence)
         if cert['mode']=='known-ack-recovery':
             require(case==self.known_ack_outcome and case['status']=='P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED' and self.known_ack_boundary.finished,
                 'P2_CERTIFICATION_KNOWN_ACK_RUNTIME_OUTCOME_REQUIRED')
@@ -1491,7 +1507,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         initial = self.initial
         plan = initial['certificationPlan']
         mode = plan['mode']
-        require(mode in SUSPENSION_MODES | {'native-window', 'contain-native'},
+        require(mode in SUSPENSION_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
                 'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
         review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
@@ -1617,6 +1633,24 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         if self.authority_timing_sha256 is not None:
             self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
 
+    def _require_profiled_before_upstream(self,case,evidence):
+        expected = self.certification_profile()
+        fault = self.fault_stage
+        require(type(fault) is P2CertificationFaultStage and fault.expected_profile == expected,
+                'P2_PROFILED_CERTIFICATION_FAULT_STAGE_REQUIRED')
+        vercel.require_record_profile(expected, case)
+        require(case.get('status') == 'P2_LIFECYCLE_TRANSPORT_FAULT_OBSERVED_CONTAINED' and
+                all(case.get(key) == fault.plan[key] for key in ('environment','stageId','candidateSha256','mode','receiver',
+                    'targetSha256','sourceCommit','nativePlanSha256')) and case.get('nativeEnabled') is False and
+                all(case.get(key) is True for key in ('faultDisabled','gatewayAdmissionClosed','frontendAdmissionClosed',
+                    'frontendRuntimeBindingVerified','uncertaintySettled')) and
+                type(case.get('outstandingUncertain')) is int and case['outstandingUncertain'] == 0 and
+                evidence.get('retryableFailureCorrelated') is True, 'P2_PROFILED_CERTIFICATION_FAULT_OUTCOME_REQUIRED')
+        effects = fault.effects()
+        require(len(effects) == 1 and effects[0]['upstreamStarted'] is False and effects[0]['upstreamReceiptVerified'] is False and
+                effects[0]['downstreamDisposition'] == '503' and _sha(_canonical(effects[0])) == case.get('injectedEffectSha256'),
+                'P2_PROFILED_CERTIFICATION_FAULT_EFFECT_REQUIRED')
+
     def finish_certification(self,value):
         self.check()
         require(self.closing_at is not None and not self.finished, 'P2_PROFILED_CERTIFICATION_CLOSE_NOT_PREPARED')
@@ -1645,7 +1679,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             return all(process.poll() is not None for process in self.scope.processes)
 
     def contain_failure_without_guard(self):
-        from p2_release_supervisor import cleanup_profiled_certification_containers
+        from p2_release_supervisor import cleanup_profiled_certification_containers, remove_profiled_certification_fault_lease
         with self.failure_lock:
             thread = self.observer.thread if self.observer else None
             if thread is not None and thread is not threading.current_thread() and thread.is_alive():
@@ -1667,6 +1701,14 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                         return False
                 finally:
                     runtime._command_scope.reset(token)
+                if self.initial['certificationPlan']['mode'] == 'fault-before-upstream':
+                    self.outcome['faultLeaseDisabled'] = None
+                    if self.outcome.get('runtimeStopped') is True:
+                        try:
+                            remove_profiled_certification_fault_lease(self.initial, self.source)
+                            self.outcome['faultLeaseDisabled'] = True
+                        except Exception:
+                            self.outcome['faultLeaseContainmentUncertain'] = True
                 self.fallback_complete = True
             try:
                 cleanup_profiled_certification_containers()

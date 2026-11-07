@@ -11,7 +11,7 @@ import {sha256} from "./recreation_inputs.mjs";
 
 const repository="princessdardan/lash-her-frontend";
 export const LEGACY_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 512, decodedBytes: 41_000_000 });
-export const PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 544, decodedBytes: 41_900_000 });
+export const PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 544, decodedBytes: 41_930_000 });
 export function verifyExactHeadWorkflow(raw) {
   const workflow=parse(raw.toString("utf8"));
   assert.ok(workflow.jobs&&Object.keys(workflow.jobs).length>0,"Operator CI jobs required");

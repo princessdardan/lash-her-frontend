@@ -1,6 +1,8 @@
 """Fixed source dispatch checks. Full recovery is qualified by its owned harness."""
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
+import json
 import re
 import unittest
 from p2_release_broker import Broker, PhysicalObserver
@@ -11,6 +13,50 @@ import p2_release_supervisor as supervisor
 
 
 class FixedDispatchTests(unittest.TestCase):
+    def test_profiled_fault_guard_removes_only_the_original_lease_from_the_original_mount(self):
+        from p2_certification_fault import LEASE
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            configuration = root / 'configuration'
+            admission = configuration / 'admission'
+            fault = root / 'p2-profiled-current-certification-owned' / 'fault'
+            admission.mkdir(parents=True, mode=0o700)
+            fault.parent.mkdir(mode=0o700)
+            fault.mkdir(mode=0o700)
+            mount = admission.stat()
+            selection = {'stageId': 'owned-503', 'receiver': 'course', 'commandSha256': 'a' * 64}
+            plan = {'mode': 'fault-before-upstream', 'faultSelection': selection,
+                    'configurationCanonicalSha256': 'b' * 64, 'gatewayProcessSha256': 'c' * 64}
+            lease = {'version': 1, 'releaseId': 'original', 'candidateSha256': 'd' * 64, 'mode': '503-before-upstream',
+                     'stageId': selection['stageId'], 'receiver': selection['receiver'], 'sourceWitnessSha256': selection['commandSha256'],
+                     'configurationSha256': plan['configurationCanonicalSha256'], 'gatewayProcessSha256': plan['gatewayProcessSha256']}
+            raw = json.dumps(lease).encode() + b'\n'
+            retained = {'version': 2, 'qualificationTargetProfile': dict(profile), 'stageId': selection['stageId'], 'lease': lease,
+                        'leaseSha256': supervisor.migrate.file_hash(raw), 'admissionDirectoryDevice': mount.st_dev,
+                        'admissionDirectoryInode': mount.st_ino}
+            initial = {'version': 2, 'qualificationTargetProfile': dict(profile), 'mode': supervisor.PROFILED_CERTIFICATION_MODE,
+                       'certificationPlan': plan, 'certificationActionId': 'owned', 'candidate': {'releaseId': 'original'},
+                       'candidateSha256': lease['candidateSha256'], 'configurationSha256': {}, 'configuration': str(configuration),
+                       'results': str(root), '_guardLayout': supervisor.PROFILED_CERTIFICATION_LAYOUT}
+            path, intent = admission / LEASE, fault / 'fault-arm-intent.json'
+            with patch.object(supervisor, 'verify_guard_boundary'), patch.object(supervisor.staging_state, 'configuration_hashes', return_value={}):
+                path.write_bytes(raw)
+                intent.write_text(json.dumps({**retained, 'admissionDirectoryInode': mount.st_ino + 1}))
+                with self.assertRaisesRegex(ValueError, 'FOREIGN_FAULT_LEASE'):
+                    supervisor.remove_profiled_certification_fault_lease(initial, root)
+                self.assertEqual(path.read_bytes(), raw)
+                intent.write_text(json.dumps(retained))
+                path.write_bytes(raw + b' ')
+                with self.assertRaisesRegex(ValueError, 'FOREIGN_FAULT_LEASE'):
+                    supervisor.remove_profiled_certification_fault_lease(initial, root)
+                self.assertEqual(path.read_bytes(), raw + b' ')
+                path.write_bytes(raw)
+                supervisor.remove_profiled_certification_fault_lease(initial, root)
+                self.assertFalse(path.exists())
+                supervisor.remove_profiled_certification_fault_lease(initial, root)
+                self.assertEqual(json.loads(intent.read_bytes()), retained)
+
     def test_profiled_certification_requires_all_exact_source_types_and_both_callbacks(self):
         class OwnedBroker(Broker):
             pass

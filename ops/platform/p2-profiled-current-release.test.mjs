@@ -217,6 +217,17 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.equal(existsSync(join(f.settings.results, 'owned-certification-ssh')), false);
     assert.equal(existsSync(join(f.settings.results, 'owned-certification')), false);
 
+    const faultSettings = { ...settings, certification: { ...settings.certification, mode: 'fault-before-upstream',
+      certificationActionId: 'owned-fault', requestEvidence: { kind: 'operator-recorded-request-details', path: join(original, 'owned-request.json') },
+      fault: { stageId: 'owned-503', receiver: 'course', commandIndex: 0, commandSha256: '3'.repeat(64) } } };
+    const fault = prepareP2ProfiledCertificationOperator(faultSettings);
+    assert.equal(fault.mode, 'fault-before-upstream');
+    assert.equal(fault.nativePlan.initialEpoch, '2');
+    assert.deepEqual(fault.faultSelection, faultSettings.certification.fault);
+    await assert.rejects(p2ProfiledCertificationOperator(faultSettings, { confirmation: 'staging/owned-fault' }), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...faultSettings, certification: { ...faultSettings.certification,
+      mode: 'fault-drop-after-ack' } }, { confirmation: 'staging/owned-fault' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+
     const targets = Object.fromEntries(Object.entries({ frontend: migration.job, ...f.apiJobs }).map(([service, job]) => {
       const { host, port, database, serverMajor } = job.target;
       const target = { qualificationTargetProfile: profile, host, port, database, serverMajor,

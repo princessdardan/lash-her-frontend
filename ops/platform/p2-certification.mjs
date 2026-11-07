@@ -155,12 +155,12 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   demand(base.browserPlanSha256===null||sha(base.browserPlanSha256));
   let faultInput;
   if(input.mode.startsWith('fault-')||input.mode==='known-ack-recovery'){
-    demand(input.fault&&action(input.fault.stageId));
-    faultInput={version:1,stageId:input.fault.stageId,mode:input.mode==='fault-before-upstream'?'503-before-upstream':'drop-after-ack',receiver:input.fault.receiver,
+    demand(input.fault&&action(input.fault.stageId)&&(!profile||nativePlan.commandWitnesses.length===1));
+    faultInput={version:input.version,...(profile?{qualificationTargetProfile:profile}:{}),stageId:input.fault.stageId,mode:input.mode==='fault-before-upstream'?'503-before-upstream':'drop-after-ack',receiver:input.fault.receiver,
       commandIndex:input.fault.commandIndex,commandSha256:input.fault.commandSha256,candidateSha256:input.candidateSha256,operatorSourceCommit:input.operatorSourceCommit,
       configurationSha256:base.configurationCanonicalSha256,gatewayConfigurationSha256:base.gatewayConfigurationSha256,gatewayProcessSha256:base.gatewayProcessSha256,
       gatewayImageSha256:candidate.artifacts.gateway.image.split('@sha256:')[1],operatorSourceClosureSha256:base.operatorSourceClosureSha256};
-    prepareP2LifecycleTransportFaultPlan(nativePlan,faultInput);
+    prepareP2LifecycleTransportFaultPlan(nativePlan,faultInput,profile);
   }
   plans.set(plan,{prepared,candidate:structuredClone(candidate),nativeSettings,candidateBytes:Buffer.from(candidateBytes),frontendReceipts,configurationSha256:structuredClone(configurationSha256),requestEvidence:structuredClone(input.requestEvidence),faultInput,
     ...(workerPlan?{workerPlan,suspensionPlan:structuredClone(input.worker.suspensionPlan)}:{})});
@@ -370,11 +370,11 @@ async function runBoundedCertification(plan,dependencies,profile){
         }else if(plan.mode==='native-window'){phase='bounded-actual-native-window';caseOutcome=await invoke();}
         else{
           const faultInput=context.faultInput;demand(faultInput);
-          const faultPlan=prepareP2LifecycleTransportFaultPlan(nativePlan,faultInput),hostStage=await host.prepareFault(faultPlan);
+          const faultPlan=prepareP2LifecycleTransportFaultPlan(nativePlan,faultInput,profile),hostStage=await host.prepareFault(faultPlan);
           const faultDirectory=join(dependencies.directory,'fault');mkdirSync(faultDirectory,{mode:0o700});phase='bounded-known-transport-fault';
           try{caseOutcome=await runP2LifecycleTransportFault({plan:faultPlan,client,withOwner,verifyEnvironment:environment,verifySession:verify,hostStage,nativeControl:host.nativeControl,
-            directory:faultDirectory,confirmation:'staging/'+faultPlan.stageId,exercise:invoke,
-            containFrontend:async()=>{const actual=await readP2CertificationCurrent(client,prepared,plan,verify);return{frontendAdmissionClosed:actual.admission.newWork===false&&actual.admission.recovery===false};}});}
+            directory:faultDirectory,confirmation:'staging/'+faultPlan.actionId,exercise:invoke,...(profile?{frontendProbe:probe}:{}),
+            containFrontend:async()=>{const actual=await readP2CertificationCurrent(client,prepared,plan,verify,false,profile);return{frontendAdmissionClosed:actual.admission.newWork===false&&actual.admission.recovery===false};}},profile);}
           catch(error){demand(plan.mode==='fault-drop-after-ack'&&error.publicReceipt?.outstandingUncertain===1);caseOutcome=error.publicReceipt;}
         }
         await host.gatewayStage('closed');
@@ -543,7 +543,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,suspensionPlan,original}=checked;
   demand(confirmation==='staging/'+plan.certificationActionId&&
-    ['contain-native','native-window','browser-pending','direct-worker'].includes(plan.mode));
+    ['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode));
   const releaseSettings=selection.releaseSettings;
   const directory=releaseSettings.results;
   frontendPrivateReceiptDirectory(directory);

@@ -48,7 +48,7 @@ def verify_profiled_current_source_closure(initial, root):
     required = REQUIRED | PROFILED_CURRENT_REQUIRED
     if initial['mode'] == PROFILED_CERTIFICATION_MODE:
         required |= PROFILED_CERTIFICATION_REQUIRED
-    return _verify_source_closure(initial, root, required, 544, 41_900_000)
+    return _verify_source_closure(initial, root, required, 544, 41_930_000)
 
 
 def _verify_source_closure(initial, root, required, max_files, max_bytes):

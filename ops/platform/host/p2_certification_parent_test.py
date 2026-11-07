@@ -431,6 +431,36 @@ class ActualCertificationEntryTests(unittest.TestCase):
 
 
 class ProfiledCertificationInputTests(unittest.TestCase):
+    def test_profiled_fault_correlates_an_admitted_503_to_its_completed_operation(self):
+        broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
+        producer, source, target = 'a' * 64, 'b' * 40, 'c' * 64
+        operation = '10000000-0000-4000-8000-000000000001'
+        native = {'initialEpoch': '2', 'planSha256': 'd' * 64, 'projectId': 'owned', 'deploymentId': 'dpl_Owned',
+                  'sourceCommit': source, 'targetSha256': target, 'producer': {'producerSha256': producer, 'role': {'oid': '100'}}}
+        broker.initial = {'nativePlan': native, 'certificationPlan': {'mode': 'fault-before-upstream'}}
+        broker.action_id = lambda: 'owned-fault'
+        stamp = '2026-11-07T00:00:00.000Z'
+        event = {'version': 1, 'status': 'P2_LIFECYCLE_CRON_ADMITTED', 'environment': 'staging', 'projectId': 'owned',
+                 'operationId': operation, 'producerSha256': producer, 'sourceCommit': source, 'targetSha256': target,
+                 'epoch': '3', 'kind': 'recovery'}
+        detail = {'version': 1, 'kind': 'vercel-native-request-details', 'reviewerGithubUserId': '8996309', 'projectId': 'owned',
+                  'deploymentId': 'dpl_Owned', 'path': parent.native.PATH, 'method': 'GET', 'providerRequestTypeFilter': 'cron',
+                  'providerRequestId': 'owned-request', 'startedAt': stamp, 'completedAt': stamp, 'httpStatus': 503,
+                  'logScope': 'this-provider-request-details', 'admittedLogLine': json.dumps(event)}
+        artifact = {'version': 1, 'kind': 'operator-recorded-request-details', 'reviewerGithubUserId': '8996309',
+                    'certificationActionId': 'owned-fault', 'nativePlanSha256': native['planSha256'], 'windowEpoch': '3',
+                    'recordedAt': stamp, 'observations': [detail]}
+        record = {'id': operation, 'kind': 'recovery', 'state': 'completed', 'completed_at': stamp, 'reconciliation_sha256': None,
+                  'epoch': '3', 'producer_sha256': producer, 'source_sha': source, 'role_oid': '100'}
+        for state, log, expected in (('completed', detail['admittedLogLine'], True), ('uncertain', detail['admittedLogLine'], False),
+                                     ('completed', None, False)):
+            with self.subTest(state=state, admitted=bool(log)), tempfile.TemporaryDirectory() as directory:
+                broker.directory = Path(directory)
+                detail['admittedLogLine'] = log
+                raw = base64.b64encode(json.dumps(artifact).encode()).decode()
+                evidence = broker._request_evidence(raw, {'operations': [{**record, 'state': state}]})
+                self.assertIs(evidence['retryableFailureCorrelated'], expected)
+
     @classmethod
     def setUpClass(cls):
         temporary = tempfile.TemporaryDirectory()
