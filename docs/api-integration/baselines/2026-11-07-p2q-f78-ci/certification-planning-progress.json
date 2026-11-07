@@ -292,10 +292,60 @@
       "passed": 5,
       "logSha256": "7dc0ff26426b3f8afcab721704eb45b35c55d8404a6bde644f20820bde4e672e"
     },
+    "fullHostWithNode24": {
+      "sourceCommit": "e0744faaa437b0943583dcee6873146bd5814934",
+      "passed": 1029,
+      "skipped": 8,
+      "logSha256": "20ac22e010d72abe0dc279dd7b941f83a1141ae5a9e5e0cca3a1bc87e28d35e5"
+    },
+    "additionalPostgres18Controls": {
+      "sourceCommit": "abb491334041e8a58a53fa469451fe0070dc7863",
+      "frontendHostBridgeSha256": "1a9c920fa43de2be03c19cb22c159a9ab83e24052e6a095dd3e16d2e48bdefa6",
+      "apiCurrentSha256": "da62eb0c5b071f025089d2e9ca365b7cebca3ecfc3edafaa9ead24208734888c",
+      "dockerLauncherProjected": true
+    },
     "installedLinuxSupervisorVerified": false,
     "profiledThreeDatabaseCompositionVerified": false,
     "operatorApplyEligible": false,
     "stagingChanged": false,
+    "releaseAccepted": false
+  },
+  "scopedCertificationComponents": {
+    "frontendSourceCommit": "d5ce532c799bfe625e734ce5c1a0ee432ffd206b",
+    "gatewayCommit": "55390dd52bc6a8ed153f309374231d9284bd96b8",
+    "frontendScopedCleanupCommit": "628282b51a6b96d238553a83d596825bbb69a143",
+    "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+    "courseOwnedDatabaseCommit": "89753405df0b657a558ca8f4108bc899abdebe1b",
+    "gatewayNode24": {
+      "passed": 50,
+      "logSha256": "5e6cb32564050081ec3adc364613b290683c3967e81a98326cdac11faba8f22d",
+      "actualGatewayAndPrivateTlsHop": true,
+      "courseBackendProjected": true
+    },
+    "frontendCronNode24": {
+      "passed": 8,
+      "logSha256": "51e92668da9dbad9b7b5b548a1e61264733cab017a008283fc0c5c0a45be0af0"
+    },
+    "frontendStoreDisposablePostgres16": { "passed": 7 },
+    "courseNode24Verify": { "passed": 716, "openApiBytesUnchanged": true },
+    "courseDisposablePostgres16": { "passed": 17, "migrations": 22, "actualRawSignatureVerified": true },
+    "focusedHost": {
+      "passed": 128,
+      "logSha256": "4a6bd39d8e0389b79013afbd814c33d92cdb1e12ccdc76e3a29639f17dae81e5",
+      "providerReadbacksProjected": true
+    },
+    "profiledSourceInstaller": {
+      "files": 537,
+      "decodedBytes": 42289373,
+      "expandedBytes": 56464370,
+      "wireBytes": 18353303,
+      "wireSha256": "a13fa37418726ece2e31ba3a815f44d1324fb01722c2c0d4334dbbd5e0cf7b6b",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "guardedControllerJoined": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
     "releaseAccepted": false
   }
 }

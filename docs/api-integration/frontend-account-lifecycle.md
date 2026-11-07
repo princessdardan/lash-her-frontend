@@ -13,10 +13,13 @@ The November 5 [approved policy](decisions/2026-11-05-p2-lifecycle-policy.md) go
 | `POST /api/admin/customer-accounts/{userId}/commands` | Exact origin/JSON, canonical UUID, active owner, fresh real Google authentication, immutable requester identity and account transaction | `new-work` |
 | Admin export retrieval | Active owner and fresh Google authentication, customer/command ownership, private attachment | `new-work` includes existing admin identity resolution |
 | `GET /api/cron/account-lifecycle` | Independent disabled-default flag, bearer authentication, bounded awaited claims, exact-body delivery, receipt binding, persisted dispositions, export assembly and expiry cleanup | `recovery`; receiver-typed P2-04 clients and dedicated lifecycle signers |
+| `GET /api/cron/account-lifecycle?operation=expire-export&commandId=<UUID>` | Exact selector on the reviewed staging project's Vercel Production runtime. Lock the selected export, check PostgreSQL time against its original expiry, scrub both frontend byte columns and verify the retained tombstone. The response binds the exact command and recovery operation ID. | Existing `recovery` producer and route. Requires a canonical live recovery operation identity before store access. |
 
 `GET /api/account`, customer export retrieval and `/account` rendering are read-only. Exports require the current authenticated customer UUID. No command or delivery receipt includes exported bytes, bearer URLs or provider error text. Direct store and worker mutations require the lifecycle admission context; unadmitted calls refuse.
 
 The coordinator-generated writer inventory includes all added routes and source modules. This table records source coverage, not historical deployment/provider fencing or live qualification.
+
+The scoped query does not claim deliveries, assemble exports, invoke a receiver or process other export rows. An exact replay returns the existing scrubbed tombstone. HEAD, preview, missing ledger identity and early expiry refuse. The operator still needs a guarded action that opens only the applicable staging recovery window and joins all three database observations.
 
 ## State, replay and recovery
 
