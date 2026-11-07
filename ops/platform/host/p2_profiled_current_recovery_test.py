@@ -79,6 +79,15 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
             suffix = initial('resume-approved-api-suffix')
             suffix['originalReceiptSha256'] = dict(list(suffix['originalReceiptSha256'].items())[:3])
             self.assertEqual(broker.select_release(suffix), selected_inputs(suffix))
+            promoted_suffix = initial('resume-approved-api-suffix')
+            self.assertEqual(broker.select_release(promoted_suffix), selected_inputs(promoted_suffix))
+            early_current = initial('restore-current-runtime')
+            early_current['originalReceiptSha256'] = dict(list(early_current['originalReceiptSha256'].items())[:3])
+            self.assertEqual(broker.select_release(early_current), selected_inputs(early_current))
+            too_early = copy.deepcopy(early_current)
+            too_early['originalReceiptSha256'].pop('frontendContinuationStarted')
+            with self.assertRaises(Exception):
+                broker.select_release(too_early)
             for change in (
                     lambda value: value.update(recoveryActionId='original-release'),
                     lambda value: value.update(disposition='retry-sql'),
@@ -159,6 +168,33 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
         self.assertTrue(broker.worker_done.is_set()); self.assertFalse(broker.failed.is_set())
         self.assertIs(calls[0][0][4], broker.current_database_proof)
         self.assertIs(calls[0][1]['_profiled_current_scope'], broker.scope)
+
+    def test_early_current_api_restore_releases_runtime_and_closes_with_frontend_action_pending(self):
+        broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)
+        broker.initial = initial('restore-current-runtime')
+        broker.initial['originalReceiptSha256'] = dict(list(broker.initial['originalReceiptSha256'].items())[:3])
+        broker._require_current_api = lambda: ({'status': 'API_RUNTIME_READY'},
+                                               {'status': 'CURRENT_DATABASES_READ_ONLY_VERIFIED'})
+        broker._runtime_readback = lambda: None
+        broker.record_base = lambda status: {'status': status}
+        broker.api_runtime_raw, broker.current_database_raw = b'runtime\n', b'current\n'
+        broker.runtime_released, broker.worker_done, broker.failed = threading.Event(), threading.Event(), threading.Event()
+        result = broker.runtime_restored()
+        self.assertTrue(broker.runtime_current); self.assertTrue(broker.runtime_released.is_set())
+        self.assertEqual(result['status'], 'P2_PROFILED_CURRENT_RUNTIME_RESTORED')
+        broker.promoted, broker.closing_at, broker.session_closed_proof = None, None, None
+        broker.worker_done.set(); broker.check = lambda: None; broker.verify_api_receipts = lambda: None
+        class Observer:
+            def __init__(self): self.operations = []
+            def probe(self, operation): self.operations.append(operation)
+            def stop(self): self.operations.append('stop')
+        class Scope:
+            def __init__(self): self.closed = False
+            def begin_close(self): self.closed = True
+        broker.observer, broker.scope = Observer(), Scope()
+        broker.prepare_close()
+        self.assertEqual(broker.observer.operations, ['verify-schema', 'stop'])
+        self.assertTrue(broker.scope.closed); self.assertIsNotNone(broker.closing_at)
 
     def test_restore_proves_api_current_before_prior_gateway_without_a_migration_entrypoint(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -252,15 +288,25 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
         broker.record_base = lambda status: {'status': status}
         broker.runtime_released = threading.Event()
         with tempfile.TemporaryDirectory() as temporary:
-            broker.migration_attempt = Path(temporary)
+            broker.migration_attempt = Path(temporary) / 'migration'; broker.migration_attempt.mkdir()
+            broker.directory = Path(temporary) / 'retained'; broker.directory.mkdir()
             broker.jobs = {}
+            broker.api_suffix_lineage_sha256 = {}
+            migration_receipt['databaseReceiptSha256'] = {}
             for service, approved in broker.initial['approvedApiSuffix'].items():
                 broker.jobs[service] = {'job': {'target': {'approvedPendingTags': approved}}}
                 directory = broker.migration_attempt / service; directory.mkdir()
                 receipt = {'version': 2, 'qualificationTargetProfile': copy.deepcopy(recovery.PROFILE),
                            'applyStarted': bool(approved), 'applyCompleted': bool(approved), 'preAppliedCount': 10,
                            'postAppliedCount': 10 + len(approved), 'failureCode': None}
-                (directory / 'database-receipt.json').write_text(json.dumps(receipt))
+                receipt_raw = json.dumps(receipt).encode()
+                (directory / 'database-receipt.json').write_bytes(receipt_raw)
+                migration_receipt['databaseReceiptSha256'][service] = recovery.sha(receipt_raw)
+                lineage = {'version': 2, 'qualificationTargetProfile': copy.deepcopy(recovery.PROFILE),
+                           'pendingTags': approved, 'appliedCount': 10}
+                lineage_raw = recovery.encoded(lineage)
+                (broker.directory / ('api-suffix-' + service + '-lineage.json')).write_bytes(lineage_raw)
+                broker.api_suffix_lineage_sha256[service] = recovery.sha(lineage_raw)
             result = broker.resume_api_suffix()
         self.assertEqual(result['status'], 'P2_PROFILED_CURRENT_API_SUFFIX_RESUMED')
         self.assertTrue(broker.api_suffix_resumed)

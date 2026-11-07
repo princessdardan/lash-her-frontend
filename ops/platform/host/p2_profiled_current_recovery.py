@@ -131,8 +131,12 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 type(api_jobs) is dict and tuple(sorted(api_jobs)) == ('community', 'course') and
                 all(valid_digest(value) for value in api_jobs.values()) and
                 type(receipts) is dict and tuple(receipts) == ORIGINAL_NAMES[:len(receipts)] and
-                ((initial.get('disposition') == 'resume-approved-api-suffix' and 3 <= len(receipts) <= 4) or
-                 (initial.get('disposition') != 'resume-approved-api-suffix' and len(receipts) == len(ORIGINAL_NAMES))) and
+                ((initial.get('disposition') == 'resume-approved-api-suffix' and
+                  len(receipts) in (3, 4, len(ORIGINAL_NAMES))) or
+                 (initial.get('disposition') == 'restore-current-runtime' and
+                  len(receipts) in (3, 4, 5, len(ORIGINAL_NAMES))) or
+                 (initial.get('disposition') == 'reconcile-frontend-get-first' and
+                  len(receipts) == len(ORIGINAL_NAMES))) and
                 all(valid_digest(value) for value in receipts.values()),
                 'P2_PROFILED_CURRENT_RECOVERY_BINDING_REQUIRED')
         suffix = initial.get('approvedApiSuffix')
@@ -329,9 +333,11 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         while not self.runtime_released.wait(0.1):
             self.check()
         self.check()
+        frontend_pending = len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES)
         require(not self.failed.is_set() and
-                (self.promoted is not None if self.initial['disposition'] != 'resume-approved-api-suffix'
-                 else getattr(self, 'api_suffix_resumed', False)),
+                (self.promoted is not None if not frontend_pending else
+                 getattr(self, 'api_suffix_resumed', False) if self.initial['disposition'] == 'resume-approved-api-suffix'
+                 else self.initial['disposition'] == 'restore-current-runtime' and getattr(self, 'runtime_current', False)),
                 'P2_PROFILED_CURRENT_FRONTEND_REQUIRED')
 
     def _require_current_api(self):
@@ -384,8 +390,18 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         runtime_receipt, migration_receipt = self._require_current_api()
         for service in ('course', 'community'):
             approved = self.initial['approvedApiSuffix'][service]
-            receipt = migrate.read_json(self.migration_attempt / service, 'database-receipt.json', expected_profile=PROFILE)
+            receipt_raw = migrate.read_input(self.migration_attempt / service, 'database-receipt.json')
+            require(migration_receipt.get('databaseReceiptSha256', {}).get(service) == sha(receipt_raw),
+                    'P2_PROFILED_CURRENT_API_SUFFIX_UNVERIFIED')
+            receipt = decode_qualification_target_json(receipt_raw, 'carrier')
+            require_profiled(receipt)
+            lineage_raw = migrate.read_input(self.directory, 'api-suffix-' + service + '-lineage.json')
+            lineage = decode_qualification_target_json(lineage_raw, 'carrier')
+            require_profiled(lineage)
             require(self.jobs[service]['job']['target']['approvedPendingTags'] == approved and
+                    self.api_suffix_lineage_sha256[service] == sha(lineage_raw) and
+                    lineage.get('pendingTags') == approved and
+                    lineage.get('appliedCount') == receipt.get('preAppliedCount') and
                     receipt.get('applyStarted') is bool(approved) and receipt.get('applyCompleted') is bool(approved) and
                     type(receipt.get('preAppliedCount')) is int and type(receipt.get('postAppliedCount')) is int and
                     receipt['postAppliedCount'] - receipt['preAppliedCount'] == len(approved) and
@@ -401,6 +417,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         runtime_receipt, prior_receipt = self._require_current_api()
         self._runtime_readback()
         self.runtime_current = True
+        if (len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
+                self.initial['disposition'] == 'restore-current-runtime'):
+            self.runtime_released.set()
         return {**self.record_base('P2_PROFILED_CURRENT_RUNTIME_RESTORED'),
                 'runtimeReceiptSha256': sha(self.api_runtime_raw),
                 **({'migrationReceiptSha256': sha(self.api_migration_raw)}
@@ -421,8 +440,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         if self.promoted is not None:
             return super().prepare_close()
         self.check()
-        require(self.initial['disposition'] == 'resume-approved-api-suffix' and
-                getattr(self, 'api_suffix_resumed', False) and getattr(self, 'runtime_current', False) and
+        require(len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
+                ((self.initial['disposition'] == 'resume-approved-api-suffix' and getattr(self, 'api_suffix_resumed', False)) or
+                 self.initial['disposition'] == 'restore-current-runtime') and getattr(self, 'runtime_current', False) and
                 self.closing_at is None and self.session_closed_proof is None,
                 'P2_PROFILED_CURRENT_FRONTEND_ACTION_PENDING_REQUIRED')
         self._runtime_readback()
@@ -436,8 +456,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         frontend_pending = self.promoted is None
         require(self.session_closed_proof is not None and not self.finished and self.worker_done.is_set() and
                 getattr(self, 'runtime_current', False) and
-                (self.promoted is not None or self.initial['disposition'] == 'resume-approved-api-suffix' and
-                 getattr(self, 'api_suffix_resumed', False)),
+                (self.promoted is not None or len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
+                 ((self.initial['disposition'] == 'resume-approved-api-suffix' and getattr(self, 'api_suffix_resumed', False)) or
+                  self.initial['disposition'] == 'restore-current-runtime')),
                 'P2_PROFILED_CURRENT_RECOVERY_SESSION_CLOSURE_REQUIRED')
         terminal_raw, terminal = decode_profiled(value['terminal'])
         completed_raw, completed = decode_profiled(value['continuationCompleted'])
@@ -532,6 +553,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
             elif suffix == 'commit':
                 require(self.finished and self.worker_done.is_set() and self.session_closed_proof is not None,
                         'P2_PROFILED_CURRENT_RECOVERY_JOIN_REQUIRED')
+                self.verify_api_receipts()
                 if self.promoted is not None:
                     self._frontend_readback(self.promoted)
                 self._runtime_readback()

@@ -29,7 +29,9 @@ const originalReceipts = (value, disposition) => {
   if (!value || Array.isArray(value) || !Object.values(value).every(digest)) return false;
   const names = Object.keys(value), prefix = originalReceiptNames.slice(0, names.length);
   if (!isDeepStrictEqual(names, prefix)) return false;
-  return disposition === "resume-approved-api-suffix" ? names.length >= 3 && names.length <= 4 : names.length === originalReceiptNames.length;
+  if (disposition === "resume-approved-api-suffix") return [3, 4, originalReceiptNames.length].includes(names.length);
+  if (disposition === "restore-current-runtime") return [3, 4, 5, originalReceiptNames.length].includes(names.length);
+  return disposition === "reconcile-frontend-get-first" && names.length === originalReceiptNames.length;
 };
 
 function requireOriginalReceipts(results, releaseId, expected, disposition) {
@@ -189,7 +191,7 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
               originalReceiptSha256: settings.originalReceiptSha256, providerContext }, observed);
             demand(Buffer.isBuffer(workload) && workload.length > 0 && workload.length <= 2_000_000);
             await runtime.reconcileFrontend(observed, observed.proof, workload);
-          } else demand(settings.disposition === "resume-approved-api-suffix");
+          } else demand(settings.disposition === "resume-approved-api-suffix" || settings.disposition === "restore-current-runtime");
           if (settings.disposition === "resume-approved-api-suffix") {
             await runtime.resumeApprovedApiSuffix();
           }

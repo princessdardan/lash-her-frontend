@@ -46,6 +46,14 @@ test("preparation is source-profiled, immutable and does not claim SQL, history,
 
 test("closed recovery dispositions require exact matching carriers and only the approved API suffix has a suffix", () => {
   assert.equal(prepareP2ProfiledCurrentRecovery(fixture("resume-approved-api-suffix")).plan.approvedApiSuffix.course[0], "0012_owned");
+  const earlyCurrent = fixture("restore-current-runtime");
+  earlyCurrent.originalReceiptSha256 = Object.fromEntries(Object.entries(earlyCurrent.originalReceiptSha256).slice(0, 3));
+  assert.equal(Object.keys(prepareP2ProfiledCurrentRecovery(earlyCurrent).plan.originalReceiptSha256).length, 3);
+  const beforeApiCurrent = structuredClone(earlyCurrent); delete beforeApiCurrent.originalReceiptSha256.frontendContinuationStarted;
+  assert.throws(() => prepareP2ProfiledCurrentRecovery(beforeApiCurrent));
+  const promotedSuffix = fixture("resume-approved-api-suffix");
+  promotedSuffix.originalReceiptSha256 = fixture().originalReceiptSha256;
+  assert.equal(Object.keys(prepareP2ProfiledCurrentRecovery(promotedSuffix).plan.originalReceiptSha256).length, 8);
   const oneService = fixture("resume-approved-api-suffix"); oneService.approvedApiSuffix.community = [];
   const oneServicePlan = prepareP2ProfiledCurrentRecovery(oneService).plan;
   assert.deepEqual(oneServicePlan.approvedApiSuffix.community, []);

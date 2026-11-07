@@ -53,7 +53,10 @@ function validateInitial(initial) {
   demand(!Array.isArray(initial.originalReceiptSha256) && Object.values(initial.originalReceiptSha256 ?? {}).every(digest)
     && isDeepStrictEqual(receiptNames, originalReceiptNames.slice(0, receiptNames.length))
     && (initial.disposition === "resume-approved-api-suffix"
-      ? receiptNames.length >= 3 && receiptNames.length <= 4 : receiptNames.length === originalReceiptNames.length));
+      ? [3, 4, originalReceiptNames.length].includes(receiptNames.length)
+      : initial.disposition === "restore-current-runtime"
+        ? [3, 4, 5, originalReceiptNames.length].includes(receiptNames.length)
+        : receiptNames.length === originalReceiptNames.length));
   const suffix = initial.approvedApiSuffix;
   if (initial.disposition === "resume-approved-api-suffix") {
     demand(suffix && !Array.isArray(suffix) && isDeepStrictEqual(Object.keys(suffix).sort(), ["community", "course"])
@@ -86,7 +89,8 @@ function environmentLock(settings, initial, directory, launch) {
     const pending = new Map();
     const signal = new AbortController();
     let sequence = 0, failed = false, active = true, exited, heartbeat, armed = false, priorGatewayPrepared = false;
-    let apiReady = false, closePrepared = false, sessionClosed = false, joined, armedProbe, diagnostics = Buffer.alloc(0);
+    let apiReady = false, closePrepared = false, sessionClosed = false, joined, committed, armedProbe, diagnostics = Buffer.alloc(0);
+    let closed = false;
     const fail = () => {
       if (failed) return;
       failed = true; active = false; signal.abort();
@@ -109,7 +113,12 @@ function environmentLock(settings, initial, directory, launch) {
     });
     child.stderr.on("error", fail); child.on("error", fail); child.stdin.on("error", fail);
     child.on("exit", code => { exited = code; if (active || code !== 0) fail(); });
-    const reaped = new Promise(resolve => child.once("close", resolve));
+    const reaped = new Promise(resolve => child.once("close", (...args) => { closed = true; resolve(args); }));
+    const waitForClose = timeout => new Promise(resolve => {
+      let settled = false;
+      const timer = setTimeout(() => { settled = true; resolve(false); }, timeout);
+      void reaped.then(() => { if (!settled) { clearTimeout(timer); resolve(true); } });
+    });
     const request = (operation, statuses, data = {}, timeout = 120_000) => {
       demand(active && !failed && Array.isArray(statuses) && statuses.length > 0);
       const id = ++sequence, raw = JSON.stringify({ id, operation, ...data }); demand(Buffer.byteLength(raw) <= MAXIMUM);
@@ -237,22 +246,25 @@ function environmentLock(settings, initial, directory, launch) {
         },
       });
       await check(); await task(check, signal.signal, host); await check(); demand(joined && sessionClosed && !failed);
-      const committed = await single("commit", "COMMITTED", {}, 120_000); demand(!active && same(committed, joined));
+      committed = await single("commit", "COMMITTED", {}, 120_000); demand(!active && same(committed, joined));
       clearInterval(heartbeat); heartbeat = undefined; child.stdin.end();
-      await reaped; demand(exited === 0 && !failed);
-      writeFrontendReceipt(directory, "p2-profiled-current-recovery-host-outcome.json", committed);
     } catch { error = new Error("P2_PROFILED_CURRENT_RECOVERY_FAILED_REQUIRES_REVIEW"); fail(); }
     finally {
       clearInterval(heartbeat); child.stdin.end();
-      if (exited === undefined) await new Promise(resolve => {
-        const timer = setTimeout(() => { child.kill("SIGTERM"); error ??= new Error("P2_PROFILED_CURRENT_RECOVERY_HOST_CLEANUP_UNCERTAIN"); resolve(); }, 60_000);
-        child.once("close", () => { clearTimeout(timer); resolve(); });
-      });
+      if (!closed && !await waitForClose(60_000)) {
+        child.kill("SIGTERM");
+        if (!await waitForClose(5_000)) {
+          child.kill("SIGKILL");
+          await waitForClose(5_000);
+        }
+      }
       active = false; lines.close(); for (const waiter of pending.values()) clearTimeout(waiter.timer);
-      if (exited !== 0) error ??= new Error("P2_PROFILED_CURRENT_RECOVERY_HOST_CLEANUP_UNCERTAIN");
+      if (!closed || exited !== 0) error ??= new Error("P2_PROFILED_CURRENT_RECOVERY_HOST_CLEANUP_UNCERTAIN");
       if (error && diagnostics.length) writeFileSync(join(directory, "p2-profiled-current-recovery-private-stderr.bin"), diagnostics, { mode: 0o600, flag: "wx" });
     }
-    if (error) throw error; return joined;
+    if (error || !committed || !same(committed, joined)) throw error ?? new Error("P2_PROFILED_CURRENT_RECOVERY_FAILED_REQUIRES_REVIEW");
+    writeFrontendReceipt(directory, "p2-profiled-current-recovery-host-outcome.json", committed);
+    return committed;
   });
   return handle;
 }
