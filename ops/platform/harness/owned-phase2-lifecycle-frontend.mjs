@@ -107,13 +107,93 @@ async function journey(input) {
   assert.equal(attempt.passed, true);
   await api("course", `/v1/student/lessons/${lesson.id}/progress`, { method: "POST", token: learner(), body: { expectedProgressRevision: 0, resumePositionSeconds: 1 }, expected: 409 });
   await sqlPools.course.query("update users set email=$1 where id=$2", [email, userId]);
-  const outbox = (await sqlPools.course.query('select event_id as "eventId",canonical_body as "canonicalBody" from community_enrollment_outbox where canonical_body::jsonb #>> \'{data,userId}\'=$1', [userId])).rows;
-  assert.equal(outbox.length, 1);
-  const { createCommunityHttpTransport } = await import(pathToFileURL(join(input.courseRoot, "src/integrations/community/http-transport/community-http-transport.ts")).href);
+  const loadCourse = file => import(pathToFileURL(join(input.courseRoot, "src/integrations/community", file)).href);
+  const { createCommunityHttpTransport } = await loadCourse("http-transport/community-http-transport.ts");
+  const { createCommunityEnrollmentPublisher } = await loadCourse("publisher/community-publisher.ts");
+  const { createDrizzleCommunityEnrollmentPublisherRepository } = await loadCourse("persistence/drizzle-publisher.repository.ts");
   const transport = createCommunityHttpTransport({ endpoint: receivers.community + "/v1/internal/course/enrollment-events", currentSecret: keys.COURSE_PUBLISHER_JWT_CURRENT_SECRET, now: () => new Date(clock), nowSeconds: () => Math.floor(clock / 1000) });
-  assert.equal((await transport.deliver(outbox[0])).kind, "acknowledged");
+  const publisher = createCommunityEnrollmentPublisher({
+    repository: createDrizzleCommunityEnrollmentPublisherRepository(drizzle(sqlPools.course)),
+    transport, now: () => new Date(Math.max(clock, Date.now())),
+  });
+  async function publishTransition(customerId, courseId, version, state) {
+    assert.equal(await publisher.runOnce(), 1, `Expected one ${state} transition at version ${version}`);
+    const event = (await sqlPools.course.query(`
+      select event_id as "eventId", canonical_body as "canonicalBody", canonical_digest, stream_id, stream_version, state, delivered_at, lease_owner
+      from community_enrollment_outbox where canonical_body::jsonb #>> '{data,userId}'=$1
+        and canonical_body::jsonb #>> '{data,courseId}'=$2 and stream_version=$3`, [customerId, courseId, version])).rows[0];
+    assert.ok(event?.delivered_at);
+    assert.equal(event.state, "delivered");
+    assert.equal(event.lease_owner, null);
+    const inbox = await sqlPools.community.query("select canonical_digest, stream_id, stream_version, state, status from course_enrollment_inbox where event_id=$1", [event.eventId]);
+    assert.deepEqual(inbox.rows, [{ canonical_digest: event.canonical_digest, stream_id: event.stream_id, stream_version: version, state, status: "applied" }]);
+    const projection = await sqlPools.community.query("select state, status, applied_version, source_event_id from course_enrollment_projections where user_id=$1 and course_id=$2", [customerId, courseId]);
+    assert.deepEqual(projection.rows, [{ state, status: "current", applied_version: version, source_event_id: event.eventId }]);
+    return event;
+  }
+  await publishTransition(userId, course.id, 1, "active");
   await api("community", "/owned/member", { token: member() });
   checks.push("real-admin-authoring-free-ledger-grant-progress-quiz-and-Course-publisher-to-Community-receiver");
+
+  const paidUser = randomUUID();
+  const paidLearner = () => applicationIssuer({ profile: "course-learner", customerId: paidUser });
+  const support = () => applicationIssuer({ profile: "course-admin", adminId, capabilities: ["course-support"] });
+  const paidCourse = (await api("course", "/v1/admin/courses", { method: "POST", token: editor(),
+    body: { slug: `owned-paid-${randomUUID()}`, title: "Owned paid course", accessMode: "paid", priceCents: 1000, taxClassification: "reviewed-owned-fixture" }, expected: 201 })).course;
+  const paidModule = (await api("course", `/v1/admin/courses/${paidCourse.id}/modules`, { method: "POST", token: editor(),
+    body: { expectedCourseRevision: 1, title: "Module", slug: "module", position: 1 }, expected: 201 })).module;
+  await api("course", `/v1/admin/modules/${paidModule.id}/lessons`, { method: "POST", token: editor(),
+    body: { expectedCourseRevision: 2, title: "Paid lesson", slug: "paid-lesson", position: 1, content: "Owned paid lesson text" }, expected: 201 });
+  await api("course", `/v1/admin/courses/${paidCourse.id}`, { method: "PATCH", token: editor(), body: { expectedRevision: 3, status: "published" } });
+
+  const unrelatedKey = randomUUID();
+  await api("course", `/v1/student/courses/${course.id}/enrollments`, { method: "POST", token: paidLearner(),
+    key: unrelatedKey, body: { idempotencyKey: unrelatedKey }, expected: 201 });
+  await publishTransition(paidUser, course.id, 1, "active");
+  async function grantPaid() {
+    const key = `owner-paid:${randomUUID()}`;
+    const response = await api("course", "/v1/admin/entitlements/grants", { method: "POST", token: support(), key,
+      body: { userId: paidUser, courseId: paidCourse.id, reason: "[paid-course revision 4] Owned publisher fixture", idempotencyKey: key }, expected: 201 });
+    assert.equal(response.effects[0].effectType, "grant_created");
+    return response.effects[0].grantId;
+  }
+  async function revokePaid(grantId) {
+    const key = `owner-paid-revoke:${randomUUID()}`;
+    const response = await api("course", "/v1/admin/entitlements/revocations", { method: "POST", token: support(), key,
+      body: { scope: "grantId", grantId, reason: "[paid-course revision 4] Owned publisher fixture", idempotencyKey: key } });
+    assert.deepEqual(response.effects, [{ grantId, effectType: "grant_revoked", previousStatus: "active", resultingStatus: "revoked" }]);
+  }
+  const paidGrant = await grantPaid();
+  const activated = await publishTransition(paidUser, paidCourse.id, 1, "active");
+  const independentGrant = await grantPaid();
+  await revokePaid(paidGrant);
+  assert.equal(await publisher.runOnce(), 0);
+  await api("course", `/v1/student/courses/${paidCourse.id}`, { token: paidLearner() });
+
+  // Import a historical grant without changing the immutable live grant rows.
+  const courseSchema = await import(pathToFileURL(join(input.courseRoot, "src/db/schema.ts")).href);
+  await drizzle(sqlPools.course).transaction(async tx => {
+    const userId = randomUUID(), enrollmentId = randomUUID(), idempotencyKey = randomUUID(), requestHash = "e".repeat(64);
+    await tx.insert(courseSchema.users).values({ id: userId });
+    await tx.insert(courseSchema.enrollments).values({ id: enrollmentId, userId, courseId: paidCourse.id, source: "import" });
+    await tx.insert(courseSchema.entitlementIdempotencyKeys).values({ idempotencyKey, requestHash, commandType: "internal_grant" });
+    await tx.insert(courseSchema.entitlementGrants).values({ enrollmentId, userId, courseId: paidCourse.id, idempotencyKey, requestHash,
+      externalOrderId: `owned-historical-${idempotencyKey}`, provider: "square", grantReason: "import", expiresAt: new Date(clock + 86400000) });
+  });
+  await revokePaid(independentGrant);
+  await api("course", `/v1/student/courses/${paidCourse.id}`, { token: paidLearner(), expected: 403 });
+  const revoked = await publishTransition(paidUser, paidCourse.id, 2, "revoked");
+  assert.equal(revoked.stream_id, activated.stream_id);
+  assert.notEqual(revoked.eventId, activated.eventId);
+  assert.equal((await transport.deliver(revoked)).kind, "acknowledged");
+  assert.equal((await sqlPools.community.query("select count(*)::integer as count from course_enrollment_inbox where stream_id=$1", [revoked.stream_id])).rows[0].count, 2);
+  assert.deepEqual((await sqlPools.community.query("select state, applied_version, source_event_id from course_enrollment_projections where stream_id=$1", [revoked.stream_id])).rows,
+    [{ state: "revoked", applied_version: 2, source_event_id: revoked.eventId }]);
+  assert.deepEqual((await sqlPools.course.query("select status, external_order_id, external_payment_id, provider from entitlement_grants where id = any($1::uuid[])", [[paidGrant, independentGrant]])).rows,
+    Array.from({ length: 2 }, () => ({ status: "revoked", external_order_id: null, external_payment_id: null, provider: null })));
+  await api("course", `/v1/student/courses/${course.id}`, { token: paidLearner() });
+  assert.equal((await sqlPools.community.query("select state from course_enrollment_projections where user_id=$1 and course_id=$2", [paidUser, course.id])).rows[0].state, "active");
+  checks.push("audited-orderless-paid-grants-preserve-independent-access-and-publish-exact-last-revocation-to-Community");
 
   const exportKey = randomUUID();
   const exported = await admitted(() => store.request({ userId, action: "export", idempotencyKey: exportKey, requester: { kind: "customer", session } }));

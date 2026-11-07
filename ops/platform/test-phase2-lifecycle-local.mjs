@@ -2,13 +2,13 @@
 // connection string, provider token, deployment operation or shared DB is used.
 // Node24: PHASE2_LIFECYCLE_LOCAL_TEST=true PG_BIN=/absolute/postgresql16/bin
 //   node ops/platform/test-phase2-lifecycle-local.mjs
-// Reproduce a receipt with PHASE2_FRONTEND_SOURCE_COMMIT=<recorded40hex>.
-// PHASE2_COURSE_SOURCE_COMMIT=05ff0694349aa0ae606997b1338618b9fc73134f
-// deliberately reproduces the retained pre-fix403 serialization failure.
+// Override PHASE2_{FRONTEND,COURSE,COMMUNITY}_SOURCE_COMMIT to replay a receipt.
+// Course b21e25cf900458eb6cbbd993582d7e1bbac36c4b reproduces the missing
+// final paid-grant revocation event with the historical expiry fixture.
 import assert from "node:assert/strict";
-import { execFileSync, fork, spawnSync } from "node:child_process";
+import { execFileSync, fork } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -18,7 +18,7 @@ import { Client } from "pg";
 
 const frontendRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const driverRoot = join(frontendRoot, "ops/platform/harness");
-const pins = { course: "11ea33d085e277bf4d9517476b683b5389c8eaa8", community: "610a581e0a16b20602d944bcdff4e0b3a43f90d0" };
+const pins = { course: "54fd289a5a8579bfbe343afb07482f406b56ad5b", community: "929fdeb13e0e5f5e25454a457961d6ed965dedff" };
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 const canonical = name => `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : `${name}-api`}.git`;
@@ -37,16 +37,18 @@ async function main() {
     phase = "source-snapshots";
     for (const [name, source] of Object.entries({ frontend: frontendRoot, course: process.env.PHASE2_COURSE_SOURCE_ROOT ?? "/private/tmp/lash-phase2-course", community: process.env.PHASE2_COMMUNITY_SOURCE_ROOT ?? "/private/tmp/lash-phase2-community" })) {
       const root = realpathSync(source); assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: root }).trim(), canonical(name));
-      const commit = name === "frontend" ? process.env.PHASE2_FRONTEND_SOURCE_COMMIT ?? run("git", ["rev-parse", "HEAD"], { cwd: root }).trim() : name === "course" ? process.env.PHASE2_COURSE_SOURCE_COMMIT ?? pins.course : pins.community;
+      const commit = name === "frontend" ? process.env.PHASE2_FRONTEND_SOURCE_COMMIT ?? run("git", ["rev-parse", "HEAD"], { cwd: root }).trim() : process.env[`PHASE2_${name.toUpperCase()}_SOURCE_COMMIT`] ?? pins[name];
       assert.match(commit, /^[a-f0-9]{40}$/u);
-      const archive = execFileSync("git", ["archive", "--format=tar", commit], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
+      const archive = join(directory, `${name}.tar`);
+      run("git", ["archive", "--format=tar", `--output=${archive}`, commit], { cwd: root });
       const snapshot = join(directory, name); mkdirSync(snapshot);
-      const extraction = spawnSync("tar", ["-xf", "-", "-C", snapshot], { input: archive, stdio: ["pipe", "pipe", "pipe"] });
-      assert.equal(extraction.status, 0, "Source snapshot extraction failed");
+      run("tar", ["-xf", archive, "-C", snapshot]);
+      const archiveHash = createHash("sha256");
+      for await (const chunk of createReadStream(archive)) archiveHash.update(chunk);
       assert.ok(existsSync(join(root, "node_modules/tsx")), "Install pinned source dependencies before owned qualification");
       symlinkSync(join(root, "node_modules"), join(snapshot, "node_modules"), "dir");
       assert.equal(hash(readFileSync(join(root, "package-lock.json"))), hash(readFileSync(join(snapshot, "package-lock.json"))), "Installed checkout lockfile must match the source pin");
-      sources[name] = { root: snapshot, commit, archiveSha256: hash(archive), lockSha256: hash(readFileSync(join(snapshot, "package-lock.json"))) };
+      sources[name] = { root: snapshot, commit, archiveSha256: archiveHash.digest("hex"), lockSha256: hash(readFileSync(join(snapshot, "package-lock.json"))) };
     }
     const apiArtifacts = {};
     for (const name of ["course", "community"]) {

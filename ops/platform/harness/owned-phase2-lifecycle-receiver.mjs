@@ -26,6 +26,7 @@ async function initialize(input) {
     app = await buildApp({ authVerifier: firstParty({ learner: { currentSecret: input.keys.COURSE_LEARNER_JWT_CURRENT_SECRET }, admin: { currentSecret: input.keys.COURSE_ADMIN_JWT_CURRENT_SECRET }, nowSeconds: () => Math.floor(clock / 1000) }), accountAccessReader: lifecycle,
       accountLifecycle: { ...lifecycleOptions, rateLimit: { maxPerMinute: 1000, burst: 1000 }, networkPolicy: (await load("src/entitlements/internal-network.ts")).createInternalNetworkPolicy({ allowedIps: ["127.0.0.1/32"] }) },
       courseRepository: course, entitlementRepository: entitlement,
+      adminEntitlementCommandRepository: (await load("src/entitlements/admin-entitlement-command.repository.ts")).createDrizzleAdminEntitlementCommandRepository(db),
       freeEnrollmentRepository: (await load("src/entitlements/free-enrollment.repository.ts")).createDrizzleFreeEnrollmentRepository(db),
       quizRepository: (await load("src/quizzes/drizzle-quiz.repository.ts")).createDrizzleQuizRepository(db),
       lessonProgressRepository: (await load("src/progress/lesson-progress.repository.ts")).createDrizzleLessonProgressRepository(db),
