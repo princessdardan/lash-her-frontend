@@ -621,6 +621,31 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired(badScope)));
       assert.notEqual(restoreHost({ ...exitSavePlan, scopedAction: badScope }).status, 0);
     }
+    const visibilityAction = { ...ackLossAction, operation: 'hide-active-document' };
+    const visibilityRequests = exitSaveRequests.slice(0, 9).map(row => ({ ...row, uses: 1 }));
+    const visibilityScope = { stage: 'lesson-visibility-save', actorId: userId, windowSeconds: 90,
+      visibilityAction, requests: visibilityRequests };
+    const visibilitySettings = paired(visibilityScope), visibilityPair = prepareP2ProfiledCertificationOperator(visibilitySettings);
+    const visibilityPlan = visibilityPair['lesson-visibility-save'];
+    assert.equal(visibilityPair.status, 'P2_INTERACTIVE_LESSON_VISIBILITY_SAVE_ACTIONS_PLANNED');
+    assert.deepEqual(visibilityPlan.scopedAction, visibilityScope);
+    assert.deepEqual(visibilityPair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    assert.equal(BigInt(visibilityPlan.initialEpoch) - BigInt(visibilityPair.identity.initialEpoch), 2n);
+    const visibilityHost = restoreHost(visibilityPlan);
+    assert.equal(visibilityHost.status, 0, visibilityHost.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator(visibilitySettings, accessConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...visibilitySettings, execution: {} }, accessConfirmation),
+      error => error.code !== 'ENOENT');
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...visibilitySettings, interactiveIdentity: undefined }));
+    for (const badScope of [
+      { ...visibilityScope, visibilityAction: { ...visibilityAction, operation: 'document-exit' } },
+      { ...visibilityScope, requests: [...visibilityRequests, exitSaveRequests[9]] },
+      { ...visibilityScope, requests: visibilityRequests.map((row, index) => index === 0 ? { ...row, uses: 2 } : row) },
+      { ...visibilityScope, requests: visibilityRequests.map((row, index) => index === 8 ? { ...row, bodySha256: visibilityRequests[7].bodySha256 } : row) },
+    ]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired(badScope)));
+      assert.notEqual(restoreHost({ ...visibilityPlan, scopedAction: badScope }).status, 0);
+    }
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -969,6 +994,7 @@ test('fixed current certification plan joins the original release plan, terminal
       [selectedLessonDenial, (userId + courseId + accessLessonId).replaceAll('-', '')],
       [ackLossScope, (userId + courseId + accessLessonId).replaceAll('-', '')],
       ...exitSaveScopes.map(selection => [selection, (userId + courseId + accessLessonId).replaceAll('-', '')]),
+      [visibilityScope, (userId + courseId + accessLessonId).replaceAll('-', '')],
       [selectedInteractive, (selectedInteractive.actorId + paidKey).replaceAll('-', '')],
       [selectedAccess, (selectedAccess.actorId + accessLessonId).replaceAll('-', '')],
       [selectedRevoke, (selectedRevoke.actorId + revokeKey).replaceAll('-', '')],
@@ -979,18 +1005,22 @@ test('fixed current certification plan joins the original release plan, terminal
     ]) {
       const scopedMaterial = [...material];
       scopedMaterial[5] = selection.stage;
+      const scopedEpoch = selection.stage === 'lesson-visibility-save' ? '999999999999999999' : epoch;
+      scopedMaterial[4] = scopedEpoch;
       const scopedNonce = selection.identityEnrollment?.nonce ?? nonce;
       scopedMaterial[8] = scopedNonce;
       const frontendFixture = spawnSync('python3', ['-B', '-c',
         'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _selection_sha as digest,_material,validate_interactive_action as check;data=json.load(sys.stdin);print(json.dumps(_material(*data["material"],digest(check(data["action"])))))',
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
-      const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
+      const frontendCookieBody = `v2.${scopedEpoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
       const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore',
-        'lesson-ack-loss', 'lesson-exit-save', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
-        ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
+        'lesson-ack-loss', 'lesson-exit-save', 'lesson-visibility-save', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+        ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${scopedEpoch}\n${selection.stage}\n${scopedNonce}`) : null;
+      const frontendCookie = `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`;
+      if (selection.stage === 'lesson-visibility-save') assert.equal(frontendCookie.length, 261);
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
-        `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,
+        frontendCookie, selectedGatewayKey, host, expires,
       ]);
     }
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('contain-native', selectedCommand)));

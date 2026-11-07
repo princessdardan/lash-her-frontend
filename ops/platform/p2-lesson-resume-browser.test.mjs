@@ -8,10 +8,10 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { p2InteractiveBrowserEntryPath, p2LessonEntryPaths, p2LessonResumePaths, validateP2InteractiveBrowserInput,
+import { hideP2LessonDocument, p2InteractiveBrowserEntryPath, p2LessonEntryPaths, p2LessonResumePaths, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonRestoreReceipt,
-  validateP2LessonResumeReceipt, watchP2LessonAckLoss, watchP2LessonExitSave, watchP2LessonRestore,
-  watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LessonResumeReceipt, validateP2LessonVisibilityReceipt, watchP2LessonAckLoss, watchP2LessonExitSave, watchP2LessonRestore,
+  watchP2LessonResume, watchP2LessonVisibility } from "./p2-lifecycle-browser-recorder.mjs";
 
 const origin = "https://staging.lashher.com", mediaHost = "stream.mux.com";
 const cache = { "cache-control": "private, no-store" };
@@ -19,6 +19,7 @@ const refused = /P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED/u;
 const restoreRefused = /P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED/u;
 const ackLossRefused = /P2_INTERACTIVE_LESSON_ACK_LOSS_RESPONSE_REFUSED/u;
 const exitSaveRefused = /P2_INTERACTIVE_LESSON_EXIT_SAVE_RESPONSE_REFUSED/u;
+const visibilityRefused = /P2_INTERACTIVE_LESSON_VISIBILITY_RESPONSE_REFUSED/u;
 
 function selection(restoring = false) {
   const target = { actorId: randomUUID(), operation: "play-and-rewind", courseId: randomUUID(), lessonId: randomUUID(), grantId: randomUUID() };
@@ -80,6 +81,18 @@ function exitSaveSelection(documentExit = false) {
       exit: { pathname: paths.academyPath, status: 200, sameDocument: !documentExit, trustedPagehide: documentExit,
         trustedHidden: documentExit, resumePositionSeconds: playedSeconds, maxPositionSeconds: target.maxPositionSeconds, expectedProgressRevision: 8 },
       media: { playedSeconds, playing: true, manifestObserved: true, segmentObserved: true } } };
+}
+
+function visibilitySelection() {
+  const fixture = exitSaveSelection(), { exitSave, ...input } = fixture.input;
+  const target = { ...exitSave, operation: "hide-active-document" };
+  const { page, playback, writes, media } = fixture.receipt;
+  const { playedSeconds: resumePositionSeconds } = media;
+  const { maxPositionSeconds } = target;
+  return { ...fixture, target, input: { ...input, actionId: "owned-lesson-visibility-save", stage: "lesson-visibility-save", visibility: target },
+    receipt: { page, playback, writes: [...writes, { ...writes[1], requestId: randomUUID(), revision: 9, resumePositionSeconds }],
+      visibility: { sameDocument: true, trustedHidden: true, trustedPagehide: false, resumePositionSeconds,
+        maxPositionSeconds, expectedProgressRevision: 8 }, media } };
 }
 
 test("resume permit and receipt bind the learner, media identity and monotonic CAS sequence", () => {
@@ -190,17 +203,42 @@ test("exit-save permit and receipt bind the selected row and genuine navigation 
   }
 });
 
+test("visibility permit and receipt require the original hidden document and saved revision", () => {
+  const { input, target, paths, receipt } = visibilitySelection(), issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+  input.epoch = "123456789012345678";
+  const selector = (target.actorId + target.courseId + target.lessonId).replaceAll("-", "");
+  const cookie = ["v2", input.epoch, input.stage, issued, expires, "a".repeat(32), selector, "b".repeat(64)].join(".");
+  const permit = { stage: input.stage, epoch: input.epoch, expires, cookie };
+  assert.equal(cookie.length, 261);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), paths.lessonPath);
+  assert.equal(validateP2LessonVisibilityReceipt(receipt, target), receipt);
+  assert.throws(() => validateP2InteractiveBrowserPermit(permit, { ...input, visibility: { ...target, actorId: randomUUID() } }));
+  for (const change of [
+    { sameDocument: false }, { trustedPagehide: true }, { trustedHidden: false },
+    { expectedProgressRevision: 9 }, { maxPositionSeconds: target.maxPositionSeconds + 1 },
+    { resumePositionSeconds: target.resumePositionSeconds + 1 },
+  ]) assert.throws(() => validateP2LessonVisibilityReceipt({ ...receipt, visibility: { ...receipt.visibility, ...change } }, target));
+  for (const change of [
+    { revision: 8 }, { progressId: randomUUID() }, { enrollmentId: randomUUID() },
+    { requestId: receipt.playback.requestId }, { resumePositionSeconds: receipt.visibility.resumePositionSeconds + 1 },
+  ]) assert.throws(() => validateP2LessonVisibilityReceipt({ ...receipt, writes: [...receipt.writes.slice(0, 2),
+    { ...receipt.writes[2], ...change }] }, target));
+});
+
 function ownedLesson(paths, scenario, prior) {
   const exitSave = scenario.startsWith("exit-");
+  const visibility = scenario.startsWith("visibility-");
   return `<!doctype html><main><h1>Owned lesson</h1><p id="progress">Saving progress…</p>
   ${exitSave ? `<a id="course" href="${paths.academyPath}">Owned course</a>` : ""}</main>
   <script src="/owned-mux-player.js"></script><script>
-    const { paths, scenario, prior, exitSave } = ${JSON.stringify({ paths, scenario, exitSave, prior: prior && {
+    const { paths, scenario, prior, exitSave, visibility } = ${JSON.stringify({ paths, scenario, exitSave, visibility, prior: prior && {
       resumePositionSeconds: prior.resumePositionSeconds, maxPositionSeconds: prior.maxPositionSeconds,
     } })};
     const post = (body,keepalive=false) => fetch(paths.progressPath, {method:'POST',headers:{'content-type':'application/json','x-lash-csrf':'1'},body:JSON.stringify(body),keepalive});
     const status = document.querySelector('#progress');
-    let revision = exitSave ? 6 : prior ? 4 : 0, lastSent = 0, watched = 0, acknowledgedMax = 0, seeking = false;
+    let revision = exitSave || visibility ? 6 : prior ? 4 : 0, lastSent = 0, watched = 0, acknowledgedMax = 0, seeking = false;
     const initial = {event:'lesson_started',expectedProgressRevision:revision};
     const start = post(initial).then(response => response.json()).then(({progress}) => {
       revision = progress.revision;
@@ -229,13 +267,24 @@ function ownedLesson(paths, scenario, prior) {
           revision = progress.revision;
           if (scenario === 'restore-extra') setTimeout(() => void post({...update,expectedProgressRevision:6}), 1000);
         }, {once:true});
-        if (exitSave) {
+        if (exitSave || visibility) {
           const save = () => {
             const resumePositionSeconds = Math.floor(player.currentTime);
             void post({resumePositionSeconds,maxPositionSeconds:prior.maxPositionSeconds+(scenario==='exit-document-wrong-max'?1:0),
-              expectedProgressRevision:revision},true);
+              expectedProgressRevision:revision},true).then(async response => {
+              if (visibility && response.ok) {
+                const {progress} = await response.json();
+                revision = progress.revision;
+              }
+            });
           };
-          if (scenario === 'exit-document-early-save') {
+          if (visibility) {
+            document.addEventListener('visibilitychange', event => {
+              if (!event.isTrusted || document.visibilityState !== 'hidden') return;
+              save();
+              if (scenario === 'visibility-replay') save();
+            });
+          } else if (scenario === 'exit-document-early-save') {
             const earlySave = () => {
               if (player.paused || player.currentTime < prior.resumePositionSeconds + 4) return;
               player.removeEventListener('timeupdate',earlySave);
@@ -332,7 +381,7 @@ function ownedAckLossLesson(paths, target, revision, replay) {
   </script>`;
 }
 
-test("owned Chromium plays, restores and saves Mux progress through native exit and acknowledgement loss", {
+test("owned Chromium plays, restores and saves Mux progress through native visibility, exit and acknowledgement loss", {
   skip: process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST !== "true",
 }, async () => {
   const { chromium } = await import("playwright"), root = mkdtempSync(join(tmpdir(), "owned-p2-resume-"));
@@ -341,7 +390,7 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
   const bundle = readFileSync(new URL("mux-player.js", import.meta.resolve("@mux/mux-player")));
   const playlist = readFileSync(new URL("../../tests/fixtures/course-mux-long.m3u8", import.meta.url));
   const segment = readFileSync(new URL("../../tests/fixtures/course-mux-0.mpegts", import.meta.url));
-  let browser, https, proxy, serve;
+  let browser, visibilityBrowser, https, proxy, serve;
   const track = socket => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); };
   const bind = server => new Promise((done, fail) => {
     server.on("connection", track);
@@ -373,15 +422,20 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
     browser = await chromium.launch();
     for (const scenario of ["normal", "duplicate", "restore", "restore-row-drift", "restore-native-drift", "restore-extra",
       "ack-loss", "ack-loss-forward-drift", "ack-loss-read-drift", "ack-loss-replay",
-      "exit-spa", "exit-document", "exit-spa-replay", "exit-document-wrong-max", "exit-document-early-save"]) {
+      "exit-spa", "exit-document", "exit-spa-replay", "exit-document-wrong-max", "exit-document-early-save",
+      "visibility-native", "visibility-replay", "visibility-pagehide", "visibility-thawed"]) {
       const restoring = scenario.startsWith("restore");
       const ackLoss = scenario.startsWith("ack-loss");
       const exitSave = scenario.startsWith("exit-");
-      const { input, target, paths, receipt, authorization, date } = exitSave ? exitSaveSelection(scenario.startsWith("exit-document"))
+      const visibility = scenario.startsWith("visibility-"), lifecycleSave = exitSave || visibility;
+      const { input, target, paths, receipt, authorization, date } = visibility ? visibilitySelection() : exitSave ? exitSaveSelection(scenario.startsWith("exit-document"))
         : ackLoss ? ackLossSelection() : selection(restoring), bodies = [];
-      const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
+      if (visibility && !visibilityBrowser) visibilityBrowser = await chromium.launch({ channel: "chromium" });
+      const context = await (visibility ? visibilityBrowser : browser).newContext({
+        proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true,
+      });
       if (ackLoss) await context.addCookies([{ name: "__Host-owned-ack-loss", value: "verified", url: origin, secure: true, httpOnly: true }]);
-      let revision = ackLoss || exitSave ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
+      let revision = ackLoss || lifecycleSave ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
       let playbackCount = 0, documentCount = 0, authoritativeReads = 0, exitResponse = false;
       const ackRow = (position, revision) => ({ id: target.progressId, userId: target.actorId, lessonId: target.lessonId,
         enrollmentId: target.enrollmentId, resumePositionSeconds: position, maxPositionSeconds: target.maxPositionSeconds, revision,
@@ -405,7 +459,7 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
         if (request.url === paths.lessonPath) {
           documentCount++;
           return send(200, "text/html", ackLoss ? ownedAckLossLesson(paths, target, revision, scenario === "ack-loss-replay")
-            : ownedLesson(paths, scenario, exitSave ? target : target.prior), cache);
+            : ownedLesson(paths, scenario, lifecycleSave ? target : target.prior), cache);
         }
         if (exitSave && request.url === paths.academyPath + "?_rsc=owned" && request.headers.rsc === "1")
           return send(200, "text/x-component", "Owned outline", cache);
@@ -435,7 +489,7 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
             return send(200, "application/json", { progress: ackRow(observed.resumePositionSeconds, drift ? 8 : revision) },
               { ...cache, "x-request-id": observed.requestId });
           }
-          if (exitSave) {
+          if (lifecycleSave) {
             if (request.headers.origin !== origin || request.headers["x-lash-csrf"] !== "1"
               || body.expectedProgressRevision !== revision || revision >= 9 || (revision === 8 && body.maxPositionSeconds !== target.maxPositionSeconds))
               return send(409, "application/json", {}, cache);
@@ -460,12 +514,51 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
         }
         return send(404, "text/plain", "");
       };
-      const page = await context.newPage(), recorder = (exitSave ? watchP2LessonExitSave : ackLoss ? watchP2LessonAckLoss
-        : restoring ? watchP2LessonRestore : watchP2LessonResume)(context, page, input);
+      const page = await context.newPage();
+      const recorder = visibility ? watchP2LessonVisibility(context, page, input,
+        scenario === "visibility-pagehide" ? () => page.goto("about:blank") : hideP2LessonDocument)
+        : (exitSave ? watchP2LessonExitSave : ackLoss ? watchP2LessonAckLoss : restoring ? watchP2LessonRestore
+          : watchP2LessonResume)(context, page, input);
       const expires = Math.floor(Date.now() / 1000) + 35;
       try {
         if (scenario === "duplicate") await assert.rejects(recorder.open(expires), refused);
         else if (scenario === "restore-row-drift") await assert.rejects(recorder.open(expires), restoreRefused);
+        else if (visibility) {
+          await recorder.open(expires);
+          if (scenario === "visibility-native" || scenario === "visibility-thawed") {
+            await recorder.wait(expires).catch(error => {
+              throw new Error(`Owned ${scenario} failed after ${bodies.length} progress requests`, { cause: error });
+            });
+            const observed = recorder.finish();
+            assert.equal(validateP2LessonVisibilityReceipt(observed, target), observed);
+            assert.deepEqual(observed.writes.slice(0, 2), receipt.writes.slice(0, 2));
+            assert.deepEqual(observed.playback, receipt.playback);
+            assert.ok(exitResponse);
+            assert.equal(revision, 9);
+            assert.equal(documentCount, 1);
+            assert.deepEqual(bodies.map(body => body.expectedProgressRevision), [6, 7, 8]);
+            assert.equal(observed.writes.at(-1).requestId, receipt.writes.at(-1).requestId);
+            assert.equal(observed.visibility.resumePositionSeconds, bodies.at(-1).resumePositionSeconds);
+            if (scenario === "visibility-native") {
+              const cover = context.pages().find(candidate => candidate !== page);
+              assert.equal(cover?.url(), "about:blank");
+              await new Promise(resolve => setTimeout(resolve, 250));
+              await recorder.confirmFenced();
+              assert.equal(documentCount, 1);
+              assert.equal(bodies.length, 3);
+              await assert.rejects(recorder.confirmFenced(), visibilityRefused);
+            } else {
+              const protocol = await context.newCDPSession(page);
+              try {
+                await protocol.send("Page.setWebLifecycleState", { state: "active" });
+                await assert.rejects(recorder.confirmFenced(), visibilityRefused);
+              } finally { await protocol.detach(); }
+            }
+          } else {
+            await assert.rejects(recorder.wait(expires), visibilityRefused);
+            assert.throws(() => recorder.finish(), visibilityRefused);
+          }
+        }
         else if (exitSave) {
           await recorder.open(expires);
           if (scenario === "exit-spa" || scenario === "exit-document") {
@@ -555,7 +648,7 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
       }
     }
   } finally {
-    await browser?.close();
+    await Promise.all([browser?.close(), visibilityBrowser?.close()]);
     for (const socket of sockets) socket.destroy();
     await Promise.all([proxy, https].filter(Boolean).map(server => new Promise(done => server.close(done))));
     rmSync(root, { recursive: true, force: true });

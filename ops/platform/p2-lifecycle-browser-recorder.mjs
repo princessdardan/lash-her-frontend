@@ -17,7 +17,8 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
 const authoringPath = "/api/admin/courses";
-const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save"];
+const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save",
+  "lesson-visibility-save"];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
@@ -32,6 +33,7 @@ const interactivePages = {
   "lesson-restore": { learner: "/academy/courses" },
   "lesson-ack-loss": { learner: "/academy/courses" },
   "lesson-exit-save": { learner: "/academy/courses" },
+  "lesson-visibility-save": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -138,6 +140,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "lesson-restore") return p2LessonResumePaths(input.restore).lessonPath;
   if (input.stage === "lesson-ack-loss") return p2LessonResumePaths(input.ackLoss).lessonPath;
   if (input.stage === "lesson-exit-save") return p2LessonResumePaths(input.exitSave).lessonPath;
+  if (input.stage === "lesson-visibility-save") return p2LessonResumePaths(input.visibility).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -213,6 +216,7 @@ export function validateP2InteractiveBrowserInput(input) {
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
           : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"] : input?.stage === "lesson-ack-loss" ? ["ackLoss"]
           : input?.stage === "lesson-exit-save" ? ["exitSave"]
+          : input?.stage === "lesson-visibility-save" ? ["visibility"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -268,6 +272,7 @@ export function validateP2InteractiveBrowserInput(input) {
   }
   if (input.stage === "lesson-ack-loss") validateLessonAckLossTarget(input.ackLoss);
   if (input.stage === "lesson-exit-save") validateLessonExitSaveTarget(input.exitSave);
+  if (input.stage === "lesson-visibility-save") validateLessonVisibilityTarget(input.visibility);
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
     demand(closed(selected, ["actorId", "operation", "courseId", "userId", "revision", "idempotencyKey", "reasonSha256",
@@ -308,7 +313,8 @@ export function validateP2InteractiveBrowserInput(input) {
 
 export function validateP2InteractiveBrowserPermit(permit, input, now = Math.floor(Date.now() / 1000)) {
   demand(closed(permit, ["stage", "epoch", "expires", "cookie"]) && permit.stage === input.stage && permit.epoch === input.epoch
-    && Number.isSafeInteger(permit.expires) && permit.expires > now && typeof permit.cookie === "string" && permit.cookie.length <= 256);
+    && Number.isSafeInteger(permit.expires) && permit.expires > now && typeof permit.cookie === "string"
+    && permit.cookie.length <= (input.stage === "lesson-visibility-save" ? 261 : 256));
   const parts = permit.cookie.split(".");
   const [version, epoch, stage, issued, expires, nonce] = parts;
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
@@ -325,7 +331,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
-    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore ?? input.ackLoss ?? input.exitSave;
+    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore
+      ?? input.ackLoss ?? input.exitSave ?? input.visibility;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -625,6 +632,7 @@ function validatePinnedLessonPositionTarget(target, operations) {
 const pinnedProgressFields = ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"];
 const validateLessonAckLossTarget = target => validatePinnedLessonPositionTarget(target, ["commit-drop-recover"]);
 const validateLessonExitSaveTarget = target => validatePinnedLessonPositionTarget(target, ["spa-navigation", "document-exit"]);
+const validateLessonVisibilityTarget = target => validatePinnedLessonPositionTarget(target, ["hide-active-document"]);
 
 export function validateP2LessonAckLossReceipt(receipt, target) {
   validateLessonAckLossTarget(target);
@@ -669,6 +677,29 @@ export function validateP2LessonExitSaveReceipt(receipt, target) {
     && integerBetween(exit.resumePositionSeconds, resume + 2, resume + 5) && exit.maxPositionSeconds === maximum
     && closed(media, ["playedSeconds", "playing", "manifestObserved", "segmentObserved"])
     && integerBetween(media.playedSeconds, resume + 2, resume + 5) && Math.abs(media.playedSeconds - exit.resumePositionSeconds) <= 2
+    && media.playing === true && media.manifestObserved === true && media.segmentObserved === true);
+  return receipt;
+}
+
+export function validateP2LessonVisibilityReceipt(receipt, target) {
+  validateLessonVisibilityTarget(target);
+  const { page, playback, writes, visibility, media } = receipt ?? {};
+  const { lessonPath } = p2LessonResumePaths(target), { resumePositionSeconds: resume, maxPositionSeconds: maximum } = target;
+  demand(closed(receipt, ["page", "playback", "writes", "visibility", "media"])
+    && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
+    && validResumePlayback(playback) && playback.playbackIdSha256 === target.playbackIdSha256
+    && closed(visibility, ["sameDocument", "trustedHidden", "trustedPagehide", "resumePositionSeconds", "maxPositionSeconds",
+      "expectedProgressRevision"])
+    && visibility.sameDocument === true && visibility.trustedHidden === true && visibility.trustedPagehide === false
+    && visibility.expectedProgressRevision === 8 && integerBetween(visibility.resumePositionSeconds, resume + 2, resume + 5)
+    && visibility.maxPositionSeconds === maximum
+    && Array.isArray(writes) && writes.length === 3 && writes.every((row, index) => closed(row, pinnedProgressFields)
+      && uuid(row.requestId) && row.progressId === target.progressId && row.enrollmentId === target.enrollmentId
+      && row.revision === index + 7 && row.resumePositionSeconds === (index < 2 ? resume : visibility.resumePositionSeconds)
+      && row.maxPositionSeconds === maximum)
+    && new Set([playback.requestId, ...writes.map(row => row.requestId)]).size === 4
+    && closed(media, ["playedSeconds", "playing", "manifestObserved", "segmentObserved"])
+    && integerBetween(media.playedSeconds, resume + 2, resume + 5) && Math.abs(media.playedSeconds - visibility.resumePositionSeconds) <= 2
     && media.playing === true && media.manifestObserved === true && media.segmentObserved === true);
   return receipt;
 }
@@ -2303,6 +2334,39 @@ export function watchP2LessonExitSave(context, page, input) {
   return watchLessonPosition(context, page, input, "lesson-exit-save");
 }
 
+// Playwright 1.59.1 sets focus emulation on the primary Chromium page session.
+// Use that same owned session to release it before a native tab switch.
+export async function hideP2LessonDocument({ context, page, cover, timeout }) {
+  const deadline = performance.now() + timeout;
+  const withinLease = () => demand(performance.now() < deadline && page.context() === context && cover !== page
+    && cover?.context() === context && !page.isClosed() && !cover.isClosed() && cover.url() === "about:blank"
+    && context.pages().includes(page) && context.pages().includes(cover) && page._connection === context._connection
+    && cover._connection === context._connection);
+  demand(Number.isFinite(timeout) && timeout > 0);
+  withinLease();
+  const { default: { version } } = await import("playwright-core/package.json", { with: { type: "json" } });
+  demand(version === "1.59.1");
+  const impl = page._connection.toImpl(page), delegate = impl?.delegate, main = delegate?._mainFrameSession;
+  const primary = main?._client;
+  demand(impl?.browserContext === context._connection.toImpl(context) && main?._page === impl && main._parentSession === null
+    && typeof main._targetId === "string" && main._targetId.length > 0 && main._targetId === delegate._targetId
+    && typeof primary?.send === "function" && primary._closed === false && typeof primary._sessionId === "string" && primary._sessionId.length > 0);
+  withinLease();
+  await primary.send("Emulation.setFocusEmulationEnabled", { enabled: false });
+  const { result, exceptionDetails } = await primary.send("Runtime.evaluate", {
+    expression: "document.visibilityState", returnByValue: true, silent: true,
+  });
+  demand(!exceptionDetails && result.value === "visible");
+  withinLease();
+  await cover.bringToFront();
+  return cover;
+}
+
+export function watchP2LessonVisibility(context, page, input, hideDocument) {
+  demand(typeof hideDocument === "function");
+  return watchLessonPosition(context, page, input, "lesson-visibility-save", hideDocument);
+}
+
 export function watchP2LessonAckLoss(context, page, input) {
   validateP2InteractiveBrowserInput(input);
   demand(input.stage === "lesson-ack-loss" && page.context() === context);
@@ -2552,24 +2616,27 @@ export function watchP2LessonAckLoss(context, page, input) {
   };
 }
 
-function watchLessonPosition(context, page, input, stage) {
+function watchLessonPosition(context, page, input, stage, hideDocument) {
   validateP2InteractiveBrowserInput(input);
   demand(input.stage === stage && page.context() === context);
   const exitSave = input.exitSave, documentExit = exitSave?.operation === "document-exit";
-  const target = exitSave ?? input.restore ?? input.resume, prior = exitSave ?? target.prior;
-  const startRevision = exitSave ? 6 : prior ? 4 : 0;
+  const visibility = input.visibility, lifecycleSave = exitSave ?? visibility;
+  const target = lifecycleSave ?? input.restore ?? input.resume, prior = lifecycleSave ?? target.prior;
+  const startRevision = lifecycleSave ? 6 : prior ? 4 : 0;
   const { academyPath, lessonPath, playbackPath, progressPath } = p2LessonEntryPaths(target);
   const origin = input.browserOrigin, source = origin + lessonPath, destination = origin + academyPath;
   const player = page.getByRole("main").locator("mux-player");
   const playback = { path: playbackPath, method: "GET" }, started = { path: progressPath, method: "POST" };
   const writes = (prior ? [startRevision + 1] : [1, 2, 3]).map(revision => ({ path: progressPath, method: "POST", revision }));
   const restored = prior ? writes[0] : null;
-  const exit = exitSave && { path: progressPath, method: "POST", revision: 8 };
-  const slots = new Map([[playbackPath, playback], [progressPath, [started, ...writes]]]);
+  const exit = lifecycleSave && { path: progressPath, method: "POST", revision: 8 };
+  const slots = new Map([[playbackPath, playback], [progressPath, [started, ...writes, ...(visibility ? [exit] : [])]]]);
   const refusal = () => new Error(exitSave ? "P2_INTERACTIVE_LESSON_EXIT_SAVE_RESPONSE_REFUSED"
+    : visibility ? "P2_INTERACTIVE_LESSON_VISIBILITY_RESPONSE_REFUSED"
     : prior ? "P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED" : "P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED");
   let navigation, opened = false, failed = false, initialized, restoredProgress, completed, active, session, executionContextId, stopNetwork, permit, previousMax = 0;
   let exiting = false, destinationRequest, sourceFrame, exitNetworkId, exitRequestedAt, exitAborted = false;
+  let visibilityCover, freezeRequested = false, visibilityFenced = false;
   const trustedEvents = new Map(), validExitHeaders = new Set();
   const eventBinding = "__lashP2ExitEvent";
   let rejectFailure;
@@ -2585,6 +2652,7 @@ function watchLessonPosition(context, page, input, stage) {
   const onRequest = request => {
     const url = URL.parse(request.url()), method = request.method(), headers = request.headers();
     try {
+      if (visibility && trustedEvents.has("freeze")) demand(request.frame().page() !== page);
       if (request.isNavigationRequest()) {
         demand(opened && method === "GET" && headers.rsc === undefined
           && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
@@ -2602,7 +2670,7 @@ function watchLessonPosition(context, page, input, stage) {
           && request.frame() === page.mainFrame() && request.resourceType() === "fetch"
           && request.redirectedFrom() === null && headers.rsc === undefined);
         const frameUrl = request.frame().url();
-        demand(frameUrl === source || slot === exit && frameUrl === destination);
+        demand(frameUrl === source || exitSave && slot === exit && frameUrl === destination);
         const recorded = request.postDataBuffer();
         if (slot === playback) demand(recorded === null);
         else {
@@ -2658,7 +2726,7 @@ function watchLessonPosition(context, page, input, stage) {
   const onExitNetworkRequest = ({ requestId, request, frameId, loaderId, documentURL, type, redirectResponse, wallTime }) => {
     if (!exiting || request.url !== origin + progressPath) return;
     if (exitNetworkId || type !== "Fetch" || request.method !== "POST" || frameId !== sourceFrame.id
-      || loaderId !== sourceFrame.loaderId || (documentURL !== source && (documentExit || documentURL !== destination))
+      || loaderId !== sourceFrame.loaderId || (documentURL !== source && (!exitSave || documentExit || documentURL !== destination))
       || redirectResponse || !Number.isFinite(wallTime) || wallTime <= 0) return fail();
     exitNetworkId = requestId;
     exitRequestedAt = wallTime * 1000;
@@ -2682,9 +2750,10 @@ function watchLessonPosition(context, page, input, stage) {
   const onTrustedExitEvent = ({ name, payload, executionContextId: observedContext }) => {
     if (name !== eventBinding) return;
     try {
-      demand(documentExit && exiting && observedContext === executionContextId && typeof payload === "string" && payload.length <= 96);
+      demand((documentExit || visibility) && exiting && observedContext === executionContextId && typeof payload === "string" && payload.length <= 96);
       const event = JSON.parse(payload);
-      demand(closed(event, ["kind", "at"]) && ["pagehide", "hidden"].includes(event.kind) && !trustedEvents.has(event.kind)
+      demand(closed(event, ["kind", "at"]) && (documentExit ? ["pagehide", "hidden"].includes(event.kind) : event.kind === "hidden" || event.kind === "freeze" && freezeRequested)
+        && !trustedEvents.has(event.kind)
         && Number.isFinite(event.at) && event.at > 0);
       trustedEvents.set(event.kind, event.at);
     } catch { fail(); }
@@ -2694,13 +2763,24 @@ function watchLessonPosition(context, page, input, stage) {
   if (documentExit) context.on("requestfinished", onFinished);
   page.on("framenavigated", onNavigation);
 
-  const bounded = async (operation, expires) => {
+  const boundedFor = async (operation, timeout) => {
     let timer;
     try {
       return await Promise.race([operation, failure, new Promise((_, reject) => {
-        timer = setTimeout(() => reject(refusal()), remaining(expires));
+        timer = setTimeout(() => reject(refusal()), timeout);
       })]);
     } finally { clearTimeout(timer); }
+  };
+  const bounded = (operation, expires) => boundedFor(operation, remaining(expires));
+  const checkHiddenDocument = async () => {
+    demand(!page.isClosed() && visibilityCover && !visibilityCover.isClosed() && visibilityCover.url() === "about:blank");
+    const { frameTree: { frame } } = await session.send("Page.getFrameTree");
+    const { result, exceptionDetails } = await session.send("Runtime.callFunctionOn", { executionContextId,
+      functionDeclaration: function hidden(source) {
+        return location.href === source && document.visibilityState === "hidden";
+      }.toString(), arguments: [{ value: source }], returnByValue: true, silent: true });
+    demand(frame.id === sourceFrame.id && frame.loaderId === sourceFrame.loaderId && frame.url === source
+      && page.url() === source && !exceptionDetails && result.value === true);
   };
   const observe = async (slot, expires) => {
     const response = await page.waitForResponse(candidate => candidate.request() === slot.request, { timeout: remaining(expires) });
@@ -2749,6 +2829,14 @@ function watchLessonPosition(context, page, input, stage) {
       try {
         demand(!opened);
         opened = true;
+        if (visibility) {
+          visibilityCover = await bounded(context.newPage(), expires);
+          demand(visibilityCover !== page && visibilityCover.context() === context && visibilityCover.url() === "about:blank");
+          visibilityCover.on("framenavigated", fail);
+          visibilityCover.on("close", fail);
+          page.on("close", fail);
+          await bounded(page.bringToFront(), expires);
+        }
         session = await context.newCDPSession(page);
         const { frameTree: { frame } } = await session.send("Page.getFrameTree");
         demand(!frame.parentId);
@@ -2779,7 +2867,7 @@ function watchLessonPosition(context, page, input, stage) {
             demand(row.id === prior.progressId && row.enrollmentId === prior.enrollmentId && permit.playbackIdSha256 === prior.playbackIdSha256);
             const { resumePositionSeconds, maxPositionSeconds } = prior;
             const result = resumeProgress(restoredResult.body, target, startRevision + 2, resumePositionSeconds, maxPositionSeconds);
-            if (exitSave) demand(result.id === prior.progressId && result.enrollmentId === prior.enrollmentId);
+            if (lifecycleSave) demand(result.id === prior.progressId && result.enrollmentId === prior.enrollmentId);
             restoredProgress = { requestId: restoredResult.requestId, progressId: result.id, enrollmentId: result.enrollmentId,
               revision: result.revision, resumePositionSeconds: result.resumePositionSeconds, maxPositionSeconds: result.maxPositionSeconds };
           }
@@ -2791,7 +2879,7 @@ function watchLessonPosition(context, page, input, stage) {
           page.getByText("Progress saved to your account.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) })]);
         demand(await player.count() === 1);
         executionContextId = await isolatedMainFrame(session, source);
-        if (exitSave) {
+        if (lifecycleSave) {
           ({ frameTree: { frame: sourceFrame } } = await session.send("Page.getFrameTree"));
           demand(sourceFrame.url === source && sourceFrame.loaderId);
           await session.send("Runtime.enable");
@@ -2800,7 +2888,7 @@ function watchLessonPosition(context, page, input, stage) {
           session.on("Network.requestWillBeSentExtraInfo", onExitNetworkHeaders);
           await session.send("Runtime.addBinding", { name: eventBinding, executionContextId });
           const { result, exceptionDetails } = await session.send("Runtime.callFunctionOn", { executionContextId,
-            functionDeclaration: function observeNativeExit({ source, name }) {
+            functionDeclaration: function observeNativeExit({ source, name, observeVisible }) {
               if (location.href !== source || document.visibilityState !== "visible") return false;
               const notify = globalThis[name];
               const observe = (event, kind) => notify(JSON.stringify({ kind, at: performance.timeOrigin + event.timeStamp }));
@@ -2808,10 +2896,13 @@ function watchLessonPosition(context, page, input, stage) {
                 if (event.isTrusted) observe(event, event.persisted ? "persisted" : "pagehide");
               }, { capture: true });
               document.addEventListener("visibilitychange", event => {
-                if (event.isTrusted && document.visibilityState === "hidden") observe(event, "hidden");
+                if (event.isTrusted && (observeVisible || document.visibilityState === "hidden")) observe(event, document.visibilityState);
+              }, { capture: true });
+              if (observeVisible) for (const kind of ["freeze", "resume"]) document.addEventListener(kind, event => {
+                if (event.isTrusted) observe(event, kind);
               }, { capture: true });
               return true;
-            }.toString(), arguments: [{ value: { source, name: eventBinding } }], returnByValue: true, silent: true });
+            }.toString(), arguments: [{ value: { source, name: eventBinding, observeVisible: Boolean(visibility) } }], returnByValue: true, silent: true });
           demand(!exceptionDetails && result.value === true);
         }
       } catch { fail(); throw refusal(); }
@@ -2819,6 +2910,43 @@ function watchLessonPosition(context, page, input, stage) {
     async wait(expires) {
       try {
         demand(initialized && !completed && !active && page.url() === source);
+        if (visibility) {
+          const { resumePositionSeconds: resume, maxPositionSeconds: maximum } = prior;
+          await Promise.all([
+            bounded(until(() => media.verified(permit), performance.now() + remaining(expires)), expires),
+            sample(value => value.paused && value.ready >= 2 && Math.floor(value.position) === resume, expires),
+          ]);
+          await press("play", expires);
+          const native = await sample(value => !value.paused && value.ready >= 2
+            && value.position >= resume + 3 && value.position < resume + 4, expires);
+          exiting = true;
+          active = [exit];
+          const [saved] = await bounded(Promise.all([observe(exit, expires),
+            hideDocument({ context, page, cover: visibilityCover, timeout: remaining(expires) })]), expires);
+          await bounded(until(() => {
+            remaining(expires);
+            return validExitHeaders.has(exitNetworkId) && trustedEvents.has("hidden");
+          }, performance.now() + remaining(expires)), expires);
+          demand(exitNetworkId === exit.cdpId && exitRequestedAt + 2 >= trustedEvents.get("hidden"));
+          await bounded(checkHiddenDocument(), expires);
+          const row = resumeProgress(saved.body, target, 9, exit.posted.resumePositionSeconds, maximum);
+          demand(row.id === prior.progressId && row.enrollmentId === prior.enrollmentId);
+          active = undefined;
+          // Keep the same hidden document in place through the parent fence.
+          const freezeTimeout = remaining(expires);
+          freezeRequested = true;
+          await boundedFor(session.send("Page.setWebLifecycleState", { state: "frozen" }), freezeTimeout);
+          await bounded(until(() => trustedEvents.has("freeze"), performance.now() + remaining(expires)), expires);
+          demand(trustedEvents.get("freeze") >= trustedEvents.get("hidden"));
+          remaining(expires);
+          completed = validateP2LessonVisibilityReceipt({ page: { pathname: lessonPath, status: 200 }, playback: initialized.playback,
+            writes: [{ ...initialized.started, resumePositionSeconds: resume, maxPositionSeconds: maximum }, restoredProgress,
+              { requestId: saved.requestId, progressId: row.id, enrollmentId: row.enrollmentId, revision: row.revision,
+                resumePositionSeconds: row.resumePositionSeconds, maxPositionSeconds: row.maxPositionSeconds }],
+            visibility: { sameDocument: true, trustedHidden: true, trustedPagehide: false, ...exit.posted },
+            media: { playedSeconds: Math.floor(native.position), playing: true, manifestObserved: true, segmentObserved: true } }, target);
+          return;
+        }
         if (exitSave) {
           const resume = prior.resumePositionSeconds;
           await Promise.all([
@@ -2909,7 +3037,21 @@ function watchLessonPosition(context, page, input, stage) {
       if (failed || !completed || context.serviceWorkers().length || (exitSave ? page.url() !== destination : !media.verified(permit))) throw refusal();
       return completed;
     },
+    async confirmFenced() {
+      try {
+        demand(visibility && !failed && completed && !visibilityFenced && trustedEvents.size === 2
+          && trustedEvents.has("freeze") && !context.serviceWorkers().length);
+        await boundedFor(checkHiddenDocument(), 5_000);
+        demand(!failed && !context.serviceWorkers().length && media.verified(permit));
+        visibilityFenced = true;
+      } catch { fail(); throw refusal(); }
+    },
     async close() {
+      if (visibility) {
+        visibilityCover?.off("framenavigated", fail);
+        visibilityCover?.off("close", fail);
+        page.off("close", fail);
+      }
       context.off("request", onRequest);
       context.off("requestfailed", onFailure);
       if (documentExit) context.off("requestfinished", onFinished);
@@ -3367,7 +3509,7 @@ async function runInteractiveBrowser(first) {
     pending.catch(() => {}); // An IPC send can fail before the caller awaits this receive.
     return pending;
   };
-  let browser, context, page, selection, mutationWatch, identityOpenedAt, verifiedIdentity, opened = false, cleared = false;
+  let browser, context, page, selection, mutationWatch, identityOpenedAt, verifiedIdentity, opened = false, cleared = false, visibilityFenced = false;
   const contexts = new Map(), actions = new Set([input.actionId]);
   const lost = () => { if (browser) void browser.close().catch(() => {}); };
   const terminate = () => { if (process.connected) process.disconnect(); else lost(); };
@@ -3396,7 +3538,8 @@ async function runInteractiveBrowser(first) {
           && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
-          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore ?? selectedInput.ackLoss ?? selectedInput.exitSave).actorId
+          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial
+            ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore ?? selectedInput.ackLoss ?? selectedInput.exitSave ?? selectedInput.visibility).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
@@ -3435,7 +3578,16 @@ async function runInteractiveBrowser(first) {
         await send("interactive-permit-installed", selection);
         continue;
       }
-      demand(selection && received.context === selection.context && received.expires === selection.expires && context && !cleared);
+      demand(selection && received.context === selection.context && received.expires === selection.expires && context);
+      if (command.type === "interactive-confirm-visibility-fenced") {
+        demand(binding.stage === "lesson-visibility-save" && cleared && mutationWatch && !visibilityFenced);
+        await mutationWatch.confirmFenced();
+        visibilityFenced = true;
+        pending = next();
+        await send("interactive-visibility-fenced", selection);
+        continue;
+      }
+      demand(!cleared);
       if (command.type === "interactive-open") {
         demand(!opened && Date.now() < selection.expires * 1000);
         opened = true;
@@ -3477,6 +3629,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "lesson-exit-save") {
           mutationWatch = watchP2LessonExitSave(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "lesson-visibility-save") {
+          mutationWatch = watchP2LessonVisibility(context, page, input, hideP2LessonDocument);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {
@@ -3561,8 +3717,10 @@ async function runInteractiveBrowser(first) {
         if (input.identityEnrollment) await context.close();
         if (captureMutation || captureIdentity) demand(Date.now() < selection.expires * 1000);
         const response = captureMutation ? mutationWatch.finish() : undefined;
-        await mutationWatch?.close();
-        mutationWatch = undefined;
+        if (binding.stage !== "lesson-visibility-save" || !captureMutation) {
+          await mutationWatch?.close();
+          mutationWatch = undefined;
+        }
         pending = next();
         if (captureMutation) await send("interactive-" + stage + "-captured", { ...selection, ...(edit ? { responses: response } : { response }) });
         else if (captureIdentity) await send("interactive-identity-captured", { ...selection, identity: verifiedIdentity });

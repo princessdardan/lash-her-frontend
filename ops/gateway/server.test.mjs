@@ -1335,16 +1335,17 @@ for (const failure of ["committed-position", "authority-revision", "reload-playb
   });
 }
 
-async function lessonExitSaveGateway(t, failure, holdOutlineProgress = false) {
+async function lessonExitSaveGateway(t, failure, holdOutlineProgress = false, stage = "lesson-exit-save") {
+  const visibilitySave = stage === "lesson-visibility-save";
   const { courseId, lessonId, write, targets, reads, requests, prior } = lessonRestoreFixture();
   const started = '{"event":"lesson_started","expectedProgressRevision":6}';
   const restored = '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":7}';
   const exited = '{"resumePositionSeconds":7,"maxPositionSeconds":14,"expectedProgressRevision":8}';
   const outlineProgress = `/course/v1/student/progress?courseId=${courseId}`;
-  const scoped = [...requests.slice(0, 6).map((row, index) => ({ ...row, uses: index === 0 ? 2 : 1 })),
+  const scoped = [...requests.slice(0, 6).map((row, index) => ({ ...row, uses: !visibilitySave && index === 0 ? 2 : 1 })),
     ...[started, restored, '{"expectedProgressRevision":8}'].map(body => (
       { method: "POST", target: write, bodySha256: certificationHash(body), uses: 1 })),
-    { method: "GET", target: outlineProgress, bodySha256: certificationHash(""), uses: 1 }];
+    ...(visibilitySave ? [] : [{ method: "GET", target: outlineProgress, bodySha256: certificationHash(""), uses: 1 }])];
   const outlineRead = Promise.withResolvers(), releaseOutline = Promise.withResolvers();
   let current = { ...prior, revision: 6 }, courseReads = 0;
   const forwarded = [];
@@ -1379,7 +1380,7 @@ async function lessonExitSaveGateway(t, failure, holdOutlineProgress = false) {
     }
     res.writeHead(200, { "content-type": "application/json", "cache-control": "public", "x-private-upstream-value": "sensitive" });
     res.end(JSON.stringify(response));
-  }, "lesson-exit-save");
+  }, stage);
   t.after(releaseOutline.resolve);
   const read = index => f.send(f.signed({ path: index === 9 ? outlineProgress : targets[index] }));
   const sendWrite = (body, options = {}) => f.send(f.signed({ method: "POST", path: write, body, ...options }));
@@ -1395,7 +1396,7 @@ async function lessonExitSaveGateway(t, failure, holdOutlineProgress = false) {
     await Promise.all([accepted(read(5)), accepted(sendWrite(started))]);
     await accepted(sendWrite(restored));
   };
-  return { f, scoped, courseId, prior, started, restored, exited, outlineProgress, read, sendWrite, accepted, hydrate,
+  return { f, scoped, courseId, prior, started, restored, exited, outlineProgress, write, read, sendWrite, accepted, hydrate,
     forwarded, outlineRead, releaseOutline };
 }
 
@@ -1462,6 +1463,61 @@ for (const failure of ["outline-course", "outline-actor", "outline-lesson", "out
     assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
   });
 }
+
+test("scoped lesson visibility save joins only the selected lesson and three ordered writes", async t => {
+  const { f, scoped, courseId, started, restored, exited, outlineProgress, write, read, sendWrite, accepted, forwarded } =
+    await lessonExitSaveGateway(t, undefined, false, "lesson-visibility-save");
+  for (const changed of [
+    scoped.slice(0, -1),
+    scoped.map((row, index) => index === 0 ? { ...row, uses: 2 } : row),
+    scoped.map((row, index) => index === 8 ? { ...row, bodySha256: certificationHash(exited) } : row),
+    [...scoped, { method: "GET", target: outlineProgress, bodySha256: certificationHash(""), uses: 1 }],
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: changed } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const refused = async promise => assert.equal((await promise).status, 503);
+  await refused(read(9));
+  await refused(sendWrite(exited));
+  await Promise.all([4, 2, 0, 3, 1].map(index => accepted(read(index))));
+  await Promise.all([accepted(read(5)), accepted(sendWrite(started))]);
+  await refused(sendWrite(exited));
+  await accepted(sendWrite(restored));
+  await refused(sendWrite(exited.replace('"resumePositionSeconds":7', '"resumePositionSeconds":5')));
+  await refused(sendWrite(exited.replace('"resumePositionSeconds":7', '"resumePositionSeconds":10')));
+  await refused(sendWrite(exited.replace('"maxPositionSeconds":14', '"maxPositionSeconds":15')));
+  await refused(sendWrite(exited, { actor: courseId }));
+  const final = f.signed({ method: "POST", path: write, body: exited });
+  await refused(f.send({ ...final, body: exited.replace('"resumePositionSeconds":7', '"resumePositionSeconds":8') }));
+  const saved = await accepted(f.send(final));
+  assert.deepEqual([saved.progress.revision, saved.progress.resumePositionSeconds, saved.progress.maxPositionSeconds], [9, 7, 14]);
+  await refused(f.send(final));
+  await refused(sendWrite(exited));
+  await refused(read(0));
+  await refused(read(9));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 9);
+  const indices = observed.interactiveEvidence.acknowledged.map(row => row.requestIndex);
+  assert.deepEqual(indices.slice(0, 5).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual(indices.slice(5, 7).sort(), [5, 6]);
+  assert.deepEqual(indices.slice(7), [7, 8]);
+  assert.deepEqual(forwarded.filter(row => row.body !== "").map(row => row.body), [started, restored, exited]);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+});
+
+test("scoped lesson visibility save marks a mismatched final Course response uncertain", async t => {
+  const { f, prior, exited, read, sendWrite, hydrate } = await lessonExitSaveGateway(t, "exit-position", false, "lesson-visibility-save");
+  await hydrate();
+  const response = await sendWrite(exited);
+  assert.equal(response.status, 502);
+  assert.equal(response.headers["x-private-upstream-value"], undefined);
+  assert.ok(!response.body.includes(prior.id));
+  assert.equal((await read(0)).status, 503);
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+  assert.equal(f.admissionState().interactiveEvidence.acknowledged.length, 8);
+});
 
 test("scoped lesson resume withholds playback data when the thumbnail names another asset", async t => {
   const { targets, requests, reads } = lessonResumeFixtureRequests();

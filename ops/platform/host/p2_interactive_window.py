@@ -30,8 +30,9 @@ _RESUME = "lesson-resume"
 _RESTORE = "lesson-restore"
 _ACK_LOSS = "lesson-ack-loss"
 _EXIT_SAVE = "lesson-exit-save"
+_VISIBILITY_SAVE = "lesson-visibility-save"
 _PAID_REVOKE = "paid-revoke"
-_LESSON_STAGES = (_LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT, _RESUME, _RESTORE, _ACK_LOSS, _EXIT_SAVE)
+_LESSON_STAGES = (_LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT, _RESUME, _RESTORE, _ACK_LOSS, _EXIT_SAVE, _VISIBILITY_SAVE)
 _STAGES = {"identity", "authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES, "lifecycle"}
 _GATEWAY_STAGES = {"authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES}
 _UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}")
@@ -171,8 +172,8 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
         return _restore_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == _ACK_LOSS:
         return _ack_loss_case_evidence(plan, action, evidence, gateway_artifact)
-    if stage == _EXIT_SAVE:
-        return _exit_save_case_evidence(plan, action, evidence, gateway_artifact)
+    if stage in (_EXIT_SAVE, _VISIBILITY_SAVE):
+        return _position_save_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "lifecycle":
         return _lifecycle_case_evidence(action, evidence)
     demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
@@ -283,8 +284,8 @@ def _valid_gateway_acknowledgements(plan, rows):
                 all(status == (404 if index == 5 else 200) for index, status in acknowledgements) and
                 sorted(indices[:5]) == [0, 1, 2, 3, 4] and sorted(indices[5:7]) == [5, 6] and
                 indices[7:] == [7, 2, 8, 2])
-    if stage in (_RESUME, _RESTORE):
-        tail = [7, 8, 9] if stage == _RESUME else [7]
+    if stage in (_RESUME, _RESTORE, _VISIBILITY_SAVE):
+        tail = {_RESUME: [7, 8, 9], _RESTORE: [7], _VISIBILITY_SAVE: [7, 8]}[stage]
         indices = [index for index, _ in acknowledgements]
         return (len(acknowledgements) == 7 + len(tail) and all(status == 200 for _, status in acknowledgements) and
                 sorted(indices[:5]) == [0, 1, 2, 3, 4] and sorted(indices[5:7]) == [5, 6] and
@@ -760,58 +761,69 @@ def _ack_loss_case_evidence(plan, action, evidence, gateway_artifact):
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
-def _exit_save_case_evidence(plan, action, evidence, gateway_artifact):
-    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_LESSON_EXIT_SAVE_EVIDENCE_REQUIRED")
+def _position_save_case_evidence(plan, action, evidence, gateway_artifact):
+    visibility = action["stage"] == _VISIBILITY_SAVE
+    def status(disposition):
+        return browser_status(plan, f"{disposition}_REQUIRED")
+
+    demand(_closed_fields(evidence, "browserResponse courseWitness"), status("EVIDENCE"))
     gateway = browser_gateway_receipt(plan, gateway_artifact)
-    # Index zero is used for both initial lesson hydration and the destination.
+    # An exit also uses index zero for the destination after initial lesson hydration.
     request_ids = {row["requestIndex"]: row["requestId"] for row in gateway["gatewayAcknowledgements"][5:]}
-    selected = action["exitSaveAction"]
+    selected = action["visibilityAction" if visibility else "exitSaveAction"]
     browser, witness = evidence["browserResponse"], evidence["courseWitness"]
-    demand(_closed_fields(browser, "page playback writes exit media"), "P2_INTERACTIVE_LESSON_EXIT_SAVE_BROWSER_RESPONSE_REQUIRED")
-    page, playback, writes, exit_receipt, media = (browser[key] for key in ("page", "playback", "writes", "exit", "media"))
+    receipt_key = "visibility" if visibility else "exit"
+    demand(_closed_fields(browser, f"page playback writes {receipt_key} media"), status("BROWSER_RESPONSE"))
+    page, playback, writes, receipt, media = (browser[key] for key in ("page", "playback", "writes", receipt_key, "media"))
     destination = f'/academy/courses/{selected["courseId"]}'
     pathname = f'{destination}/lessons/{selected["lessonId"]}'
     demand(page == {"pathname": pathname, "status": 200} and type(page["status"]) is int,
-           "P2_INTERACTIVE_LESSON_EXIT_SAVE_PAGE_REQUIRED")
+           status("PAGE"))
     demand(_closed_fields(playback, "requestId expiresAt thumbnailExpiresAt lifetimeMs playbackIdSha256") and
            playback["requestId"] == request_ids[5] and playback["playbackIdSha256"] == selected["playbackIdSha256"] and
            type(playback["lifetimeMs"]) is int and 590_000 <= playback["lifetimeMs"] <= 601_000,
-           "P2_INTERACTIVE_LESSON_EXIT_SAVE_PLAYBACK_REQUIRED")
+           status("PLAYBACK"))
     expiry, thumbnail_expiry = (_lesson_expiry(playback[key]) for key in ("expiresAt", "thumbnailExpiresAt"))
     demand(expiry is not None and thumbnail_expiry is not None and
            abs(expiry - thumbnail_expiry) <= timedelta(milliseconds=601_000 - playback["lifetimeMs"]),
-           "P2_INTERACTIVE_LESSON_EXIT_SAVE_PLAYBACK_REQUIRED")
+           status("PLAYBACK"))
     progress_ids = {key: selected[key] for key in ("progressId", "enrollmentId")}
     resume, maximum = selected["resumePositionSeconds"], selected["maxPositionSeconds"]
     integer_fields = ("revision", "resumePositionSeconds", "maxPositionSeconds")
-    demand(type(writes) is list and len(writes) == 2 and all(
-        row == {**progress_ids, "requestId": request_ids[index], "revision": index + 1,
-                "resumePositionSeconds": resume, "maxPositionSeconds": maximum} and
-        all(type(row[key]) is int for key in integer_fields)
-        for row, index in zip(writes, (6, 7))), "P2_INTERACTIVE_LESSON_EXIT_SAVE_PROGRESS_REQUIRED")
     spa = selected["operation"] == "spa-navigation"
-    demand(_closed_fields(exit_receipt, "pathname status sameDocument trustedPagehide trustedHidden resumePositionSeconds maxPositionSeconds expectedProgressRevision") and
-           exit_receipt["pathname"] == destination and type(exit_receipt["status"]) is int and exit_receipt["status"] == 200 and
-           exit_receipt["sameDocument"] is spa and exit_receipt["trustedPagehide"] is (not spa) and
-           exit_receipt["trustedHidden"] is (not spa) and
-           _safe_integer(exit_receipt["resumePositionSeconds"], resume + 2) and exit_receipt["resumePositionSeconds"] <= resume + 5 and
-           type(exit_receipt["maxPositionSeconds"]) is int and exit_receipt["maxPositionSeconds"] == maximum and
-           type(exit_receipt["expectedProgressRevision"]) is int and exit_receipt["expectedProgressRevision"] == 8,
-           "P2_INTERACTIVE_LESSON_EXIT_SAVE_EXIT_REQUIRED")
-    exit_position = exit_receipt["resumePositionSeconds"]
+    fields = "sameDocument trustedPagehide trustedHidden resumePositionSeconds maxPositionSeconds expectedProgressRevision"
+    if not visibility:
+        fields += " pathname status"
+    demand(_closed_fields(receipt, fields) and
+           (visibility or (receipt["pathname"] == destination and type(receipt["status"]) is int and receipt["status"] == 200)) and
+           receipt["sameDocument"] is (visibility or spa) and receipt["trustedPagehide"] is (not visibility and not spa) and
+           receipt["trustedHidden"] is (not spa) and
+           _safe_integer(receipt["resumePositionSeconds"], resume + 2) and receipt["resumePositionSeconds"] <= resume + 5 and
+           type(receipt["maxPositionSeconds"]) is int and receipt["maxPositionSeconds"] == maximum and
+           type(receipt["expectedProgressRevision"]) is int and receipt["expectedProgressRevision"] == 8,
+           status(receipt_key.upper()))
+    saved_position = receipt["resumePositionSeconds"]
+    indices = (6, 7, 8) if visibility else (6, 7)
+    demand(type(writes) is list and len(writes) == len(indices) and all(
+        row == {**progress_ids, "requestId": request_ids[index], "revision": index + 1,
+                "resumePositionSeconds": saved_position if index == 8 else resume, "maxPositionSeconds": maximum} and
+        all(type(row[key]) is int for key in integer_fields)
+        for row, index in zip(writes, indices)), status("PROGRESS"))
     demand(_closed_fields(media, "playedSeconds playing manifestObserved segmentObserved") and
            _safe_integer(media["playedSeconds"], resume + 2) and media["playedSeconds"] <= resume + 5 and
-           abs(media["playedSeconds"] - exit_position) <= 2 and
+           abs(media["playedSeconds"] - saved_position) <= 2 and
            all(media[key] is True for key in ("playing", "manifestObserved", "segmentObserved")),
-           "P2_INTERACTIVE_LESSON_EXIT_SAVE_MEDIA_REQUIRED")
+           status("MEDIA"))
     joined = {"actorId": action["actorId"], **{key: selected[key] for key in ("courseId", "lessonId", "grantId", "playbackIdSha256")},
-              **progress_ids, "revision": 9, "resumePositionSeconds": exit_position, "maxPositionSeconds": maximum,
+              **progress_ids, "revision": 9, "resumePositionSeconds": saved_position, "maxPositionSeconds": maximum,
               "playbackExpiresAt": max(playback["expiresAt"], playback["thumbnailExpiresAt"])}
     demand(witness == {**joined, "readOnly": True} and witness["readOnly"] is True and
-           all(type(witness[key]) is int for key in integer_fields), "P2_INTERACTIVE_LESSON_EXIT_SAVE_COURSE_WITNESS_REQUIRED")
+           all(type(witness[key]) is int for key in integer_fields), status("COURSE_WITNESS"))
+    destination_reads = {} if visibility else {
+        "destinationCourseGatewayRequestId": request_ids[0], "destinationProgressGatewayRequestId": request_ids[9]}
     return {**joined, "operation": selected["operation"], "playbackGatewayRequestId": request_ids[5],
             "progressGatewayRequestIds": [request_ids[index] for index in (6, 7, 8)],
-            "destinationCourseGatewayRequestId": request_ids[0], "destinationProgressGatewayRequestId": request_ids[9],
+            **destination_reads,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
@@ -1103,7 +1115,7 @@ def require_browser_ledger(plan, witness):
            len({row["id"] for row in operations}) == len(operations) and
            any(row["kind"] == "new-work" for row in operations),
            browser_status(plan, "COMPLETED_NEW_WORK_REQUIRED"))
-    if plan["scopedAction"]["stage"] in (_ASSESSMENT, _EXIT_SAVE):
+    if plan["scopedAction"]["stage"] in (_ASSESSMENT, _EXIT_SAVE, _VISIBILITY_SAVE):
         demand(len(operations) == 3 and all(row["kind"] == "new-work" for row in operations),
                browser_status(plan, "THREE_NEW_WORK_REQUIRED"))
     if plan["scopedAction"]["stage"] == _RESUME:
@@ -1140,6 +1152,7 @@ def validate_interactive_action(action):
     restore = type(action) is dict and action.get("stage") == _RESTORE
     ack_loss = type(action) is dict and action.get("stage") == _ACK_LOSS
     exit_save = type(action) is dict and action.get("stage") == _EXIT_SAVE
+    visibility = type(action) is dict and action.get("stage") == _VISIBILITY_SAVE
     fields = {"stage", "actorId", "requests", "windowSeconds"}
     if lifecycle:
         fields.add("frontendAction")
@@ -1167,6 +1180,8 @@ def validate_interactive_action(action):
         fields.add("ackLossAction")
     if exit_save:
         fields.add("exitSaveAction")
+    if visibility:
+        fields.add("visibilityAction")
     enrollment = identity and "identityEnrollment" in action
     if identity:
         fields.add("identityEnrollment" if enrollment else "identityActor")
@@ -1457,16 +1472,18 @@ def validate_interactive_action(action):
         expected.extend({"method": "POST", "target": f"{lesson}/progress", "uses": 1,
                          "bodySha256": _hash(json.dumps(body, separators=(",", ":")).encode())} for body in bodies)
         demand(requests == expected, "P2_INTERACTIVE_LESSON_ACK_LOSS_REQUESTS_REQUIRED")
-    if exit_save:
-        selection = action["exitSaveAction"]
+    if exit_save or visibility:
+        selection = action["visibilityAction" if visibility else "exitSaveAction"]
+        operations = ("hide-active-document",) if visibility else ("spa-navigation", "document-exit")
+        status = "P2_INTERACTIVE_LESSON_VISIBILITY_SAVE" if visibility else "P2_INTERACTIVE_LESSON_EXIT_SAVE"
         demand(_closed_fields(selection, "operation courseId lessonId grantId progressId enrollmentId resumePositionSeconds maxPositionSeconds playbackIdSha256") and
-               selection["operation"] in ("spa-navigation", "document-exit") and
+               selection["operation"] in operations and
                all(_matches(_UUID, selection[key]) for key in ("courseId", "lessonId", "grantId", "progressId", "enrollmentId")) and
                _safe_integer(selection["resumePositionSeconds"], 3) and selection["resumePositionSeconds"] <= 6 and
                _safe_integer(selection["maxPositionSeconds"]) and selection["maxPositionSeconds"] == selection["resumePositionSeconds"] + 10 and
-               _digest(selection["playbackIdSha256"]), "P2_INTERACTIVE_LESSON_EXIT_SAVE_SELECTION_REQUIRED")
+               _digest(selection["playbackIdSha256"]), f"{status}_SELECTION_REQUIRED")
         course, lesson, playback, progress, quiz, attempts = _learner_access_paths(selection, "/course/v1/student")
-        expected = [{"method": "GET", "target": target, "bodySha256": _EMPTY, "uses": 2 if target == course else 1}
+        expected = [{"method": "GET", "target": target, "bodySha256": _EMPTY, "uses": 2 if exit_save and target == course else 1}
                     for target in (course, lesson, progress, quiz, attempts, playback)]
         bodies = [{"event": "lesson_started", "expectedProgressRevision": 6},
                   {"resumePositionSeconds": selection["resumePositionSeconds"], "maxPositionSeconds": selection["maxPositionSeconds"],
@@ -1474,9 +1491,10 @@ def validate_interactive_action(action):
                   {"expectedProgressRevision": 8}]
         expected.extend({"method": "POST", "target": f"{lesson}/progress", "uses": 1,
                          "bodySha256": _hash(json.dumps(body, separators=(",", ":")).encode())} for body in bodies)
-        expected.append({"method": "GET", "target": f'/course/v1/student/progress?courseId={selection["courseId"]}',
-                         "bodySha256": _EMPTY, "uses": 1})
-        demand(requests == expected, "P2_INTERACTIVE_LESSON_EXIT_SAVE_REQUESTS_REQUIRED")
+        if exit_save:
+            expected.append({"method": "GET", "target": f'/course/v1/student/progress?courseId={selection["courseId"]}',
+                             "bodySha256": _EMPTY, "uses": 1})
+        demand(requests == expected, f"{status}_REQUESTS_REQUIRED")
     return copy.deepcopy(action)
 
 
@@ -1492,7 +1510,7 @@ def validate_interactive_plan_action(plan):
 def _selection_sha(action):
     lesson_field = {_LESSON_ENTRY: "lessonEntryAction", _LESSON_DENIAL: "lessonDenialAction", _ASSESSMENT: "assessmentAction",
                     _RESUME: "resumeAction", _RESTORE: "restoreAction", _ACK_LOSS: "ackLossAction",
-                    _EXIT_SAVE: "exitSaveAction"}.get(action["stage"])
+                    _EXIT_SAVE: "exitSaveAction", _VISIBILITY_SAVE: "visibilityAction"}.get(action["stage"])
     if lesson_field:
         selected = action[lesson_field]
         return (action["actorId"] + selected["courseId"] + selected["lessonId"]).replace("-", "")
@@ -1665,7 +1683,7 @@ class P2InteractiveWindow:
         lesson_denial = self.action.get("lessonDenialAction")
         assessment = self.action.get("assessmentAction")
         resume = self.action.get("resumeAction")
-        recovery_lesson = self.action.get("restoreAction") or self.action.get("ackLossAction")
+        recovery_lesson = self.action.get("restoreAction") or self.action.get("ackLossAction") or self.action.get("visibilityAction")
         exit_save = self.action.get("exitSaveAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
         paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}

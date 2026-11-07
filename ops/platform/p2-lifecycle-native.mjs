@@ -289,6 +289,16 @@ const reviewedLessonExitSaveDependencies = {
   "src/lib/learning/progress-sync.ts": "8e5dccb07f2b3f408fa577abf222e0a6dcbff48a144ca38c0a867ed253d9929b",
   "ops/gateway/lesson-resume-position.mjs": "3ed69e07ac54f961e71c7acbca26f2b49b6932b3dd30f37914ebda3471208b8f"
 };
+const reviewedLessonVisibilitySource = {
+  ...reviewedLessonExitSaveSource,
+  "src/lib/writer-admission/runtime.ts": "25c4bb5aaf37f93a9b70ba02481341ea7f713b88d862615c0ef2283f9fdb74af"
+};
+const reviewedLessonVisibilityDependencies = {
+  ...reviewedLessonExitSaveDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "6d2b4006a08e28d480658c891e52fb4e8844a1cc504888c38901f4df218da977",
+  "src/lib/api-integration/course-client.ts": "aeb912b8ed19f88c310b2fc24096e76a54a0d27f931c039d1286743984d8ee14",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "d67898a4bbfbf4a6589e8dd83ef03c15f1c43ca56ff03b89b114d821c88ababd"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -325,7 +335,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]],
     [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies, reviewedProgressRecoveryDependencies]],
     [reviewedLessonAckLossSource, [reviewedLessonAckLossDependencies]],
-    [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]]]
+    [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]],
+    [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

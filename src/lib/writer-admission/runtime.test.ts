@@ -569,6 +569,7 @@ for (const [stage, selectionKey, writeKey] of [
   ["lesson-restore", "lessonRestore", "lessonRestoreWrite"],
   ["lesson-ack-loss", "lessonAckLoss", "lessonAckLossWrite"],
   ["lesson-exit-save", "lessonExitSave", "lessonExitSaveWrite"],
+  ["lesson-visibility-save", "lessonVisibilitySave", "lessonVisibilitySaveWrite"],
 ] as const) {
   test(`${stage} v2 grants write admission only on the exact selected progress POST`, async () => {
     const now = 1_794_009_600;

@@ -12,6 +12,7 @@ import {
   devices,
   type Browser,
   type BrowserContext,
+  type ConsoleMessage,
   type Page,
   type Request,
   type Response,
@@ -51,7 +52,8 @@ const ownedBrowserArguments = (spki: string) => [
 if (production && fixture) {
   if (!/^[A-Za-z0-9+/]{43}=$/u.test(fixture.browserCertificateSpki ?? ""))
     throw new Error("Owned loopback browser certificate required");
-  test.use({ launchOptions: { args: ownedBrowserArguments(fixture.browserCertificateSpki!) } });
+  // Full Chromium provides native tab visibility for the standalone save case.
+  test.use({ channel: "chromium", launchOptions: { args: ownedBrowserArguments(fixture.browserCertificateSpki!) } });
 }
 function owned(): Fixture {
   if (!fixture || !(production ? /^https:\/\/localhost:\d+$/u : /^http:\/\/localhost:\d+$/u).test(fixture.origin))
@@ -761,6 +763,86 @@ test("production Academy native playback, rewind and separate-session resume", a
         requestId: exitRows[0].requestId, progress: { revision: exitProgress.revision, resumePositionSeconds: exitProgress.resumePositionSeconds,
           maxPositionSeconds: exitProgress.maxPositionSeconds } },
     }, null, 2) + "\n", { mode: 0o600 });
+
+    const { hideP2LessonDocument } = await import("../../ops/platform/p2-lifecycle-browser-recorder.mjs");
+    const cover = await first.newPage();
+    expect(cover.url()).toBe("about:blank");
+    await page.bringToFront();
+    const visibilityOffset = readOwnedGatewayJournal().length;
+    const [visibilityStart, visibilityPlayback, visibilityRestore, visibilityDocument] = await Promise.all([
+      observed.write(exitProgress.revision), observed.playback(), observed.write(exitProgress.revision + 1),
+      page.goto(pathname),
+    ]);
+    expect(visibilityDocument?.status()).toBe(200);
+    expect(visibilityPlayback.status()).toBe(200);
+    const visibilityStarted = await receipt(visibilityStart, exitProgress.revision);
+    const visibilityRestored = await receipt(visibilityRestore, exitProgress.revision + 1);
+    for (const write of [visibilityStarted, visibilityRestored]) {
+      expect(write.progress).toMatchObject({
+        id: exitProgress.id, enrollmentId: exitProgress.enrollmentId,
+        resumePositionSeconds: exitProgress.resumePositionSeconds, maxPositionSeconds: exitProgress.maxPositionSeconds,
+      });
+    }
+    const beforeVisibility = visibilityRestored.progress;
+    await assertPersisted(beforeVisibility);
+    const visibilityPlayer = await readyPlayer(page);
+    const visibilityRequests = observed.requests.length;
+    const visibilitySample = await playBeforeExit(visibilityPlayer, beforeVisibility);
+    expect(visibilitySample.currentTime).toBeLessThan(beforeVisibility.maxPositionSeconds);
+    expect(observed.requests).toHaveLength(visibilityRequests);
+    expect(await page.evaluate(() => window.document.visibilityState)).toBe("visible");
+
+    const session = await first.newCDPSession(page);
+    try {
+      const { frameTree: { frame: oldFrame } } = await session.send("Page.getFrameTree");
+      const lifecycleMarker = "owned-course-browser-visibility-only";
+      const lifecycleMessages: string[] = [];
+      const rememberLifecycle = (message: ConsoleMessage) => {
+        if (message.text().startsWith(lifecycleMarker + " "))
+          lifecycleMessages.push(message.text().slice(lifecycleMarker.length + 1));
+      };
+      await page.evaluate(marker => {
+        window.document.addEventListener("visibilitychange", event => {
+          console.info(marker, JSON.stringify({
+            type: event.type, trusted: event.isTrusted, state: window.document.visibilityState,
+          }));
+        });
+        window.addEventListener("pagehide", event => {
+          console.info(marker, JSON.stringify({ type: event.type, trusted: event.isTrusted }));
+        });
+      }, lifecycleMarker);
+      page.on("console", rememberLifecycle);
+      try {
+        const [response] = await Promise.all([
+          observed.write(beforeVisibility.revision),
+          page.waitForEvent("console", { timeout: 10_000, predicate: message =>
+            message.text().startsWith(lifecycleMarker + " ") }),
+          hideP2LessonDocument({ context: first, page, cover, timeout: 10_000 }),
+        ]);
+        const visibilityWrite = await receipt(response, beforeVisibility.revision);
+        expect(await page.evaluate(() => window.document.visibilityState)).toBe("hidden");
+        await session.send("Page.setWebLifecycleState", { state: "frozen" });
+        const { frameTree: { frame: hiddenFrame } } = await session.send("Page.getFrameTree");
+        expect(hiddenFrame).toMatchObject({ id: oldFrame.id, loaderId: oldFrame.loaderId, url: owned().origin + pathname });
+        expect(lifecycleMessages.map(message => JSON.parse(message))).toEqual([
+          { type: "visibilitychange", trusted: true, state: "hidden" },
+        ]);
+        assertExitPosition(visibilityWrite.progress.resumePositionSeconds, visibilitySample, beforeVisibility);
+        expect(visibilityWrite.progress.resumePositionSeconds).toBeLessThan(beforeVisibility.maxPositionSeconds);
+        await assertPersisted(visibilityWrite.progress);
+        expect(observed.requests).toHaveLength(visibilityRequests + 1);
+        const gatewayIndexes = verifyGateway(visibilityOffset, visibilityPlayback, [visibilityStarted, visibilityRestored, visibilityWrite]);
+        await writeFile(info.outputPath("visibility-save.json"), JSON.stringify({
+          syntheticHls: true, progressRowPreserved: true, sameDocument: true, pagehideObserved: false,
+          visibilityChange: { trusted: true, state: "hidden" },
+          sample: visibilitySample, save: compact(visibilityWrite), gatewayIndexes,
+        }, null, 2) + "\n", { mode: 0o600 });
+      } finally {
+        page.off("console", rememberLifecycle);
+      }
+    } finally {
+      await session.detach();
+    }
   } finally {
     await close(first, second);
     await secondBrowser?.close();

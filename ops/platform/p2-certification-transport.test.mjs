@@ -90,7 +90,8 @@ resume=stage=='lesson-resume';resume_action=action.get('resumeAction',{})
 restore=stage=='lesson-restore';restore_action=action.get('restoreAction',{})
 ack_loss=stage=='lesson-ack-loss';ack_loss_action=action.get('ackLossAction',{})
 exit_save=stage=='lesson-exit-save';exit_save_action=action.get('exitSaveAction',{})
-gateway_scoped=authoring or learning or paid_grant or learner_access or paid_revoke or lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save
+visibility=stage=='lesson-visibility-save';visibility_action=action.get('visibilityAction',{})
+gateway_scoped=authoring or learning or paid_grant or learner_access or paid_revoke or lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility
 access_outcome=access_action.get('outcome')
 access_status={'allowed':200,'archived':410,'draft':404,'restricted':403}.get(access_outcome)
 learning_action=action.get('learningAction',{});paid_grant_action=action.get('paidGrantAction',{})
@@ -145,8 +146,8 @@ for raw in sys.stdin:
     owner=fixture_id(2) if behavior=='wrong-owner' else action['actorId']
     key=fixture_id(2) if behavior=='wrong-idempotency-key' else (revoke_action if paid_revoke else paid_grant_action)['idempotencyKey']
     selector=owner.replace('-','')+key.replace('-','')
-   elif lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save:
-    selected_lesson=entry_action if lesson_entry else denial_action if lesson_denial else assessment_action if assessment else resume_action if resume else restore_action if restore else ack_loss_action if ack_loss else exit_save_action
+   elif lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility:
+    selected_lesson=entry_action if lesson_entry else denial_action if lesson_denial else assessment_action if assessment else resume_action if resume else restore_action if restore else ack_loss_action if ack_loss else exit_save_action if exit_save else visibility_action
     learner=fixture_id(2) if behavior=='wrong-learner' else action['actorId']
     course=fixture_id(2) if behavior=='wrong-lesson-course' else selected_lesson['courseId']
     lesson=fixture_id(5) if behavior=='wrong-lesson' else selected_lesson['lessonId']
@@ -242,6 +243,9 @@ for raw in sys.stdin:
     if exit_save:
      order=(4,3,2,1,0,6,5,7,8,9,0) if behavior=='joined-progress-first' else (0,1,2,3,4,5,6,7,0,8,9)
      selected=[(260+index,280+index,route,200) for index,route in enumerate(order)]
+    if visibility:
+     order=(4,3,2,1,0,6,5,7,8) if behavior=='joined-progress-first' else tuple(range(9))
+     selected=[(310+index,330+index,route,200) for index,route in enumerate(order)]
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[3 if paid_grant else -1 if changes_existing else 1]['upstreamStatus']=201 if publication or archive else 200
@@ -251,14 +255,17 @@ for raw in sys.stdin:
     if assessment and behavior=='wrong-observe-ack':
      next(row for row in acks if row['requestIndex']==5)['upstreamStatus']=200
     if assessment and behavior=='wrong-observe-order':acks[7],acks[9]=acks[9],acks[7]
-    if (resume or restore or ack_loss) and behavior=='wrong-observe-ack':acks[-1]['upstreamStatus']=409
+    if (resume or restore or ack_loss or visibility) and behavior=='wrong-observe-ack':acks[-1]['upstreamStatus']=409
     if resume and behavior=='wrong-observe-order':acks[7],acks[9]=acks[9],acks[7]
     if restore and behavior=='wrong-observe-order':acks[6],acks[7]=acks[7],acks[6]
-    if (lesson_entry or lesson_denial or assessment or resume or restore or ack_loss) and behavior=='duplicate-lesson-ack':acks[-1]['proofRequestId']=acks[-2]['proofRequestId']
+    if (lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or visibility) and behavior=='duplicate-lesson-ack':acks[-1]['proofRequestId']=acks[-2]['proofRequestId']
     if ack_loss and behavior=='duplicate-request-ack':acks[9]['requestId']=acks[8]['requestId']
     if ack_loss and behavior=='swap-recovery-ack':acks[8],acks[9]=acks[9],acks[8]
     if exit_save and behavior=='early-final-exit-ack':acks[7],acks[8]=acks[8],acks[7]
     if exit_save and behavior=='duplicate-final-exit-ack':acks[10]['requestIndex']=acks[9]['requestIndex']
+    if visibility and behavior=='early-final-visibility-ack':acks[7],acks[8]=acks[8],acks[7]
+    if visibility and behavior=='duplicate-final-visibility-ack':acks[8]['requestIndex']=acks[7]['requestIndex']
+    if visibility and behavior=='unexpected-outline-ack':acks[8]['requestIndex']=9
     if lesson_denial and behavior=='wrong-observe-order':acks[10],acks[11]=acks[11],acks[10]
     if learner_access and behavior=='wrong-access-status':acks[-1]['upstreamStatus']=403 if access_status==200 else 200
     if behavior=='wrong-observe-order':
@@ -529,6 +536,19 @@ for raw in sys.stdin:
      'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
     if behavior=='wrong-join':
      joined['destinationCourseGatewayRequestId']=next(row['requestId'] for row in acks[:5] if row['requestIndex']==0)
+   elif visibility:
+    assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
+    response=evidence['browserResponse'];witness=evidence['courseWitness']
+    ids={row['requestIndex']:row['requestId'] for row in gateway_observation['gatewayAcknowledgements']}
+    assert response['page']=={'pathname':'/academy/courses/'+visibility_action['courseId']+'/lessons/'+visibility_action['lessonId'],'status':200}
+    assert response['visibility']=={'sameDocument':True,'trustedHidden':True,'trustedPagehide':False,
+     'resumePositionSeconds':7,'maxPositionSeconds':14,'expectedProgressRevision':8}
+    assert response['playback']['requestId']==ids[5] and [row['requestId'] for row in response['writes']]==[ids[6],ids[7],ids[8]]
+    joined={**{key:value for key,value in witness.items() if key!='readOnly'},'operation':visibility_action['operation'],
+     'playbackGatewayRequestId':ids[5],'progressGatewayRequestIds':[ids[6],ids[7],ids[8]],
+     'browserResponseSha256':digest(response),'courseWitnessSha256':digest(witness),
+     'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
+    if behavior=='wrong-join':joined['progressGatewayRequestIds'][-1]=ids[2]
    elif stage=='identity':
     actor={'actorKind':'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment else action['identityActor']
     assert set(evidence)=={'browserIdentity','identityWitness'}
@@ -549,7 +569,7 @@ for raw in sys.stdin:
    value['receipt']={**base,**fence,**joined,'status':status('JOINED'),
     'browserProgramSha256':binding['browserProgramSha256'],
     'frontendAdmission':{'epoch':str(int(epoch)+1),'newWork':False,'recovery':False,'active':0,'uncertain':0},
-    'frontendOperationCount':(4 if behavior=='unexpected-frontend-operation' else 3) if exit_save else
+    'frontendOperationCount':(4 if behavior=='unexpected-frontend-operation' else 3) if (exit_save or visibility) else
      (6 if behavior=='unexpected-frontend-operation' else 5) if ack_loss else
      (3 if behavior=='unexpected-frontend-operation' else 2) if restore else
      (5 if behavior=='unexpected-frontend-operation' else 4) if resume else
@@ -595,7 +615,8 @@ const lessonDenial=certificationStage==='lesson-denial',assessment=certification
 const restore=certificationStage==='lesson-restore';
 const ackLoss=certificationStage==='lesson-ack-loss';
 const exitSave=certificationStage==='lesson-exit-save',spaExit=exitSave&&variant==='spa-navigation';
-const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave;
+const visibility=certificationStage==='lesson-visibility-save';
+const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility;
 const provider=identity?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
 const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const createCurriculum=authoring&&['create-module','create-lesson'].includes(variant);
@@ -614,7 +635,7 @@ const refusedPermit=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider
 const installFailure=behavior==='install-failure'||refusedPermit;
 const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack','wrong-observe-order','unexpected-patch-ack',
  'wrong-prior-status','wrong-learning-tail','wrong-access-status','duplicate-lesson-ack','duplicate-request-ack','swap-recovery-ack',
- 'early-final-exit-ack','duplicate-final-exit-ack'].includes(behavior);
+ 'early-final-exit-ack','duplicate-final-exit-ack','early-final-visibility-ack','duplicate-final-visibility-ack','unexpected-outline-ack'].includes(behavior);
 const skipObserve=behavior==='fence-without-observe';
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor};
@@ -659,6 +680,7 @@ const ackLossAction={...resumeAction,operation:'commit-drop-recover',
  progressId:restoreAction.prior.progressId,enrollmentId:restoreAction.prior.enrollmentId,
  resumePositionSeconds:4,maxPositionSeconds:14,playbackIdSha256:restoreAction.prior.playbackIdSha256};
 const exitSaveAction={...ackLossAction,operation:variant};
+const visibilityAction={...ackLossAction,operation:'hide-active-document'};
 const studentLesson=student+'/lessons/'+lessonId;
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'
  ?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
@@ -676,15 +698,16 @@ const publicationRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision+Number(republish),status:'published'})),uses:1};
 const draftRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision,status:'draft'})),uses:1};
-const requests=exitSave?[
+const outlineProgressRequest={method:'GET',target:student+'/progress?courseId='+commandId,bodySha256:emptyBodySha256,uses:1};
+const requests=exitSave||visibility?[
  ...[studentCourse,studentLesson,student+'/progress?lessonId='+lessonId,studentLesson+'/quiz',
   studentLesson+'/quiz/attempts',studentLesson+'/playback']
-  .map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:index===0?2:1})),
+  .map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:exitSave&&index===0?2:1})),
  ...[{event:'lesson_started',expectedProgressRevision:6},
   {resumePositionSeconds:4,maxPositionSeconds:14,expectedProgressRevision:7},
   {expectedProgressRevision:8}]
   .map(body=>({method:'POST',target:studentLesson+'/progress',bodySha256:rawHash(JSON.stringify(body)),uses:1})),
- {method:'GET',target:student+'/progress?courseId='+commandId,bodySha256:emptyBodySha256,uses:1},
+ ...(exitSave?[outlineProgressRequest]:[]),
 ]:ackLoss?[
  ...[studentCourse,studentLesson,student+'/progress?lessonId='+lessonId,studentLesson+'/quiz',
   studentLesson+'/quiz/attempts',studentLesson+'/playback']
@@ -771,7 +794,7 @@ const scopedAction={stage:certificationStage,actorId:identity?null:actor,request
   ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:learning?{learningAction}:
     paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:paidRevoke?{paidRevokeAction}:
     lessonEntry?{lessonEntryAction}:lessonDenial?{lessonDenialAction}:assessment?{assessmentAction}:resume?{resumeAction}:
-    restore?{restoreAction}:ackLoss?{ackLossAction}:exitSave?{exitSaveAction}:{frontendAction:selection})};
+    restore?{restoreAction}:ackLoss?{ackLossAction}:exitSave?{exitSaveAction}:visibility?{visibilityAction}:{frontendAction:selection})};
 const plan={mode:'interactive-browser',version:2,environment:'staging',qualificationTargetProfile:profile,certificationActionId:actionId,
   initialEpoch:'7',maximumSeconds:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
   nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},
@@ -957,6 +980,15 @@ for(const changed of [
    requests.map((row,index)=>index===9?{...row,target:student+'/progress?courseId='+target}:row)]
    .map(requests=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests}}})),
  ]:[]),
+ ...(visibility?[
+  ...[{operation:'document-exit'},{progressId:'invalid'},{maxPositionSeconds:15}]
+   .map(change=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,
+    visibilityAction:{...visibilityAction,...change}}}})),
+  ...[requests.slice(0,-1),[...requests,outlineProgressRequest],
+   requests.map((row,index)=>index===0?{...row,uses:2}:row),
+   requests.map((row,index)=>index===8?{...row,bodySha256:requests[7].bodySha256}:row)]
+   .map(requests=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests}}})),
+ ]:[]),
  ...(lessonDenial?[
   ...[{enrolledActorId:actor},{lessonId:actor},{courseId:target},{grantId:'invalid'},{operation:'open-lesson'}]
    .map(selected=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,lessonDenialAction:{...lessonDenialAction,...selected}}}})),
@@ -1094,7 +1126,19 @@ const exitSaveWrites=[6,7].map((index,offset)=>({
 const exitReceipt={pathname:academyPath,status:200,sameDocument:spaExit,trustedPagehide:!spaExit,trustedHidden:!spaExit,
  resumePositionSeconds:7,maxPositionSeconds:14,expectedProgressRevision:8};
 const exitSaveWitness={...restoreWitness,revision:9,resumePositionSeconds:7,maxPositionSeconds:14};
-const evidence=exitSave?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
+const visibilityOrder=reverseHydration?[4,3,2,1,0,6,5,7,8]:[0,1,2,3,4,5,6,7,8];
+const visibilityRequestId=index=>'12345678-1234-4123-8123-'+String(310+visibilityOrder.indexOf(index)).padStart(12,'0');
+const visibilityPlayback={...resumePlayback,requestId:visibilityRequestId(5)};
+const visibilityWrites=[6,7,8].map((index,offset)=>({
+ requestId:visibilityRequestId(index),progressId:visibilityAction.progressId,enrollmentId:visibilityAction.enrollmentId,
+ revision:7+offset,resumePositionSeconds:index===8?7:4,maxPositionSeconds:14,
+}));
+const visibilityReceipt={sameDocument:true,trustedHidden:true,trustedPagehide:false,
+ resumePositionSeconds:7,maxPositionSeconds:14,expectedProgressRevision:8};
+const evidence=visibility?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
+ playback:visibilityPlayback,writes:visibilityWrites,visibility:visibilityReceipt,
+ media:{playedSeconds:7,playing:true,manifestObserved:true,segmentObserved:true}},courseWitness:exitSaveWitness}
+ :exitSave?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
  playback:exitSavePlayback,writes:exitSaveWrites,exit:exitReceipt,media:{playedSeconds:7,playing:true,manifestObserved:true,segmentObserved:true}},
  courseWitness:exitSaveWitness}
  :ackLoss?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},playback:ackLossPlayback,
@@ -1146,7 +1190,9 @@ const evidence=exitSave?{browserResponse:{page:{pathname:academyPath+'/lessons/'
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
   ...(identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
-const invalidEvidence=exitSave?{...evidence,browserResponse:{...evidence.browserResponse,exit:{...exitReceipt,trustedPagehide:spaExit}}}
+const invalidEvidence=visibility?{...evidence,browserResponse:{...evidence.browserResponse,
+ visibility:{...visibilityReceipt,trustedPagehide:true}}}
+ :exitSave?{...evidence,browserResponse:{...evidence.browserResponse,exit:{...exitReceipt,trustedPagehide:spaExit}}}
  :ackLoss?{...evidence,browserResponse:{...evidence.browserResponse,recovery:{
  ...ackLossRecovery,requestId:ackLossId(2)}}}
  :restore?{...evidence,browserResponse:{...evidence.browserResponse,restored:{...restored,requestId:restoreStarted.requestId}}}
@@ -1207,6 +1253,7 @@ const result=start()(async(_verify,_signal,host)=>{
     assessmentAttempts.flatMap(row=>[row.requestId,row.progress.requestId]));
    else if(ackLoss) assert.equal(observed.gatewayAcknowledgements[9].requestId,ackLossRecovery.requestId);
    else if(exitSave) assert.deepEqual(observed.gatewayAcknowledgements.map(row=>row.requestIndex),exitSaveOrder);
+   else if(visibility) assert.deepEqual(observed.gatewayAcknowledgements.map(row=>row.requestIndex),visibilityOrder);
    else if(restore) assert.equal(observed.gatewayAcknowledgements[7].requestId,restored.requestId);
    else if(resume) assert.deepEqual(observed.gatewayAcknowledgements.slice(7).map(row=>row.requestId),resumeWrites.map(row=>row.requestId));
    else assert.equal(mutation.requestId,lessonEntry?lessonProgressId:requestId);
@@ -1244,6 +1291,18 @@ const result=start()(async(_verify,_signal,host)=>{
   const movedStart={...exitSaveWrites[0],requestId:exitSaveRequestId(9)};
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,writes:[movedStart,exitSaveWrites[1]]}}));
   for(const change of [{enrollmentId:target},{revision:8},{resumePositionSeconds:8},{maxPositionSeconds:15}])
+   await assert.rejects(stage.retain({...evidence,courseWitness:{...exitSaveWitness,...change}}));
+ }
+ if(visibility){
+  for(const change of [{sameDocument:false},{trustedHidden:false},{resumePositionSeconds:5},{expectedProgressRevision:9}]){
+   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,
+    visibility:{...visibilityReceipt,...change}}}));
+  }
+  for(const change of [{revision:8},{requestId:visibilityRequestId(2)},{maxPositionSeconds:15}]){
+   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,
+    writes:[...visibilityWrites.slice(0,2),{...visibilityWrites[2],...change}]}}));
+  }
+  for(const change of [{progressId:target},{revision:8},{resumePositionSeconds:8},{maxPositionSeconds:15}])
    await assert.rejects(stage.retain({...evidence,courseWitness:{...exitSaveWitness,...change}}));
  }
  if(assessment){
@@ -1486,6 +1545,11 @@ const result=start()(async(_verify,_signal,host)=>{
    retained.destinationCourseGatewayRequestId,retained.destinationProgressGatewayRequestId,
    retained.revision,retained.resumePositionSeconds,retained.maxPositionSeconds,retained.frontendOperationCount],
   [actor,variant,exitSavePlayback.requestId,[6,7,8].map(exitSaveRequestId),exitSaveRequestId(0),exitSaveRequestId(9),9,7,14,3],
+ );
+ if(visibility) assert.deepEqual(
+  [retained.actorId,retained.operation,retained.playbackGatewayRequestId,retained.progressGatewayRequestIds,
+   retained.revision,retained.resumePositionSeconds,retained.maxPositionSeconds,retained.frontendOperationCount],
+  [actor,'hide-active-document',visibilityPlayback.requestId,visibilityWrites.map(row=>row.requestId),9,7,14,3],
  );
  if(resume) assert.deepEqual(
   [retained.actorId,retained.operation,retained.positionGatewayRequestIds,retained.revision,
@@ -1756,6 +1820,9 @@ for(const [certificationStage,actorKind,behavior,variant] of [
   .map(behavior=>['lesson-exit-save','customer',behavior,'spa-navigation']),
  ...['joined-progress-first','duplicate-final-exit-ack','wrong-learner']
   .map(behavior=>['lesson-exit-save','customer',behavior,'document-exit']),
+ ...['joined','joined-progress-first','wrong-learner','early-final-visibility-ack','duplicate-final-visibility-ack',
+  'unexpected-outline-ack','wrong-observe-ack','duplicate-lesson-ack','wrong-join','unexpected-frontend-operation']
+  .map(behavior=>['lesson-visibility-save','customer',behavior]),
 ]){
  test(`fixed interactive transport handles ${certificationStage} ${variant??actorKind} ${behavior} over the guarded pipe`,()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-interactive-wire-')));chmodSync(directory,0o700);

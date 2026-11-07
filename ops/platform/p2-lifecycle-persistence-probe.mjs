@@ -664,7 +664,7 @@ const lessonEntryBaselines = new WeakMap();
 const lessonResumeBaselines = new WeakMap();
 const lessonRestoreBaselines = new WeakMap();
 const lessonAckLossBaselines = new WeakMap();
-const lessonExitSaveBaselines = new WeakMap();
+const lessonSaveBaselines = new WeakMap();
 const lessonDenialBaselines = new WeakMap();
 const assessmentBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
@@ -1911,7 +1911,7 @@ export async function observeP2InteractiveRestoreCase(courseJob, selection, base
 const pinnedLessonIdentityFields = [...lessonEntrySelectionFields, "progressId", "enrollmentId"];
 const pinnedLessonSelectionFields = [...pinnedLessonIdentityFields, "resumePositionSeconds", "maxPositionSeconds", "playbackIdSha256"];
 const pinnedLessonProgressFields = ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"];
-const lessonExitSaveSelectionFields = [...pinnedLessonSelectionFields, "operation"];
+const lessonSaveSelectionFields = [...pinnedLessonSelectionFields, "operation"];
 
 function validatePinnedLessonSelection(selection, fields, check) {
   demand(closed(selection, fields) && pinnedLessonIdentityFields.every(key => courseUuid(selection[key]))
@@ -1984,8 +1984,18 @@ export async function observeP2InteractiveAckLossCase(courseJob, selection, base
 
 function validateLessonExitSaveSelection(selection) {
   const check = "course-lesson-exit-save-selection";
-  validatePinnedLessonSelection(selection, lessonExitSaveSelectionFields, check);
+  validatePinnedLessonSelection(selection, lessonSaveSelectionFields, check);
   demand(["spa-navigation", "document-exit"].includes(selection.operation), check);
+}
+
+function lessonSavePlayedPosition(value, resumePositionSeconds) {
+  return Number.isSafeInteger(value) && value >= resumePositionSeconds + 2 && value <= resumePositionSeconds + 5;
+}
+
+function matchesLessonSaveMedia(media, resumePositionSeconds, savedPositionSeconds) {
+  return closed(media, ["playedSeconds", "playing", "manifestObserved", "segmentObserved"])
+    && lessonSavePlayedPosition(media.playedSeconds, resumePositionSeconds) && Math.abs(media.playedSeconds - savedPositionSeconds) <= 2
+    && media.playing === true && media.manifestObserved === true && media.segmentObserved === true;
 }
 
 function validateLessonExitSaveReceipt(receipt, selection, before) {
@@ -1995,7 +2005,6 @@ function validateLessonExitSaveReceipt(receipt, selection, before) {
   const { courseId, lessonId, operation, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = selection;
   const outline = `/academy/courses/${courseId}`;
   const sameDocument = operation === "spa-navigation";
-  const playedRange = value => Number.isSafeInteger(value) && value >= resumePositionSeconds + 2 && value <= resumePositionSeconds + 5;
   const expiry = reviewedPlaybackExpiry(playback, check, true);
   demand(closed(page, ["pathname", "status"]) && page.pathname === `${outline}/lessons/${lessonId}` && page.status === 200
     && playback.playbackIdSha256 === playbackIdSha256 && expiry > Date.parse(before.lesson.observed_at)
@@ -2006,45 +2015,86 @@ function validateLessonExitSaveReceipt(receipt, selection, before) {
     "resumePositionSeconds", "maxPositionSeconds", "expectedProgressRevision"])
     && exit.pathname === outline && exit.status === 200 && exit.sameDocument === sameDocument
     && exit.trustedPagehide === !sameDocument && exit.trustedHidden === !sameDocument
-    && exit.expectedProgressRevision === 8 && playedRange(exit.resumePositionSeconds) && exit.maxPositionSeconds === maxPositionSeconds
-    && closed(media, ["playedSeconds", "playing", "manifestObserved", "segmentObserved"])
-    && playedRange(media.playedSeconds) && Math.abs(media.playedSeconds - exit.resumePositionSeconds) <= 2
-    && media.playing === true && media.manifestObserved === true && media.segmentObserved === true, check);
-  return expiry;
+    && exit.expectedProgressRevision === 8 && lessonSavePlayedPosition(exit.resumePositionSeconds, resumePositionSeconds)
+    && exit.maxPositionSeconds === maxPositionSeconds && matchesLessonSaveMedia(media, resumePositionSeconds, exit.resumePositionSeconds), check);
+  return { playbackExpiry: expiry, resumePositionSeconds: exit.resumePositionSeconds };
 }
 
-export async function captureP2InteractiveExitSaveBaseline(courseJob, selection, dependencies) {
-  validateLessonExitSaveSelection(selection);
+function validateLessonVisibilitySelection(selection) {
+  const check = "course-lesson-visibility-save-selection";
+  validatePinnedLessonSelection(selection, lessonSaveSelectionFields, check);
+  demand(selection.operation === "hide-active-document", check);
+}
+
+function validateLessonVisibilityReceipt(receipt, selection, before) {
+  const check = "course-lesson-visibility-save-receipt";
+  demand(closed(receipt, ["page", "playback", "writes", "visibility", "media"]), check);
+  const { page, playback, writes, visibility, media } = receipt;
+  const { courseId, lessonId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = selection;
+  const expiry = reviewedPlaybackExpiry(playback, check, true);
+  demand(closed(page, ["pathname", "status"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.status === 200
+    && playback.playbackIdSha256 === playbackIdSha256 && expiry > Date.parse(before.lesson.observed_at)
+    && closed(visibility, ["sameDocument", "trustedHidden", "trustedPagehide", "resumePositionSeconds", "maxPositionSeconds", "expectedProgressRevision"])
+    && visibility.sameDocument === true && visibility.trustedHidden === true && visibility.trustedPagehide === false
+    && visibility.expectedProgressRevision === 8 && lessonSavePlayedPosition(visibility.resumePositionSeconds, resumePositionSeconds)
+    && visibility.maxPositionSeconds === maxPositionSeconds
+    && Array.isArray(writes) && writes.length === 3 && [...writes].every((write, index) => closed(write, pinnedLessonProgressFields)
+      && matchesPinnedLessonWrite(write, selection, index + 7, index < 2 ? resumePositionSeconds : visibility.resumePositionSeconds))
+    && new Set([playback.requestId, ...writes.map(write => write.requestId)]).size === 4
+    && matchesLessonSaveMedia(media, resumePositionSeconds, visibility.resumePositionSeconds), check);
+  return { playbackExpiry: expiry, resumePositionSeconds: visibility.resumePositionSeconds };
+}
+
+async function captureLessonSaveBaseline(courseJob, selection, dependencies, check) {
   const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
   const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined,
-    client => readPinnedLessonPosition(client, selected, selected, 6, "course-lesson-exit-save"));
+    client => readPinnedLessonPosition(client, selected, selected, 6, check));
   const baseline = Object.freeze({});
-  lessonExitSaveBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+  lessonSaveBaselines.set(baseline, { selected, result, jobSha256, roleOid,
     verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
   return baseline;
 }
 
-export async function observeP2InteractiveExitSaveCase(courseJob, selection, baseline, browserReceipt, dependencies) {
-  validateLessonExitSaveSelection(selection);
-  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonExitSaveBaselines.get(baseline);
+async function observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, check, validateReceipt) {
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonSaveBaselines.get(baseline);
   demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
-    && saved.verifySession === dependencies?.verifySession && lessonExitSaveSelectionFields.every(key => selection[key] === saved.selected[key]),
-  "course-lesson-exit-save-receipt");
-  const before = saved.result, playbackExpiry = validateLessonExitSaveReceipt(browserReceipt, saved.selected, before);
-  lessonExitSaveBaselines.delete(baseline);
-  const { resumePositionSeconds } = browserReceipt.exit;
+    && saved.verifySession === dependencies?.verifySession && lessonSaveSelectionFields.every(key => selection[key] === saved.selected[key]),
+  `${check}-receipt`);
+  const before = saved.result;
+  const { playbackExpiry, resumePositionSeconds } = validateReceipt(browserReceipt, saved.selected, before);
+  lessonSaveBaselines.delete(baseline);
   const position = { ...saved.selected, resumePositionSeconds };
   const { result: after } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
-    client => readPinnedLessonPosition(client, saved.selected, position, 9, "course-lesson-exit-save"));
+    client => readPinnedLessonPosition(client, saved.selected, position, 9, check));
   demand(after.progress[0].created_at === before.progress[0].created_at
-    && Date.parse(after.progress[0].updated_at) >= Date.parse(before.lesson.observed_at), "course-lesson-exit-save-progress");
-  demand(sameIds(after.history, before.history), "course-lesson-exit-save-history");
+    && Date.parse(after.progress[0].updated_at) >= Date.parse(before.lesson.observed_at), `${check}-progress`);
+  demand(sameIds(after.history, before.history), `${check}-history`);
   const baselineExpiry = before.lesson.last_token_expires_at === null ? 0 : Date.parse(before.lesson.last_token_expires_at);
   demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
-    && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-exit-save-media");
+    && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), `${check}-media`);
   const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, maxPositionSeconds, playbackIdSha256 } = saved.selected;
   return { actorId, courseId, lessonId, grantId, progressId, enrollmentId, revision: 9, resumePositionSeconds,
     maxPositionSeconds, playbackIdSha256, playbackExpiresAt: date(playbackExpiry), readOnly: true };
+}
+
+export async function captureP2InteractiveExitSaveBaseline(courseJob, selection, dependencies) {
+  validateLessonExitSaveSelection(selection);
+  return captureLessonSaveBaseline(courseJob, selection, dependencies, "course-lesson-exit-save");
+}
+
+export async function observeP2InteractiveExitSaveCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonExitSaveSelection(selection);
+  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, "course-lesson-exit-save", validateLessonExitSaveReceipt);
+}
+
+export async function captureP2InteractiveVisibilityBaseline(courseJob, selection, dependencies) {
+  validateLessonVisibilitySelection(selection);
+  return captureLessonSaveBaseline(courseJob, selection, dependencies, "course-lesson-visibility-save");
+}
+
+export async function observeP2InteractiveVisibilityCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonVisibilitySelection(selection);
+  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, "course-lesson-visibility-save", validateLessonVisibilityReceipt);
 }
 
 const lessonDenialSelectionFields = [...lessonEntrySelectionFields, "enrolledActorId"];

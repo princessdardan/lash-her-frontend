@@ -23,7 +23,8 @@ import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOpe
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
-  validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction} from './p2-certification-transport.mjs';
+  validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
+  validateP2InteractiveVisibilityAction} from './p2-certification-transport.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
   readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
@@ -48,6 +49,7 @@ import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftC
   captureP2InteractiveResumeBaseline,observeP2InteractiveResumeCase,captureP2InteractiveRestoreBaseline,observeP2InteractiveRestoreCase,
   captureP2InteractiveAckLossBaseline,observeP2InteractiveAckLossCase,
   captureP2InteractiveExitSaveBaseline,observeP2InteractiveExitSaveCase,
+  captureP2InteractiveVisibilityBaseline,observeP2InteractiveVisibilityCase,
   captureP2InteractivePaidLearnerAccessBaseline,observeP2InteractivePaidLearnerAccessCase,validateP2InteractivePaidLearnerAccess,
   captureP2InteractivePaidRevokeBaseline,observeP2InteractivePaidRevokeCase,validateP2InteractivePaidRevoke,
   captureP2InteractivePaidGrantBaseline,observeP2InteractivePaidGrantCase} from './p2-lifecycle-persistence-probe.mjs';
@@ -72,7 +74,8 @@ const paidRevokeCourseSource='54fd289a5a8579bfbe343afb07482f406b56ad5b';
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
-const customerCourseBrowserStages=['learning','lesson-entry','lesson-denial','lesson-assessment','lesson-resume','lesson-restore','lesson-ack-loss','lesson-exit-save','learner-access'];
+const customerCourseBrowserStages=['learning','lesson-entry','lesson-denial','lesson-assessment','lesson-resume','lesson-restore','lesson-ack-loss',
+  'lesson-exit-save','lesson-visibility-save','learner-access'];
 const courseBackedBrowserStages=new Set(['authoring','paid-grant','paid-revoke',...customerCourseBrowserStages]);
 const communityBackedBrowserStages=new Set(['learning','paid-grant','paid-revoke']);
 const pairedBrowserStages=new Set(['lifecycle',...courseBackedBrowserStages]);
@@ -287,9 +290,11 @@ function interactiveActionValid(value){
   const lessonDenial=value?.stage==='lesson-denial',assessment=value?.stage==='lesson-assessment',resume=value?.stage==='lesson-resume',restore=value?.stage==='lesson-restore';
   const ackLoss=value?.stage==='lesson-ack-loss';
   const exitSave=value?.stage==='lesson-exit-save';
+  const visibility=value?.stage==='lesson-visibility-save';
   const selectionKey=lifecycle?'frontendAction':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':
     learnerAccess?'learnerAccessAction':lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':
-    resume?'resumeAction':restore?'restoreAction':ackLoss?'ackLossAction':exitSave?'exitSaveAction':paidRevoke?'paidRevokeAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
+    resume?'resumeAction':restore?'restoreAction':ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':
+      paidRevoke?'paidRevokeAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','media','lifecycle',...courseBackedBrowserStages].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
@@ -303,6 +308,7 @@ function interactiveActionValid(value){
   if(restore)return validateP2InteractiveRestoreAction(value.restoreAction,value.requests);
   if(ackLoss)return validateP2InteractiveAckLossAction(value.ackLossAction,value.requests);
   if(exitSave)return validateP2InteractiveExitSaveAction(value.exitSaveAction,value.requests);
+  if(visibility)return validateP2InteractiveVisibilityAction(value.visibilityAction,value.requests);
   if(learnerAccess)return learnerAccessActionValid(value.learnerAccessAction,value.requests);
   if(paidGrant)return paidGrantActionValid(value.paidGrantAction,value.requests);
   if(paidRevoke)return paidRevokeActionValid(value.paidRevokeAction,value.requests);
@@ -643,6 +649,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const lessonEntry=action.stage==='lesson-entry',lessonDenial=action.stage==='lesson-denial',assessment=action.stage==='lesson-assessment',resume=action.stage==='lesson-resume',restore=action.stage==='lesson-restore';
   const ackLoss=action.stage==='lesson-ack-loss';
   const exitSave=action.stage==='lesson-exit-save';
+  const visibility=action.stage==='lesson-visibility-save';
   const paidRevoke=action.stage==='paid-revoke';
   const communityBacked=communityBackedBrowserStages.has(action.stage);
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
@@ -657,6 +664,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const selection=authoring?authoringSelection(action):learning?{...learningSelection,actorId:action.actorId}:
     learnerAccess?learnerAccessSelection(action):lessonEntry?lessonEntrySelection(action):lessonDenial?lessonDenialSelection(action):assessment?assessmentSelection(action):
     resume?resumeSelection(action):restore?restoreSelection(action):ackLoss?ackLossSelection(action):exitSave?{actorId:action.actorId,...action.exitSaveAction}:
+    visibility?{actorId:action.actorId,...action.visibilityAction}:
     paidRevoke?paidRevokeSelection(action,courseDraft.paidRevokeReason):
     paidGrant?{...paidGrantSelection,actorId:action.actorId,reason:courseDraft.paidGrantReason}:
     enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
@@ -684,6 +692,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       restore?await captureP2InteractiveRestoreBaseline(courseDraft.job,selection,courseObservations):
       ackLoss?await captureP2InteractiveAckLossBaseline(courseDraft.job,selection,courseObservations):
       exitSave?await captureP2InteractiveExitSaveBaseline(courseDraft.job,selection,courseObservations):
+      visibility?await captureP2InteractiveVisibilityBaseline(courseDraft.job,selection,courseObservations):
       learnerAccess?await captureP2InteractivePaidLearnerAccessBaseline(courseDraft.job,selection,undefined,courseObservations):
       paidRevoke?await captureP2InteractivePaidRevokeBaseline(courseDraft.job,selection,courseObservations):
       paidGrant?await captureP2InteractivePaidGrantBaseline(courseDraft.job,selection,courseObservations):
@@ -714,6 +723,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
         restore?await controller.captureRestoreResponse(context):
         ackLoss?await controller.captureAckLossResponse(context):
         exitSave?await controller.captureExitSaveResponse(context):
+        visibility?await controller.captureVisibilityResponse(context):
         learnerAccess?await controller.captureLearnerAccessResponse(context):
         paidRevoke?await controller.capturePaidRevokeResponse(context):
         paidGrant?await controller.capturePaidGrantResponse(context):
@@ -746,6 +756,10 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       if(closureFailed)throw new Error(statusPrefix+'_CLOSURE_REQUIRES_REVIEW');
     }
     signal?.throwIfAborted();
+    if(visibility){
+      const browserFence=await controller.confirmVisibilityFenced(context);
+      record('p2-interactive-lesson-visibility-save-browser-fenced.json',browserFence);
+    }
     const witness=authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
       authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
       learning?await observeP2InteractiveFreeEnrollmentCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
@@ -756,6 +770,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       restore?await observeP2InteractiveRestoreCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
       ackLoss?await observeP2InteractiveAckLossCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
       exitSave?await observeP2InteractiveExitSaveCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
+      visibility?await observeP2InteractiveVisibilityCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
       learnerAccess?await observeP2InteractivePaidLearnerAccessCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       paidRevoke?await observeP2InteractivePaidRevokeCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       paidGrant?await observeP2InteractivePaidGrantCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
@@ -767,7 +782,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       courseBacked?{browserResponse:browserEvidence,courseWitness:witness}:
       identity?{browserIdentity:browserEvidence,identityWitness:witness}:{browserResponse:browserEvidence,lifecycleWitness:witness});
     demand(joined.status===statusPrefix+'_JOINED');
-    if(resume||restore||ackLoss||exitSave)record(`p2-interactive-${action.stage}-joined.json`,joined);
+    if(resume||restore||ackLoss||exitSave||visibility)record(`p2-interactive-${action.stage}-joined.json`,joined);
     return joined;
   }catch(error){
     // Keep the original domain/fence failure. A dying child may separately
