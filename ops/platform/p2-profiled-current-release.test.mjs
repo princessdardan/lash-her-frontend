@@ -462,6 +462,33 @@ test('fixed current certification plan joins the original release plan, terminal
       denialReadRows.map((row, index) => index === 2 ? { ...row, target: row.target + '&limit=1' } : row)]) {
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedLessonDenial, requests })));
     }
+    const assessmentAction = { operation: 'fail-then-pass', courseId, lessonId: accessLessonId, grantId: accessGrantId, quizRevision: 3,
+      failAnswers: [{ questionId: 'q2', optionId: 'wrong' }, { questionId: 'q1', optionId: 'wrong' }],
+      passAnswers: [{ questionId: 'q2', optionId: 'correct' }, { questionId: 'q1', optionId: 'correct' }] };
+    const assessmentRows = [
+      ...denialReadRows.map((row, index) => ({ ...row, uses: index === 2 ? 3 : 1 })),
+      lessonWrite,
+      ...[assessmentAction.failAnswers, assessmentAction.passAnswers].map(answers => ({ method: 'POST',
+        target: lesson + '/quiz/attempts', bodySha256: rawHash(JSON.stringify({ quizRevision: assessmentAction.quizRevision, answers })), uses: 1 })),
+    ];
+    const assessmentScope = { stage: 'lesson-assessment', actorId: userId, windowSeconds: 90, assessmentAction, requests: assessmentRows };
+    const assessmentSettings = paired(assessmentScope), assessmentPair = prepareP2ProfiledCertificationOperator(assessmentSettings);
+    assert.equal(assessmentPair.status, 'P2_INTERACTIVE_LESSON_ASSESSMENT_ACTIONS_PLANNED');
+    assert.deepEqual(assessmentPair['lesson-assessment'].scopedAction, assessmentScope);
+    assert.deepEqual(assessmentPair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    assert.equal(BigInt(assessmentPair['lesson-assessment'].initialEpoch) - BigInt(assessmentPair.identity.initialEpoch), 2n);
+    const assessmentHost = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(assessmentPair['lesson-assessment']), encoding: 'utf8' });
+    assert.equal(assessmentHost.status, 0, assessmentHost.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator(assessmentSettings, accessConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...assessmentSettings, execution: {} }, accessConfirmation), error => error.code !== 'ENOENT');
+    for (const assessmentActionChange of [{ quizRevision: true }, { passAnswers: assessmentAction.passAnswers.toReversed() },
+      { passAnswers: assessmentAction.failAnswers }]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...assessmentScope,
+        assessmentAction: { ...assessmentAction, ...assessmentActionChange } })));
+    }
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...assessmentScope,
+      requests: assessmentRows.map((row, index) => index === 7 ? { ...row, bodySha256: assessmentRows[8].bodySha256 } : row) })));
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -825,7 +852,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

@@ -21,6 +21,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
   captureP2InteractiveLessonEntryBaseline, observeP2InteractiveLessonEntryCase,
   captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
+  captureP2InteractiveAssessmentBaseline, observeP2InteractiveAssessmentCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
@@ -292,6 +293,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-lesson-entry-refuses-ineligible-fixtures-browser-mismatches-and-persistence-drift",
       "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
       "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
+      "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
+      "course-assessment-refuses-ineligible-plans-mismatched-receipts-and-persistence-drift",
       "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
       "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
       "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
@@ -1521,6 +1524,7 @@ async function runOwnedLessonEntryWitness({ course, job, dependencies, input, cr
 
   await runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz,
     entitlement: createDrizzleEntitlementRepository(db), admin: createDrizzleAdminEntitlementCommandRepository(db) });
+  await runOwnedAssessmentWitness({ course, job, dependencies, input, create, enrollment, progress, video, quiz });
 }
 
 async function runOwnedLessonDenialWitness({ course, job, dependencies, seed, enter, enrollment, progress, video, quiz, entitlement, admin }) {
@@ -1615,6 +1619,117 @@ async function runOwnedLessonDenialWitness({ course, job, dependencies, seed, en
     await change(fixture);
     await assert.rejects(observe(fixture.selection, before), { check });
     await assert.rejects(observe(fixture.selection, before), { check: "course-lesson-denial-receipt" });
+  }
+}
+
+async function runOwnedAssessmentWitness({ course, job, dependencies, input, create, enrollment, progress, video, quiz }) {
+  const document = { version: 1, mode: "graded", passingPercent: 80, questions: ["z-first", "a-second"].map(id => ({
+    id, prompt: `Owned question ${id}`, options: [{ id: "left", text: "Left" }, { id: "right", text: "Right" }],
+    correctOptionId: "right", feedback: "Owned feedback",
+  })) };
+  const seed = async (name, { mode = "graded", preview = false, withMedia = false } = {}) => {
+    const fixture = input(`assessment-${name}`, { status: "published", accessMode: "free", priceCents: 0 });
+    await create(fixture);
+    const { courseId } = fixture, moduleId = randomUUID(), lessonId = randomUUID(), actorId = randomUUID(), quizId = randomUUID();
+    await course.query("INSERT INTO public.modules(id,course_id,slug,title,position) VALUES($1,$2,'module','Module',1)", [moduleId, courseId]);
+    await course.query("INSERT INTO public.lessons(id,module_id,slug,title,position,is_preview) VALUES($1,$2,'assessment','Assessment',1,$3)", [lessonId, moduleId, preview]);
+    await course.query("INSERT INTO public.quiz_revisions(id,lesson_id,revision,document,created_by) VALUES($1,$2,1,$3::jsonb,$4)",
+      [quizId, lessonId, { ...document, mode }, randomUUID()]);
+    if (withMedia) await course.query("INSERT INTO public.video_assets(lesson_id,status) VALUES($1,'pending')", [lessonId]);
+    const grant = await enrollment.enrollFree({ userId: actorId, courseId, idempotencyKey: randomUUID() });
+    return { enrollmentId: grant.record.enrollmentId, quizId,
+      selection: { actorId, courseId, lessonId, grantId: grant.record.id, quizRevision: 1,
+        failAnswers: document.questions.map(({ id }, index) => ({ questionId: id, optionId: index === 0 ? "left" : "right" })),
+        passAnswers: document.questions.map(({ id }) => ({ questionId: id, optionId: "right" })) } };
+  };
+  const capture = ({ selection }) => captureP2InteractiveAssessmentBaseline(job, selection, dependencies);
+  const observe = ({ selection }, baseline, receipt) => observeP2InteractiveAssessmentCase(job, selection, baseline, receipt, dependencies);
+  const start = ({ selection: { actorId: userId, courseId, lessonId }, enrollmentId }) =>
+    progress.recordProgress({ userId, courseId, lessonId, enrollmentId, expectedProgressRevision: 0, markStarted: true });
+  const perform = async ({ selection: { actorId: userId, courseId, lessonId, quizRevision, failAnswers, passAnswers }, enrollmentId, quizId }) => {
+    assert.equal((await quiz.readStudentQuiz({ userId, lessonId })).id, quizId);
+    await assert.rejects(video.withPlaybackAuthorization({ userId, lessonId }, async () => assert.fail("Text-only lesson reached signer")),
+      { statusCode: 404, code: "LESSON_NOT_FOUND" });
+    const started = await start({ selection: { actorId: userId, courseId, lessonId }, enrollmentId });
+    assert.equal(started.revision, 1);
+    await assert.rejects(progress.recordProgress({ userId, courseId, lessonId, enrollmentId, expectedProgressRevision: 1, markCompleted: true }),
+      { name: "GradedQuizCompletionRequiredError" });
+    const attempts = [];
+    for (const [index, answers] of [failAnswers, passAnswers].entries()) {
+      const payloadRequestId = randomUUID();
+      const result = await quiz.submitAttempt({ userId, lessonId, quizRevision, requestId: payloadRequestId, answers });
+      assert.deepEqual(result.answers.map(answer => answer.questionId), ["a-second", "z-first"]);
+      assert.equal(result.passed, index === 1);
+      const [stored] = await progress.listProgress({ userId, lessonId });
+      assert.equal(stored.revision, index + 2);
+      attempts.push({ requestId: randomUUID(), payloadRequestId, attemptId: result.id, quizRevisionId: result.quizRevisionId,
+        quizRevision: result.quizRevision, correctCount: result.correctCount, totalCount: result.totalCount, passed: result.passed,
+        completed: result.completed, createdAt: result.createdAt.toISOString(), progress: {
+          requestId: randomUUID(), progressId: stored.id, enrollmentId: stored.enrollmentId, revision: stored.revision,
+          completedAt: stored.completedAt?.toISOString() ?? null, completedQuizRevision: stored.completedQuizRevision,
+        } });
+    }
+    assert.equal((await quiz.listAttempts({ userId, lessonId })).length, 2);
+    return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, status: 200 },
+      playback: { requestId: randomUUID(), status: 404 },
+      started: { requestId: randomUUID(), progressId: started.id, enrollmentId, revision: started.revision }, attempts };
+  };
+
+  const fixture = await seed("valid"), { selection, enrollmentId } = fixture;
+  const baseline = await capture(fixture), receipt = await perform(fixture);
+  assert.equal(JSON.stringify(baseline), "{}");
+  for (const mutate of [
+    value => { value.playback.status = 200; },
+    value => { value.attempts[0].payloadRequestId = value.attempts[1].payloadRequestId; },
+    value => { value.attempts[0].correctCount = 0; },
+    value => { value.attempts[1].progress.completedQuizRevision = null; },
+    value => { value.attempts[0].answers = selection.failAnswers; },
+    value => { value.attempts.reverse(); },
+  ]) {
+    const invalid = structuredClone(receipt);
+    mutate(invalid);
+    await assert.rejects(observe(fixture, baseline, invalid), { check: "course-assessment-receipt" });
+  }
+  assert.deepEqual(await observe(fixture, baseline, receipt), { actorId: selection.actorId, courseId: selection.courseId,
+    lessonId: selection.lessonId, grantId: selection.grantId, quizRevision: selection.quizRevision, enrollmentId, progressId: receipt.started.progressId,
+    attemptIds: receipt.attempts.map(attempt => attempt.attemptId), progressRevision: 3, readOnly: true });
+  await assert.rejects(observe(fixture, baseline, receipt), { check: "course-assessment-receipt" });
+  await assert.rejects(capture(fixture), { check: "course-assessment-pristine" });
+
+  for (const [name, settings] of [["preview", { preview: true }], ["practice", { mode: "practice" }], ["media", { withMedia: true }]]) {
+    await assert.rejects(capture(await seed(name, settings)), { check: "course-assessment-lesson" });
+  }
+  const pristine = await seed("pristine");
+  const refuseSelection = (patch, check) =>
+    assert.rejects(capture({ selection: { ...pristine.selection, ...patch } }), { check });
+  await refuseSelection({ grantId: randomUUID() }, "course-assessment-grant");
+  await refuseSelection({ quizRevision: 2 }, "course-assessment-lesson");
+  await refuseSelection({ passAnswers: pristine.selection.failAnswers }, "course-assessment-selection");
+  await refuseSelection({ passAnswers: pristine.selection.passAnswers.toReversed(),
+    failAnswers: pristine.selection.failAnswers.toReversed() }, "course-assessment-lesson");
+  await refuseSelection({ failAnswers: pristine.selection.failAnswers.map(answer => ({ ...answer, optionId: "other" })) }, "course-assessment-lesson");
+  await refuseSelection({ failAnswers: pristine.selection.passAnswers, passAnswers: pristine.selection.failAnswers }, "course-assessment-lesson");
+  await start(pristine);
+  await assert.rejects(capture(pristine), { check: "course-assessment-pristine" });
+
+  const otherAnswers = await seed("other-answers"), answersBaseline = await capture(otherAnswers);
+  const alternateSelection = { ...otherAnswers.selection,
+    failAnswers: otherAnswers.selection.failAnswers.map((answer, index) => ({ ...answer, optionId: index === 0 ? "right" : "left" })) };
+  const alternateReceipt = await perform({ ...otherAnswers, selection: alternateSelection });
+  assert.equal(alternateReceipt.attempts[0].correctCount, 1);
+  await assert.rejects(observe(otherAnswers, answersBaseline, alternateReceipt), { check: "course-assessment-attempts" });
+
+  for (const [name, check, drift] of [
+    ["payload", "course-assessment-attempts", ({ attempts }) => { attempts[0].payloadRequestId = randomUUID(); }],
+    ["progress", "course-assessment-progress", ({ started }) => course.query("UPDATE public.lesson_progress SET revision=4 WHERE id=$1",
+      [started.progressId])],
+    ["history", "course-assessment-history", (_receipt, { selection: { courseId } }) => course.query(
+      "UPDATE public.courses SET description='Owned history change' WHERE id=$1", [courseId])],
+  ]) {
+    const fixture = await seed(name), baseline = await capture(fixture), receipt = await perform(fixture);
+    await drift(receipt, fixture);
+    await assert.rejects(observe(fixture, baseline, receipt), { check });
+    await assert.rejects(observe(fixture, baseline, receipt), { check: "course-assessment-receipt" });
   }
 }
 

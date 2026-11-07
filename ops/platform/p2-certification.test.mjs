@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {nativeDocuments} from './harness/p2-native-unit-fixture.mjs';
 import {frontendCoordinationHash as hash} from './frontend-release-inventory.mjs';
-import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts} from './p2-certification.mjs';
+import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts,p2CertificationReviewView} from './p2-certification.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {readKnownAckRuntimeDatabaseUrl} from './p2-known-ack-loss-probe.mjs';
 
@@ -36,6 +36,25 @@ function fixture(startState='already-closed',gateway=false){
   input.requestEvidence={kind:'operator-recorded-request-details',path:join(root,'operator-details.json')};
   return{root,receipts,prepared,input,candidateBytes,configuration,run:()=>prepareP2BoundedCertification(prepared,input,candidateBytes,{frontendReceipts:receipts,configurationSha256:configuration}),cleanup:()=>rmSync(root,{recursive:true,force:true})};
 }
+test('assessment evidence keeps the exact plan and request digests while omitting reviewed answer values',()=>{
+  const assessmentAction={operation:'fail-then-pass',courseId:'course',lessonId:'lesson',grantId:'grant',quizRevision:4,
+    failAnswers:[{questionId:'private-fixture-question',optionId:'private-fixture-fail'}],
+    passAnswers:[{questionId:'private-fixture-question',optionId:'private-fixture-pass'}]};
+  const scopedAction={stage:'lesson-assessment',actorId:'actor',windowSeconds:90,assessmentAction,
+    requests:[{method:'POST',target:'/course/v1/student/lessons/lesson/quiz/attempts',bodySha256:'2'.repeat(64),uses:1}]};
+  const privatePlan={mode:'interactive-browser',scopedAction};
+  const plan={...privatePlan,planSha256:p2NativeHash(privatePlan)};
+  const review=p2CertificationReviewView(plan);
+  assert.equal(review.planSha256,plan.planSha256);
+  assert.deepEqual(review.scopedAction.requests,scopedAction.requests);
+  assert.deepEqual(review.scopedAction.assessmentAction,
+    {operation:'fail-then-pass',courseId:'course',lessonId:'lesson',grantId:'grant',quizRevision:4,answersRedacted:true});
+  assert.doesNotMatch(JSON.stringify(review),/private-fixture|failAnswers|passAnswers/u);
+  assert.equal(plan.scopedAction.assessmentAction,assessmentAction);
+  const other={mode:'known-ack-recovery',planSha256:'3'.repeat(64)};
+  assert.equal(p2CertificationReviewView(other),other);
+});
+
 test('native parent preserves original candidate identity and derives only fixed source epochs',()=>{
   for(const startState of ['qualified-ready','already-closed']){
     const f=fixture(startState);try{

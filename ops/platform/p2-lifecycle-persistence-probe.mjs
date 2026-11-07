@@ -284,6 +284,46 @@ const SQL = Object.freeze({
       JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`),
     lessonDenialIdentity: paidArchiveDigest("FROM public.users r WHERE r.id=ANY($1::uuid[])"),
     lessonDenialCommands: paidArchiveDigest("FROM public.account_lifecycle_commands r WHERE r.user_id=ANY($1::uuid[])", "r.command_id"),
+    assessmentLesson: `SELECT quiz.id::text AS quiz_id,pg_catalog.clock_timestamp()::text AS observed_at,
+      ${jsonbSha("pg_catalog.to_jsonb(c)")} AS course_fingerprint,
+      grades.total_count,grades.fail_count,grades.pass_count
+      FROM public.lessons l JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
+      JOIN LATERAL (SELECT q.id,q.revision,q.document FROM public.quiz_revisions q
+        WHERE q.lesson_id=l.id ORDER BY q.revision DESC LIMIT 1) quiz ON quiz.revision=$3::int
+      CROSS JOIN LATERAL (
+        SELECT count(*)::int AS total_count,
+          count(*) FILTER(WHERE q.question->>'correctOptionId'=answer.failed->>'optionId')::int AS fail_count,
+          count(*) FILTER(WHERE q.question->>'correctOptionId'=answer.passed->>'optionId')::int AS pass_count
+        FROM pg_catalog.jsonb_array_elements(quiz.document->'questions') WITH ORDINALITY q(question,position)
+        CROSS JOIN LATERAL (SELECT $4::jsonb->(q.position::int-1) AS failed,$5::jsonb->(q.position::int-1) AS passed) answer
+        WHERE q.question->>'id'=answer.failed->>'questionId' AND q.question->>'id'=answer.passed->>'questionId'
+          AND EXISTS(SELECT 1 FROM pg_catalog.jsonb_array_elements(q.question->'options') o WHERE o->>'id'=answer.failed->>'optionId')
+          AND EXISTS(SELECT 1 FROM pg_catalog.jsonb_array_elements(q.question->'options') o WHERE o->>'id'=answer.passed->>'optionId')
+      ) grades
+      WHERE c.id=$1::uuid AND l.id=$2::uuid AND c.status='published' AND c.access_mode='free' AND c.currency='CAD' AND c.price_cents=0
+        AND l.archived_at IS NULL AND m.archived_at IS NULL AND NOT l.is_preview
+        AND NOT EXISTS(SELECT 1 FROM public.video_assets v WHERE v.lesson_id=l.id)
+        AND quiz.document->>'mode'='graded' AND (quiz.document->>'passingPercent')::int BETWEEN 1 AND 100
+        AND grades.total_count=pg_catalog.jsonb_array_length(quiz.document->'questions')
+        AND grades.total_count=pg_catalog.jsonb_array_length($4::jsonb) AND grades.total_count=pg_catalog.jsonb_array_length($5::jsonb)
+        AND grades.fail_count*100<(quiz.document->>'passingPercent')::int*grades.total_count
+        AND grades.pass_count*100>=(quiz.document->>'passingPercent')::int*grades.total_count`,
+    assessmentProgress: `SELECT id::text AS progress_id,enrollment_id::text,revision,completed_quiz_revision,
+      completed_at::text,created_at::text,
+      (resume_position_seconds=0 AND max_position_seconds=0 AND last_watched_at=completed_at AND updated_at=completed_at) AS completed_in_place
+      FROM public.lesson_progress WHERE user_id=$1::uuid AND lesson_id=$2::uuid LIMIT 2`,
+    assessmentAttemptRows: `SELECT id::text AS attempt_id,request_id::text,request_hash,quiz_revision_id::text,
+      user_id::text,enrollment_id::text,correct_count,total_count,passed,completed,created_at::text,
+      (deidentified_at IS NULL AND CASE
+        WHEN request_id=$4::uuid THEN answers=$5::jsonb
+        WHEN request_id=$6::uuid THEN answers=$7::jsonb ELSE false END) AS answers_match
+      FROM public.quiz_attempts WHERE lesson_id=$1::uuid AND (user_id=$2::uuid OR enrollment_id=$3::uuid)
+      ORDER BY created_at,id LIMIT 3`,
+    assessmentOtherAttempts: paidArchiveDigest(`FROM public.quiz_attempts r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid
+        AND (r.user_id IS DISTINCT FROM $2::uuid OR r.lesson_id<>$3::uuid)`),
+    assessmentOutbox: paidArchiveDigest(`FROM public.community_enrollment_outbox r JOIN public.community_enrollment_streams s
+      ON s.id=r.stream_id WHERE s.course_id=$1::uuid`, "r.event_id"),
     paidArchiveModules: paidArchiveDigest("FROM public.modules r WHERE r.course_id=$1::uuid"),
     paidArchiveLessons: paidArchiveDigest(`FROM public.lessons r JOIN public.modules m ON m.id=r.module_id
       WHERE m.course_id=$1::uuid`),
@@ -620,6 +660,7 @@ const paidRepublishBaselines = new WeakMap();
 const paidLearnerAccessBaselines = new WeakMap();
 const lessonEntryBaselines = new WeakMap();
 const lessonDenialBaselines = new WeakMap();
+const assessmentBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
@@ -1747,6 +1788,146 @@ export async function observeP2InteractiveLessonDenialCase(courseJob, selection,
   demand(sameIds(result.history, saved.result.history), "course-lesson-denial-history");
   demand(sameIds(result.media, saved.result.media), "course-lesson-denial-media");
   return { ...saved.selected, effectiveAccess: false, readOnly: true };
+}
+
+const assessmentSelectionFields = [...lessonEntrySelectionFields, "quizRevision", "failAnswers", "passAnswers"];
+const assessmentAnswerKey = /^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$/u;
+const assessmentPayloadId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
+const assessmentHistory = [...paidArchiveHistory.filter(name => name !== "paidArchiveAttempts" && name !== "paidArchiveProgress"),
+  "paidArchiveStreams", "assessmentOutbox", "lessonDenialMediaHistory"];
+
+function validateAssessmentSelection(selection) {
+  const check = "course-assessment-selection";
+  demand(closed(selection, assessmentSelectionFields) && lessonEntrySelectionFields.every(key => courseUuid(selection[key]))
+    && Number.isInteger(selection.quizRevision) && selection.quizRevision >= 1 && selection.quizRevision <= 2_147_483_647, check);
+  const { failAnswers, passAnswers } = selection;
+  for (const answers of [failAnswers, passAnswers]) {
+    demand(Array.isArray(answers) && answers.length >= 1 && answers.length <= 100
+      && Array.from(answers).every(answer => closed(answer, ["questionId", "optionId"])
+        && [answer.questionId, answer.optionId].every(id => typeof id === "string" && assessmentAnswerKey.test(id)))
+      && new Set(answers.map(answer => answer.questionId)).size === answers.length, check);
+  }
+  demand(failAnswers.length === passAnswers.length && failAnswers.every((answer, index) => answer.questionId === passAnswers[index].questionId)
+    && failAnswers.some((answer, index) => answer.optionId !== passAnswers[index].optionId), check);
+}
+
+async function readAssessmentState(client, { actorId, courseId, lessonId, grantId, quizRevision, failAnswers, passAnswers }) {
+  const lessons = await read(client, "course", "assessmentLesson", [
+    courseId, lessonId, quizRevision, JSON.stringify(failAnswers), JSON.stringify(passAnswers),
+  ]);
+  const lesson = lessons[0];
+  demand(lessons.length === 1 && courseUuid(lesson.quiz_id) && SHA.test(lesson.course_fingerprint)
+    && Number.isFinite(Date.parse(lesson.observed_at)) && lesson.total_count === failAnswers.length
+    && [lesson.fail_count, lesson.pass_count].every(count => Number.isInteger(count) && count >= 0 && count <= lesson.total_count)
+    && lesson.fail_count < lesson.pass_count, "course-assessment-lesson");
+  const accounts = await read(client, "course", "paidLearnerActiveAccount", [actorId]);
+  const access = await read(client, "course", "paidCourseAccess", [courseId, actorId]);
+  demand(accounts.length === 1 && accounts[0].active === true && access.length === 1 && access[0].eligible === true, "course-assessment-access");
+  const requestHash = sha(JSON.stringify({ command: "free_grant", userId: actorId, courseId }));
+  const grants = await read(client, "course", "lessonEntryFreeGrant", [grantId, actorId, courseId, requestHash]);
+  const grant = grants[0];
+  demand(grants.length === 1 && courseUuid(grant.enrollment_id) && SHA.test(grant.key_fingerprint), "course-assessment-grant");
+  return { lesson, enrollmentId: grant.enrollment_id, history: [
+    lesson.course_fingerprint, grant.key_fingerprint,
+    ...await readPaidArchiveDigests(client, [courseId], assessmentHistory),
+    ...await readPaidArchiveDigests(client, [courseId, actorId, lessonId], ["lessonEntryOtherProgress", "assessmentOtherAttempts"]),
+    ...await readPaidArchiveDigests(client, [actorId], ["paidCourseAccount"]),
+    ...await readPaidArchiveDigests(client, [[actorId]], ["lessonDenialIdentity", "lessonDenialCommands"]),
+  ] };
+}
+
+const assessmentDate = value => typeof value === "string" && Number.isFinite(Date.parse(value)) && date(value) === value;
+
+function validateAssessmentReceipt(receipt, { courseId, lessonId, quizRevision }, before) {
+  const check = "course-assessment-receipt";
+  demand(closed(receipt, ["page", "playback", "started", "attempts"]), check);
+  const { page, playback, started, attempts } = receipt;
+  demand(closed(page, ["pathname", "status"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.status === 200
+    && closed(playback, ["requestId", "status"]) && playback.status === 404 && courseUuid(playback.requestId)
+    && closed(started, ["requestId", "progressId", "enrollmentId", "revision"])
+    && [started.requestId, started.progressId].every(courseUuid) && started.enrollmentId === before.enrollmentId && started.revision === 1
+    && Array.isArray(attempts) && attempts.length === 2, check);
+  for (const [index, expectedCorrectCount] of [before.lesson.fail_count, before.lesson.pass_count].entries()) {
+    const attempt = attempts[index], passed = index === 1;
+    demand(closed(attempt, ["requestId", "payloadRequestId", "attemptId", "quizRevisionId", "quizRevision",
+      "correctCount", "totalCount", "passed", "completed", "createdAt", "progress"])
+      && [attempt.requestId, attempt.attemptId].every(courseUuid)
+      && typeof attempt.payloadRequestId === "string" && assessmentPayloadId.test(attempt.payloadRequestId)
+      && attempt.quizRevisionId === before.lesson.quiz_id && attempt.quizRevision === quizRevision
+      && attempt.correctCount === expectedCorrectCount && attempt.totalCount === before.lesson.total_count
+      && attempt.passed === passed && attempt.completed === passed && assessmentDate(attempt.createdAt), check);
+    const progress = attempt.progress;
+    demand(closed(progress, ["requestId", "progressId", "enrollmentId", "revision", "completedAt", "completedQuizRevision"])
+      && courseUuid(progress.requestId) && progress.progressId === started.progressId && progress.enrollmentId === started.enrollmentId
+      && progress.revision === index + 2 && progress.completedAt === (passed ? attempt.createdAt : null)
+      && progress.completedQuizRevision === (passed ? quizRevision : null), check);
+  }
+  const [failed, passed] = attempts;
+  demand(new Set([playback.requestId, started.requestId, ...attempts.flatMap(attempt =>
+    [attempt.requestId, attempt.payloadRequestId, attempt.progress.requestId, attempt.attemptId])]).size === 10
+    && failed.createdAt <= passed.createdAt, check);
+}
+
+function storedAssessmentAnswers(answers) {
+  return answers.map(({ questionId, optionId }) => ({ questionId, optionId }))
+    .sort((a, b) => a.questionId < b.questionId ? -1 : a.questionId > b.questionId ? 1 : 0);
+}
+
+export async function captureP2InteractiveAssessmentBaseline(courseJob, selection, dependencies) {
+  validateAssessmentSelection(selection);
+  const selected = structuredClone(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { actorId, lessonId } = selected;
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const before = await readAssessmentState(client, selected);
+    const progress = await read(client, "course", "assessmentProgress", [actorId, lessonId]);
+    const attempts = await read(client, "course", "lessonEntryAttemptAbsent", [lessonId, actorId, before.enrollmentId]);
+    demand(progress.length === 0 && attempts.length === 1 && attempts[0].absent === true, "course-assessment-pristine");
+    return before;
+  });
+  const baseline = Object.freeze({});
+  assessmentBaselines.set(baseline, { selected, selectionSha256: sha(selected), result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveAssessmentCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateAssessmentSelection(selection);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = assessmentBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && saved.selectionSha256 === sha(selection), "course-assessment-receipt");
+  validateAssessmentReceipt(browserReceipt, saved.selected, saved.result);
+  const { started, attempts: [failed, passed] } = structuredClone(browserReceipt);
+  assessmentBaselines.delete(baseline);
+  const { actorId, courseId, lessonId, grantId, quizRevision, failAnswers, passAnswers } = saved.selected;
+  const { enrollmentId } = saved.result;
+  const answers = [failAnswers, passAnswers].map(storedAssessmentAnswers);
+  const reviewedAttempts = [failed, passed];
+  await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const after = await readAssessmentState(client, saved.selected);
+    demand(after.enrollmentId === enrollmentId && after.lesson.quiz_id === saved.result.lesson.quiz_id
+      && sameIds(after.history, saved.result.history), "course-assessment-history");
+    const attempts = await read(client, "course", "assessmentAttemptRows", [
+      lessonId, actorId, enrollmentId, failed.payloadRequestId, JSON.stringify(answers[0]), passed.payloadRequestId, JSON.stringify(answers[1]),
+    ]);
+    demand(attempts.length === 2, "course-assessment-attempts");
+    for (const [index, receipt] of reviewedAttempts.entries()) {
+      const row = attempts.find(attempt => attempt.request_id === receipt.payloadRequestId);
+      const requestHash = sha(JSON.stringify({ userId: actorId, lessonId, quizRevision, answers: answers[index] }));
+      demand(row?.attempt_id === receipt.attemptId && row.request_hash === requestHash && row.answers_match === true
+        && row.user_id === actorId && row.enrollment_id === enrollmentId && row.quiz_revision_id === receipt.quizRevisionId
+        && row.correct_count === receipt.correctCount && row.total_count === receipt.totalCount && row.passed === receipt.passed
+        && row.completed === receipt.completed && Date.parse(row.created_at) === Date.parse(receipt.createdAt), "course-assessment-attempts");
+    }
+    const rows = await read(client, "course", "assessmentProgress", [actorId, lessonId]), progress = rows[0];
+    const createdAt = Date.parse(progress?.created_at);
+    demand(rows.length === 1 && progress.progress_id === started.progressId && progress.enrollment_id === enrollmentId
+      && progress.revision === 3 && progress.completed_quiz_revision === quizRevision && progress.completed_in_place === true
+      && createdAt >= Date.parse(saved.result.lesson.observed_at) && createdAt <= Date.parse(failed.createdAt)
+      && Date.parse(progress.completed_at) === Date.parse(passed.createdAt)
+      && Date.parse(passed.createdAt) <= Date.parse(after.lesson.observed_at), "course-assessment-progress");
+  });
+  return { actorId, courseId, lessonId, grantId, quizRevision, enrollmentId, progressId: started.progressId,
+    attemptIds: [failed.attemptId, passed.attemptId], progressRevision: 3, readOnly: true };
 }
 
 const paidRevokeSelectionFields = ["courseId", "userId", "grantId", "actorId", "revision", "idempotencyKey", "reason", "remainingAccess"];

@@ -413,6 +413,27 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_assessment_probes_only_exact_document_and_api_paths_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        lesson = "10000000-0000-4000-8000-000000000002"
+        api = f"/api/academy/lessons/{lesson}"
+        paths = (f"/academy/courses/{course}/lessons/{lesson}", f"{api}/playback", f"/api/academy/progress?lessonId={lesson}",
+                 f"{api}/progress", f"{api}/quiz/attempts")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester(progress_lesson_id=lesson)
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "LESSON_ASSESSMENT_TARGET_REQUIRED"):
+                ingress.observe_lesson_assessment_protection(self.base.context, self.fixture.client, course_id=course,
+                                                             lesson_id=f"{lesson}?other=1", expected_profile=self.profile)
+            receipt = ingress.observe_lesson_assessment_protection(self.base.context, self.fixture.client, course_id=course,
+                                                                     lesson_id=lesson, expected_profile=self.profile)
+        self.assertEqual(receipt["requestMethod"], "GET")
+        self.assertEqual(receipt["endpointDenials"], [
+            {"path": path, "aliasUnauthenticatedStatus": 401, "deploymentUnauthenticatedStatus": 403} for path in paths
+        ])
+        self.assertEqual(urls, [origin + target for target in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})

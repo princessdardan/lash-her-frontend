@@ -17,6 +17,8 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
 const authoringPath = "/api/admin/courses";
+const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment"];
+const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
   authoring: { owner: "/admin/courses" },
@@ -25,6 +27,7 @@ const interactivePages = {
   "learner-access": { learner: "/academy/courses" },
   "lesson-entry": { learner: "/academy/courses" },
   "lesson-denial": { learner: "/academy/courses" },
+  "lesson-assessment": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -126,6 +129,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "learner-access") return p2PaidLearnerAccessPaths(input.learnerAccess).pagePath;
   if (input.stage === "lesson-entry") return p2LessonEntryPaths(input.lessonEntry).academyPath;
   if (input.stage === "lesson-denial") return p2LessonDenialPaths(input.lessonDenial).lessonPath;
+  if (input.stage === "lesson-assessment") return p2LessonAssessmentPaths(input.assessment).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -156,6 +160,21 @@ export function p2LessonDenialPaths({ courseId, lessonId }) {
   return { lessonPath, flightPath: lessonPath + "?_rsc", targets: targets.slice(1) };
 }
 
+export function p2LessonAssessmentPaths(target) {
+  const { lessonPath, playbackPath, progressPath } = p2LessonEntryPaths(target);
+  return { lessonPath, playbackPath, progressPath, latestPath: "/api/academy/progress?lessonId=" + target.lessonId,
+    attemptsPath: "/api/academy/lessons/" + target.lessonId + "/quiz/attempts" };
+}
+
+const assessmentKey = value => matches(value, /^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$/u);
+const assessmentRequestId = value => matches(value, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u);
+const assessmentRevision = value => Number.isSafeInteger(value) && value >= 1 && value <= 2_147_483_647;
+const assessmentAnswers = answers => Array.isArray(answers) && answers.length >= 1 && answers.length <= 100
+  && answers.every(answer => closed(answer, ["questionId", "optionId"]) && assessmentKey(answer.questionId) && assessmentKey(answer.optionId))
+  && new Set(answers.map(answer => answer.questionId)).size === answers.length;
+const sameAssessmentAnswers = (left, right) => assessmentAnswers(left) && left.length === right.length
+  && left.every((answer, index) => answer.questionId === right[index].questionId && answer.optionId === right[index].optionId);
+
 export function p2PaidGrantPaths({ courseId }) {
   const pagePath = "/admin/courses/" + courseId + "/manual-grants";
   return { pagePath, pathname: "/api" + pagePath };
@@ -178,7 +197,7 @@ export function validateP2InteractiveBrowserInput(input) {
     ...(["lifecycle", "authoring", "learning"].includes(input?.stage) ? [input.stage]
       : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
-          : input?.stage === "lesson-denial" ? ["lessonDenial"]
+          : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -213,6 +232,15 @@ export function validateP2InteractiveBrowserInput(input) {
     demand(closed(selected, ["actorId", "operation", "courseId", "lessonId", "enrolledActorId", "grantId"])
       && selected.operation === "deny-cross-account" && selected.actorId !== selected.enrolledActorId
       && [selected.actorId, selected.courseId, selected.lessonId, selected.enrolledActorId, selected.grantId].every(uuid));
+  }
+  if (input.stage === "lesson-assessment") {
+    const selected = input.assessment;
+    demand(closed(selected, ["actorId", "operation", "courseId", "lessonId", "grantId", "quizRevision", "failAnswers", "passAnswers"])
+      && selected.operation === "fail-then-pass" && [selected.actorId, selected.courseId, selected.lessonId, selected.grantId].every(uuid)
+      && assessmentRevision(selected.quizRevision) && assessmentAnswers(selected.failAnswers) && assessmentAnswers(selected.passAnswers)
+      && selected.failAnswers.length === selected.passAnswers.length
+      && selected.failAnswers.every((answer, index) => answer.questionId === selected.passAnswers[index].questionId)
+      && !sameAssessmentAnswers(selected.failAnswers, selected.passAnswers));
   }
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
@@ -260,8 +288,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
     && Number(issued) <= now && Number(expires) === permit.expires && permit.expires - Number(issued) <= input.windowSeconds
     && /^[a-f0-9]{32}$/u.test(nonce ?? "")
-    && (["lifecycle", "identity", "authoring", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"].includes(stage)
-      ? version === "v2" && parts.length === 8 && (["lesson-entry", "lesson-denial"].includes(stage) ? matches(parts[6], /^[a-f0-9]{96}$/u) : sha(parts[6])) && sha(parts[7])
+    && (["lifecycle", "identity", "authoring", "paid-grant", "paid-revoke", ...learnerScopedStages].includes(stage)
+      ? version === "v2" && parts.length === 8 && (heldLessonStages.includes(stage) ? matches(parts[6], /^[a-f0-9]{96}$/u) : sha(parts[6])) && sha(parts[7])
       : version === "v1" && parts.length === 7 && sha(parts[6])));
   if (stage === "identity") {
     const enrollment = input.identityEnrollment;
@@ -270,8 +298,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (stage === "authoring") demand(parts[6] === authoringSelector(input));
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
-  if (stage === "lesson-entry" || stage === "lesson-denial") {
-    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial;
+  if (heldLessonStages.includes(stage)) {
+    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -481,6 +509,40 @@ export function validateP2LessonDenialReceipt(receipt, target) {
       closed(read, ["target", "status", "requestId", "code"]) && read.target === targets[index] && read.status === 403
       && uuid(read.requestId) && read.code === "access_required")
     && new Set([receipt.page.documentRequestId, receipt.page.flightRequestId, ...receipt.reads.map(read => read.requestId)]).size === targets.length + 2);
+  return receipt;
+}
+
+const assessmentInstant = value => typeof value === "string" && Number.isFinite(Date.parse(value))
+  && new Date(Date.parse(value)).toISOString() === value;
+
+export function validateP2LessonAssessmentReceipt(receipt, target) {
+  const { lessonPath } = p2LessonAssessmentPaths(target);
+  demand(closed(receipt, ["page", "playback", "started", "attempts"])
+    && closed(receipt.page, ["pathname", "status"]) && receipt.page.pathname === lessonPath && receipt.page.status === 200
+    && closed(receipt.playback, ["requestId", "status"]) && uuid(receipt.playback.requestId) && receipt.playback.status === 404
+    && closed(receipt.started, ["requestId", "progressId", "enrollmentId", "revision"])
+    && [receipt.started.requestId, receipt.started.progressId, receipt.started.enrollmentId].every(uuid) && receipt.started.revision === 1
+    && Array.isArray(receipt.attempts) && receipt.attempts.length === 2);
+  const { started, playback, attempts } = receipt;
+  for (const [index, attempt] of attempts.entries()) {
+    const passing = index === 1;
+    demand(closed(attempt, ["requestId", "payloadRequestId", "attemptId", "quizRevisionId", "quizRevision", "correctCount",
+      "totalCount", "passed", "completed", "createdAt", "progress"])
+      && [attempt.requestId, attempt.attemptId, attempt.quizRevisionId].every(uuid) && assessmentRequestId(attempt.payloadRequestId)
+      && attempt.quizRevision === target.quizRevision && attempt.totalCount === target.failAnswers.length
+      && Number.isSafeInteger(attempt.correctCount) && attempt.correctCount >= 0 && attempt.correctCount <= attempt.totalCount
+      && attempt.passed === passing && attempt.completed === passing && assessmentInstant(attempt.createdAt));
+    const progress = attempt.progress;
+    demand(closed(progress, ["requestId", "progressId", "enrollmentId", "revision", "completedAt", "completedQuizRevision"])
+      && uuid(progress.requestId) && progress.progressId === started.progressId && progress.enrollmentId === started.enrollmentId
+      && progress.revision === index + 2 && progress.completedAt === (passing ? attempt.createdAt : null)
+      && progress.completedQuizRevision === (passing ? target.quizRevision : null));
+  }
+  demand(new Set([playback.requestId, started.requestId, ...attempts.flatMap(attempt =>
+    [attempt.requestId, attempt.payloadRequestId, attempt.attemptId, attempt.progress.requestId])]).size === 10
+    && attempts[0].quizRevisionId === attempts[1].quizRevisionId
+    && attempts[0].correctCount < attempts[1].correctCount
+    && Date.parse(attempts[0].createdAt) <= Date.parse(attempts[1].createdAt));
   return receipt;
 }
 
@@ -1507,16 +1569,17 @@ export function watchP2LessonDenial(context, page, input) {
   };
 }
 
-function watchLessonEntryNetworkBodies(session, frameId, slots, origin, fail) {
+function watchLessonNetworkBodies(session, frameId, slots, origin, fail) {
   const byRequest = new Map();
-  for (const slot of slots.values()) {
+  for (const slot of [...slots.values()].flat()) {
     slot.native = new Promise((resolve, reject) => { slot.resolve = resolve; slot.reject = reject; });
     slot.native.catch(() => {});
   }
   const onResponse = ({ requestId, frameId: actualFrame, type, response }) => {
-    const url = URL.parse(response.url), slot = url?.origin === origin && slots.get(url.pathname);
-    if (!slot) return;
-    if (slot.cdpId || actualFrame !== frameId || type !== "Fetch" || url.search || response.status !== 200 ||
+    const url = URL.parse(response.url), group = url?.origin === origin && slots.get(url.pathname + url.search);
+    if (!group) return;
+    const slot = Array.isArray(group) ? group.find(row => !row.cdpId) : group;
+    if (!slot || slot.cdpId || actualFrame !== frameId || type !== "Fetch" || response.status !== (slot.status ?? 200) ||
       response.fromServiceWorker || response.fromDiskCache || response.fromPrefetchCache) return fail();
     slot.cdpId = requestId;
     const ids = Object.entries(response.headers).filter(([name]) => name.toLowerCase() === "x-request-id");
@@ -1531,9 +1594,10 @@ function watchLessonEntryNetworkBodies(session, frameId, slots, origin, fail) {
     void session.send("Network.getResponseBody", { requestId }).then(result => {
       const { body, base64Encoded } = result;
       result.body = "";
-      demand(typeof body === "string" && body.length <= 4 * Math.ceil(maxLifecycleBody / 3));
+      const maximum = slot.maximum ?? maxLifecycleBody;
+      demand(typeof body === "string" && body.length <= (base64Encoded ? 4 * Math.ceil(maximum / 3) : maximum));
       const bytes = Buffer.from(body, base64Encoded ? "base64" : "utf8");
-      try { slot.resolve({ body: exactBrowserJson(bytes), size: bytes.length }); }
+      try { slot.resolve({ body: exactBrowserJson(bytes, maximum), size: bytes.length }); }
       finally { bytes.fill(0); }
     }).catch(error => slot.reject(error));
   };
@@ -1650,7 +1714,7 @@ export function watchP2LessonEntry(context, page, input) {
         const buffers = { maxTotalBufferSize: 256 * 1024, maxResourceBufferSize: 8192 };
         await session.send("Network.configureDurableMessages", buffers);
         await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
-        stopNetwork = watchLessonEntryNetworkBodies(session, frame.id, slots, origin, fail);
+        stopNetwork = watchLessonNetworkBodies(session, frame.id, slots, origin, fail);
         const observed = Promise.all([
           page.waitForResponse(candidate => candidate.request() === flight.request, { timeout: remaining(expires) }),
           apiRead(playback, playbackPath, expires), apiRead(progress, progressPath, expires),
@@ -1700,6 +1764,246 @@ export function watchP2LessonEntry(context, page, input) {
       context.off("requestfailed", onFailure);
       page.off("framenavigated", onNavigation);
       fail();
+    },
+  };
+}
+
+function assessmentProgress(body, target, revision, completion, quizRevision) {
+  const row = revision === 1 ? body?.progress : body?.progress?.[0];
+  demand(closed(body, ["progress"]) && (revision === 1 || Array.isArray(body.progress) && body.progress.length === 1)
+    && closed(row, ["id", "userId", "lessonId", "enrollmentId", "maxPositionSeconds", "resumePositionSeconds",
+      "revision", "completedQuizRevision", "completedAt", "lastWatchedAt", "createdAt", "updatedAt"])
+    && uuid(row.id) && uuid(row.enrollmentId) && row.userId === target.actorId && row.lessonId === target.lessonId
+    && row.maxPositionSeconds === 0 && row.resumePositionSeconds === 0 && row.revision === revision
+    && row.completedAt === completion && row.completedQuizRevision === quizRevision);
+  return { progressId: row.id, enrollmentId: row.enrollmentId, revision: row.revision,
+    completedAt: row.completedAt, completedQuizRevision: row.completedQuizRevision };
+}
+
+function assessmentResult(body, target, answers, quizRevisionId, passing) {
+  const attempt = body?.attempt;
+  const sorted = [...answers].sort((a, b) => a.questionId < b.questionId ? -1 : 1);
+  demand(closed(body, ["attempt"]) && closed(attempt, ["id", "lessonId", "quizRevisionId", "quizRevision", "mode", "passingPercent",
+    "answers", "correctCount", "totalCount", "passed", "completed", "createdAt", "results"])
+    && uuid(attempt.id) && attempt.lessonId === target.lessonId && attempt.quizRevisionId === quizRevisionId
+    && attempt.quizRevision === target.quizRevision && attempt.mode === "graded" && sameAssessmentAnswers(attempt.answers, sorted)
+    && attempt.passed === passing && attempt.completed === passing && assessmentInstant(attempt.createdAt)
+    && Number.isSafeInteger(attempt.passingPercent) && attempt.passingPercent >= 1 && attempt.passingPercent <= 100
+    && Number.isSafeInteger(attempt.correctCount) && attempt.correctCount >= 0 && attempt.correctCount <= answers.length
+    && attempt.totalCount === answers.length && (attempt.correctCount * 100 >= attempt.passingPercent * attempt.totalCount) === passing
+    && Array.isArray(attempt.results) && attempt.results.length === answers.length && attempt.results.every((result, index) =>
+      closed(result, ["questionId", "selectedOptionId", "correctOptionId", "correct", "feedback"])
+      && result.questionId === answers[index].questionId && result.selectedOptionId === answers[index].optionId
+      && assessmentKey(result.correctOptionId) && result.correct === (result.selectedOptionId === result.correctOptionId)
+      && typeof result.feedback === "string" && result.feedback.length <= 8000)
+    && attempt.results.filter(result => result.correct).length === attempt.correctCount);
+  return { attemptId: attempt.id, quizRevisionId: attempt.quizRevisionId, quizRevision: attempt.quizRevision,
+    correctCount: attempt.correctCount, totalCount: attempt.totalCount, passed: attempt.passed, completed: attempt.completed, createdAt: attempt.createdAt };
+}
+
+export function watchP2LessonAssessment(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "lesson-assessment" && page.context() === context);
+  const target = input.assessment, { lessonPath, playbackPath, progressPath, latestPath, attemptsPath } = p2LessonAssessmentPaths(target);
+  const origin = input.browserOrigin, source = origin + lessonPath, maximum = 8 * 1024 * 1024;
+  const playback = { path: playbackPath, method: "GET", status: 404 };
+  const started = { path: progressPath, method: "POST", status: 200 };
+  const pairs = [target.failAnswers, target.passAnswers].map(answers => ({
+    attempt: { path: attemptsPath, method: "POST", status: 200, maximum, answers },
+    latest: { path: latestPath, method: "GET", status: 200 },
+  }));
+  const slots = new Map([[playbackPath, playback], [progressPath, started],
+    [attemptsPath, pairs.map(pair => pair.attempt)], [latestPath, pairs.map(pair => pair.latest)]]);
+  const refusal = () => new Error("P2_INTERACTIVE_LESSON_ASSESSMENT_RESPONSE_REFUSED");
+  const assessment = () => page.getByRole("main").getByRole("region", { name: "Check your understanding", exact: true });
+  let navigation, opened = false, failed = false, initialized, completed, active, session, stopNetwork;
+  let rejectFailure;
+  const failure = new Promise((_, reject) => { rejectFailure = reject; });
+  failure.catch(() => {});
+  const fail = () => { if (!failed) { failed = true; rejectFailure(refusal()); } };
+  const remaining = expires => {
+    const timeout = expires * 1000 - Date.now();
+    if (failed || timeout <= 0 || timeout > input.windowSeconds * 1000) throw refusal();
+    return timeout;
+  };
+  const onRequest = request => {
+    const url = URL.parse(request.url()), method = request.method(), headers = request.headers();
+    try {
+      demand(request.resourceType() !== "media" && !/(?:^|\.)mux\.com$/iu.test(url?.hostname ?? ""));
+      if (request.isNavigationRequest()) {
+        demand(opened && !navigation && request.url() === source && method === "GET" && headers.rsc === undefined
+          && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+        navigation = request;
+        return;
+      }
+      if (url?.origin === origin && url.pathname.startsWith("/api/")) {
+        const slot = active?.find(candidate => candidate.path === url.pathname + url.search);
+        demand(slot && !slot.request && !url.hash && method === slot.method && request.frame() === page.mainFrame()
+          && request.frame().url() === source && request.resourceType() === "fetch" && request.redirectedFrom() === null
+          && headers.rsc === undefined);
+        if (slot.path === latestPath) demand(active[0].request);
+        const recorded = request.postDataBuffer();
+        if (method === "GET") demand(recorded === null);
+        else {
+          const bytes = recorded && Buffer.from(recorded);
+          try {
+            const body = exactBrowserJson(bytes, 65_536);
+            if (slot === started) demand(bytes.toString("utf8") === '{"event":"lesson_started","expectedProgressRevision":0}');
+            else {
+              demand(closed(body, ["quizRevision", "requestId", "answers"]) && body.quizRevision === target.quizRevision
+                && assessmentRequestId(body.requestId) && sameAssessmentAnswers(body.answers, slot.answers)
+                && bytes.toString("utf8") === JSON.stringify({ quizRevision: target.quizRevision, requestId: body.requestId,
+                  answers: slot.answers.map(({ questionId, optionId }) => ({ questionId, optionId })) })
+                && !pairs.some(({ attempt }) => attempt.payloadRequestId === body.requestId));
+              slot.payloadRequestId = body.requestId;
+            }
+          } finally { bytes?.fill(0); }
+        }
+        slot.request = request;
+        return;
+      }
+      demand(["GET", "HEAD", "OPTIONS"].includes(method));
+      if (url?.origin === origin && headers.rsc !== undefined) {
+        demand(!url.pathname.startsWith("/academy/courses/") && (headers["next-router-prefetch"] !== undefined
+          || headers["next-router-segment-prefetch"] !== undefined) && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+      }
+    } catch { fail(); }
+  };
+  const onFailure = request => { if (request === navigation || active?.some(slot => slot.request === request)) fail(); };
+  const onNavigation = frame => { if (frame === page.mainFrame() && navigation && frame.url() !== source) fail(); };
+  context.on("request", onRequest);
+  context.on("requestfailed", onFailure);
+  page.on("framenavigated", onNavigation);
+
+  const observe = async (slot, expires) => {
+    const response = await page.waitForResponse(candidate => candidate.request() === slot.request, { timeout: remaining(expires) });
+    const [head, bounds, native] = await Promise.all([readBrowserResponseHead(response, slot.request, origin, slot.path, slot.method, slot.status),
+      readBrowserResponseBounds(response, slot.request, slot.maximum ?? maxLifecycleBody, true), slot.native]);
+    demand(slot.gatewayId === head.requestId && (!bounds.identity || bounds.declared === undefined || native.size === bounds.declared)
+      && !slot.request.failure());
+    if (slot.method === "POST") {
+      const [csrf, requestOrigin, fetchSite, contentType, idempotency] = await Promise.all([
+        "x-lash-csrf", "origin", "sec-fetch-site", "content-type", "x-idempotency-key",
+      ].map(name => slot.request.headerValue(name)));
+      demand(csrf === "1" && requestOrigin === origin && (fetchSite === null || fetchSite === "same-origin")
+        && contentType === "application/json" && idempotency === null);
+    }
+    remaining(expires);
+    return { requestId: head.requestId, body: native.body };
+  };
+
+  const bounded = async (operation, expires) => {
+    let timer;
+    try {
+      return await Promise.race([operation, failure, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(refusal()), remaining(expires));
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+
+  const fillForm = async (answers, expires) => {
+    const form = assessment().locator("form"), fields = form.locator("fieldset");
+    await form.waitFor({ state: "visible", timeout: remaining(expires) });
+    demand(await form.count() === 1 && await fields.count() === answers.length);
+    let quizRevisionId;
+    for (const [index, answer] of answers.entries()) {
+      const radios = fields.nth(index).getByRole("radio");
+      const names = await radios.evaluateAll(elements => elements.map(element => element.name));
+      const id = names[0]?.slice(5, 41);
+      demand(uuid(id) && (!quizRevisionId || id === quizRevisionId) && names.length >= 2 && names.length <= 6
+        && names.every(name => name === "quiz-" + id + "-" + answer.questionId));
+      quizRevisionId = id;
+      const selected = radios.and(fields.nth(index).locator(`input[value="${answer.optionId}"]`));
+      demand(await selected.count() === 1 && await selected.isVisible());
+      await selected.check({ timeout: remaining(expires) });
+      demand(await selected.isChecked());
+    }
+    return quizRevisionId;
+  };
+
+  const noPlayer = async () => {
+    demand(page.url() === source && await page.getByRole("main").locator("mux-player, video, audio").count() === 0);
+  };
+
+  return {
+    async open(expires) {
+      try {
+        demand(!opened);
+        opened = true;
+        session = await context.newCDPSession(page);
+        const { frameTree: { frame } } = await session.send("Page.getFrameTree");
+        demand(!frame.parentId);
+        const buffers = { maxTotalBufferSize: 4 * maximum, maxResourceBufferSize: maximum };
+        await session.send("Network.configureDurableMessages", buffers);
+        await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
+        stopNetwork = watchLessonNetworkBodies(session, frame.id, slots, origin, fail);
+        active = [playback, started];
+        const [media, saved, response] = await bounded(Promise.all([
+          observe(playback, expires), observe(started, expires),
+          page.goto(source, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) }),
+        ]), expires);
+        demand(navigation && response?.request() === navigation && response.status() === 200 && response.url() === source
+          && !response.fromServiceWorker() && navigation.redirectedTo() === null);
+        const [types, cache] = await Promise.all([response.headerValues("content-type"), response.headerValues("cache-control")]);
+        demand(types.length === 1 && /^text\/html(?:;.*)?$/iu.test(types[0]) && cache.length === 1
+          && privateNoStore({ "cache-control": cache[0] })
+          && closed(media.body, ["error", "requestId"]) && media.body.requestId === media.requestId
+          && closed(media.body.error, ["code", "message"]) && media.body.error.code === "not_found"
+          && media.body.error.message === "This resource is unavailable.");
+        const progress = assessmentProgress(saved.body, target, 1, null, null);
+        initialized = { playback: { requestId: media.requestId, status: 404 },
+          started: { requestId: saved.requestId, progressId: progress.progressId, enrollmentId: progress.enrollmentId, revision: 1 } };
+        active = undefined;
+        await Promise.all([assessment().locator("form").waitFor({ state: "visible", timeout: remaining(expires) }),
+          page.getByText("Progress saved to your account.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) })]);
+        await noPlayer();
+      } catch { fail(); throw refusal(); }
+    },
+    async wait(expires) {
+      try {
+        demand(initialized && !completed && !active);
+        const attempts = [];
+        for (const [index, { attempt, latest }] of pairs.entries()) {
+          const passing = index === 1;
+          if (passing) await assessment().getByRole("button", { name: "Try again", exact: true }).click({ timeout: remaining(expires) });
+          const quizRevisionId = await fillForm(attempt.answers, expires);
+          active = [attempt, latest];
+          const submit = assessment().locator("form").getByRole("button", { name: "Submit answers", exact: true });
+          const [observedAttempt, observedProgress] = await bounded(Promise.all([
+            observe(attempt, expires), observe(latest, expires), submit.click({ timeout: remaining(expires) }),
+          ]), expires);
+          active = undefined;
+          const result = assessmentResult(observedAttempt.body, target, attempt.answers, quizRevisionId, passing);
+          const progress = assessmentProgress(observedProgress.body, target, index + 2,
+            passing ? result.createdAt : null, passing ? target.quizRevision : null);
+          const threshold = observedAttempt.body.attempt.passingPercent;
+          await assessment().getByText(`Score at least ${threshold}% to complete this assessment. You can try as often as you need.`, { exact: true })
+            .waitFor({ state: "visible", timeout: remaining(expires) });
+          await assessment().getByRole("heading", { level: 3, name: passing ? "Assessment passed" : "Keep practising", exact: true })
+            .waitFor({ state: "visible", timeout: remaining(expires) });
+          await assessment().getByText(new RegExp(`^${result.correctCount} of ${result.totalCount} answers correct\\.`))
+            .waitFor({ state: "visible", timeout: remaining(expires) });
+          if (passing) await page.getByText("Lesson complete. Progress saved.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) });
+          else demand(await page.getByText("Lesson complete. Progress saved.", { exact: true }).count() === 0);
+          await noPlayer();
+          attempts.push({ requestId: observedAttempt.requestId, payloadRequestId: attempt.payloadRequestId, ...result,
+            progress: { requestId: observedProgress.requestId, ...progress } });
+        }
+        remaining(expires);
+        completed = validateP2LessonAssessmentReceipt({ page: { pathname: lessonPath, status: 200 }, ...initialized, attempts }, target);
+      } catch { fail(); throw refusal(); }
+    },
+    finish() {
+      if (failed || !completed || context.serviceWorkers().length) throw refusal();
+      return completed;
+    },
+    async close() {
+      context.off("request", onRequest);
+      context.off("requestfailed", onFailure);
+      page.off("framenavigated", onNavigation);
+      fail();
+      stopNetwork?.();
+      await session?.detach().catch(() => {});
     },
   };
 }
@@ -2165,7 +2469,7 @@ async function runInteractiveBrowser(first) {
         break;
       }
       if (command.type === "interactive-select") {
-        demand(cleared && !input.identityEnrollment && !["lesson-entry", "lesson-denial"].includes(input.stage)
+        demand(cleared && !input.identityEnrollment && !heldLessonStages.includes(input.stage)
           && closed(received, [...Object.keys(binding), "next"]));
         const selectedInput = validateP2InteractiveBrowserInput(received.next);
         demand(!selectedInput.identityEnrollment && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
@@ -2174,8 +2478,8 @@ async function runInteractiveBrowser(first) {
         if (["authoring", "paid-grant", "paid-revoke"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
           && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
-        if (["learning", "learner-access", "lesson-entry", "lesson-denial"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
-          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial).actorId
+        if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
+          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
@@ -2194,7 +2498,7 @@ async function runInteractiveBrowser(first) {
       if (command.type === "interactive-install") {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input))
-          && (!["learning", "learner-access", "lesson-entry", "lesson-denial"].includes(binding.stage) || contexts.has("learner"))
+          && (!learnerScopedStages.includes(binding.stage) || contexts.has("learner"))
           && (!["paid-grant", "paid-revoke"].includes(binding.stage) || contexts.has("owner")));
         selection = { context: received.context, expires: received.expires };
         const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
@@ -2236,6 +2540,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "lesson-denial") {
           mutationWatch = watchP2LessonDenial(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "lesson-assessment") {
+          mutationWatch = watchP2LessonAssessment(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {
@@ -2303,7 +2611,7 @@ async function runInteractiveBrowser(first) {
         await send("interactive-page-opened", { ...selection, path, httpStatus });
       } else {
         const edit = isP2InteractiveAuthoringPair(input), stage = edit ? "authoring-edit" : binding.stage;
-        const captureMutation = ["lifecycle", "authoring", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"].includes(binding.stage)
+        const captureMutation = ["lifecycle", "authoring", "paid-grant", "paid-revoke", ...learnerScopedStages].includes(binding.stage)
           && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
@@ -2313,14 +2621,14 @@ async function runInteractiveBrowser(first) {
         await expireP2InteractiveBrowserCookie(context);
         // Teardown can queue progress or telemetry. Hold the selected page until
         // the parent closes the browser after fencing, with the permit expired.
-        if (!captureMutation || !["lesson-entry", "lesson-denial"].includes(binding.stage)) {
+        if (!captureMutation || !heldLessonStages.includes(binding.stage)) {
           await Promise.all(context.pages().map(page => page.close()));
         }
         cleared = true;
         if (input.identityEnrollment) await context.close();
         if (captureMutation || captureIdentity) demand(Date.now() < selection.expires * 1000);
         const response = captureMutation ? mutationWatch.finish() : undefined;
-        mutationWatch?.close();
+        await mutationWatch?.close();
         mutationWatch = undefined;
         pending = next();
         if (captureMutation) await send("interactive-" + stage + "-captured", { ...selection, ...(edit ? { responses: response } : { response }) });
@@ -2332,7 +2640,7 @@ async function runInteractiveBrowser(first) {
     process.off("disconnect", lost);
     process.off("SIGTERM", terminate);
     process.stdin.destroy();
-    mutationWatch?.close();
+    await mutationWatch?.close();
     try { if (context && !cleared) await expireP2InteractiveBrowserCookie(context); }
     finally { await browser?.close(); }
   }

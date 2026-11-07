@@ -25,11 +25,13 @@ _SOURCE_KEY = "ops/platform/host/p2_interactive_window.py"
 _LEARNER_ACCESS = "learner-access"
 _LESSON_ENTRY = "lesson-entry"
 _LESSON_DENIAL = "lesson-denial"
+_ASSESSMENT = "lesson-assessment"
 _PAID_REVOKE = "paid-revoke"
-_STAGES = {"identity", "authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, _LESSON_ENTRY, _LESSON_DENIAL, "lifecycle"}
-_GATEWAY_STAGES = {"authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, _LESSON_ENTRY, _LESSON_DENIAL}
+_STAGES = {"identity", "authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, _LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT, "lifecycle"}
+_GATEWAY_STAGES = {"authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, _LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT}
 _UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}")
 _SHA = re.compile(r"[a-f0-9]{64}")
+_ANSWER_KEY = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}")
 _LESSON_SELECTOR = re.compile(r"[a-f0-9]{96}")
 _UTC_MILLISECONDS = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z")
 _SOURCE_SHA = re.compile(r"[a-f0-9]{40}")
@@ -44,7 +46,7 @@ _MAX_STATE = 16_384
 _GATEWAY_GID = 65532
 _ZERO = {"newWork": 0, "recovery": 0}
 CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
-SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, _LESSON_ENTRY, _LESSON_DENIAL))
+SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, _LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT))
 EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | SCOPED_GATEWAY_BROWSER_STAGES
 _CREATE_DRAFT = "create-draft"
 _EDIT_DRAFT = "edit-and-stale-draft"
@@ -155,6 +157,8 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
         return _lesson_entry_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == _LESSON_DENIAL:
         return _lesson_denial_case_evidence(plan, action, evidence, gateway_artifact)
+    if stage == _ASSESSMENT:
+        return _assessment_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "lifecycle":
         return _lifecycle_case_evidence(action, evidence)
     demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
@@ -259,6 +263,12 @@ def _valid_gateway_acknowledgements(plan, rows):
         return (len(acknowledgements) == 15 and all(status == 403 for _, status in acknowledgements) and
                 sorted(indices[:5]) == sorted(indices[5:10]) == [0, 1, 2, 3, 4] and
                 indices[10:] == [1, 5, 2, 3, 4])
+    if stage == _ASSESSMENT:
+        indices = [index for index, _ in acknowledgements]
+        return (len(acknowledgements) == 11 and
+                all(status == (404 if index == 5 else 200) for index, status in acknowledgements) and
+                sorted(indices[:5]) == [0, 1, 2, 3, 4] and sorted(indices[5:7]) == [5, 6] and
+                indices[7:] == [7, 2, 8, 2])
     return acknowledgements in _gateway_sequences(plan)
 
 
@@ -271,7 +281,7 @@ def browser_gateway_receipt(plan, artifact):
            all(type(artifact[key]) is int and artifact[key] == 0 for key in ("gatewayActive", "gatewayUncertain")),
            browser_status(plan, "GATEWAY_ARTIFACT_REQUIRED"))
     rows = artifact["gatewayAcknowledgements"]
-    maximum_rows = 15 if common["stage"] == _LESSON_DENIAL else 9
+    maximum_rows = 15 if common["stage"] == _LESSON_DENIAL else 11 if common["stage"] == _ASSESSMENT else 9
     demand(type(rows) is list and len(rows) <= maximum_rows and all(
                _closed_fields(row, "requestId proofRequestId requestIndex upstreamStatus") and
                _matches(_UUID, row["requestId"]) and _matches(_UUID, row["proofRequestId"]) and
@@ -510,6 +520,58 @@ def _lesson_denial_case_evidence(plan, action, evidence, gateway_artifact):
     return {**joined, "operation": selected["operation"], "effectiveAccess": False,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
+
+
+def _assessment_case_evidence(plan, action, evidence, gateway_artifact):
+    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_LESSON_ASSESSMENT_EVIDENCE_REQUIRED")
+    gateway = browser_gateway_receipt(plan, gateway_artifact)
+    acks = gateway["gatewayAcknowledgements"]
+    render_ids = {row["requestIndex"]: row["requestId"] for row in acks[5:7]}
+    browser, witness = evidence["browserResponse"], evidence["courseWitness"]
+    selected = action["assessmentAction"]
+    course_id, lesson_id, grant_id, quiz_revision = (selected[key] for key in ("courseId", "lessonId", "grantId", "quizRevision"))
+    demand(_closed_fields(browser, "page playback started attempts"), "P2_INTERACTIVE_LESSON_ASSESSMENT_BROWSER_RESPONSE_REQUIRED")
+    page, playback, started, attempts = (browser[key] for key in ("page", "playback", "started", "attempts"))
+    demand(_closed_fields(page, "pathname status") and page["pathname"] == f"/academy/courses/{course_id}/lessons/{lesson_id}" and
+           type(page["status"]) is int and page["status"] == 200 and _closed_fields(playback, "requestId status") and
+           playback["requestId"] == render_ids[5] and type(playback["status"]) is int and playback["status"] == 404,
+           "P2_INTERACTIVE_LESSON_ASSESSMENT_PAGE_REQUIRED")
+    demand(_closed_fields(started, "requestId progressId enrollmentId revision") and started["requestId"] == render_ids[6] and
+           all(_matches(_UUID, started[key]) for key in ("progressId", "enrollmentId")) and type(started["revision"]) is int and
+           started["revision"] == 1, "P2_INTERACTIVE_LESSON_ASSESSMENT_STARTED_REQUIRED")
+    demand(type(attempts) is list and len(attempts) == 2, "P2_INTERACTIVE_LESSON_ASSESSMENT_ATTEMPTS_REQUIRED")
+    for index, row in enumerate(attempts):
+        passed = index == 1
+        demand(_closed_fields(row, "requestId payloadRequestId attemptId quizRevisionId quizRevision correctCount totalCount passed completed createdAt progress") and
+               row["requestId"] == acks[7 + index * 2]["requestId"] and
+               all(_matches(_UUID, row[key]) for key in ("payloadRequestId", "attemptId", "quizRevisionId")) and row["payloadRequestId"][14] == "4" and
+               type(row["quizRevision"]) is int and row["quizRevision"] == quiz_revision and
+               type(row["totalCount"]) is int and row["totalCount"] == len(selected["failAnswers"]) and
+               type(row["correctCount"]) is int and 0 <= row["correctCount"] <= row["totalCount"] and
+               row["passed"] is passed and row["completed"] is passed and _lesson_expiry(row["createdAt"]) is not None,
+               "P2_INTERACTIVE_LESSON_ASSESSMENT_ATTEMPTS_REQUIRED")
+        progress = row["progress"]
+        demand(_closed_fields(progress, "requestId progressId enrollmentId revision completedAt completedQuizRevision") and
+               progress["requestId"] == acks[8 + index * 2]["requestId"] and
+               all(progress[key] == started[key] for key in ("progressId", "enrollmentId")) and
+               type(progress["revision"]) is int and progress["revision"] == 2 + index and
+               progress["completedAt"] == (row["createdAt"] if passed else None) and
+               type(progress["completedQuizRevision"]) is (int if passed else type(None)) and
+               progress["completedQuizRevision"] == (quiz_revision if passed else None),
+               "P2_INTERACTIVE_LESSON_ASSESSMENT_PROGRESS_REQUIRED")
+    failed, passed = attempts
+    identifiers = [row["requestId"] for row in acks] + [row[key] for row in attempts for key in ("payloadRequestId", "attemptId")]
+    demand(failed["quizRevisionId"] == passed["quizRevisionId"] and failed["createdAt"] <= passed["createdAt"] and
+           failed["correctCount"] < passed["correctCount"] and len(set(identifiers)) == len(identifiers),
+           "P2_INTERACTIVE_LESSON_ASSESSMENT_ATTEMPTS_REQUIRED")
+    joined = {"actorId": action["actorId"], "courseId": course_id, "lessonId": lesson_id, "grantId": grant_id,
+              "quizRevision": quiz_revision, "enrollmentId": started["enrollmentId"], "progressId": started["progressId"],
+              "attemptIds": [row["attemptId"] for row in attempts], "progressRevision": 3}
+    demand(_closed_fields(witness, "actorId courseId lessonId grantId quizRevision enrollmentId progressId attemptIds progressRevision readOnly") and
+           witness["readOnly"] is True and all(type(witness[key]) is int for key in ("quizRevision", "progressRevision")) and
+           all(witness[key] == value for key, value in joined.items()), "P2_INTERACTIVE_LESSON_ASSESSMENT_COURSE_WITNESS_REQUIRED")
+    return {**joined, "operation": selected["operation"], "browserResponseSha256": _receipt_sha(browser),
+            "courseWitnessSha256": _receipt_sha(witness), "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
@@ -799,7 +861,17 @@ def require_browser_ledger(plan, witness):
            len({row["id"] for row in operations}) == len(operations) and
            any(row["kind"] == "new-work" for row in operations),
            browser_status(plan, "COMPLETED_NEW_WORK_REQUIRED"))
+    if plan["scopedAction"]["stage"] == _ASSESSMENT:
+        demand(len(operations) == 3 and all(row["kind"] == "new-work" for row in operations),
+               browser_status(plan, "THREE_NEW_WORK_REQUIRED"))
     return len(operations)
+
+
+def _assessment_answers(answers):
+    return (type(answers) is list and 1 <= len(answers) <= 100 and
+            all(_closed_fields(answer, "questionId optionId") and
+                all(_matches(_ANSWER_KEY, answer[key]) for key in ("questionId", "optionId")) for answer in answers) and
+            len({answer["questionId"] for answer in answers}) == len(answers))
 
 
 def validate_interactive_action(action):
@@ -812,6 +884,7 @@ def validate_interactive_action(action):
     learner_access = type(action) is dict and action.get("stage") == _LEARNER_ACCESS
     lesson_entry = type(action) is dict and action.get("stage") == _LESSON_ENTRY
     lesson_denial = type(action) is dict and action.get("stage") == _LESSON_DENIAL
+    assessment = type(action) is dict and action.get("stage") == _ASSESSMENT
     fields = {"stage", "actorId", "requests", "windowSeconds"}
     if lifecycle:
         fields.add("frontendAction")
@@ -829,6 +902,8 @@ def validate_interactive_action(action):
         fields.add("lessonEntryAction")
     if lesson_denial:
         fields.add("lessonDenialAction")
+    if assessment:
+        fields.add("assessmentAction")
     enrollment = identity and "identityEnrollment" in action
     if identity:
         fields.add("identityEnrollment" if enrollment else "identityActor")
@@ -1044,12 +1119,33 @@ def validate_interactive_action(action):
         demand(requests == [{"method": "GET", "target": target, "bodySha256": _EMPTY, "uses": uses}
                             for target, uses in zip(targets, (2, 3, 3, 3, 3, 1))],
                "P2_INTERACTIVE_LESSON_DENIAL_REQUESTS_REQUIRED")
+    if assessment:
+        selection = action["assessmentAction"]
+        demand(_closed_fields(selection, "operation courseId lessonId grantId quizRevision failAnswers passAnswers") and
+               selection["operation"] == "fail-then-pass" and all(_matches(_UUID, selection[key]) for key in ("courseId", "lessonId", "grantId")) and
+               type(selection["quizRevision"]) is int and 1 <= selection["quizRevision"] <= 2_147_483_647,
+               "P2_INTERACTIVE_LESSON_ASSESSMENT_SELECTION_REQUIRED")
+        fail, passed = selection["failAnswers"], selection["passAnswers"]
+        demand(_assessment_answers(fail) and _assessment_answers(passed) and fail != passed and
+               [row["questionId"] for row in fail] == [row["questionId"] for row in passed],
+               "P2_INTERACTIVE_LESSON_ASSESSMENT_ANSWERS_REQUIRED")
+        course, lesson, playback, progress, quiz, attempts = _learner_access_paths(selection, "/course/v1/student")
+        expected = [{"method": "GET", "target": target, "bodySha256": _EMPTY, "uses": 3 if index == 2 else 1}
+                    for index, target in enumerate((course, lesson, progress, quiz, attempts, playback))]
+        expected.append({"method": "POST", "target": f"{lesson}/progress", "uses": 1,
+                         "bodySha256": _hash(b'{"event":"lesson_started","expectedProgressRevision":0}')})
+        for answers in (fail, passed):
+            normalized = [{key: answer[key] for key in ("questionId", "optionId")} for answer in answers]
+            body = json.dumps({"quizRevision": selection["quizRevision"], "answers": normalized}, separators=(",", ":")).encode()
+            expected.append({"method": "POST", "target": attempts, "uses": 1, "bodySha256": _hash(body)})
+        demand(requests == expected, "P2_INTERACTIVE_LESSON_ASSESSMENT_REQUESTS_REQUIRED")
     return copy.deepcopy(action)
 
 
 def _selection_sha(action):
-    if action["stage"] in (_LESSON_ENTRY, _LESSON_DENIAL):
-        selected = action["lessonEntryAction" if action["stage"] == _LESSON_ENTRY else "lessonDenialAction"]
+    lesson_field = {_LESSON_ENTRY: "lessonEntryAction", _LESSON_DENIAL: "lessonDenialAction", _ASSESSMENT: "assessmentAction"}.get(action["stage"])
+    if lesson_field:
+        selected = action[lesson_field]
         return (action["actorId"] + selected["courseId"] + selected["lessonId"]).replace("-", "")
     if action["stage"] == _LEARNER_ACCESS:
         return (action["actorId"] + action["learnerAccessAction"]["lessonId"]).replace("-", "")
@@ -1094,7 +1190,7 @@ def _material(secret, deployment, source, target, epoch, stage, starts, duration
            type(starts) is int and 1_000_000_000 <= starts < 9_999_999_700 and
            type(duration) is int and 30 <= duration <= 300 and _matches(_NONCE, nonce),
            "P2_INTERACTIVE_PRIVATE_BINDING_REQUIRED")
-    selector = _LESSON_SELECTOR if stage in (_LESSON_ENTRY, _LESSON_DENIAL) else _SHA
+    selector = _LESSON_SELECTOR if stage in (_LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT) else _SHA
     demand(_matches(selector, selection_sha) if stage in EXECUTABLE_BROWSER_STAGES else selection_sha is None,
            "P2_INTERACTIVE_FRONTEND_BINDING_REQUIRED")
     host = match.group(1)
@@ -1218,6 +1314,7 @@ class P2InteractiveWindow:
         learner_access = self.action.get("learnerAccessAction")
         lesson_entry = self.action.get("lessonEntryAction")
         lesson_denial = self.action.get("lessonDenialAction")
+        assessment = self.action.get("assessmentAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
         paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}
         if learning:
@@ -1235,6 +1332,9 @@ class P2InteractiveWindow:
         if lesson_denial:
             protect = ingress.observe_lesson_denial_protection
             paths = {"course_id": lesson_denial["courseId"], "lesson_id": lesson_denial["lessonId"]}
+        if assessment:
+            protect = ingress.observe_lesson_assessment_protection
+            paths = {"course_id": assessment["courseId"], "lesson_id": assessment["lessonId"]}
         if authoring and authoring["operation"] in (_QUALIFY_PUBLICATION, _REPUBLISH_PAID_COURSE):
             paths["publication_readiness"] = True
         if authoring and authoring["operation"] == _SAVE_QUIZ_REVISION:
