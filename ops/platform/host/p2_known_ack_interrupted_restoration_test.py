@@ -10,7 +10,7 @@ from unittest.mock import patch
 import p2_known_ack_interrupted_restoration as c
 import p2_known_ack_loss_test as b
 import release_test
-from p2_source_closure import REQUIRED
+from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, PROFILED_CERTIFICATION_REQUIRED
 
 
 def selection():
@@ -306,6 +306,186 @@ class RetainedChainTests(unittest.TestCase):
         # deleted after a pending write or the current pointer was lost.
         for state in ('pending','missing','contradictory'):
             with self.subTest(state=state),patch.object(c.prior,'observe_stopped_prior_gateway',side_effect=ValueError('PRIOR_GATEWAY_LATEST_STOP_LINEAGE_REQUIRED')),self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):self.load()
+
+
+class ProfiledRetainedChainTests(unittest.TestCase):
+    """Use the actual B recorder/boundary writers and projected runtime I/O."""
+
+    def setUp(self):
+        fixture = b.ProfiledKnownAckSourceTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        self.fixture = fixture; broker = fixture.broker; profile = fixture.profile; self.fields = fixture.fields
+        self.root = b.source.ROOT; self.selected = broker.selected; self.jobs = broker.jobs
+        self.cert = self.root / ('p2-profiled-current-certification-' + broker.action_id())
+        self.cert.mkdir(mode=0o700); broker.directory = self.cert
+        release = self.root / self.selected['releaseId']; release.mkdir(mode=0o700)
+        c.migrate.write_exact_bytes(release, 'candidate.json', fixture.candidate_raw)
+        actual_capture, actual_stopped = c.prior.capture_before_stop, c.prior.observe_stopped_prior_gateway
+        source_commit = self.selected['sources']['frontend']['commit']
+        operators = self.root / 'operators'; installed = operators / source_commit
+        names = REQUIRED | PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | {c.known.HOST_MODULE, c.known.MODULE,
+            'ops/platform/host/p2_prior_gateway.py', 'ops/platform/host/p2_certification_fault.py', 'ops/gateway/p2-certification-fault.mjs'}
+        manifest = {}
+        for name in sorted(names):
+            raw = c.migrate.read_input(broker.source, name)
+            file = installed / name; file.parent.mkdir(parents=True, exist_ok=True); file.write_bytes(raw); file.chmod(0o444)
+            manifest[name] = c.sha(raw)
+        closure = c.sha(c.canonical(sorted(manifest.items())))
+        broker.initial['sourceSha256'] = manifest; broker.initial['sourceClosureSha256'] = closure
+        cert = broker.initial['certificationPlan']; fault = broker.fault_stage.plan; native = broker.initial['nativePlan']
+        native.update(environment='staging', actionId=self.selected['releaseId'],
+                      phase2ContractManifestSha256=self.selected['phase2ContractManifestSha256'], target=fixture.scope.receipt['target'])
+        native['planSha256'] = c.sha(c.canonical({key: value for key, value in native.items() if key != 'planSha256'}))
+        fault.update(environment='staging', actionId=self.selected['releaseId'], maxMatches=1, leaseMilliseconds=120000,
+                     nativePlanSha256=native['planSha256'], operatorSourceClosureSha256=closure)
+        cert['operatorSourceClosureSha256'] = closure
+        cert['configurationSha256'] = c.sha(b.parent._profiled_compact(broker.initial['configurationSha256']))
+        rows = [{'service': name, 'containerId': format(index + 1, '064x'),
+                 'image': self.selected['artifacts'][c.runtime.IMAGE_KEYS[name]]['image'],
+                 'health': 'none' if name.endswith('-tls') else 'healthy'} for index, name in enumerate(c.runtime.SERVICES)]
+        cert['runtimeInventorySha256'] = c.sha(c.canonical(rows))
+        intent = c.known.replacement_intent(cert, fixture.recovery, expected_profile=profile)
+        cert['knownAckRecovery'] = {**self.fields, 'recoveryActionId': fixture.recovery, 'intent': intent, 'intentSha256': c.sha(c.canonical(intent))}
+        cert['planSha256'] = b.parent._profiled_plan_hash(cert)
+        fixture.scope.certification_plan = copy.deepcopy(cert)
+        fixture.scope.receipt['planSha256'] = cert['planSha256']
+        fixture.scope._physical_observer.request.update(plan=cert, receipt=fixture.scope.receipt)
+        candidate_hash = broker.initial['candidateSha256']
+        fixture.gateway['binding'].update(releaseId=self.selected['releaseId'], hostMachineId='1' * 32,
+            gatewayImage=self.selected['artifacts']['gateway']['image'],
+            runtimeConfigurationSha256=broker.initial['configurationSha256']['runtime.json'])
+        mount = broker.configuration / 'admission'; mount.mkdir(mode=0o755)
+        self.fault_dir = self.cert / 'fault'; self.fault_dir.mkdir(mode=0o700)
+        command = native['commandWitnesses'][0]
+        lease = {'version': 1, **{key: fault[key] for key in ('environment', 'profile', 'stageId', 'candidateSha256', 'configurationSha256',
+            'gatewayConfigurationSha256', 'gatewayProcessSha256', 'gatewayImageSha256', 'mode', 'receiver')},
+            'releaseId': self.selected['releaseId'], 'sourceWitnessSha256': fault['commandSha256'],
+            'issuedAt': '2026-11-06T01:00:00.000Z', 'expiresAt': '2026-11-06T01:02:00.000Z', 'maxMatches': 1,
+            'record': {'commandId': command['commandId'], 'accountVersion': int(command['accountVersion']), 'canonicalSha256': fault['commandSha256']}}
+        lease_sha = c.sha(c.canonical(lease) + b'\n'); broker.fault_stage.lease_sha256 = lease_sha
+        broker.fault_stage.effects.return_value[0]['leaseSha256'] = lease_sha
+        self.write(self.fault_dir, 'fault-arm-intent.json', {**self.fields, 'stageId': fault['stageId'], 'leaseSha256': lease_sha,
+            'admissionDirectoryDevice': mount.stat().st_dev, 'admissionDirectoryInode': mount.stat().st_ino, 'lease': lease})
+        self.write(self.fault_dir, 'fault-arm-observed.json', {**self.fields, 'status': 'P2_FAULT_LEASE_ARMED', 'stageId': fault['stageId'],
+            'leaseSha256': lease_sha, 'expiresAt': lease['expiresAt'], 'maxMatches': 1, 'gatewayProcessSha256': fault['gatewayProcessSha256']})
+        self.component = fixture.replacement_fixture()
+        self.replacement = fixture.boundary.output; self.causal = broker.known_ack_recorder.directory
+        _, api = b.parent.check_profiled_certification_apis(fixture.scope, broker.jobs, broker.source, broker.bundle, self.cert / 'current-api',
+            dict.fromkeys(('course', 'community'), 'owned-private-input'), manifest, expected_profile=profile)
+        self.write(self.cert, 'p2-certification-current-ready.json', {'status': 'P2_CERTIFICATION_CURRENT_READY', 'apiDatabases': api,
+            'containers': rows, 'sqlReplayed': False, 'runtimeReplaced': False})
+        self.write(self.cert, 'p2-profiled-certification-input-verified.json', {**self.fields, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
+            'environment': 'staging', 'releaseId': self.selected['releaseId'], 'certificationActionId': broker.action_id(),
+            'sourceCommit': source_commit, 'candidateSha256': candidate_hash, 'targetSha256': cert['targetSha256'],
+            'planSha256': cert['planSha256'], 'originalReleasePlanHashHostVerified': True})
+        self.initial = {**self.fields, 'mode': c.PROFILED_MODE, 'environment': 'staging', 'recoveryActionId': 'new-profiled-c',
+            'candidateSha256': candidate_hash, 'bundle': str(broker.bundle), 'results': str(self.root),
+            'configuration': cert['knownAckConfigurationInputDirectory'], 'configurationSha256': broker.initial['configurationSha256'],
+            'targetSha256': cert['targetSha256'], 'hostMachineId': '1' * 32, 'apiJobSha256': cert['apiJobSha256'],
+            'receiverTargets': fixture.receiver_targets, 'originalCertificationPlanSha256': cert['planSha256'],
+            'originalCertificationPlanBytesSha256': '1' * 64, 'operationId': broker.known_ack_recorder.domain['operationId']}
+        self.cert_id, self.recovery_id, self.source_commit = broker.action_id(), fixture.recovery, source_commit
+        self.stop_dir = self.cert / 'prior-gateway-after-quiescence'
+        self.stop_dir.mkdir(mode=0o700)
+        patches = (patch.object(c, 'ROOT', self.root), patch.object(c, 'OPERATORS', operators),
+            patch.object(c.prior, 'capture_before_stop', actual_capture), patch.object(c.prior, 'observe_stopped_prior_gateway', actual_stopped),
+            patch.object(c.prior, '_inventory', side_effect=lambda *_: [fixture.model['gateway'][0]['Id']]),
+            patch.object(c.prior, '_mounted_configuration', side_effect=lambda *_: Path(next(row['Source'] for row in
+                fixture.model['gateway'][0]['Mounts'] if row['Destination'] == '/admission')).parent),
+            patch.object(c.prior, '_close', side_effect=lambda *_args, **kwargs: fixture.gateway_read(expected_profile=kwargs['expected_profile'])))
+        for item in patches:
+            item.start(); self.addCleanup(item.stop)
+
+    @staticmethod
+    def write(directory, name, value):
+        c.migrate.write_json(directory, name, value)
+
+    def stop(self):
+        profile = self.fixture.profile
+        original_guard = {key: self.initial[key] for key in ('candidateSha256', 'configurationSha256', 'hostMachineId')}
+        before = c.prior.capture_before_stop({**original_guard, 'certificationActionId': self.cert_id}, self.selected, self.stop_dir,
+            self.fixture.scope.verify, expected_profile=profile)
+        self.fixture.model['gateway'][0]['State'].update(Running=False, Pid=0)
+        c.prior.retain_ordered_stop(before, self.stop_dir, self.fixture.scope.verify, expected_profile=profile)
+
+    def refresh_pins(self):
+        def pin(directory, name):
+            path = directory / name
+            return c.sha(path.read_bytes()) if path.exists() else None
+        self.initial['interruptedRestoration'] = {**self.fields, 'mode': c.PROFILED_MODE, 'restorationActionId': 'new-profiled-c',
+            'originalCertificationActionId': self.cert_id, 'originalRecoveryActionId': self.recovery_id,
+            'originalOperatorSourceCommit': self.source_commit,
+            'causalReceiptSha256': {name: pin(self.causal, name) for name in c.PROFILED_CAUSAL_FILES},
+            'replacementReceiptSha256': {name: pin(self.replacement, name) for name in c.REPLACEMENT_FILES},
+            'priorGatewayReference': {'kind': 'stopped-current-candidate', 'stopReceiptDirectory': str(self.stop_dir),
+                                      'stopReceiptSha256': pin(self.stop_dir, c.prior.STOPPED)}}
+
+    def load(self):
+        return c.load_profiled_retained(self.initial, self.selected, self.jobs, self.fixture.scope.verify,
+                                        expected_profile=self.fixture.profile)
+
+    def test_exact_intent_and_stopped_original_one_do_not_issue_authority(self):
+        self.stop(); self.refresh_pins(); evidence = self.load()
+        self.assertEqual(evidence['frontier'], 'original-stopped-one')
+        self.assertEqual(evidence['activeStage'], None); self.assertEqual(evidence['completedStages'], [])
+        self.assertEqual(evidence['stoppedGateway']['admission']['uncertain'], {'newWork': 0, 'recovery': 1})
+        self.assertEqual(len(evidence['observedProcesses']), 10)
+        self.assertFalse(any('up' in call for call in self.fixture.calls))
+
+    def test_replacement_zero_requires_the_actual_latest_process_and_durable_marker(self):
+        outcome = self.component.restore(); self.stop(); self.refresh_pins(); evidence = self.load()
+        self.assertEqual(evidence['frontier'], 'replacement-stopped-zero')
+        self.assertEqual(evidence['stoppedGateway']['process'], outcome['newGateway']['process'])
+        self.assertEqual(evidence['completedStages'], list(c.runtime.STAGES))
+        marker = self.replacement / c.B_GATEWAY_MARKER; original = marker.read_bytes()
+        value = json.loads(original); value['pendingLineage']['expectedCandidateSha256'] = 'f' * 64
+        marker.write_bytes(c.canonical(value) + b'\n'); self.refresh_pins()
+        with self.assertRaisesRegex(ValueError, 'DURABLE_GATEWAY_FRONTIER_REQUIRED'): self.load()
+        marker.unlink(); self.refresh_pins()
+        with self.assertRaisesRegex(ValueError, 'LATEST_STOPPED_ONE_REQUIRED'): self.load()
+
+    def test_active_gateway_intent_without_command_requires_original_source_and_latest_one(self):
+        capture = c.prior.capture_before_stop
+        def lose_before_stop(initial, selected, output, *args, **options):
+            if output == self.replacement:
+                raise ValueError('OWNED_LOST_BEFORE_OLD_STOP')
+            return capture(initial, selected, output, *args, **options)
+        with patch.object(c.prior, 'capture_before_stop', side_effect=lose_before_stop):
+            with self.assertRaisesRegex(ValueError, 'OWNED_LOST_BEFORE_OLD_STOP'): self.component.restore()
+        self.stop(); self.refresh_pins(); evidence = self.load()
+        self.assertEqual(evidence['activeStage'], ('gateway',))
+        self.assertEqual(evidence['frontier'], 'original-stopped-one')
+        with patch.object(c, 'PROFILED_B_FRONTIER_SHA256', 'f' * 64):
+            with self.assertRaisesRegex(ValueError, 'GATEWAY_FRONTIER_UNKNOWN'): self.load()
+        c.prior._remember({**self.initial, 'recoveryActionId': self.recovery_id}, evidence['originalGateway'],
+            'replacement-in-progress', expectedCandidateSha256=self.initial['candidateSha256'])
+        with self.assertRaisesRegex(ValueError, 'LATEST_STOP_LINEAGE_REQUIRED'): self.load()
+
+    def test_candidate_jobs_lease_and_original_plan_require_actual_bytes(self):
+        self.stop(); self.refresh_pins()
+        for path, code in ((self.fixture.candidate_file, 'EXACT_ORIGINAL_CANDIDATE_REQUIRED'),
+                           (Path(self.initial['bundle']) / 'jobs/course.json', 'EXACT_ORIGINAL_API_JOB_REQUIRED')):
+            raw = path.read_bytes(); path.write_bytes(raw + b'\n')
+            with self.assertRaisesRegex(ValueError, code): self.load()
+            path.write_bytes(raw)
+        self.initial['originalCertificationPlanSha256'] = 'f' * 64
+        with self.assertRaisesRegex(ValueError, 'ORIGINAL_INPUT_REQUIRED'): self.load()
+        path = self.fault_dir / 'fault-arm-intent.json'; value = json.loads(path.read_bytes()); value['admissionDirectoryInode'] += 1
+        path.write_bytes(c.canonical(value) + b'\n')
+        self.initial['originalCertificationPlanSha256'] = self.fixture.broker.initial['certificationPlan']['planSha256']
+        with self.assertRaisesRegex(ValueError, 'FAULT_MOUNT_REQUIRED'): self.load()
+
+    def test_rehashed_reconciliation_cannot_wash_original_uncertainty(self):
+        self.stop()
+        reconcile = self.causal / 'reconciliation-observed.json'
+        authorization = self.causal / 'replacement-authorization.json'
+        intent = self.replacement / 'known-ack-replacement-intent.json'
+        record = json.loads(reconcile.read_bytes()); record['oldGatewayUncertain']['recovery'] = 0
+        reconcile.write_bytes(c.canonical(record) + b'\n')
+        auth = json.loads(authorization.read_bytes()); auth['reconciliationObservedSha256'] = c.sha(reconcile.read_bytes())
+        authorization.write_bytes(c.canonical(auth) + b'\n')
+        value = json.loads(intent.read_bytes()); value.update(authorization=auth, authorizationRawSha256=c.sha(authorization.read_bytes()))
+        intent.write_bytes(c.canonical(value) + b'\n'); self.refresh_pins()
+        with self.assertRaisesRegex(ValueError, 'CAUSAL_CONTEXT_REQUIRED'): self.load()
 
 
 class AuthorityTests(unittest.TestCase):

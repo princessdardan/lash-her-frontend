@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import stat
 import sys
 import threading
 import time
@@ -37,18 +38,23 @@ from p2_release_broker import Broker, PhysicalObserver, LOCK, MAXIMUM, decode
 from p2_recovery_broker import P2RecoveryPhysicalObserver
 from p2_recovery_scope import P2RecoveryScope
 from p2_recovery_runtime import P2RecoveryRuntime
-from p2_source_closure import TYPES, verify_source_closure
+from p2_source_closure import (PROFILED_CERTIFICATION_MODE, TYPES, verify_source_closure,
+                               verify_profiled_current_source_closure)
+from qualification_target_profile import decode_qualification_target_json
 
 require = migrate.demand
 ROOT = Path('/var/lib/lash-her/releases/staging')
 OPERATORS = Path('/opt/lash-her/operators')
 MODE = 'known-ack-interrupted-restoration'
+PROFILED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 MAX_SECONDS = 900
 CAUSAL_FILES = ('recovery-intent.json', 'baseline.json', 'domain.json', 'request-details.json',
                 'settlement.json', 'replacement-authorization.json')
 B_GATEWAY_MARKER = 'known-ack-gateway-replacement-started.json'
 B_FRONTIER_MODULE = 'ops/platform/host/p2_known_ack_loss.py'
 B_FRONTIER_SHA256 = '445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db'
+PROFILED_B_FRONTIER_SHA256 = '133e2e383857149c8f82a0a0d85458805ae003f6b1a51667babbb414a99a0d78'
+PROFILED_CAUSAL_FILES = (*CAUSAL_FILES, 'reconciliation-observed.json')
 REPLACEMENT_FILES = ('known-ack-replacement-intent.json', B_GATEWAY_MARKER, *(
     'known-ack-stage-' + str(i) + '-' + suffix + '.json'
     for i in range(5) for suffix in ('intent', 'observed')))
@@ -117,7 +123,9 @@ def read_pinned(directory, pins):
     return result
 
 
-def original_source(commit, expected):
+def original_source(commit, expected, *, expected_profile=None):
+    profile = migrate.profile_context(expected_profile)
+    max_bytes, max_files = (48_000_000, 544) if profile is not None else (41_000_000, 512)
     directory = OPERATORS / commit
     require(directory == directory.resolve() and not any(p.is_symlink() for p in (directory, *directory.parents)), 'P2_INTERRUPTED_ORIGINAL_SOURCE_REQUIRED')
     manifest, total = {}, 0
@@ -128,13 +136,18 @@ def original_source(commit, expected):
         info = p.stat()
         require(info.st_uid == os.getuid() and not info.st_mode & 0o022 and 0 < info.st_size <= 2_000_000, 'P2_INTERRUPTED_ORIGINAL_SOURCE_PERMISSIONS')
         total += info.st_size
-        require(total <= 41_000_000 and len(manifest) < 512, 'P2_INTERRUPTED_ORIGINAL_SOURCE_BOUNDS')
+        require(total <= max_bytes and len(manifest) < max_files, 'P2_INTERRUPTED_ORIGINAL_SOURCE_BOUNDS')
         manifest[p.relative_to(directory).as_posix()] = sha(p.read_bytes())
-    verify_source_closure({'sourceSha256': manifest, 'sourceClosureSha256': expected}, directory)
+    packet = {'sourceSha256': manifest, 'sourceClosureSha256': expected}
+    if profile is None:
+        verify_source_closure(packet, directory)
+    else:
+        verify_profiled_current_source_closure({**packet, 'mode': PROFILED_CERTIFICATION_MODE,
+            'qualificationTargetProfile': profile}, directory)
     return directory, manifest
 
 
-def validate_request_details(plan, certification_id, evidence, operations):
+def validate_request_details(plan, certification_id, evidence, operations, *, strict=False):
     artifact = evidence['originalArtifact']
     require(set(artifact) == {'version', 'kind', 'reviewerGithubUserId', 'certificationActionId', 'nativePlanSha256', 'windowEpoch', 'recordedAt', 'observations'} and
             one(artifact['version']) and artifact['kind'] == 'operator-recorded-request-details' and artifact['reviewerGithubUserId'] == '8996309' and
@@ -154,7 +167,7 @@ def validate_request_details(plan, certification_id, evidence, operations):
                 re.fullmatch(r'[A-Za-z0-9:._-]{1,200}', row['providerRequestId']) and row['providerRequestId'] not in ids and
                 _iso(row['completedAt']) >= _iso(row['startedAt']), 'P2_INTERRUPTED_NATIVE_REQUEST_REQUIRED')
         ids.add(row['providerRequestId'])
-        event = json.loads(row['admittedLogLine'])
+        event = decode_qualification_target_json(row['admittedLogLine'], 'carrier') if strict else json.loads(row['admittedLogLine'])
         require(set(event) == {'version', 'status', 'environment', 'projectId', 'operationId', 'producerSha256', 'sourceCommit', 'epoch', 'kind', 'targetSha256'} and
                 one(event['version']) and event['status'] == 'P2_LIFECYCLE_CRON_ADMITTED' and event['environment'] == 'staging' and
                 event['projectId'] == plan['nativePlan']['projectId'] and event['producerSha256'] == plan['nativePlan']['producer']['producerSha256'] and
@@ -190,13 +203,25 @@ def require_gateway_counts(value):
             'P2_INTERRUPTED_INTEGER_GATEWAY_COUNTS_REQUIRED')
 
 
-def original_fault_receipts(selection, selected, plan, effect):
-    directory = root_path(str(ROOT / ('p2-certification-' + selection['originalCertificationActionId']) / 'fault'))
+def original_fault_receipts(selection, selected, plan, effect, *, expected_profile=None, certification=None, old_mount=None):
+    profile = migrate.profile_context(expected_profile)
+    certification = ROOT / ('p2-certification-' + selection['originalCertificationActionId']) if profile is None else certification
+    directory = root_path(str(certification / 'fault'))
     names = ('fault-arm-intent.json', 'fault-arm-observed.json')
     raw = {name: migrate.read_input(directory, name, 2_000_000) for name in names}
-    intent, observed = (json.loads(raw[name]) for name in names)
+    intent, observed = (json.loads(raw[name]) if profile is None else _profiled_record(raw[name], profile) for name in names)
     lease = intent.get('lease')
-    require(set(intent) == {'version', 'stageId', 'leaseSha256', 'lease'} and one(intent['version']) and
+    common = {'version', 'stageId', 'leaseSha256', 'lease'}
+    if profile is not None:
+        from p2_certification_fault import LEASE
+        mount = old_mount / 'admission'
+        info = mount.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and not info.st_mode & 0o022 and
+                type(intent.get('admissionDirectoryDevice')) is int and type(intent.get('admissionDirectoryInode')) is int and
+                (intent['admissionDirectoryDevice'], intent['admissionDirectoryInode']) == (info.st_dev, info.st_ino) and
+                not (mount / LEASE).exists() and not (mount / LEASE).is_symlink(), 'P2_INTERRUPTED_PROFILED_FAULT_MOUNT_REQUIRED')
+        common |= {'qualificationTargetProfile', 'admissionDirectoryDevice', 'admissionDirectoryInode'}
+    require(set(intent) == common and (profile is not None or one(intent['version'])) and
             isinstance(lease, dict) and set(lease) == {'version', 'environment', 'profile', 'stageId', 'candidateSha256', 'configurationSha256',
             'gatewayConfigurationSha256', 'gatewayProcessSha256', 'gatewayImageSha256', 'mode', 'receiver', 'releaseId',
             'sourceWitnessSha256', 'issuedAt', 'expiresAt', 'maxMatches', 'record'} and
@@ -212,9 +237,11 @@ def original_fault_receipts(selection, selected, plan, effect):
             str(record['accountVersion']) == command['accountVersion'] and record['canonicalSha256'] == plan['commandSha256'],
             'P2_INTERRUPTED_ORIGINAL_FAULT_COMMAND_REQUIRED')
     from p2_certification_parent import _iso
-    require(_iso(lease['expiresAt']) - _iso(lease['issuedAt']) == 120 and
-            set(observed) == {'version', 'status', 'stageId', 'leaseSha256', 'expiresAt', 'maxMatches', 'gatewayProcessSha256'} and
-            one(observed['version']) and one(observed['maxMatches']) and observed['status'] == 'P2_FAULT_LEASE_ARMED' and
+    fields = {'version', 'status', 'stageId', 'leaseSha256', 'expiresAt', 'maxMatches', 'gatewayProcessSha256'}
+    if profile is not None:
+        fields.add('qualificationTargetProfile')
+    require(_iso(lease['expiresAt']) - _iso(lease['issuedAt']) == 120 and set(observed) == fields and
+            (profile is not None or one(observed['version'])) and one(observed['maxMatches']) and observed['status'] == 'P2_FAULT_LEASE_ARMED' and
             all(observed[key] == lease[key] for key in ('stageId', 'expiresAt', 'gatewayProcessSha256')) and
             observed['leaseSha256'] == intent['leaseSha256'], 'P2_INTERRUPTED_ORIGINAL_FAULT_READBACK_REQUIRED')
     return {name: sha(raw[name]) for name in names}
@@ -356,6 +383,440 @@ def load_retained(initial, selected, jobs, verify, command=None):
     return {'selection': selection, 'plan': plan, 'values': values, 'stages': stages, 'originalGateway': observation,
             'inputDirectory': input_directory, 'replacementDirectory': replacement, 'activeStage': active, 'completedStages': completed,
             'oldProcesses': output['oldProcesses'], 'originalReadySha256': sha(ready_raw), 'originalFaultReceiptSha256': fault_pins, 'originalSource': source, 'originalSourceManifest': manifest}
+
+
+def _profiled_record(raw, profile):
+    value = decode_qualification_target_json(raw, 'carrier')
+    migrate.require_profile(profile, value)
+    require(type(value.get('version')) is int and value['version'] == 2, 'P2_INTERRUPTED_PROFILED_RECEIPT_REQUIRED')
+    return value
+
+
+def _profiled_selection(initial, selected, profile):
+    value = initial['interruptedRestoration']
+    migrate.require_profile(profile, initial, value)
+    keys = {'version', 'qualificationTargetProfile', 'mode', 'restorationActionId', 'originalCertificationActionId',
+            'originalRecoveryActionId', 'originalOperatorSourceCommit', 'causalReceiptSha256',
+            'replacementReceiptSha256', 'priorGatewayReference'}
+    ids = ('restorationActionId', 'originalCertificationActionId', 'originalRecoveryActionId')
+    require(type(initial['version']) is int and initial['version'] == 2 and initial['mode'] == PROFILED_MODE and
+            initial['environment'] == 'staging' and initial['recoveryActionId'] == value['restorationActionId'] and
+            digest(initial['originalCertificationPlanSha256']) and digest(initial['originalCertificationPlanBytesSha256']) and
+            set(value) == keys and type(value['version']) is int and value['version'] == 2 and value['mode'] == PROFILED_MODE and
+            all(action(value[key]) for key in ids) and len({selected['releaseId'], *(value[key] for key in ids)}) == 4 and
+            value['originalOperatorSourceCommit'] == selected['sources']['frontend']['commit'] and
+            migrate.source_commit(value['originalOperatorSourceCommit']) and digest(initial['candidateSha256']),
+            'P2_INTERRUPTED_PROFILED_EXPLICIT_SELECTION_REQUIRED')
+    for key, names in (('causalReceiptSha256', PROFILED_CAUSAL_FILES), ('replacementReceiptSha256', REPLACEMENT_FILES)):
+        pins = value[key]
+        require(type(pins) is dict and set(pins) == set(names) and all(digest(pin) or
+                key == 'replacementReceiptSha256' and pin is None for pin in pins.values()),
+                'P2_INTERRUPTED_PROFILED_FIXED_PINS_REQUIRED')
+    require(digest(value['replacementReceiptSha256']['known-ack-replacement-intent.json']),
+            'P2_INTERRUPTED_PROFILED_REPLACEMENT_INTENT_REQUIRED')
+    ref = value['priorGatewayReference']
+    require(type(ref) is dict and set(ref) == {'kind', 'stopReceiptDirectory', 'stopReceiptSha256'} and
+            ref['kind'] == 'stopped-current-candidate' and type(ref['stopReceiptDirectory']) is str and
+            ref['stopReceiptDirectory'] == str(Path(ref['stopReceiptDirectory'])) and digest(ref['stopReceiptSha256']),
+            'P2_INTERRUPTED_PROFILED_STOP_REFERENCE_REQUIRED')
+    return copy.deepcopy(value)
+
+
+def _profiled_files(directory, pins, profile):
+    rows = {}
+    for name, pin in pins.items():
+        path = directory / name
+        if pin is None:
+            require(not path.exists() and not path.is_symlink(), 'P2_INTERRUPTED_ORIGINAL_ABSENCE_CHANGED')
+            continue
+        raw = migrate.read_input(directory, name)
+        require(sha(raw) == pin, 'P2_INTERRUPTED_ORIGINAL_RECEIPT_CHANGED')
+        rows[name] = _profiled_record(raw, profile)
+    return rows
+
+
+def _profiled_causal(initial, selection, selected, values, profile):
+    intent, baseline, domain, requests, settlement, authorization, reconciled = (values[name] for name in PROFILED_CAUSAL_FILES)
+    plan = baseline['plan']; native_plan = plan['nativePlan']; reviewed = intent['intent']
+    migrate.require_profile(profile, plan, native_plan, native_plan.get('target'), reviewed)
+    for value in (plan, native_plan, reviewed):
+        require(type(value.get('version')) is int and value['version'] == 2, 'P2_INTERRUPTED_PROFILED_ORIGINAL_PLAN_REQUIRED')
+    recovery_id, cert_id = selection['originalRecoveryActionId'], selection['originalCertificationActionId']
+    source_commit, candidate = selection['originalOperatorSourceCommit'], initial['candidateSha256']
+    require(plan['candidateSha256'] == candidate and plan['candidateObjectSha256'] == native_plan['candidateSha256'] == sha(canonical(selected)) and
+            plan['sourceCommit'] == plan['operatorSourceCommit'] == native_plan['sourceCommit'] == source_commit and
+            plan['targetSha256'] == native_plan['targetSha256'] == initial['targetSha256'] and
+            native_plan['actionId'] == plan['actionId'] == selected['releaseId'] and native_plan['projectId'] == selected['workload']['projectId'] and
+            native_plan['phase2ContractManifestSha256'] == selected['phase2ContractManifestSha256'] and
+            plan['environment'] == native_plan['environment'] == 'staging' and plan['profile'] == 'lifecycle-known-command-v1' and
+            plan['mode'] == 'drop-after-ack' and plan['receiver'] in ('course', 'community') and one(plan['maxMatches']) and
+            type(plan['leaseMilliseconds']) is int and plan['leaseMilliseconds'] == 120000 and
+            len(native_plan['commandWitnesses']) == 1 and native_plan['commandWitnesses'][0]['action'] == 'suspend' and
+            re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']) and
+            type(native_plan['windowSeconds']) is int and 1 <= native_plan['windowSeconds'] <= 180 and
+            plan['nativePlanSha256'] == native_plan['planSha256'] == sha(canonical({k: v for k, v in native_plan.items() if k != 'planSha256'})),
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_ONE_SUSPEND_REQUIRED')
+    expected_intent = known.replacement_intent({**reviewed, 'knownAckConfigurationInputDirectory': reviewed['configurationInputDirectory'],
+        'knownAckReceiverTargets': initial['receiverTargets'], 'nativePlan': native_plan}, recovery_id, expected_profile=profile)
+    require(set(intent) == {'version', 'qualificationTargetProfile', 'recoveryActionId', 'intent', 'intentSha256'} and
+            intent['recoveryActionId'] == recovery_id and reviewed == expected_intent and reviewed['certificationActionId'] == cert_id and
+            reviewed['candidateSha256'] == candidate and reviewed['sourceCommit'] == reviewed['operatorSourceCommit'] == source_commit and
+            reviewed['targetSha256'] == initial['targetSha256'] and reviewed['gatewayProcessSha256'] == plan['gatewayProcessSha256'] and
+            reviewed['operatorSourceClosureSha256'] == plan['operatorSourceClosureSha256'] and
+            sha(canonical(reviewed)) == intent['intentSha256'] == authorization['recoveryIntentSha256'],
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_INTENT_REQUIRED')
+    require_original_configuration(initial, plan, reviewed)
+    names = ('P2_KNOWN_ACK_BASELINE_RETAINED', 'P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW', 'P2_KNOWN_ACK_REQUEST_DETAILS_JOINED',
+             'P2_KNOWN_ACK_SPECIFIC_OPERATION_SETTLEMENT', 'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED', 'P2_KNOWN_ACK_RECONCILIATION_OBSERVED_FENCED')
+    common = {'version', 'qualificationTargetProfile', 'status'}
+    source_keys = {'recoveryActionId', 'candidateSha256', 'certificationActionId', 'sourceModuleSha256',
+                   'operatorSourceClosureSha256', 'recoveryIntentReceiptSha256'}
+    causal_keys = {'operationId', 'baselineSha256', 'domainSha256', 'requestDetailsSha256', 'settlementSha256'}
+    for row, status, fields in zip((baseline, domain, requests, settlement, authorization, reconciled), names, (
+            {'plan', 'sourceModuleSha256', 'candidateSha256', 'gateway', 'databases', 'recoveryActionId'},
+            {'gateway', 'databases', 'effect', 'operationId'},
+            {'artifactSha256', 'domainSha256', 'provenance', 'originalArtifact'},
+            (causal_keys - {'settlementSha256'}) | {'recoveryActionId', 'epoch', 'gateway', 'databases'},
+            source_keys | causal_keys | {'originalGateway', 'recoveryIntentSha256', 'reconciliationObservedSha256',
+                'ordinaryClosedZeroGate', 'sqlReplayAllowed', 'roleChangeAllowed'},
+            source_keys | causal_keys | {'gateway', 'databases', 'frontendGlobalClosedZero', 'oldGatewayUncertain',
+                'runtimeReplaced', 'ordinaryClosedZeroGate'})):
+        require(set(row) == common | fields and row.get('status') == status, 'P2_INTERRUPTED_PROFILED_CAUSAL_RECORD_REQUIRED')
+    require(
+            all(row['candidateSha256'] == candidate for row in (baseline, authorization, reconciled)) and
+            all(row['recoveryActionId'] == recovery_id for row in (baseline, settlement, authorization, reconciled)) and
+            authorization['certificationActionId'] == reconciled['certificationActionId'] == cert_id and
+            authorization['sourceModuleSha256'] == reconciled['sourceModuleSha256'] == baseline['sourceModuleSha256'] and
+            authorization['operatorSourceClosureSha256'] == reconciled['operatorSourceClosureSha256'] == reviewed['operatorSourceClosureSha256'] and
+            all(authorization[key] is False for key in ('ordinaryClosedZeroGate', 'sqlReplayAllowed', 'roleChangeAllowed')) and
+            reconciled['frontendGlobalClosedZero'] is True and reconciled['runtimeReplaced'] is False and
+            reconciled['ordinaryClosedZeroGate'] is False and canonical(reconciled['oldGatewayUncertain']) == canonical({'newWork': 0, 'recovery': 1}),
+            'P2_INTERRUPTED_PROFILED_CAUSAL_CONTEXT_REQUIRED')
+    pins = selection['causalReceiptSha256']
+    for field, name, carriers in (
+            ('baselineSha256', 'baseline.json', (settlement, authorization, reconciled)),
+            ('domainSha256', 'domain.json', (requests, settlement, authorization, reconciled)),
+            ('requestDetailsSha256', 'request-details.json', (settlement, authorization, reconciled)),
+            ('settlementSha256', 'settlement.json', (authorization, reconciled)),
+            ('recoveryIntentReceiptSha256', 'recovery-intent.json', (authorization, reconciled)),
+            ('reconciliationObservedSha256', 'reconciliation-observed.json', (authorization,))):
+        require(all(row[field] == pins[name] for row in carriers), 'P2_INTERRUPTED_PROFILED_CAUSAL_HASH_REQUIRED')
+    old = settlement['gateway']
+    for row in (baseline, domain, settlement, reconciled):
+        require_snapshot_numbers(row['databases']); require_gateway_counts(row['gateway'])
+        require(_profiled_process(row['gateway']['process'], running=True) and known._same_process(old, row['gateway']),
+                'P2_INTERRUPTED_PROFILED_OLD_PROCESS_CHANGED')
+    initial_gateway = baseline['gateway']['admission']
+    require(initial_gateway['newWork'] is False and initial_gateway['recovery'] is True and
+            known._zero(initial_gateway['active']) and known._zero(initial_gateway['uncertain']) and
+            domain['databases']['frontend']['admission']['epoch'] == str(int(native_plan['initialEpoch']) + 1),
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_WINDOW_EPOCH_REQUIRED')
+    for row, closed in ((domain, False), (settlement, True)):
+        require(known.validate_domain(plan, baseline['databases'], row['databases'], row['gateway'], [domain['effect']], closed=closed)
+                == {'operationId': domain['operationId']}, 'P2_INTERRUPTED_PROFILED_DOMAIN_REQUIRED')
+    require(canonical(authorization['originalGateway']) == canonical(baseline['gateway']) and reconciled['gateway'] == old and
+            prior._closed_observed(old) and known._zero(old['admission']['active']) and
+            old['admission']['uncertain'] == {'newWork': 0, 'recovery': 1} and
+            domain['operationId'] == settlement['operationId'] == authorization['operationId'] == reconciled['operationId'] and
+            settlement['epoch'] == settlement['databases']['frontend']['admission']['epoch'] == str(int(native_plan['initialEpoch']) + 2),
+            'P2_INTERRUPTED_PROFILED_EXACT_SETTLEMENT_REQUIRED')
+    known.validate_settled(plan, settlement['databases'], reconciled['databases'], domain['operationId'], pins['settlement.json'])
+    snapshots = (domain['databases'], settlement['databases'], reconciled['databases'])
+    require(all(known._delivery_receipts(row['frontend']) == known._delivery_receipts(snapshots[0]['frontend']) and
+                all(row[name] == snapshots[0][name] for name in ('course', 'community')) for row in snapshots[1:]) and
+            snapshots[0]['frontend']['operations'] == snapshots[1]['frontend']['operations'],
+            'P2_INTERRUPTED_PROFILED_IN_WINDOW_RECEIPTS_CHANGED')
+    return plan, reviewed, old
+
+
+def _profiled_process(value, *, running):
+    return (type(value) is dict and set(value) == {'containerId', 'imageId', 'pid', 'startedAt', 'restartCount', 'running'} and
+            digest(value['containerId']) and migrate.digest(value['imageId']) and type(value['pid']) is int and
+            (value['pid'] > 0 if running else value['pid'] == 0) and value['running'] is running and
+            type(value['startedAt']) is str and 0 < len(value['startedAt']) <= 80 and
+            type(value['restartCount']) is int and value['restartCount'] >= 0)
+
+
+def _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile):
+    bundle = root_path(initial['bundle'])
+    retained_release = root_path(str(Path(initial['results']) / selected['releaseId']))
+    candidate_raw = migrate.read_input(bundle, 'release.candidate.json')
+    require(candidate_raw == migrate.read_input(retained_release, 'candidate.json') and
+            sha(candidate_raw) == initial['candidateSha256'] and decode_qualification_target_json(candidate_raw, 'carrier') == selected,
+            'P2_INTERRUPTED_PROFILED_EXACT_ORIGINAL_CANDIDATE_REQUIRED')
+    inputs_raw = migrate.read_input(certification, 'p2-profiled-certification-input-verified.json')
+    inputs = _profiled_record(inputs_raw, profile)
+    require(inputs['status'] == 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED' and inputs['environment'] == 'staging' and
+            inputs['releaseId'] == selected['releaseId'] and inputs['sourceCommit'] == reviewed['sourceCommit'] and
+            inputs['certificationActionId'] == selection['originalCertificationActionId'] and inputs['targetSha256'] == initial['targetSha256'] and
+            inputs['candidateSha256'] == initial['candidateSha256'] and digest(inputs['planSha256']) and
+            inputs['planSha256'] == initial['originalCertificationPlanSha256'] and
+            inputs['originalReleasePlanHashHostVerified'] is True, 'P2_INTERRUPTED_PROFILED_ORIGINAL_INPUT_REQUIRED')
+    ready_raw = migrate.read_input(certification, 'p2-certification-current-ready.json')
+    # This outer ready receipt is unchanged by the profiled certification
+    # parent. The source API proof nested in it carries the v2 profile.
+    ready = decode_qualification_target_json(ready_raw, 'carrier')
+    require(set(ready) == {'status', 'apiDatabases', 'containers', 'sqlReplayed', 'runtimeReplaced'} and
+            ready['status'] == 'P2_CERTIFICATION_CURRENT_READY' and ready['sqlReplayed'] is False and
+            ready['runtimeReplaced'] is False and sha(canonical(ready['containers'])) == reviewed['runtimeInventorySha256'],
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_READY_REQUIRED')
+    api_dir = certification / 'current-api'
+    api_raw = migrate.read_input(api_dir, 'certification-current-databases-outcome.json')
+    api = _profiled_record(api_raw, profile)
+    migrate.require_contract_identity(selected, api)
+    pins = initial['apiJobSha256']
+    require(type(pins) is dict and set(pins) == {'course', 'community'} and all(digest(pin) for pin in pins.values()) and
+            api == ready['apiDatabases'] and api['status'] == 'P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED' and
+            api['phase'] == 'completed' and api['environment'] == 'staging' and api['releaseId'] == selected['releaseId'] and
+            api['certificationActionId'] == selection['originalCertificationActionId'] and api['candidateSha256'] == initial['candidateSha256'] and
+            api['checkerSha256'] == manifest['ops/platform/host/database_current.mjs'] and set(api['databases']) == set(pins) and
+            all(api[key] is False for key in ('migrationsExecuted', 'frontendSqlApplied', 'trafficAuthorized')),
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_API_CURRENT_REQUIRED')
+    for name, pin in pins.items():
+        job = jobs[name]['job']; migrate.require_job_profile(profile, job)
+        raw = migrate.read_input(bundle, 'jobs/' + name + '.json')
+        receipt_raw = migrate.read_input(api_dir / name, 'database-receipt.json')
+        receipt = _profiled_record(receipt_raw, profile)
+        migrate.require_contract_identity(selected, receipt)
+        receiver = initial['receiverTargets'][name]
+        require(set(receiver) == {'host', 'port', 'database', 'user', 'serverMajor', 'roleOid'} and
+                all(receiver[key] == job['target'][key] for key in ('host', 'port', 'database', 'serverMajor')) and
+                receiver['user'] == job['runtimeRole'] and re.fullmatch(r'[1-9][0-9]{0,9}', receiver['roleOid']) and
+                raw == migrate.read_input(api_dir / (name + '-input'), 'job.json') and sha(raw) == pin and
+                decode_qualification_target_json(raw, 'carrier') == job and
+                api['databases'][name] == {'image': jobs[name]['image'], 'jobSha256': pin, 'receiptSha256': sha(receipt_raw)} and
+                receipt['status'] == 'CURRENT_API_DATABASE_READ_ONLY_PASS' and receipt['service'] == jobs[name]['service'] and
+                receipt['environment'] == 'staging' and receipt['manifestSha256'] == pin and
+                receipt['checkerSha256'] == api['checkerSha256'] and receipt['migrationsExecuted'] is False and
+                receipt['schemaBaselineSha256'] == job['schemaBaselineSha256'] and receipt['artifactSha256'] == job['target']['artifactSha256'] and
+                receipt['target'] == {key: job['target'][key] for key in ('host', 'port', 'database', 'user', 'serverMajor')} and
+                'selected-image-operator-role-policy' in receipt['checks'] and receipt['pendingTags'] == [],
+                'P2_INTERRUPTED_PROFILED_EXACT_ORIGINAL_API_JOB_REQUIRED')
+    return ready, {'inputVerifiedSha256': sha(inputs_raw), 'readySha256': sha(ready_raw), 'apiCurrentSha256': sha(api_raw)}
+
+
+def _profiled_replacement(initial, selected, selection, values, stages, old, ready, replacement):
+    intent = stages['known-ack-replacement-intent.json']
+    authorization = values['replacement-authorization.json']; recovery_id = selection['originalRecoveryActionId']
+    candidate = initial['candidateSha256']; snapshot = replacement / 'runtime-known-ack/configuration'
+    stage_fields = {'version', 'qualificationTargetProfile', 'status', 'recoveryActionId', 'candidateSha256'}
+    require(set(intent) == stage_fields | {'authorization', 'recoveryIntent', 'oldProcesses', 'stages', 'unavailableStages',
+            'authorizationRawSha256', 'configurationSha256', 'configurationPaths'} and
+            intent['status'] == 'P2_KNOWN_ACK_ORDERED_REPLACEMENT_INTENT' and intent['authorization'] == authorization and
+            intent['recoveryIntent'] == values['recovery-intent.json'] and
+            intent['authorizationRawSha256'] == selection['causalReceiptSha256']['replacement-authorization.json'] and
+            intent['configurationSha256'] == initial['configurationSha256'] and
+            intent['configurationPaths'] == {'input': initial['configuration'], 'oldMounted': old['binding']['configurationDirectory'],
+                                              'newMounted': str(snapshot)} and
+            intent['stages'] == [list(stage) for stage in runtime.STAGES] and
+            intent['unavailableStages'] == [list(stage) for stage in known.UNAVAILABLE_STAGES],
+            'P2_INTERRUPTED_PROFILED_REPLACEMENT_INTENT_REQUIRED')
+    for row in stages.values():
+        require(row.get('candidateSha256') == candidate and row.get('recoveryActionId') == recovery_id,
+                'P2_INTERRUPTED_PROFILED_REPLACEMENT_ACTION_REQUIRED')
+    inventory, old_processes = ready['containers'], intent['oldProcesses']
+    require(set(old_processes) == set(runtime.SERVICES) and old_processes['gateway'] == old['process'] and
+            [row['service'] for row in inventory] == list(runtime.SERVICES) and
+            all(set(row) == {'service', 'containerId', 'image', 'health'} and
+                _profiled_process(old_processes[row['service']], running=True) and
+                row['containerId'] == old_processes[row['service']]['containerId'] and
+                row['image'] == selected['artifacts'][runtime.IMAGE_KEYS[row['service']]]['image'] and
+                row['health'] == ('none' if row['service'].endswith('-tls') else 'healthy') for row in inventory) and
+            len({row['containerId'] for row in inventory}) == len(runtime.SERVICES), 'P2_INTERRUPTED_PROFILED_RUNTIME_INVENTORY_REQUIRED')
+    completed, active, processes = [], None, copy.deepcopy(old_processes)
+    for index, stage in enumerate(runtime.STAGES):
+        begin = stages.get(f'known-ack-stage-{index}-intent.json')
+        end = stages.get(f'known-ack-stage-{index}-observed.json')
+        if begin is None:
+            require(end is None, 'P2_INTERRUPTED_STAGE_READBACK_WITHOUT_INTENT')
+            continue
+        require(set(begin) == stage_fields | {'stage', 'maximumSeconds', 'authorizationReceiptSha256'} and
+                len(completed) == index and active is None and begin['status'] == 'P2_KNOWN_ACK_RUNTIME_STAGE_INTENT' and
+                begin['stage'] == list(stage) and type(begin['maximumSeconds']) is int and begin['maximumSeconds'] == 120 and
+                begin['authorizationReceiptSha256'] == sha(canonical(authorization)), 'P2_INTERRUPTED_PROFILED_STAGE_INTENT_REQUIRED')
+        if end is None:
+            active = stage
+            continue
+        require(set(end) == stage_fields | {'stage', 'newProcesses'} and end['status'] == 'P2_KNOWN_ACK_RUNTIME_STAGE_OBSERVED' and
+                end['stage'] == list(stage) and set(end['newProcesses']) == set(stage) and
+                all(_profiled_process(row, running=True) and row['restartCount'] == 0 and
+                    row['containerId'] != old_processes[name]['containerId'] and row['imageId'] == old_processes[name]['imageId']
+                    for name, row in end['newProcesses'].items()), 'P2_INTERRUPTED_PROFILED_STAGE_READBACK_REQUIRED')
+        processes.update(end['newProcesses']); completed.append(stage)
+        require(len({row['containerId'] for row in processes.values()}) == len(processes), 'P2_INTERRUPTED_PROFILED_STAGE_PROCESS_COLLISION')
+    return active, completed, old_processes, processes
+
+
+def _profiled_stop_pair(directory, initial, selected, manifest, profile):
+    before_raw, stop_raw = (migrate.read_input(directory, name) for name in (prior.BEFORE_STOP, prior.STOPPED))
+    before, stop = (_profiled_record(raw, profile) for raw in (before_raw, stop_raw))
+    action_id = prior._require_profiled_stop_identity(directory, initial, selected, before, stop, profile)
+    observation = before['observation']; process = observation['process']; stopped = stop['stoppedProcess']
+    require(action_id is not None and before['status'] == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and
+            stop['status'] == 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED' and before['protocol'] == stop['protocol'] == prior.PROTOCOL and
+            before['sourceModuleSha256'] == stop['sourceModuleSha256'] == manifest['ops/platform/host/p2_prior_gateway.py'] and
+            stop['beforeSha256'] == sha(before_raw) and prior._closed_observed(observation) and
+            _profiled_process(process, running=True) and _profiled_process(stopped, running=False) and
+            stopped == {**process, 'pid': 0, 'running': False}, 'P2_INTERRUPTED_PROFILED_STOP_PAIR_REQUIRED')
+    return observation, action_id, {'beforeSha256': sha(before_raw), 'stopSha256': sha(stop_raw)}
+
+
+def _profiled_gateway_frontier(initial, selected, selection, stages, old, active, completed, processes,
+                               certification, replacement, snapshot, manifest, profile, verify, command):
+    ref = selection['priorGatewayReference']; stop_dir = root_path(ref['stopReceiptDirectory'])
+    guard_dirs = (certification, certification / 'prior-gateway-after-quiescence', certification / 'prior-gateway-broker-fallback')
+    require(stop_dir in (replacement, *guard_dirs), 'P2_INTERRUPTED_PROFILED_FIXED_STOP_ROOT_REQUIRED')
+    stopped, retained_action, stop_pins = _profiled_stop_pair(stop_dir, initial, selected, manifest, profile)
+    require(stop_pins['stopSha256'] == ref['stopReceiptSha256'] and known._zero(stopped['admission']['active']),
+            'P2_INTERRUPTED_PROFILED_STOP_REFERENCE_CHANGED')
+    require(prior.observe_stopped_prior_gateway({**initial, 'priorGatewayReference': ref}, selected, verify, command,
+                expected_profile=profile) == stopped, 'P2_INTERRUPTED_PROFILED_ACTUAL_STOP_REQUIRED')
+    marker = stages.get(B_GATEWAY_MARKER)
+    if marker is None:
+        require(('gateway',) not in completed and known._same_process(stopped, old) and
+                stopped['admission']['uncertain'] == {'newWork': 0, 'recovery': 1} and
+                (stop_dir != replacement or active == ('gateway',)), 'P2_INTERRUPTED_PROFILED_LATEST_STOPPED_ONE_REQUIRED')
+        if active == ('gateway',):
+            require(manifest[known.HOST_MODULE] == PROFILED_B_FRONTIER_SHA256,
+                    'P2_INTERRUPTED_PROFILED_GATEWAY_FRONTIER_UNKNOWN')
+        return 'original-stopped-one', stopped, stop_pins
+
+    require(completed == list(runtime.STAGES) and active is None and stop_dir in guard_dirs and
+            retained_action == selection['originalCertificationActionId'] and prior._zero(stopped) and
+            stopped['process'] == processes['gateway'] and stopped['process']['containerId'] != old['process']['containerId'] and
+            stopped['binding'] == {**old['binding'], 'configurationDirectory': str(snapshot)},
+            'P2_INTERRUPTED_PROFILED_LATEST_REPLACEMENT_ZERO_REQUIRED')
+    original_stop, original_action, original_pins = _profiled_stop_pair(replacement, initial, selected, manifest, profile)
+    candidate, recovery_id = initial['candidateSha256'], selection['originalRecoveryActionId']
+    common = {'protocol': prior.PROTOCOL, 'actionId': recovery_id, 'candidateSha256': candidate,
+              'process': old['process'], 'binding': old['binding']}
+    require(set(marker) == {'version', 'qualificationTargetProfile', 'status', 'recoveryActionId', 'candidateSha256',
+            'operatorSourceClosureSha256', 'sourceModuleSha256', 'authorizationReceiptSha256', 'beforeStopSha256', 'orderedStopSha256',
+            'oldProcess', 'oldBinding', 'sourceStopLineage', 'pendingLineage'} and
+            marker['status'] == 'P2_KNOWN_ACK_GATEWAY_REPLACEMENT_STARTED' and original_action == recovery_id and
+            known._same_process(original_stop, old) and known._zero(original_stop['admission']['active']) and
+            original_stop['admission']['uncertain'] == {'newWork': 0, 'recovery': 1} and
+            marker['operatorSourceClosureSha256'] == stages['known-ack-replacement-intent.json']['authorization']['operatorSourceClosureSha256'] and
+            marker['sourceModuleSha256'] == manifest[known.HOST_MODULE] and
+            marker['authorizationReceiptSha256'] == stages['known-ack-stage-4-intent.json']['authorizationReceiptSha256'] and
+            marker['beforeStopSha256'] == original_pins['beforeSha256'] and marker['orderedStopSha256'] == original_pins['stopSha256'] and
+            canonical(marker['oldProcess']) == canonical(old['process']) and marker['oldBinding'] == old['binding'] and
+            canonical(marker['sourceStopLineage']) == canonical({**common, 'state': 'stopped-observed', 'stopReceiptDirectory': str(replacement),
+                                                                  'stopReceiptSha256': original_pins['stopSha256']}) and
+            canonical(marker['pendingLineage']) == canonical({**common, 'state': 'replacement-in-progress', 'expectedCandidateSha256': candidate}),
+            'P2_INTERRUPTED_PROFILED_DURABLE_GATEWAY_FRONTIER_REQUIRED')
+    return 'replacement-stopped-zero', stopped, {**stop_pins, 'originalBeforeSha256': original_pins['beforeSha256'],
+                                                  'originalStopSha256': original_pins['stopSha256']}
+
+
+def _profiled_completion(certification, replacement, frontier, stopped, old, processes, initial, selected, selection, values, profile):
+    terminal = certification / 'p2-profiled-current-certification-outcome.json'
+    require(not terminal.exists() and not terminal.is_symlink(), 'P2_INTERRUPTED_ORIGINAL_COMPLETION_EXISTS')
+    runtime_dir = replacement / 'runtime-known-ack'
+    paths = (runtime_dir / 'p2-recovery-runtime-ready.json', runtime_dir / 'known-ack-runtime-outcome.json',
+             certification / 'known-ack-replacement-joined.json')
+    records = [migrate.read_input(path.parent, path.name) if path.exists() or path.is_symlink() else None for path in paths]
+    if any(raw is not None for raw in records):
+        require(frontier == 'replacement-stopped-zero' and records[0] is not None and
+                (records[2] is None or records[2] == records[1]), 'P2_INTERRUPTED_PROFILED_COMPLETION_FRONTIER_REQUIRED')
+        for raw in records[:2]:
+            if raw is None:
+                continue
+            value = _profiled_record(raw, profile)
+            require(value['environment'] == 'staging' and value['releaseId'] == selected['releaseId'] and
+                    value['recoveryActionId'] == selection['originalRecoveryActionId'] and value['candidateSha256'] == initial['candidateSha256'] and
+                    all(value[key] is False for key in ('sqlReplayed', 'migrationsExecuted', 'frontendSqlApplied', 'trafficAuthorized')),
+                    'P2_INTERRUPTED_PROFILED_COMPLETION_IDENTITY_REQUIRED')
+        ready = _profiled_record(records[0], profile)
+        inventory = [{'service': name, 'containerId': processes[name]['containerId'],
+                      'image': selected['artifacts'][runtime.IMAGE_KEYS[name]]['image'],
+                      'health': 'none' if name.endswith('-tls') else 'healthy'} for name in runtime.SERVICES]
+        require(ready['status'] == 'P2_RECOVERY_API_RUNTIME_READY' and ready['containers'] == inventory,
+                'P2_INTERRUPTED_PROFILED_COMPLETION_READY_REQUIRED')
+        if records[1] is not None:
+            outcome = _profiled_record(records[1], profile)
+            migrate.require_contract_identity(selected, outcome)
+            require(outcome['status'] == 'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED' and outcome['readinessReceiptSha256'] == sha(records[0]) and
+                    known._same_process(outcome['newGateway'], stopped) and prior._zero(outcome['newGateway']) and
+                    known._same_process(outcome['originalGateway'], old) and outcome['originalGatewayUncertaintyPreserved'] is True and
+                    outcome['originalGateway']['admission']['uncertain'] == {'newWork': 0, 'recovery': 1} and
+                    outcome['containers'] == ready['containers'] and outcome['apiDatabases'] == ready['apiDatabases'] == outcome['currentApiDatabasesAfter'] and
+                    outcome['ordinaryClosedZeroGate'] is False and outcome['nativeDisabled'] is True and one(outcome['runtimeReplacements']) and
+                    outcome['recoveryIntentSha256'] == values['recovery-intent.json']['intentSha256'] and
+                    outcome['frontendOperationId'] == initial['operationId'] and
+                    outcome['gatewayReplacementStartedSha256'] == selection['replacementReceiptSha256'][B_GATEWAY_MARKER],
+                    'P2_INTERRUPTED_PROFILED_COMPLETION_OUTCOME_REQUIRED')
+    return {path.name: None if raw is None else sha(raw) for path, raw in zip(paths, records)}
+
+
+def load_profiled_retained(initial, selected, jobs, verify, command=None, *, expected_profile):
+    """Read the exact interrupted B chain and latest stop. This issues no authority."""
+    profile = migrate.profile_context(expected_profile)
+    require(profile is not None, 'P2_INTERRUPTED_PROFILED_SOURCE_REQUIRED')
+    migrate.candidate_profile(selected, profile)
+    require(set(jobs) == {'frontend', 'course', 'community'} and set(initial['receiverTargets']) == {'course', 'community'},
+            'P2_INTERRUPTED_PROFILED_EXACT_JOBS_REQUIRED')
+    verify()
+    selection = _profiled_selection(initial, selected, profile)
+    cert_id, recovery_id = selection['originalCertificationActionId'], selection['originalRecoveryActionId']
+    certification = root_path(str(Path(initial['results']) / ('p2-profiled-current-certification-' + cert_id)))
+    causal = root_path(str(ROOT / ('p2-known-ack-loss-' + cert_id)))
+    replacement = root_path(str(ROOT / ('p2-profiled-known-ack-' + recovery_id)))
+    values = _profiled_files(causal, selection['causalReceiptSha256'], profile)
+    stages = _profiled_files(replacement, selection['replacementReceiptSha256'], profile)
+    plan, reviewed, old = _profiled_causal(initial, selection, selected, values, profile)
+    from p2_certification_fault import frontend_target_sha256
+    frontend_job = jobs['frontend']['job']; migrate.require_job_profile(profile, frontend_job, frontend=True)
+    target = {key: frontend_job['target'][key] for key in ('host', 'port', 'database', 'user', 'serverMajor', 'qualificationTargetProfile')}
+    require(plan['nativePlan']['target'] == target and initial['targetSha256'] == frontend_target_sha256(target),
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_FRONTEND_TARGET_REQUIRED')
+    require(values['settlement.json']['operationId'] == initial['operationId'] and
+            re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}', initial['operationId']),
+            'P2_INTERRUPTED_PROFILED_REVIEWED_OPERATION_REQUIRED')
+    source, manifest = original_source(selection['originalOperatorSourceCommit'], reviewed['operatorSourceClosureSha256'], expected_profile=profile)
+    require({known.HOST_MODULE, known.MODULE, 'ops/platform/host/p2_prior_gateway.py', 'ops/platform/host/p2_certification_fault.py',
+             'ops/gateway/p2-certification-fault.mjs'}.issubset(manifest) and
+            manifest[known.MODULE] == values['baseline.json']['sourceModuleSha256'], 'P2_INTERRUPTED_PROFILED_ORIGINAL_READER_REQUIRED')
+    ready, auxiliary = _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile)
+    active, completed, old_processes, processes = _profiled_replacement(initial, selected, selection, values, stages, old, ready, replacement)
+    input_directory = root_path(initial['configuration']); old_mount = root_path(old['binding']['configurationDirectory'])
+    snapshot = replacement / 'runtime-known-ack/configuration'
+    require(str(input_directory) == reviewed['configurationInputDirectory'] and len({input_directory, old_mount, snapshot}) == 3,
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_CONFIGURATION_PATH_REQUIRED')
+    runtime.validate_snapshot_source(input_directory, selected, jobs, expected_profile=profile)
+    for directory in (input_directory, old_mount):
+        require(staging_state.configuration_hashes(directory) == initial['configurationSha256'],
+                'P2_INTERRUPTED_PROFILED_ORIGINAL_CONFIGURATION_BYTES_CHANGED')
+    if active is not None or completed or snapshot.exists() or snapshot.is_symlink():
+        require(staging_state.configuration_hashes(root_path(str(snapshot))) == initial['configurationSha256'] and
+                'sha256:' + sha(migrate.read_input(snapshot, 'compose.yaml')) == selected['runtime']['composeSha256'],
+                'P2_INTERRUPTED_PROFILED_REPLACEMENT_SNAPSHOT_CHANGED')
+    requests = values['request-details.json']
+    request_raw = migrate.read_input(certification, 'p2-certification-operator-request-details.json')
+    require(sha(request_raw) == requests['artifactSha256'] == requests['provenance']['artifactSha256'] and
+            decode_qualification_target_json(request_raw, 'carrier') == requests['originalArtifact'] and
+            requests['provenance']['authority'] == 'operator-recorded-request-details', 'P2_INTERRUPTED_ORIGINAL_REQUEST_BYTES_REQUIRED')
+    domain = values['domain.json']; effect = domain['effect']
+    validate_request_details(plan, cert_id, requests, domain['databases']['frontend']['operations'], strict=True)
+    require(set(effect) == {'version', 'status', 'environment', 'profile', 'stageId', 'candidateSha256', 'configurationSha256',
+            'gatewayProcessSha256', 'gatewayImageSha256', 'sourceWitnessSha256', 'leaseSha256', 'mode', 'receiver', 'upstreamStarted',
+            'downstreamDisposition', 'upstreamReceiptVerified', 'upstreamStatus', 'downstreamBytesStarted'} and
+            one(effect['version']) and effect['status'] == 'P2_TRANSPORT_FAULT_INJECTED' and
+            all(effect[key] == plan[key] for key in ('environment', 'profile', 'stageId', 'candidateSha256', 'configurationSha256',
+                'gatewayProcessSha256', 'gatewayImageSha256', 'mode', 'receiver')) and
+            effect['gatewayImageSha256'] == selected['artifacts']['gateway']['image'].split('@sha256:')[1] and
+            type(effect['upstreamStatus']) is int and effect['upstreamStatus'] == 200, 'P2_INTERRUPTED_PROFILED_RAW_EFFECT_REQUIRED')
+    fault_pins = original_fault_receipts(selection, selected, plan, effect, expected_profile=profile,
+                                         certification=certification, old_mount=old_mount)
+    frontier, stopped, stop_pins = _profiled_gateway_frontier(initial, selected, selection, stages, old, active, completed,
+        processes, certification, replacement, snapshot, manifest, profile, verify, command)
+    completion = _profiled_completion(certification, replacement, frontier, stopped, old, processes, initial, selected, selection, values, profile)
+    verify()
+    return {'selection': selection, 'plan': plan, 'values': values, 'stages': stages, 'originalGateway': old, 'stoppedGateway': stopped,
+            'frontier': frontier, 'inputDirectory': input_directory, 'oldMountedDirectory': old_mount, 'replacementDirectory': replacement,
+            'replacementSnapshot': snapshot, 'activeStage': active, 'completedStages': completed, 'oldProcesses': old_processes,
+            'observedProcesses': processes, 'originalSource': source, 'originalSourceManifest': manifest, 'originalFaultReceiptSha256': fault_pins,
+            'originalAuxiliarySha256': {**auxiliary, 'operatorRequestSha256': sha(request_raw), 'stop': stop_pins, 'completion': completion}}
 
 
 def validate_fresh_settled(retained, snapshot):
