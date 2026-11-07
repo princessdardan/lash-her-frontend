@@ -50,6 +50,7 @@ LEGACY_FIXTURE_ONLY_OMISSIONS = frozenset({
     'ops/platform/host/current_databases_test.py',
     'ops/platform/host/p2_certification_parent_test.py',
     'ops/platform/host/p2_certification_fault_test.py',
+    'ops/platform/host/p2_known_ack_loss_test.py',
     'ops/platform/host/p2_lifecycle_authority_timing_test.py',
     'ops/platform/host/p2_lifecycle_persistence_probe_test.py',
     'ops/platform/p2-lifecycle-suspension-evidence.test.mjs',
