@@ -212,7 +212,7 @@ async function enroll(page: Page, value: Scenario) {
   const replay = await page.evaluate(async ({ courseId, body }) => {
     const response = await fetch(`/api/academy/courses/${courseId}/enrollments`, {
       method: "POST", mode: "same-origin", credentials: "same-origin", redirect: "error",
-      headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      headers: { "content-type": "application/json", "x-lash-csrf": "1" }, body: JSON.stringify(body),
     });
     return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
   }, { courseId: value.courseId, body: requestBody });

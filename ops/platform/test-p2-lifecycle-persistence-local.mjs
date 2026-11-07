@@ -252,7 +252,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     const settle = await ownedEnrollmentSettlement(course, community, communitySource);
     await runOwnedPaidRevokeWitness({ course, job: revokeSource ? { ...job, sourceCommit: revokeSource.revision } : job,
       dependencies, input, create, courseSource: revokeSource?.root ?? courseSource, expiryFixed: revokeSource !== undefined, community, settle });
-    await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create, settle });
+    await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create, settle, courseSource, community });
     await runOwnedPaidGrantWitness({ course, job, dependencies, input, create, courseSource, community, settle });
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource });
@@ -273,6 +273,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-quiz-save-refuses-private-shape-scope-and-database-history-drift",
       "course-free-enrollment-orderless-grant-joins-settled-activation-to-actual-community-inbox",
       "course-free-enrollment-refuses-ineligible-occupied-and-persisted-outcome-drift",
+      "course-free-enrollment-exact-key-replay-preserves-original-course-and-community-history",
       "course-paid-grant-orderless-audited-effect-joins-settled-activation-to-actual-community-inbox",
       "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
       "course-paid-second-grant-preserves-reviewed-existing-enrollment-history-and-community-activation",
@@ -770,7 +771,7 @@ async function runOwnedQuizSaveWitness({ course, job, dependencies, input, creat
   await assert.rejects(observe(attempt, attemptBaseline), { check: "course-quiz-save-history-changed" });
 }
 
-async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create, settle }) {
+async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create, settle, courseSource, community }) {
   const seed = async (name, changes = {}, actorId = randomUUID()) => {
     const fixture = input(`free-enrollment-${name}`, { status: "published", accessMode: "free", priceCents: 0, ...changes });
     await create(fixture);
@@ -874,6 +875,70 @@ async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input,
     const receipt = name === "receipt-grant" ? { ...browser(selected), grantId: randomUUID() } : browser(selected);
     await assert.rejects(observe(selected, baseline, receipt), { check });
     await assert.rejects(observe(selected, baseline), { check: "course-free-enrollment-receipt" });
+  }
+
+  const { db, importSource } = await ownedCourseRepository(course, courseSource);
+  const [{ createDrizzleFreeEnrollmentRepository }] = await importOwnedAccountAwareCourseSource(importSource,
+    "src/entitlements/free-enrollment.repository.ts");
+  const repository = createDrizzleFreeEnrollmentRepository(db);
+  const replayFixture = (fixture, proof) => ({ ...fixture, selection: { ...fixture.selection, prior: {
+    grantId: fixture.grantId, enrollmentId: fixture.enrollmentId, eventId: fixture.eventId, streamId: fixture.streamId, canonicalDigest: proof.canonicalDigest,
+  } } });
+  const replay = async ({ selection: { actorId: userId, courseId, idempotencyKey } }) => {
+    const { record, isReplay } = await repository.enrollFree({ userId, courseId, idempotencyKey });
+    assert.equal(isReplay, true);
+    return { courseId, grantId: record.id, enrollmentId: record.enrollmentId, source: "free", status: record.status, idempotentReplay: isReplay };
+  };
+  await progress(test, test.enrollmentId);
+  const original = replayFixture(test, delivery), { selection: reviewed } = original, { prior } = reviewed;
+  for (const [change, check] of [[{ canonicalDigest: "0".repeat(64) }, "course-free-enrollment-selection"],
+    [{ canonicalDigest: hash("wrong event") }, "course-free-enrollment-prior"], [{ streamId: randomUUID() }, "course-free-enrollment-prior"],
+    [{ eventId: randomUUID() }, "course-free-enrollment-prior"], [{ enrollmentId: randomUUID() }, "course-free-enrollment-prior"],
+    [{ grantId: randomUUID() }, "course-free-enrollment-persistence"]]) {
+    await assert.rejects(capture({ ...original, selection: { ...reviewed, prior: { ...prior, ...change } } }), { check });
+  }
+  await assert.rejects(capture({ ...original, selection: { ...reviewed, idempotencyKey: randomUUID() } }), { check: "course-free-enrollment-persistence" });
+  await assert.rejects(repository.enrollFree({ userId: reviewed.actorId, courseId: otherCourse.selection.courseId,
+    idempotencyKey: reviewed.idempotencyKey }), { name: "EntitlementConflictError" });
+  const replayBaseline = await capture(original), replayReceipt = await replay(original);
+  assert.equal(JSON.stringify(replayBaseline), "{}");
+  assert.deepEqual(replayReceipt, { ...browser(test), idempotentReplay: true });
+  await assert.rejects(observe(original, replayBaseline, browser(test)), { check: "course-free-enrollment-receipt" });
+  await assert.rejects(observe(original, replayBaseline, { ...replayReceipt, enrollmentId: randomUUID() }), { check: "course-free-enrollment-receipt" });
+  await assert.rejects(observe({ ...original, selection: { ...reviewed, prior: { ...prior, eventId: randomUUID() } } }, replayBaseline, replayReceipt),
+    { check: "course-free-enrollment-receipt" });
+  assert.deepEqual(await observe(original, replayBaseline, replayReceipt), { ...replayReceipt, transitionId: test.eventId,
+    communityDelivery: activeEnrollmentDelivery(test, delivery), readOnly: true });
+  await assert.rejects(observe(original, replayBaseline, replayReceipt), { check: "course-free-enrollment-receipt" });
+
+  for (const [name, check] of [["pending", "course-free-enrollment-prior"], ["missing-inbox", "community-free-enrollment-inbox"],
+    ["progress", "course-free-enrollment-history"], ["enrollment", "course-free-enrollment-history"],
+    ["outbox", "course-free-enrollment-history"], ["projection", "community-free-enrollment-projection"], ["extra-inbox", "community-free-enrollment-inbox"]]) {
+    const fixture = await seed(`replay-${name}`);
+    const at = await write(fixture);
+    const proof = name === "pending" ? { canonicalDigest: (await course.query(
+      "SELECT canonical_digest FROM public.community_enrollment_outbox WHERE event_id=$1::uuid", [fixture.eventId])).rows[0].canonical_digest }
+      : await settle(fixture, 1, name !== "missing-inbox");
+    const candidate = replayFixture(fixture, proof);
+    if (name === "pending" || name === "missing-inbox") {
+      await assert.rejects(capture(candidate), { check });
+      continue;
+    }
+    const baseline = await capture(candidate), receipt = await replay(candidate);
+    if (name === "progress") await progress(fixture, fixture.enrollmentId);
+    if (name === "enrollment") await course.query("UPDATE public.enrollments SET updated_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid", [fixture.enrollmentId]);
+    if (name === "outbox") await course.query("UPDATE public.community_enrollment_outbox SET updated_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid", [fixture.eventId]);
+    if (name === "projection") await community.query("UPDATE public.course_enrollment_projections SET updated_at=pg_catalog.clock_timestamp() WHERE stream_id=$1::uuid", [fixture.streamId]);
+    if (name === "extra-inbox") {
+      const { actorId: userId, courseId } = fixture.selection, eventId = randomUUID();
+      const body = JSON.stringify({ data: { courseId, effectiveAt: at, state: "revoked", userId }, eventId,
+        eventType: "enrollment.revoked", occurredAt: at, producer: "lash-her-course-api", schemaVersion: 1, stream: { id: fixture.streamId, version: 2 } });
+      await community.query(`INSERT INTO public.course_enrollment_inbox(event_id,canonical_digest,canonical_body,event_type,schema_version,
+        producer,occurred_at,stream_id,stream_version,user_id,course_id,state,status,effective_at,quarantine_code)
+        VALUES($1,$2,$3,'enrollment.revoked',1,'lash-her-course-api',$4,$5,2,$6,$7,'revoked','quarantined',$4,'owned-fixture')`,
+      [eventId, hash(body), body, at, fixture.streamId, userId, courseId]);
+    }
+    await assert.rejects(observe(candidate, baseline, receipt), { check });
   }
 }
 

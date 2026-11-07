@@ -363,6 +363,24 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedFree, requests })));
     assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedFree,
       learningAction: { ...selectedFree.learningAction, idempotencyKey: userId } })));
+    const prior = {
+      grantId: '10000000-0000-4000-8000-000000000010', enrollmentId: '10000000-0000-4000-8000-000000000011',
+      eventId: '10000000-0000-4000-8000-000000000012', streamId: '10000000-0000-4000-8000-000000000013',
+      canonicalDigest: 'a'.repeat(64),
+    };
+    const replayScope = { ...selectedFree, learningAction: { ...selectedFree.learningAction, operation: 'replay-free-enrollment', prior },
+      requests: [{ ...learnerRead, uses: 1 }, progressRead, grant] };
+    const replay = prepareP2ProfiledCertificationOperator(paired(replayScope));
+    assert.deepEqual(replay.learning.scopedAction, replayScope);
+    assert.notEqual(replay.learning.planSha256, freePair.learning.planSha256);
+    const replayHost = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(replay.learning), encoding: 'utf8' });
+    assert.equal(replayHost.status, 0, replayHost.stderr);
+    for (const badPrior of [null, { ...prior, canonicalDigest: '0'.repeat(64) }, { ...prior, eventId: 'other' }]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...replayScope,
+        learningAction: { ...replayScope.learningAction, prior: badPrior } })));
+    }
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...replayScope, requests: selectedFree.requests })));
     const accessLessonId = '10000000-0000-4000-8000-000000000007';
     const accessGrantId = '10000000-0000-4000-8000-000000000008';
     const student = '/course/v1/student', lesson = student + '/lessons/' + accessLessonId;

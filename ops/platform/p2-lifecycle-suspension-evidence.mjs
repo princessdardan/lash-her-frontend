@@ -254,13 +254,17 @@ async function reviewedInteractiveInput(plan, challenge) {
   }
   if (action.stage === "learning") {
     const selected = action.learningAction;
-    demand(selected?.operation === "enroll-free-course");
+    const replay = selected?.operation === "replay-free-enrollment";
+    demand(replay || selected?.operation === "enroll-free-course");
     const detail = "/course/v1/student/courses/" + selected.courseId, empty = hash("");
-    demand(isDeepStrictEqual(action.requests, [
+    const progress = { method: "GET", target: "/course/v1/student/progress?courseId=" + selected.courseId, bodySha256: empty, uses: 1 };
+    const enrollment = { method: "POST", target: detail + "/enrollments", bodySha256: hash(JSON.stringify({ idempotencyKey: selected.idempotencyKey })), uses: 1 };
+    demand(isDeepStrictEqual(action.requests, replay ? [
+      { method: "GET", target: detail, bodySha256: empty, uses: 1 }, progress, enrollment,
+    ] : [
       { method: "GET", target: "/course/v1/courses/" + selected.slug, bodySha256: empty, uses: 1 },
       { method: "GET", target: detail, bodySha256: empty, uses: 2 },
-      { method: "POST", target: detail + "/enrollments", bodySha256: hash(JSON.stringify({ idempotencyKey: selected.idempotencyKey })), uses: 1 },
-      { method: "GET", target: "/course/v1/student/progress?courseId=" + selected.courseId, bodySha256: empty, uses: 1 },
+      enrollment, progress,
     ]));
     learning = { actorId: action.actorId, ...selected };
   }

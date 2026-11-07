@@ -211,6 +211,8 @@ def _authoring_requests(action):
 def _gateway_sequences(plan):
     stage = plan["scopedAction"]["stage"]
     if stage == "learning":
+        if plan["scopedAction"]["learningAction"]["operation"] == "replay-free-enrollment":
+            return (((0, 200), (1, 200), (2, 200)), ((1, 200), (0, 200), (2, 200)))
         prefix = ((0, 200), (1, 403), (2, 201))
         return (prefix + ((1, 200), (3, 200)), prefix + ((3, 200), (1, 200)))
     if stage == "paid-grant":
@@ -266,6 +268,8 @@ def _valid_community_activation(delivery, transition_id):
 
 def _learning_case_evidence(plan, action, evidence, gateway_artifact):
     selected = action["learningAction"]
+    replay = selected["operation"] == "replay-free-enrollment"
+    prior = selected["prior"] if replay else None
     demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_LEARNING_EVIDENCE_REQUIRED")
     gateway = browser_gateway_receipt(plan, gateway_artifact)
     post_id = gateway["gatewayAcknowledgements"][2]["requestId"]
@@ -279,15 +283,21 @@ def _learning_case_evidence(plan, action, evidence, gateway_artifact):
     fields = "courseId grantId enrollmentId source status idempotentReplay"
     demand(_closed_fields(body, fields) and body["courseId"] == selected["courseId"] and
            all(_matches(_UUID, body[key]) for key in ("grantId", "enrollmentId")) and
-           body["source"] == "free" and body["status"] == "active" and body["idempotentReplay"] is False,
+           body["source"] == "free" and body["status"] == "active" and body["idempotentReplay"] is replay and
+           (not replay or all(body[key] == prior[key] for key in ("grantId", "enrollmentId"))),
            "P2_INTERACTIVE_LEARNING_ENROLLMENT_BODY_REQUIRED")
     demand(_closed_fields(witness, f"{fields} transitionId communityDelivery readOnly") and witness["readOnly"] is True and
-           witness["idempotentReplay"] is False and _matches(_UUID, witness["transitionId"]) and
+           witness["idempotentReplay"] is replay and _matches(_UUID, witness["transitionId"]) and
            all(witness[key] == value for key, value in body.items()), "P2_INTERACTIVE_LEARNING_COURSE_WITNESS_REQUIRED")
     delivery = witness["communityDelivery"]
-    demand(_valid_community_activation(delivery, witness["transitionId"]), "P2_INTERACTIVE_LEARNING_COMMUNITY_DELIVERY_REQUIRED")
+    demand(_valid_community_activation(delivery, witness["transitionId"]) and
+           (not replay or witness["transitionId"] == prior["eventId"] and
+            all(delivery[key] == prior[key] for key in ("streamId", "canonicalDigest"))),
+           "P2_INTERACTIVE_LEARNING_COMMUNITY_DELIVERY_REQUIRED")
+    joined_operation = {"operation": selected["operation"]} if replay else {}
     return {**{key: body[key] for key in ("courseId", "grantId", "enrollmentId")}, "slug": selected["slug"],
-            "actorId": action["actorId"], "transitionId": witness["transitionId"], "communityDelivery": delivery, "gatewayPostRequestId": post_id,
+            "actorId": action["actorId"], **joined_operation, "transitionId": witness["transitionId"],
+            "communityDelivery": delivery, "gatewayPostRequestId": post_id,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
@@ -823,18 +833,26 @@ def validate_interactive_action(action):
                    "P2_INTERACTIVE_AUTHORING_REPUBLISH_DIGEST_REQUIRED")
     if learning:
         selection = action["learningAction"]
-        demand(_closed_fields(selection, "operation courseId slug idempotencyKey") and
-               selection["operation"] == "enroll-free-course" and _matches(_UUID, selection["courseId"]) and
+        replay = type(selection) is dict and selection.get("operation") == "replay-free-enrollment"
+        fields = "operation courseId slug idempotencyKey" + (" prior" if replay else "")
+        demand(_closed_fields(selection, fields) and
+               (replay or selection["operation"] == "enroll-free-course") and _matches(_UUID, selection["courseId"]) and
                _matches(_SLUG, selection["slug"]) and len(selection["slug"]) <= 120 and
                _matches(_UUID, selection["idempotencyKey"]), "P2_INTERACTIVE_LEARNING_ENROLLMENT_SELECTION_REQUIRED")
+        if replay:
+            prior = selection["prior"]
+            demand(_closed_fields(prior, "grantId enrollmentId eventId streamId canonicalDigest") and
+                   all(_matches(_UUID, prior[key]) for key in ("grantId", "enrollmentId", "eventId", "streamId")) and
+                   _digest(prior["canonicalDigest"]), "P2_INTERACTIVE_LEARNING_REPLAY_PRIOR_REQUIRED")
         course = f'/course/v1/student/courses/{selection["courseId"]}'
         digest = _receipt_sha({"idempotencyKey": selection["idempotencyKey"]})
-        expected = [
+        detail = {"method": "GET", "target": course, "bodySha256": _EMPTY, "uses": 1 if replay else 2}
+        progress = {"method": "GET", "target": f'/course/v1/student/progress?courseId={selection["courseId"]}',
+                    "bodySha256": _EMPTY, "uses": 1}
+        enroll = {"method": "POST", "target": f"{course}/enrollments", "bodySha256": digest, "uses": 1}
+        expected = [detail, progress, enroll] if replay else [
             {"method": "GET", "target": f'/course/v1/courses/{selection["slug"]}', "bodySha256": _EMPTY, "uses": 1},
-            {"method": "GET", "target": course, "bodySha256": _EMPTY, "uses": 2},
-            {"method": "POST", "target": f"{course}/enrollments", "bodySha256": digest, "uses": 1},
-            {"method": "GET", "target": f'/course/v1/student/progress?courseId={selection["courseId"]}',
-             "bodySha256": _EMPTY, "uses": 1},
+            detail, enroll, progress,
         ]
         demand(requests == expected, "P2_INTERACTIVE_LEARNING_ENROLLMENT_REQUESTS_REQUIRED")
     if paid_grant:

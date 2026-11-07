@@ -34,6 +34,7 @@ const authoringRepublishOperation='republish-paid-course';
 const authoringQuizOperation='save-quiz-revision';
 const authoringArchiveOperation='archive-paid-course';
 const learningEnrollmentOperation='enroll-free-course';
+const learningReplayOperation='replay-free-enrollment';
 const paidGrantOperation='grant-paid-access';
 const learnerAccessOperation='observe-paid-access';
 const paidRevokeOperation='revoke-paid-grant';
@@ -150,17 +151,20 @@ function reviewedAuthoringAction(action){
 
 function reviewedLearningAction(action){
   const selected=action.learningAction;
-  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','slug','idempotencyKey'])&&
-    selected.operation===learningEnrollmentOperation&&canonicalUuid(selected.courseId)&&courseSlug(selected.slug)&&
+  const replay=selected?.operation===learningReplayOperation;
+  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','slug','idempotencyKey',...(replay?['prior']:[])])&&
+    (replay||selected.operation===learningEnrollmentOperation)&&canonicalUuid(selected.courseId)&&courseSlug(selected.slug)&&
     canonicalUuid(selected.idempotencyKey));
-  const {courseId,slug,idempotencyKey}=selected,student='/course/v1/student',detail=student+'/courses/'+courseId;
-  demand(isDeepStrictEqual(action.requests,[
-    {method:'GET',target:'/course/v1/courses/'+slug,bodySha256:emptyBodySha256,uses:1},
-    {method:'GET',target:detail,bodySha256:emptyBodySha256,uses:2},
-    {method:'POST',target:detail+'/enrollments',bodySha256:p2NativeHash(JSON.stringify({idempotencyKey})),uses:1},
-    {method:'GET',target:student+'/progress?courseId='+courseId,bodySha256:emptyBodySha256,uses:1},
+  const {courseId,slug,idempotencyKey,prior}=selected,student='/course/v1/student',detail=student+'/courses/'+courseId;
+  if(replay)demand(exact(prior,['grantId','enrollmentId','eventId','streamId','canonicalDigest'])&&
+    [prior.grantId,prior.enrollmentId,prior.eventId,prior.streamId].every(canonicalUuid)&&nonzeroSha256(prior.canonicalDigest));
+  const course={method:'GET',target:detail,bodySha256:emptyBodySha256,uses:replay?1:2};
+  const progress={method:'GET',target:student+'/progress?courseId='+courseId,bodySha256:emptyBodySha256,uses:1};
+  const enroll={method:'POST',target:detail+'/enrollments',bodySha256:p2NativeHash(JSON.stringify({idempotencyKey})),uses:1};
+  demand(isDeepStrictEqual(action.requests,replay?[course,progress,enroll]:[
+    {method:'GET',target:'/course/v1/courses/'+slug,bodySha256:emptyBodySha256,uses:1},course,enroll,progress,
   ]));
-  const learning={actorId:action.actorId,...selected};
+  const learning={actorId:action.actorId,...selected,...(replay?{prior:{...prior}}:{})};
   return {selection:{...learning,actorKind:'customer'},learning};
 }
 
@@ -314,6 +318,8 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const sequences=learning?[
     [[0,200],[1,403],[2,201],[1,200],[3,200]],
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
+  ]:operation===learningReplayOperation?[
+    [[0,200],[1,200],[2,200]],[[1,200],[0,200],[2,200]],
   ]:operation===paidGrantOperation?[
     [[0,200],[1,200],[0,200],[2,201],[1,200],[3,200],[0,200]],
   ]:operation===paidRevokeOperation?[
@@ -339,15 +345,18 @@ function requireCommunityActivation(delivery,transitionId){
 function learningJoinedEvidence(evidence,selected,observed){
   demand(exact(evidence,['browserResponse','courseWitness']));
   const {browserResponse:response,courseWitness:witness}=evidence;
-  const {actorId,courseId,slug}=selected,{grantId,enrollmentId}=response?.body??{};
+  const {actorId,courseId,slug,operation,prior}=selected,{grantId,enrollmentId}=response?.body??{};
+  const replay=operation===learningReplayOperation;
   const {transitionId,communityDelivery}=witness??{},gatewayPostRequestId=observed.gatewayAcknowledgements[2].requestId;
   const academyPath='/academy/courses/'+courseId;
-  const body={courseId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:false};
+  const body={courseId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:replay};
   demand([grantId,enrollmentId,transitionId].every(canonicalUuid)&&
     isDeepStrictEqual(response,{method:'POST',pathname:'/api'+academyPath+'/enrollments',status:200,requestId:gatewayPostRequestId,academyPath,body})&&
     isDeepStrictEqual(witness,{...body,transitionId,communityDelivery,readOnly:true}));
   requireCommunityActivation(communityDelivery,transitionId);
-  return {actorId,courseId,slug,grantId,enrollmentId,transitionId,communityDelivery,browserResponseSha256:p2NativeHash(response),
+  if(replay)demand(grantId===prior.grantId&&enrollmentId===prior.enrollmentId&&transitionId===prior.eventId&&
+    communityDelivery.streamId===prior.streamId&&communityDelivery.canonicalDigest===prior.canonicalDigest);
+  return {actorId,...(replay?{operation}:{}),courseId,slug,grantId,enrollmentId,transitionId,communityDelivery,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPostRequestId};
 }
 

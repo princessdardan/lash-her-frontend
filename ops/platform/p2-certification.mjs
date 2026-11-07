@@ -144,14 +144,26 @@ function paidArchiveActionValid(selected,requests){
   ]);
 }
 function learningEnrollmentActionValid(selected,requests){
-  if(!exactKeys(selected,['operation','courseId','slug','idempotencyKey'])||selected.operation!=='enroll-free-course'||
+  const replay=selected?.operation==='replay-free-enrollment';
+  if(!exactKeys(selected,['operation','courseId','slug','idempotencyKey',...(replay?['prior']:[])])||
+    (!replay&&selected.operation!=='enroll-free-course')||
     !uuid(selected.courseId)||!authoringSlug(selected.slug)||!uuid(selected.idempotencyKey))return false;
   const detail=`/course/v1/student/courses/${selected.courseId}`;
+  const progress={method:'GET',target:`/course/v1/student/progress?courseId=${selected.courseId}`,uses:1,bodySha256:emptyRequestSha256};
+  const enrollment={method:'POST',target:detail+'/enrollments',uses:1,bodySha256:rawHash(JSON.stringify({idempotencyKey:selected.idempotencyKey}))};
+  if(replay){
+    const {prior}=selected;
+    return exactKeys(prior,['grantId','enrollmentId','eventId','streamId','canonicalDigest'])&&
+      [prior.grantId,prior.enrollmentId,prior.eventId,prior.streamId].every(uuid)&&sha(prior.canonicalDigest)&&
+      prior.canonicalDigest!=='0'.repeat(64)&&isDeepStrictEqual(requests,[
+        {method:'GET',target:detail,uses:1,bodySha256:emptyRequestSha256},progress,enrollment,
+      ]);
+  }
   return isDeepStrictEqual(requests,[
     {method:'GET',target:`/course/v1/courses/${selected.slug}`,uses:1,bodySha256:emptyRequestSha256},
     {method:'GET',target:detail,uses:2,bodySha256:emptyRequestSha256},
-    {method:'POST',target:detail+'/enrollments',uses:1,bodySha256:rawHash(JSON.stringify({idempotencyKey:selected.idempotencyKey}))},
-    {method:'GET',target:`/course/v1/student/progress?courseId=${selected.courseId}`,uses:1,bodySha256:emptyRequestSha256},
+    enrollment,
+    progress,
   ]);
 }
 function learnerAccessActionValid(selected,requests){

@@ -87,6 +87,7 @@ gateway_scoped=authoring or learning or paid_grant or learner_access or paid_rev
 access_outcome=access_action.get('outcome')
 access_status={'allowed':200,'archived':410,'draft':404,'restricted':403}.get(access_outcome)
 learning_action=action.get('learningAction',{});paid_grant_action=action.get('paidGrantAction',{})
+replay=learning_action.get('operation')=='replay-free-enrollment'
 authoring_action=action.get('authoringAction',{})
 editing=authoring_action.get('operation')=='edit-and-stale-draft'
 reorder=authoring_action.get('operation')=='reorder-and-stale-curriculum'
@@ -191,7 +192,10 @@ for raw in sys.stdin:
      selected=[(11,13,0,200),(4,12,1,observed_prior),(6,18,2,200),(16,17,0,200)]
     if learning:
      selected=[(11,13,0,200),(12,14,1,403),(4,15,2,201),(16,17,1,200),(6,18,3,200)]
-     if behavior=='joined-progress-first':selected[3],selected[4]=selected[4],selected[3]
+     if replay:
+      selected=[(11,13,0,200),(12,14,1,200),(4,15,2,200)]
+      if behavior=='joined-progress-first':selected[0],selected[1]=selected[1],selected[0]
+     elif behavior=='joined-progress-first':selected[3],selected[4]=selected[4],selected[3]
      if behavior=='wrong-learning-tail':selected[4]=(6,18,1,200)
     if paid_grant:
      selected=[(11,13,0,200),(12,14,1,200),(16,17,0,200),(4,15,2,201),(21,23,1,200),(6,18,3,200),(22,24,0,200)]
@@ -204,6 +208,7 @@ for raw in sys.stdin:
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[3 if paid_grant else -1 if changes_existing else 1]['upstreamStatus']=201 if publication or archive else 200
+    if replay and behavior=='wrong-observe-ack':acks[2]['upstreamStatus']=201
     if paid_revoke and behavior=='wrong-observe-ack':acks[4]['upstreamStatus']=201
     if learner_access and behavior=='wrong-access-status':acks[-1]['upstreamStatus']=403 if access_status==200 else 200
     if behavior=='wrong-observe-order':
@@ -277,7 +282,7 @@ for raw in sys.stdin:
     assert response=={'method':'POST','pathname':'/api'+academy_path+'/enrollments','status':200,
      'requestId':post_request,'academyPath':academy_path,'body':body}
     assert body=={'courseId':course_id,'grantId':fixture_id(7),'enrollmentId':fixture_id(8),
-     'source':'free','status':'active','idempotentReplay':False}
+     'source':'free','status':'active','idempotentReplay':replay}
     transition_id=fixture_id(9)
     delivery=activation(transition_id)
     assert witness=={**body,'transitionId':transition_id,'communityDelivery':delivery,'readOnly':True}
@@ -285,6 +290,12 @@ for raw in sys.stdin:
      'enrollmentId':body['enrollmentId'],'transitionId':transition_id,'communityDelivery':delivery,'browserResponseSha256':digest(response),
      'courseWitnessSha256':digest(witness),'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256'],
      'gatewayPostRequestId':post_request}
+    if replay:
+     prior=learning_action['prior']
+     assert prior=={'grantId':body['grantId'],'enrollmentId':body['enrollmentId'],'eventId':transition_id,
+      'streamId':delivery['streamId'],'canonicalDigest':delivery['canonicalDigest']}
+     joined['operation']=learning_action['operation']
+    if behavior=='wrong-replay-join':joined.pop('operation')
     if behavior=='wrong-join':joined['transitionId']=fixture_id(2)
     if behavior=='wrong-community-join':joined['communityDelivery']={**delivery,'canonicalDigest':'6'*64}
    elif changes_existing:
@@ -418,6 +429,7 @@ const commandId='12345678-1234-4123-8123-000000000003',requestId='12345678-1234-
 const staleRequestId='12345678-1234-4123-8123-000000000006';
 const {certificationStage,actorKind,behavior,variant}=fixture;
 const identity=certificationStage==='identity',authoring=certificationStage==='authoring',learning=certificationStage==='learning';
+const replay=learning&&variant==='exact-key-replay';
 const paidGrant=certificationStage==='paid-grant',learnerAccess=certificationStage==='learner-access';
 const secondPaid=paidGrant&&variant==='second-grant',priorGrantId='12345678-1234-4123-8123-000000000055';
 const priorGrant=secondPaid?{priorGrantId}:{};
@@ -447,7 +459,6 @@ const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'
 const observedActor=identityEnrollment?{actorKind:'customer',actorId:'12345678-1234-4123-8123-000000000005'}:identityActor;
 const slug='p2q-course-draft',coursePath='/api/admin/courses/'+commandId,courseTarget='/course/v1/admin/courses/'+commandId;
 const idempotencyKey='12345678-1234-4123-8123-000000000019';
-const learningAction={operation:'enroll-free-course',courseId:commandId,slug,idempotencyKey};
 const grantCommandId='12345678-1234-4123-8123-000000000020',grantRevision=variant==='max-revision'?2_147_483_647:7;
 const grantReason='Qualification fixture reason',grantKey='owner-paid:'+idempotencyKey;
 const grantPath='/course/v1/admin/entitlements/grants',encodedGrantKey=encodeURIComponent(grantKey);
@@ -456,6 +467,10 @@ const kind=variant?.endsWith('-module')?'module':'lesson',parentId=kind==='modul
 const curriculumPath=kind==='module'?'/courses/'+parentId+'/modules':'/modules/'+parentId+'/lessons';
 const reorderPath=curriculumPath+'/reorder',childSlug='p2q-new-child',itemId='12345678-1234-4123-8123-000000000010';
 const ids=['12345678-1234-4123-8123-000000000009','12345678-1234-4123-8123-000000000007','12345678-1234-4123-8123-000000000008'];
+const activationStreamId='12345678-1234-4123-8123-000000000029',activationDigest='5'.repeat(64);
+const replayPrior={grantId:ids[1],enrollmentId:ids[2],eventId:ids[0],streamId:activationStreamId,canonicalDigest:activationDigest};
+const learningAction={operation:replay?'replay-free-enrollment':'enroll-free-course',courseId:commandId,slug,idempotencyKey,
+ ...(replay?{prior:replayPrior}:{})};
 const outcomeKind=published?'published':'blocked',issueCodes=published?[]:['MISSING_LESSONS','MISSING_TITLE'];
 const lessonId=target,quizId=itemId,quizPath='/admin/lessons/'+lessonId+'/quiz';
 const quizDocument={version:1,mode:'graded',passingPercent:80,questions:[{
@@ -506,6 +521,10 @@ const requests=paidRevoke?[
   })),uses:1},
   {method:'GET',target:grantPath+'?userId='+target+'&courseId='+commandId+'&idempotencyKey='+encodedGrantKey+'&limit=2',
    bodySha256:emptyBodySha256,uses:1},
+]:replay?[
+  {method:'GET',target:studentCourse,bodySha256:emptyBodySha256,uses:1},
+  {method:'GET',target:student+'/progress?courseId='+commandId,bodySha256:emptyBodySha256,uses:1},
+  {method:'POST',target:studentCourse+'/enrollments',bodySha256:rawHash(JSON.stringify({idempotencyKey})),uses:1},
 ]:learning?[
   {method:'GET',target:'/course/v1/courses/'+slug,bodySha256:emptyBodySha256,uses:1},
   {method:'GET',target:studentCourse,bodySha256:emptyBodySha256,uses:2},
@@ -655,10 +674,13 @@ for(const changed of [
   ...[{idempotencyKey:'invalid'},{idempotencyKey:target},{slug:'invalid/path'},{courseId:target},{operation:'enroll-paid-course'}]
    .map(selected=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,learningAction:{...learningAction,...selected}}}})),
   ...[
-   [...requests].reverse(),[requests[0],{...requests[1],uses:1},...requests.slice(2)],
-   [...requests.slice(0,2),{...requests[2],bodySha256:'1'.repeat(64)},requests[3]],
-   [...requests.slice(0,3),{...requests[3],target:student+'/progress'}],
+   [...requests].reverse(),[requests[0],{...requests[1],uses:requests[1].uses+1},...requests.slice(2)],
+   [...requests.slice(0,2),{...requests[2],bodySha256:'1'.repeat(64)},...requests.slice(3)],
+   replay?[requests[0],{...requests[1],target:student+'/progress'},requests[2]]:[...requests.slice(0,3),{...requests[3],target:student+'/progress'}],
   ].map(requests=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests}}})),
+  ...(replay?[undefined,null,{...replayPrior,grantId:'invalid'},{...replayPrior,streamId:'invalid'},{...replayPrior,canonicalDigest:'0'.repeat(64)},
+   {...replayPrior,streamVersion:1}]:[replayPrior]).map(prior=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,
+    learningAction:{...learningAction,prior}}}})),
  ]:[]),
  ...(paidGrant?[
   ...[{idempotencyKey:'invalid'},{idempotencyKey:target},{userId:commandId},{courseId:target},{revision:0},{revision:2_147_483_648},
@@ -713,8 +735,8 @@ const publicationBody={courseId:commandId,slug,revision:authoringAction.revision
 const [transitionId,grantId,enrollmentId]=ids;
 const activationTransitionId=secondPaid?null:transitionId;
 const activationDelivery={
- streamId:'12345678-1234-4123-8123-000000000029',streamVersion:1,
- eventId:secondPaid?'12345678-1234-4123-8123-000000000028':transitionId,canonicalDigest:'5'.repeat(64),state:'active',
+ streamId:activationStreamId,streamVersion:1,
+ eventId:secondPaid?'12345678-1234-4123-8123-000000000028':transitionId,canonicalDigest:activationDigest,state:'active',
 };
 const revokeTransitionId=remainingAccess?null:transitionId;
 const communityDelivery={
@@ -724,7 +746,7 @@ const communityDelivery={
 };
 const history=republish?{userId:target,grantId,historyPreserved:true,effectiveAccess:published&&expectedAccess}:{};
 const quizBody={courseId:commandId,slug,lessonId,quizId,revision:authoringAction.revision+1,quizRevision:quizRevision+1,documentSha256};
-const freeBody={courseId:commandId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:false};
+const freeBody={courseId:commandId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:replay};
 const grantBody={courseId:commandId,userId:target,commandId:grantCommandId,grantId,courseRevision:grantRevision};
 const archiveBody={courseId:commandId,slug,revision:authoringAction.revision+1,status:'archived'};
 const accessBody={courseId:commandId,lessonId,outcome:variant},effectiveAccess=variant==='allowed';
@@ -890,7 +912,8 @@ const result=start()(async(_verify,_signal,host)=>{
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,status:202}}));
  }
  if(learning){
-  for(const changed of [{source:'paid'},{status:'revoked'},{idempotentReplay:true},{courseId:target},{grantId:'invalid'}]){
+  for(const changed of [{source:'paid'},{status:'revoked'},{idempotentReplay:!replay},{courseId:target},{grantId:'invalid'},
+   ...(replay?[{grantId:target},{enrollmentId:target}]:[])]){
    const body={...freeBody,...changed};
    await assert.rejects(stage.retain({browserResponse:{...evidence.browserResponse,body},courseWitness:{...evidence.courseWitness,...changed}}));
   }
@@ -899,6 +922,13 @@ const result=start()(async(_verify,_signal,host)=>{
   }
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,academyPath:'/academy'}}));
   await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
+  if(replay){
+   for(const changed of [{streamId:target},{canonicalDigest:'6'.repeat(64)}]){
+    await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,communityDelivery:{...activationDelivery,...changed}}}));
+   }
+   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,transitionId:target,
+    communityDelivery:{...activationDelivery,eventId:target}}}));
+  }
  }
  if(learning||paidGrant){
   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,communityDelivery:undefined}}));
@@ -971,7 +1001,8 @@ const result=start()(async(_verify,_signal,host)=>{
    {liveSessionCount:2},
   ]) await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,...changed}}));
  }
- if(['wrong-join','wrong-item-join','unexpected-archive-flags','unexpected-frontend-operation','wrong-community-join','wrong-prior-join'].includes(behavior)){
+ if(['wrong-join','wrong-item-join','unexpected-archive-flags','unexpected-frontend-operation','wrong-community-join','wrong-prior-join',
+  'wrong-replay-join'].includes(behavior)){
   await assert.rejects(stage.retain(evidence),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
   await assert.rejects(stage.retain(evidence));
   throw new Error('fixture-stop-after-mismatched-join');
@@ -996,10 +1027,14 @@ const result=start()(async(_verify,_signal,host)=>{
    retained.remainingAccess,retained.transitionId,retained.communityDelivery,retained.gatewayPostRequestId],
   [actor,'revoke-paid-grant',commandId,target,grantId,grantCommandId,grantRevision,remainingAccess,revokeTransitionId,communityDelivery,requestId],
  );
- if(learning) assert.deepEqual(
-  [retained.actorId,retained.courseId,retained.slug,retained.grantId,retained.enrollmentId,retained.transitionId,retained.communityDelivery,retained.gatewayPostRequestId],
-  [actor,commandId,slug,grantId,enrollmentId,transitionId,activationDelivery,requestId],
- );
+ if(learning){
+  assert.deepEqual(
+   [retained.actorId,retained.courseId,retained.slug,retained.grantId,retained.enrollmentId,retained.transitionId,retained.communityDelivery,retained.gatewayPostRequestId],
+   [actor,commandId,slug,grantId,enrollmentId,transitionId,activationDelivery,requestId],
+  );
+  if(replay) assert.equal(retained.operation,'replay-free-enrollment');
+  else assert.ok(!Object.hasOwn(retained,'operation'));
+ }
  if(authoring){
   if(archive){
    assert.equal(retained.gatewayPatchRequestId,requestId);
@@ -1147,6 +1182,14 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['learning','customer','wrong-learning-tail'],
  ['learning','customer','wrong-join'],
  ['learning','customer','wrong-community-join'],
+ ['learning','customer','joined','exact-key-replay'],
+ ['learning','customer','joined-progress-first','exact-key-replay'],
+ ['learning','customer','wrong-learner','exact-key-replay'],
+ ['learning','customer','wrong-idempotency-key','exact-key-replay'],
+ ['learning','customer','wrong-observe-order','exact-key-replay'],
+ ['learning','customer','wrong-observe-ack','exact-key-replay'],
+ ['learning','customer','wrong-community-join','exact-key-replay'],
+ ['learning','customer','wrong-replay-join','exact-key-replay'],
  ['paid-grant','admin','joined'],
  ['paid-grant','admin','joined','max-revision'],
  ['paid-grant','admin','wrong-owner'],

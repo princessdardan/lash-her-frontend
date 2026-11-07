@@ -567,6 +567,28 @@ class InteractiveWindowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ARCHIVE_DIGEST_REQUIRED"):
             window.validate_interactive_action({**action, "requests": [read, {**patch, "bodySha256": wrong}]})
 
+    def test_free_replay_plan_preserves_key_selector_and_exact_request_budget(self):
+        actor, course, key, grant, enrollment, event, stream = [
+            f"10000000-0000-4000-8000-{index:012d}" for index in range(1, 8)]
+        detail = f"/course/v1/student/courses/{course}"
+        requests = [
+            {"method": "GET", "target": detail, "bodySha256": window._EMPTY, "uses": 1},
+            {"method": "GET", "target": f"/course/v1/student/progress?courseId={course}", "bodySha256": window._EMPTY, "uses": 1},
+            {"method": "POST", "target": f"{detail}/enrollments", "bodySha256": window._receipt_sha({"idempotencyKey": key}), "uses": 1},
+        ]
+        prior = {"grantId": grant, "enrollmentId": enrollment, "eventId": event, "streamId": stream, "canonicalDigest": "5" * 64}
+        selection = {"operation": "replay-free-enrollment", "courseId": course, "slug": "owned-course", "idempotencyKey": key, "prior": prior}
+        action = {"stage": "learning", "actorId": actor, "windowSeconds": 60, "learningAction": selection, "requests": requests}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        self.assertEqual(window._selection_sha(action), (actor + key).replace("-", ""))
+        for change in ({"streamId": "invalid"}, {"canonicalDigest": "0" * 64}, {"streamVersion": 1}, {"grantId": None}):
+            with self.subTest(prior=change), self.assertRaisesRegex(ValueError, "LEARNING_REPLAY_PRIOR_REQUIRED"):
+                window.validate_interactive_action({**action, "learningAction": {**selection, "prior": {**prior, **change}}})
+        for changed in (requests[::-1], [{**requests[0], "uses": 2}, *requests[1:]],
+                        [*requests[:2], {**requests[2], "bodySha256": "4" * 64}]):
+            with self.subTest(requests=changed), self.assertRaisesRegex(ValueError, "LEARNING_ENROLLMENT_REQUESTS_REQUIRED"):
+                window.validate_interactive_action({**action, "requests": changed})
+
     def test_paid_grant_plan_binds_reviewed_reason_revision_and_exact_encoded_targets(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"
