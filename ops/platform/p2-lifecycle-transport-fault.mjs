@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
 import { observeP2LifecycleNativeLedger } from "./p2-lifecycle-native.mjs";
+import { requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile } from "./qualification-target-profile.mjs";
 
 const plans = new WeakMap();
 const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
@@ -15,19 +16,29 @@ const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_TRANSPORT_FAULT_REFUSED"); };
 const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 
-export function prepareP2LifecycleTransportFaultPlan(nativePlan, input) {
-  demand(nativePlan?.version === 1 && nativePlan.environment === "staging" && nativePlan.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM"
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    demand(!carriers.some(value => value && Object.hasOwn(value, "qualificationTargetProfile")));
+    return undefined;
+  }
+  return requireQualificationTargetProfile(currentProfile, { qualificationTargetProfile: expected }, ...carriers);
+}
+
+export function prepareP2LifecycleTransportFaultPlan(nativePlan, input, expectedProfile) {
+  const profile = profileContext(expectedProfile, nativePlan, nativePlan?.target, input), version = profile ? 2 : 1;
+  demand(nativePlan?.version === version && nativePlan.environment === "staging" && nativePlan.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM"
     && nativePlan.finalDisposition === "disabled-and-admission-closed" && sha(nativePlan.planSha256)
     && sha(nativePlan.candidateSha256) && sha(nativePlan.targetSha256) && /^[a-f0-9]{40}$/u.test(nativePlan.sourceCommit)
     && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(nativePlan.actionId) && Array.isArray(nativePlan.commandWitnesses)
-    && closed(input, ["version", "stageId", "mode", "receiver", "commandIndex", "candidateSha256", "commandSha256", "configurationSha256", "gatewayConfigurationSha256", "gatewayImageSha256", "gatewayProcessSha256", "operatorSourceCommit", "operatorSourceClosureSha256"])
-    && input.version === 1 && /^[a-f0-9]{40}$/u.test(input.operatorSourceCommit)
+    && closed(input, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "stageId", "mode", "receiver", "commandIndex", "candidateSha256", "commandSha256", "configurationSha256", "gatewayConfigurationSha256", "gatewayImageSha256", "gatewayProcessSha256", "operatorSourceCommit", "operatorSourceClosureSha256"])
+    && input.version === version && /^[a-f0-9]{40}$/u.test(input.operatorSourceCommit)
+    && (!profile || input.operatorSourceCommit === nativePlan.sourceCommit)
     && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.stageId) && ["503-before-upstream", "drop-after-ack"].includes(input.mode)
     && ["course", "community"].includes(input.receiver) && Number.isInteger(input.commandIndex) && input.commandIndex >= 0
     && input.commandIndex < nativePlan.commandWitnesses.length && [input.candidateSha256, input.commandSha256, input.configurationSha256, input.gatewayConfigurationSha256,
       input.gatewayImageSha256, input.gatewayProcessSha256, input.operatorSourceClosureSha256].every(sha));
   const selected = nativePlan.commandWitnesses[input.commandIndex]; demand(uuid(selected.commandId));
-  const plan = freeze({ version: 1, environment: "staging", profile: "lifecycle-known-command-v1", actionId: nativePlan.actionId, stageId: input.stageId,
+  const plan = freeze({ version, ...(profile ? { qualificationTargetProfile: profile } : {}), environment: "staging", profile: "lifecycle-known-command-v1", actionId: nativePlan.actionId, stageId: input.stageId,
     sourceCommit: nativePlan.sourceCommit,
     candidateSha256: input.candidateSha256, candidateObjectSha256: nativePlan.candidateSha256, nativePlanSha256: nativePlan.planSha256, targetSha256: nativePlan.targetSha256,
     mode: input.mode, receiver: input.receiver, commandSha256: input.commandSha256, configurationSha256: input.configurationSha256,
@@ -36,10 +47,10 @@ export function prepareP2LifecycleTransportFaultPlan(nativePlan, input) {
     operatorSourceCommit: input.operatorSourceCommit, operatorSourceClosureSha256: input.operatorSourceClosureSha256,
     leaseMilliseconds: 120000, maxMatches: 1, finalDisposition: "fault-disabled-native-off-and-admission-closed",
     standaloneActivationEligible: false, automaticReplayAllowed: false, automaticReconciliationAllowed: false, releaseAccepted: false });
-  plans.set(plan, { nativePlan, selected: structuredClone(selected) }); return plan;
+  plans.set(plan, { nativePlan, selected: structuredClone(selected), profile }); return plan;
 }
 
-function physicalVerifier(nativePlan, client, verifyEnvironment, verifySession) {
+function physicalVerifier(nativePlan, client, verifyEnvironment, verifySession, probe) {
   let originalPid;
   return async () => {
     await verifyEnvironment(); await verifySession();
@@ -51,11 +62,17 @@ function physicalVerifier(nativePlan, client, verifyEnvironment, verifySession) 
       && identity.username === nativePlan.target.user && identity.session_username === nativePlan.target.user
       && identity.database === nativePlan.target.database && identity.major === nativePlan.target.serverMajor);
     originalPid ??= identity.pid;
-    const locked = (await client.query(`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE locktype='advisory' AND pid=pg_catalog.pg_backend_pid()
+    if (probe) {
+      const backend = (await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0];
+      demand(identity.pid === probe.backendPid && backend?.backend_start === probe.backendStart);
+    }
+    for (const key of ["lash-her:private-db:migrations", ...(probe ? [probe.marker] : [])]) {
+      const locked = (await client.query(`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE locktype='advisory' AND pid=pg_catalog.pg_backend_pid()
       AND granted AND mode='ExclusiveLock' AND database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database())
       AND objsubid=1 AND classid=((pg_catalog.hashtext($1)::bigint>>32)&4294967295)::oid
-      AND objid=(pg_catalog.hashtext($1)::bigint&4294967295)::oid) AS held`, ["lash-her:private-db:migrations"])).rows[0];
-    demand(locked?.held === true);
+      AND objid=(pg_catalog.hashtext($1)::bigint&4294967295)::oid) AS held`, [key])).rows[0];
+      demand(locked?.held === true);
+    }
   };
 }
 
@@ -80,13 +97,15 @@ async function selectedCommand(client, expected) {
 }
 
 function assertHostObservation(value, plan, recovery = true, zero = true) {
-  demand(value?.version === 1 && value.status === "P2_FAULT_HOST_CURRENT" && value.candidateSha256 === plan.candidateSha256
+  profileContext(plan.qualificationTargetProfile, value);
+  demand(value?.version === plan.version && value.status === "P2_FAULT_HOST_CURRENT" && value.candidateSha256 === plan.candidateSha256
     && value.candidateObjectSha256 === plan.candidateObjectSha256
     && value.configurationSha256 === plan.configurationSha256 && value.gatewayConfigurationSha256 === plan.gatewayConfigurationSha256
     && value.gatewayImageSha256 === plan.gatewayImageSha256 && value.gatewayProcessSha256 === plan.gatewayProcessSha256
     && value.operatorSourceCommit === plan.operatorSourceCommit && value.operatorSourceClosureSha256 === plan.operatorSourceClosureSha256
     && value.targetSha256 === plan.targetSha256
     && sha(value.runtimeInventorySha256) && value.gatewayAdmission?.valid === true && value.gatewayAdmission.newWork === false
+    && (plan.version === 1 || value.gatewayAdmission.releaseId === plan.actionId && value.gatewayAdmission.candidateSha256 === plan.candidateSha256)
     && value.gatewayAdmission.recovery === recovery && ["newWork", "recovery"].every(key => Number.isInteger(value.gatewayAdmission.active?.[key])
       && value.gatewayAdmission.active[key] >= 0 && Number.isInteger(value.gatewayAdmission.uncertain?.[key]) && value.gatewayAdmission.uncertain[key] >= 0
       && (!zero || value.gatewayAdmission.active[key] === 0 && value.gatewayAdmission.uncertain[key] === 0))
@@ -95,13 +114,22 @@ function assertHostObservation(value, plan, recovery = true, zero = true) {
 
 async function nativeMetadata(nativePlan, control) {
   const value = await control.observeMetadata(nativePlan);
+  requireNativeProfile(nativePlan, value);
   demand(value?.projectId === nativePlan.projectId && value.deploymentId === nativePlan.deploymentId && value.sourceCommit === nativePlan.sourceCommit
     && value.deploymentUrl === nativePlan.deploymentUrl && isDeepStrictEqual(value.schedule, nativePlan.schedule) && typeof value.nativeEnabled === "boolean");
   return value;
 }
 
+function requireNativeProfile(plan, value) {
+  if (plan.qualificationTargetProfile === undefined) return;
+  profileContext(plan.qualificationTargetProfile, value);
+  demand(value.version === 2 && value.environment === 'staging' && value.releaseId === plan.actionId &&
+    value.candidateSha256 === plan.candidateSha256 && value.phase2ContractManifestSha256 === plan.phase2ContractManifestSha256);
+}
+
 async function nativeBoundary(nativePlan, control) {
   const current = await control.observe(nativePlan);
+  requireNativeProfile(nativePlan, current);
   demand(current?.configurationRecordSha256 === nativePlan.configurationRecordSha256
     && isDeepStrictEqual(current.featureControls, nativePlan.featureControls)
     && isDeepStrictEqual(current.writerAdmissionBinding, nativePlan.writerAdmissionBinding));
@@ -112,26 +140,41 @@ async function nativeBoundary(nativePlan, control) {
   return current;
 }
 
-export async function runP2LifecycleTransportFault(input) {
-  const { plan, client, verifyEnvironment, verifySession, withOwner, hostStage, nativeControl, exercise, containFrontend, directory } = input;
+export async function runP2LifecycleTransportFault(input, expectedProfile) {
+  const { plan, client, verifyEnvironment, verifySession, withOwner, hostStage, nativeControl, exercise, containFrontend, directory, frontendProbe } = input;
   const binding = plans.get(plan);
   demand(binding && input.confirmation === `staging/${plan.actionId}` && typeof verifyEnvironment === "function" && typeof verifySession === "function"
     && typeof withOwner === "function" && typeof exercise === "function" && typeof containFrontend === "function"
     && ["verify", "observe", "arm", "disarm", "closeGateway", "effects"].every(name => typeof hostStage?.[name] === "function")
     && typeof nativeControl?.observe === "function" && typeof nativeControl.observeMetadata === "function");
+  const profile = profileContext(expectedProfile, plan);
+  demand(isDeepStrictEqual(profile, binding.profile));
+  if (profile) {
+    profileContext(profile, frontendProbe, frontendProbe?.job, frontendProbe?.job?.target, frontendProbe?.receipt,
+      frontendProbe?.receipt?.target, frontendProbe?.plan, frontendProbe?.plan?.nativePlan, frontendProbe?.plan?.nativePlan?.target);
+    demand(frontendProbe.version === 2 && frontendProbe.job.version === 2 && frontendProbe.receipt.version === 2 && frontendProbe.plan.version === 2 &&
+      frontendProbe.receipt.status === 'P2_CERTIFICATION_DATABASE_CURRENT' && frontendProbe.receipt.candidateSha256 === plan.candidateSha256 &&
+      [frontendProbe.job, frontendProbe.receipt].every(row => row.releaseId === plan.actionId && row.sourceCommit === plan.sourceCommit) &&
+      frontendProbe.receipt.planSha256 === frontendProbe.plan.planSha256 && frontendProbe.receipt.targetSha256 === plan.targetSha256 &&
+      isDeepStrictEqual(frontendProbe.plan.nativePlan, binding.nativePlan) && sha(frontendProbe.marker) &&
+      Number.isSafeInteger(frontendProbe.backendPid) && frontendProbe.backendPid > 0 &&
+      typeof frontendProbe.backendStart === 'string' && frontendProbe.backendStart.length > 0 && frontendProbe.backendStart.length <= 80);
+  } else demand(frontendProbe === undefined);
   plans.delete(plan); // One source invocation; an unknown attempt is never replayed.
   const { nativePlan, selected } = binding, store = frontendReleaseReceiptStore(directory), dependencies = { verifySession, withOwner };
-  const verify = physicalVerifier(nativePlan, client, verifyEnvironment, verifySession);
+  const probeIdentity = profile ? { marker: frontendProbe.marker, backendPid: frontendProbe.backendPid, backendStart: frontendProbe.backendStart } : undefined;
+  const verify = physicalVerifier(nativePlan, client, verifyEnvironment, verifySession, probeIdentity);
   let primaryFailure = false, effect, before, after, gatewayClosure, frontendClosure,
     faultDisabled = false, finalLedger, nativeOff = false, nativeEnabled = null, frontendRuntimeBindingVerified = false,
     phase = "physical-preflight", failurePhase = null;
-  const outcome = () => ({ version: 1, status: !primaryFailure && effect && faultDisabled && gatewayClosure?.gatewayAdmissionClosed === true
+  const outcome = () => ({ version: plan.version, ...(profile ? { qualificationTargetProfile: profile } : {}), status: !primaryFailure && effect && faultDisabled && gatewayClosure?.gatewayAdmissionClosed === true
       && frontendClosure?.frontendAdmissionClosed === true && nativeOff && frontendRuntimeBindingVerified
       && finalLedger?.newWork === false && finalLedger.recovery === false
       && finalLedger.active === 0 && finalLedger.uncertain === 0
       && ["newWork", "recovery"].every(key => gatewayClosure.active?.[key] === 0 && gatewayClosure.uncertain?.[key] === 0)
       ? "P2_LIFECYCLE_TRANSPORT_FAULT_OBSERVED_CONTAINED" : "P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW",
     environment: "staging", stageId: plan.stageId, candidateSha256: plan.candidateSha256, mode: plan.mode, receiver: plan.receiver,
+    ...(profile ? { targetSha256: plan.targetSha256, sourceCommit: plan.sourceCommit, nativePlanSha256: plan.nativePlanSha256 } : {}),
     phase, failurePhase, injectedEffectSha256: effect ? hash(effect) : null, beforeLedgerSha256: before ? hash(before) : null, afterLedgerSha256: after ? hash(after) : null,
     faultDisabled, gatewayAdmissionClosed: gatewayClosure?.gatewayAdmissionClosed ?? null,
     frontendAdmissionClosed: frontendClosure?.frontendAdmissionClosed === false ? false
@@ -157,10 +200,19 @@ export async function runP2LifecycleTransportFault(input) {
       && actual.pending[0].status === "pending" && actual.pending[0].lease_id === null && actual.pending[0].lease_until === null && actual.pending[0].ready === true);
     demand(before.deliveries.some(row => row.command_id === selected.commandId && row.receiver !== plan.receiver && row.status === "acknowledged" && row.acknowledged_at !== null));
     await verify(); await hostStage.verify(plan);
+    if (profile) {
+      demand((await nativeBoundary(nativePlan, nativeControl)).nativeEnabled === false);
+      await verify();
+    }
     retain("p2-fault-started.json", { ...plan, initialEpoch: before.epoch, sourceCommandWitnessSha256: hash(actual.command), status: "P2_LIFECYCLE_FAULT_STARTED" });
     phase = "arm";
     const record = { commandId: actual.command.commandId, accountVersion: actual.command.accountVersion, canonicalSha256: hash(actual.command) };
     const armedReceipt = await hostStage.arm(plan, record);
+    if (profile) {
+      profileContext(profile, armedReceipt);
+      demand(armedReceipt.version === 2 && armedReceipt.stageId === plan.stageId && armedReceipt.maxMatches === 1 &&
+        armedReceipt.gatewayProcessSha256 === plan.gatewayProcessSha256);
+    }
     demand(armedReceipt?.status === "P2_FAULT_LEASE_ARMED" && sha(armedReceipt.leaseSha256));
     retain("p2-fault-armed.json", armedReceipt);
     phase = "actual-worker-invocation";
@@ -176,8 +228,8 @@ export async function runP2LifecycleTransportFault(input) {
       && effects[0].stageId === plan.stageId && effects[0].candidateSha256 === plan.candidateSha256 && effects[0].leaseSha256 === armedReceipt.leaseSha256
       && effects[0].gatewayProcessSha256 === plan.gatewayProcessSha256 && effects[0].gatewayImageSha256 === plan.gatewayImageSha256
       && effects[0].sourceWitnessSha256 === plan.commandSha256 && effects[0].mode === plan.mode && effects[0].receiver === plan.receiver
-      && (plan.mode === "503-before-upstream" ? effects[0].upstreamStarted === false && effects[0].downstreamDisposition === "503"
-        : effects[0].upstreamReceiptVerified === true && effects[0].upstreamStatus === 200 && effects[0].downstreamBytesStarted === false
+      && (plan.mode === "503-before-upstream" ? effects[0].upstreamStarted === false && effects[0].upstreamReceiptVerified === false && effects[0].downstreamDisposition === "503"
+        : effects[0].upstreamStarted === true && effects[0].upstreamReceiptVerified === true && effects[0].upstreamStatus === 200 && effects[0].downstreamBytesStarted === false
           && effects[0].downstreamDisposition === "dropped-before-any-response-bytes"));
     effect = effects[0];
     after = await observeP2LifecycleNativeLedger(nativePlan, client, dependencies, before.epoch);
@@ -190,8 +242,15 @@ export async function runP2LifecycleTransportFault(input) {
     // failed. The source parent must await this before releasing its locks.
     {
       phase = "containment";
-      try { const disabled = await hostStage.disarm(plan); faultDisabled = disabled.faultDisabled === true; } catch { primaryFailure = true; failurePhase ??= phase; }
-      try { gatewayClosure = await hostStage.closeGateway(plan); } catch { primaryFailure = true; failurePhase ??= phase; }
+      try {
+        const disabled = await hostStage.disarm(plan);
+        if (profile) { profileContext(profile, disabled); demand(disabled.version === 2 && disabled.leaseAbsent === true); }
+        faultDisabled = disabled.faultDisabled === true;
+      } catch { primaryFailure = true; failurePhase ??= phase; }
+      try {
+        gatewayClosure = await hostStage.closeGateway(plan);
+        if (profile) { profileContext(profile, gatewayClosure); demand(gatewayClosure.version === 2 && gatewayClosure.fileFencePersisted === true); }
+      } catch { primaryFailure = true; failurePhase ??= phase; }
       try { frontendClosure = await containFrontend(nativePlan, { faultDisabled, gatewayClosure }); } catch { primaryFailure = true; failurePhase ??= phase; }
       try { await verify(); finalLedger = await observeP2LifecycleNativeLedger(nativePlan, client, dependencies); } catch { primaryFailure = true; failurePhase ??= phase; }
       // Discard earlier cleanup observations before independent terminal reads.

@@ -4,39 +4,56 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { nativeModel } from "./harness/p2-native-unit-fixture.mjs";
+import { nativeDocuments, nativeModel } from "./harness/p2-native-unit-fixture.mjs";
 import { prepareP2LifecycleTransportFaultPlan, runP2LifecycleTransportFault } from "./p2-lifecycle-transport-fault.mjs";
+import { prepareP2LifecycleNativePlan } from "./p2-lifecycle-native.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile } from "./qualification-target-profile.mjs";
 const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
   ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a.localeCompare(b))) : child);
 const hash = value => createHash("sha256").update(canonical(value)).digest("hex");
 
-function fixture(mode = "503-before-upstream") {
-  const model = nativeModel(), selected = model.plan.commandWitnesses[0], calls = [], originalQuery = model.client.query;
+function fixture(mode = "503-before-upstream", profile) {
+  const documents = nativeDocuments(), model = nativeModel(documents);
+  const fields = profile ? { version: 2, qualificationTargetProfile: profile } : { version: 1 };
+  if (profile) {
+    const bind = value => ({ ...value, qualificationTargetProfile: profile });
+    const candidate = documents.candidate, source = documents.settings;
+    model.plan = prepareP2LifecycleNativePlan({ ...bind(candidate), version: 3, workload: bind(candidate.workload),
+      sources: { frontend: bind(candidate.sources.frontend) } }, { ...source, ...fields, target: bind(source.target) }, profile);
+  }
+  const selected = model.plan.commandWitnesses[0], calls = [], originalQuery = model.client.query;
+  const marker = "c".repeat(64), backendStart = "2026-11-07 00:00:00+00", lockReads = [];
   model.state.newWork = false;
   Object.assign(model.state.deliveries.find(row => row.receiver === "community"), { status: "acknowledged", attempts: 1, acknowledged_at: new Date() });
   const command = { version: 1, commandId: selected.commandId, userId: randomUUID(), accountVersion: 1, action: "suspend", issuedAt: new Date().toISOString() };
   model.client.query = async (sql, values) => {
+    if (sql.includes("backend_start::text")) return { rows: [{ backend_start: backendStart }] };
+    if (sql.includes("AS held")) lockReads.push(values[0]);
     if (sql.includes("SELECT command_id::text,user_id::text")) return { rows: [{ command_id: command.commandId, user_id: command.userId, account_version: "1", action: "suspend", issued_at: new Date(command.issuedAt), command }] };
     if (sql.includes("WHERE status<>'acknowledged'")) return { rows: model.state.deliveries.filter(row => row.status !== "acknowledged").map(row => ({ ...row, lease_id: null, ready: true })) };
     return originalQuery.call(model.client, sql, values);
   };
-  const settings = { version: 1, stageId: "owned-fault", mode, receiver: "course", commandIndex: 0, candidateSha256: "1".repeat(64), commandSha256: hash(command),
+  const settings = { ...fields, stageId: "owned-fault", mode, receiver: "course", commandIndex: 0, candidateSha256: "1".repeat(64), commandSha256: hash(command),
     configurationSha256: "2".repeat(64), gatewayConfigurationSha256: "3".repeat(64), gatewayImageSha256: "4".repeat(64), gatewayProcessSha256: "5".repeat(64),
     operatorSourceCommit: model.plan.sourceCommit, operatorSourceClosureSha256: "8".repeat(64) };
-  const plan = prepareP2LifecycleTransportFaultPlan(model.plan, settings), leaseSha = "6".repeat(64), zeros = { newWork: 0, recovery: 0 };
+  const plan = prepareP2LifecycleTransportFaultPlan(model.plan, settings, profile), leaseSha = "6".repeat(64), zeros = { newWork: 0, recovery: 0 };
   const gatewayState = { newWork: false, recovery: true, active: { ...zeros }, uncertain: { ...zeros } };
   let armed = false;
   const hostStage = {
     async verify() { calls.push("host-verify"); },
-    async observe() { return { version: 1, status: "P2_FAULT_HOST_CURRENT", candidateSha256: plan.candidateSha256, candidateObjectSha256: plan.candidateObjectSha256,
+    async observe() { return { ...fields, status: "P2_FAULT_HOST_CURRENT", candidateSha256: plan.candidateSha256, candidateObjectSha256: plan.candidateObjectSha256,
       configurationSha256: plan.configurationSha256, gatewayConfigurationSha256: plan.gatewayConfigurationSha256, gatewayImageSha256: plan.gatewayImageSha256,
       gatewayProcessSha256: plan.gatewayProcessSha256, targetSha256: plan.targetSha256, operatorSourceCommit: plan.operatorSourceCommit,
       operatorSourceClosureSha256: plan.operatorSourceClosureSha256,
-      runtimeInventorySha256: "7".repeat(64), gatewayAdmission: { valid: true, ...structuredClone(gatewayState) }, faultLeasePresent: false }; },
-    async arm(_plan, record) { calls.push("arm"); assert.equal(record.commandId, command.commandId); assert.equal(record.canonicalSha256, plan.commandSha256); armed = true; return { status: "P2_FAULT_LEASE_ARMED", leaseSha256: leaseSha }; },
-    async disarm() { calls.push("disarm"); armed = false; return { faultDisabled: true }; },
+      runtimeInventorySha256: "7".repeat(64), gatewayAdmission: { valid: true, ...structuredClone(gatewayState),
+        ...(profile ? { releaseId: plan.actionId, candidateSha256: plan.candidateSha256 } : {}) }, faultLeasePresent: false }; },
+    async arm(_plan, record) { calls.push("arm"); assert.equal(record.commandId, command.commandId); assert.equal(record.canonicalSha256, plan.commandSha256); armed = true;
+      return { status: "P2_FAULT_LEASE_ARMED", leaseSha256: leaseSha,
+        ...(profile ? { ...fields, stageId: plan.stageId, maxMatches: 1, gatewayProcessSha256: plan.gatewayProcessSha256 } : {}) }; },
+    async disarm() { calls.push("disarm"); armed = false; return { faultDisabled: true, ...(profile ? { ...fields, leaseAbsent: true } : {}) }; },
     async closeGateway() { calls.push("gateway-close"); gatewayState.newWork = false; gatewayState.recovery = false;
-      return { gatewayAdmissionClosed: true, active: gatewayState.active, uncertain: gatewayState.uncertain }; },
+      return { gatewayAdmissionClosed: true, active: gatewayState.active, uncertain: gatewayState.uncertain,
+        ...(profile ? { ...fields, fileFencePersisted: true } : {}) }; },
     async effects() { assert.equal(armed, true); return [{ version: 1, status: "P2_TRANSPORT_FAULT_INJECTED", environment: "staging", profile: plan.profile, stageId: plan.stageId,
       candidateSha256: plan.candidateSha256, configurationSha256: plan.configurationSha256, gatewayProcessSha256: plan.gatewayProcessSha256,
       gatewayImageSha256: plan.gatewayImageSha256, sourceWitnessSha256: plan.commandSha256, leaseSha256: leaseSha, mode: plan.mode, receiver: plan.receiver,
@@ -44,15 +61,86 @@ function fixture(mode = "503-before-upstream") {
       upstreamReceiptVerified: mode !== "503-before-upstream", ...(mode === "drop-after-ack" ? { upstreamStatus: 200, downstreamBytesStarted: false } : {}) }]; },
   };
   const nativeControl = { async observeMetadata() { return { projectId: model.plan.projectId, deploymentId: model.plan.deploymentId, sourceCommit: model.plan.sourceCommit,
-    deploymentUrl: model.plan.deploymentUrl, schedule: model.plan.schedule, nativeEnabled: model.state.enabled }; },
+    deploymentUrl: model.plan.deploymentUrl, schedule: model.plan.schedule, nativeEnabled: model.state.enabled,
+    ...(profile ? { ...fields, environment: 'staging', releaseId: model.plan.actionId, candidateSha256: model.plan.candidateSha256,
+      phase2ContractManifestSha256: model.plan.phase2ContractManifestSha256 } : {}) }; },
     async observe() { return { ...await nativeControl.observeMetadata(), configurationRecordSha256: model.plan.configurationRecordSha256,
       featureControls: model.plan.featureControls, writerAdmissionBinding: model.plan.writerAdmissionBinding }; } };
   const input = { plan, client: model.client, directory: model.input.directory, confirmation: "staging/" + model.plan.actionId,
     verifyEnvironment: async () => { calls.push("environment"); }, verifySession: async () => {}, withOwner: model.input.withOwner, nativeControl, hostStage,
     async exercise() { calls.push("exercise"); model.state.deliveries.find(row => row.receiver === "course").attempts++; },
     async containFrontend() { calls.push("frontend-contain"); model.state.newWork = false; model.state.recovery = false; return { frontendAdmissionClosed: true }; } };
-  return { model, plan, settings, input, calls, hostStage, gatewayState, cleanup: model.cleanup, run: () => runP2LifecycleTransportFault(input) };
+  if (profile) {
+    const certification = { ...fields, planSha256: "9".repeat(64), nativePlan: model.plan };
+    const identity = { releaseId: plan.actionId, sourceCommit: plan.sourceCommit };
+    input.frontendProbe = { ...fields, marker, backendStart, backendPid: 123, plan: certification,
+      job: { ...fields, ...identity, target: model.plan.target }, receipt: { ...fields, ...identity, status: 'P2_CERTIFICATION_DATABASE_CURRENT',
+        planSha256: certification.planSha256, candidateSha256: plan.candidateSha256, targetSha256: plan.targetSha256, target: model.plan.target } };
+  }
+  return { model, plan, settings, input, calls, hostStage, gatewayState, marker, lockReads, cleanup: model.cleanup,
+    run: () => runP2LifecycleTransportFault(input, profile) };
 }
+
+test("profiled transport checks both locks and preserves the original gateway effect wire in both fault modes", async () => {
+  for (const mode of ['503-before-upstream', 'drop-after-ack']) {
+    const value = fixture(mode, currentProfile);
+    try {
+      const result = await value.run();
+      assert.equal(result.status, 'P2_LIFECYCLE_TRANSPORT_FAULT_OBSERVED_CONTAINED');
+      assert.equal(result.version, 2);
+      assert.deepEqual(result.qualificationTargetProfile, currentProfile);
+      assert.equal(result.targetSha256, value.plan.targetSha256);
+      assert.equal(result.nativePlanSha256, value.model.plan.planSha256);
+      assert.equal(result.releaseAccepted, false);
+      assert.equal(result.deployedCertificationComplete, false);
+      assert.ok(value.lockReads.includes(value.marker));
+      assert.ok(value.lockReads.includes('lash-her:private-db:migrations'));
+      const retained = JSON.parse(readFileSync(join(value.input.directory, 'p2-fault-effect.json'))).effect;
+      assert.equal(retained.version, 1);
+      assert.equal(Object.hasOwn(retained, 'qualificationTargetProfile'), false);
+    } finally { value.cleanup(); }
+  }
+});
+
+test("profiled transport refuses mixed contexts and stale nonce or native profile before arming", async () => {
+  for (const scenario of ['wrong-context', 'nonce-lost', 'legacy-host', 'legacy-native', 'native-drift-before-arm']) {
+    const value = fixture('503-before-upstream', currentProfile);
+    try {
+      assert.throws(() => prepareP2LifecycleTransportFaultPlan(value.model.plan, value.settings));
+      assert.throws(() => prepareP2LifecycleTransportFaultPlan(value.model.plan,
+        { ...value.settings, operatorSourceCommit: 'a'.repeat(40) }, currentProfile));
+      if (scenario === 'nonce-lost') {
+        const query = value.input.client.query;
+        value.input.client.query = (sql, args) => sql.includes('AS held') && args[0] === value.marker ? { rows: [{ held: false }] } : query(sql, args);
+      }
+      const stripProfile = value => {
+        const row = { ...value, version: 1 };
+        delete row.qualificationTargetProfile;
+        return row;
+      };
+      if (scenario === 'legacy-host') {
+        const observe = value.hostStage.observe;
+        value.hostStage.observe = async () => stripProfile(await observe());
+      }
+      if (scenario === 'legacy-native') {
+        const observe = value.input.nativeControl.observeMetadata;
+        value.input.nativeControl.observeMetadata = async () => stripProfile(await observe());
+      }
+      if (scenario === 'native-drift-before-arm') {
+        const verify = value.hostStage.verify;
+        let count = 0;
+        value.hostStage.verify = async () => {
+          await verify();
+          if (++count === 2) value.model.state.enabled = true;
+        };
+      }
+      await assert.rejects(scenario === 'wrong-context' ? runP2LifecycleTransportFault(value.input) : value.run());
+      assert.equal(value.calls.includes('arm'), false);
+      assert.equal(value.calls.includes('exercise'), false);
+      if (scenario !== 'wrong-context') assert.ok(value.calls.includes('gateway-close'));
+    } finally { value.cleanup(); }
+  }
+});
 
 test("source plan has no executable standalone path or caller command/body/URL options", () => {
   const value = fixture();

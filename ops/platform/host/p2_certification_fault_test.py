@@ -1,8 +1,10 @@
 """Owned FD/filesystem cleanup tests; Docker/Linux-root/PG observation is separate."""
 import fcntl
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -32,6 +34,7 @@ class FaultStageTests(unittest.TestCase):
         self.private = self.root / "private"; self.private.mkdir(mode=0o700)
         stage = fault.P2CertificationFaultStage.__new__(fault.P2CertificationFaultStage)
         stage.scope, stage.selected, stage.jobs = self.scope, {"releaseId": "owned-release"}, {}
+        stage.expected_profile = None
         stage.plan = {"version": 1, "environment": "staging", "profile": "lifecycle-known-command-v1", "stageId": "owned-one-record",
             "candidateSha256": "1" * 64, "configurationSha256": "2" * 64, "gatewayConfigurationSha256": "3" * 64,
             "gatewayProcessSha256": "4" * 64, "gatewayImageSha256": "5" * 64, "mode": "drop-after-ack", "receiver": "course", "commandSha256": "6" * 64}
@@ -159,6 +162,123 @@ class FaultStageTests(unittest.TestCase):
             mounted.side_effect = ValueError("OWNED_MOUNT_DRIFT")
             with self.assertRaisesRegex(ValueError, "OWNED_MOUNT_DRIFT"):
                 fault.P2CertificationFaultStage.verify(stage)
+
+
+class ProfiledFaultStageTests(unittest.TestCase):
+    def test_profiled_scope_preserves_original_gateway_lease_and_requires_exact_witness_and_lock(self):
+        from p2_certification_parent_test import ProfiledCertificationInputTests
+
+        owner = ProfiledCertificationInputTests()
+        owner.setUpClass()
+        self.addCleanup(owner.doClassCleanups)
+        owner.setUp()
+        self.addCleanup(owner.doCleanups)
+        cert = owner.plan
+        native = cert['nativePlan']
+        command = native['commandWitnesses'][0]
+        selection = {'stageId': 'owned-fault', 'receiver': 'course', 'commandIndex': 0, 'commandSha256': '6' * 64}
+        inventory = [{'service': 'gateway', 'containerId': 'a' * 12, 'image': owner.initial['candidate']['artifacts']['gateway']['image']}]
+        cert.update(mode='fault-drop-after-ack', faultSelection=selection, runtimeInventorySha256=owner.hash(inventory, canonical=True))
+        owner.rehash()
+        fixture = owner.physical_fixture()
+        witness = {**command, 'canonicalSha256': selection['commandSha256']}
+        record = {'commandId': command['commandId'], 'accountVersion': 1, 'canonicalSha256': selection['commandSha256']}
+        selected_fields = ('candidateSha256', 'candidateObjectSha256', 'targetSha256', 'sourceCommit', 'gatewayConfigurationSha256',
+                           'gatewayProcessSha256', 'operatorSourceCommit', 'operatorSourceClosureSha256')
+        stage_plan = {**{key: cert[key] for key in selected_fields}, 'version': 2, 'qualificationTargetProfile': owner.profile,
+                      'environment': 'staging', 'profile': 'lifecycle-known-command-v1', 'actionId': owner.release_id,
+                      'mode': 'drop-after-ack', 'stageId': selection['stageId'], 'receiver': selection['receiver'],
+                      'commandSha256': selection['commandSha256'], 'nativePlanSha256': native['planSha256'],
+                      'configurationSha256': cert['configurationCanonicalSha256'],
+                      'commandSelectionSha256': owner.hash({'nativePlanSha256': native['planSha256'], 'commandIndex': 0}, canonical=True),
+                      'gatewayImageSha256': fixture.selected['artifacts']['gateway']['image'].split('@sha256:')[1],
+                      'maxMatches': 1, 'leaseMilliseconds': 120000, 'finalDisposition': 'fault-disabled-native-off-and-admission-closed',
+                      'standaloneActivationEligible': False, 'automaticReconciliationAllowed': False,
+                      'automaticReplayAllowed': False, 'releaseAccepted': False}
+        admission = owner.configuration / 'admission'
+        admission.mkdir(mode=0o755)
+        actual_admission = admission.stat()
+        directory = owner.configuration.parent / 'fault'
+        actual_stat, actual_fstat = Path.stat, os.fstat
+        def project_root(info):
+            return os.stat_result((*info[:4], 0, *info[5:]))
+        def owned_path_stat(path, *args, **kwargs):
+            info = actual_stat(path, *args, **kwargs)
+            return project_root(info) if path == directory.parent else info
+        def owned_fd_stat(fd):
+            info = actual_fstat(fd)
+            if stat.S_ISDIR(info.st_mode) and info.st_ino == actual_admission.st_ino:
+                return project_root(info)
+            return info
+        def physical(args, **options):
+            result = owner.physical_child(fixture, args, **options)
+            if args[1] == 'run' and json.loads(options['input'])['operation'] == 'witness':
+                value = json.loads(result.stdout)
+                value['witness']['commands'] = [witness]
+                value['witnessSha256'] = owner.hash(value['witness'])
+                result.stdout = json.dumps(value)
+            return result
+        def gateway(args, **_):
+            self.assertEqual(args[:2], ['docker', 'exec'])
+            state_path = admission / 'state.json'
+            state = json.loads(state_path.read_bytes()) if state_path.exists() else {'newWork': False, 'recovery': True}
+            zero = {'newWork': 0, 'recovery': 0}
+            value = {'version': 1, 'status': 'P2_FAULT_GATEWAY_CURRENT', 'processSha256': cert['gatewayProcessSha256'],
+                     'gatewayConfigurationSha256': cert['gatewayConfigurationSha256'], 'faultModuleSha256': owner.files[fault.MODULE],
+                     'faultLeasePresent': (admission / fault.LEASE).exists(),
+                     'admissionDirectory': {'device': str(actual_admission.st_dev), 'inode': str(actual_admission.st_ino)},
+                     'admission': {**state, 'valid': True, 'releaseId': owner.release_id, 'candidateSha256': cert['candidateSha256'],
+                                   'active': zero, 'uncertain': zero}}
+            return subprocess.CompletedProcess(args, 0, json.dumps(value).encode(), b'')
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(subprocess, 'run', side_effect=physical))
+            fixture.observer.start(lambda: None)
+            stack.callback(fixture.observer.stop)
+            scope = owner.physical_scope(fixture)
+            stack.enter_context(patch.object(fault, 'ROOT', owner.configuration.parent))
+            stack.enter_context(patch.object(fault, 'OPERATOR_ROOT', owner.operators))
+            stack.enter_context(patch.object(fault, 'LOCK', fixture.lock))
+            stack.enter_context(patch.object(os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(os, 'fstat', side_effect=owned_fd_stat))
+            stack.enter_context(patch.object(Path, 'stat', new=owned_path_stat))
+            stack.enter_context(patch.object(os, 'fchown'))
+            stack.enter_context(patch.object(scope, 'run', side_effect=gateway))
+            inventory_check = stack.enter_context(patch.object(fault.runtime, 'check_containers', return_value=inventory))
+            mount = stack.enter_context(patch.object(fault.identity, '_one_container'))
+            args = (scope, fixture.selected, fixture.jobs, owner.configuration, owner.source, stage_plan, directory)
+            with self.assertRaisesRegex(ValueError, 'PROFILE_POLICY_REFUSED'):
+                fault.P2CertificationFaultStage(*args, source_files=owner.files)
+            with self.assertRaisesRegex(ValueError, 'PROFILED_SOURCE_SELECTION_REQUIRED'):
+                fault.P2CertificationFaultStage(*args[:5], {**stage_plan, 'receiver': 'community'}, directory,
+                                                source_files=owner.files, expected_profile=owner.profile)
+            stage = fault.P2CertificationFaultStage(*args, source_files=owner.files, expected_profile=owner.profile)
+            stack.callback(stage.close)
+            inventory_check.assert_called_with(fixture.selected, owner.configuration, expected_profile=owner.profile)
+            self.assertEqual(stage.observe()['qualificationTargetProfile'], owner.profile)
+            with self.assertRaisesRegex(ValueError, 'PROFILED_ACTUAL_COMMAND_REQUIRED'):
+                stage.arm({**record, 'accountVersion': 2})
+            self.assertFalse((admission / fault.LEASE).exists())
+            receipt = stage.arm(record)
+            raw = (admission / fault.LEASE).read_bytes()
+            lease = json.loads(raw)
+            intent = json.loads((directory / 'fault-arm-intent.json').read_bytes())
+            self.assertEqual((receipt['version'], intent['version'], lease['version']), (2, 2, 1))
+            self.assertEqual(receipt['qualificationTargetProfile'], owner.profile)
+            self.assertEqual(intent['lease'], lease)
+            self.assertNotIn('qualificationTargetProfile', lease)
+            self.assertEqual(receipt['leaseSha256'], fault._hash(raw))
+            self.assertGreater(mount.call_count, 2)
+            renamed = fixture.lock.with_name('old.lock')
+            fixture.lock.rename(renamed); fixture.lock.touch(mode=0o600)
+            try:
+                with self.assertRaisesRegex(ValueError, 'CLEANUP_LOCK_CHANGED'):
+                    stage.disarm()
+                self.assertEqual((admission / fault.LEASE).read_bytes(), raw)
+            finally:
+                fixture.lock.unlink(); renamed.rename(fixture.lock)
+            self.assertIs(stage.disarm()['leaseAbsent'], True)
+            self.assertIs(stage.close_gateway()['gatewayAdmissionClosed'], True)
 
 
 if __name__ == "__main__":
