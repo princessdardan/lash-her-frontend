@@ -2019,10 +2019,25 @@ test("owned Chromium paid revocation requires trusted checkbox confirmation and 
 test("owned Chromium paid learner access checks the normal page and exact credentialed read-only endpoints",
   { skip: !ownedInteractiveBrowser }, async () => {
     const { chromium } = await import("playwright");
-    const browser = await chromium.launch();
+    // Exercise native Fetch and the network observer against actual HTTPS.
+    const root = mkdtempSync(join(tmpdir(), "owned-p2-learner-tls-"));
+    const key = join(root, "key.pem"), cert = join(root, "cert.pem"), sockets = new Set();
+    const host = new URL(interactiveInput().browserOrigin).hostname;
+    let browser, https, proxy, proxyPort, serve;
+    const track = socket => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+    };
+    const bind = async server => {
+      server.on("connection", track);
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      return server.address().port;
+    };
     const open = async (outcome, scenario) => {
       const fixture = ownedPaidLearnerAccess(outcome), { input, target, targets, receipt, pagePath, lessonPath } = fixture;
-      const expected = ownedAccessOutcomes[outcome], context = await browser.newContext(), effects = [];
+      const expected = ownedAccessOutcomes[outcome], effects = [];
+      const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
       const now = Math.floor(Date.now() / 1000) * 1000, date = new Date(now).toUTCString(), expiresAt = new Date(now + 600_000).toISOString();
       const moduleId = randomUUID(), lesson = { id: target.lessonId, moduleId, isPreview: false, title: "Private lesson text" };
       const question = { id: "question", prompt: "Private question", options: [{ id: "first", text: "First" }, { id: "second", text: "Second" }] };
@@ -2038,29 +2053,61 @@ test("owned Chromium paid learner access checks the normal page and exact creden
         { attempts: [{ id: randomUUID(), lessonId: target.lessonId, quizRevisionId: randomUUID(), results: [{ feedback: "Private feedback" }] }] },
       ];
       const document = `<!doctype html><script src="/_next/static/owned-asset.js"></script>
-        <script>fetch('/courses/owned-link-prefetch?_rsc=fixture');</script>
+        <script>
+          fetch('/courses/owned-link-prefetch?_rsc=fixture');
+          const fixtureFetch = window.fetch;
+          window.fetch = (target, options) => {
+            if (target === ${JSON.stringify(targets[0])}) throw new Error('Owned page fetch wrapper');
+            return fixtureFetch(target, options);
+          };
+          ${scenario === "fetch-header-mismatch" ? `const fixtureGetHeader = Headers.prototype.get;
+            Headers.prototype.get = function(name) {
+              return name === 'x-request-id' ? ${JSON.stringify(randomUUID())} : fixtureGetHeader.call(this, name);
+            };` : ""}
+        </script>
         <h1>${outcome === "allowed" ? "Owned paid course" : scenario === "wrong-heading" ? "Sign in to continue" : expected.heading}</h1>
         ${outcome === "allowed" || scenario === "leaked-link" ? `<a href="${lessonPath}">Open lesson</a>` : ""}`;
       await context.addCookies([{ name: "owned-customer", value: "fixture-session", url: input.browserOrigin + "/" }]);
-      await context.route("**/*", async route => {
-        const request = route.request(), url = new URL(request.url());
-        if (url.origin !== input.browserOrigin) return route.abort();
-        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
-        const index = targets.indexOf(url.pathname + url.search);
-        if (index < 0) return route.fulfill({ status: 200, contentType: "text/javascript", body: "" });
-        effects.push({ target: targets[index], method: request.method(), session: (await request.headerValue("cookie"))?.includes("owned-customer=fixture-session") });
-        if (scenario === "redirect" && index === 0) return route.fulfill({ status: 302, headers: { location: "/api/academy/other" } });
+      serve = (request, response) => {
+        const send = (status, headers, body = "") => response.writeHead(status, { ...headers, "content-length": Buffer.byteLength(body) }).end(body);
+        if (request.method === "GET" && request.url === pagePath) return send(200, { "content-type": "text/html" }, document);
+        const index = targets.indexOf(request.url);
+        if (index < 0) return send(200, { "content-type": "text/javascript" });
+        effects.push({ target: targets[index], method: request.method, session: request.headers.cookie?.includes("owned-customer=fixture-session") });
+        if (scenario === "redirect" && index === 0) return send(302, { location: "/api/academy/other" });
         const id = receipt.reads[index].requestId;
         const body = outcome === "allowed" ? bodies[index] : { error: { code: expected.code,
           message: scenario === "unsafe-error" ? "Private upstream detail" : expected.message }, requestId: scenario === "wrong-error-id" ? randomUUID() : id };
-        return route.fulfill({ status: expected.status, body: JSON.stringify(body), headers: { "content-type": "application/json", date,
-          "x-request-id": id, "cache-control": scenario === "public-cache" ? "public" : "private, no-store" } });
-      });
+        return send(expected.status, { "content-type": "application/json", date, "x-request-id": id,
+          "cache-control": scenario === "public-cache" ? "public" : "private, no-store" }, JSON.stringify(body));
+      };
       const page = await context.newPage(), watch = watchP2PaidLearnerAccess(context, page, input);
       return { ...fixture, page, watch, effects, expires: Math.floor(Date.now() / 1000) + 60,
         close: async () => { watch.close(); await context.close(); } };
     };
     try {
+      assert.equal(spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-subj", `/CN=${host}`, "-keyout", key, "-out", cert], { stdio: "ignore" }).status, 0);
+      https = createHttpsServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
+        if (!serve || request.headers.host !== host) return response.writeHead(403).end();
+        serve(request, response);
+      });
+      const tlsPort = await bind(https);
+      proxy = createHttpServer((_request, response) => response.writeHead(403).end());
+      proxy.on("connect", (request, socket, head) => {
+        if (request.url !== `${host}:443`) { socket.destroy(); return; }
+        const target = connect(tlsPort, "127.0.0.1");
+        track(target);
+        target.once("error", () => socket.destroy());
+        socket.once("error", () => target.destroy());
+        target.once("connect", () => {
+          socket.write("HTTP/1.1 200 Connection established\r\n\r\n");
+          if (head.length) target.write(head);
+          socket.pipe(target).pipe(socket);
+        });
+      });
+      proxyPort = await bind(proxy);
+      browser = await chromium.launch();
       for (const outcome of Object.keys(ownedAccessOutcomes)) {
         const owned = await open(outcome);
         try {
@@ -2077,7 +2124,7 @@ test("owned Chromium paid learner access checks the normal page and exact creden
       }
 
       for (const [outcome, scenario] of [["allowed", "preview"], ["allowed", "long-thumbnail"], ["allowed", "foreign-progress"],
-        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["archived", "unsafe-error"],
+        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["allowed", "fetch-header-mismatch"], ["archived", "unsafe-error"],
         ["draft", "wrong-error-id"], ["archived", "leaked-link"], ["restricted", "wrong-heading"], ["allowed", "write"], ["allowed", "navigate"]]) {
         const rejected = await open(outcome, scenario);
         try {
@@ -2092,7 +2139,12 @@ test("owned Chromium paid learner access checks the normal page and exact creden
           assert.throws(() => rejected.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }
-    } finally { await browser.close(); }
+    } finally {
+      await browser?.close();
+      for (const socket of sockets) socket.destroy();
+      await Promise.all([proxy, https].filter(server => server?.listening).map(server => new Promise(done => server.close(done))));
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
 test("owned Chromium lifecycle watcher captures only selected command and preference responses",

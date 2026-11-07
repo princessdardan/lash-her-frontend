@@ -576,7 +576,7 @@ async function readBrowserResponseHead(response, request, origin, pathname, meth
   return { method, pathname, status, requestId: ids[0] };
 }
 
-async function readBrowserResponseJson(response, request, maximum, allowCompression = false) {
+async function readBrowserResponseBounds(response, request, maximum, allowCompression) {
   const [encodings, lengths, size] = await Promise.all([
     response.headerValues("content-encoding"), response.headerValues("content-length"), request.sizes(),
   ]);
@@ -586,6 +586,11 @@ async function readBrowserResponseJson(response, request, maximum, allowCompress
     && Number.isSafeInteger(size.responseBodySize) && size.responseBodySize <= maximum);
   const declared = lengths.length === 1 ? Number(lengths[0]) : undefined;
   demand(declared === undefined ? size.responseBodySize > 0 : declared <= maximum);
+  return { identity, declared };
+}
+
+async function readBrowserResponseJson(response, request, maximum, allowCompression = false) {
+  const { identity, declared } = await readBrowserResponseBounds(response, request, maximum, allowCompression);
   const bytes = await response.body();
   try {
     demand(!identity || declared === undefined || bytes.length === declared);
@@ -957,28 +962,50 @@ export function watchP2PaidLearnerAccess(context, page, input) {
   const read = async (path, index, expires) => {
     const slot = activeRead = { target: path }, maximum = allowed ? maxAuthoringBody : maxLifecycleBody;
     const timeout = Math.min(8000, remaining(expires));
+    let captured;
     try {
-      const [response] = await Promise.all([
-        page.waitForResponse(candidate => candidate.request() === slot.request, { timeout }),
-        page.evaluate(async ({ target, timeout, maximum }) => {
-          const response = await fetch(target, { method: "GET", mode: "same-origin", credentials: "same-origin", redirect: "error",
-            cache: "no-store", headers: { accept: "application/json" }, signal: AbortSignal.timeout(timeout) });
-          const reader = response.body?.getReader();
-          if (!reader) throw new Error("P2_LEARNER_ACCESS_BODY_MISSING");
-          let size = 0;
-          try {
-            while (true) {
-              const chunk = await reader.read();
-              if (chunk.done) break;
+      const observed = page.waitForResponse(candidate => candidate.request() === slot.request, { timeout });
+      // Chromium can discard its DevTools copy after the renderer drains Fetch.
+      // Read the actual browser stream once and retain its bytes only until they
+      // can be joined to the independently observed network response.
+      captured = page.evaluateHandle(async ({ target, timeout, maximum }) => {
+        const response = await window.__lashP2qLearnerAccessFetch(target, { method: "GET", mode: "same-origin", credentials: "same-origin",
+          redirect: "error", cache: "no-store", headers: { accept: "application/json" }, signal: AbortSignal.timeout(timeout) });
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("P2_LEARNER_ACCESS_BODY_MISSING");
+        const bytes = new Uint8Array(maximum);
+        let size = 0;
+        try {
+          while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            try {
+              if (chunk.value.byteLength > maximum - size) throw new Error("P2_LEARNER_ACCESS_BODY_LIMIT");
+              bytes.set(chunk.value, size);
               size += chunk.value.byteLength;
-              chunk.value.fill(0);
-              if (size > maximum) throw new Error("P2_LEARNER_ACCESS_BODY_LIMIT");
-            }
-          } finally { reader.releaseLock(); }
-        }, { target: path, timeout, maximum }),
-      ]);
+            } finally { chunk.value.fill(0); }
+          }
+          return { bytes, size, url: response.url, status: response.status, redirected: response.redirected,
+            requestId: response.headers.get("x-request-id"), contentType: response.headers.get("content-type"), cacheControl: response.headers.get("cache-control") };
+        } catch (error) {
+          bytes.fill(0);
+          await reader.cancel().catch(() => {});
+          throw error;
+        } finally { reader.releaseLock(); }
+      }, { target: path, timeout, maximum });
+      const [response, capture] = await Promise.all([observed, captured]);
       const head = await readBrowserResponseHead(response, slot.request, origin, path, "GET", expected.status);
-      const body = await readBrowserResponseJson(response, slot.request, maximum, true);
+      const [{ identity, declared }, contentType, cacheControl] = await Promise.all([
+        readBrowserResponseBounds(response, slot.request, maximum, true), response.headerValue("content-type"), response.headerValue("cache-control"),
+      ]);
+      const payload = await capture.evaluate(({ bytes, size, ...metadata }) => ({ ...metadata, bytes: bytes.subarray(0, size) }));
+      let body;
+      try {
+        demand(payload.url === response.url() && payload.status === head.status && payload.redirected === false
+          && payload.requestId === head.requestId && payload.contentType === contentType && payload.cacheControl === cacheControl
+          && payload.bytes instanceof Uint8Array && (!identity || declared === undefined || payload.bytes.byteLength === declared));
+        body = exactBrowserJson(Buffer.from(payload.bytes.buffer, payload.bytes.byteOffset, payload.bytes.byteLength), maximum);
+      } finally { payload.bytes?.fill(0); }
       let code = null;
       if (!allowed) {
         demand(closed(body, ["error", "requestId"]) && body.requestId === head.requestId && closed(body.error, ["code", "message"])
@@ -1002,7 +1029,15 @@ export function watchP2PaidLearnerAccess(context, page, input) {
         && body.attempts.every(row => uuid(row?.id) && row.lessonId === target.lessonId && uuid(row.quizRevisionId)));
       remaining(expires);
       return { target: path, status: head.status, requestId: head.requestId, code };
-    } finally { activeRead = undefined; }
+    } finally {
+      try {
+        const capture = await captured?.catch(() => undefined);
+        if (capture) {
+          try { await capture.evaluate(({ bytes }) => { bytes.fill(0); }); }
+          finally { await capture.dispose(); }
+        }
+      } finally { activeRead = undefined; }
+    }
   };
 
   return {
@@ -1010,6 +1045,9 @@ export function watchP2PaidLearnerAccess(context, page, input) {
       try {
         demand(!opened);
         opened = true;
+        await page.addInitScript(source => {
+          if (location.href === source) Object.defineProperty(window, "__lashP2qLearnerAccessFetch", { value: window.fetch.bind(window) });
+        }, source);
         const response = await page.goto(source, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) });
         demand(navigation && response?.request() === navigation && response.status() === 200 && response.url() === source
           && !response.fromServiceWorker() && navigation.redirectedTo() === null);
