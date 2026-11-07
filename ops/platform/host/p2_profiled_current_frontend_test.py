@@ -195,6 +195,7 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
         cases = (("absent", [], "dpl_Previous123"),
                  ("ambiguous", [valid, {**valid, "uid": "dpl_Other123"}], "dpl_Previous123"),
                  ("wrong-target", [{**valid, "target": "preview"}], "dpl_Previous123"),
+                 ("same-previous", [{**valid, "uid": "dpl_Previous123"}], "dpl_Previous123"),
                  ("changed-prior", [valid], "dpl_Unrelated123"))
         for name, rows, current in cases:
             with self.subTest(name=name):
@@ -214,6 +215,17 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
         initial["plan"]["lostBuildReceiptSha256"] = dict(initial["lostBuildReceiptSha256"])
         with mock.patch.object(subject.vercel, "Client", side_effect=AssertionError("provider read")):
             with self.assertRaises(ValueError): subject.observe_lost_build_post_ack(initial, provider, lambda: None)
+        for key, name in (("deployStarted", "p2-profiled-current-deploy-started.json"),
+                          ("buildIntent", "provider-mutation-intent-002.json")):
+            with self.subTest(duplicate_key=key):
+                initial, provider, attempt = self.lost_build_fixture()
+                path = attempt / name; encoded = path.read_text().rstrip()
+                path.write_text(encoded[:-1] + ',"version":2}\n')
+                digest = subject.sha(path.read_bytes())
+                initial["lostBuildReceiptSha256"][key] = digest
+                initial["plan"]["lostBuildReceiptSha256"][key] = digest
+                with mock.patch.object(subject.vercel, "Client", side_effect=AssertionError("provider read")):
+                    with self.assertRaises(ValueError): subject.observe_lost_build_post_ack(initial, provider, lambda: None)
 
     def test_main_routes_only_the_fixed_lost_build_operation_to_the_internal_helper(self):
         payload = {"operation": "recovery-observe-lost-build", "version": 2, "qualificationTargetProfile": PROFILE,

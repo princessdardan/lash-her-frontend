@@ -299,6 +299,7 @@ function lostBuildProof(result, selected) {
     isDeepStrictEqual(result.configurationSha256, selected.configurationSha256) && result.targetSha256 === selected.plan.targetSha256 &&
     result.projectId === selected.candidate.workload.projectId && /^dpl_[A-Za-z0-9]+$/u.test(result.deploymentId ?? "") &&
     (result.previousDeploymentId === null || /^dpl_[A-Za-z0-9]+$/u.test(result.previousDeploymentId ?? "")) &&
+    result.deploymentId !== result.previousDeploymentId &&
     result.lostBuildReceiptSha256 === pinsHash(selected.pins) && result.deployStartedSha256 === selected.pins.deployStarted &&
     result.buildStartedSha256 === selected.pins.buildStarted && result.buildIntentSha256 === selected.pins.buildIntent &&
     (!Object.hasOwn(selected.pins, "buildOutcome") || result.buildOutcomeSha256 === selected.pins.buildOutcome) &&

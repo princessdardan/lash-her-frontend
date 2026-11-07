@@ -191,5 +191,7 @@ print(json.dumps({'type':'result','value':r}),flush=True)
     assert.ok(Buffer.isBuffer(result.evidence) && sha(result.evidence) === result.evidenceSha256);
     assert.ok(environmentChecks >= 3 && sessionChecks >= 3);
     await assert.rejects(readProfiledCurrentWorkloadReceipt(context, result), /REVIEW_REQUIRED/u);
+    writeFileSync(executable, program.replace("'deploymentId':'dpl_Owned123'", "'deploymentId':'dpl_Previous123'"), { mode: 0o700 });
+    await assert.rejects(observeProfiledCurrentFrontend(context), /REVIEW_REQUIRED/u);
   } finally { process.env.PATH = previousPath; chmodSync(directory, 0o700); rmSync(directory, { recursive: true, force: true }); }
 });

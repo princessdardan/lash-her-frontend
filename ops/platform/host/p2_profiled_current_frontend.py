@@ -19,6 +19,7 @@ import migrate
 import vercel
 from qualification_target_profile import (
     STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as PROFILE,
+    decode_qualification_target_json,
     require_qualification_target_profile,
     resolve_qualification_target_profile,
 )
@@ -396,7 +397,7 @@ def lost_build_context(initial, provider):
 def _receipt(attempt, name, expected_sha, expected):
     raw = migrate.read_input(attempt, name)
     demand(sha(raw) == expected_sha, "PROFILED_CURRENT_LOST_BUILD_RECEIPT_MISMATCH")
-    value = json.loads(raw)
+    value = decode_qualification_target_json(raw, "carrier")
     require_qualification_target_profile(expected, value)
     demand(isinstance(value, dict), "PROFILED_CURRENT_LOST_BUILD_RECEIPT_REFUSED")
     return raw, value
@@ -446,7 +447,7 @@ def observe_lost_build_post_ack(initial, provider, verify=checkpoint):
         demand(re.fullmatch(r"provider-mutation-intent-[0-9]{3}\.json", path.name),
                "PROFILED_CURRENT_LOST_BUILD_INTENT_REFUSED")
         raw = migrate.read_input(attempt, path.name)
-        value = json.loads(raw)
+        value = decode_qualification_target_json(raw, "carrier")
         require_qualification_target_profile(expected, value)
         demand(isinstance(value, dict) and set(value) == {"version", "qualificationTargetProfile", "sequence", "method",
                "pathSha256", "bodyKeys", "providerMutationCompleted", "trafficAuthorized"} and
@@ -484,6 +485,7 @@ def observe_lost_build_post_ack(initial, provider, verify=checkpoint):
     matches = matching_deployments(client, project_id, source_commit, candidate["releaseId"])
     demand(len(matches) == 1, "PROFILED_CURRENT_LOST_BUILD_EFFECT_AMBIGUOUS")
     deployment_id = matches[0]
+    demand(deployment_id != previous, "PROFILED_CURRENT_LOST_BUILD_EFFECT_UNVERIFIED")
     deployment = vercel.deployment_state(client, deployment_id, project_id, source_commit, candidate["releaseId"])
     demand(deployment.get("deploymentId") == deployment_id and deployment.get("projectId") == project_id and
            deployment.get("sourceCommit") == source_commit,
