@@ -142,9 +142,25 @@ Review six empty-body gateway GET rows in order. Use `/course/v1/student/courses
 
 The document and Flight response must render **Enrollment required** with private no-store caching. Their reference IDs must match the course-read acknowledgement in each five-request group. Inspect the bounded raw responses for the three private fixture strings. The lesson, playback, progress, quiz and attempt API reads must return the sanitized `access_required` response and match the final five gateway request IDs. Require zero frontend writes and unchanged Course account, grant, lesson, progress, attempt and asset state and immutable outbox event fields after closure. Use a ready, current asset on the nonpreview lesson to verify playback access denial.
 
-S08 needs a scoped policy for the positions and revision sequence emitted by real playback. S09 can proceed independently with a published, text-only graded lesson. Its initial render uses five protected Course reads. Hydration makes one initial progress write and one playback authorization request that returns 404 because the lesson has no media. Review the failing and passing answers in display order. Bind each attempt to the reviewed quiz revision and answers while allowing the form to generate its UUID. Match both immutable attempt rows and progress revisions 1, 2 and 3.
+For S09 graded fail and pass, prepare a published free course with a text-only nonpreview graded lesson, an active free grant, and pristine progress and attempts for the verified customer. Pair the identity action with stage `lesson-assessment`. Review `assessmentAction.operation` as `fail-then-pass`, the course, lesson and grant IDs, the current `quizRevision`, and `failAnswers` and `passAnswers` in displayed question order. Keep these answers in the owner's private settings. The CLI previews and started receipt redact both arrays and retain the full plan digest and reviewed row digests.
+
+Review the following Course rows in order. Use empty-body hashes for the GETs.
+
+1. `GET /course/v1/student/courses/<courseId>`.
+2. `GET /course/v1/student/lessons/<lessonId>`.
+3. `GET /course/v1/student/progress?lessonId=<lessonId>` with three uses.
+4. `GET /course/v1/student/lessons/<lessonId>/quiz`.
+5. `GET /course/v1/student/lessons/<lessonId>/quiz/attempts`.
+6. `GET /course/v1/student/lessons/<lessonId>/playback`.
+7. `POST /course/v1/student/lessons/<lessonId>/progress` with the exact UTF-8 JSON `{"event":"lesson_started","expectedProgressRevision":0}`.
+8. `POST /course/v1/student/lessons/<lessonId>/quiz/attempts` with the reviewed failing answer template.
+9. `POST /course/v1/student/lessons/<lessonId>/quiz/attempts` with the reviewed passing answer template.
+
+Each row other than the progress read has one use. Hash each attempt template as compact UTF-8 JSON with `quizRevision` followed by `answers`. Each answer has `questionId` followed by `optionId`. The gateway MAC still covers the exact raw request, including the form-generated UUIDv4. Require acknowledgement index groups `{0,1,2,3,4}` and `{5,6}` in any order within each group, followed by `[7,2,8,2]` in order. Require the canonical no-asset 404 for index 5 and status 200 for the other ten requests. Require three completed frontend operations and join the browser's six gateway request IDs to the hydration and assessment acknowledgements. Match both immutable attempts and revisions 1, 2 and 3. The failed attempt leaves completion empty. The passing attempt records completion at its creation time.
 
 For the stale-quiz case, preserve the learner's original form across the separately guarded owner draft, edit and republish actions. Submit the old revision with a fresh attempt UUID after republishing. Require a conflict response with stable stored progress and attempts. A replay of an already accepted UUID exercises the existing idempotent replay rule. Reloading the lesson mounts new hydration requests and belongs in a separate observation.
+
+For S08, measure the real player event sequence before reviewing write rows. An initial visit saves `lesson_started`, then playback can emit position writes at the ten-second heartbeat, pause and seek. Verify a rewind changes resume while preserving the maximum. A second independently authenticated session posts `lesson_started` at the saved revision and can emit another position write when metadata restoration seeks to the saved position. Handle stale revision, exit saves and lost acknowledgements as separate windows with their own write and read budgets.
 
 Frontend source `85130cdc` integrates `mux-callback-recovery` under the guarded controller. It binds the actual managed upload, generation and running gateway; restores the original closed state; and requires a positive Course acknowledgement, zero active and uncertain work, and an unchanged final managed row. The scoped action requires the reviewed managed-only Course implementation and currently pins exact source `b21e25cf`. Verify and pin the final candidate and qualify the composed action on staging.
 
