@@ -449,7 +449,11 @@ test("production Academy graded assessment fail, pass and stale form", async ({ 
     expect(selectedRows().slice(11)).toEqual([expect.objectContaining({
       method: "POST", target: `${upstreamLesson}/quiz/attempts`, status: 409,
     })]);
-    const currentProgress = await progress(page, lessonId);
+    const currentProgress = await page.evaluate(async target => {
+      const response = await fetch(target, { credentials: "same-origin", redirect: "error" });
+      if (!response.ok) throw new Error("Owned assessment progress read failed");
+      return (await response.json()).progress[0];
+    }, progressApi);
     expect(currentProgress).toMatchObject({ id: initial.id, revision: 3, completedAt: null });
     expect(await readState()).toEqual(persisted);
     await writeFile(info.outputPath("assessment.json"), JSON.stringify({
