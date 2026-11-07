@@ -28,10 +28,12 @@ GATEWAY_STARTED='known-ack-gateway-replacement-started.json'
 HOST_MODULE='ops/platform/host/p2_known_ack_loss.py'
 require=migrate.demand
 _ISSUER=object()
+_PROFILED_ISSUER=object()
 _AUTHORIZATIONS=weakref.WeakKeyDictionary()
 _AUTHORIZATION_LOCK=threading.Lock()
 _BOUNDARIES=weakref.WeakSet()
 _BOUNDARY_ISSUER=object()
+_PROFILED_BOUNDARY_ISSUER=object()
 UNAVAILABLE_STAGES=(('community-api','course-api'),('community-tls','course-tls'),('gateway',))
 MOUNTS={'gateway':{'/config/gateway.json':'gateway.json','/admission':'admission','/tls':'tls/gateway'},
     'course-tls':{'/config/course-tls.json':'course-tls.json','/tls':'tls/course'},'community-tls':{'/config/community-tls.json':'community-tls.json','/tls':'tls/community'},
@@ -47,6 +49,10 @@ def _same_process(first,second):return first['process']==second['process'] and f
 def _profile_record(expected_profile):
     return {} if expected_profile is None else {'version':2,'qualificationTargetProfile':expected_profile}
 
+def _profile_arguments(source):
+    expected=getattr(source,'expected_profile',None)
+    return {} if expected is None else {'expected_profile':expected}
+
 def _delivery_receipts(frontend):
     # Readiness is a clock-derived observation. The ACK identity is not.
     return [{key:value for key,value in row.items() if key!='ready'} for row in frontend['deliveries']]
@@ -61,18 +67,18 @@ def _source_command(scope):
 
 class KnownAckLossRecoveryAuthorization:
     def __init__(self,issuer,recorder,record):
-        require(issuer is _ISSUER,'P2_KNOWN_ACK_SOURCE_ISSUER_REQUIRED')
+        require(issuer is _ISSUER or issuer is _PROFILED_ISSUER,'P2_KNOWN_ACK_SOURCE_ISSUER_REQUIRED')
         self._recorder=recorder
         self._record=copy.deepcopy(record)
         self._used=False
         with _AUTHORIZATION_LOCK:
-            _AUTHORIZATIONS[self]={'recorder':recorder,'record':copy.deepcopy(record),'state':'unused'}
+            _AUTHORIZATIONS[self]={'issuer':issuer,'recorder':recorder,'record':copy.deepcopy(record),'state':'unused'}
 
 
-def _authorization(value,scope,recovery_action_id):
+def _authorization(value,scope,recovery_action_id,issuer=_ISSUER):
     """Call only while holding the private registry mutex."""
     state=_AUTHORIZATIONS.get(value) if type(value) is KnownAckLossRecoveryAuthorization else None
-    require(state is not None and state['recorder'].scope is scope and state['state']=='unused' and
+    require(state is not None and state['issuer'] is issuer and state['recorder'].scope is scope and state['state']=='unused' and
         recovery_action_id==state['record']['recoveryActionId'],'P2_KNOWN_ACK_OPAQUE_AUTHORIZATION_REQUIRED')
     return state
 
@@ -92,12 +98,19 @@ def consume_known_ack_loss_authorization(value,scope,recovery_action_id):
     This is deliberately not an ordinary PriorGatewayBoundary. No serialized
     receipt or counter claim can be consumed by the ordinary zero factory.
     """
+    return _consume_authorization(value,scope,recovery_action_id,_ISSUER)
+
+
+def _consume_authorization(value,scope,recovery_action_id,issuer,*,recorder=None):
     with _AUTHORIZATION_LOCK:
-        state=_authorization(value,scope,recovery_action_id)
+        state=_authorization(value,scope,recovery_action_id,issuer)
+        require(recorder is None or state['recorder'] is recorder,'P2_KNOWN_ACK_OPAQUE_AUTHORIZATION_REQUIRED')
         # Reserve before any verifier I/O. A failed or interrupted verification
         # is an attempted consumption and never restores unused authority.
         state['state']='consuming';value._used=True
-    try:state['recorder']._verify_authorization(state['record'])
+    try:
+        if issuer is _PROFILED_ISSUER:state['recorder']._verify_profiled_authorization(state['record'])
+        else:state['recorder']._verify_authorization(state['record'])
     except BaseException:
         with _AUTHORIZATION_LOCK:state['state']='poisoned'
         raise
@@ -175,6 +188,8 @@ class P2KnownAckLossRecorder:
         self.backend_deadline=(datetime.now(timezone.utc)+timedelta(seconds=remaining)).isoformat(timespec='milliseconds').replace('+00:00','Z')
         self.request_evidence=None
         self.reconciliation_attempted=False
+        self.reconciliation_observed_sha256=None
+        self.profiled_replacement_attempted=False
         self.directory=ROOT/('p2-known-ack-loss-'+broker.action_id())
         require(os.geteuid()==0 and self.directory.resolve()==self.directory and not any(path.is_symlink() for path in (self.directory,*self.directory.parents)),
             'P2_KNOWN_ACK_PRIVATE_ROOT_REQUIRED')
@@ -230,12 +245,13 @@ class P2KnownAckLossRecorder:
 
     def _sql(self,service,selected_user_binding=None):
         self._verify();broker=self.broker
+        profile=_profile_arguments(self)
         payload={'version':1,'service':service,'commandId':self.command['commandId'],'accountVersion':self.command['accountVersion'],
             'commandSha256':self.plan['commandSha256'],'windowEpoch':self.window_epoch,'backendDeadline':self.backend_deadline}
         if service=='frontend':
             payload.update(target=broker.jobs['frontend']['job']['target'],owner=broker.initial['owner'],marker=broker.armed_probe['marker'],
                 backendPid=broker.armed_probe['backendPid'],backendStart=broker.armed_probe['backendStart'],targetSha256=self.plan['targetSha256'])
-            if self.expected_profile is not None:
+            if profile:
                 payload['target']={key:payload['target'][key] for key in ('host','port','database','user','serverMajor')}
             identifier='lash-p2-certification-observer-'+uuid.uuid4().hex
             args=['docker','run','--rm','--name',identifier,'--interactive','--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
@@ -246,21 +262,20 @@ class P2KnownAckLossRecorder:
             payload['target']=self.receiver_targets[service]
             payload['selectedUserBindingSha256']=selected_user_binding or self.baseline['frontend']['userBindingSha256']
             require(re.fullmatch(r'[a-f0-9]{64}',payload['selectedUserBindingSha256'] or ''),'P2_KNOWN_ACK_FRONTEND_USER_BINDING_REQUIRED')
-            options={} if self.expected_profile is None else {'expected_profile':self.expected_profile}
-            values=runtime.environment_values(migrate.read_input(self.configuration_input,service+'-api.env'),'staging',service+'-api',broker.jobs,**options)
+            values=runtime.environment_values(migrate.read_input(self.configuration_input,service+'-api.env'),'staging',service+'-api',broker.jobs,**profile)
             identifier='lash-p2-certification-observer-'+uuid.uuid4().hex
             args=['docker','run','--rm','--name',identifier,'--interactive','--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
                 '--memory','128m','--pids-limit','64','--env','NODE_ENV=production','--env','DATABASE_TARGET=staging','--env','STAGING_DATABASE_URL',
                 '--mount',f'type=bind,src={broker.source/MODULE},dst=/app/p2-known-ack-loss-probe.mjs,readonly',
                 '--entrypoint','node',broker.selected['artifacts'][service+'Runtime']['image'],'/app/p2-known-ack-loss-probe.mjs']
             environment={**runtime.SAFE_ENV,'STAGING_DATABASE_URL':values['STAGING_DATABASE_URL']}
-        if self.expected_profile is not None:args[2:2]=['--pull','never']
+        if profile:args[2:2]=['--pull','never']
         try:
             result=self.scope.run(args,env=environment,input=canonical(payload),capture_output=True,timeout=20,check=True)
             require(not result.stderr and 0<len(result.stdout)<=65536,'P2_KNOWN_ACK_PRIVATE_SQL_OUTPUT_REQUIRED')
             value=json.loads(result.stdout)
             require(value.get('status')=='P2_KNOWN_ACK_SQL_CURRENT' and value.get('service')==service and value.get('readOnly') is True,'P2_KNOWN_ACK_PRIVATE_SQL_READBACK_REQUIRED')
-            if self.expected_profile is not None:
+            if profile:
                 require(type(value.get('version')) is int and value['version']==1 and value.get('commandId')==self.command['commandId'] and
                     (service=='frontend' or value.get('roleOid')==self.receiver_targets[service]['roleOid']),
                     'P2_KNOWN_ACK_PROFILED_SQL_READBACK_REQUIRED')
@@ -390,19 +405,42 @@ class P2KnownAckLossRecorder:
             'candidateSha256':self.broker.initial['candidateSha256'],'certificationActionId':self.broker.action_id(),
             'recoveryIntentReceiptSha256':self.intent_receipt_sha256,'sourceModuleSha256':self.source_sha256,
             'operatorSourceClosureSha256':self.broker.initial['sourceClosureSha256']})
+        self.reconciliation_observed_sha256=observed_sha
         return {**record,'reconciliationObservedSha256':observed_sha}
 
-    def authorize_replacement(self):
-        require(self.expected_profile is None,'P2_KNOWN_ACK_PROFILED_REPLACEMENT_UNAVAILABLE')
-        self._verify();require(self.settlement is not None,'P2_KNOWN_ACK_SOURCE_SETTLEMENT_REQUIRED')
-        record={'version':1,'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED','recoveryActionId':self.recovery_action_id,'candidateSha256':self.broker.initial['candidateSha256'],
+    def _replacement_record(self):
+        return {'version':1,**_profile_record(self.expected_profile),'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED',
+            'recoveryActionId':self.recovery_action_id,'candidateSha256':self.broker.initial['candidateSha256'],
             'originalGateway':self.baseline_gateway,'domainSha256':self.domain_sha256,'settlementSha256':self.settlement_sha256,
             'baselineSha256':self.baseline_sha256,'requestDetailsSha256':self.request_sha256,'sourceModuleSha256':self.source_sha256,
             'recoveryIntentSha256':self.selection['intentSha256'],
             'operatorSourceClosureSha256':self.broker.initial['sourceClosureSha256'],'certificationActionId':self.broker.action_id(),
             'operationId':self.domain['operationId'],'ordinaryClosedZeroGate':False,'sqlReplayAllowed':False,'roleChangeAllowed':False}
+
+    def authorize_replacement(self):
+        require(self.expected_profile is None,'P2_KNOWN_ACK_PROFILED_REPLACEMENT_UNAVAILABLE')
+        self._verify();require(self.settlement is not None,'P2_KNOWN_ACK_SOURCE_SETTLEMENT_REQUIRED')
+        record=self._replacement_record()
         self._verify_authorization(record);self._retain('replacement-authorization.json',record)
         return KnownAckLossRecoveryAuthorization(_ISSUER,self,record)
+
+    def authorize_profiled_replacement(self):
+        require(self.expected_profile is not None and self.broker.known_ack_recorder is self and
+            self.reconciliation_observed_sha256 is not None and not self.profiled_replacement_attempted,
+            'P2_KNOWN_ACK_PROFILED_REPLACEMENT_CONFIRMATION_REQUIRED')
+        self.profiled_replacement_attempted=True
+        record={**self._replacement_record(),'reconciliationObservedSha256':self.reconciliation_observed_sha256,
+            'recoveryIntentReceiptSha256':self.intent_receipt_sha256}
+        self._verify_profiled_authorization(record)
+        self.profiled_authorization_sha256=self._retain('replacement-authorization.json',record)
+        return KnownAckLossRecoveryAuthorization(_PROFILED_ISSUER,self,record)
+
+    def _verify_profiled_authorization(self,record):
+        require(self.expected_profile is not None and self.broker.known_ack_recorder is self and
+            digest(migrate.read_input(self.directory,'reconciliation-observed.json'))==
+            record['reconciliationObservedSha256']==self.reconciliation_observed_sha256,
+            'P2_KNOWN_ACK_PROFILED_RECONCILIATION_CHANGED')
+        self._verify_settlement(record)
 
     def _verify_authorization(self,record):
         require(self.expected_profile is None,'P2_KNOWN_ACK_PROFILED_REPLACEMENT_UNAVAILABLE')
@@ -417,18 +455,25 @@ class P2KnownAckLossRecorder:
         for name,key in (('baseline.json','baselineSha256'),('domain.json','domainSha256'),('request-details.json','requestDetailsSha256'),('settlement.json','settlementSha256')):
             require(digest(migrate.read_input(self.directory,name))==record[key],'P2_KNOWN_ACK_ORIGINAL_RECEIPT_CHANGED')
         options={} if self.expected_profile is None else {'require_disarmed':True}
-        gateway=self._gateway(**options);actual=self._snapshot();front=actual['frontend'];admission=front['admission']
+        gateway=self._gateway(**options);actual=self._snapshot()
         require(_same_process(self.baseline_gateway,gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
-            _zero(gateway['admission']['active']) and gateway['admission']['uncertain']=={'newWork':0,'recovery':1} and
-            admission['newWork'] is False and admission['recovery'] is False and admission['active']==admission['uncertain']==0,'P2_KNOWN_ACK_GLOBAL_ZERO_AND_OLD_ONE_REQUIRED')
+            _zero(gateway['admission']['active']) and gateway['admission']['uncertain']=={'newWork':0,'recovery':1},
+            'P2_KNOWN_ACK_GLOBAL_ZERO_AND_OLD_ONE_REQUIRED')
+        self._verify_settled_snapshot(record,actual)
+        if self.expected_profile is not None:
+            require(self._gateway(**options)==gateway,'P2_KNOWN_ACK_PROFILED_OLD_GATEWAY_CHANGED')
+        return {'gateway':gateway,'databases':actual}
+
+    def _verify_settled_snapshot(self,record,actual):
+        front=actual['frontend'];admission=front['admission']
+        require(admission['newWork'] is False and admission['recovery'] is False and admission['active']==admission['uncertain']==0,
+            'P2_KNOWN_ACK_GLOBAL_ZERO_AND_OLD_ONE_REQUIRED')
         selected=[row for row in front['operations'] if row['id']==record['operationId']]
         require(len(selected)==1 and selected[0]['state']=='completed' and selected[0]['reconciliation_sha256']==record['settlementSha256'],'P2_KNOWN_ACK_SPECIFIC_SETTLED_OPERATION_REQUIRED')
         validate_settled(self.plan,self.settlement['databases'],actual,record['operationId'],record['settlementSha256'])
         if self.expected_profile is not None:
             require(_delivery_receipts(front)==_delivery_receipts(self.settlement['databases']['frontend']),
                 'P2_KNOWN_ACK_PROFILED_IN_WINDOW_RECEIPTS_CHANGED')
-            require(self._gateway(**options)==gateway,'P2_KNOWN_ACK_PROFILED_OLD_GATEWAY_CHANGED')
-        return {'gateway':gateway,'databases':actual}
 
 
 def replacement_intent(cert,recovery_action_id,*,expected_profile=None):
@@ -597,25 +642,43 @@ class KnownAckLossBoundary:
     scope. Docker environment bytes stay private and are never receipt hashes.
     """
     def __init__(self,issuer,broker,authorization):
-        require(issuer is _BOUNDARY_ISSUER,'P2_KNOWN_ACK_BOUNDARY_SOURCE_REQUIRED')
+        profiled=type(self) is ProfiledKnownAckLossBoundary
+        require(issuer is (_PROFILED_BOUNDARY_ISSUER if profiled else _BOUNDARY_ISSUER),'P2_KNOWN_ACK_BOUNDARY_SOURCE_REQUIRED')
         self.broker,self.parent=broker,broker.scope
         self.recorder=broker.known_ack_recorder
+        self.expected_profile=self.recorder.expected_profile if profiled else None
         self.action=self.recorder.recovery_action_id
-        self.record=consume_known_ack_loss_authorization(authorization,self.parent,self.action)
+        self.record=(_consume_authorization(authorization,self.parent,self.action,_PROFILED_ISSUER,recorder=self.recorder)
+            if profiled else consume_known_ack_loss_authorization(authorization,self.parent,self.action))
         self.selected,self.jobs=copy.deepcopy(broker.selected),copy.deepcopy(broker.jobs)
         self.old_configuration=broker.configuration
         self.input_configuration=self.recorder.configuration_input
-        self.output=ROOT/('p2-certification-'+self.action)
-        self.output.mkdir(mode=0o700)
-        self.runtime_output=self.output/'runtime-known-ack';self.runtime_output.mkdir(mode=0o700)
+        prefix='p2-profiled-known-ack-' if profiled else 'p2-certification-'
+        self.output=ROOT/(prefix+self.action)
+        self.runtime_output=self.output/'runtime-known-ack'
         self.snapshot=self.runtime_output/'configuration'
         self.snapshot_bound=False
         self.compose_bytes=migrate.read_input(broker.source,'ops/platform/compose.yaml')
         require(self.selected['runtime']['composeSha256']=='sha256:'+digest(self.compose_bytes),'P2_KNOWN_ACK_EXACT_COMPOSE_SOURCE_REQUIRED')
         self.initial={key:copy.deepcopy(broker.initial[key]) for key in ('candidateSha256','hostMachineId','configurationSha256')}
         self.initial['recoveryActionId']=self.action
+        if profiled:
+            self.initial.update(_profile_record(self.expected_profile))
+            require(len({self.old_configuration,self.input_configuration,self.snapshot})==3,
+                'P2_KNOWN_ACK_DISTINCT_SOURCE_CONFIGURATION_REQUIRED')
+            self.authorization_raw_sha256=digest(migrate.read_input(self.recorder.directory,'replacement-authorization.json'))
+            require(self.authorization_raw_sha256==self.recorder.profiled_authorization_sha256,'P2_KNOWN_ACK_PROFILED_AUTHORIZATION_BYTES_CHANGED')
+            self.stage_receipt_sha256={}
+            self.runtime_attempted=False
+        self.output.mkdir(mode=0o700)
+        self.runtime_output.mkdir(mode=0o700)
         self.command=_source_command(self.parent)
         self.old_gateway=copy.deepcopy(self.recorder._gateway())
+        if profiled:
+            from p2_prior_gateway import _closed_observed
+            require(_same_process(self.old_gateway,self.record['originalGateway']) and _closed_observed(self.old_gateway) and
+                _zero(self.old_gateway['admission']['active']) and self.old_gateway['admission']['uncertain']=={'newWork':0,'recovery':1},
+                'P2_KNOWN_ACK_PROFILED_OLD_ONE_CHANGED')
         self.stage_index=0;self.stage_active=None;self.stage_deadline=None;self.finished=False
         self.gateway_frontier_ready=False;self.gateway_started_sha256=None;self.pending_lineage=None;self.running_lineage=None
         self.started=False;self.new_gateway=None;self.new_rows={};self.new_metadata={}
@@ -628,10 +691,25 @@ class KnownAckLossBoundary:
             require(str(actual['State']['Pid'])==expected['pid'] and actual['State']['StartedAt']==expected['startedAt'],
                 'P2_KNOWN_ACK_ORIGINAL_PROCESS_CHANGED')
             self.old_metadata[service]=self._public_process(actual)
+        if profiled:
+            require(self.old_metadata['gateway']==self.old_gateway['process'],'P2_KNOWN_ACK_PROFILED_OLD_GATEWAY_IDENTITY_REQUIRED')
         _BOUNDARIES.add(self)
-        migrate.write_json(self.output,'known-ack-replacement-intent.json',{'status':'P2_KNOWN_ACK_ORDERED_REPLACEMENT_INTENT',
+        self._retain_stage('known-ack-replacement-intent.json',{'status':'P2_KNOWN_ACK_ORDERED_REPLACEMENT_INTENT',
             'authorization':self.record,'recoveryIntent':self.recorder.selection,'oldProcesses':self.old_metadata,
-            'stages':[list(value) for value in runtime.STAGES],'unavailableStages':[list(value) for value in UNAVAILABLE_STAGES]})
+            'stages':[list(value) for value in runtime.STAGES],'unavailableStages':[list(value) for value in UNAVAILABLE_STAGES],
+            **({'authorizationRawSha256':self.authorization_raw_sha256,'configurationSha256':self.initial['configurationSha256'],
+                'configurationPaths':{'input':str(self.input_configuration),'oldMounted':str(self.old_configuration),'newMounted':str(self.snapshot)}} if profiled else {})})
+
+    def _retain_stage(self,name,record):
+        profile=_profile_arguments(self)
+        fields={} if not profile else {**_profile_record(self.expected_profile),'candidateSha256':self.record['candidateSha256'],
+            'recoveryActionId':self.action}
+        value={**record,**fields}
+        migrate.write_json(self.output,name,value)
+        if profile:
+            raw=migrate.read_input(self.output,name)
+            require(json.loads(raw)==value,'P2_KNOWN_ACK_PROFILED_STAGE_READBACK_REQUIRED')
+            self.stage_receipt_sha256[name]=digest(raw)
 
     def _read_json(self,args,env=runtime.SAFE_ENV,timeout=15):
         value=self.parent.run(args,env=env,timeout=timeout,capture_output=True,check=True)
@@ -644,7 +722,7 @@ class KnownAckLossBoundary:
 
     def _cache_environment(self,configuration):
         if str(configuration) in self.expected_environments:return
-        env=runtime.runtime_environment(self.selected,configuration)
+        env=runtime.runtime_environment(self.selected,configuration,**_profile_arguments(self))
         model=self._read_json([*runtime.compose_command(configuration,'staging'),'config','--format','json'],env)
         require(set(model.get('services',{}))==set(runtime.SERVICES),'P2_KNOWN_ACK_EXACT_COMPOSE_SERVICES_REQUIRED')
         values={}
@@ -693,6 +771,7 @@ class KnownAckLossBoundary:
 
     def verify(self):
         with self.mutex:
+            profile=_profile_arguments(self)
             require(self in _BOUNDARIES and self.broker.scope is self.parent and self.broker.known_ack_recorder is self.recorder,'P2_KNOWN_ACK_SOURCE_BOUNDARY_CHANGED')
             self.parent.require_release(self.selected,self.jobs);self.parent.require_configuration(self.old_configuration);self.parent.require_configuration(self.input_configuration)
             require(migrate.read_input(self.broker.source,'ops/platform/compose.yaml')==self.compose_bytes,'P2_KNOWN_ACK_COMPOSE_SOURCE_CHANGED')
@@ -705,9 +784,18 @@ class KnownAckLossBoundary:
                     digest(migrate.read_input(self.output,prior.BEFORE_STOP))==self.before_stop_sha256,'P2_KNOWN_ACK_STOP_RECEIPT_CHANGED')
             if self.gateway_started_sha256 is not None:
                 require(digest(migrate.read_input(self.output,GATEWAY_STARTED))==self.gateway_started_sha256,'P2_KNOWN_ACK_GATEWAY_START_MARKER_CHANGED')
-            actual=self.broker.observer.probe('observe')['admission']
+            frontend=self.broker.observer.probe('observe');actual=frontend['admission']
             require(actual['newWork'] is False and actual['recovery'] is False and actual['active']==actual['uncertain']==0 and
                 actual['epoch']==self.recorder.settlement['epoch'],'P2_KNOWN_ACK_PHYSICAL_CLOSED_ZERO_REQUIRED')
+            if profile:
+                self.recorder._verify_profiled_context()
+                vercel.require_record_profile(self.expected_profile,frontend)
+                require(self.broker.known_ack_boundary is self and frontend['journalSha256']==self.parent.receipt['journalSha256'] and
+                    frontend['targetSha256']==self.recorder.plan['targetSha256'] and
+                    digest(migrate.read_input(self.recorder.directory,'replacement-authorization.json'))==self.authorization_raw_sha256,
+                    'P2_KNOWN_ACK_PROFILED_FRONTEND_OR_AUTHORITY_CHANGED')
+                for name,pin in self.stage_receipt_sha256.items():
+                    require(digest(migrate.read_input(self.output,name))==pin,'P2_KNOWN_ACK_PROFILED_STAGE_RECEIPT_CHANGED')
             require(self.stage_active is None or time.monotonic()<self.stage_deadline,'P2_KNOWN_ACK_RUNTIME_STAGE_EXPIRED')
             inventory=self._inventory()
             for service,ids in inventory.items():
@@ -726,12 +814,12 @@ class KnownAckLossBoundary:
                     else:require(observed['restartCount']==0,'P2_KNOWN_ACK_NEW_PROCESS_RESTARTED')
             import p2_prior_gateway as prior
             if self.finished:
-                gateway=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command)
+                gateway=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command,**profile)
                 require(_same_process(gateway,self.new_gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
                     _zero(gateway['admission']['active']) and _zero(gateway['admission']['uncertain']),'P2_KNOWN_ACK_NEW_GATEWAY_DRIFT')
                 require(prior._read_lineage()==self.running_lineage,'P2_KNOWN_ACK_NEW_RUNNING_LINEAGE_CHANGED')
             elif self.stage_active!=('gateway',):
-                gateway=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command)
+                gateway=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command,**profile)
                 require(_same_process(gateway,self.old_gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
                     _zero(gateway['admission']['active']) and gateway['admission']['uncertain']=={'newWork':0,'recovery':1},'P2_KNOWN_ACK_OLD_ONE_CHANGED')
             elif hasattr(self,'stopped_sha256'):
@@ -747,6 +835,7 @@ class KnownAckLossBoundary:
 
     def before_stage(self,stage):
         with self.mutex:
+            profile=_profile_arguments(self)
             self.verify();require(self.snapshot_bound and self.stage_active is None and self.stage_index<len(runtime.STAGES) and tuple(stage)==runtime.STAGES[self.stage_index] and not self.finished,
                 'P2_KNOWN_ACK_FIXED_STAGE_ORDER_REQUIRED')
             self.recorder.verify_backend_idle()
@@ -754,20 +843,29 @@ class KnownAckLossBoundary:
             with self.broker.native_mutex:
                 require(self.broker._native_observe()['nativeEnabled'] is False,'P2_KNOWN_ACK_PRESTAGE_FULL_PROFILE_REQUIRED')
             self.stage_active=tuple(stage);self.stage_deadline=time.monotonic()+120;self.started=True
-            migrate.write_json(self.output,'known-ack-stage-'+str(self.stage_index)+'-intent.json',{'status':'P2_KNOWN_ACK_RUNTIME_STAGE_INTENT','stage':list(stage),
+            self._retain_stage('known-ack-stage-'+str(self.stage_index)+'-intent.json',{'status':'P2_KNOWN_ACK_RUNTIME_STAGE_INTENT','stage':list(stage),
                 'recoveryActionId':self.action,'maximumSeconds':120,'candidateSha256':self.record['candidateSha256'],'authorizationReceiptSha256':digest(canonical(self.record))})
             if tuple(stage)==('gateway',):
                 import p2_prior_gateway as prior
-                self.before_stop=prior.capture_before_stop(self.initial,self.selected,self.output,self.parent.verify,self.command)
+                self.before_stop=prior.capture_before_stop(self.initial,self.selected,self.output,self.parent.verify,self.command,**profile)
                 require(self.before_stop['status']=='PRIOR_GATEWAY_PRESTOP_OBSERVED' and _same_process(self.old_gateway,self.before_stop['observation']) and
                     self.before_stop['observation']['admission']['uncertain']=={'newWork':0,'recovery':1} and _zero(self.before_stop['observation']['admission']['active']),
                     'P2_KNOWN_ACK_ORIGINAL_ONE_PRESTOP_REQUIRED')
+                if profile:
+                    vercel.require_record_profile(self.expected_profile,self.before_stop)
+                    require(prior._closed_observed(self.before_stop['observation']) and self.before_stop['actionId']==self.action and
+                        self.before_stop['candidateSha256']==self.initial['candidateSha256'],
+                        'P2_KNOWN_ACK_PROFILED_PRESTOP_CLOSED_REQUIRED')
                 self.parent.run(['docker','stop','--time','10',self.old_gateway['process']['containerId']],env=runtime.SAFE_ENV,timeout=30,capture_output=True,check=True)
-                stopped=prior.retain_ordered_stop(self.before_stop,self.output,self.parent.verify,self.command)
+                stopped=prior.retain_ordered_stop(self.before_stop,self.output,self.parent.verify,self.command,**profile)
                 require(stopped['status']=='PRIOR_GATEWAY_ORDERED_STOP_OBSERVED','P2_KNOWN_ACK_ORDERED_STOP_REQUIRED')
+                if profile:
+                    vercel.require_record_profile(self.expected_profile,stopped)
+                    require(stopped['actionId']==self.action and stopped['candidateSha256']==self.initial['candidateSha256'],
+                        'P2_KNOWN_ACK_PROFILED_STOP_BINDING_REQUIRED')
                 self.stopped_initial={**self.initial,'priorGatewayReference':{'kind':'stopped-current-candidate','stopReceiptDirectory':str(self.output),
                     'stopReceiptSha256':digest(migrate.read_input(self.output,prior.STOPPED))}}
-                observed=prior.observe_stopped_prior_gateway(self.stopped_initial,self.selected,self.parent.verify,self.command)
+                observed=prior.observe_stopped_prior_gateway(self.stopped_initial,self.selected,self.parent.verify,self.command,**profile)
                 require(_same_process(self.old_gateway,observed) and observed['admission']['uncertain']=={'newWork':0,'recovery':1},'P2_KNOWN_ACK_STOPPED_ONE_RECEIPT_REQUIRED')
                 self.stopped_sha256=digest(migrate.read_input(self.output,prior.STOPPED));self.before_stop_sha256=digest(migrate.read_input(self.output,prior.BEFORE_STOP))
                 self.stop_lineage=prior._read_lineage()
@@ -787,7 +885,8 @@ class KnownAckLossBoundary:
                     'operatorSourceClosureSha256':self.record['operatorSourceClosureSha256'],'sourceModuleSha256':helper_sha,
                     'authorizationReceiptSha256':digest(canonical(self.record)),'beforeStopSha256':self.before_stop_sha256,'orderedStopSha256':self.stopped_sha256,
                     'oldProcess':self.old_gateway['process'],'oldBinding':self.old_gateway['binding'],'sourceStopLineage':self.stop_lineage,'pendingLineage':pending}
-                migrate.write_json(self.output,GATEWAY_STARTED,marker)
+                if profile:marker.update(_profile_record(self.expected_profile))
+                self._retain_stage(GATEWAY_STARTED,marker)
                 marker_raw=migrate.read_input(self.output,GATEWAY_STARTED)
                 require(json.loads(marker_raw)==marker,'P2_KNOWN_ACK_GATEWAY_START_READBACK_REQUIRED')
                 self.gateway_started_sha256=digest(marker_raw)
@@ -797,6 +896,7 @@ class KnownAckLossBoundary:
         # Only these literal, actively held stages can interrupt the catalog.
         # A failed full probe never selects this branch.
         with self.mutex:
+            profile=_profile_arguments(self)
             self.verify()
             self.recorder.verify_backend_idle()
             with self.broker.native_mutex:
@@ -805,10 +905,11 @@ class KnownAckLossBoundary:
                     import frontend_probe
                     from frontend_release_adapters import LockedClient
                     context=self.broker._native_context();plan=context['plan']
-                    private=frontend_probe._private_input(Path(context['privateProbeDirectory']),{'environment':'staging','projectId':plan['projectId'],
-                        'sourceCommit':plan['sourceCommit'],'releaseId':plan['actionId']})
+                    identity=self.broker._probe_identity() if profile else {'environment':'staging','projectId':plan['projectId'],
+                        'sourceCommit':plan['sourceCommit'],'releaseId':plan['actionId']}
+                    private=frontend_probe._private_input(Path(context['privateProbeDirectory']),identity,**profile)
                     require(private==self.broker.initial['privateProbe'],'P2_KNOWN_ACK_ORIGINAL_PROBE_CHANGED')
-                    observed=native.observe_metadata(context,LockedClient(self.broker.vercel,self.broker.check))
+                    observed=native.observe_metadata(context,LockedClient(self.broker.vercel,self.broker.check),**profile)
                 else:observed=self.broker._native_observe()
                 require(observed['nativeEnabled'] is False,'P2_KNOWN_ACK_NATIVE_MUST_REMAIN_OFF')
             return {'stage':list(self.stage_active) if self.stage_active is not None else None,'stageIndex':self.stage_index,
@@ -816,6 +917,7 @@ class KnownAckLossBoundary:
 
     def after_stage(self,stage):
         with self.mutex:
+            profile=_profile_arguments(self)
             require(self.stage_active==tuple(stage) and time.monotonic()<self.stage_deadline,'P2_KNOWN_ACK_FINITE_STARTED_STAGE_REQUIRED')
             inventory=self._inventory()
             for service in stage:
@@ -827,10 +929,13 @@ class KnownAckLossBoundary:
                 self.new_metadata[service]=self._public_process(value)
             if tuple(stage)==('gateway',):
                 import p2_prior_gateway as prior
-                actual=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command)
+                actual=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command,**profile)
                 require(actual['process']['containerId']!=self.old_gateway['process']['containerId'] and actual['binding']['configurationDirectory']==str(self.snapshot) and
                     actual['admission']['newWork'] is False and actual['admission']['recovery'] is False and _zero(actual['admission']['active']) and _zero(actual['admission']['uncertain']),
                     'P2_KNOWN_ACK_NEW_GATEWAY_CLOSED_ZERO_REQUIRED')
+                if profile:
+                    require(actual['process']==self.new_metadata['gateway'] and actual['binding']['candidateSha256']==self.initial['candidateSha256'],
+                        'P2_KNOWN_ACK_PROFILED_NEW_GATEWAY_IDENTITY_REQUIRED')
                 prior._remember(self.initial,actual)
                 self.running_lineage=prior._read_lineage()
                 require(self.running_lineage=={'protocol':prior.PROTOCOL,'state':'running-observed','actionId':self.action,
@@ -842,7 +947,7 @@ class KnownAckLossBoundary:
             self.recorder.verify_backend_idle()
             with self.broker.native_mutex:
                 require(self.broker._native_observe()['nativeEnabled'] is False,'P2_KNOWN_ACK_POSTSTAGE_FULL_PROFILE_REQUIRED')
-            migrate.write_json(self.output,'known-ack-stage-'+str(self.stage_index-1)+'-observed.json',{'status':'P2_KNOWN_ACK_RUNTIME_STAGE_OBSERVED','stage':list(stage),
+            self._retain_stage('known-ack-stage-'+str(self.stage_index-1)+'-observed.json',{'status':'P2_KNOWN_ACK_RUNTIME_STAGE_OBSERVED','stage':list(stage),
                 'recoveryActionId':self.action,'newProcesses':{name:self.new_metadata[name] for name in stage}})
 
 
@@ -853,10 +958,26 @@ def issue_known_ack_loss_boundary(broker,authorization):
     return KnownAckLossBoundary(_BOUNDARY_ISSUER,broker,authorization)
 
 
+class ProfiledKnownAckLossBoundary(KnownAckLossBoundary):
+    """The same fixed transitions under an explicit profiled certification scope."""
+
+
+def issue_profiled_known_ack_loss_boundary(broker,authorization):
+    from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
+    require(type(broker) is P2ProfiledCertificationBroker and type(broker.scope) is P2CertificationScope and
+        broker.initial['certificationPlan']['mode']=='known-ack-recovery' and
+        type(broker.known_ack_recorder) is P2KnownAckLossRecorder and broker.known_ack_recorder.broker is broker and
+        broker.known_ack_recorder.expected_profile==broker.certification_profile()==broker.scope._expected_profile,
+        'P2_KNOWN_ACK_PROFILED_SOURCE_CONSUMER_REQUIRED')
+    return ProfiledKnownAckLossBoundary(_PROFILED_BOUNDARY_ISSUER,broker,authorization)
+
+
 class KnownAckRecoveryScope(P2ReleaseScope):
     """Typed adapter for the original scope; no new lock or child registry."""
     def __init__(self,boundary):
-        require(type(boundary) is KnownAckLossBoundary and boundary in _BOUNDARIES,'P2_KNOWN_ACK_EXACT_BOUNDARY_REQUIRED')
+        profiled=type(self) is ProfiledKnownAckRecoveryScope
+        boundary_type=ProfiledKnownAckLossBoundary if profiled else KnownAckLossBoundary
+        require(type(boundary) is boundary_type and boundary in _BOUNDARIES,'P2_KNOWN_ACK_EXACT_BOUNDARY_REQUIRED')
         self.boundary,self.parent=boundary,boundary.parent
         self.descriptor,self.path,self.identity=self.parent.descriptor,self.parent.path,self.parent.identity
         self.receipt,self.candidate_sha256=copy.deepcopy(self.parent.receipt),self.parent.candidate_sha256
@@ -905,7 +1026,9 @@ class KnownAckRecoveryRuntime(P2RecoveryRuntime):
     constructor supplies the same complete field set after source validation.
     """
     def __init__(self,scope):
-        require(type(scope) is KnownAckRecoveryScope and scope.boundary in _BOUNDARIES,'P2_KNOWN_ACK_ACTUAL_RECOVERY_SCOPE_REQUIRED')
+        profiled=type(self) is ProfiledKnownAckRecoveryRuntime
+        scope_type=ProfiledKnownAckRecoveryScope if profiled else KnownAckRecoveryScope
+        require(type(scope) is scope_type and scope.boundary in _BOUNDARIES,'P2_KNOWN_ACK_ACTUAL_RECOVERY_SCOPE_REQUIRED')
         scope.verify();boundary=scope.boundary
         self.scope,self.selected,self.jobs=scope,boundary.selected,boundary.jobs
         self.configuration,self.output,self.compose_file,self.source=boundary.input_configuration,boundary.runtime_output,boundary.broker.source/'ops/platform/compose.yaml',boundary.broker.source
@@ -926,3 +1049,51 @@ class KnownAckRecoveryRuntime(P2RecoveryRuntime):
             'gatewayReplacementStartedSha256':boundary.gateway_started_sha256,
             'readinessReceiptSha256':digest(migrate.read_input(self.output,'p2-recovery-runtime-ready.json'))}
         migrate.write_json(self.output,'known-ack-runtime-outcome.json',outcome);return outcome
+
+
+class ProfiledKnownAckRecoveryScope(KnownAckRecoveryScope):
+    """All runtime commands remain registered on the held certification scope."""
+
+
+class ProfiledKnownAckRecoveryRuntime(KnownAckRecoveryRuntime):
+    """Use the selected images' read-only API checker on the original raw jobs."""
+    def _profiled_apis(self,name):
+        from current_databases import read_certification_api_proof
+        from p2_certification_parent import check_profiled_certification_apis
+        boundary=self.scope.boundary;broker=boundary.broker;profile=boundary.expected_profile
+        self.scope.verify()
+        credentials={name:broker.initial['credentials'][name.upper()+'_STAGING_DATABASE_URL'] for name in ('course','community')}
+        directory=self.output/name
+        proof,outcome=check_profiled_certification_apis(boundary.parent,self.jobs,self.source,broker.bundle,directory,
+            credentials,broker.initial['sourceSha256'],expected_profile=profile)
+        _,retained=read_certification_api_proof(proof,boundary.parent,self.selected,self.jobs,expected_profile=profile)
+        require(retained==outcome,'P2_KNOWN_ACK_PROFILED_API_CURRENT_CHANGED')
+        self.scope.verify()
+        return outcome,digest(migrate.read_input(directory,'certification-current-databases-outcome.json'))
+
+    def _read_current_apis(self):
+        self.before_apis,self.before_apis_sha256=self._profiled_apis('current-api-before')
+        return self.before_apis['databases']
+
+    def restore(self):
+        boundary=self.scope.boundary
+        with boundary.mutex:
+            require(not boundary.runtime_attempted,'P2_KNOWN_ACK_PROFILED_RUNTIME_ALREADY_ATTEMPTED')
+            boundary.runtime_attempted=True
+        result=self._restore(expected_profile=boundary.expected_profile)
+        require(boundary.finished and boundary.stage_index==len(runtime.STAGES),'P2_KNOWN_ACK_COMPLETE_ORDERED_REPLACEMENT_REQUIRED')
+        after,after_sha=self._profiled_apis('current-api-after')
+        require(after==self.before_apis,'P2_KNOWN_ACK_PROFILED_API_CURRENT_CHANGED')
+        recorder=boundary.recorder
+        recorder._verify_settled_snapshot(boundary.record,recorder._snapshot())
+        boundary.verify_healthy_boundary()
+        outcome={**result,**migrate.contract_identity(self.selected),'status':'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED',
+            'originalGateway':boundary.old_gateway,'newGateway':boundary.new_gateway,'currentApiDatabasesAfter':after['databases'],
+            'currentApiBeforeReceiptSha256':self.before_apis_sha256,'currentApiAfterReceiptSha256':after_sha,
+            'frontendJournalSha256':boundary.parent.receipt['journalSha256'],
+            'ordinaryClosedZeroGate':False,'originalGatewayUncertaintyPreserved':True,'frontendOperationId':boundary.record['operationId'],
+            'recoveryIntentSha256':boundary.record['recoveryIntentSha256'],'runtimeReplacements':1,'nativeDisabled':True,'trafficAuthorized':False,
+            'gatewayReplacementStartedSha256':boundary.gateway_started_sha256,
+            'readinessReceiptSha256':digest(migrate.read_input(self.output,'p2-recovery-runtime-ready.json'))}
+        migrate.write_json(self.output,'known-ack-runtime-outcome.json',outcome)
+        return outcome

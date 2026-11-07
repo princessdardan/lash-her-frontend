@@ -3,6 +3,7 @@ import base64
 import copy
 import fcntl
 import json
+import shutil
 import threading
 import os
 import subprocess
@@ -226,6 +227,9 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
     def setUp(self):
         runtime=release_test.RuntimeReleaseTests();runtime.setUp();self.addCleanup(runtime.tearDown)
         root=runtime.root.resolve();bundle=runtime.bundle.resolve();configuration=runtime.configuration.resolve()
+        source_root=Path(source.__file__).resolve().parents[3]
+        runtime.compose.write_bytes(migrate.read_input(source_root,'ops/platform/compose.yaml'))
+        runtime.fixture.release['runtime']['composeSha256']='sha256:'+source.digest(runtime.compose.read_bytes())
         runtime.fixture.add_frontend()
         pair={'contractPhase':'p2','phase2ContractManifestSha256':'sha256:'+'e'*64}
         for carrier in (runtime.fixture.release,runtime.fixture.release['frontendMigration'],*runtime.fixture.jobs.values()):
@@ -240,6 +244,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
         self.candidate_file.write_bytes(self.candidate_raw);candidate_sha=source.digest(self.candidate_raw)
         runtime.gateway['admission']={'file':'/admission/state.json','releaseId':'test-release','candidateSha256':candidate_sha}
         runtime.save('runtime.json',runtime.target);runtime.save('gateway.json',runtime.gateway)
+        input_configuration=Path(shutil.copytree(configuration,root/'original-configuration-input'))
         selected,jobs,_,_=source.runtime.make_plan(bundle,configuration,runtime.compose,expected_profile=self.profile)
         configuration_hashes=staging_state.configuration_hashes(configuration)
         test_plan,self.baseline,self.domain,domain_gateway,effects=fixture()
@@ -248,8 +253,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
         canonical_candidate_sha=source.digest(source.canonical(selected));action='owned-certification';self.recovery='owned-replacement'
         self.receiver_targets={name:{**{key:jobs[name]['job']['target'][key] for key in ('host','port','database','serverMajor')},
             'user':jobs[name]['job']['runtimeRole'],'roleOid':'456'} for name in ('course','community')}
-        source_root=Path(source.__file__).resolve().parents[3]
-        source_files={source.MODULE:source.digest(migrate.read_input(source_root,source.MODULE))}
+        source_files={name:source.digest(migrate.read_input(source_root,name)) for name in (source.MODULE,source.HOST_MODULE,parent.API_CHECKER)}
         closure=source.digest(source.canonical(sorted(source_files.items())))
         native={**test_plan['nativePlan'],**self.fields,'candidateSha256':canonical_candidate_sha,'targetSha256':target_sha,
             'sourceCommit':job['sourceCommit'],'owner':owner,'windowSeconds':60,'projectId':selected['workload']['projectId'],
@@ -263,7 +267,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             'candidateSha256':candidate_sha,'candidateObjectSha256':canonical_candidate_sha,'targetSha256':target_sha,
             'gatewayProcessSha256':'b'*64,'gatewayConfigurationSha256':gateway_config,'runtimeInventorySha256':'c'*64,
             'configurationSha256':'d'*64,'configurationCanonicalSha256':source.digest(source.canonical(configuration_hashes)),
-            'operatorSourceClosureSha256':closure,'knownAckConfigurationInputDirectory':str(configuration),
+            'operatorSourceClosureSha256':closure,'knownAckConfigurationInputDirectory':str(input_configuration),
             'knownAckReceiverTargets':self.receiver_targets,'nativePlan':native,'apiJobSha256':job_hashes,
             'faultSelection':{'stageId':'owned-fault','receiver':'course','commandIndex':0,'commandSha256':test_plan['commandSha256']}}
         intent=source.replacement_intent(cert,self.recovery,expected_profile=self.profile)
@@ -278,7 +282,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             'oldLoginsDenied':True,'oldRoleSessions':0,'sqlReplayed':False,'trafficAuthorized':False,'owner':owner,'runtime':native['producer']['role'],
             'retiredLogins':[],'after':after,'witness':witness,'journalSha256':source.digest(parent._profiled_compact(after)),
             'witnessSha256':source.digest(parent._profiled_compact(witness))}
-        observer._expected_profile=self.profile;observer.selected=selected
+        observer._expected_profile=self.profile;observer.selected=selected;observer.source=source_root
         observer.request={'job':job,'plan':cert,'receipt':receipt,'baseline':json.loads(jobs['frontend']['schema']),
             'owner':owner,'historicalLogins':{'retiredLogins':[]}}
         observer.verify=Mock()
@@ -303,6 +307,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
         broker.configuration=configuration;broker.selected=selected;broker.jobs=jobs;broker.bundle=bundle;broker.source=source_root
         broker.certification_started=time.monotonic();broker.directory=root/'certification';broker.directory.mkdir(mode=0o700)
         broker._native_observe=Mock(return_value={'nativeEnabled':False})
+        broker.known_ack_recorder=None;broker.known_ack_boundary=None
         self.gateway={'status':'PRIOR_GATEWAY_OBSERVED','process':{'containerId':stage.gateway['containerId'],'pid':123},
             'binding':{'candidateSha256':candidate_sha,'configurationDirectory':str(configuration),'gatewayConfigurationSha256':gateway_config},
             'admission':{**domain_gateway['admission'],'uncertain':{'newWork':0,'recovery':0}}}
@@ -328,7 +333,9 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             projection.start();self.addCleanup(projection.stop)
 
     def recorder(self):
-        return source.P2KnownAckLossRecorder(self.broker,self.recovery,self.receiver_targets,expected_profile=self.profile)
+        recorder=source.P2KnownAckLossRecorder(self.broker,self.recovery,self.receiver_targets,expected_profile=self.profile)
+        self.broker.known_ack_recorder=recorder
+        return recorder
 
     def request_artifact(self):
         native=self.broker.initial['nativePlan'];action=self.broker.action_id();observations=[]
@@ -451,6 +458,145 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
         recorder.reconciliation_attempted=False;self.scope.revoked.set()
         with self.assertRaisesRegex(ValueError,'RELEASE_SCOPE_CLOSED'):recorder.confirm_reconciliation()
         self.assertFalse((recorder.directory/'reconciliation-observed.json').exists())
+
+    def test_profiled_authority_requires_confirmation_and_poisoned_consume_cannot_retry(self):
+        recorder=self.prepare();self.settle(recorder)
+        with self.assertRaisesRegex(ValueError,'REPLACEMENT_CONFIRMATION_REQUIRED'):recorder.authorize_profiled_replacement()
+        observed=recorder.confirm_reconciliation();authorization=recorder.authorize_profiled_replacement()
+        with self.assertRaisesRegex(ValueError,'REPLACEMENT_CONFIRMATION_REQUIRED'):recorder.authorize_profiled_replacement()
+        with self.assertRaisesRegex(ValueError,'OPAQUE_AUTHORIZATION_REQUIRED'):
+            source.consume_known_ack_loss_authorization(authorization,self.scope,self.recovery)
+        with self.assertRaisesRegex(ValueError,'OPAQUE_AUTHORIZATION_REQUIRED'):
+            source.issue_profiled_known_ack_loss_boundary(self.broker,observed)
+        path=recorder.directory/'reconciliation-observed.json';raw=path.read_bytes();path.write_bytes(raw+b'\n')
+        with self.assertRaisesRegex(ValueError,'PROFILED_RECONCILIATION_CHANGED'):
+            source.issue_profiled_known_ack_loss_boundary(self.broker,authorization)
+        path.write_bytes(raw)
+        with self.assertRaisesRegex(ValueError,'OPAQUE_AUTHORIZATION_REQUIRED'):
+            source.issue_profiled_known_ack_loss_boundary(self.broker,authorization)
+        self.assertFalse((source.ROOT/('p2-profiled-known-ack-'+self.recovery)).exists())
+
+    def replacement_fixture(self):
+        broker=self.broker;self.release=broker.selected;self.configuration=broker.configuration
+        self.model={service:[KnownTransitionTests.metadata(self,service,index+1,self.configuration)]
+            for index,service in enumerate(source.runtime.SERVICES)}
+        self.replace=lambda stage:KnownTransitionTests.replace(self,stage)
+        self.metadata=lambda *args:KnownTransitionTests.metadata(self,*args)
+        self.calls=[];self.api_fault=None;self.api_after_drift=False;self.new_uncertain=0
+        broker.runtime_current=[{'service':service,'containerId':rows[0]['Id']} for service,rows in self.model.items()]
+        broker.process_snapshot=[{'service':service,'pid':str(rows[0]['State']['Pid']),'startedAt':rows[0]['State']['StartedAt']}
+            for service,rows in self.model.items()]
+        self.gateway['process']=source.KnownAckLossBoundary._public_process(self.model['gateway'][0])
+        broker.fault_stage.gateway={'containerId':self.gateway['process']['containerId']}
+        broker.initial['hostMachineId']='1'*32
+        broker.initial['credentials']={name.upper()+'_STAGING_DATABASE_URL':'owned-private-input' for name in ('course','community')}
+        broker.native_mutex=threading.Lock();broker.check=self.scope.verify
+        broker.observer=self.scope._physical_observer
+        broker.observer.probe=Mock(side_effect=lambda _: {**self.fields,'journalSha256':self.scope.receipt['journalSha256'],
+            'targetSha256':self.scope.receipt['targetSha256'],'admission':copy.deepcopy(self.current['frontend']['admission'])})
+        def gateway(*_args,**options):
+            self.assertEqual(options['expected_profile'],self.profile)
+            value=copy.deepcopy(self.gateway);actual=source.KnownAckLossBoundary._public_process(self.model['gateway'][0])
+            if actual['containerId']!=value['process']['containerId']:
+                value['process']=actual;value['binding']['configurationDirectory']=str(self.snapshot)
+                value['admission']['uncertain']['recovery']=self.new_uncertain
+            return value
+        self.gateway_read.side_effect=gateway
+
+        def stop_observed(initial,_selected,output,*_args,expected_profile):
+            self.assertEqual(expected_profile,self.profile)
+            value={**self.fields,'protocol':prior.PROTOCOL,'sourceModuleSha256':prior._source_sha256(),
+                'status':'PRIOR_GATEWAY_PRESTOP_OBSERVED','actionId':initial['recoveryActionId'],
+                'candidateSha256':initial['candidateSha256'],'observation':gateway(expected_profile=expected_profile)}
+            migrate.write_json(output,prior.BEFORE_STOP,value);return value
+
+        def stopped_observed(initial,_selected,*_args,expected_profile):
+            self.assertEqual(expected_profile,self.profile)
+            ref=initial['priorGatewayReference'];pointer=prior._read_lineage()
+            self.assertFalse(self.model['gateway'][0]['State']['Running'])
+            self.assertEqual((pointer['state'],pointer['stopReceiptSha256']),('stopped-observed',ref['stopReceiptSha256']))
+            return gateway(expected_profile=expected_profile)
+
+        def run(args,**kwargs):
+            self.scope.verify();self.calls.append(args)
+            if args[1:3]==['rm','--force'] or args[1:3]==['container','ls'] and any('name=^/' in arg for arg in args):
+                value=''
+            elif '/check/input/current.mjs' in args:
+                service=next(name for name in ('course','community') if any('api-check-'+name+'-' in arg for arg in args))
+                if service==self.api_fault:return subprocess.CompletedProcess(args,1,stdout=b'',stderr=b'')
+                job=broker.jobs[service]['job'];value={**self.fields,**migrate.contract_identity(broker.selected),
+                    'status':'CURRENT_API_DATABASE_READ_ONLY_PASS','environment':'staging','service':broker.jobs[service]['service'],
+                    'checks':['selected-image-operator-role-policy'],'migrationsExecuted':False,'pendingTags':[],
+                    'appliedCount':2 if self.api_after_drift and self.boundary.finished else 1,
+                    'transportVerifier':'selected-image/hasVerifiedMigrationTransport','checkerSha256':broker.initial['sourceSha256'][parent.API_CHECKER],
+                    'manifestSha256':broker.initial['certificationPlan']['apiJobSha256'][service],
+                    'schemaBaselineSha256':job['schemaBaselineSha256'],'artifactSha256':job['target']['artifactSha256'],
+                    'target':{key:job['target'][key] for key in ('host','port','database','user','serverMajor')}}
+            elif '/app/p2-known-ack-loss-probe.mjs' in args:
+                payload=json.loads(kwargs['input']);service=payload['service']
+                value={**self.current[service],'version':1,'status':'P2_KNOWN_ACK_SQL_CURRENT','service':service,
+                    'commandId':payload['commandId'],'roleOid':self.receiver_targets[service]['roleOid'],'readOnly':True}
+            else:value=KnownTransitionTests.docker(self,args)
+            raw=value if isinstance(value,str) else json.dumps(value)
+            return subprocess.CompletedProcess(args,0,stdout=raw if kwargs.get('text') else raw.encode(),stderr='' if kwargs.get('text') else b'')
+
+        for projection in (patch.object(self.scope,'run',side_effect=run),patch.object(prior,'ROOT',source.ROOT),
+                patch.object(prior,'capture_before_stop',side_effect=stop_observed),
+                patch.object(prior,'observe_stopped_prior_gateway',side_effect=stopped_observed),
+                patch.object(prior,'_process',side_effect=lambda *_:source.KnownAckLossBoundary._public_process(self.model['gateway'][0])),
+                patch.object(source.runtime,'preflight')):
+            projection.start();self.addCleanup(projection.stop)
+        recorder=self.prepare();self.settle(recorder);recorder.confirm_reconciliation()
+        authorization=recorder.authorize_profiled_replacement()
+        self.boundary=source.issue_profiled_known_ack_loss_boundary(broker,authorization)
+        self.snapshot=self.boundary.snapshot;broker.known_ack_boundary=self.boundary
+        with self.assertRaisesRegex(ValueError,'EXACT_BOUNDARY_REQUIRED'):source.KnownAckRecoveryScope(self.boundary)
+        with self.assertRaisesRegex(ValueError,'OPAQUE_AUTHORIZATION_REQUIRED'):
+            source.issue_profiled_known_ack_loss_boundary(broker,authorization)
+        scope=source.ProfiledKnownAckRecoveryScope(self.boundary)
+        self.assertEqual(scope.descriptor,self.scope.descriptor)
+        with self.assertRaisesRegex(ValueError,'ACTUAL_RECOVERY_SCOPE_REQUIRED'):source.KnownAckRecoveryRuntime(scope)
+        return source.ProfiledKnownAckRecoveryRuntime(scope)
+
+    def test_profiled_runtime_replaces_exact_five_stages_and_retains_old_one(self):
+        component=self.replacement_fixture();result=component.restore()
+        self.assertEqual(result['status'],'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED')
+        self.assertEqual(result['qualificationTargetProfile'],self.profile)
+        self.assertEqual(result['currentApiBeforeReceiptSha256'],result['currentApiAfterReceiptSha256'])
+        self.assertEqual(result['frontendJournalSha256'],self.scope.receipt['journalSha256'])
+        self.assertEqual(result['originalGateway']['admission']['uncertain'],{'newWork':0,'recovery':1})
+        self.assertEqual(result['newGateway']['admission']['uncertain'],{'newWork':0,'recovery':0})
+        self.assertEqual(prior._read_lineage()['process'],result['newGateway']['process'])
+        self.assertFalse(result['sqlReplayed']);self.assertFalse(result['frontendSqlApplied']);self.assertFalse(result['trafficAuthorized'])
+        self.assertEqual(len(result['containers']),10)
+        self.assertEqual(self.boundary.output.name,'p2-profiled-known-ack-'+self.recovery)
+        self.assertEqual([tuple(call[call.index('90')+1:]) for call in self.calls if 'up' in call],list(source.runtime.STAGES))
+        self.assertFalse(any('--execute' in call or 'pull' in call for call in self.calls))
+        self.assertEqual(staging_state.configuration_hashes(self.snapshot),self.scope.configuration_sha256)
+        for name,pin in self.boundary.stage_receipt_sha256.items():
+            raw=migrate.read_input(self.boundary.output,name)
+            self.assertEqual(source.digest(raw),pin);self.assertEqual(json.loads(raw)['qualificationTargetProfile'],self.profile)
+        source.runtime.preflight.assert_called_once_with(component.selected,self.snapshot,component.jobs,pull=False,expected_profile=self.profile)
+
+    def test_profiled_api_failure_refuses_before_runtime_and_poisons_attempt(self):
+        component=self.replacement_fixture();self.api_fault='community'
+        with self.assertRaisesRegex(ValueError,'DATABASE_CONTAINER_CHECK_FAILED'):component.restore()
+        self.assertFalse(self.snapshot.exists());self.assertFalse(any('up' in call or 'stop' in call for call in self.calls))
+        self.api_fault=None
+        with self.assertRaisesRegex(ValueError,'PROFILED_RUNTIME_ALREADY_ATTEMPTED'):component.restore()
+
+    def test_profiled_nonzero_new_gateway_never_advances_pending_lineage(self):
+        component=self.replacement_fixture();self.new_uncertain=1
+        with self.assertRaisesRegex(ValueError,'NEW_GATEWAY_CLOSED_ZERO_REQUIRED'):component.restore()
+        self.assertEqual(prior._read_lineage()['state'],'replacement-in-progress')
+        self.assertTrue((self.boundary.output/source.GATEWAY_STARTED).is_file())
+        self.assertFalse((self.boundary.runtime_output/'known-ack-runtime-outcome.json').exists())
+
+    def test_profiled_runtime_has_no_terminal_for_different_current_api_proof(self):
+        component=self.replacement_fixture();self.api_after_drift=True
+        with self.assertRaisesRegex(ValueError,'PROFILED_API_CURRENT_CHANGED'):component.restore()
+        self.assertEqual(prior._read_lineage()['state'],'running-observed')
+        self.assertFalse((self.boundary.runtime_output/'known-ack-runtime-outcome.json').exists())
 
 
 class KnownTransitionTests(unittest.TestCase):

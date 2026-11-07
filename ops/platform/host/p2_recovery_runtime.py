@@ -57,24 +57,37 @@ class P2RecoveryRuntime:
             migrate.demand(not self.command(['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + container + '$', '--format', '{{.ID}}'], runtime.SAFE_ENV, 15), 'P2_RECOVERY_API_CONTAINER_CLEANUP_UNVERIFIED')
 
     def restore(self):
+        return self._restore()
+
+    def _read_current_apis(self):
+        return {name: self.verify_api_current(name, self.output) for name in ('course', 'community')}
+
+    def _restore(self, *, expected_profile=None):
+        expected = migrate.candidate_profile(self.selected, expected_profile)
+        options = {} if expected is None else {'expected_profile': expected}
+        if expected is not None:
+            from p2_known_ack_loss import ProfiledKnownAckRecoveryRuntime, ProfiledKnownAckRecoveryScope
+            migrate.demand(type(self) is ProfiledKnownAckRecoveryRuntime and type(self.scope) is ProfiledKnownAckRecoveryScope
+                           and self.scope.boundary.expected_profile == expected,
+                           'P2_PROFILED_KNOWN_ACK_RUNTIME_SCOPE_REQUIRED')
         self.scope.require_release(self.selected, self.jobs)
         self.scope.require_configuration(self.configuration)
         self.scope.require_frontend(self.selected, self.jobs['frontend'])
         migrate.private_directory(self.output)
         self.scope.require_prior_gateway()
-        verified = {name: self.verify_api_current(name, self.output) for name in ('course', 'community')}
+        verified = self._read_current_apis()
         self.scope.verify()
         snapshot = self.output / 'configuration'
         compose = migrate.read_input(self.compose_file.parent, self.compose_file.name)
         migrate.demand(self.selected['runtime']['composeSha256'] == 'sha256:' + migrate.file_hash(compose), 'P2_RECOVERY_COMPOSE_CHANGED')
-        runtime.snapshot_configuration(self.configuration, snapshot, self.selected, self.jobs, compose)
+        runtime.snapshot_configuration(self.configuration, snapshot, self.selected, self.jobs, compose, **options)
         self.snapshot = snapshot
         self.scope.initialize_runtime(snapshot, self.selected)
-        prefix, env = runtime.compose_command(snapshot, 'staging'), runtime.runtime_environment(self.selected, snapshot)
+        prefix, env = runtime.compose_command(snapshot, 'staging'), runtime.runtime_environment(self.selected, snapshot, **options)
         # Source-selected preflight must remain under the same registered runner.
         token = runtime._command_scope.set(self.scope)
         try:
-            runtime.preflight(self.selected, snapshot, self.jobs)
+            runtime.preflight(self.selected, snapshot, self.jobs, **({'pull': False, **options} if expected is not None else {}))
             for stage in runtime.STAGES:
                 self.scope.require_configuration(self.configuration)
                 self.scope.before_runtime_stage(stage)
@@ -82,7 +95,7 @@ class P2RecoveryRuntime:
                 self.scope.after_runtime_stage(stage)
             probe = json.loads(self.command([*prefix, 'exec', '-T', 'gateway', 'node', 'release-probe.mjs'], env, 30))
             migrate.demand(probe.get('status') == 'API_RUNTIME_BOUNDARIES_PASS' and set(probe.get('checks', [])) == runtime.PROBE_CHECKS, 'P2_RECOVERY_RUNTIME_BOUNDARIES_REQUIRED')
-            containers = runtime.check_containers(self.selected, snapshot)
+            containers = runtime.check_containers(self.selected, snapshot, **options)
             migrate.demand(len(containers) == 10 and {item['service'] for item in containers} == set(runtime.SERVICES), 'P2_RECOVERY_TEN_SERVICES_REQUIRED')
         finally:
             runtime._command_scope.reset(token)
@@ -91,5 +104,7 @@ class P2RecoveryRuntime:
                    'recoveryActionId': self.scope.recovery_action_id, 'candidateSha256': self.scope.candidate_sha256,
                    'apiDatabases': verified, 'containers': containers, 'boundaryChecks': probe['checks'],
                    'sqlReplayed': False, 'rolePreparationRepeated': False, 'trafficAuthorized': False}
+        if expected is not None:
+            outcome.update(version=2, qualificationTargetProfile=expected, frontendSqlApplied=False, migrationsExecuted=False)
         migrate.write_json(self.output, 'p2-recovery-runtime-ready.json', outcome)
         return outcome
