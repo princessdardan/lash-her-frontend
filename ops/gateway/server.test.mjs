@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { mkdtempSync, readFileSync, rmSync, renameSync, statSync, writeFileSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, renameSync, statSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -8,9 +8,9 @@ import { createServer, request } from "node:https";
 import { createServer as createHttpServer } from "node:http";
 import { createGateway } from "./server.mjs";
 import { createPrivateTlsProxy } from "./private-tls.mjs";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
-import { createAdmissionReader, selectScopedMuxCallback, SCOPED_MUX_HEADER } from "./admission.mjs";
+import { createAdmissionReader, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_HEADER } from "./admission.mjs";
 import { interactiveCourseOperation } from "./operations.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
@@ -295,6 +295,247 @@ test("scoped Mux admission forwards only the selected managed callback and mints
   assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
   assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 1 });
   assert.deepEqual(f.admissionState().muxCallbackEvidence, { admitted: 1, managedAcks: [] });
+});
+
+async function interactiveFixture(t, requests, handler, stage = "learning") {
+  const directory = mkdtempSync(join(folder, "interactive-admission-"));
+  const file = join(directory, "state.json"), mount = statSync(directory, { bigint: true });
+  const admission = { file, releaseId: "owned-interactive", candidateSha256: "a".repeat(64) };
+  const start = Date.now(), processSha = "b".repeat(64), key = "c".repeat(64);
+  const actorId = "10000000-0000-4000-8000-000000000001";
+  const state = { version: 3, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
+    actionId: "owned-interactive-action", newWork: false, recovery: false, interactive: {
+      actorId, stage, epoch: "91", frontendSourceCommit: "d".repeat(40),
+      deploymentHost: "owned-immutable.vercel.app", issuedAt: new Date(start - 1000).toISOString(),
+      expiresAt: new Date(start + 60_000).toISOString(), nonce: "e".repeat(32), gatewayProcessSha256: processSha,
+      mountDevice: String(mount.dev), mountInode: String(mount.ino), key, requests,
+    } };
+  const { interactive, ...selected } = state;
+  const ordinary = { ...selected, version: 1, actionId: "owned-original-release" };
+  const save = value => {
+    writeFileSync(file, certificationCanonical(value) + "\n", { mode: 0o640 });
+    chmodSync(file, 0o640);
+  };
+  const staging = { admission, appEnv: "staging", publicHost: "api-staging.lashher.com",
+    ownerId: "team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" };
+  let wall = start, tick = 0n, currentProcess = processSha;
+  const options = { processBinding: () => currentProcess, storageAuthority: path => path === file,
+    now: () => wall, monotonic: () => tick, interactiveGroup: mount.gid };
+  save(state);
+  const f = await fixture(t, handler, staging, { scopedAdmission: options });
+  let proofSequence = 0;
+  function signed({ method = "GET", path, body, actor = actorId, idempotency = "", issued = Math.floor(wall / 1000), proofId,
+    signingKey = key, catalog = false }) {
+    const requestId = proofId ?? `10000000-0000-4000-8000-${String(++proofSequence).padStart(12, "0")}`;
+    const token = catalog ? "" : `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ sub: actor })).toString("base64url")}.owned`;
+    const message = ["lash-her:p2q:interactive:gateway-request:v1", issued, requestId, method, path, certificationHash(body ?? ""),
+      certificationHash(token), certificationHash(idempotency)].join("\n");
+    const mac = createHmac("sha256", Buffer.from(signingKey, "hex")).update(message).digest("hex");
+    return { method, path, ...(body === undefined ? {} : { body }), headers: {
+      "x-request-id": requestId, [SCOPED_INTERACTIVE_HEADER]: `v1.${issued}.${requestId}.${mac}`,
+      ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(idempotency ? { "x-idempotency-key": idempotency } : {}),
+    } };
+  }
+  return { ...f, state, ordinary, save, signed, file, staging, options, start,
+    setClock(time, monotonic) { wall = time; tick = monotonic; },
+    setProcess(value) { currentProcess = value; } };
+}
+
+test("scoped interactive v3 joins exact signed requests, including GETs, to bounded TLS acknowledgements", async t => {
+  const id = "20000000-0000-4000-8000-000000000002";
+  const read = `/course/v1/student/progress?courseId=${id}`;
+  const write = `/course/v1/student/lessons/${id}/progress`;
+  const catalog = "/course/v1/courses?limit=2";
+  const body = '{"positionSeconds":17}';
+  const requests = [
+    { method: "GET", target: read, bodySha256: certificationHash(""), uses: 1 },
+    { method: "POST", target: write, bodySha256: certificationHash(body), uses: 2 },
+    { method: "GET", target: catalog, bodySha256: certificationHash(""), uses: 1 },
+  ];
+  let entered, release;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const complete = new Promise(resolve => { release = resolve; });
+  const forwarded = [];
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    forwarded.push({ method: req.method, url: req.url, authorization: req.headers.authorization,
+      proof: req.headers[SCOPED_INTERACTIVE_HEADER], body: Buffer.concat(chunks).toString() });
+    if (req.url === read.slice("/course".length)) {
+      entered();
+      await complete;
+    }
+    if (req.headers["x-idempotency-key"] === "owned-conflict") {
+      res.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+      res.end('{"error":{"code":"CONFLICT","message":"Owned conflict"}}');
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"owned":true}');
+  });
+  const writeInput = f.signed({ method: "POST", path: write, body, idempotency: "owned-first" });
+  for (const refused of [
+    { method: "GET", path: read, headers: { authorization: writeInput.headers.authorization } },
+    f.signed({ path: read + "&limit=2" }),
+    f.signed({ path: catalog }),
+    f.signed({ path: read, actor: id }),
+    f.signed({ path: read, signingKey: "f".repeat(64) }),
+    f.signed({ path: read, issued: Math.floor(f.start / 1000) - 30 }),
+    f.signed({ path: read, issued: Math.floor(f.start / 1000) + 1 }),
+    f.signed({ method: "POST", path: write, body: '{"positionSeconds":18}' }),
+    { ...writeInput, headers: { ...writeInput.headers, "x-idempotency-key": "owned-tampered" } },
+    { ...writeInput, headers: { ...writeInput.headers, "x-request-id": id } },
+    { ...writeInput, headers: { ...writeInput.headers, "content-type": "text/plain" } },
+    f.signed({ method: "POST", path: "/course/v1/internal/accounts/commands", body: "{}" }),
+    f.signed({ method: "POST", path: "/course/v1/webhooks/mux", body: "{}" }),
+  ]) assert.equal((await f.send(refused)).status, 503);
+  assert.equal(forwarded.length, 0);
+
+  const readInput = f.signed({ path: read });
+  const readResponse = f.send(readInput);
+  await waiting;
+  const during = f.admissionState();
+  assert.equal(during.valid, false);
+  assert.equal(during.version, 3);
+  assert.equal(during.interactiveActive, true);
+  assert.equal(during.newWork, null);
+  assert.equal(during.recovery, null);
+  assert.deepEqual(during.active, { newWork: 1, recovery: 0 });
+  assert.deepEqual(during.interactiveEvidence, { admitted: 1, acknowledged: [] });
+  assert.equal(Object.hasOwn(during, "interactive"), false);
+  assert.equal(JSON.stringify(during).includes(f.state.interactive.key), false);
+  release();
+  const readResult = await readResponse;
+  assert.equal(readResult.status, 200);
+  assert.equal((await f.send(readInput)).status, 503);
+  const writeResult = await f.send(writeInput);
+  assert.equal(writeResult.status, 200);
+  assert.equal((await f.send(writeInput)).status, 503);
+  const conflictInput = f.signed({ method: "POST", path: write, body, idempotency: "owned-conflict" });
+  const conflict = await f.send(conflictInput);
+  assert.equal(conflict.status, 409);
+  assert.equal((await f.send(f.signed({ method: "POST", path: write, body }))).status, 503);
+  const catalogInput = f.signed({ path: catalog, catalog: true });
+  const catalogResult = await f.send(catalogInput);
+  assert.equal(catalogResult.status, 200);
+  assert.equal(forwarded.length, 4);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+  assert.equal(forwarded.at(-1).authorization, undefined);
+  assert.equal(forwarded[1].body, body);
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.interactiveEvidence, { admitted: 4, acknowledged: [
+    [readInput, readResult, 0], [writeInput, writeResult, 1], [conflictInput, conflict, 1], [catalogInput, catalogResult, 2],
+  ].map(([input, response, requestIndex]) => ({ requestId: response.headers["x-request-id"],
+    proofRequestId: input.headers["x-request-id"], requestIndex, upstreamStatus: response.status })) });
+});
+
+test("scoped media refresh accepts the normal bodyless POST without a content type", async t => {
+  const lesson = "20000000-0000-4000-8000-000000000002";
+  const asset = "30000000-0000-4000-8000-000000000003";
+  const target = `/course/v1/admin/lessons/${lesson}/video/${asset}/refresh`;
+  const method = "POST";
+  const requests = [{ method, target, bodySha256: certificationHash(""), uses: 2 }];
+  const forwarded = [];
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    forwarded.push({ method: req.method, path: req.url, contentType: req.headers["content-type"], body: Buffer.concat(chunks).toString() });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"videoAsset":{"status":"processing"}}');
+  }, "media");
+  const bodyless = f.signed({ method, path: target });
+  assert.equal((await f.send({ ...bodyless, headers: { ...bodyless.headers, "content-type": "text/plain" } })).status, 503);
+  assert.equal((await f.send(f.signed({ method, path: target, body: "{}" }))).status, 503);
+  assert.equal((await f.send(bodyless)).status, 200);
+  assert.equal((await f.send(f.signed({ method, path: target, body: "" }))).status, 200);
+  assert.deepEqual(forwarded, [undefined, "application/json"].map(contentType => ({
+    method, path: target.slice("/course".length), contentType, body: "",
+  })));
+  assert.equal(f.admissionState().interactiveEvidence.acknowledged.length, 2);
+});
+
+test("invalid and retired interactive v3 states deny private GETs while ordinary state remains compatible", async t => {
+  const path = "/course/v1/student/courses";
+  const requests = [{ method: "GET", target: path, bodySha256: certificationHash(""), uses: 1 }];
+  let forwarded = 0;
+  const f = await interactiveFixture(t, requests, (_req, res) => {
+    forwarded++;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  });
+  assert.equal(createAdmissionReader(f.staging, f.options)().valid, true);
+  assert.equal(createAdmissionReader(f.staging, { ...f.options, interactiveGroup: f.options.interactiveGroup + 1n })().valid, false);
+  assert.equal(createAdmissionReader(f.staging, { processBinding: f.options.processBinding })().valid, false);
+  const unsigned = { path, headers: { authorization: f.signed({ path }).headers.authorization } };
+  for (const [index, patch] of [
+    { mountInode: "0" },
+    { gatewayProcessSha256: "0".repeat(64) },
+    { deploymentHost: "staging.lashher.com" },
+    { requests: [requests[0], requests[0]] },
+    { requests: [{ ...requests[0], bodySha256: "e".repeat(64) }] },
+    { requests: [{ ...requests[0], uses: 5 }] },
+    { requests: [{ ...requests[0], method: "POST", target: "/course/v1/internal/accounts/commands" }] },
+    { requests: [{ ...requests[0], method: "GET", target: "/course/v1/admin/entitlements/grants" }] },
+    { requests: [{ ...requests[0], target: path + "?" }] },
+    { requests: [{ ...requests[0], target: path + "?owned=" + "x".repeat(512) }] },
+    { expiresAt: new Date(f.start - 1).toISOString() },
+    { expiresAt: new Date(f.start + 301_000).toISOString() },
+  ].entries()) {
+    f.save({ ...f.state, actionId: `owned-bad-${index}`, interactive: { ...f.state.interactive, ...patch } });
+    assert.equal((await f.send(unsigned)).status, 503);
+    assert.equal(f.admissionState().interactiveActive, false);
+  }
+  f.save(f.state);
+  chmodSync(f.file, 0o644);
+  assert.equal((await f.send(unsigned)).status, 503);
+  f.save(f.state);
+  writeFileSync(f.file, certificationCanonical(f.state).replace('"version":3', '"version":3,"version":3') + "\n");
+  assert.equal((await f.send(unsigned)).status, 503);
+  f.save(f.state);
+  assert.equal(f.admissionState().interactiveActive, true);
+  f.setProcess("0".repeat(64));
+  assert.equal((await f.send(unsigned)).status, 503);
+  f.setProcess(f.state.interactive.gatewayProcessSha256);
+  assert.equal((await f.send(f.signed({ path }))).status, 503);
+  const clock = { ...f.state, actionId: "owned-interactive-clock" };
+  f.save(clock);
+  assert.equal(f.admissionState().interactiveActive, true);
+  f.setClock(f.start, 60_000_000_000n);
+  assert.equal((await f.send(unsigned)).status, 503);
+  assert.equal(f.admissionState().interactiveActive, false);
+  rmSync(f.file);
+  assert.equal((await f.send(unsigned)).status, 503);
+  assert.equal(forwarded, 0);
+  f.save(f.ordinary);
+  assert.equal((await f.send(f.signed({ path }))).status, 503);
+  assert.equal((await f.send(unsigned)).status, 200);
+  assert.equal(f.admissionState().version, 1);
+});
+
+test("scoped interactive lost and errored upstream acknowledgements retain uncertainty after closure", async t => {
+  const path = "/course/v1/student/courses";
+  const requests = [{ method: "GET", target: path, bodySha256: certificationHash(""), uses: 2 }];
+  let forwarded = 0;
+  const f = await interactiveFixture(t, requests, (req, res) => {
+    if (++forwarded === 2) {
+      req.socket.destroy();
+      return;
+    }
+    res.writeHead(502, { "content-type": "application/json" });
+    res.end('{"error":{"code":"BAD_GATEWAY","message":"Owned receiver response lost"}}');
+  });
+  assert.equal((await f.send(f.signed({ path }))).status, 502);
+  assert.equal((await f.send(f.signed({ path }))).status, 502);
+  assert.equal((await f.send(f.signed({ path }))).status, 503);
+  assert.equal(forwarded, 2);
+  assert.deepEqual(f.admissionState().interactiveEvidence, { admitted: 2, acknowledged: [] });
+  assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 2, recovery: 0 });
+  f.save(f.ordinary);
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 2, recovery: 0 });
 });
 
 test("scoped Mux selection binds upload IDs and requires a managed marker for an unknown asset", () => {

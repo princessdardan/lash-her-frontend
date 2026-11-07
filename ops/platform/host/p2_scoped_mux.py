@@ -114,7 +114,7 @@ class P2ScopedMuxStage:
                  self.plan.get("mode") == "mux-callback-recovery" and broker.external_armed is True,
                  "P2_SCOPED_MUX_SOURCE_MODE_REQUIRED")
         self.action = self._validate_action(self.plan.get("scopedAction"))
-        _require(type(self.plan.get("maximumSeconds")) is int and 0 < self.plan["maximumSeconds"] <= 120,
+        _require(type(self.plan.get("maximumSeconds")) is int and self.plan["maximumSeconds"] == 300,
                  "P2_SCOPED_MUX_BOUNDED_PLAN_REQUIRED")
         source_hashes = broker.initial.get("sourceSha256")
         _require(type(source_hashes) is dict and source_hashes.get(_SOURCE_KEY) == _hash(_SOURCE.read_bytes()),
@@ -304,7 +304,8 @@ class P2ScopedMuxStage:
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ValueError("P2_SCOPED_MUX_INITIAL_STATE_REQUIRED") from None
         self._ordinary_closed(ordinary)
-        _require(raw == _canonical(ordinary) and admission.get("sha256") == _hash(raw),
+        known_encodings = (_canonical(ordinary), (json.dumps(ordinary, sort_keys=True) + "\n").encode())
+        _require(raw in known_encodings and admission.get("sha256") == _hash(raw),
                  "P2_SCOPED_MUX_INITIAL_STATE_BYTES_REQUIRED")
         self._original_raw, self._original_sha256 = raw, _hash(raw)
         self._managed_before = self._managed_attempt("before")

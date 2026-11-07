@@ -45,6 +45,11 @@ const reviewedInteractiveDependencies = {
   "src/proxy.ts": "790b076d78dc67a992a9662bd0d0f3b54b2ea5a23965a2d8be881e20099a0a80",
   "src/app/admin/auth-actions.ts": "e2420cae789e8239f44058ba66d82d46fd7bfcf0b08c69ea59c1dab8ecd54de1"
 };
+const reviewedGatewayProofDependencies = {
+  ...reviewedInteractiveDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "a7b55a52a4194f67f90058fd2e17939f63af9f0669b1f9601f1bb80f24accc9f",
+  "src/lib/api-integration/gateway-transport.ts": "69fdca4874a44faad96318151270dbf37948becabed33c5255d1f6516ce4cbf8"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -67,8 +72,11 @@ function sourcePolicy(sourceCommit) {
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
   demand(same(selected, reviewedInteractiveSource));
-  for (const [file, expected] of Object.entries(reviewedInteractiveDependencies)) demand(readSourceHash(file) === expected);
-  return { ...selected, ...reviewedInteractiveDependencies };
+  const dependencies = Object.fromEntries(Object.keys(reviewedInteractiveDependencies).map(file => [file, readSourceHash(file)]));
+  if (same(dependencies, reviewedInteractiveDependencies)) return { ...selected, ...dependencies };
+  dependencies["src/lib/api-integration/gateway-transport.ts"] = readSourceHash("src/lib/api-integration/gateway-transport.ts");
+  demand(same(dependencies, reviewedGatewayProofDependencies));
+  return { ...selected, ...dependencies };
 }
 export function prepareP2LifecycleNativePlan(candidate, input, expectedProfile) {
   try {

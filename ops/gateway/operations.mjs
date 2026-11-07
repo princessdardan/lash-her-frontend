@@ -71,6 +71,21 @@ export function interactiveCourseOperation(method, pathname) {
   return valid ? group : null;
 }
 
+export function interactiveCourseStagePermits(stage, method, target) {
+  if (typeof target !== "string") return false;
+  const path = target.split("?", 1)[0];
+  const group = interactiveCourseOperation(method, path);
+  if (group === null) return false;
+  if (stage === group && stage !== "catalog") return true;
+  if (method !== "GET") return false;
+  if (stage === "media") return group === "authoring";
+  if (stage === "learning") return group === "catalog";
+  if (stage === "paid-grant") {
+    return group === "authoring" && /^\/course\/v1\/admin\/courses\/[^/]+$/u.test(path);
+  }
+  return false;
+}
+
 export function createOperationsServer(counters, gauges = {}, admissionState) {
   return createServer({ maxHeaderSize: 4096, requestTimeout: 2000 }, (req, res) => {
     res.setHeader("cache-control", "no-store");

@@ -73,7 +73,7 @@ class ScopedMuxTests(unittest.TestCase):
                           "sourceSha256": {mux._SOURCE_KEY: mux._hash(mux._SOURCE.read_bytes())},
                           "credentials": {"COURSE_STAGING_DATABASE_URL": "postgresql://private"},
                           "certificationPlan": {"mode": "mux-callback-recovery", "scopedAction": action(),
-                                                "maximumSeconds": 120, "gatewayProcessSha256": "a" * 64,
+                                                "maximumSeconds": 300, "gatewayProcessSha256": "a" * 64,
                                                 "gatewayConfigurationSha256": "b" * 64}}
         broker.selected = {"environment": "staging", "releaseId": "release-owned",
                            "sources": {"frontend": {"commit": "1" * 40}},
@@ -204,6 +204,18 @@ class ScopedMuxTests(unittest.TestCase):
         self.assertEqual(closed["status"], "P2_SCOPED_MUX_CLOSED")
         self.assertEqual(closed["managedAckCount"], 1)
         self.assertEqual((self.admission / "state.json").read_bytes(), mux._canonical(self.original))
+
+    def test_preflight_and_close_preserve_ordinary_operator_state_bytes(self):
+        stage = self.manual_stage()
+        original = (json.dumps(self.original, sort_keys=True) + "\n").encode()
+        (self.admission / "state.json").write_bytes(original)
+        acknowledgments = [{"requestId": "request_owned", "eventId": "event_owned", "upstreamStatus": 200}]
+        stage.broker._gateway_observation = lambda: self.marker(stage, acknowledgments=acknowledgments)
+        stage._preflight()
+        stage.open()
+        stage.observe()
+        stage.close()
+        self.assertEqual((self.admission / "state.json").read_bytes(), original)
 
     def test_close_refuses_if_managed_effect_changes_after_observation(self):
         stage = self.manual_stage()

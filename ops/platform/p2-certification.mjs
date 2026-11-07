@@ -25,6 +25,7 @@ import {p2CertificationEnvironmentLock,readP2CertificationKnownAckStage} from '.
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
+import {interactiveCourseStagePermits} from '../gateway/operations.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -38,6 +39,7 @@ const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-
 const exactKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort());
 const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
 const scopedModes=new Set(['export-cleanup','mux-callback-recovery','lifecycle-persistence']);
+const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
@@ -47,7 +49,30 @@ const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
+function interactiveActionValid(value){
+  if(!exactKeys(value,['stage','actorId','requests','windowSeconds'])||
+     !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
+     !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
+     !Number.isInteger(value.windowSeconds)||value.windowSeconds<30||value.windowSeconds>300||
+     !Array.isArray(value.requests))return false;
+  if(['identity','lifecycle'].includes(value.stage))return value.requests.length===0;
+  if(!value.requests.length||value.requests.length>16)return false;
+  const selected=new Set(), empty=rawHash(Buffer.alloc(0));
+  for(const row of value.requests){
+    if(!exactKeys(row,['method','target','bodySha256','uses'])||
+       typeof row.target!=='string'||row.target.length>512||
+       !/^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?@\[\]_~A-Za-z0-9-]+)?$/u.test(row.target)||
+       !sha(row.bodySha256)||(row.method==='GET'&&row.bodySha256!==empty)||
+       !Number.isInteger(row.uses)||row.uses<1||row.uses>4||!interactiveCourseStagePermits(value.stage,row.method,row.target))return false;
+    const key=JSON.stringify([row.method,row.target,row.bodySha256]);
+    if(selected.has(key))return false;
+    selected.add(key);
+  }
+  return true;
+}
+
 function scopedActionValid(mode, value){
+  if(mode==='interactive-browser')return interactiveActionValid(value);
   if(mode==='export-cleanup')return exactKeys(value,['commandId','readyRecordSha256'])&&uuid(value.commandId)&&sha(value.readyRecordSha256);
   if(mode==='lifecycle-persistence')return exactKeys(value,['stage','subjectBindingSha256'])&&
     ['capture-export-ready','capture-delete-baseline','verify-delete'].includes(value.stage)&&sha(value.subjectBindingSha256);
@@ -91,7 +116,7 @@ export function bindP2CertificationReadyReceipts(directory,plan){
 export function prepareP2BoundedCertification(prepared,input,candidateBytes,{frontendReceipts,configurationSha256,profiledRelease}){
   const candidate=prepared?.migration?.candidate,inventory=prepared?.plan,job=prepared?.migration?.job;
   const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
-  const scoped=scopedModes.has(input?.mode);
+  const scoped=scopedPlanningModes.has(input?.mode);
   if(scoped)demand(profile&&scopedActionValid(input.mode,input.scopedAction));
   else demand(input?.scopedAction===undefined);
   demand(persistenceModes.has(input?.mode)?sha(input.persistenceReviewedSha256):input?.persistenceReviewedSha256===undefined);
@@ -116,6 +141,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     isDeepStrictEqual(input.native.featureControls,inventory.certification.featureControls)&&input.native.targetSha256===inventory.targetSha256&&
     ['host','port','database','user','serverMajor'].every(key=>input.native.target[key]===job.target[key]));
   const closedOffset=input.startState==='qualified-ready'?1n:0n;
+  if(input.mode==='interactive-browser')demand((BigInt(input.initialEpoch)+2n).toString().length<=18);
   if(['native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery'].includes(input.mode)){
     demand(input.requestEvidence?.kind==='operator-recorded-request-details'&&typeof input.requestEvidence.path==='string'&&resolve(input.requestEvidence.path)===input.requestEvidence.path);
     frontendPrivateReceiptDirectory(dirname(input.requestEvidence.path));

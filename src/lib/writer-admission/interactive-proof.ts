@@ -9,12 +9,16 @@ import { resolveApplicationEnvironment } from "@/lib/env/application-environment
 export const INTERACTIVE_ORIGIN = "https://staging.lashher.com";
 export const INTERACTIVE_COOKIE = "__Host-lash-p2q-window";
 export const INTERACTIVE_HEADER = "x-lash-internal-interactive-admission";
+export const INTERACTIVE_GATEWAY_PROOF_HEADER = "x-lash-certification-interactive";
 
 const stages = ["identity", "authoring", "media", "learning", "paid-grant", "lifecycle"] as const;
 type Stage = (typeof stages)[number];
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
+const gatewayOrigin = "https://api-staging.lashher.com";
+const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "paid-grant"]);
 const uuid = "[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}";
 const at = (pattern: string) => new RegExp(`^(?:${pattern})$`, "u");
+const gatewayRequestId = at(uuid);
 const signedDigest = /^[a-f0-9]{64}$/u;
 const epochPattern = /^[1-9][0-9]{0,17}$/u;
 const maxLeaseSeconds = 600;
@@ -103,7 +107,7 @@ function browserProof(authority: Binding, cookie: string, now: number) {
     !/^\d{10}$/u.test(started ?? "") || !/^\d{10}$/u.test(expires ?? "") || !/^[a-f0-9]{32}$/u.test(nonce ?? "") ||
     Number(started) > now || Number(expires) <= now || Number(expires) - Number(started) > maxLeaseSeconds ||
     !authentic(mac, signature(authority, "browser", [version, epoch, stage, started, expires, nonce].join(".")))) return null;
-  return { epoch, stage: stage as Stage };
+  return { epoch, stage: stage as Stage, nonce };
 }
 
 // A browser cookie is accepted only on selected paths. Proxy issues a short
@@ -132,12 +136,10 @@ export function interactiveRequestHeaders(request: NextRequest): Headers | undef
   return headers;
 }
 
-export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
-  now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string } | null {
+function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: string, now: number) {
   if (proof.length > 780) return null;
-  const authority = binding(env);
-  const browser = authority && browserProof(authority, cookie, now);
-  if (!authority || !browser) return null;
+  const browser = browserProof(authority, cookie, now);
+  if (!browser) return null;
   const [issued, route, mac, extra] = proof.split(".");
   if (extra !== undefined || !/^\d{10}$/u.test(issued ?? "") || !/^[A-Za-z0-9_-]+$/u.test(route ?? "") ||
     Number(issued) > now || now - Number(issued) >= maxRequestSeconds ||
@@ -145,7 +147,55 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
   const [method, path, trailing] = Buffer.from(route, "base64url").toString().split(" ");
   if (trailing !== undefined || !method || !path || !permits(browser.stage, method, path)) return null;
   if (method === "POST" && path === "/admin/sign-in" && !adminGoogleAction.getStore()) return null;
+  return browser;
+}
+
+export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
+  now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string } | null {
+  const authority = binding(env);
+  const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
+  if (!authority || !browser) return null;
   const { source, target } = authority;
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
   return { epoch: browser.epoch, producerSha256, source, target };
+}
+
+export async function interactiveCourseGatewayProof(request: {
+  url: URL; method: string; requestId: string; body?: string; applicationToken?: string; idempotencyKey?: string;
+}): Promise<string | null> {
+  const { url, method, requestId } = request;
+  const target = url.pathname + url.search;
+  const configuredOrigin = process.env.API_GATEWAY_STAGING_ORIGIN;
+  if ((configuredOrigin !== gatewayOrigin && configuredOrigin !== gatewayOrigin + "/") ||
+    url.origin !== gatewayOrigin || url.href !== gatewayOrigin + target || !url.pathname.startsWith("/course/v1/") ||
+    !gatewayRequestId.test(requestId)) return null;
+  const authority = binding(process.env);
+  if (!authority) return null;
+
+  try {
+    const { cookies, headers } = await import("next/headers");
+    const proof = (await headers()).get(INTERACTIVE_HEADER);
+    if (!proof) return null;
+    const permits = (await cookies()).getAll(INTERACTIVE_COOKIE);
+    const issued = Math.floor(Date.now() / 1000);
+    const browser = permits.length === 1 && verifiedInteractiveRequest(authority, proof, permits[0].value, issued);
+    if (!browser || !gatewayStages.has(browser.stage)) return null;
+    const { deploymentHost, source, target: frontendTarget } = authority;
+    const { epoch, stage, nonce } = browser;
+    // This window key stays local. Only the MAC over this exact outbound
+    // request is sent to the gateway.
+    const key = createHmac("sha256", authority.key)
+      .update(`lash-her:p2q:interactive:gateway-key:v1\n${deploymentHost}\n${source}\n${frontendTarget}\n${epoch}\n${stage}\n${nonce}`)
+      .digest();
+    const hashes = [request.body, request.applicationToken, request.idempotencyKey]
+      .map(value => createHash("sha256").update(value ?? "").digest("hex"));
+    const mac = createHmac("sha256", key).update([
+      "lash-her:p2q:interactive:gateway-request:v1", issued, requestId, method, target, ...hashes,
+    ].join("\n")).digest("hex");
+    return `v1.${issued}.${requestId}.${mac}`;
+  } catch {
+    // Commands outside browser request context still use the ordinary
+    // transport and cannot supply an interactive proof.
+    return null;
+  }
 }

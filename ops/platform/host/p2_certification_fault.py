@@ -44,7 +44,7 @@ try{
  const stat=readFileSync('/proc/1/stat','utf8'),fields=stat.slice(stat.lastIndexOf(')')+2).trim().split(/\s+/u);
  const processSha256=p2GatewayProcessBinding({bootId:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),pid:1,startTicks:fields[19]});
  const admission=await new Promise((resolve,reject)=>{const req=get({hostname:'127.0.0.1',port:9100,path:'/admission',timeout:2000},res=>{
-  let raw='';res.on('data',chunk=>{raw+=chunk;if(Buffer.byteLength(raw)>8192)res.destroy()});res.once('error',reject);res.once('end',()=>{
+  let raw='';res.on('data',chunk=>{raw+=chunk;if(Buffer.byteLength(raw)>12288)res.destroy(Error())});res.once('error',reject);res.once('end',()=>{
    try{if(res.statusCode!==200)throw Error();resolve(JSON.parse(raw))}catch{reject(Error())}})});req.once('timeout',()=>req.destroy());req.once('error',reject)});
  const directory=statSync('/admission',{bigint:true});
  console.log(JSON.stringify({version:1,status:'P2_FAULT_GATEWAY_CURRENT',processSha256,gatewayConfigurationSha256:sha(readFileSync('/config/gateway.json')),

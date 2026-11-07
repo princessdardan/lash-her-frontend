@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getVercelOidcToken } from "@vercel/oidc";
 import routes from "../../../ops/gateway/routes.json";
 import { getApplicationEnvironment } from "@/lib/env/application-environment.server";
+import { INTERACTIVE_GATEWAY_PROOF_HEADER, interactiveCourseGatewayProof } from "@/lib/writer-admission/interactive-proof";
 
 export type GatewayRequest = {
   service?: "course" | "community";
@@ -56,13 +57,21 @@ export function createGatewayTransport(config: {
       const token = await abortableToken(getToken, signal);
       signal.throwIfAborted();
       if (!token || token.length > 16_384 || !/^[A-Za-z0-9._-]+$/u.test(token)) throw new Error("Missing workload proof");
+      const requestId = randomUUID();
+      const url = new URL(`/${service}${input.path}`, origin);
       const headers: Record<string, string> = {
-        accept: "application/json", "x-lash-workload-token": token, "x-request-id": randomUUID(),
+        accept: "application/json", "x-lash-workload-token": token, "x-request-id": requestId,
       };
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;
       if (input.body !== undefined) headers["content-type"] = "application/json";
-      const response = await fetch(new URL(`/${service}${input.path}`, origin), {
+      if (service === "course" && !pathname.startsWith("/v1/internal/")) {
+        const proof = await interactiveCourseGatewayProof({ url, requestId, method: input.method, body: input.body,
+          applicationToken: input.applicationToken, idempotencyKey: input.idempotencyKey });
+        if (proof) headers[INTERACTIVE_GATEWAY_PROOF_HEADER] = proof;
+      }
+      signal.throwIfAborted();
+      const response = await fetch(url, {
         method: input.method, headers, body: input.body, signal,
         redirect: "manual", cache: "no-store",
       });

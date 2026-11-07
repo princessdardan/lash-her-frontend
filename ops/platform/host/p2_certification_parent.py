@@ -90,9 +90,10 @@ BROWSER_MODES = frozenset(('auth-preparation', 'browser-pending'))
 SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
 PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
 SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery'}
+SCOPED_PLAN_MODES = SCOPED_MODES | {'interactive-browser'}
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
-PROFILED_MODES = SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
+PROFILED_MODES = SUSPENSION_MODES | SCOPED_PLAN_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
                                     'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
     'version', 'qualificationTargetProfile', 'environment', 'actionId', 'projectId', 'sourceCommit',
@@ -221,7 +222,7 @@ def _profiled_initial(initial, expected):
     extra = set()
     if mode == 'known-ack-recovery':
         extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
-    if mode in SCOPED_MODES:
+    if mode in SCOPED_PLAN_MODES:
         extra = {'scopedAction'}
         _require_profiled_scoped_action(mode, plan.get('scopedAction'))
     if mode in PERSISTENCE_MODES:
@@ -239,7 +240,7 @@ def _profiled_initial(initial, expected):
             all(_profiled_digest(plan[key]) for key in ('candidateObjectSha256', 'runtimeInventorySha256', 'gatewayProcessSha256',
                 'originalReleasePlanSha256', 'originalReleaseReceiptSha256')) and
             type(plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', plan['initialEpoch']) and
-            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' or mode in SCOPED_MODES else 900) and
+            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' or mode in SCOPED_PLAN_MODES else 900) and
             (_profiled_digest(plan['browserPlanSha256']) if mode in BROWSER_MODES else plan['browserPlanSha256'] is None) and
             (type(plan['workerPlan']) is dict and _profiled_digest(plan['workerPlanSha256'])
              if mode == 'direct-worker' else plan['workerPlan'] is None and plan['workerPlanSha256'] is None) and
@@ -247,10 +248,12 @@ def _profiled_initial(initial, expected):
             plan['persistenceReaderEligible'] is True and all(plan[key] is False for key in PROFILED_PLAN_FALSE) and
             plan['planSha256'] == _profiled_plan_hash(plan),
             'P2_PROFILED_CERTIFICATION_PLAN_BINDING_REQUIRED')
+    if mode == 'interactive-browser':
+        require(len(str(int(plan['initialEpoch']) + 2)) <= 18, 'P2_INTERACTIVE_FRONTEND_EPOCH_BOUNDS_REQUIRED')
     native_plan = plan['nativePlan']
     vercel.require_record_profile(expected, plan, native_plan)
     migrate.require_profile(expected, native_plan.get('target'))
-    control_only = mode in BROWSER_MODES or mode in SCOPED_MODES
+    control_only = mode in BROWSER_MODES or mode in SCOPED_PLAN_MODES
     require(set(native_plan) == (BROWSER_CONTROL_FIELDS if control_only else NATIVE_PLAN_FIELDS) and
             set(native_plan['target']) == NATIVE_TARGET_FIELDS and
             native_plan['planSha256'] == _profiled_plan_hash(native_plan) and
@@ -260,7 +263,7 @@ def _profiled_initial(initial, expected):
             type(native_plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']),
             'P2_PROFILED_CERTIFICATION_NATIVE_PLAN_REQUIRED')
     if control_only:
-        purpose = 'scoped-certification-control-only' if mode in SCOPED_MODES else 'browser-authentication-control-only'
+        purpose = 'scoped-certification-control-only' if mode in SCOPED_PLAN_MODES else 'browser-authentication-control-only'
         require(native_plan['purpose'] == purpose and native_plan['commandWitnesses'] == [] and
                 native_plan['initialEpoch'] == plan['initialEpoch'], 'P2_PROFILED_CERTIFICATION_BROWSER_CONTROL_REQUIRED')
     else:
@@ -289,6 +292,11 @@ def _require_profiled_scoped_action(mode, value):
     uuid_pattern = r'[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
     def matches(pattern, text):
         return type(text) is str and re.fullmatch(pattern, text) is not None
+
+    if mode == 'interactive-browser':
+        from p2_interactive_window import validate_interactive_action
+        validate_interactive_action(value)
+        return
 
     if mode == 'export-cleanup':
         require(type(value) is dict and set(value) == {'commandId', 'readyRecordSha256'} and

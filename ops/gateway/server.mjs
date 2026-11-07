@@ -6,8 +6,8 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
-  admissionClass, createAdmissionReader, isScopedMuxRoute, scopedMuxAcknowledged, selectScopedMuxCallback,
-  SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
+  admissionClass, createAdmissionReader, isScopedMuxRoute, scopedInteractiveAcknowledged, scopedMuxAcknowledged,
+  selectScopedInteractiveRequest, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
 
@@ -21,8 +21,11 @@ export function createGateway(input, options = {}) {
   const config = validateConfig(input);
   const verify = options.verify ?? createWorkloadVerifier(config);
   const certification = (options.certificationFault ?? createP2CertificationFault)(config);
-  const currentAdmission = createAdmissionReader(config, options.scopedMuxAdmission);
+  const admissionOptions = options.scopedAdmission ?? options.scopedMuxAdmission;
+  const currentAdmission = createAdmissionReader(config, admissionOptions);
+  const admissionNow = admissionOptions?.now ?? Date.now;
   const scopedMuxEvidence = new Map();
+  const scopedInteractiveEvidence = new Map();
   const budgets = new MinuteBudget(options.limits ?? {
     preauth: 2400, webhook: 600, workload: 1200, service: 600,
   });
@@ -40,7 +43,7 @@ export function createGateway(input, options = {}) {
     headersTimeout: 5000, requestTimeout: 10_000, connectionsCheckingInterval: 1000,
   }, (req, res) => {
     const requestId = randomUUID();
-    let admissionCategory, uncertaintyRecorded = false;
+    let admissionCategory, uncertaintyRecorded = false, interactiveRequest = false;
     const markUncertain = () => {
       if (admissionCategory && !uncertaintyRecorded) {
         uncertain[admissionCategory]++;
@@ -54,7 +57,11 @@ export function createGateway(input, options = {}) {
     active++;
     const timer = setTimeout(() => { req.destroy(); res.destroy(); }, 12_000);
     res.once("close", () => { active--; clearTimeout(timer); });
-    void handle().catch(() => { if (!res.headersSent && !res.destroyed) refuse(502, "upstream_unavailable"); else res.destroy(); });
+    void handle().catch(() => {
+      if (interactiveRequest) markUncertain();
+      if (!res.headersSent && !res.destroyed) refuse(502, "upstream_unavailable");
+      else res.destroy();
+    });
 
     function refuse(status, code, retryAfter) {
       counters.rejected++;
@@ -97,9 +104,14 @@ export function createGateway(input, options = {}) {
         if (retry) return refuse(429, "rate_limit_exceeded", retry);
       }
       const category = admissionClass(route);
-      let muxAdmission;
-      if (category && config.admission !== undefined) {
-        const admission = currentAdmission();
+      const admission = config.admission === undefined ? undefined : currentAdmission();
+      let muxAdmission, interactiveAdmission;
+      if (admission?.version === 3 || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) {
+        if (!admission?.interactive || !admission.interactive.requests.some(row => row.method === req.method && row.target === req.url)) {
+          return refuse(503, "release_maintenance", 30);
+        }
+        interactiveAdmission = admission;
+      } else if (category && admission) {
         if (admission[category]) accountAdmission(category);
         else if (category === "recovery" && admission.muxCallback && isScopedMuxRoute(route, req.url)) muxAdmission = admission;
         else return refuse(503, "release_maintenance", 30);
@@ -118,6 +130,31 @@ export function createGateway(input, options = {}) {
       const body = Buffer.concat(chunks);
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
       let muxSelection, muxEvidence;
+      let interactiveSelection, interactiveEvidence;
+      if (interactiveAdmission) {
+        const current = currentAdmission();
+        if (res.destroyed || current.sha256 !== interactiveAdmission.sha256) return refuse(503, "release_maintenance", 30);
+        interactiveSelection = selectScopedInteractiveRequest(current.interactive, {
+          method: req.method, target: req.url, body, headers: req.headers, now: admissionNow(),
+        });
+        if (!interactiveSelection) return refuse(503, "release_maintenance", 30);
+        interactiveEvidence = scopedInteractiveEvidence.get(current.sha256);
+        if (!interactiveEvidence) {
+          interactiveEvidence = { ids: new Set(), used: new Map(), acknowledged: [] };
+          scopedInteractiveEvidence.set(current.sha256, interactiveEvidence);
+        }
+        const used = interactiveEvidence.used.get(interactiveSelection.requestIndex) ?? 0;
+        if (interactiveEvidence.ids.has(interactiveSelection.requestId) || used >= interactiveSelection.uses) {
+          return refuse(503, "release_maintenance", 30);
+        }
+        interactiveEvidence.ids.add(interactiveSelection.requestId);
+        interactiveEvidence.used.set(interactiveSelection.requestIndex, used + 1);
+        interactiveRequest = true;
+        // Catalog, playback and other scoped GETs are part of the same drain.
+        accountAdmission("newWork");
+      } else if (admission && currentAdmission().version === 3) {
+        return refuse(503, "release_maintenance", 30);
+      }
       if (muxAdmission) {
         const current = currentAdmission();
         if (res.destroyed || current.sha256 !== muxAdmission.sha256) return refuse(503, "release_maintenance", 30);
@@ -134,7 +171,7 @@ export function createGateway(input, options = {}) {
         // upstream operation, so rejecting a foreign callback cannot dirty drain.
         accountAdmission("recovery");
       }
-      const fault = certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
+      const fault = interactiveSelection ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
       if (certification.beforeUpstream(fault, res, () => refuse(503, "upstream_unavailable", 1))) return;
       const headers = { "x-request-id": requestId, "content-length": String(body.length) };
       for (const [name, value] of Object.entries(req.headers)) {
@@ -164,6 +201,11 @@ export function createGateway(input, options = {}) {
               else if (reply.statusCode === 200) muxEvidence.managedAcks.push({
                 requestId, eventId: muxSelection.eventId, upstreamStatus: 200,
               });
+            }
+            if (interactiveSelection) {
+              if (!scopedInteractiveAcknowledged(reply.statusCode, reply.headers["content-type"], buffered)) markUncertain();
+              else interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
+                requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
             }
             // The complete upstream ACK must be checked before any downstream
             // status, headers or bytes. A deliberate drop retains uncertainty
@@ -204,11 +246,14 @@ export function createGateway(input, options = {}) {
   server.on("upgrade", (_req, socket) => socket.destroy());
   server.on("close", () => agent.destroy());
   return { server, counters, admissionState: () => {
-    const { muxCallback, ...state } = config.admission === undefined
+    const { interactive, muxCallback, ...state } = config.admission === undefined
       ? { valid: false, newWork: false, recovery: false } : currentAdmission();
     // Older release readers require the ordinary admission flags. A scoped
     // window cannot be used as evidence that ordinary admission is closed.
-    const scoped = muxCallback ? { valid: false, newWork: null, recovery: null, muxCallbackActive: true,
+    const interactiveEvidence = interactive && scopedInteractiveEvidence.get(state.sha256);
+    const scoped = interactive ? { valid: false, newWork: null, recovery: null, interactiveActive: true,
+      interactiveEvidence: { admitted: interactiveEvidence?.ids.size ?? 0, acknowledged: structuredClone(interactiveEvidence?.acknowledged ?? []) },
+    } : muxCallback ? { valid: false, newWork: null, recovery: null, muxCallbackActive: true,
       muxCallbackEvidence: structuredClone(scopedMuxEvidence.get(state.sha256) ?? { admitted: 0, managedAcks: [] }),
     } : {};
     return { ...state, ...scoped, active: { ...admitted }, uncertain: { ...uncertain } };

@@ -60,6 +60,8 @@ def verify_profiled_current_source_closure(initial, root):
             'export-cleanup': {'ops/platform/host/p2_scoped_export_cleanup.py', 'ops/platform/host/p2_interactive_ingress.py'},
             'mux-callback-recovery': {'ops/platform/host/p2_scoped_mux.py', 'ops/gateway/admission.mjs', 'ops/gateway/private-tls.mjs'},
             'lifecycle-persistence': {'ops/platform/host/p2_lifecycle_persistence_probe.py'},
+            'interactive-browser': {'ops/platform/host/p2_interactive_window.py', 'ops/platform/host/p2_interactive_ingress.py',
+                                    'ops/gateway/admission.mjs', 'ops/gateway/operations.mjs', 'ops/gateway/server.mjs'},
         }.get(initial.get('certificationPlan', {}).get('mode'))
         if scoped is not None:
             required |= scoped | {'ops/platform/host/p2_day_two_workload.py'}

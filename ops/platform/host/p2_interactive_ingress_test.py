@@ -1,7 +1,13 @@
 """Owned provider/TLS fixtures; no staging or credential access."""
 import copy
 import json
+import os
+from pathlib import Path
 import ssl
+import stat
+import tempfile
+import time
+from types import SimpleNamespace
 import unittest
 import urllib.error
 import urllib.parse
@@ -10,6 +16,7 @@ from unittest.mock import patch
 
 import p2_canonical_browser_origin as canonical
 import p2_interactive_ingress as ingress
+import p2_interactive_window as window
 import p2_lifecycle_native_test as native_fixture
 import vercel
 
@@ -285,6 +292,114 @@ class InteractiveIngressTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, "INGRESS_PATH_REFUSED"):
                 requester.request(canonical.ORIGIN, path)
         self.assertEqual(urls, [])
+
+
+class InteractiveWindowTests(unittest.TestCase):
+    def test_guarded_private_permit_and_exact_gateway_fence(self):
+        from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
+
+        actor = "10000000-0000-4000-8000-000000000001"
+        action = {"stage": "learning", "actorId": actor, "windowSeconds": 90,
+                  "requests": [{"method": "GET", "target": "/course/v1/courses?limit=1",
+                                "bodySha256": window._EMPTY, "uses": 1}]}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        for change in ({"actorId": "wrong"}, {"windowSeconds": 301}, {"requests": action["requests"] * 2},
+                       {"stage": "lifecycle"}, {"requests": [{**action["requests"][0], "bodySha256": "b" * 64}]}):
+            with self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, **change})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mount = root / "admission"
+            mount.mkdir()
+            path = mount / "state.json"
+            ordinary = {"version": 1, "environment": "staging", "releaseId": "owned-release", "candidateSha256": "a" * 64,
+                        "actionId": "owned-prior", "newWork": False, "recovery": False}
+            raw = (json.dumps(ordinary, sort_keys=True) + "\n").encode()
+            path.write_bytes(raw)
+            path.chmod(0o644)
+            fd = os.open(mount, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                scope = P2CertificationScope.__new__(P2CertificationScope)
+                scope.require_frontend = lambda *_: None
+                scope.require_configuration = lambda *_: None
+                broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
+                broker.scope, broker.external_armed, broker.guard_arm_verified = scope, True, True
+                broker.certification_started = time.monotonic()
+                broker.admission_fd, broker.admission_identity, broker.configuration = fd, os.fstat(fd), root
+                broker.jobs, broker.selected = {"frontend": {}}, {"releaseId": "owned-release"}
+                broker.action_id, broker.check = lambda: "owned-action", lambda: None
+                broker._native_context, broker.profile_arguments, broker.vercel = lambda: {}, lambda: {}, object()
+                secret = "owned-browser-permit-fixture-key"
+                broker.initial = {"candidateSha256": "a" * 64, "scopedCronSecret": secret,
+                    "sourceSha256": {window._SOURCE_KEY: window._hash(window._SOURCE.read_bytes())},
+                    "certificationPlan": {"mode": "interactive-browser", "startState": "already-closed", "maximumSeconds": 300,
+                        "scopedAction": action, "initialEpoch": "7", "sourceCommit": "b" * 40, "targetSha256": "c" * 64,
+                        "nativePlan": {"deploymentUrl": "https://owned.vercel.app"},
+                        "gatewayProcessSha256": "d" * 64, "gatewayConfigurationSha256": "e" * 64}}
+                frontend = {"epoch": "7", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
+                broker.observer = SimpleNamespace(probe=lambda _operation: {"admission": dict(frontend)})
+                observed = []
+
+                def gateway():
+                    stored = json.loads(path.read_bytes())
+                    admission = {**stored, "valid": True, "sha256": window._hash(path.read_bytes()),
+                                 "active": dict(window._ZERO), "uncertain": dict(window._ZERO)}
+                    if stored["version"] == 3:
+                        admission.pop("interactive")
+                        admission.update(valid=False, newWork=None, recovery=None, interactiveActive=True,
+                                         interactiveEvidence={"admitted": len(observed), "acknowledged": copy.deepcopy(observed)})
+                    return {"processSha256": "d" * 64, "gatewayConfigurationSha256": "e" * 64,
+                            "admissionDirectory": {"device": str(broker.admission_identity.st_dev),
+                                                   "inode": str(broker.admission_identity.st_ino)},
+                            "faultLeasePresent": False, "admission": admission}
+
+                broker._gateway_observation = gateway
+                with patch.object(window.os, "geteuid", return_value=0):
+                    stage = window.P2InteractiveWindow(broker)
+                stage._mount = lambda: (fd, broker.admission_identity)
+
+                def read_projecting_root_ownership():
+                    mode = stat.S_IMODE(path.stat().st_mode)
+                    return path.read_bytes(), mode, 65532 if mode == 0o640 else 0
+
+                stage._read = read_projecting_root_ownership
+                with patch.object(window.os, "fchown") as chown, \
+                     patch.object(window.ingress, "observe_browser_protection", return_value={"status": "owned-protection"}), \
+                     patch.object(window.native, "observe_metadata", return_value={"nativeEnabled": False}), \
+                     patch.object(window.time, "time", return_value=1_794_009_600) as wall:
+                    self.assertEqual(stage.prepare()["status"], "owned-protection")
+                    opened = stage.open_gateway()
+                    self.assertEqual(opened, {"stage": "learning", "epoch": "8", "expiresAt": "2026-11-07T00:01:30.000Z",
+                                              "gatewayScoped": True})
+                    installed = json.loads(path.read_bytes())["interactive"]
+                    self.assertEqual(installed["actorId"], actor)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+                    self.assertEqual(chown.call_args.args[1:], (0, 65532))
+                    with self.assertRaisesRegex(ValueError, "FRONTEND_WINDOW"):
+                        stage.take_private_browser_permit()
+                    frontend.update(epoch="8", newWork=True, recovery=True)
+                    permit = stage.take_private_browser_permit()
+                    self.assertTrue(permit["cookie"].startswith("v1.8.learning.1794009600.1794009690."))
+                    self.assertNotIn(permit["cookie"], path.read_text())
+                    self.assertNotIn(installed["key"], repr(opened))
+                    with self.assertRaisesRegex(ValueError, "PERMIT_NOT_AVAILABLE"):
+                        stage.take_private_browser_permit()
+                    with self.assertRaisesRegex(ValueError, "COMPLETE_GATEWAY_EFFECTS"):
+                        stage.collect_gateway_effects()
+                    observed.append({"requestId": "10000000-0000-4000-8000-000000000002",
+                                     "proofRequestId": "10000000-0000-4000-8000-000000000003",
+                                     "requestIndex": 0, "upstreamStatus": 200})
+                    self.assertEqual(stage.collect_gateway_effects(), observed)
+                    wall.return_value = 1_794_009_691
+                    with self.assertRaisesRegex(ValueError, "EFFECT_ORDER"):
+                        stage.collect_gateway_effects()
+                    stage.fence_gateway()
+                    self.assertEqual(stage.verify_gateway_fenced(),
+                                     {"gatewayAdmissionClosed": True, "gatewayActive": 0, "gatewayUncertain": 0})
+                    self.assertEqual(path.read_bytes(), raw)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+            finally:
+                os.close(fd)
 
 
 if __name__ == "__main__":

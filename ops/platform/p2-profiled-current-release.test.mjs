@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -225,10 +225,16 @@ test('fixed current certification plan joins the original release plan, terminal
     const selectedMux = { attemptId: '10000000-0000-4000-8000-000000000002', generation: 2,
       environmentId: 'owned-environment', assetId: null, uploadId: 'owned-upload', eventType: 'video.upload.asset_created' };
     const selectedPersistence = { stage: 'verify-delete', subjectBindingSha256: 'a'.repeat(64) };
+    const courseId = '10000000-0000-4000-8000-000000000002';
+    const selectedInteractive = { stage: 'paid-grant', actorId: '10000000-0000-4000-8000-000000000003', windowSeconds: 90,
+      requests: [
+        { method: 'GET', target: '/course/v1/admin/courses/' + courseId, bodySha256: rawHash(Buffer.alloc(0)), uses: 1 },
+        { method: 'POST', target: '/course/v1/admin/entitlements/grants', bodySha256: 'a'.repeat(64), uses: 1 },
+      ] };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
     for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
-      ['lifecycle-persistence', selectedPersistence]]) {
+      ['lifecycle-persistence', selectedPersistence], ['interactive-browser', selectedInteractive]]) {
       const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
       assert.deepEqual(preparedScope.scopedAction, selected);
       assert.equal(preparedScope.maximumSeconds, 300);
@@ -250,6 +256,28 @@ test('fixed current certification plan joins the original release plan, terminal
       { confirmation: 'staging/owned-scoped-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('lifecycle-persistence',
       { ...selectedPersistence, stage: 'unreviewed-stage' })));
+    await assert.rejects(p2ProfiledCertificationOperator(scoped('interactive-browser', selectedInteractive),
+      { confirmation: 'staging/owned-scoped-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+    for (const requests of [
+      [...selectedInteractive.requests, selectedInteractive.requests[0]],
+      [{ ...selectedInteractive.requests[0], bodySha256: 'b'.repeat(64) }],
+      [{ ...selectedInteractive.requests[1], target: '/course/v1/internal/accounts/commands' }],
+      [{ ...selectedInteractive.requests[1], target: '/course/v1/admin/courses/' + courseId + '/modules' }],
+    ]) assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('interactive-browser', { ...selectedInteractive, requests })));
+    const material = ['owned-interoperability-fixture-key', 'https://owned.vercel.app', 'a'.repeat(40), 'b'.repeat(64),
+      '14', 'paid-grant', 1794009600, 90, 'c'.repeat(32)];
+    const privateFixture = spawnSync('python3', ['-B', '-c',
+      'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _material;print(json.dumps(_material(*json.load(sys.stdin))))',
+      join(root, 'ops/platform/host')], { input: JSON.stringify(material), encoding: 'utf8' });
+    assert.equal(privateFixture.status, 0, privateFixture.stderr);
+    const [secret, deployment, sourceCommit, targetSha, epoch, stage, issued, duration, nonce] = material;
+    const host = new URL(deployment).host, expires = issued + duration, binding = `${host}\n${sourceCommit}\n${targetSha}`;
+    const sign = message => createHmac('sha256', secret).update(message).digest('hex');
+    const cookieBody = `v1.${epoch}.${stage}.${issued}.${expires}.${nonce}`;
+    assert.deepEqual(JSON.parse(privateFixture.stdout), [
+      `${cookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${cookieBody}`)}`,
+      sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${stage}\n${nonce}`), host, expires,
+    ]);
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('contain-native', selectedCommand)));
 
     const faultSettings = { ...settings, certification: { ...settings.certification, mode: 'fault-before-upstream',
