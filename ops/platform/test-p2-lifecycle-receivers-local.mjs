@@ -10,10 +10,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
-import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
+import { readP2LifecycleOwnedContractSelection, verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const apiPins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 let phase = "preflight";
@@ -46,11 +45,16 @@ async function main() {
     commits = Object.fromEntries(Object.entries(verified.manifest.sources).map(([name, source]) => [name, source.revision]));
     sourceManifestSha256 = verified.sourceManifestSha256;
   } else {
-    commits = Object.fromEntries(Object.entries(sources).map(([name, source]) => [name, run("git", ["rev-parse", "HEAD"], { cwd: source }).trim()]));
+    commits = Object.fromEntries(Object.entries(sources).map(([name, source]) => {
+      const git = (...args) => run("git", ["--no-replace-objects", "--no-optional-locks", ...args], { cwd: source }).trim();
+      assert.equal(git("remote", "get-url", "origin"),
+        `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
+      if (name !== "frontend") assert.equal(git("status", "--porcelain", "--untracked-files=all"), "", `${name} source must be clean`);
+      return [name, git("rev-parse", "--verify", "HEAD^{commit}")];
+    }));
+    readP2LifecycleOwnedContractSelection(root, { course: commits.course, community: commits.community });
   }
-  assert.equal(commits.course, apiPins.course); assert.equal(commits.community, apiPins.community); assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
-  if (!containerMode) for (const [name, source] of Object.entries(sources))
-    assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: source }).trim(), `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
+  assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
 
   const directory = mkdtempSync(join(tmpdir(), "p2-lifecycle-receivers-")); chmodSync(directory, 0o700);
   const data = join(directory, "data"), certificate = join(directory, "server.crt"), key = join(directory, "server.key");

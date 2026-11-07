@@ -19,10 +19,10 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  P2_LIFECYCLE_OWNED_API_REVISIONS,
   P2_INTERRUPTED_OWNED_SOURCE_FILES,
   P2_KNOWN_ACK_OWNED_SOURCE_FILES,
   p2LifecycleOwnedSourceFileMap,
+  selectP2LifecycleOwnedApiPair,
   verifyP2LifecycleOwnedSourceManifest,
 } from "./p2-lifecycle-owned-source-manifest.mjs";
 
@@ -159,6 +159,10 @@ export const P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS = Object.freeze([
   "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
   "course-paid-revoke-refuses-missing-outbox-with-pinned-foreign-expiry-predicate-defect",
 ]);
+const LIFECYCLE_PERSISTENCE_CORRECTED_CHECKS = Object.freeze([
+  ...P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS.slice(0, -1),
+  "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry",
+]);
 const LIFECYCLE_RECEIVER_CHECKS = Object.freeze([
   "actual-source-both-receivers-accept-canonical-suspend-over-verified-tls",
   ...["course", "community"].flatMap(service => ["exact-replay", "changed-replay", "stale-restore", "future-gap"]
@@ -212,6 +216,10 @@ const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward", "persistenc
 const PRIVATE_FAILURE_DIRECTORY = "p2-owned-fixture-failure";
 const PRIVATE_FAILURE_MAX_BYTES = 4 * 1024 * 1024;
 const demand = condition => { if (!condition) throw new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED"); };
+function lifecycleApiPair({ course, community }) {
+  try { return selectP2LifecycleOwnedApiPair({ course, community }); }
+  catch { demand(false); }
+}
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
 const hash = value => createHash("sha256").update(value).digest("hex");
 const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
@@ -501,6 +509,10 @@ function interruptedNegativesDockerArguments(frontendRoot, directories) {
 
 export function buildP2InterruptedRestorationExpected(frontendRoot, frontendSource, sources) {
   demand(digest(frontendSource?.revision, 40) && exactKeys(sources, ["course", "community"]));
+  const apiSourceCommits = Object.fromEntries(["course", "community"].map(service => [service, sources[service].revision]));
+  lifecycleApiPair(apiSourceCommits);
+  const manifest = validateP2IdentityFixtureManifest(readBounded(join(frontendRoot, MANIFEST), 512_000));
+  demand(Object.entries(apiSourceCommits).every(([service, revision]) => manifest.artifacts[service].revision === revision));
   const ownedSourceSha256 = Object.fromEntries(P2_INTERRUPTED_OWNED_SOURCE_FILES.map(name => [name, hash(readBounded(join(frontendRoot, name)))]));
   const fixtureSourceSha256 = Object.fromEntries(P2_KNOWN_ACK_OWNED_SOURCE_FILES.map(name =>
     [name, hash(readBounded(join(frontendRoot, "ops/platform", name)))]));
@@ -520,7 +532,7 @@ export function buildP2InterruptedRestorationExpected(frontendRoot, frontendSour
     candidate.artifacts[name] = { image: `ghcr.io/princessdardan/owned-${name.toLowerCase()}@sha256:${String(index + 1).repeat(64)}` };
   });
   return { frontendSourceCommit: frontendSource.revision,
-    apiSourceCommits: Object.fromEntries(["course", "community"].map(service => [service, sources[service].revision])),
+    apiSourceCommits,
     apiSourceLocks: Object.fromEntries(["course", "community"].map(service => [service, sources[service].packageLockSha256])),
     ownedSourceSha256, fixtureSourceSha256, candidate,
     gatewayDependency: { package: "jose", version: "6.2.3", resolution: "ops/gateway/node_modules/jose", packageSha256: hash(packageBytes) } };
@@ -529,9 +541,8 @@ export function buildP2InterruptedRestorationExpected(frontendRoot, frontendSour
 export function buildP2LifecyclePersistencePostgres18Input(input) {
   demand(exactKeys(input, ["frontendRoot", "directories", "frontendSource", "sources", "identityManifestSha256", "currentReceipt", "forwardReceipt"])
     && exactKeys(input.directories, ["course", "community"]) && exactKeys(input.sources, ["course", "community"])
-    && input.sources.course.revision === P2_LIFECYCLE_OWNED_API_REVISIONS.course &&
-    input.sources.community.revision === P2_LIFECYCLE_OWNED_API_REVISIONS.community &&
-    digest(input.identityManifestSha256) && typeof input.currentReceipt === "string" && typeof input.forwardReceipt === "string");
+    && digest(input.identityManifestSha256) && typeof input.currentReceipt === "string" && typeof input.forwardReceipt === "string");
+  lifecycleApiPair({ course: input.sources.course.revision, community: input.sources.community.revision });
   const roots = { frontend: input.frontendRoot, course: input.directories.course, community: input.directories.community };
   const files = Object.fromEntries(Object.entries(roots).map(([service, directory]) =>
     [service, p2LifecycleOwnedSourceFileMap(service, directory)]));
@@ -565,14 +576,18 @@ export function buildP2LifecyclePersistencePostgres18Input(input) {
 
 export function parseP2LifecyclePersistencePostgres18Receipt(output, expected) {
   demand(typeof output === "string" && output.length > 0 && output.length <= 1_000_000 &&
-    exactKeys(expected, ["sourceCommits", "sourceSha256", "sourceManifestSha256"]) && digest(expected.sourceManifestSha256));
+    exactKeys(expected, ["sourceCommits", "sourceSha256", "sourceManifestSha256"]) && digest(expected.sourceManifestSha256) &&
+    exactKeys(expected.sourceCommits, ["frontend", "course", "community"]) && digest(expected.sourceCommits.frontend, 40));
+  const { course, expiryFixed } = lifecycleApiPair(expected.sourceCommits);
+  const keys = expiryFixed ? [...LIFECYCLE_RECEIPT_KEYS, "courseRevokeSourceCommit"] : LIFECYCLE_RECEIPT_KEYS;
+  const checks = expiryFixed ? LIFECYCLE_PERSISTENCE_CORRECTED_CHECKS : P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS;
   const lines = output.trim().split("\n");
   demand(lines.length === 1);
   const receipt = JSON.parse(lines[0]);
-  demand(exactKeys(receipt, LIFECYCLE_RECEIPT_KEYS) && receipt.version === 1 &&
+  demand(exactKeys(receipt, keys) && (!expiryFixed || receipt.courseRevokeSourceCommit === course) && receipt.version === 1 &&
     receipt.status === "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS" && receipt.postgresMajor === 18 &&
     receipt.frontendMigrations === 83 && receipt.courseMigrations === 22 && receipt.communityMigrations === 11 &&
-    JSON.stringify(receipt.checks) === JSON.stringify(P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS) && receipt.skipped === 0 && receipt.readOnly === true &&
+    JSON.stringify(receipt.checks) === JSON.stringify(checks) && receipt.skipped === 0 && receipt.readOnly === true &&
     receipt.fixtureOnly === true && receipt.providerTouched === false && receipt.liveCertification === false &&
     receipt.sourceMode === "parent-issued-manifest-and-mounted-readback" &&
     receipt.sourceManifestSha256 === expected.sourceManifestSha256 &&
@@ -582,7 +597,9 @@ export function parseP2LifecyclePersistencePostgres18Receipt(output, expected) {
 
 export function parseP2LifecycleReceiversPostgres18Receipt(output, expected) {
   demand(typeof output === "string" && output.length > 0 && output.length <= 1_000_000 &&
-    exactKeys(expected, ["sourceCommits", "sourceSha256", "sourceManifestSha256"]) && digest(expected.sourceManifestSha256));
+    exactKeys(expected, ["sourceCommits", "sourceSha256", "sourceManifestSha256"]) && digest(expected.sourceManifestSha256) &&
+    exactKeys(expected.sourceCommits, ["frontend", "course", "community"]) && digest(expected.sourceCommits.frontend, 40));
+  lifecycleApiPair(expected.sourceCommits);
   const lines = output.trim().split("\n");
   demand(lines.length === 1);
   const receipt = JSON.parse(lines[0]);
@@ -699,7 +716,7 @@ function validateInterruptedApi(value, service, expected, terminal, journals) {
 
 function validateInterruptedExpected(expected) {
   demand(exactKeys(expected, ["frontendSourceCommit", "apiSourceCommits", "apiSourceLocks", "ownedSourceSha256", "fixtureSourceSha256", "candidate", "gatewayDependency"]) &&
-    digest(expected.frontendSourceCommit, 40) && same(expected.apiSourceCommits, P2_LIFECYCLE_OWNED_API_REVISIONS) &&
+    digest(expected.frontendSourceCommit, 40) && exactKeys(expected.apiSourceCommits, ["course", "community"]) &&
     exactKeys(expected.apiSourceLocks, ["course", "community"]) && Object.values(expected.apiSourceLocks).every(value => digest(value)) &&
     exactKeys(expected.ownedSourceSha256, P2_INTERRUPTED_OWNED_SOURCE_FILES) && Object.values(expected.ownedSourceSha256).every(value => digest(value)) &&
     exactKeys(expected.fixtureSourceSha256, P2_KNOWN_ACK_OWNED_SOURCE_FILES) && Object.values(expected.fixtureSourceSha256).every(value => digest(value)) &&
@@ -707,6 +724,7 @@ function validateInterruptedExpected(expected) {
     valuesMatch(expected.gatewayDependency, { package: "jose", version: "6.2.3", resolution: "ops/gateway/node_modules/jose" }) &&
     digest(expected.gatewayDependency.packageSha256) && expected.candidate?.environment === "staging" && expected.candidate.contractPhase === "p2" &&
     expected.candidate.sources?.frontend?.commit === expected.frontendSourceCommit);
+  lifecycleApiPair(expected.apiSourceCommits);
 }
 
 export function parseP2InterruptedRestorationPostgres18Receipt(output, expected) {
@@ -910,6 +928,9 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
   demand(validSourceReadToken(sourceReadToken));
   const manifestBytes = readBounded(join(frontendRoot, MANIFEST), 512_000);
   const manifest = validateP2IdentityFixtureManifest(manifestBytes);
+  if (options.lifecyclePostgres18 === true) {
+    lifecycleApiPair({ course: manifest.artifacts.course.revision, community: manifest.artifacts.community.revision });
+  }
   let workspace;
   let failed = false;
   try {
@@ -1033,6 +1054,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
           fixtureOnly: lifecycleReceipt.fixtureOnly, providerTouched: lifecycleReceipt.providerTouched,
           sourceMode: lifecycleReceipt.sourceMode, sourceManifestSha256: lifecycleReceipt.sourceManifestSha256,
           parentProofSha256: lifecycleInput.parentProofSha256, sourceCommits: lifecycleReceipt.sourceCommits,
+          ...(Object.hasOwn(lifecycleReceipt, "courseRevokeSourceCommit") ? { courseRevokeSourceCommit: lifecycleReceipt.courseRevokeSourceCommit } : {}),
           sourceSha256: lifecycleReceipt.sourceSha256 };
         mark(diagnostic, "exact-source-proof", "frontend");
         verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,

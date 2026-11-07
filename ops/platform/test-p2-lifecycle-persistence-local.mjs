@@ -1,4 +1,4 @@
-// Disposable PostgreSQL 16 proof only. No external URL, provider or live service.
+// Disposable PostgreSQL proof only. No external URL, provider or live service.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -33,12 +33,12 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
   validateP2InteractiveCurriculumCreate, validateP2InteractivePublication, validateP2InteractiveQuizSave } from "./p2-lifecycle-persistence-probe.mjs";
-import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
+import { P2_LIFECYCLE_OWNED_REHEARSAL_API_REVISIONS, readP2LifecycleOwnedContractSelection,
+  verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const apiPins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
-const courseRevokeFixedPin = "54fd289a5a8579bfbe343afb07482f406b56ad5b";
+const courseRevokeFixedPin = P2_LIFECYCLE_OWNED_REHEARSAL_API_REVISIONS.course;
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 let phase = "preflight";
@@ -55,18 +55,19 @@ async function main() {
   const containerMode = process.argv.length === 3 && process.argv[2] === POSTGRES18_MODE;
   assert.equal(process.argv.length, containerMode ? 3 : 2, "Fixed owned mode required");
   const postgresMajor = Number(process.env.OWNED_POSTGRES_MAJOR ?? "16");
-  assert.equal(postgresMajor, containerMode ? 18 : 16, "Selected PostgreSQL major required");
+  assert.ok(containerMode ? postgresMajor === 18 : [16, 18].includes(postgresMajor), "Selected PostgreSQL major required");
   const pgBin = process.env.PG_BIN; assert.ok(pgBin?.startsWith("/"));
   if (containerMode) assert.equal(pgBin, "/usr/lib/postgresql/18/bin", "Fixed PostgreSQL 18 binary directory required");
   assert.match(run(join(pgBin, "postgres"), ["--version"]), new RegExp(`PostgreSQL\\) ${postgresMajor}\\.`, "u"));
   const sources = containerMode ? { frontend: "/source", course: "/exact-sources/lash-her-course-api", community: "/exact-sources/lash-her-community-api" }
     : { frontend: root, course: resolve(process.env.P2_COURSE_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"),
       community: resolve(process.env.P2_COMMUNITY_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community") };
-  let commits, sourceManifestSha256 = null;
+  let commits, apiPair, sourceManifestSha256 = null;
   if (containerMode) {
     phase = "exact-source-manifest";
     const verified = verifyP2LifecycleOwnedSourceManifest(await readManifest(), sources);
     commits = Object.fromEntries(Object.entries(verified.manifest.sources).map(([name, source]) => [name, source.revision]));
+    apiPair = verified.apiPair;
     sourceManifestSha256 = verified.sourceManifestSha256;
   } else {
     commits = Object.fromEntries(Object.entries(sources).map(([name, source]) => [name, run("git", ["rev-parse", "HEAD"], { cwd: source }).trim()]));
@@ -74,12 +75,15 @@ async function main() {
       assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: source }).trim(), `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
       assert.equal(run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: source }), "", `${name} source must be exact and clean`);
     }
+    apiPair = readP2LifecycleOwnedContractSelection(sources.frontend, { course: commits.course, community: commits.community }).pair;
   }
-  assert.equal(commits.course, apiPins.course); assert.equal(commits.community, apiPins.community); assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
-  let revokeSource;
+  assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
+  if (!containerMode && postgresMajor === 18) assert.ok(apiPair.expiryFixed, "Native PostgreSQL 18 requires the corrected Course rehearsal pair");
+  let revokeSource = apiPair.expiryFixed ? { root: sources.course, revision: apiPair.course } : undefined;
   const fixedRevokeRoot = process.env.P2_COURSE_REVOKE_FIXED_SOURCE_ROOT;
   if (fixedRevokeRoot !== undefined) {
-    assert.ok(!containerMode && fixedRevokeRoot.startsWith("/"), "Fixed Course revoke fixture requires its native exact source pin");
+    assert.ok(!containerMode && !apiPair.expiryFixed && fixedRevokeRoot.startsWith("/"),
+      "Fixed Course revoke override requires the historical native fixture pair");
     const cwd = resolve(fixedRevokeRoot);
     const git = (...args) => run("git", args, { cwd }).trim();
     assert.equal(git("rev-parse", "HEAD"), courseRevokeFixedPin);

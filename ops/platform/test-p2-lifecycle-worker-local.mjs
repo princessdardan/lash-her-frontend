@@ -13,6 +13,7 @@ import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact, frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
+import { readP2LifecycleOwnedContractSelection } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url)), execute = (file, args, options = {}) => execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 let phase = "owned-preflight", childFailure;
@@ -22,8 +23,14 @@ async function main() {
   assert.ok([16,18].includes(major) && bin?.startsWith("/")); assert.match(execute(join(bin, "postgres"), ["--version"]), new RegExp(`PostgreSQL\\) ${major}\\.`, "u"));
   const sources = { frontend: root, course: resolve(process.env.P2_COURSE_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"),
     community: resolve(process.env.P2_COMMUNITY_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community") };
-  const pins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
-  for (const service of ["course", "community"]) assert.equal(execute("git", ["rev-parse", "HEAD"], { cwd: sources[service] }).trim(), pins[service]);
+  const pins = {};
+  for (const service of ["course", "community"]) {
+    const git = (...args) => execute("git", ["--no-replace-objects", "--no-optional-locks", ...args], { cwd: sources[service] }).trim();
+    assert.equal(git("remote", "get-url", "origin"), `https://github.com/princessdardan/lash-her-${service}-api.git`);
+    assert.equal(git("status", "--porcelain", "--untracked-files=all"), "", `${service} source must be clean`);
+    pins[service] = git("rev-parse", "--verify", "HEAD^{commit}");
+  }
+  readP2LifecycleOwnedContractSelection(root, pins);
   const directory = mkdtempSync(join(tmpdir(), "p2-worker-owned-")); chmodSync(directory, 0o700);
   const data = join(directory, "data"), cert = join(directory, "server.crt"), key = join(directory, "server.key"), password = randomBytes(32).toString("hex"), clients = [];
   let started = false;

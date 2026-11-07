@@ -9,10 +9,20 @@ const API_REVISIONS = Object.freeze({
   course: "0bb054d5a04db71c481a8b3d182db6df19782cdc",
   community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
 });
+const REHEARSAL_API_REVISIONS = Object.freeze({
+  course: "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+  community: "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+});
 const REPOSITORIES = Object.freeze({
   frontend: "lash-her-frontend",
   course: "lash-her-course-api",
   community: "lash-her-community-api",
+});
+const P2_CONTRACT_MANIFEST = "contracts/api-integration/p2-candidate/manifest.json";
+const API_ARTIFACTS = Object.freeze({
+  course: { service: "course", sourcePath: "openapi/course-api.json" },
+  community: { service: "community", sourcePath: "openapi/community-api.json" },
+  enrollmentEvent: { service: "community", sourcePath: "contracts/course-enrollment/v1/enrollment-event.schema.json" },
 });
 export const P2_INTERRUPTED_OWNED_SOURCE_FILES = Object.freeze([
   "ops/platform/p2-known-ack-interrupted-restoration.mjs", "ops/platform/host/p2_known_ack_interrupted_restoration.py",
@@ -46,6 +56,20 @@ const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_OWNE
 const closed = (value, fields) => Boolean(value && typeof value === "object" && !Array.isArray(value)
   && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...fields].sort()));
 
+// Owned fixture pins only. Release source selection is governed separately.
+const API_PAIRS = Object.freeze([
+  Object.freeze({ ...API_REVISIONS, expiryFixed: false }),
+  Object.freeze({ ...REHEARSAL_API_REVISIONS, expiryFixed: true }),
+]);
+
+export function selectP2LifecycleOwnedApiPair(revisions) {
+  demand(closed(revisions, ["course", "community"]));
+  const pair = API_PAIRS.find(({ course, community }) =>
+    revisions.course === course && revisions.community === community);
+  demand(pair);
+  return pair;
+}
+
 function validateFileMap(value) {
   demand(value && typeof value === "object" && !Array.isArray(value));
   const names = Object.keys(value);
@@ -71,7 +95,7 @@ export function validateP2LifecycleOwnedSourceManifest(raw) {
       && isSha(source.artifactSha256.community) && isSha(source.artifactSha256.enrollmentEvent));
     validateFileMap(source.files);
   }
-  demand(value.sources.course.revision === API_REVISIONS.course && value.sources.community.revision === API_REVISIONS.community);
+  selectP2LifecycleOwnedApiPair({ course: value.sources.course.revision, community: value.sources.community.revision });
   return value;
 }
 
@@ -85,6 +109,21 @@ function readFile(root, name) {
   const info = lstatSync(path);
   demand(info.isFile() && !info.isSymbolicLink() && info.size <= 16 * 1024 * 1024);
   return readFileSync(path);
+}
+
+export function readP2LifecycleOwnedContractSelection(frontendRoot, revisions) {
+  const bytes = readFile(frontendRoot, P2_CONTRACT_MANIFEST), value = JSON.parse(bytes.toString());
+  demand(value?.version === 1 && value.status === "released" && closed(value.artifacts, Object.keys(API_ARTIFACTS)));
+  const pair = selectP2LifecycleOwnedApiPair({ course: value.artifacts.course?.revision, community: value.artifacts.community?.revision });
+  if (revisions !== undefined) demand(selectP2LifecycleOwnedApiPair(revisions) === pair);
+  const artifactSha256 = {};
+  for (const [name, { service, sourcePath }] of Object.entries(API_ARTIFACTS)) {
+    const artifact = value.artifacts[name];
+    demand(artifact?.repository === REPOSITORIES[service] && artifact.revision === pair[service]
+      && artifact.sourcePath === sourcePath && typeof artifact.sha256 === "string" && isSha(artifact.sha256));
+    artifactSha256[name] = artifact.sha256;
+  }
+  return Object.freeze({ pair, manifestSha256: hash(bytes), artifactSha256: Object.freeze(artifactSha256) });
 }
 
 function walk(root, directory, output) {
@@ -113,20 +152,24 @@ export function p2LifecycleOwnedSourceFileMap(service, sourceRoot) {
 export function verifyP2LifecycleOwnedSourceManifest(raw, roots) {
   const manifest = validateP2LifecycleOwnedSourceManifest(raw);
   demand(closed(roots, ["frontend", "course", "community"]));
+  const selection = readP2LifecycleOwnedContractSelection(roots.frontend,
+    { course: manifest.sources.course.revision, community: manifest.sources.community.revision });
   for (const service of ["frontend", "course", "community"]) {
     const source = manifest.sources[service], actual = p2LifecycleOwnedSourceFileMap(service, roots[service]);
     demand(JSON.stringify(actual) === JSON.stringify(source.files)
       && source.packageSha256 === actual["package.json"] && source.packageLockSha256 === actual["package-lock.json"]);
-    if (service === "course") demand(source.artifactSha256.course === actual["openapi/course-api.json"]);
-    if (service === "community") demand(source.artifactSha256.community === actual["openapi/community-api.json"]
-      && source.artifactSha256.enrollmentEvent === actual["contracts/course-enrollment/v1/enrollment-event.schema.json"]);
+    for (const [name, { service: owner, sourcePath }] of Object.entries(API_ARTIFACTS))
+      if (owner === service) demand(source.artifactSha256[name] === actual[sourcePath] &&
+        source.artifactSha256[name] === selection.artifactSha256[name]);
   }
-  demand(manifest.identityManifestSha256 === manifest.sources.frontend.files["contracts/api-integration/p2-candidate/manifest.json"]);
+  demand(manifest.identityManifestSha256 === selection.manifestSha256 &&
+    manifest.identityManifestSha256 === manifest.sources.frontend.files[P2_CONTRACT_MANIFEST]);
   const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(typeof raw === "string" ? raw : JSON.stringify(raw));
-  return Object.freeze({ manifest, sourceManifestSha256: hash(bytes) });
+  return Object.freeze({ manifest, apiPair: selection.pair, sourceManifestSha256: hash(bytes) });
 }
 
 export const P2_LIFECYCLE_OWNED_API_REVISIONS = API_REVISIONS;
+export const P2_LIFECYCLE_OWNED_REHEARSAL_API_REVISIONS = REHEARSAL_API_REVISIONS;
 export const P2_LIFECYCLE_OWNED_SOURCE_CLOSURE = Object.freeze({
   frontend: Object.freeze({ directories: FRONTEND_DIRECTORIES, files: FRONTEND_FILES }),
   api: Object.freeze({ directories: API_DIRECTORIES, files: API_FILES }),

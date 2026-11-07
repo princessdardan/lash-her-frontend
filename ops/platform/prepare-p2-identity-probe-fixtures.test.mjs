@@ -13,10 +13,12 @@ import { P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS, p2IdentityFixtureFailureReceipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
   validateP2IdentityFixtureManifest, verifyP2FrontendSourceProof } from "./prepare-p2-identity-probe-fixtures.mjs";
 import { P2_LIFECYCLE_OWNED_API_REVISIONS, P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, P2_INTERRUPTED_OWNED_SOURCE_FILES, P2_KNOWN_ACK_OWNED_SOURCE_FILES,
-  verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
+  selectP2LifecycleOwnedApiPair, verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const revisions = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
+const rehearsalRevisions = { course: "54fd289a5a8579bfbe343afb07482f406b56ad5b", community: "929fdeb13e0e5f5e25454a457961d6ed965dedff" };
+const correctedExpiryCheck = "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry";
 const contents = { course: Buffer.from('{"openapi":"3.1.0","info":{"title":"course"}}\n'), community: Buffer.from('{"openapi":"3.1.0","info":{"title":"community"}}\n'),
   enrollmentEvent: Buffer.from('{"$schema":"https://json-schema.org/draft/2020-12/schema"}\n') };
 const sourceReadToken = "fixture-source-token-value-not-secret";
@@ -24,12 +26,16 @@ const sourceReadToken = "fixture-source-token-value-not-secret";
 test("current lifecycle producers match the actual selected candidate API revisions", () => {
   const manifest = JSON.parse(readFileSync(new URL("../../contracts/api-integration/p2-candidate/manifest.json", import.meta.url)));
   const selected = Object.fromEntries(["course", "community"].map(service => [service, manifest.artifacts[service].revision]));
-  assert.deepEqual(revisions, selected);
-  assert.deepEqual(P2_LIFECYCLE_OWNED_API_REVISIONS, selected);
-  for (const file of ["test-p2-lifecycle-persistence-local.mjs", "test-p2-lifecycle-receivers-local.mjs",
-    "test-p2-known-ack-loss-local.mjs", "test-p2-lifecycle-worker-local.mjs"]) {
+  assert.deepEqual(P2_LIFECYCLE_OWNED_API_REVISIONS, revisions);
+  assert.deepEqual(selectP2LifecycleOwnedApiPair(selected), { ...selected, expiryFixed: selected.course === rehearsalRevisions.course });
+  for (const [file, selector] of Object.entries({
+    "test-p2-lifecycle-persistence-local.mjs": "readP2LifecycleOwnedContractSelection",
+    "test-p2-lifecycle-receivers-local.mjs": "selectP2LifecycleOwnedApiPair",
+    "test-p2-known-ack-loss-local.mjs": "readP2LifecycleOwnedContractSelection",
+    "test-p2-lifecycle-worker-local.mjs": "selectP2LifecycleOwnedApiPair",
+  })) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    for (const revision of Object.values(selected)) assert.ok(source.includes(revision), `${file} must qualify the selected immutable API source`);
+    assert.ok(source.includes(selector), `${file} must qualify the selected immutable API source`);
   }
 });
 
@@ -89,11 +95,11 @@ test("frontend source proof accepts only the two fixed actions/checkout HTTPS re
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-function fixtureManifest() {
+function fixtureManifest(sourceRevisions = revisions) {
   return { version: 1, status: "released", frontendBaseRevision: "a".repeat(40), boundarySha256: "b".repeat(64), readmeSha256: "c".repeat(64), artifacts: {
-    course: { repository: "lash-her-course-api", revision: revisions.course, sourcePath: "openapi/course-api.json", file: "course-api.json", sha256: sha(contents.course) },
-    community: { repository: "lash-her-community-api", revision: revisions.community, sourcePath: "openapi/community-api.json", file: "community-api.json", sha256: sha(contents.community) },
-    enrollmentEvent: { repository: "lash-her-community-api", revision: revisions.community, sourcePath: "contracts/course-enrollment/v1/enrollment-event.schema.json",
+    course: { repository: "lash-her-course-api", revision: sourceRevisions.course, sourcePath: "openapi/course-api.json", file: "course-api.json", sha256: sha(contents.course) },
+    community: { repository: "lash-her-community-api", revision: sourceRevisions.community, sourcePath: "openapi/community-api.json", file: "community-api.json", sha256: sha(contents.community) },
+    enrollmentEvent: { repository: "lash-her-community-api", revision: sourceRevisions.community, sourcePath: "contracts/course-enrollment/v1/enrollment-event.schema.json",
       file: "enrollment-event.schema.json", sha256: sha(contents.enrollmentEvent) },
   } };
 }
@@ -142,13 +148,16 @@ function forwardRecoveryReceipt(changes = {}) {
 
 function lifecyclePersistenceReceipt(manifestBytes, changes = {}) {
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  const sourceCommits = Object.fromEntries(Object.entries(manifest.sources).map(([service, source]) => [service, source.revision]));
+  const corrected = sourceCommits.course === rehearsalRevisions.course && sourceCommits.community === rehearsalRevisions.community;
   const sourceSha256 = Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs",
     "p2-lifecycle-owned-source-manifest.mjs", "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs"]
     .map(name => [name, manifest.sources.frontend.files[`ops/platform/${name}`]]));
   return JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS", postgresMajor: 18,
     frontendMigrations: 83, courseMigrations: 22, communityMigrations: 11,
-    sourceCommits: Object.fromEntries(Object.entries(manifest.sources).map(([service, source]) => [service, source.revision])),
-    checks: P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS,
+    sourceCommits,
+    checks: corrected ? [...P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS.slice(0, -1), correctedExpiryCheck] : P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS,
+    ...(corrected ? { courseRevokeSourceCommit: sourceCommits.course } : {}),
     skipped: 0, readOnly: true, fixtureOnly: true, providerTouched: false, liveCertification: false,
     sourceMode: "parent-issued-manifest-and-mounted-readback", sourceManifestSha256: sha(manifestBytes), sourceSha256, ...changes }) + "\n";
 }
@@ -187,8 +196,9 @@ function interruptedNegativeOutput(expected) {
   return JSON.stringify(value) + "\n";
 }
 function interruptedExpected(root, workspace) {
+  const { artifacts } = JSON.parse(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json"), "utf8"));
   return buildP2InterruptedRestorationExpected(root, { revision: "d".repeat(40) }, Object.fromEntries(["course", "community"].map(service =>
-    [service, { revision: revisions[service], packageLockSha256: sha(readFileSync(join(workspace, `lash-her-${service}-api/package-lock.json`))) }])));
+    [service, { revision: artifacts[service].revision, packageLockSha256: sha(readFileSync(join(workspace, `lash-her-${service}-api/package-lock.json`))) }])));
 }
 function interruptedReceipt(expected) {
   const value = structuredClone(retainedInterruptedReceipt), restored = value.restoration, terminal = restored.terminalReceipt;
@@ -225,7 +235,7 @@ function populateSourceClosure(root, service) {
 // Recreate only the files selected by the real readonly descriptors. This tests
 // child source-manifest verification against the mounted filesystem projection,
 // rather than incorrectly verifying the parent's complete source tree.
-function verifyProjectedLifecycleMounts(manifestBytes, args) {
+function verifyProjectedLifecycleMounts(manifestBytes, args, contractRevisions) {
   const projection = realpathSync(mkdtempSync(join(tmpdir(), "p2-lifecycle-mount-projection-")));
   try {
     for (const [index, argument] of args.entries()) {
@@ -238,12 +248,22 @@ function verifyProjectedLifecycleMounts(manifestBytes, args) {
       mkdirSync(dirname(target), { recursive: true });
       cpSync(fields.src, target, { recursive: true, dereference: false });
     }
+    if (contractRevisions) {
+      const path = "contracts/api-integration/p2-candidate/manifest.json";
+      const pinnedManifest = JSON.stringify(fixtureManifest(contractRevisions));
+      writeFileSync(join(projection, "source", path), pinnedManifest);
+      const sourceManifest = JSON.parse(manifestBytes);
+      sourceManifest.identityManifestSha256 = sha(pinnedManifest);
+      sourceManifest.sources.frontend.files[path] = sourceManifest.identityManifestSha256;
+      manifestBytes = Buffer.from(JSON.stringify(sourceManifest));
+    }
     return verifyP2LifecycleOwnedSourceManifest(manifestBytes, { frontend: join(projection, "source"),
       course: join(projection, "exact-sources/lash-her-course-api"), community: join(projection, "exact-sources/lash-her-community-api") });
   } finally { rmSync(projection, { recursive: true, force: true }); }
 }
 
 function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDependencyRoots = ["ops/gateway", "tools/api-contract-toolchain"], settings = {}) {
+  const sourceRevisions = settings.sourceRevisions ?? revisions;
   const root = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-root-")));
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-work-")));
   chmodSync(root, 0o700); chmodSync(workspace, 0o700);
@@ -255,7 +275,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
     const path = join(root, name); mkdirSync(dirname(path), { recursive: true });
     if (!existsSync(path)) writeFileSync(path, `fixed interrupted fixture ${name}\n`);
   }
-  writeFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json"), JSON.stringify(fixtureManifest()));
+  writeFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json"), JSON.stringify(fixtureManifest(sourceRevisions)));
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.py"), "# owned fixture\n");
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.mjs"), "// owned fixture\n");
   writeFileSync(join(root, "ops/gateway/routes.json"), "{}\n");
@@ -349,7 +369,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
     }
     if (args.join(" ") === "rev-parse HEAD") {
       if (options.cwd === root) return ok("d".repeat(40) + "\n");
-      return ok((options.cwd.endsWith("lash-her-course-api") ? revisions.course : revisions.community) + "\n");
+      return ok((options.cwd.endsWith("lash-her-course-api") ? sourceRevisions.course : sourceRevisions.community) + "\n");
     }
     if (args.join(" ") === "rev-parse HEAD^{tree}") return ok((options.cwd === root ? "c" : options.cwd.endsWith("lash-her-course-api") ? "e" : "f").repeat(40) + "\n");
     if (args.join(" ") === "remote get-url origin") return ok(options.cwd === root ? "https://github.com/princessdardan/lash-her-frontend.git\n" :
@@ -908,12 +928,57 @@ test("lifecycle receipt parser refuses missing, extra, drifted, skipped and part
       receipt => { [receipt.checks[30], receipt.checks[31]] = [receipt.checks[31], receipt.checks[30]]; },
       receipt => { receipt.checks = receipt.checks.slice(0, -1); }, receipt => { receipt.sourceManifestSha256 = "1".repeat(64); },
       receipt => { receipt.sourceCommits.course = "1".repeat(40); }, receipt => { delete receipt.sourceSha256["p2-lifecycle-state-witness.mjs"]; },
+      receipt => { receipt.courseRevokeSourceCommit = rehearsalRevisions.course; },
+      receipt => { receipt.checks = [...receipt.checks.slice(0, -1), correctedExpiryCheck]; },
       receipt => { receipt.unreviewed = true; }];
     for (const change of changes) {
       const receipt = structuredClone(valid); change(receipt);
       assert.throws(() => parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(receipt), expected),
         /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
     }
+  } finally { value.cleanup(); }
+});
+
+test("reviewed rehearsal requires mounted revision pins and the positive expiry check from the selected Course source", () => {
+  const value = harness(tap(), [], undefined, { sourceRevisions: rehearsalRevisions });
+  const originalRun = value.run;
+  try {
+    value.run = (file, args, options) => {
+      if (file === "docker" && args.includes("ops/platform/test-p2-lifecycle-persistence-local.mjs")) {
+        assert.throws(() => verifyProjectedLifecycleMounts(options.input, args, revisions), /P2_LIFECYCLE_OWNED_SOURCE_MANIFEST_REFUSED/u);
+      }
+      return originalRun(file, args, options);
+    };
+    const result = runLifecycle(value);
+    const { sourceCommits, sourceSha256, sourceManifestSha256, courseRevokeSourceCommit, checks } = result.lifecyclePersistence;
+    assert.deepEqual(sourceCommits, { ...rehearsalRevisions, frontend: "d".repeat(40) });
+    assert.equal(courseRevokeSourceCommit, rehearsalRevisions.course);
+    assert.equal(checks.at(-1), correctedExpiryCheck);
+    assert.deepEqual(result.lifecycleReceivers.sourceCommits, sourceCommits);
+    const expected = { sourceCommits, sourceSha256, sourceManifestSha256 };
+    const input = value.calls.find(call => call.file === "docker" && call.args.includes("ops/platform/test-p2-lifecycle-persistence-local.mjs")).input;
+    const receipt = JSON.parse(lifecyclePersistenceReceipt(input));
+    assert.equal(parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(receipt), expected).courseRevokeSourceCommit, rehearsalRevisions.course);
+    const changes = [value => { delete value.courseRevokeSourceCommit; },
+      value => { value.courseRevokeSourceCommit = revisions.course; },
+      value => { value.checks = P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS; }];
+    for (const change of changes) {
+      const changed = structuredClone(receipt);
+      change(changed);
+      assert.throws(() => parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(changed), expected),
+        /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+    }
+    const mixed = { ...sourceCommits, community: revisions.community };
+    assert.throws(() => parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify({ ...receipt, sourceCommits: mixed }),
+      { ...expected, sourceCommits: mixed }), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+  } finally { value.cleanup(); }
+});
+
+test("lifecycle preparation refuses a mixed historical and rehearsal pair before fetching sources", () => {
+  const value = harness(tap(), [], undefined, { sourceRevisions: { ...revisions, course: rehearsalRevisions.course } });
+  try {
+    assert.throws(() => runLifecycle(value), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+    assert.equal(value.calls.length, 0);
   } finally { value.cleanup(); }
 });
 

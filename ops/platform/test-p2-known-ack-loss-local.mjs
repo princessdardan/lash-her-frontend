@@ -6,20 +6,51 @@ import { createServer } from "node:net";
 import { randomUUID,createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {createRequire} from 'node:module';
 import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { frontendAdmissionTargetSha256, bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact } from "./frontend-admission-bootstrap.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
+import { P2_LIFECYCLE_OWNED_API_REVISIONS, readP2LifecycleOwnedContractSelection } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const safeEnvironment={PATH:process.env.PATH,LANG:'C',LC_ALL:'C',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'};
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const execute=(file,args)=>execFileSync(file,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:safeEnvironment});
 let phase='ownership';
+const services=['course','community'];
+
+function selectApiSources(){
+  const mountedRoots=Object.fromEntries(services.map(service=>[service,`/exact-sources/lash-her-${service}-api`]));
+  const repositories=Object.fromEntries(services.map(service=>[service,
+    realpathSync(process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_ROOT`]??`/Users/dardan/workspace/lash-her-${service}-api/.worktrees/phase2-role-qualification`)]));
+  const overrides=Object.fromEntries(services.map(service=>[service,process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_COMMIT`]]));
+  const hasOverride=Object.values(overrides).some(commit=>commit!==undefined);
+  const mounted=Object.values(repositories).some(repository=>repository.startsWith('/exact-sources/'));
+  if(mounted){
+    assert.deepEqual(repositories,mountedRoots);
+    assert.equal(hasOverride,false);
+  }
+  const frontend=realpathSync(fileURLToPath(new URL('../..',import.meta.url)));
+  const selection=hasOverride?undefined:readP2LifecycleOwnedContractSelection(frontend);
+  const commits=Object.fromEntries(services.map(service=>[service,overrides[service]??
+    (selection?.pair??P2_LIFECYCLE_OWNED_API_REVISIONS)[service]]));
+  for(const commit of Object.values(commits))assert.match(commit,/^[a-f0-9]{40}$/u);
+  if(mounted){
+    assert.equal(frontend,'/source');
+    const git=(root,...args)=>execute('git',['--no-replace-objects','--no-optional-locks','-c','safe.directory='+root,'-C',root,...args]);
+    const manifest=git(frontend,'cat-file','blob','HEAD:contracts/api-integration/p2-candidate/manifest.json');
+    assert.equal(hash(manifest),selection.manifestSha256);
+    for(const service of services)assert.equal(git(repositories[service],'rev-parse','--verify','HEAD^{commit}').trim(),commits[service]);
+  }
+  return {repositories,commits};
+}
+
 async function main(){
   assert.equal(process.env.P2_KNOWN_ACK_OWNED_TEST,'true'); const binaries=process.env.PG_BIN; assert.ok(binaries?.startsWith('/'));
   const selectedMajor=process.env.OWNED_POSTGRES_MAJOR??'16';assert.ok(['16','18'].includes(selectedMajor));const postgresMajor=Number(selectedMajor);
   assert.match(execute(join(binaries,'postgres'),['--version']),new RegExp(`PostgreSQL\\) ${postgresMajor}\\.`,'u'));
+  const {repositories,commits}=selectApiSources();
   const listener=createServer();await new Promise((resolve,reject)=>{listener.once('error',reject);listener.listen(0,'127.0.0.1',resolve);});const port=listener.address().port;await new Promise(resolve=>listener.close(resolve));
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-known-ack-owned-'))),data=join(directory,'data'),password=`owned-${randomUUID()}`,clients=[];chmodSync(directory,0o700);let started=false;
   try{
@@ -37,9 +68,9 @@ async function main(){
     await operator.query('GRANT USAGE ON SCHEMA public TO frontend_runtime');await operator.query('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO frontend_runtime');await operator.query('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO frontend_runtime');
     phase='actual-api-sources-and-migrations';const apis={};
     for(const service of ['course','community']){
-      const repository=realpathSync(process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_ROOT`]??`/Users/dardan/workspace/lash-her-${service}-api/.worktrees/phase2-role-qualification`);
+      const repository=repositories[service];
       assert.equal(execute('git',['--no-replace-objects','--no-optional-locks','-C',repository,'remote','get-url','origin']).trim(),`https://github.com/princessdardan/lash-her-${service}-api.git`);
-      const commit=process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_COMMIT`]??({course:'0bb054d5a04db71c481a8b3d182db6df19782cdc',community:'8594d953a5c0e0849e7a2e5e0de21f03537c4dc4'}[service]);assert.match(commit,/^[a-f0-9]{40}$/u);
+      const commit=commits[service];
       const root=join(directory,service);mkdirSync(root);
       const archive=execFileSync('git',['--no-replace-objects','--no-optional-locks','-C',repository,'archive',commit],{maxBuffer:64*1024*1024,env:safeEnvironment});
       const extracted=spawnSync('tar',['-xf','-','-C',root],{input:archive,env:safeEnvironment});assert.equal(extracted.status,0);
