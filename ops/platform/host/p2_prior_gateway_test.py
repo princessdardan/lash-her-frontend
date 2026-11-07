@@ -184,7 +184,7 @@ class PriorGatewayTests(unittest.TestCase):
             for name, value in [('runtime.json', target), ('gateway.json', gateway)]:
                 (self.configuration/name).write_text(json.dumps(value))
                 self.initial['configurationSha256'][name] = migrate.file_hash((self.configuration/name).read_bytes())
-            self.initial.pop('recoveryActionId')
+            self.initial['recoveryActionId'] = selected['releaseId']
             output = self.root/('p2-profiled-current-'+selected['releaseId'])
             output.mkdir(mode=0o700)
             with self.assertRaisesRegex(ValueError, 'PROFILE_POLICY_REFUSED'):
@@ -198,6 +198,19 @@ class PriorGatewayTests(unittest.TestCase):
             self.assertEqual(record['qualificationTargetProfile'], ref)
             self.assertEqual(record['status'], 'PRIOR_GATEWAY_CLOSED_ZERO')
             self.assertFalse(self.control({})['newWork'])
+            recovery_output = self.root/('p2-profiled-current-recovery-'+selected['releaseId'])
+            recovery_output.mkdir(mode=0o700)
+            retained = [(directory, gate.capture_before_stop(
+                self.initial, selected, directory, self.verify, self.command,
+                lambda _: None, expected_profile=ref)) for directory in (output, recovery_output)]
+            self.child.terminate(); self.child.wait(5); self.running = False
+            for directory, before in retained:
+                stopped = gate.retain_ordered_stop(before, directory, self.verify, self.command,
+                                                   expected_profile=ref)
+                self.assertEqual(before['version'], 2)
+                self.assertEqual(stopped['version'], 2)
+                self.assertNotIn('sourceCommit', before)
+                self.assertNotIn('sourceCommit', stopped)
         finally:
             fixture.tearDown()
 
@@ -205,7 +218,7 @@ class PriorGatewayTests(unittest.TestCase):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         ref = copy.deepcopy(dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE))
         action = 'profiled-stop-fixture'
-        initial = {'candidateSha256': 'b' * 64, 'recoveryActionId': action}
+        initial = {'candidateSha256': 'b' * 64, 'recoveryActionId': 'fresh-c-action'}
         selected = {'releaseId': 'selected-fixture', 'sources': {'frontend': {'commit': 'a' * 40}}}
         identity = {'version': 2, 'qualificationTargetProfile': ref, 'actionId': action,
                     'sourceCommit': 'a' * 40, 'candidateSha256': 'b' * 64}
@@ -220,11 +233,13 @@ class PriorGatewayTests(unittest.TestCase):
             with self.subTest(prefix=prefix):
                 root = self.root / (prefix + action)
                 root.mkdir(mode=0o700)
-                gate._require_profiled_stop_identity(root, initial, selected, before, stopped, ref)
+                self.assertEqual(gate._require_profiled_stop_identity(
+                    root, initial, selected, before, stopped, ref), action)
                 for label in gate._GUARDED_RECEIPT_LABELS:
                     nested = root / label
                     nested.mkdir(mode=0o700)
-                    gate._require_profiled_stop_identity(nested, initial, selected, before, stopped, ref)
+                    self.assertEqual(gate._require_profiled_stop_identity(
+                        nested, initial, selected, before, stopped, ref), action)
         self.assertFalse(any(name in gate._action_directories(action) for name in
             (prefix + action for prefix in prefixes)))
         self.assertTrue(all(prefix + action in gate._action_directories(action, ref) for prefix in prefixes))
@@ -265,12 +280,19 @@ class PriorGatewayTests(unittest.TestCase):
             stopped = gate.retain_ordered_stop(before, output, self.verify, self.command, expected_profile=ref)
             self.assertEqual(before['sourceCommit'], selected['sources']['frontend']['commit'])
             self.assertEqual(stopped['sourceCommit'], before['sourceCommit'])
+            self.initial['recoveryActionId'] = 'fresh-c-action'
             self.initial['priorGatewayReference'] = {'kind': 'stopped-current-candidate',
                 'stopReceiptDirectory': str(output),
                 'stopReceiptSha256': migrate.file_hash((output/gate.STOPPED).read_bytes())}
             actual = gate.observe_stopped_prior_gateway(self.initial, selected, self.verify, self.command,
                                                         expected_profile=ref)
             self.assertEqual(actual['admission']['uncertain'], {'newWork': 0, 'recovery': 0})
+            pointer = gate._read_lineage()
+            gate._write_lineage({**pointer, 'actionId': self.initial['recoveryActionId']})
+            with self.assertRaisesRegex(ValueError, 'LATEST_STOP_LINEAGE'):
+                gate.observe_stopped_prior_gateway(self.initial, selected, self.verify, self.command,
+                                                   expected_profile=ref)
+            gate._write_lineage(pointer)
             raw = json.loads((output/gate.BEFORE_STOP).read_bytes()); raw['sourceCommit'] = 'c' * 40
             (output/gate.BEFORE_STOP).write_text(json.dumps(raw))
             with self.assertRaisesRegex(ValueError, 'PROFILED_STOP_IDENTITY|STOP_PROOF'):

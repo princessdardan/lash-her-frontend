@@ -39,21 +39,25 @@ def _action_directories(action, expected=None):
 
 _GUARDED_RECEIPT_LABELS = ('prior-gateway-after-quiescence', 'prior-gateway-broker-fallback',
                            'prior-gateway-api-suspension')
-_PROFILED_RECEIPT_PREFIXES = ('p2-profiled-current-certification-', 'p2-profiled-known-ack-',
-                              'p2-profiled-known-ack-restoration-')
+_PROFILED_RECEIPT_PREFIXES = ('p2-profiled-current-certification-',
+                              'p2-profiled-known-ack-restoration-', 'p2-profiled-known-ack-')
 
 
-def _profiled_receipt_root(directory, action, expected):
+def _profiled_receipt_root(directory, expected):
     if expected is None:
         return None
     root = directory.parent if directory.name in _GUARDED_RECEIPT_LABELS else directory
-    return root if root.name in tuple(prefix + action for prefix in _PROFILED_RECEIPT_PREFIXES) else None
+    for prefix in _PROFILED_RECEIPT_PREFIXES:
+        if root.name.startswith(prefix):
+            return root, root.name.removeprefix(prefix)
+    return None
 
 
 def _require_profiled_stop_identity(directory, initial, selected, before, stopped, expected):
-    action = initial.get('recoveryActionId', initial.get('certificationActionId', selected['releaseId']))
-    if _profiled_receipt_root(directory, action, expected) is None:
-        return
+    retained = _profiled_receipt_root(directory, expected)
+    if retained is None:
+        return None
+    _root, action = retained
     source = selected.get('sources', {}).get('frontend', {}).get('commit')
     migrate.require_profile(expected, before, stopped)
     before_fields = {'protocol','sourceModuleSha256','status','candidateSha256','actionId','observation',
@@ -64,10 +68,12 @@ def _require_profiled_stop_identity(directory, initial, selected, before, stoppe
         type(before.get('version')) is int and before['version'] == 2 and
         type(stopped.get('version')) is int and stopped['version'] == 2 and
         isinstance(source, str) and re.fullmatch(r'[a-f0-9]{40}', source) and source != '0' * 40 and
+        isinstance(action, str) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', action) and
         before.get('actionId') == stopped.get('actionId') == action and
         before.get('sourceCommit') == stopped.get('sourceCommit') == source and
         before.get('candidateSha256') == stopped.get('candidateSha256') == initial['candidateSha256'],
         'PRIOR_GATEWAY_PROFILED_STOP_IDENTITY_REQUIRED')
+    return action
 
 
 
@@ -339,7 +345,7 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None, *, ex
     stopped = json.loads(raw)
     before_raw = migrate.read_input(directory, BEFORE_STOP)
     before = json.loads(before_raw)
-    _require_profiled_stop_identity(directory, initial, selected, before, stopped, expected_profile)
+    retained_action = _require_profiled_stop_identity(directory, initial, selected, before, stopped, expected_profile)
     require(stopped.get('protocol') == before.get('protocol') == PROTOCOL and
         stopped.get('sourceModuleSha256') == before.get('sourceModuleSha256') == _source_sha256() and
         stopped.get('beforeSha256') == migrate.file_hash(before_raw) and
@@ -359,7 +365,9 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None, *, ex
     pointer = _read_lineage()
     require(pointer is not None and pointer.get('state') == 'stopped-observed' and pointer.get('process') == observation['process'] and
         pointer.get('binding') == observation['binding'] and pointer.get('stopReceiptDirectory') == str(directory) and
-        pointer.get('stopReceiptSha256') == ref['stopReceiptSha256'], 'PRIOR_GATEWAY_LATEST_STOP_LINEAGE_REQUIRED')
+        pointer.get('stopReceiptSha256') == ref['stopReceiptSha256'] and
+        (retained_action is None or pointer.get('actionId') == retained_action),
+        'PRIOR_GATEWAY_LATEST_STOP_LINEAGE_REQUIRED')
     if ids:
         require(_process(ids[0],command,verify) == stopped.get('stoppedProcess'), 'PRIOR_GATEWAY_STOPPED_PROCESS_CHANGED')
         require(_mounted_configuration(ids[0],command,verify) == Path(observation['binding']['configurationDirectory']), 'PRIOR_GATEWAY_STOPPED_MOUNT_CHANGED')
@@ -548,10 +556,16 @@ def capture_before_stop(initial, selected, output, verify, command=None, assert_
     record = {'protocol':PROTOCOL,'sourceModuleSha256':_source_sha256(),'status':'PRIOR_GATEWAY_PRESTOP_UNKNOWN','candidateSha256':initial['candidateSha256'],
         'actionId':initial.get('recoveryActionId',initial.get('certificationActionId',selected['releaseId'])),'observation':None}
     if expected_profile is not None:
-        source = selected.get('sources', {}).get('frontend', {}).get('commit')
-        require(isinstance(source,str) and re.fullmatch(r'[a-f0-9]{40}',source) and source != '0'*40,
-            'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
-        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile), sourceCommit=source)
+        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
+        retained = _profiled_receipt_root(output, expected_profile)
+        if retained is not None:
+            source = selected.get('sources', {}).get('frontend', {}).get('commit')
+            require(retained[1] == record['actionId'] and
+                isinstance(record['actionId'],str) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',record['actionId']) and
+                isinstance(source,str) and
+                re.fullmatch(r'[a-f0-9]{40}',source) and source != '0'*40,
+                'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
+            record['sourceCommit'] = source
     try:
         ids = _inventory(command,verify)
         if not ids or not _process(ids[0],command,verify)['running']:
@@ -584,11 +598,17 @@ def retain_ordered_stop(before, output, verify, command=None, *, expected_profil
         'candidateSha256':before['candidateSha256'],'actionId':before['actionId'],'stoppedProcess':None}
     if expected_profile is not None:
         migrate.require_profile(expected_profile, before)
-        require(type(before.get('version')) is int and before['version'] == 2 and
-            isinstance(before.get('sourceCommit'),str) and re.fullmatch(r'[a-f0-9]{40}',before['sourceCommit']) and
-            before['sourceCommit'] != '0'*40, 'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
-        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile),
-            sourceCommit=before['sourceCommit'])
+        require(type(before.get('version')) is int and before['version'] == 2,
+            'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
+        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
+        retained = _profiled_receipt_root(output, expected_profile)
+        if retained is not None:
+            require(retained[1] == before.get('actionId') and isinstance(before.get('actionId'),str) and
+                re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',before['actionId']) and
+                isinstance(before.get('sourceCommit'),str) and
+                re.fullmatch(r'[a-f0-9]{40}',before['sourceCommit']) and before['sourceCommit'] != '0'*40,
+                'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
+            record['sourceCommit'] = before['sourceCommit']
     if observed is not None:
         try:
             process = _process(observed['process']['containerId'],command,verify)
