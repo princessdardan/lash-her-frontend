@@ -172,7 +172,7 @@ function reviewedPaidGrantAction(action){
     selected.operation===paidGrantOperation&&[selected.courseId,selected.userId,selected.idempotencyKey].every(canonicalUuid)&&
     Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_647&&
     nonzeroSha256(selected.reasonSha256)&&selected.reasonSha256!==emptyBodySha256);
-  const {courseId,userId,idempotencyKey}=selected,grant=action.requests[2];
+  const {operation,courseId,userId,revision,idempotencyKey,reasonSha256}=selected,grant=action.requests[2];
   const grants='/course/v1/admin/entitlements/grants',key='owner-paid%3A'+idempotencyKey;
   demand(reviewedWriteRequest(grant,'POST',grants)&&isDeepStrictEqual(action.requests,[
     {method:'GET',target:authoringCourseTarget+'/'+courseId,bodySha256:emptyBodySha256,uses:3},
@@ -180,8 +180,8 @@ function reviewedPaidGrantAction(action){
     grant,
     {method:'GET',target:grants+'?userId='+userId+'&courseId='+courseId+'&idempotencyKey='+key+'&limit=2',bodySha256:emptyBodySha256,uses:1},
   ]));
-  const {priorGrantId:_priorGrantId,...browserSelection}=selected;
-  return {selection:{actorId:action.actorId,...selected,actorKind:'admin'},paidGrant:{actorId:action.actorId,...browserSelection}};
+  return {selection:{actorId:action.actorId,...selected,actorKind:'admin'},
+    paidGrant:{actorId:action.actorId,operation,courseId,userId,revision,idempotencyKey,reasonSha256}};
 }
 
 function reviewedLearnerAccessAction(action){
