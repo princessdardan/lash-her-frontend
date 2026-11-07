@@ -87,9 +87,13 @@ test("recovery preserves the exact 19-file configuration map across the retained
     const pins = Object.fromEntries(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome",
       "apiRuntimeOutcome", "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]
       .map((name, index) => [name, String(index + 1).repeat(64)]));
-    const sourceCommit = "a".repeat(40), target = { qualificationTargetProfile: profile };
+    const sourceCommit = "a".repeat(40), target = { qualificationTargetProfile: profile, approvedPendingTags: [], allowEmptyBootstrap: false,
+      runtimeRole: "frontend_runtime" };
     const candidate = { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "owned-release",
-      sources: { frontend: { commit: sourceCommit } }, frontendMigration: { qualificationTargetProfile: profile } };
+      contractPhase: "p2", phase2ContractManifestSha256: `sha256:${"d".repeat(64)}`,
+      sources: { frontend: { commit: sourceCommit, repository: "https://github.com/princessdardan/lash-her-frontend.git", requiredChecks: "passed" } },
+      workload: { projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", environment: "production" },
+      frontendMigration: { qualificationTargetProfile: profile } };
     const job = { version: 2, qualificationTargetProfile: profile, environment: "staging", releaseId: "owned-release", sourceCommit, target };
     const plan = { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
       disposition: "reconcile-frontend-get-first", originalReleaseId: "owned-release", sourceCommit, candidateSha256: "e".repeat(64),

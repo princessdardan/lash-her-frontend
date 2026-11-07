@@ -281,6 +281,14 @@ def recovery_context(initial, provider):
            candidate.get("version") == 3 and job.get("version") == 2 and
            candidate.get("releaseId") == job.get("releaseId") == plan.get("originalReleaseId") and
            candidate.get("sources", {}).get("frontend", {}).get("commit") == job.get("sourceCommit") == plan.get("sourceCommit") and
+           candidate.get("sources", {}).get("frontend", {}).get("repository") == "https://github.com/princessdardan/lash-her-frontend.git" and
+           candidate.get("sources", {}).get("frontend", {}).get("requiredChecks") == "passed" and
+           candidate.get("workload", {}).get("projectId") == "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" and
+           candidate.get("workload", {}).get("environment") == "production" and candidate.get("contractPhase") == "p2" and
+           isinstance(candidate.get("phase2ContractManifestSha256"), str) and
+           re.fullmatch(r"sha256:[a-f0-9]{64}", candidate["phase2ContractManifestSha256"]) and
+           job.get("environment") == "staging" and job.get("target", {}).get("approvedPendingTags") == [] and
+           job.get("target", {}).get("allowEmptyBootstrap") is False and
            isinstance(plan.get("configurationSha256"), dict) and set(plan["configurationSha256"]) == CONFIGURATION_NAMES and
            all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) and value != "0" * 64
                for value in plan["configurationSha256"].values()) and

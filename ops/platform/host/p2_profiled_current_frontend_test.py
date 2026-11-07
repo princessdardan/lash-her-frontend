@@ -68,8 +68,11 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
             (attempt / name).write_bytes(raw); os.chmod(attempt / name, 0o600); pins[key] = subject.sha(raw)
         candidate = {"version": 3, "qualificationTargetProfile": PROFILE, "environment": "staging", "releaseId": "owned-release",
             "contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "d" * 64,
-            "sources": {"frontend": {"commit": SOURCE}}, "frontendMigration": {"qualificationTargetProfile": PROFILE}}
-        target = {"qualificationTargetProfile": PROFILE}
+            "sources": {"frontend": {"commit": SOURCE, "repository": "https://github.com/princessdardan/lash-her-frontend.git",
+                "requiredChecks": "passed"}}, "workload": {"projectId": PROJECT, "environment": "production"},
+            "frontendMigration": {"qualificationTargetProfile": PROFILE}}
+        target = {"qualificationTargetProfile": PROFILE, "approvedPendingTags": [], "allowEmptyBootstrap": False,
+                  "runtimeRole": "frontend_runtime"}
         job = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging", "releaseId": "owned-release",
                "sourceCommit": SOURCE, "target": target}
         configuration = {name: str(index % 9 + 1) * 64 for index, name in enumerate(sorted(subject.CONFIGURATION_NAMES))}

@@ -133,7 +133,13 @@ function validateRecovery(context) {
     ["restore-current-runtime", "reconcile-frontend-get-first", "resume-approved-api-suffix"].includes(plan.disposition) &&
     candidate.version === 3 && job.version === 2 && candidate.releaseId === plan.originalReleaseId &&
     job.releaseId === plan.originalReleaseId && candidate.sources?.frontend?.commit === plan.sourceCommit &&
-    job.sourceCommit === plan.sourceCommit && commit(plan.sourceCommit) && digest(plan.candidateSha256) &&
+    candidate.sources.frontend.repository === "https://github.com/princessdardan/lash-her-frontend.git" &&
+    candidate.sources.frontend.requiredChecks === "passed" && candidate.workload?.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" &&
+    candidate.workload.environment === "production" && candidate.contractPhase === "p2" &&
+    /^sha256:[a-f0-9]{64}$/u.test(candidate.phase2ContractManifestSha256 ?? "") &&
+    candidate.phase2ContractManifestSha256 !== `sha256:${"0".repeat(64)}` && job.sourceCommit === plan.sourceCommit &&
+    job.environment === "staging" && Array.isArray(job.target.approvedPendingTags) && job.target.approvedPendingTags.length === 0 &&
+    job.target.allowEmptyBootstrap === false && commit(plan.sourceCommit) && digest(plan.candidateSha256) &&
     digest(plan.targetSha256) && isDeepStrictEqual(pins, plan.originalReceiptSha256) &&
     isDeepStrictEqual(Object.keys(pins).sort(), [...recoveryPinNames].sort()) && Object.values(pins).every(digest));
   demand(typeof own(context, "verifyEnvironment") === "function" && typeof own(context, "verifySession") === "function");
