@@ -275,6 +275,30 @@ test('owned failure metadata excludes messages, values, raw URLs and non-source 
  assert.equal(JSON.stringify(engine).includes(canary),false);assert.equal(engine.error.code,'P2_SOURCE_CONTENT_CHANGED');assert.equal(validateOwnedDiagnostic(engine,engineContext),engine);
 });
 
+test('owned engine projects exact archived v1 source within its existing bounds',()=>{
+ const root=new URL('../../',import.meta.url);
+ const result=spawnSync('python3',['-B','-c',String.raw`
+import hashlib, runpy, subprocess, tempfile
+from pathlib import Path
+root = Path.cwd()
+engine = runpy.run_path(str(root / 'docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py'))
+git = ['git', '--no-replace-objects', '-c', f'safe.directory={root}']
+commit = subprocess.check_output([*git, 'rev-parse', '--verify', 'HEAD^{commit}'], text=True).strip()
+with tempfile.TemporaryDirectory() as directory:
+    source = Path(directory)
+    manifest = engine['archive_operator_sources'](str(root), commit, source)
+    assert engine['REQUIRED'] <= manifest.keys()
+    assert engine['PROFILED_CURRENT_SOURCE_ONLY'].isdisjoint(manifest)
+    assert not (source / 'ops/platform/host/p2_certification_parent_test.py').exists()
+    assert not (source / 'ops/platform/prepare-p2-identity-probe-fixtures.test.mjs').exists()
+    assert len(manifest) <= 512 and sum((source / name).stat().st_size for name in manifest) <= 41_000_000
+    retained = 'ops/platform/host/p2_release_supervisor.py'
+    committed = subprocess.check_output([*git, 'cat-file', 'blob', f'{commit}:{retained}'])
+    assert manifest[retained] == hashlib.sha256(committed).hexdigest()
+`],{cwd:root,encoding:'utf8',timeout:15000,env:{PATH:process.env.PATH}});
+ assert.equal(result.status,0,result.error?.message??result.stderr);
+});
+
 test('actual failing original child reaches outer private capture through fixed catch and cleanup',async()=>{
  const {ownedDiagnosticSource,ownedDiagnosticContext}=await import('../../docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs');
  const {fileURLToPath,pathToFileURL}=await import('node:url'),paths=await import('node:path'),fs=await import('node:fs'),vm=await import('node:vm'),{createRequire}=await import('node:module'),{createHash}=await import('node:crypto');

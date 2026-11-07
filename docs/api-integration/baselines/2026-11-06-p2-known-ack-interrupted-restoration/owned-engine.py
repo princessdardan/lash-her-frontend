@@ -33,8 +33,8 @@ import p2_known_ack_interrupted_restoration as c
 import p2_release_broker as shared
 import p2_prior_gateway as prior
 import frontend_gateway_observation
-from p2_certification_parent_test import LEGACY_FIXTURE_ONLY_OMISSIONS, PROFILED_CURRENT_SOURCE_ONLY
-from p2_source_closure import TYPES
+from p2_certification_parent_test import PROFILED_CURRENT_SOURCE_ONLY
+from p2_source_closure import REQUIRED, TYPES
 
 
 def write(directory,name,value):
@@ -56,19 +56,33 @@ def model_row(candidate,service,identifier,configuration,running=False,pid=0):
       'Mounts':[{'Type':'bind','Source':str(configuration/relative),'Destination':destination,'RW':False} for destination,relative in c.known.MOUNTS.get(service,{}).items()]}
 
 
+def archive_operator_sources(root,commit,source):
+    archive=subprocess.check_output(['git','--no-replace-objects','-c','safe.directory='+root,'-C',root,'archive',commit,'ops'])
+    subprocess.run(['tar','-xf','-','-C',str(source)],input=archive,check=True)
+    ops=source/'ops'
+    if ops.is_symlink() or not ops.is_dir():
+        raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
+    paths={}
+    for path in ops.rglob('*'):
+        if path.is_symlink():
+            raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
+        if path.is_file() and path.suffix in TYPES:
+            paths[path.relative_to(source).as_posix()]=path
+    if not PROFILED_CURRENT_SOURCE_ONLY.issubset(paths):
+        raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
+    # The v1 fixture retains every required source while excluding unrelated tests.
+    for name in list(paths):
+        if name in PROFILED_CURRENT_SOURCE_ONLY or (name not in REQUIRED and name.endswith(('_test.py','.test.mjs','.test.ts','.test.mts'))):
+            paths.pop(name).unlink()
+    if not REQUIRED.issubset(paths) or len(paths)>512 or sum(path.stat().st_size for path in paths.values())>41_000_000:
+        raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
+    return {name:c.sha(path.read_bytes()) for name,path in paths.items()}
+
+
 def configuration(value):
     work=Path(value['work']);root=work/'root';root.mkdir(mode=0o700);operators=work/'operators';operators.mkdir(mode=0o700)
     data=value['input'];candidate=value['candidate'];candidate_hash=value['candidateSha256'];commit=data['sourceCommit'];source=operators/commit;source.mkdir()
-    archive=subprocess.check_output(['git','--no-replace-objects','-c','safe.directory='+value['root'],'-C',value['root'],'archive',commit,'ops'])
-    subprocess.run(['tar','-xf','-','-C',str(source)],input=archive,check=True)
-    # Both sides exercise the v1 fixture with the legacy source bounds.
-    # Install every shared runtime file and omit the fixed test-only selection.
-    for name in PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_ONLY_OMISSIONS:
-        path=source/name
-        if path.is_symlink() or not path.is_file():
-            raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
-        path.unlink()
-    manifest={path.relative_to(source).as_posix():c.sha(path.read_bytes()) for path in (source/'ops').rglob('*') if path.is_file() and path.suffix in TYPES}
+    manifest=archive_operator_sources(value['root'],commit,source)
     closure=c.sha(c.canonical(sorted(manifest.items())))
     input_directory=root/'root-owned-input';input_directory.mkdir(mode=0o700)
     runtime={'version':1,'environment':'staging','releaseId':candidate['releaseId'],'hostMachineId':'1'*32,'previousReleaseRef':'owned/none','maintenanceRef':'owned/c'}
