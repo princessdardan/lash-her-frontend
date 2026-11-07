@@ -506,23 +506,26 @@ def _retained_qualifier_program(source, source_files):
 
 
 def finalize_retained_authority_timing(scope, selected, jobs, configuration, source, worker_plan, suspension_plan,
-                                       persistence_reviewed, expected_worker_sha256):
+                                       persistence_reviewed, expected_worker_sha256, *, expected_profile=None,
+                                       release_evidence=None, database_proof=None):
     """Return a safe timing receipt for the owning certification parent to retain."""
     from p2_certification_parent import P2CertificationScope
     from p2_lifecycle_persistence_probe import private_program as persistence_program
     from p2_lifecycle_suspension_evidence import LOCK
-    from p2_lifecycle_worker_evidence import load_retained_worker
+    from p2_lifecycle_worker_evidence import load_retained_worker, worker_profile
 
     demand(type(scope) is P2CertificationScope and scope.path == LOCK and os.geteuid() == 0,
         "P2_S13_ACTUAL_PARENT_REQUIRED")
     parent_plan = scope.certification_plan
     demand(parent_plan.get("mode") == "direct-worker" and parent_plan.get("certificationActionId") == worker_plan.get("actionId")
         and parent_plan.get("workerPlanSha256") == _hash(_canonical(worker_plan)), "P2_S13_DIRECT_WORKER_PARENT_BINDING_REQUIRED")
+    expected = worker_profile(scope, worker_plan, suspension_plan, persistence_reviewed, expected_profile)
     args = (scope, selected, jobs, configuration, source, worker_plan, suspension_plan, persistence_reviewed, expected_worker_sha256)
-    retained = load_retained_worker(*args)
+    retained_inputs = {"expected_profile": expected, "release_evidence": release_evidence, "database_proof": database_proof}
+    retained = load_retained_worker(*args, **retained_inputs)
     qualification, receiver_evidence = _join_retained_timing(retained, worker_plan, suspension_plan, persistence_reviewed)
     source_files = persistence_reviewed["operatorSourceFiles"]
-    demand(_hash(persistence_program(source)) == persistence_reviewed["programSha256"],
+    demand(_hash(persistence_program(source, expected_profile=expected)) == persistence_reviewed["programSha256"],
         "P2_S13_RETAINED_WITNESS_PROGRAM_CHANGED")
     program = _retained_qualifier_program(source, source_files)
     body = _canonical(qualification)
@@ -532,7 +535,7 @@ def finalize_retained_authority_timing(scope, selected, jobs, configuration, sou
         scope.verify()
         token = runtime._command_scope.set(scope)
         try:
-            containers = runtime.check_containers(selected, Path(configuration))
+            containers = runtime.check_containers(selected, Path(configuration), expected_profile=expected)
         finally:
             runtime._command_scope.reset(token)
         demand(containers == persistence_reviewed["containers"], "P2_S13_RETAINED_RUNTIME_CHANGED")
@@ -551,9 +554,13 @@ def finalize_retained_authority_timing(scope, selected, jobs, configuration, sou
     demand(value.get("status") == "P2_S13_AUTHORITY_TIMING_QUALIFIED" and value.get("bindingSha256") == qualification["bindingSha256"]
         and value.get("s12ReceiptSha256") == expected_worker_sha256 and value.get("releaseAccepted") is False,
         "P2_S13_RETAINED_QUALIFICATION_BINDING_REQUIRED")
-    demand(checked_gateway() == gateway and load_retained_worker(*args) == retained
+    demand(checked_gateway() == gateway and load_retained_worker(*args, **retained_inputs) == retained
         and _retained_qualifier_program(source, source_files) == program, "P2_S13_RETAINED_EVIDENCE_CHANGED")
-    return {**value, "candidateSha256": worker_plan["candidateSha256"], "configurationSha256": worker_plan["configurationSha256"],
+    # The fixed mathematical qualifier receives only its public observation
+    # DTO. Return the source-selected profile on the actual evidence carrier.
+    profile_fields = {"version": 2, "qualificationTargetProfile": expected,
+        "releaseEvidence": retained["suspension"]["releaseEvidence"]} if expected is not None else {}
+    return {**value, **profile_fields, "candidateSha256": worker_plan["candidateSha256"], "configurationSha256": worker_plan["configurationSha256"],
         "pendingRecordSha256": retained["suspension"]["pendingRecordSha256"], "workerInvokedAt": retained["record"]["workerInvokedAt"],
         "receiverEvidence": receiver_evidence, "muxExpiryObservedBeforeWorker": True, "postAckMuxAccessObserved": False,
         "stalledRenewalQualified": False, "s12CaseQualified": False}

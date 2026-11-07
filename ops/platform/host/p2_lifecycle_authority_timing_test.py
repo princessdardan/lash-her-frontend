@@ -1,4 +1,5 @@
 """Owned controller/scope tests; no live provider or staging call."""
+import base64
 from copy import deepcopy
 from datetime import datetime, timezone
 import fcntl
@@ -10,12 +11,15 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import uuid
 
 import p2_identity_negative_probe as identity
+import p2_certification_parent as certification
 import p2_identity_probe_scope as identity_scope
 import p2_lifecycle_authority_timing as timing
 import p2_lifecycle_authority_timing_scope as timing_scope
@@ -25,6 +29,8 @@ import p2_lifecycle_worker_evidence as worker
 from p2_certification_fault import frontend_target_sha256
 from p2_certification_parent import P2CertificationScope
 from p2_release_scope import P2ReleaseScope
+import staging_state
+from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
 
 
 class AuthorityTimingTests(unittest.TestCase):
@@ -184,6 +190,8 @@ class AuthorityTimingTests(unittest.TestCase):
 class RetainedTimingFinalizerTests(unittest.TestCase):
     """Actual fixed readers, POSIX lease and pure Node qualifier; no Docker/provider."""
 
+    PROFILE = None
+
     @staticmethod
     def utc(seconds):
         return datetime.fromtimestamp(1_800_000_000 + seconds, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -196,12 +204,17 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="owned-s13-finalizer-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
+        ref = self.PROFILE
+        self.fields = {"version": 1} if ref is None else {"version": 2, "qualificationTargetProfile": ref}
+        profile = {"qualificationTargetProfile": ref} if ref is not None else {}
         commit = "1" * 40
         self.source = root / "operators" / commit
         files = (timing.TIMING, timing.IDENTITY, worker.DENIAL, "ops/platform/p2-lifecycle-browser-recorder.mjs",
             "ops/platform/p2-lifecycle-pending-probe.mjs", "ops/platform/p2-lifecycle-suspension-evidence.mjs",
             "ops/platform/host/p2_lifecycle_suspension_evidence.py", "ops/platform/p2-lifecycle-worker-evidence.mjs",
-            "ops/platform/host/p2_lifecycle_worker_evidence.py", *persistence.PROGRAM_FILES[:2])
+            "ops/platform/host/p2_lifecycle_worker_evidence.py", *persistence.PROGRAM_FILES[:2],
+            "ops/platform/qualification-target-profile.mjs", "ops/platform/qualification-target-profiles.json",
+            certification.OBSERVER)
         actual = Path(timing.__file__).resolve().parents[3]
         for name in files:
             path = self.source / name
@@ -219,11 +232,19 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         certification_plan = {"certificationActionId": "owned-worker", "candidateSha256": "3" * 64,
             "planSha256": "a" * 64, "targetSha256": frontend_target_sha256(target)}
         frontend_receipt = {**job, "target": {key: target[key] for key in ("host", "port", "database", "user", "serverMajor")},
-            **certification_plan, "status": "P2_CERTIFICATION_DATABASE_CURRENT", "schemaVerified": True, "sqlReplayed": False,
+            **certification_plan, **self.fields, "status": "P2_CERTIFICATION_DATABASE_CURRENT", "schemaVerified": True, "sqlReplayed": False,
             "oldLoginsDenied": True, "oldRoleSessions": 0, "runtimeRoleVerified": True, "trafficAuthorized": False, "after": [{"owned": "lineage"}]}
         self.selected = {"environment": "staging", "contractPhase": "p2", "releaseId": "owned-release",
             "phase2ContractManifestSha256": phase2, "sources": {"frontend": {"commit": commit}}}
         self.jobs = {"frontend": {"job": {**job, "target": target}}}
+        if ref is not None:
+            self.selected.update(version=3, **profile, sourceApproval=profile, integration=profile, approval=profile,
+                sources={name: {"commit": commit, **profile} for name in ("frontend", "course", "community")},
+                workload={"projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", "environment": "production", **profile})
+            self.jobs["frontend"] = {"frontend": True, "job": {**job, **self.fields,
+                "target": {**target, **profile, "allowEmptyBootstrap": False}}, "schema": timing._canonical(profile)}
+            for name in ("course", "community"):
+                self.jobs[name] = {"job": {"schemaVersion": 2, **profile, "target": {"schemaVersion": 2, **profile}}}
         lock = root / "release.lock"
         fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
         self.addCleanup(os.close, fd)
@@ -253,12 +274,15 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         gateway = {"service": "gateway", "containerId": "4" * 64}
         reviewed_sources = {key: commit for key in ("frontend", "course", "community")}
         reviewed_targets = {key: {"targetSha256": "5" * 64} for key in reviewed_sources}
-        self.reviewed = {"plan": {"hostMachineId": "owned-machine", "candidateSha256": "3" * 64, "configurationSha256": "6" * 64,
+        self.reviewed = {**self.fields, "plan": {**self.fields, "hostMachineId": "owned-machine", "candidateSha256": "3" * 64, "configurationSha256": "6" * 64,
             "sources": reviewed_sources, "targets": reviewed_targets}, "operatorSourceFiles": source_files,
-            "programSha256": timing._hash(persistence.private_program(self.source)),
+            "programSha256": timing._hash(persistence.private_program(self.source, ref)),
             "containers": [gateway]}
         resources = {key: str(uuid.UUID(int=index, version=4)) for index, key in enumerate(("userId", "courseId", "lessonId"), 1)}
-        self.suspension_plan = {"actionId": "owned-suspension", "sourceCommit": commit, "operatorSourceCommit": commit,
+        self.suspension_plan = {**self.fields, "environment": "staging", "profile": "normal-ui-suspension-pending-v1",
+            "windowSeconds": 840, "initialAdmission": {"newWork": True, "recovery": False}, "workerInvocationAuthorized": False,
+            "automaticReplayAllowed": False, "finalDisposition": "native-off-and-admission-closed",
+            "actionId": "owned-suspension", "sourceCommit": commit, "operatorSourceCommit": commit,
             "candidateSha256": "3" * 64, "candidateObjectSha256": suspension.digest(suspension.canonical(self.selected)),
             "configurationSha256": "6" * 64, "targetSha256": frontend_target_sha256(target), "hostMachineId": "owned-machine",
             "browserProgramSha256": browser_program, "pendingProgramSha256": source_files[files[4]], "parentProgramSha256": source_files[files[5]],
@@ -268,6 +292,11 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         self.worker_dir = root / "p2-worker-owned-worker"
         self.suspension_dir.mkdir(mode=0o700)
         self.worker_dir.mkdir(mode=0o700)
+        self.release_evidence, self.api_proof, self.release_hashes = None, None, {}
+        if ref is not None:
+            self.reviewed["privateDirectory"] = str(self.worker_dir)
+            self.release_evidence, self.release_hashes = self.make_release_evidence(certification_plan)
+            self.api_proof = object()
         binding = suspension.digest(suspension.canonical(self.suspension_plan))
         uid = lambda n: str(uuid.UUID(int=n, version=4))
         command = {"version": 1, "commandId": uid(4), "userId": resources["userId"], "accountVersion": 1,
@@ -292,7 +321,7 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
             "requestedByAdminId": uid(7), "uiRequestId": uid(5), "uiResponseObservedAt": self.utc(12),
             "controlledDenialObservedAt": self.utc(332.1), "observedAt": self.utc(604), "frontendStatus": "suspended", "sessions": 0,
             "deliveries": pending_rows, "laterCommandCount": 0, "pendingOrDeliveringCount": 2, "readOnly": True, "workerInvoked": False}
-        self.pending = {"version": 1, "status": "P2_SUSPENSION_PENDING_SOURCE_RETAINED", "planSha256": binding,
+        self.pending = {**self.fields, "status": "P2_SUSPENSION_PENDING_SOURCE_RETAINED", "planSha256": binding,
             **{key: self.suspension_plan[key] for key in ("candidateSha256", "configurationSha256", "sourceCommit", "targetSha256", "pendingProgramSha256")},
             "pending": pending, "workerInvoked": False}
         self.mux = {"lastAccepted": self.http(206, 601), "firstDenied": self.http(403, 602), "pollResolutionMs": 2000}
@@ -306,15 +335,18 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
             {"lastAccepted": self.http(200, 331), "firstDenied": self.http(401, 332), "pollResolutionMs": 2000})
         suspension.private_record(self.suspension_dir, "controlled-mux-window.json", self.mux)
         pending_sha = suspension.private_record(self.suspension_dir, "p2-lifecycle-suspension-pending.json", self.pending)["recordSha256"]
-        self.worker_plan = {**{key: self.suspension_plan[key] for key in ("candidateSha256", "candidateObjectSha256", "sourceCommit", "configurationSha256", "targetSha256")},
+        self.worker_plan = {**self.fields, **{key: self.suspension_plan[key] for key in ("candidateSha256", "candidateObjectSha256", "sourceCommit", "configurationSha256", "targetSha256")},
             "actionId": "owned-worker", "profile": "direct-known-suspension-v1", "pendingRecordSha256": pending_sha,
             "suspensionPlanSha256": binding, "canonicalCommandSha256": suspension.digest(suspension.canonical(command)),
             "sourceProgramSha256": source_files[files[7]], "hostProgramSha256": source_files[files[8]],
             "denialProgramSha256": timing._hash(worker.denial_program(self.source))}
         canonical_digest = self.worker_plan["canonicalCommandSha256"]
         worker_binding = suspension.digest(suspension.canonical(self.worker_plan))
-        self.scope = P2CertificationScope(fd, lock, lambda: None, frontend_receipt, "3" * 64, release=self.selected, jobs=self.jobs,
-            certification_plan={**certification_plan, "mode": "direct-worker", "workerPlanSha256": worker_binding})
+        scope_plan = {**certification_plan, **self.fields, "mode": "direct-worker", "workerPlanSha256": worker_binding,
+            "workerPlan": self.worker_plan}
+        scope_kwargs = self.profiled_scope_inputs(scope_plan, frontend_receipt, source_files) if ref is not None else {}
+        self.scope = P2CertificationScope(fd, lock, lambda: None, frontend_receipt, "3" * 64, release=self.selected,
+            jobs=self.jobs, certification_plan=scope_plan, **scope_kwargs)
         witness = {"command": {**{key: command[key] for key in ("commandId", "accountVersion", "action", "issuedAt")}, "canonicalSha256": canonical_digest},
             "candidateSha256": "3" * 64, "configurationSha256": "6" * 64,
             "userId": resources["userId"], "sources": reviewed_sources, "targetSha256": {key: "5" * 64 for key in reviewed_sources},
@@ -336,19 +368,22 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
             "sourceSha256": timing._hash(timing._canonical(witness["sources"])), "targetSha256": timing._hash(timing._canonical(witness["targetSha256"])),
             "witnessSha256": timing._hash(timing._canonical(witness)), "commandCount": 1, "pendingOrDeliveringCount": 0, "receiverAcknowledgedCount": 2,
             "rowCounts": {"frontend": 5, "course": 3, "community": 3}, "readOnly": True, "providerTouched": False, "releaseAccepted": False}
-        witness_sha = worker.write_record(self.worker_dir, "lifecycle-account.json", {"version": 1, "stage": "lifecycle-account",
-            "subjectBindingSha256": "b" * 64, "contextSha256": persistence._context_binding(self.reviewed["plan"]),
+        subject_binding = persistence._subject_binding({"stage": "lifecycle-account", "userId": command["userId"],
+            "selectedCommand": {key: command[key] for key in ("commandId", "accountVersion")}})
+        witness_sha = worker.write_record(self.worker_dir, "lifecycle-account.json", {**self.fields, "stage": "lifecycle-account",
+            "subjectBindingSha256": subject_binding, "contextSha256": persistence._context_binding(self.reviewed["plan"]),
             "witness": witness, "privateEvidence": None, "receipt": lifecycle, "priorRecordSha256": None})
         joined = {**{key: self.worker_plan[key] for key in ("candidateSha256", "configurationSha256", "sourceCommit", "targetSha256", "pendingRecordSha256")},
-            "version": 1, "status": "P2_DIRECT_LIFECYCLE_WORKER_JOINED", "bindingSha256": worker_binding,
+            **self.fields, "status": "P2_DIRECT_LIFECYCLE_WORKER_JOINED", "bindingSha256": worker_binding,
             "commandId": uid(4), "accountVersion": 1, "action": "suspend", "workerInvokedAt": self.utc(605),
             "invocationClass": "direct-source-authenticated-cron", "nativeScheduleEnabled": False, "nativeInvocationQualified": False,
-            "invocation": {"status": "P2_DIRECT_WORKER_HTTP_OBSERVED", "httpStatus": 200, "operationId": uid(8), "workerInvokedAt": self.utc(605),
+            "invocation": {**self.fields, "status": "P2_DIRECT_WORKER_HTTP_OBSERVED", "httpStatus": 200, "operationId": uid(8), "workerInvokedAt": self.utc(605),
                 "bindingSha256": worker_binding, "nativeInvocationQualified": False}, "lifecyclePrivateRecordSha256": witness_sha,
             "receiverDenials": denials, "receiverDeniedCount": 2, "receiverDeniedHttpCount": 1, "frontendActive": 0, "frontendUncertain": 0,
-            "releaseAccepted": False}
+            "sourceProgramSha256": self.worker_plan["sourceProgramSha256"], "releaseAccepted": False}
         self.worker_sha = worker.write_record(self.worker_dir, "joined-worker.json",
-            {"version": 1, "status": "P2_DIRECT_WORKER_MACHINE_ARTIFACT", "planSha256": worker_binding, "record": joined,
+            {**self.fields, "status": "P2_DIRECT_WORKER_MACHINE_ARTIFACT", "planSha256": worker_binding, "record": joined,
+             **({"releaseEvidence": self.release_hashes} if ref is not None else {}),
              **{key: self.worker_plan[key] for key in ("sourceProgramSha256", "hostProgramSha256")}})
         self.calls = []
         self.after_child = lambda: None
@@ -365,24 +400,91 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         patchers = [patch.object(timing, "os", OwnedHostOs()), patch.object(suspension, "os", OwnedHostOs()),
             patch.object(worker, "os", OwnedHostOs()), patch.object(suspension, "Path", path),
             patch.object(suspension, "ROOT", OwnedPath(root)), patch.object(worker, "ROOT", OwnedPath(root)),
-            patch.object(suspension, "LOCK", lock), patch.object(persistence, "_reviewed", side_effect=lambda value: value),
-            patch.object(persistence, "_join_selected"), patch.object(identity, "source_closure", return_value=source_files),
+            patch.object(suspension, "LOCK", lock), patch.object(worker, "LOCK", lock), patch.object(persistence, "_reviewed", side_effect=lambda value, _expected=None: value),
+            patch.object(persistence, "_join_selected"), patch.object(persistence, "_source_closure", return_value=source_files),
             patch.object(identity, "_configuration_hash", return_value="6" * 64), patch.object(identity, "_one_container"),
             patch.object(timing.runtime, "check_containers", return_value=[gateway]), patch.object(self.scope, "run", side_effect=owned_child)]
         for patcher in patchers:
             patcher.start()
             self.addCleanup(patcher.stop)
+        if ref is not None:
+            def check_api_proof(proof, scope, selected, jobs, *, expected_profile):
+                self.assertIs(proof, self.api_proof)
+                self.assertIs(scope, self.scope)
+                self.assertEqual((selected, jobs, expected_profile), (self.selected, self.jobs, ref))
+                scope.verify()
+            check = patch.object(worker.current_databases, "read_certification_api_proof", side_effect=check_api_proof)
+            self.api_check = check.start()
+            self.addCleanup(check.stop)
+
+    def profiled_scope_inputs(self, plan, receipt, source_files):
+        ref = self.PROFILE
+        owner = {"name": "owned_admission_owner", "oid": "101"}
+        role = {"name": "owned_runtime", "oid": "102"}
+        job = self.jobs["frontend"]["job"]
+        profile = {"qualificationTargetProfile": ref}
+        target = {**receipt["target"], **profile}
+        for name in staging_state.CONFIGURATION_FILES:
+            path = self.configuration / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"owned configuration bytes\n")
+        configuration_sha256 = staging_state.configuration_hashes(self.configuration)
+        plan.update(startState="already-closed", contractPhase=job["contractPhase"],
+            phase2ContractManifestSha256=job["phase2ContractManifestSha256"],
+            configurationCanonicalSha256=timing._hash(certification._canonical(configuration_sha256)),
+            nativePlan={**self.fields, "target": target, "owner": owner, "producer": {"role": role}})
+        plan["planSha256"] = certification._profiled_plan_hash(plan)
+        receipt.update(target=target, planSha256=plan["planSha256"], service="frontend", owner=owner, runtime=role,
+            retiredLogins=[], witness={})
+        for field in ("after", "witness"):
+            receipt["journalSha256" if field == "after" else "witnessSha256"] = timing._hash(certification._profiled_compact(receipt[field]))
+        request = {**self.fields, "marker": "f" * 64, "backendPid": 1234, "backendStart": "2026-11-07 00:00:00+00",
+            "job": job, "baseline": profile, "owner": owner, "producers": [], "plan": plan, "receipt": receipt,
+            "historicalLogins": {**self.fields, "target": target, "retiredLogins": []}}
+        observer = certification.P2CertificationPhysicalObserver(self.selected, request, self.source, "owned-physical-projection",
+            program=self.source / certification.OBSERVER, program_sha256=source_files[certification.OBSERVER], expected_profile=ref)
+        # The real observer class and request binding stay in the loop. The
+        # heartbeat thread models the separate database/Docker observer here.
+        observer.thread = threading.Thread(target=observer.stop_event.wait, daemon=True)
+        observer.thread.start()
+        observer.last_verified = time.monotonic()
+        self.addCleanup(observer.stop)
+        return {"configuration_sha256": configuration_sha256, "expected_profile": ref, "physical_observer": observer}
+
+    def make_release_evidence(self, certification_plan):
+        common = {**self.fields, "environment": "staging", "releaseId": self.selected["releaseId"],
+            "sourceCommit": self.suspension_plan["sourceCommit"], "deploymentId": self.suspension_plan["deploymentId"]}
+        records = {name: dict(common) for name in suspension.READY_FILES}
+        feature, writer = {"owned": True}, {"mode": "enforce"}
+        records["frontend-workload-outcome.json"].update(status="FRONTEND_VERIFIED", featureControls=feature,
+            writerAdmissionBinding=writer, trafficAuthorized=False, nativeSchedulerVerified=False)
+        records["frontend-promotion-outcome.json"].update(status="FRONTEND_DOMAINS_PROMOTED", phase="completed",
+            frontendDomainsPromoted=True, trafficAuthorized=False)
+        raw = {name: timing._canonical(value) + b"\n" for name, value in records.items()}
+        ready_hashes = {name: timing._hash(value) for name, value in raw.items()}
+        workload, promotion = (ready_hashes[name] for name in ("frontend-workload-outcome.json", "frontend-promotion-outcome.json"))
+        terminal = timing._canonical({**common, "status": "P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION",
+            "candidateSha256": self.suspension_plan["candidateSha256"], "frontendWorkloadReceiptSha256": workload,
+            "trafficAuthorized": False, "releaseAccepted": False}) + b"\n"
+        terminal_sha = timing._hash(terminal)
+        self.reviewed["plan"].update(releaseId=common["releaseId"], originalReleaseSha256=terminal_sha, frontendDeploymentSha256=promotion)
+        self.suspension_plan.update(releaseId=common["releaseId"], configurationRecordSha256=workload, featureControls=feature, writerAdmissionBinding=writer)
+        certification_plan.update(originalReleaseReceiptSha256=terminal_sha, readyReceiptSha256=ready_hashes)
+        return {"originalReleaseReceipt": base64.b64encode(terminal).decode(),
+            "readyReceipts": {name: base64.b64encode(value).decode() for name, value in raw.items()}}, {
+            "originalReleaseReceiptSha256": terminal_sha, "frontendWorkloadReceiptSha256": workload, "frontendPromotionReceiptSha256": promotion}
 
     def put_public_capture(self, binding):
         (self.suspension_dir / "controlled-capture-public.json").unlink(missing_ok=True)
-        suspension.private_record(self.suspension_dir, "controlled-capture-public.json", {"version": 1, "bindingSha256": binding,
+        suspension.private_record(self.suspension_dir, "controlled-capture-public.json", {**self.fields, "bindingSha256": binding,
             "capturePublic": self.capture, "controlledCaptureMetadataSha256": timing._hash(timing._canonical(self.capture)),
             "tokenBytesOutput": False, "credentialHashesOutput": False})
 
     def finalize(self, scope=None, expected_sha=None):
         return timing.finalize_retained_authority_timing(self.scope if scope is None else scope, self.selected, self.jobs,
             self.configuration, self.source, self.worker_plan, self.suspension_plan, self.reviewed,
-            self.worker_sha if expected_sha is None else expected_sha)
+            self.worker_sha if expected_sha is None else expected_sha, expected_profile=self.PROFILE,
+            release_evidence=self.release_evidence, database_proof=self.api_proof)
 
     def test_real_retained_readers_and_fixed_qualifier_preserve_pre_worker_mux_order(self):
         result = self.finalize()
@@ -397,6 +499,11 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         self.assertFalse(result["releaseAccepted"])
         self.assertEqual(result["receiverEvidence"]["course"]["httpStatus"], 403)
         self.assertIsNone(result["receiverEvidence"]["community"]["httpStatus"])
+        self.assertEqual(result["version"], self.fields["version"])
+        if self.PROFILE is not None:
+            self.assertEqual(result["qualificationTargetProfile"], self.PROFILE)
+            self.assertEqual(result["releaseEvidence"], self.release_hashes)
+            self.assertEqual(self.api_check.call_count, 2)
 
     def test_claimed_digests_and_json_cannot_replace_fixed_files_or_the_live_scope(self):
         with self.assertRaisesRegex(ValueError, "ACTUAL_PARENT_REQUIRED"):
@@ -404,13 +511,14 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         ordinary = P2ReleaseScope(self.scope.descriptor, self.scope.path, lambda: None, self.scope.receipt)
         with self.assertRaisesRegex(ValueError, "ACTUAL_PARENT_REQUIRED"):
             self.finalize(scope=ordinary)
-        for change in ({"mode": "native-window"}, {"certificationActionId": "foreign"}, {"workerPlanSha256": "0" * 64}):
-            parent_plan = {**self.scope.certification_plan, **change}
-            foreign = P2CertificationScope(self.scope.descriptor, self.scope.path, lambda: None,
-                {**self.scope.receipt, "certificationActionId": parent_plan["certificationActionId"]}, "3" * 64,
-                release=self.selected, jobs=self.jobs, certification_plan=parent_plan)
-            with self.assertRaisesRegex(ValueError, "DIRECT_WORKER_PARENT_BINDING_REQUIRED"):
-                self.finalize(scope=foreign)
+        for change in ({"actionId": "foreign"}, {"pendingRecordSha256": "0" * 64}):
+            original = self.worker_plan
+            self.worker_plan = {**original, **change}
+            try:
+                with self.assertRaisesRegex(ValueError, "DIRECT_WORKER_PARENT_BINDING_REQUIRED"):
+                    self.finalize()
+            finally:
+                self.worker_plan = original
         with self.assertRaisesRegex(ValueError, "RETAINED_BYTES_CHANGED"):
             self.finalize(expected_sha="f" * 64)
         path = self.suspension_dir / "controlled-mux-window.json"
@@ -443,6 +551,18 @@ class RetainedTimingFinalizerTests(unittest.TestCase):
         self.after_child = replace
         with self.assertRaisesRegex(ValueError, "RETAINED_EVIDENCE_CHANGED"):
             self.finalize()
+
+
+class ProfiledRetainedTimingFinalizerTests(RetainedTimingFinalizerTests):
+    PROFILE = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+
+    def test_workload_bytes_cannot_be_reencoded_after_review(self):
+        name = "frontend-workload-outcome.json"
+        original = base64.b64decode(self.release_evidence["readyReceipts"][name], validate=True)
+        self.release_evidence["readyReceipts"][name] = base64.b64encode(original + b" ").decode()
+        with self.assertRaisesRegex(ValueError, "RELEASE_EVIDENCE_CHANGED"):
+            self.finalize()
+        self.assertEqual(self.calls, [])
 
 
 class AuthorityTimingScopeTests(unittest.TestCase):
