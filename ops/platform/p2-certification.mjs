@@ -33,7 +33,8 @@ import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,ca
   captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
 import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftCase,validateP2InteractiveCourseDraft,
   captureP2InteractiveCourseDraftEditsBaseline,observeP2InteractiveCourseDraftEditsCase,validateP2InteractiveCourseDraftEdits,
-  captureP2InteractiveCourseReorderBaseline,observeP2InteractiveCourseReorderCase,validateP2InteractiveCourseReorder} from './p2-lifecycle-persistence-probe.mjs';
+  captureP2InteractiveCourseReorderBaseline,observeP2InteractiveCourseReorderCase,validateP2InteractiveCourseReorder,
+  captureP2InteractiveCurriculumCreateBaseline,observeP2InteractiveCurriculumCreateCase,validateP2InteractiveCurriculumCreate} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -63,11 +64,14 @@ const authoringCases=new Map([
     baseline:captureP2InteractiveCourseDraftEditsBaseline,observe:observeP2InteractiveCourseDraftEditsCase}],
   ['reorder-and-stale-curriculum',{field:'authoringReorder',paired:true,validate:validateP2InteractiveCourseReorder,
     baseline:captureP2InteractiveCourseReorderBaseline,observe:observeP2InteractiveCourseReorderCase}],
+  ['create-curriculum',{field:'authoringCurriculum',paired:false,validate:validateP2InteractiveCurriculumCreate,
+    baseline:captureP2InteractiveCurriculumCreateBaseline,observe:observeP2InteractiveCurriculumCreateCase}],
 ]);
-function courseDraftSelection({authoringAction,requests}){
+const authoringSlug=value=>typeof value==='string'&&value.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
+function authoringSelection({authoringAction,requests}){
   const {operation,...selection}=authoringAction;
-  return operation==='create-draft'?{...selection,bodySha256:requests[1].bodySha256}:
-    {...selection,winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256};
+  return authoringCases.get(operation).paired?{...selection,winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256}:
+    {...selection,bodySha256:requests[1].bodySha256};
 }
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
@@ -102,15 +106,18 @@ function interactiveActionValid(value){
   if(authoring){
     const selected=value.authoringAction,configured=authoringCases.get(selected?.operation),[read,...mutations]=value.requests;
     if(!configured)return false;
-    const {paired}=configured,reorder=selected.operation==='reorder-and-stale-curriculum';
-    if(!exactKeys(selected,['operation','slug',...(paired?['courseId','revision']:[]),...(reorder?['kind','parentId']:[])])||
-       typeof selected.slug!=='string'||selected.slug.length>120||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(selected.slug))return false;
-    if(paired&&(!uuid(selected.courseId)||!Number.isInteger(selected.revision)||selected.revision<1||selected.revision>=2_147_483_647))return false;
-    if(reorder&&(!uuid(selected.parentId)||!['module','lesson'].includes(selected.kind)||
+    const {paired}=configured,reorder=selected.operation==='reorder-and-stale-curriculum',create=selected.operation==='create-curriculum';
+    const detailRead=paired||create,curriculum=reorder||create;
+    if(!exactKeys(selected,['operation','slug',...(detailRead?['courseId','revision']:[]),
+      ...(curriculum?['kind','parentId']:[]),...(create?['childSlug']:[])])||
+      !authoringSlug(selected.slug)||(create&&!authoringSlug(selected.childSlug)))return false;
+    if(detailRead&&(!uuid(selected.courseId)||!Number.isInteger(selected.revision)||selected.revision<1||selected.revision>=2_147_483_647))return false;
+    if(curriculum&&(!uuid(selected.parentId)||!['module','lesson'].includes(selected.kind)||
       selected.kind==='module'&&selected.parentId!==selected.courseId))return false;
     const base='/course/v1/admin/courses',detail=`${base}/${selected.courseId}`;
-    const target=reorder?(selected.kind==='module'?detail+'/modules/reorder':`/course/v1/admin/modules/${selected.parentId}/lessons/reorder`):paired?detail:base;
-    return isDeepStrictEqual(read,{method:'GET',target:paired?detail:base+'?limit=100',bodySha256:emptyRequestSha256,uses:paired?3:1})&&
+    const curriculumPath=selected.kind==='module'?detail+'/modules':`/course/v1/admin/modules/${selected.parentId}/lessons`;
+    const target=curriculum?curriculumPath+(reorder?'/reorder':''):paired?detail:base;
+    return isDeepStrictEqual(read,{method:'GET',target:detailRead?detail:base+'?limit=100',bodySha256:emptyRequestSha256,uses:paired?3:create?2:1})&&
       mutations.length===(paired?2:1)&&mutations.every(row=>exactKeys(row,['method','target','bodySha256','uses'])&&
         row.method===(paired&&!reorder?'PATCH':'POST')&&row.target===target&&row.uses===1&&sha(row.bodySha256)&&row.bodySha256!==emptyRequestSha256)&&
       (!paired||mutations[0].bodySha256!==mutations[1].bodySha256);
@@ -411,7 +418,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   if(authoring)demand(courseDraft?.job&&courseDraft.draft&&typeof courseDraft.readCourseDatabaseUrl==='function');
   const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase()}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
-  const selection=authoring?courseDraftSelection(action):
+  const selection=authoring?authoringSelection(action):
     enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
   const context=authoring||!enrollment&&selection.actorKind==='admin'?'owner':'learner';
   const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
@@ -874,7 +881,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   if(authoring){
     const {field,validate}=authoringCases.get(plan.scopedAction.authoringAction.operation);
     demand(exactKeys(execution,[field]));
-    authoringDraft=validate(courseDraftSelection(plan.scopedAction),execution[field]);
+    authoringDraft=validate(authoringSelection(plan.scopedAction),execution[field]);
   }
   demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
   const releaseSettings=selection.releaseSettings;

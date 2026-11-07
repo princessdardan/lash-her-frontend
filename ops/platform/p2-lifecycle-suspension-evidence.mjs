@@ -11,7 +11,7 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { isP2InteractiveAuthoringPair, p2AuthoringReorderPath, p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath,
+import { isP2InteractiveAuthoringPair, p2AuthoringCurriculumPath, p2AuthoringReorderPath, p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath,
   p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt,
   validateP2AuthoringReorderResponses, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
@@ -219,6 +219,10 @@ async function reviewedInteractiveInput(plan, challenge) {
       authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
         revision: selected.revision, winnerBodySha256: first.bodySha256, staleBodySha256: second.bodySha256,
         ...(reorder ? { kind: selected.kind, parentId: selected.parentId } : {}) };
+    } else if (selected?.operation === "create-curriculum") {
+      demand(first?.method === "POST" && first.target === "/course/v1" + p2AuthoringCurriculumPath(selected).slice(4));
+      authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
+        revision: selected.revision, kind: selected.kind, parentId: selected.parentId, childSlug: selected.childSlug, bodySha256: first.bodySha256 };
     } else {
       demand(selected?.operation === "create-draft" && first?.method === "POST" && first.target === "/course/v1/admin/courses");
       authoring = { actorId: action.actorId, slug: selected.slug, bodySha256: first.bodySha256 };
@@ -281,7 +285,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
-          && (!isP2InteractiveAuthoringPair(input) || message.httpStatus === 200));
+          && (!(isP2InteractiveAuthoringPair(input) || input.authoring?.operation === "create-curriculum") || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);

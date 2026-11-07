@@ -170,12 +170,20 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(reorder.cookie, reorder.proxyProof, () => send({
     method: "POST", path: reorderPath, body: reorderBody, applicationToken: "owned.admin.jwt",
   }), reorderRoute);
+  const curriculumPath = "/v1/admin/modules/12345678-1234-4123-8123-123456789abc/lessons";
+  const curriculumRoute = "POST /api/admin/modules/12345678-1234-4123-8123-123456789abc/lessons";
+  const curriculum = evidence("authoring", curriculumRoute, issued, "7032712d617574682d6e65772d7631008e2280dc03894248b21cf87427f9e85c");
+  const curriculumBody = '{"expectedCourseRevision":3,"title":"Lesson","slug":"lesson","position":1,"contentDocument":{"version":1,"blocks":[]},"transcript":null,"isPreview":false,"captions":[]}';
+  await inBrowser(curriculum.cookie, curriculum.proxyProof, () => send({
+    method: "POST", path: curriculumPath, body: curriculumBody, applicationToken: "owned.admin.jwt",
+  }), curriculumRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
     { stage: "authoring", method: "POST", target: "/course/v1/admin/courses", bytes: [draftBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [editBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "POST", target: "/course" + reorderPath, bytes: [reorderBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "POST", target: "/course" + curriculumPath, bytes: [curriculumBody, "owned.admin.jwt", ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -213,6 +221,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 16);
-  assert.ok(captured.slice(5).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, 17);
+  assert.ok(captured.slice(6).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

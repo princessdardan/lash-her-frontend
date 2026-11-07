@@ -653,6 +653,84 @@ for (const kind of ["modules", "lessons"]) {
   });
 }
 
+for (const kind of ["module", "lesson"]) {
+  test(`scoped authoring acknowledges ${kind} creation between two exact draft reads`, async t => {
+    const courseId = "20000000-0000-4000-8000-000000000001";
+    const parentModuleId = "20000000-0000-4000-8000-000000000002";
+    const createdId = "20000000-0000-4000-8000-000000000003";
+    const foreignParentId = "20000000-0000-4000-8000-000000000004";
+    const creatingModule = kind === "module";
+    const read = `/course/v1/admin/courses/${courseId}`;
+    const createPath = parentId => creatingModule ? `/course/v1/admin/courses/${parentId}/modules` : `/course/v1/admin/modules/${parentId}/lessons`;
+    const write = createPath(creatingModule ? courseId : parentModuleId);
+    const expectedCourseRevision = 7;
+    const form = creatingModule
+      ? { expectedCourseRevision, title: "P2Q second module", slug: "p2q-second-module", description: "Reviewed module description", position: 2 }
+      : { expectedCourseRevision, title: "P2Q first lesson", slug: "p2q-first-lesson", position: 1,
+        contentDocument: { version: 1, blocks: [] }, transcript: "Reviewed lesson transcript", isPreview: true, captions: [] };
+    const body = JSON.stringify(form);
+    const requests = [
+      { method: "GET", target: read, bodySha256: certificationHash(""), uses: 2 },
+      { method: "POST", target: write, bodySha256: certificationHash(body), uses: 1 },
+    ];
+    const parent = { id: parentModuleId, courseId, title: "P2Q parent module", slug: "p2q-parent-module", description: null, position: 1,
+      archivedAt: null, courseRevision: expectedCourseRevision, lessons: [] };
+    const baseline = { course: { id: courseId, title: "P2Q curriculum draft", slug: "p2q-curriculum-draft", description: null, introduction: null,
+      currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false }, taxClassification: null,
+      status: "draft", revision: expectedCourseRevision, modules: [parent] } };
+    const { expectedCourseRevision: revision, ...fields } = form;
+    const saved = { id: createdId, ...fields, archivedAt: null, courseRevision: revision + 1,
+      ...(creatingModule ? { courseId, lessons: [] } : { moduleId: parentModuleId, content: null }) };
+    const created = { [kind]: saved };
+    const after = { course: { ...baseline.course, revision: revision + 1, modules: creatingModule
+      ? [{ ...parent, courseRevision: revision + 1 }, saved]
+      : [{ ...parent, courseRevision: revision + 1, lessons: [saved] }] } };
+    const forwarded = [];
+    let current = baseline;
+    const f = await interactiveFixture(t, requests, async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      forwarded.push({ method: req.method, target: req.url, body: Buffer.concat(chunks).toString(),
+        requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+      if (req.method === "POST") current = after;
+      res.writeHead(req.method === "POST" ? 201 : 200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(req.method === "POST" ? created : current));
+    }, "authoring");
+
+    const post = (payload = body, path = write) => f.signed({ method: "POST", path, body: payload });
+    for (const denied of [post(body, createPath(foreignParentId)), post(body, `${write}/reorder`),
+      post(JSON.stringify({ ...form, title: "Unreviewed title" })), post(JSON.stringify(form, null, 2))]) {
+      assert.equal((await f.send(denied)).status, 503);
+    }
+    const steps = [
+      { input: f.signed({ path: read }), requestIndex: 0, status: 200, value: baseline },
+      { input: post(), requestIndex: 1, status: 201, value: created },
+      { input: f.signed({ path: read }), requestIndex: 0, status: 200, value: after },
+    ];
+    const acknowledged = [];
+    for (const { input, requestIndex, status, value } of steps) {
+      const output = await f.send(input);
+      assert.equal(output.status, status);
+      assert.deepEqual(JSON.parse(output.body), value);
+      const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+      assert.match(requestId, /^[a-f0-9-]{36}$/u);
+      assert.notEqual(requestId, proofRequestId);
+      acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: status });
+      assert.equal((await f.send(input)).status, 503);
+    }
+    assert.equal((await f.send(f.signed({ path: read }))).status, 503);
+    assert.equal((await f.send(post())).status, 503);
+    assert.equal(new Set(acknowledged.map(row => row.requestId)).size, 3);
+    assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, 3);
+    assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+      body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined })));
+    const observed = f.admissionState();
+    assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.interactiveEvidence, { admitted: 3, acknowledged });
+  });
+}
+
 function mediaRefreshReceipt(lessonId, id) {
   return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };

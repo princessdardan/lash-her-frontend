@@ -67,7 +67,15 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
               result = await course.updateCourse(params.courseId, input);
               break;
             }
-            case "create-module": result = await course.createModule(params.courseId, body as Parameters<Client["createModule"]>[1]); break;
+            case "create-module": {
+              const input = body as Parameters<Client["createModule"]>[1];
+              if (currentWriterAuthoringActorId()) {
+                validateCandidateRequest("course", "/v1/admin/courses/{courseId}/modules", "post", { params, body: input });
+                if (!Object.hasOwn(input, "description")) throw new IntegrationServiceError("invalid_request", 400);
+              }
+              result = await course.createModule(params.courseId, input);
+              break;
+            }
             case "update-module": result = await course.updateModule(params.moduleId, body as Parameters<Client["updateModule"]>[1]); break;
             case "reorder-modules": {
               const input = body as ReorderInput;
@@ -75,7 +83,18 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
               result = await course.reorderModules(params.courseId, input);
               break;
             }
-            case "create-lesson": result = await course.createLesson(params.moduleId, body as Parameters<Client["createLesson"]>[1]); break;
+            case "create-lesson": {
+              const input = body as Parameters<Client["createLesson"]>[1];
+              if (currentWriterAuthoringActorId()) {
+                validateCandidateRequest("course", "/v1/admin/modules/{moduleId}/lessons", "post", { params, body: input });
+                if (Object.hasOwn(input, "content") || !Object.hasOwn(input, "transcript") || !Object.hasOwn(input, "isPreview") ||
+                  input.contentDocument?.version !== 1 || input.contentDocument.blocks.length !== 0 || input.captions?.length !== 0) {
+                  throw new IntegrationServiceError("invalid_request", 400);
+                }
+              }
+              result = await course.createLesson(params.moduleId, input);
+              break;
+            }
             case "update-lesson": result = await course.updateLesson(params.lessonId, body as Parameters<Client["updateLesson"]>[1]); break;
             case "reorder-lessons": {
               const input = body as ReorderInput;

@@ -12,8 +12,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
 import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraftEditsBaseline, captureP2InteractiveCourseReorderBaseline,
-  observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase, p2LifecyclePersistenceTargetSha256,
-  validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder } from "./p2-lifecycle-persistence-probe.mjs";
+  captureP2InteractiveCurriculumCreateBaseline, observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase,
+  observeP2InteractiveCourseReorderCase, observeP2InteractiveCurriculumCreateCase, p2LifecyclePersistenceTargetSha256,
+  validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
+  validateP2InteractiveCurriculumCreate } from "./p2-lifecycle-persistence-probe.mjs";
 import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -204,13 +206,16 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await assert.rejects(observe(missing, await capture(missing)), { check: "course-draft-persistence" });
     await runOwnedDraftEditWitness({ course, job, dependencies, input, create });
     await runOwnedCourseReorderWitness({ course, job, dependencies, input, create });
+    await runOwnedCurriculumCreateWitness({ course, job, dependencies, input, create });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
     return ["course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields", "course-draft-wrong-row-field-role-or-unheld-session-refused",
       "course-draft-edit-held-winning-fields-single-revision-and-stale-unchanged", "course-draft-edit-wrong-baseline-winner-stale-and-replay-refused",
       "course-module-and-lesson-full-reorder-archived-siblings-and-stale-zero-writes",
-      "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift"];
+      "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift",
+      "course-curriculum-create-normal-module-and-lesson-fields-with-single-revision-and-preserved-siblings",
+      "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -380,6 +385,109 @@ async function runOwnedCourseReorderWitness({ course, job, dependencies, input, 
     await assert.rejects(observe(test, baseline), { check });
     await assert.rejects(observe(test, baseline), { check: "course-reorder-receipt" });
   }
+}
+
+async function runOwnedCurriculumCreateWitness({ course, job, dependencies, input, create }) {
+  const seed = async (kind, name) => {
+    const fixture = input(`curriculum-create-${name}`), { courseId, draft: { slug } } = fixture;
+    await create(fixture);
+    const parentId = kind === "module" ? courseId : randomUUID(), siblingId = randomUUID(), itemId = randomUUID();
+    if (kind === "lesson") {
+      await course.query("INSERT INTO public.modules(id,course_id,slug,title,position) VALUES($1,$2,'lesson-parent','Lesson parent',1)", [parentId, courseId]);
+    }
+    const [table, foreignKey] = kind === "module" ? ["modules", "course_id"] : ["lessons", "module_id"];
+    await course.query(`INSERT INTO public.${table}(id,${foreignKey},slug,title,position,archived_at)
+      VALUES($1,$2,'existing-sibling','Existing sibling',2,pg_catalog.clock_timestamp())`, [siblingId, parentId]);
+    const childSlug = "selected-child";
+    const body = kind === "module"
+      ? { expectedCourseRevision: 1, title: "New module", slug: childSlug, description: "Reviewed description", position: 1 }
+      : { expectedCourseRevision: 1, title: "New lesson", slug: childSlug, position: 1,
+        contentDocument: { version: 1, blocks: [] }, transcript: "Reviewed transcript", isPreview: true, captions: [] };
+    return { selection: { courseId, slug, revision: 1, kind, parentId, childSlug, bodySha256: hash(JSON.stringify(body)) },
+      body, siblingId, itemId };
+  };
+  const capture = ({ selection, body }) => captureP2InteractiveCurriculumCreateBaseline(job, selection, body, dependencies);
+  const browser = ({ selection, itemId }) => ({ courseId: selection.courseId, parentId: selection.parentId, kind: selection.kind,
+    itemId, slug: selection.childSlug, revision: selection.revision + 1 });
+  const observe = (test, baseline, receipt = browser(test)) =>
+    observeP2InteractiveCurriculumCreateCase(job, test.selection, baseline, receipt, dependencies);
+  const withBody = (test, body) => ({ ...test, body, selection: { ...test.selection, childSlug: body.slug, bodySha256: hash(JSON.stringify(body)) } });
+  const write = async ({ selection, body, itemId }) => {
+    await course.query("BEGIN");
+    try {
+      assert.equal((await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid AND revision=$2::int AND status='draft'",
+        [selection.courseId, body.expectedCourseRevision])).rowCount, 1);
+      if (selection.kind === "module") {
+        await course.query("INSERT INTO public.modules(id,course_id,slug,title,description,position) VALUES($1,$2,$3,$4,$5,$6)",
+          [itemId, selection.parentId, body.slug, body.title, body.description, body.position]);
+      } else {
+        await course.query(`INSERT INTO public.lessons(id,module_id,slug,title,position,content_document,transcript,is_preview,captions)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+        [itemId, selection.parentId, body.slug, body.title, body.position, body.contentDocument, body.transcript, body.isPreview, JSON.stringify(body.captions)]);
+      }
+      await course.query("COMMIT");
+    } catch (error) {
+      await course.query("ROLLBACK");
+      throw error;
+    }
+  };
+
+  for (const kind of ["module", "lesson"]) {
+    const test = await seed(kind, kind);
+    assert.deepEqual(validateP2InteractiveCurriculumCreate(test.selection, test.body), test.body);
+    const wrongOrder = withBody(test, Object.fromEntries(Object.entries(test.body).reverse()));
+    assert.throws(() => validateP2InteractiveCurriculumCreate(wrongOrder.selection, wrongOrder.body), { check: "course-curriculum-create-body" });
+    assert.throws(() => validateP2InteractiveCurriculumCreate(test.selection, { ...test.body, title: "Wrong bytes" }),
+      { check: "course-curriculum-create-body-hash" });
+    await assert.rejects(capture(withBody(test, { ...test.body, slug: "existing-sibling" })), { check: "course-curriculum-create-occupied" });
+    await assert.rejects(capture(withBody(test, { ...test.body, position: 2 })), { check: "course-curriculum-create-occupied" });
+    if (kind === "lesson") {
+      for (const changes of [{ contentDocument: { version: 1, blocks: [{}] } }, { captions: [{}] }]) {
+        const invalid = withBody(test, { ...test.body, ...changes });
+        assert.throws(() => validateP2InteractiveCurriculumCreate(invalid.selection, invalid.body), { check: "course-curriculum-create-lesson" });
+      }
+      await course.query("UPDATE public.modules SET archived_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid", [test.selection.parentId]);
+      await assert.rejects(capture(test), { check: "course-curriculum-create-parent" });
+      await course.query("UPDATE public.modules SET archived_at=NULL WHERE id=$1::uuid", [test.selection.parentId]);
+    }
+    const baseline = await capture(test);
+    assert.equal(JSON.stringify(baseline), "{}");
+    await write(test);
+    await assert.rejects(observe(test, {}, browser(test)), { check: "course-curriculum-create-receipt" });
+    await assert.rejects(observe(test, baseline, { ...browser(test), slug: "foreign" }), { check: "course-curriculum-create-receipt" });
+    assert.deepEqual(await observe(test, baseline), { ...browser(test), readOnly: true });
+    await assert.rejects(observe(test, baseline), { check: "course-curriculum-create-receipt" });
+  }
+  const foreign = await seed("lesson", "foreign"), other = input("curriculum-foreign-course");
+  await create(other);
+  await assert.rejects(capture({ ...foreign, selection: { ...foreign.selection, courseId: other.courseId, slug: other.draft.slug } }),
+    { check: "course-curriculum-create-parent" });
+
+  for (const [field, sql, check] of [
+    ["legacy-content", "UPDATE public.lessons SET content='unexpected' WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["document", "UPDATE public.lessons SET content_document=NULL WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["transcript", "UPDATE public.lessons SET transcript=NULL WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["preview", "UPDATE public.lessons SET is_preview=false WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["captions", "UPDATE public.lessons SET captions='[{}]'::jsonb WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["archive", "UPDATE public.lessons SET archived_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["position", "UPDATE public.lessons SET position=3 WHERE id=$1::uuid", "course-curriculum-create-persistence"],
+    ["sibling-position", "UPDATE public.lessons SET position=3 WHERE id=$1::uuid", "course-curriculum-create-siblings"],
+    ["sibling-archive", "UPDATE public.lessons SET archived_at=NULL WHERE id=$1::uuid", "course-curriculum-create-siblings"],
+    ["parent-archive", "UPDATE public.modules SET archived_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid", "course-curriculum-create-siblings"],
+    ["revision", "UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", "course-curriculum-create-draft"],
+  ]) {
+    const test = await seed("lesson", field), baseline = await capture(test);
+    await write(test);
+    const targetId = field.startsWith("sibling-") ? test.siblingId : field.startsWith("parent-") ? test.selection.parentId
+      : field === "revision" ? test.selection.courseId : test.itemId;
+    await course.query(sql, [targetId]);
+    await assert.rejects(observe(test, baseline), { check });
+    await assert.rejects(observe(test, baseline), { check: "course-curriculum-create-receipt" });
+  }
+  const module = await seed("module", "module-drift"), before = await capture(module);
+  await write(module);
+  await course.query("UPDATE public.modules SET description='unexpected' WHERE id=$1::uuid", [module.itemId]);
+  await assert.rejects(observe(module, before), { check: "course-curriculum-create-persistence" });
 }
 
 try { await main(); }

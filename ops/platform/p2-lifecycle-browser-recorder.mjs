@@ -68,22 +68,28 @@ function enrollmentSelector(enrollment) {
 
 const authoringEdit = input => input.stage === "authoring" && input.authoring?.operation === "edit-and-stale-draft";
 const authoringReorder = input => input.stage === "authoring" && input.authoring?.operation === "reorder-and-stale-curriculum";
+const authoringCreateCurriculum = input => input.stage === "authoring" && input.authoring?.operation === "create-curriculum";
 export const isP2InteractiveAuthoringPair = input => authoringEdit(input) || authoringReorder(input);
 
-export function p2AuthoringReorderPath({ kind, parentId }) {
-  return kind === "module" ? authoringPath + "/" + parentId + "/modules/reorder" : "/api/admin/modules/" + parentId + "/lessons/reorder";
+export function p2AuthoringCurriculumPath({ kind, parentId }) {
+  return kind === "module" ? authoringPath + "/" + parentId + "/modules" : "/api/admin/modules/" + parentId + "/lessons";
+}
+
+export function p2AuthoringReorderPath(target) {
+  return p2AuthoringCurriculumPath(target) + "/reorder";
 }
 
 function authoringSelector(input) {
   demand(uuid(input.authoring.actorId));
   const prefix = authoringReorder(input) ? "7032712d617574682d736f72742d7631"
-    : authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
+    : authoringCreateCurriculum(input) ? "7032712d617574682d6e65772d763100"
+      : authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
   return prefix + input.authoring.actorId.replaceAll("-", "");
 }
 
 export function p2InteractiveBrowserEntryPath(input, context) {
   const path = p2InteractiveBrowserPath(input.stage, context);
-  return isP2InteractiveAuthoringPair(input) ? path + "/" + input.authoring.courseId : path;
+  return isP2InteractiveAuthoringPair(input) || authoringCreateCurriculum(input) ? path + "/" + input.authoring.courseId : path;
 }
 
 export function validateP2InteractiveBrowserInput(input) {
@@ -100,15 +106,18 @@ export function validateP2InteractiveBrowserInput(input) {
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
   if (input.stage === "authoring") {
-    const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), reorder = authoringReorder(input);
-    demand(closed(target, ["actorId", "slug", ...(pair ? ["operation", "courseId", "revision", "winnerBodySha256", "staleBodySha256"] : ["bodySha256"]),
-      ...(reorder ? ["kind", "parentId"] : [])])
+    const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), create = authoringCreateCurriculum(input);
+    const curriculum = authoringReorder(input) || create;
+    demand(closed(target, ["actorId", "slug", ...(pair || create ? ["operation", "courseId", "revision"] : []),
+      ...(pair ? ["winnerBodySha256", "staleBodySha256"] : ["bodySha256"]), ...(curriculum ? ["kind", "parentId"] : []),
+      ...(create ? ["childSlug"] : [])])
       && uuid(target.actorId) && matches(target.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.slug.length <= 120);
-    if (pair) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision) && target.revision >= 1 && target.revision < Number.MAX_SAFE_INTEGER
-      && sha(target.winnerBodySha256) && sha(target.staleBodySha256) && target.winnerBodySha256 !== target.staleBodySha256);
+    if (pair || create) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision) && target.revision >= 1 && target.revision < Number.MAX_SAFE_INTEGER);
+    if (pair) demand(sha(target.winnerBodySha256) && sha(target.staleBodySha256) && target.winnerBodySha256 !== target.staleBodySha256);
     else demand(sha(target.bodySha256));
-    if (reorder) demand(["module", "lesson"].includes(target.kind) && uuid(target.parentId)
+    if (curriculum) demand(["module", "lesson"].includes(target.kind) && uuid(target.parentId)
       && (target.kind !== "module" || target.parentId === target.courseId));
+    if (create) demand(matches(target.childSlug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.childSlug.length <= 120);
   }
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
@@ -302,6 +311,14 @@ function validateAuthoringCourseReceipt(receipt, target, edit = false) {
 }
 
 export function validateP2AuthoringMutationReceipt(receipt, target) {
+  if (target.operation === "create-curriculum") {
+    demand(closed(receipt, ["method", "pathname", "status", "requestId", "body"]) && receipt.method === "POST"
+      && receipt.pathname === p2AuthoringCurriculumPath(target) && receipt.status === 200 && uuid(receipt.requestId)
+      && closed(receipt.body, ["courseId", "parentId", "kind", "itemId", "slug", "revision"])
+      && receipt.body.courseId === target.courseId && receipt.body.parentId === target.parentId && receipt.body.kind === target.kind
+      && uuid(receipt.body.itemId) && receipt.body.slug === target.childSlug && receipt.body.revision === target.revision + 1);
+    return receipt;
+  }
   return validateAuthoringCourseReceipt(receipt, target);
 }
 
@@ -346,6 +363,28 @@ function reorderResult(body, target, submittedIds) {
   return { courseId: target.courseId, parentId: target.parentId, kind: target.kind, revision, ids };
 }
 
+function validateCurriculumPost(body, target) {
+  const module = target.kind === "module";
+  demand(closed(body, ["expectedCourseRevision", "title", "slug", "position",
+    ...(module ? ["description"] : ["contentDocument", "transcript", "isPreview", "captions"])])
+    && body.expectedCourseRevision === target.revision && typeof body.title === "string" && body.title.length > 0
+    && body.slug === target.childSlug && Number.isSafeInteger(body.position) && body.position >= 1);
+  if (module) demand(body.description === null || typeof body.description === "string");
+  else demand((body.transcript === null || typeof body.transcript === "string") && typeof body.isPreview === "boolean"
+    && closed(body.contentDocument, ["version", "blocks"]) && body.contentDocument.version === 1
+    && Array.isArray(body.contentDocument.blocks) && body.contentDocument.blocks.length === 0
+    && Array.isArray(body.captions) && body.captions.length === 0);
+}
+
+function curriculumResult(body, target) {
+  demand(closed(body, [target.kind]));
+  const item = body[target.kind];
+  demand(item && typeof item === "object" && !Array.isArray(item)
+    && item[target.kind === "module" ? "courseId" : "moduleId"] === target.parentId);
+  return { courseId: target.courseId, parentId: target.parentId, kind: target.kind,
+    itemId: item.id, slug: item.slug, revision: item.courseRevision };
+}
+
 async function readMutationResponse(response, request, input, pathname, editRole, submittedIds) {
   const authoring = input.stage === "authoring", maximum = authoring ? maxAuthoringBody : maxLifecycleBody;
   const reorder = authoringReorder(input);
@@ -377,6 +416,9 @@ async function readMutationResponse(response, request, input, pathname, editRole
     const body = exactBrowserJson(bytes, maximum);
     if (!authoring) return validateP2LifecycleMutationReceipt({ ...receipt, body }, input.lifecycle);
     if (reorder) return { ...receipt, body: reorderResult(body, input.authoring, submittedIds) };
+    if (authoringCreateCurriculum(input)) {
+      return validateP2AuthoringMutationReceipt({ ...receipt, body: curriculumResult(body, input.authoring) }, input.authoring);
+    }
     demand(closed(body, ["course"]) && body.course && typeof body.course === "object" && !Array.isArray(body.course));
     const { id: courseId, slug, revision, status: courseStatus } = body.course;
     return validateAuthoringCourseReceipt({ ...receipt, body: { courseId, slug, revision, status: courseStatus } }, input.authoring, editRole === "winner");
@@ -387,11 +429,12 @@ async function readMutationResponse(response, request, input, pathname, editRole
 // is lost while closing the page, invalidates the first accepted response.
 function watchMutation(context, page, input, edit) {
   validateP2InteractiveBrowserInput(input);
-  const authoring = input.stage === "authoring", reorder = authoringReorder(input), target = input.lifecycle;
-  const pathname = reorder ? p2AuthoringReorderPath(input.authoring) : edit ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : target.pathname;
+  const authoring = input.stage === "authoring", reorder = authoringReorder(input), create = authoringCreateCurriculum(input), target = input.lifecycle;
+  const pathname = reorder ? p2AuthoringReorderPath(input.authoring) : create ? p2AuthoringCurriculumPath(input.authoring)
+    : edit ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : target.pathname;
   const method = edit && !reorder ? "PATCH" : "POST";
   const refusal = () => new Error(authoring ? "P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED" : "P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED");
-  let selected, receipt, accept, reject, submittedIds, activation, failed = false, responseStarted = false;
+  let selected, receipt, accept, reject, submittedIds, activation, failed = false, responseStarted = false, savedVisible = false;
   const observed = new Promise((resolve, fail) => { accept = resolve; reject = fail; });
   observed.catch(() => {});
   const fail = () => { failed = true; reject(refusal()); };
@@ -415,7 +458,8 @@ function watchMutation(context, page, input, edit) {
           submittedIds = posted.ids;
           activation = edit.acceptReorder(frame);
           activation.catch(fail);
-        } else {
+        } else if (create) validateCurriculumPost(posted, input.authoring);
+        else {
           demand(posted?.slug === input.authoring.slug);
           if (edit) {
             demand(posted.expectedRevision === input.authoring.revision && !Object.hasOwn(posted, "status")
@@ -446,11 +490,18 @@ function watchMutation(context, page, input, edit) {
       let timer;
       try {
         await Promise.race([observed, new Promise((_, timeout) => { timer = setTimeout(() => timeout(refusal()), remaining); })]);
+        if (create) {
+          const timeout = expires * 1000 - Date.now();
+          if (timeout <= 0) throw refusal();
+          const message = input.authoring.kind === "module" ? "Module saved." : "Lesson saved.";
+          await page.getByRole("status").getByText(message, { exact: true }).waitFor({ state: "visible", timeout }).catch(() => { throw refusal(); });
+          savedVisible = true;
+        }
         if (failed) throw refusal();
       } finally { clearTimeout(timer); }
     },
     finish() {
-      if (failed || !receipt || context.serviceWorkers().length) throw refusal();
+      if (failed || !receipt || create && !savedVisible || context.serviceWorkers().length) throw refusal();
       return receipt;
     },
     close() {
@@ -778,9 +829,19 @@ async function runInteractiveBrowser(first) {
         } else {
           if (binding.stage === "lifecycle") mutationWatch = watchP2LifecycleMutation(context, page, input);
           if (binding.stage === "authoring") mutationWatch = watchP2AuthoringMutation(context, page, input);
-          const response = await page.goto(input.browserOrigin + path, { waitUntil: "domcontentloaded", timeout: 30_000 });
+          const url = input.browserOrigin + path;
+          const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
           httpStatus = response?.status();
           demand(Number.isInteger(httpStatus));
+          if (authoringCreateCurriculum(input)) {
+            const timeout = selection.expires * 1000 - Date.now();
+            demand(timeout > 0 && httpStatus === 200 && response.url() === url && page.url() === url);
+            const name = input.authoring.kind === "module" ? "Add module" : "Add lesson";
+            await Promise.all([
+              page.getByRole("button", { name, exact: true }).and(page.locator("button:enabled")).first().waitFor({ state: "visible", timeout }),
+              page.getByText("draft · Revision " + input.authoring.revision, { exact: true }).waitFor({ state: "visible", timeout }),
+            ]);
+          }
         }
         pending = next();
         await send("interactive-page-opened", { ...selection, path, httpStatus });

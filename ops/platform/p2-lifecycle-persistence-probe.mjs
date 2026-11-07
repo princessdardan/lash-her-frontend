@@ -107,13 +107,21 @@ const SQL = Object.freeze({
       pg_catalog.current_setting('transaction_read_only') AS read_only`,
     draftAbsent: "SELECT NOT EXISTS(SELECT 1 FROM public.courses WHERE slug=$1::text) AS absent",
     draftCurrent: "SELECT id::text AS course_id,slug,revision,status,(title<>$2::text AND title<>$3::text) AS both_titles_change FROM public.courses WHERE slug=$1::text",
-    reorderCourse: "SELECT id::text AS course_id,slug,revision,status FROM public.courses WHERE slug=$1::text",
-    reorderLessonParent: `SELECT id::text,slug,created_at::text,archived_at::text FROM public.modules
+    curriculumCourse: "SELECT id::text AS course_id,slug,revision,status FROM public.courses WHERE slug=$1::text",
+    curriculumLessonParent: `SELECT id::text,slug,created_at::text,archived_at::text FROM public.modules
       WHERE id=$1::uuid AND course_id=$2::uuid`,
-    reorderModules: `SELECT id::text,slug,position,created_at::text,archived_at::text FROM public.modules
-      WHERE course_id=$1::uuid ORDER BY position LIMIT 1001`,
-    reorderLessons: `SELECT id::text,slug,position,created_at::text,archived_at::text FROM public.lessons
-      WHERE module_id=$1::uuid ORDER BY position LIMIT 1001`,
+    curriculumModules: `SELECT id::text,slug,position,created_at::text,archived_at::text FROM public.modules
+      WHERE course_id=$1::uuid ORDER BY position LIMIT 1002`,
+    curriculumLessons: `SELECT id::text,slug,position,created_at::text,archived_at::text FROM public.lessons
+      WHERE module_id=$1::uuid ORDER BY position LIMIT 1002`,
+    curriculumCreatedModule: `SELECT m.id::text AS item_id,m.slug,m.position,
+      (m.title=$3::text AND m.description IS NOT DISTINCT FROM $4::text AND m.archived_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM public.lessons WHERE module_id=m.id)) AS fields_match
+      FROM public.modules m WHERE m.id=$1::uuid AND m.course_id=$2::uuid`,
+    curriculumCreatedLesson: `SELECT id::text AS item_id,slug,position,
+      (title=$3::text AND content IS NULL AND content_document=$4::jsonb AND transcript IS NOT DISTINCT FROM $5::text
+        AND is_preview=$6::boolean AND captions='[]'::jsonb AND archived_at IS NULL) AS fields_match
+      FROM public.lessons WHERE id=$1::uuid AND module_id=$2::uuid`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -369,6 +377,7 @@ async function clientFromInput(input) {
 const draftBaselines = new WeakMap();
 const draftEditBaselines = new WeakMap();
 const courseReorderBaselines = new WeakMap();
+const curriculumCreateBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -586,21 +595,26 @@ function siblingIdentity(row) {
   return JSON.stringify([row.id, row.slug, row.created_at, row.archived_at]);
 }
 
-async function readCourseReorder(client, selection, revision, ids, contiguous) {
+async function readCourseCurriculum(client, selection, revision, check) {
   const { courseId, slug, kind, parentId } = selection;
-  const courses = await read(client, "course", "reorderCourse", [slug]);
-  demand(courses.length === 1 && matchesDraftRow(courses[0], courseId, slug, revision), "course-reorder-draft");
+  const courses = await read(client, "course", "curriculumCourse", [slug]);
+  demand(courses.length === 1 && matchesDraftRow(courses[0], courseId, slug, revision), `${check}-draft`);
   let parent = null;
   if (kind === "lesson") {
-    const parents = await read(client, "course", "reorderLessonParent", [parentId, courseId]);
-    demand(parents.length === 1 && parents[0].id === parentId, "course-reorder-parent");
-    parent = siblingIdentity(parents[0]);
+    const parents = await read(client, "course", "curriculumLessonParent", [parentId, courseId]);
+    demand(parents.length === 1 && parents[0].id === parentId, `${check}-parent`);
+    parent = parents[0];
   }
-  const rows = await read(client, "course", kind === "module" ? "reorderModules" : "reorderLessons", [parentId]);
-  demand(sameIds(rows.map(row => row.id), ids) && rows.every((row, index) =>
-    Number.isInteger(row.position) && row.position > (index === 0 ? 0 : rows[index - 1].position)
-      && (!contiguous || row.position === index + 1)), "course-reorder-siblings");
-  return { parent, siblings: new Map(rows.map(row => [row.id, siblingIdentity(row)])) };
+  const rows = await read(client, "course", kind === "module" ? "curriculumModules" : "curriculumLessons", [parentId]);
+  demand(rows.every((row, index) => Number.isInteger(row.position) && row.position > (index === 0 ? 0 : rows[index - 1].position)),
+    `${check}-siblings`);
+  return { parent, rows };
+}
+
+async function readCourseReorder(client, selection, revision, ids, contiguous) {
+  const { parent, rows } = await readCourseCurriculum(client, selection, revision, "course-reorder");
+  demand(sameIds(rows.map(row => row.id), ids) && (!contiguous || rows.every((row, index) => row.position === index + 1)), "course-reorder-siblings");
+  return { parent: parent === null ? null : siblingIdentity(parent), siblings: new Map(rows.map(row => [row.id, siblingIdentity(row)])) };
 }
 
 export async function captureP2InteractiveCourseReorderBaseline(courseJob, selection, reorder, dependencies) {
@@ -629,6 +643,79 @@ export async function observeP2InteractiveCourseReorderCase(courseJob, selection
   demand(result.parent === saved.result.parent && saved.ids.every(id => result.siblings.get(id) === saved.result.siblings.get(id)),
     "course-reorder-identity-changed");
   return { courseId, parentId, kind, revision, ids: [...saved.ids], readOnly: true };
+}
+
+const curriculumCreateSelectionFields = ["courseId", "slug", "revision", "kind", "parentId", "childSlug", "bodySha256"];
+const curriculumCreateModuleFields = ["expectedCourseRevision", "title", "slug", "description", "position"];
+const curriculumCreateLessonFields = ["expectedCourseRevision", "title", "slug", "position", "contentDocument", "transcript", "isPreview", "captions"];
+
+export function validateP2InteractiveCurriculumCreate(selection, input) {
+  demand(closed(selection, curriculumCreateSelectionFields) && courseUuid(selection.courseId) && courseUuid(selection.parentId)
+    && draftSlug(selection.slug) && draftSlug(selection.childSlug)
+    && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_646
+    && ["module", "lesson"].includes(selection.kind) && (selection.kind !== "module" || selection.parentId === selection.courseId)
+    && typeof selection.bodySha256 === "string" && SHA.test(selection.bodySha256), "course-curriculum-create-selection");
+  let raw;
+  try { raw = JSON.stringify(input); } catch { throw new P2LifecyclePersistenceError("course-curriculum-create-body"); }
+  demand(typeof raw === "string" && Buffer.byteLength(raw) <= 1_048_576 && sha(raw) === selection.bodySha256, "course-curriculum-create-body-hash");
+  const body = JSON.parse(raw), module = selection.kind === "module";
+  demand(orderedDraftFields(body, module ? curriculumCreateModuleFields : curriculumCreateLessonFields)
+    && body.expectedCourseRevision === selection.revision && body.slug === selection.childSlug && draftText(body.title, 300)
+    && Number.isInteger(body.position) && body.position >= 1 && body.position <= 2_147_483_647, "course-curriculum-create-body");
+  if (module) demand(body.description === null || draftText(body.description, 100_000), "course-curriculum-create-module");
+  else demand(orderedDraftFields(body.contentDocument, ["version", "blocks"]) && body.contentDocument.version === 1
+    && Array.isArray(body.contentDocument.blocks) && body.contentDocument.blocks.length === 0
+    && (body.transcript === null || draftText(body.transcript, 500_000)) && typeof body.isPreview === "boolean"
+    && Array.isArray(body.captions) && body.captions.length === 0, "course-curriculum-create-lesson");
+  return body;
+}
+
+function retainedCurriculumSibling(row) {
+  return JSON.stringify([row.position, siblingIdentity(row)]);
+}
+
+export async function captureP2InteractiveCurriculumCreateBaseline(courseJob, selection, input, dependencies) {
+  const selected = Object.freeze({ ...selection }), expected = validateP2InteractiveCurriculumCreate(selected, input);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const { parent, rows } = await readCourseCurriculum(client, selected, selected.revision, "course-curriculum-create");
+    demand(parent === null || parent.archived_at === null, "course-curriculum-create-parent");
+    demand(rows.length <= 1000 && rows.every(row => row.slug !== selected.childSlug && row.position !== expected.position),
+      "course-curriculum-create-occupied");
+    return { parent: parent === null ? null : siblingIdentity(parent), siblings: rows.map(retainedCurriculumSibling) };
+  });
+  const baseline = Object.freeze({});
+  curriculumCreateBaselines.set(baseline, { selected, expected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveCurriculumCreateCase(courseJob, selection, baseline, browserBody, dependencies) {
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = curriculumCreateBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && closed(selection, curriculumCreateSelectionFields)
+    && saved.verifyEnvironment === dependencies?.verifyEnvironment && saved.verifySession === dependencies?.verifySession
+    && curriculumCreateSelectionFields.every(key => selection[key] === saved.selected[key])
+    && closed(browserBody, ["courseId", "parentId", "kind", "itemId", "slug", "revision"])
+    && ["courseId", "parentId", "kind"].every(key => browserBody[key] === saved.selected[key]) && courseUuid(browserBody.itemId)
+    && browserBody.slug === saved.selected.childSlug && browserBody.revision === saved.selected.revision + 1, "course-curriculum-create-receipt");
+  curriculumCreateBaselines.delete(baseline);
+  const { courseId, parentId, kind, childSlug } = saved.selected, revision = saved.selected.revision + 1;
+  const { itemId } = browserBody;
+  const { expected } = saved;
+  await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const { parent, rows } = await readCourseCurriculum(client, saved.selected, revision, "course-curriculum-create");
+    const siblings = rows.filter(row => row.id !== itemId);
+    demand(rows.length === saved.result.siblings.length + 1 && siblings.length === saved.result.siblings.length
+      && siblings.every((row, index) => retainedCurriculumSibling(row) === saved.result.siblings[index])
+      && (parent === null ? null : siblingIdentity(parent)) === saved.result.parent, "course-curriculum-create-siblings");
+    const key = kind === "module" ? "curriculumCreatedModule" : "curriculumCreatedLesson";
+    const args = [itemId, parentId, expected.title, ...(kind === "module"
+      ? [expected.description] : [expected.contentDocument, expected.transcript, expected.isPreview])];
+    const created = await read(client, "course", key, args);
+    demand(created.length === 1 && created[0].item_id === itemId && created[0].slug === childSlug
+      && created[0].position === expected.position && created[0].fields_match === true, "course-curriculum-create-persistence");
+  });
+  return { courseId, parentId, kind, itemId, slug: childSlug, revision, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

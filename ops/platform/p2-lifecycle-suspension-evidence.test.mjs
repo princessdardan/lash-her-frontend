@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2AuthoringReorderPath,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2AuthoringCurriculumPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
@@ -209,6 +209,7 @@ const ownedAuthoring = { actorId: adminId, slug: ownedDraft.slug, bodySha256: id
 const authoringSelector = actorId => "7032712d617574686f72696e672d7631" + actorId.replaceAll("-", "");
 const authoringEditSelector = actorId => "7032712d617574682d656469742d7631" + actorId.replaceAll("-", "");
 const authoringReorderSelector = actorId => "7032712d617574682d736f72742d7631" + actorId.replaceAll("-", "");
+const authoringCurriculumSelector = actorId => "7032712d617574682d6e65772d763100" + actorId.replaceAll("-", "");
 const ownedCourseId = randomUUID();
 const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
 const { status: ownedDraftStatus, ...ownedEditFields } = ownedDraft;
@@ -231,7 +232,8 @@ function interactivePermit(input) {
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
-      ? authoringReorderSelector(input.authoring.actorId) : authoringSelector(input.authoring.actorId);
+      ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
+        ? authoringCurriculumSelector(input.authoring.actorId) : authoringSelector(input.authoring.actorId);
   const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
@@ -382,6 +384,43 @@ test("reorder permit and paired browser receipt bind the selected parent, owner 
     assert.throws(() => validateP2AuthoringReorderResponses({ winner, stale: { ...stale, keyboardActivated: false } }, target));
     assert.throws(() => validateP2AuthoringReorderResponses({ winner, stale: { ...stale, controlLabel: "private" } }, target));
     assert.throws(() => validateP2AuthoringReorderResponses({ winner: { ...winner, body: { ...winner.body, ids: [winnerBody.ids[0], winnerBody.ids[0]] } }, stale }, target));
+  }
+});
+
+function ownedCurriculum(kind) {
+  const parentId = kind === "module" ? ownedCourseId : randomUUID(), childSlug = `owned-new-${kind}`;
+  const fields = { expectedCourseRevision: 4, title: `Private ${kind} title`, slug: childSlug };
+  const posted = kind === "module" ? { ...fields, description: "Private description", position: 2 }
+    : { ...fields, position: 2, contentDocument: { version: 1, blocks: [] }, transcript: null, isPreview: false, captions: [] };
+  const target = { actorId: adminId, operation: "create-curriculum", courseId: ownedCourseId, slug: ownedDraft.slug, revision: 4,
+    kind, parentId, childSlug, bodySha256: identityHash(posted) };
+  const itemId = randomUUID(), parentField = kind === "module" ? "courseId" : "moduleId";
+  const item = { id: itemId, [parentField]: parentId, slug: childSlug, courseRevision: 5, title: posted.title, position: posted.position };
+  return { input: interactiveInput({ stage: "authoring", authoring: target }), target, posted, item, parentField,
+    response: { [kind]: item }, body: { courseId: ownedCourseId, parentId, kind, itemId, slug: childSlug, revision: 5 } };
+}
+
+test("curriculum create permit and compact receipt bind the owner, parent, child slug and revision", () => {
+  for (const kind of ["module", "lesson"]) {
+    const { input, target, body } = ownedCurriculum(kind), permit = interactivePermit(input);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(permit.cookie.split(".")[6], authoringCurriculumSelector(adminId));
+    assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), `/admin/courses/${ownedCourseId}`);
+    assert.throws(() => p2InteractiveBrowserEntryPath(input, "learner"));
+    for (const variant of [{ childSlug: "BAD SLUG" }, { kind: "other" }, { revision: 0 }, { parentId: "other" }]) {
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, ...variant } }));
+    }
+    const parts = permit.cookie.split(".");
+    for (const selector of [authoringSelector(adminId), authoringReorderSelector(adminId), authoringCurriculumSelector(randomUUID())]) {
+      parts[6] = selector;
+      assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+    }
+    const receipt = { method: "POST", pathname: p2AuthoringCurriculumPath(target), status: 200, requestId: randomUUID(), body };
+    assert.deepEqual(validateP2AuthoringMutationReceipt(receipt, target), receipt);
+    for (const variant of [{ slug: "other" }, { revision: 4 }, { parentId: randomUUID() }, { title: "Private" }]) {
+      assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, body: { ...body, ...variant } }, target));
+    }
   }
 });
 
@@ -790,7 +829,7 @@ async function ownedMutationPage(browser, input, pathname, contextName, response
     return route.fulfill(response);
   });
   const page = await context.newPage(), watch = watchMutation(context, page, input);
-  await page.goto(input.browserOrigin + p2InteractiveBrowserPath(input.stage, contextName));
+  await page.goto(input.browserOrigin + p2InteractiveBrowserEntryPath(input, contextName));
   const post = (target, body) => page.evaluate(async ({ target, body }) => {
     const result = await fetch(target, { method: "POST", redirect: "manual", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     await result.arrayBuffer();
@@ -1012,6 +1051,82 @@ test("owned Chromium authoring watcher refuses digest changes, mismatched draft 
         await foreignPage.post(pathname, ownedDraft);
         await assert.rejects(foreignPage.watch.wait(foreignPage.expires), /AUTHORING_RESPONSE_REFUSED/u);
       } finally { await foreignPage.close(); }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium curriculum capture waits for the normal saved status and refuses mismatched mutations",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const requestId = randomUUID(), headers = { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId };
+    try {
+      for (const kind of ["module", "lesson"]) {
+        const fixture = ownedCurriculum(kind), { input, target, posted, item, parentField, response, body } = fixture;
+        const pathname = p2AuthoringCurriculumPath(target), detail = p2InteractiveBrowserEntryPath(input, "owner");
+        const add = kind === "module" ? "Add module" : "Add lesson", saved = kind === "module" ? "Module saved." : "Lesson saved.";
+        const result = { status: 200, headers, body: JSON.stringify(response) };
+        const document = `<!doctype html><button id="add">${add}</button><form hidden><label>Title<input name="title"></label>
+          <label>Slug<input name="slug"></label><button>Save ${kind}</button></form><button id="readback" hidden>Complete readback</button>
+          <div role="status"><p></p></div><script>
+          const form = document.querySelector('form'), readback = document.querySelector('#readback');
+          document.querySelector('#add').onclick = () => { form.hidden = false; };
+          form.onsubmit = async event => {
+            event.preventDefault();
+            const fields = new FormData(form);
+            const post = await fetch(${JSON.stringify(pathname)}, {method:'POST',headers:{'content-type':'application/json'},
+              body:JSON.stringify({...${JSON.stringify(posted)},title:fields.get('title'),slug:fields.get('slug')})});
+            await post.json();
+            readback.hidden = false;
+          };
+          readback.onclick = async () => {
+            await (await fetch(${JSON.stringify("/api" + detail)})).text();
+            document.querySelector('[role="status"] p').textContent = ${JSON.stringify(saved)};
+          };
+          </script>`;
+        const owner = await ownedMutationPage(browser, input, pathname, "owner", result, watchP2AuthoringMutation, document);
+        try {
+          const capture = owner.watch.wait(owner.expires);
+          capture.catch(() => {});
+          await owner.page.getByRole("button", { name: add, exact: true }).click();
+          await owner.page.getByRole("textbox", { name: "Title", exact: true }).fill(posted.title);
+          await owner.page.getByRole("textbox", { name: "Slug", exact: true }).fill(posted.slug);
+          await owner.page.getByRole("button", { name: "Save " + kind, exact: true }).click();
+          const readback = owner.page.getByRole("button", { name: "Complete readback", exact: true });
+          await readback.waitFor({ state: "visible" });
+          assert.throws(() => owner.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+          await readback.click();
+          await capture;
+          const receipt = owner.watch.finish();
+          assert.deepEqual(receipt, { method: "POST", pathname, status: 200, requestId, body });
+          assert.equal(JSON.stringify(receipt).includes(posted.title), false);
+          await owner.post(pathname, posted);
+          assert.throws(() => owner.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await owner.close(); }
+
+        const wrongSlug = { ...posted, slug: "different-child" };
+        for (const scenario of [
+          { request: wrongSlug, response },
+          { request: wrongSlug, response, digest: identityHash(wrongSlug) },
+          { request: posted, response: { [kind]: { ...item, slug: "different-child" } } },
+          { request: posted, response: { [kind]: { ...item, [parentField]: randomUUID() } } },
+          { request: posted, response: { [kind]: { ...item, courseRevision: 4 } } },
+          { request: posted, response, source: "/admin/courses/" + randomUUID() },
+          { request: posted, response, path: pathname + "/wrong" },
+          { request: posted, response },
+        ]) {
+          const selected = scenario.digest ? { ...input, authoring: { ...target, bodySha256: scenario.digest } } : input;
+          const rejected = await ownedMutationPage(browser, selected, pathname, "owner", { ...result, body: JSON.stringify(scenario.response) },
+            watchP2AuthoringMutation);
+          try {
+            if (scenario.source) await rejected.page.goto(input.browserOrigin + scenario.source);
+            await rejected.post(scenario.path ?? pathname, scenario.request);
+            const expires = scenario.path || scenario.request === posted && scenario.response === response && !scenario.source
+              ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
+            await assert.rejects(rejected.watch.wait(expires), /AUTHORING_RESPONSE_REFUSED/u);
+            assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+          } finally { await rejected.close(); }
+        }
+      }
     } finally { await browser.close(); }
   });
 

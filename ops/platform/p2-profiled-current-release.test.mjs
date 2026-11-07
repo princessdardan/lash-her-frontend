@@ -330,6 +330,37 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedReorder,
         authoringAction: { ...selectedReorder.authoringAction, parentId: before[0] } })));
     }
+    const selectedCurriculum = selectedReorders.map(({ authoringAction, requests }, index) => {
+      const base = { expectedCourseRevision: 1, title: 'Owned private scaffold', slug: 'owned-child', position: 1 };
+      const authoringCurriculum = authoringAction.kind === 'module'
+        ? { expectedCourseRevision: base.expectedCourseRevision, title: base.title, slug: base.slug, description: null, position: base.position }
+        : { ...base, contentDocument: { version: 1, blocks: [] }, transcript: 'Private transcript', isPreview: false, captions: [] };
+      return [{ ...selectedReorders[index],
+        authoringAction: { ...authoringAction, operation: 'create-curriculum', childSlug: base.slug },
+        requests: [{ ...requests[0], uses: 2 }, { ...requests[1], target: requests[1].target.replace(/\/reorder$/u, ''),
+          bodySha256: rawHash(JSON.stringify(authoringCurriculum)) }] }, authoringCurriculum];
+    });
+    for (const [selected, authoringCurriculum] of selectedCurriculum) {
+      const settings = paired(selected), planned = prepareP2ProfiledCertificationOperator(settings);
+      assert.equal(planned.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+      assert.deepEqual(planned.authoring.scopedAction, selected);
+      assert.deepEqual(planned.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+      assert.equal(JSON.stringify(planned).includes(authoringCurriculum.title), false);
+      const hostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(planned.authoring), encoding: 'utf8' });
+      assert.equal(hostPlan.status, 0, hostPlan.stderr);
+      const confirmation = { confirmation: 'staging/owned-scoped-action' };
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: { authoringCurriculum } }, confirmation), { code: 'ENOENT' });
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: {
+        authoringCurriculum: { ...authoringCurriculum, expectedCourseRevision: 2 },
+      } }, confirmation), error => error.code !== 'ENOENT');
+      const [read, write] = selected.requests;
+      for (const requests of [[read, write, write], [read, { ...write, method: 'PATCH' }],
+        [read, { ...write, target: write.target + '/reorder' }], [{ ...read, uses: 1 }, write]])
+        assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected, requests })));
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected,
+        authoringAction: { ...selected.authoringAction, childSlug: 'Other child' } })));
+    }
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);
@@ -432,6 +463,7 @@ test('fixed current certification plan joins the original release plan, terminal
       [selectedAuthoring, '7032712d617574686f72696e672d7631' + selectedAuthoring.actorId.replaceAll('-', '')],
       [selectedEdit, '7032712d617574682d656469742d7631' + selectedEdit.actorId.replaceAll('-', '')],
       ...selectedReorders.map(selection => [selection, '7032712d617574682d736f72742d7631' + selection.actorId.replaceAll('-', '')]),
+      ...selectedCurriculum.map(([selection]) => [selection, '7032712d617574682d6e65772d763100' + selection.actorId.replaceAll('-', '')]),
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },

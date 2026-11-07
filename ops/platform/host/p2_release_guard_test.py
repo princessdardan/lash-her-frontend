@@ -171,13 +171,15 @@ class IndependentGuardTests(unittest.TestCase):
         for kind in ('module', 'lesson'):
             with self.subTest(reorder_kind=kind):
                 self.check_profiled_interactive_terminal('authoring', 'admin', None, reorder_kind=kind)
+            with self.subTest(create_kind=kind):
+                self.check_profiled_interactive_terminal('authoring', 'admin', None, create_kind=kind)
 
-    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None):
+    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None, create_kind=None):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
-        initial, directory = self.profiled_certification(
-            f'owned-{stage_name}-{"edit" if editing else reorder_kind or provider or actor_kind}')
+        variant = f'create-{create_kind}' if create_kind is not None else 'edit' if editing else reorder_kind or provider or actor_kind
+        initial, directory = self.profiled_certification(f'owned-{stage_name}-{variant}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
         actor, user, request, command, *ledger_ids = ids
@@ -192,7 +194,15 @@ class IndependentGuardTests(unittest.TestCase):
         elif identity:
             action['identityActor'] = reviewed
         elif authoring:
-            if reorder_kind is not None:
+            if create_kind is not None:
+                parent = command if create_kind == 'module' else ledger_ids[0]
+                action['authoringAction'] = {'operation': 'create-curriculum', 'slug': 'owned-draft', 'childSlug': 'owned-child',
+                                             'courseId': command, 'revision': 3, 'kind': create_kind, 'parentId': parent}
+                resource = f'/admin/courses/{command}/modules' if create_kind == 'module' else f'/admin/modules/{parent}/lessons'
+                action['requests'] = [
+                    {'method': 'GET', 'target': f'/course/v1/admin/courses/{command}', 'bodySha256': window._EMPTY, 'uses': 2},
+                    {'method': 'POST', 'target': f'/course/v1{resource}', 'bodySha256': '9' * 64, 'uses': 1}]
+            elif reorder_kind is not None:
                 parent = command if reorder_kind == 'module' else ledger_ids[0]
                 ordered_ids = [f'30000000-0000-4000-8000-{index:012d}'
                                for index in range(1, (1001 if reorder_kind == 'lesson' else 4))]
@@ -245,6 +255,9 @@ class IndependentGuardTests(unittest.TestCase):
             draft = ({'courseId': command, 'parentId': parent, 'kind': reorder_kind, 'revision': 4, 'ids': ordered_ids}
                      if reorder_kind is not None else
                      {'courseId': command, 'slug': 'owned-draft', 'revision': 4 if editing else 1, 'status': 'draft'})
+            if create_kind is not None:
+                draft = {'courseId': command, 'parentId': parent, 'kind': create_kind, 'revision': 4,
+                         'itemId': ledger_ids[1], 'slug': 'owned-child'}
             domain = {**draft, 'readOnly': True}
             domain_key = 'courseWitness'
             if paired:
@@ -262,11 +275,15 @@ class IndependentGuardTests(unittest.TestCase):
                         [*acknowledgement_ids[:2], request, acknowledgement_ids[2], user], acknowledgement_ids[3:],
                         (0, 0, 1, 0, 2), (200, 200, 200, 200, 409))]
             else:
-                browser = {'method': 'POST', 'pathname': '/api/admin/courses', 'status': 200, 'requestId': request, 'body': draft}
+                pathname = f'/api{resource}' if create_kind is not None else '/api/admin/courses'
+                browser = {'method': 'POST', 'pathname': pathname, 'status': 200, 'requestId': request, 'body': draft}
                 browser_key = 'browserResponse'
                 acknowledgements = [
                     {'requestId': user, 'proofRequestId': actor, 'requestIndex': 0, 'upstreamStatus': 200},
                     {'requestId': request, 'proofRequestId': ledger_ids[0], 'requestIndex': 1, 'upstreamStatus': 201}]
+                if create_kind is not None:
+                    acknowledgements.append({'requestId': ledger_ids[2], 'proofRequestId': ledger_ids[1],
+                                             'requestIndex': 0, 'upstreamStatus': 200})
             gateway_artifact = {**window.browser_receipt(plan, 'GATEWAY_OBSERVED'), 'epoch': '2', 'gatewayActive': 0,
                                 'gatewayUncertain': 0, 'gatewayStateSha256': '7' * 64, 'gatewayAcknowledgements': acknowledgements}
             migrate.write_json(directory, window.browser_artifact(plan, 'gateway'), gateway_artifact)
@@ -320,10 +337,19 @@ class IndependentGuardTests(unittest.TestCase):
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         if authoring:
             wrong = {**browser, 'winner': {**browser['winner'], 'requestId': user}} if paired else {**browser, 'requestId': user}
-            response_error = 'AUTHORING_REORDER_RESPONSES_REQUIRED' if reorder_kind is not None else 'AUTHORING_BROWSER_RESPONSE_REQUIRED'
+            response_error = ('AUTHORING_CURRICULUM_RESPONSE_REQUIRED' if create_kind is not None else
+                              'AUTHORING_REORDER_RESPONSES_REQUIRED' if reorder_kind is not None else 'AUTHORING_BROWSER_RESPONSE_REQUIRED')
             with self.assertRaisesRegex(ValueError, response_error):
                 broker.command({**envelope, 'operation': 'interactive-retain',
                                 'caseEvidence': {**evidence, browser_key: wrong}})
+        if create_kind is not None:
+            for change in ({'itemId': 'invalid-uuid'}, {'parentId': user}, {'slug': 'owned-draft'}, {'revision': 3}):
+                wrong = {**browser, 'body': {**draft, **change}}
+                with self.subTest(body=tuple(change)), self.assertRaisesRegex(ValueError, 'AUTHORING_CURRICULUM_BODY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            with self.assertRaisesRegex(ValueError, 'AUTHORING_COURSE_WITNESS_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain',
+                                'caseEvidence': {**evidence, domain_key: {**domain, 'itemId': user}}})
         if editing:
             for change in ({'requestId': request}, {'dirtyInputPreserved': False}, {'outcome': 'other'}, {'body': {'code': 'conflict'}}):
                 with self.subTest(stale=change), self.assertRaisesRegex(ValueError, 'AUTHORING_STALE_RESPONSE_REQUIRED'):
@@ -363,6 +389,10 @@ class IndependentGuardTests(unittest.TestCase):
                 self.assertEqual(case['browserResponsesSha256'], supervisor._canonical_sha(browser))
             else:
                 self.assertEqual(case['gatewayPostRequestId'], request)
+            if create_kind is not None:
+                self.assertEqual({key: case[key] for key in ('kind', 'parentId', 'itemId', 'slug', 'childSlug', 'revision')},
+                                 {'kind': create_kind, 'parentId': parent, 'itemId': draft['itemId'],
+                                  'slug': 'owned-draft', 'childSlug': 'owned-child', 'revision': 4})
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -397,6 +427,9 @@ class IndependentGuardTests(unittest.TestCase):
             if paired:
                 rows = bad['gatewayAcknowledgements']
                 rows[2], rows[4] = rows[4], rows[2]
+            elif create_kind is not None:
+                rows = bad['gatewayAcknowledgements']
+                rows[1], rows[2] = rows[2], rows[1]
             else:
                 bad['gatewayAcknowledgements'][1]['upstreamStatus'] = 200
             (directory / window.browser_artifact(plan, 'gateway')).write_text(json.dumps(bad))

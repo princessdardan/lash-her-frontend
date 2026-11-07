@@ -328,6 +328,32 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_curriculum_creation_plan_binds_child_slug_parent_and_exact_use_counts(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        module = "10000000-0000-4000-8000-000000000003"
+        for kind, parent, route in (("module", course, f"courses/{course}/modules"), ("lesson", module, f"modules/{module}/lessons")):
+            selection = {"operation": "create-curriculum", "slug": "owned-draft", "childSlug": "owned-child",
+                         "courseId": course, "revision": 4, "kind": kind, "parentId": parent}
+            requests = [{"method": "GET", "target": f"/course/v1/admin/courses/{course}", "bodySha256": window._EMPTY, "uses": 2},
+                        {"method": "POST", "target": f"/course/v1/admin/{route}", "bodySha256": "b" * 64, "uses": 1}]
+            action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": requests, "authoringAction": selection}
+            self.assertEqual(window.validate_interactive_action(action), action)
+            selector = window._selection_sha(action)
+            self.assertEqual(selector, "7032712d617574682d6e65772d763100" + owner.replace("-", ""))
+            cookie, key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                 "8", "authoring", 1_794_009_600, 60, "c" * 32, selector)
+            self.assertEqual(cookie.split(".")[6], selector)
+            self.assertEqual(len(key), 64)
+            for change in ({"childSlug": "not-canonical!"}, {"parentId": owner}, {"revision": True}, {"courseId": owner}):
+                with self.subTest(kind=kind, change=change), self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "authoringAction": {**selection, **change}})
+            for changed in ([{**requests[0], "uses": 3}, requests[1]],
+                            [requests[0], {**requests[1], "target": requests[1]["target"] + "/reorder"}],
+                            [requests[0], {**requests[1], "bodySha256": window._EMPTY}]):
+                with self.subTest(kind=kind, requests=changed), self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "requests": changed})
+
     def test_curriculum_reorder_plan_binds_exact_parent_targets_and_separate_selector(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

@@ -357,6 +357,66 @@ test("customer-facing authoring routes isolate unauthenticated and non-editor st
   }
 });
 
+test("owner curriculum forms create the reviewed module and lesson scaffold with exact request bytes", async ({ browser }) => {
+  if (!storagePath) throw new Error("Owned storage fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await ownedContext(browser, states.owner);
+  const page = await context.newPage();
+  try {
+    await page.goto("/admin/courses");
+    await page.getByLabel("Course title", { exact: true }).fill("Curriculum creation fixture");
+    await page.getByRole("textbox", { name: /^URL name/ }).fill("curriculum-create-fixture");
+    await page.getByRole("button", { name: "Create draft", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/courses\/[a-f0-9-]{36}$/u);
+    const courseId = new URL(page.url()).pathname.split("/").pop();
+    const editor = page.getByRole("region", { name: "Open course editor" });
+    const save = async (kind: "module" | "lesson", pathname: string, body: object) => {
+      const pending = page.waitForResponse(response => response.request().method() === "POST" &&
+        new URL(response.url()).pathname === pathname);
+      await editor.getByRole("button", { name: `Save ${kind}`, exact: true }).click();
+      const response = await pending;
+      expect(response.status()).toBe(200);
+      expect(response.request().postData()).toBe(JSON.stringify(body));
+      expect(await response.headerValue("x-request-id")).toMatch(/^[a-f0-9-]{36}$/u);
+      expect(await response.headerValue("cache-control")).toBe("private, no-store");
+      const notice = kind === "module" ? "Module saved." : "Lesson saved.";
+      await expect(page.getByRole("status").getByText(notice, { exact: true })).toBeVisible();
+      return response.json();
+    };
+    await page.getByRole("button", { name: "Add module", exact: true }).click();
+    const moduleInput = {
+      expectedCourseRevision: 1, title: "Reviewed module", slug: "reviewed-module",
+      description: "Owned module description.", position: 1,
+    };
+    await editor.getByLabel("Title", { exact: true }).fill(moduleInput.title);
+    await editor.getByRole("textbox", { name: /^URL name/ }).fill(moduleInput.slug);
+    await editor.getByLabel("Description", { exact: true }).fill(moduleInput.description);
+    const { module: savedModule } = await save("module", `/api/admin/courses/${courseId}/modules`, moduleInput);
+    expect(savedModule).toMatchObject({ courseId, slug: moduleInput.slug, courseRevision: 2, position: 1, lessons: [] });
+
+    await page.getByRole("button", { name: "Add lesson", exact: true }).click();
+    const lessonInput = {
+      expectedCourseRevision: 2, title: "Reviewed lesson", slug: "reviewed-lesson", position: 1,
+      contentDocument: { version: 1, blocks: [] }, transcript: "Owned initial transcript.", isPreview: true, captions: [],
+    };
+    await editor.getByLabel("Title", { exact: true }).fill(lessonInput.title);
+    await editor.getByRole("textbox", { name: /^URL name/ }).fill(lessonInput.slug);
+    await editor.getByLabel("Transcript", { exact: true }).fill(lessonInput.transcript);
+    await editor.getByRole("checkbox", { name: "Public preview text (assessments still require enrollment)" }).check();
+    const { lesson } = await save("lesson", `/api/admin/modules/${savedModule.id}/lessons`, lessonInput);
+    expect(lesson).toMatchObject({ moduleId: savedModule.id, slug: lessonInput.slug, courseRevision: 3,
+      transcript: lessonInput.transcript, isPreview: true, contentDocument: lessonInput.contentDocument, captions: [] });
+    const response = await page.request.get(`/api/admin/courses/${courseId}`);
+    expect(response.status()).toBe(200);
+    const { course } = await response.json();
+    expect(course).toMatchObject({ revision: 3, status: "draft", modules: [
+      { id: savedModule.id, description: moduleInput.description, lessons: [{ id: lesson.id, transcript: lessonInput.transcript }] },
+    ] });
+  } finally {
+    await context.close().catch(() => {});
+  }
+});
+
 test("two owner tabs submit complete module and lesson orders by keyboard and reject stale revisions", async ({
   browser,
   baseURL,

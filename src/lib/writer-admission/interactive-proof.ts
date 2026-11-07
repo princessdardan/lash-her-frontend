@@ -19,8 +19,9 @@ const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
 const authoringActorPrefix = "7032712d617574686f72696e672d7631";
 const authoringEditActorPrefix = "7032712d617574682d656469742d7631";
 const authoringReorderActorPrefix = "7032712d617574682d736f72742d7631";
+const authoringCreateCurriculumActorPrefix = "7032712d617574682d6e65772d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
-  authoringOperation?: "create-draft" | "edit-draft" | "reorder-curriculum" };
+  authoringOperation?: "create-draft" | "edit-draft" | "reorder-curriculum" | "create-curriculum" };
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string; authoringActorId?: string };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
@@ -51,6 +52,10 @@ const authoringEdit = {
 const authoringReorder = {
   GET: authoringEdit.GET,
   POST: at(`/api/admin/(?:courses/${uuid}/modules|modules/${uuid}/lessons)/reorder`),
+};
+const authoringCreateCurriculum = {
+  GET: authoringEdit.GET,
+  POST: at(`/api/admin/(?:courses/${uuid}/modules|modules/${uuid}/lessons)`),
 };
 const media = {
   GET: at(`/api/admin/lessons/${uuid}/video`),
@@ -87,6 +92,7 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
     case "authoring":
+      if (authoringOperation === "create-curriculum") return matches(authoringCreateCurriculum, method, path);
       if (authoringOperation === "reorder-curriculum") return matches(authoringReorder, method, path);
       if (authoringOperation === "edit-draft") return matches(authoringEdit, method, path);
       return authoringOperation === "create-draft" && ((method === "GET" && path === "/admin/courses") || (method === "POST" && path === "/api/admin/courses"));
@@ -159,7 +165,9 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const editActorId = decodeSelectedUuid(selection, authoringEditActorPrefix);
     if (editActorId) return { ...permit, authoringActorId: editActorId, authoringOperation: "edit-draft" };
     const reorderActorId = decodeSelectedUuid(selection, authoringReorderActorPrefix);
-    return reorderActorId ? { ...permit, authoringActorId: reorderActorId, authoringOperation: "reorder-curriculum" } : null;
+    if (reorderActorId) return { ...permit, authoringActorId: reorderActorId, authoringOperation: "reorder-curriculum" };
+    const createCurriculumActorId = decodeSelectedUuid(selection, authoringCreateCurriculumActorPrefix);
+    return createCurriculumActorId ? { ...permit, authoringActorId: createCurriculumActorId, authoringOperation: "create-curriculum" } : null;
   }
   return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }

@@ -81,6 +81,34 @@ test("scoped curriculum reorders accept only a revision and unique canonical IDs
   }
 });
 
+test("scoped curriculum creation accepts only the normal module and empty lesson scaffold forms", async () => {
+  const fields = { expectedCourseRevision: 3, title: "Scaffold", slug: "scaffold", position: 1 };
+  const moduleBody = { ...fields, description: null };
+  const lessonBody = { ...fields, contentDocument: { version: 1, blocks: [] }, transcript: null, isPreview: false, captions: [] };
+  const documentWithBlock = { version: 1, blocks: [{ _type: "block", _key: "block", children: [{ _type: "span", _key: "span", text: "Lesson" }] }] };
+  for (const [operation, method, path, params, valid, invalid] of [
+    ["create-module", "createModule", `/api/admin/courses/${id}/modules`, { courseId: id }, moduleBody,
+      [null, fields, { ...moduleBody, position: 0 }, { ...moduleBody, archived: false }]],
+    ["create-lesson", "createLesson", `/api/admin/modules/${id}/lessons`, { moduleId: id }, lessonBody,
+      [null, fields, { ...lessonBody, transcript: undefined }, { ...lessonBody, isPreview: undefined },
+        { ...lessonBody, content: null }, { ...lessonBody, contentDocument: null },
+        { ...lessonBody, contentDocument: documentWithBlock }, { ...lessonBody, captions: [{ language: "en", label: "English", url: "https://owned.invalid/en.vtt" }] }]],
+  ] as const) {
+    const calls: unknown[] = [];
+    const makeHandler = (ownerId?: string) => createCourseAdminHandler(operation, {
+      enabled: () => true, origin: () => origin,
+      run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, ownerId),
+      client: () => ({ async [method](parent: string, input: unknown) { assert.equal(parent, id); calls.push(input); return {}; } }) as never,
+    });
+    const handler = makeHandler(id);
+    for (const body of invalid) assert.equal((await handler(req(path, "POST", body), params)).status, 400);
+    assert.deepEqual(calls, []);
+    assert.equal((await handler(req(path, "POST", valid), params)).status, 200);
+    assert.equal((await makeHandler()(req(path, "POST", fields), params)).status, 200);
+    assert.deepEqual(calls, [valid, fields]);
+  }
+});
+
 test("admin paginated reads are private, validated and authorized through the real named client", async () => {
   let calls = 0;
   const client = createCourseClient({ enabled: () => true, getAdmin: async permission => { assert.equal(permission, "courses:edit"); return actor; }, mintToken: () => "server.admin.jwt", getTransport: () => async input => {
