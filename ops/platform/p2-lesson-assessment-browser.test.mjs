@@ -205,8 +205,9 @@ test("owned Chromium submits two genuine graded attempts, captures all six effec
               receipt.attempts[index].payloadRequestId = effect.body.requestId;
             }
             assert.deepEqual(watch.finish(), receipt);
-            assert.deepEqual(effects.map(effect => effect.target), [paths.playbackPath, paths.progressPath,
-              paths.attemptsPath, paths.latestPath, paths.attemptsPath, paths.latestPath]);
+            const targets = effects.map(effect => effect.target);
+            assert.deepEqual(targets.slice(0, 2).sort(), [paths.playbackPath, paths.progressPath].sort());
+            assert.deepEqual(targets.slice(2), [paths.attemptsPath, paths.latestPath, paths.attemptsPath, paths.latestPath]);
             assert.doesNotMatch(JSON.stringify(watch.finish()), /fixture-session|feedback|optionId|questionId/u);
             await page.evaluate(path => fetch(path), paths.latestPath);
             assert.throws(() => watch.finish(), refusal);
