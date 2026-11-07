@@ -130,6 +130,47 @@ test("academy handlers isolate caching, reject forged identity/query input and e
   assert.equal((await createAcademyHandler("catalog", dependencies)(new Request("https://site.example.com/api/academy/catalog?limit=1&limit=2"))).status, 400);
 });
 
+test("scoped free enrollment matches the signed key and customer before Course while ordinary keys still work", async () => {
+  const site = "https://site.example.com";
+  const courseId = lessonId, key = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const receipt = { courseId, enrollmentId: customerId, grantId: adminId, source: "free", status: "active", idempotentReplay: false };
+  let selected: { actorId: string; idempotencyKey: string } | undefined = { actorId: customerId, idempotencyKey: key };
+  let activeCustomer: Awaited<ReturnType<typeof customer>> | null = await customer();
+  let permitReads = 0, scopedActorReads = 0;
+  const calls: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getCustomer: async () => activeCustomer, mintToken: () => "learner.jwt", run: direct,
+    getTransport: () => async request => { calls.push(request); return Response.json(receipt, { status: 201 }); } });
+  const enroll = createAcademyHandler("free-enrollment", { client: () => client, origin: () => site,
+    getLearningEnrollment: async () => { permitReads++; return selected; },
+    getCustomer: async () => { scopedActorReads++; return activeCustomer; } });
+  const post = (body: unknown, origin = site) => enroll(new Request(`${site}/api/academy/courses/${courseId}/enrollments`, {
+    method: "POST", headers: { "content-type": "application/json", origin, "x-lash-csrf": "1" }, body: JSON.stringify(body),
+  }), { courseId });
+  assert.equal((await post({ idempotencyKey: key }, "https://other.invalid")).status, 403);
+  assert.equal(permitReads, 0);
+  for (const body of [null, [], {}, { idempotencyKey: adminId }, { idempotencyKey: key, userId: customerId }]) {
+    assert.equal((await post(body)).status, 400);
+  }
+  assert.equal(scopedActorReads, 0);
+  activeCustomer = { ...await customer(), id: adminId };
+  assert.equal((await post({ idempotencyKey: key })).status, 403);
+  activeCustomer = null;
+  assert.equal((await post({ idempotencyKey: key })).status, 401);
+  assert.equal(calls.length, 0);
+  activeCustomer = await customer();
+  const admitted = await post({ idempotencyKey: key });
+  assert.equal(admitted.status, 200);
+  assert.equal(admitted.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await admitted.json(), receipt);
+  selected = undefined;
+  const ordinaryKey = "owned:random-or-legacy-key";
+  assert.equal((await post({ idempotencyKey: ordinaryKey })).status, 200);
+  assert.equal(scopedActorReads, 3);
+  assert.deepEqual(calls.map(({ path, applicationToken, idempotencyKey, body }) => ({ path, applicationToken, idempotencyKey, body })),
+    [key, ordinaryKey].map(idempotencyKey => ({ path: `/v1/student/courses/${courseId}/enrollments`, applicationToken: "learner.jwt",
+      idempotencyKey, body: JSON.stringify({ idempotencyKey }) })));
+});
+
 test("closed gateway rate-limit and pre-forward maintenance envelopes remain safe and deterministic", async () => {
   for (const [status, code] of [[429, "rate_limit_exceeded"], [503, "release_maintenance"]] as const) {
     const client = createCourseClient({ enabled: allowed, getCustomer: customer, mintToken: () => "learner.jwt", run: async (_kind, work) => withWriterOperationContext(work),

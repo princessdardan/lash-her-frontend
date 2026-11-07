@@ -330,6 +330,37 @@ test("interactive writer uses only its certified producer and refuses a changed 
   assert.ok(f.calls.filter(call => call.sql.includes("current_policy")).every(call => call.values?.[2] === selected.producerSha256));
 });
 
+test("learning enrollment permits bind canonical customer and idempotency UUIDs to enrollment routes only", () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const actorId = selectedCustomerId, idempotencyKey = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const selected = actorId.replaceAll("-", "") + idempotencyKey.replaceAll("-", "");
+  const course = "10000000-0000-4000-8000-000000000001";
+  const issue = (selector?: string) => {
+    const body = [selector ? "v2" : "v1", "12", "learning", now, now + 120, "ab".repeat(16), ...(selector ? [selector] : [])].join(".");
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = issue(selected);
+  const attest = (method: string, path: string, permit = cookie) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie: permit }, env, now);
+  const enroll = `/api/academy/courses/${course}/enrollments`;
+  for (const [method, path] of [["GET", "/courses/owned-free-course"], ["GET", `/academy/courses/${course}`], ["POST", enroll]]) {
+    const proof = attest(method, path);
+    assert.ok(proof);
+    assert.deepEqual(readInteractiveRequest(proof, cookie, env, now)?.learningEnrollment, { actorId, idempotencyKey });
+    assert.equal(readInteractiveRequest(proof, issue(selected.slice(32) + selected.slice(0, 32)), env, now), null);
+  }
+  for (const [method, path] of [["GET", "/courses"], ["GET", "/academy"], ["GET", "/api/customer-auth/session"],
+    ["GET", `/api/academy/courses/${course}`], ["GET", `/academy/courses/${course}/lessons/${course}`],
+    ["POST", `/api/academy/lessons/${course}/progress`], ["POST", `/api/academy/lessons/${course}/quiz/attempts`], ["GET", enroll]]) {
+    assert.equal(attest(method, path), null);
+  }
+  for (const invalid of [issue(), issue("0".repeat(32) + selected.slice(32)), issue(selected.slice(0, 32) + "0".repeat(32)),
+    issue(selected.toUpperCase()), issue(selected.slice(1))]) assert.equal(attest("POST", enroll, invalid), null);
+});
+
 test("first-time identity permits bind the selected provider, normalized email and operation context", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };

@@ -139,11 +139,21 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     },
   });
   const send = transport();
-  const learning = evidence("learning", "GET /api/academy/courses");
+  const learnerCourse = "12345678-1234-4123-8123-123456789abc";
+  const learningRoute = `GET /academy/courses/${learnerCourse}`;
+  const learningSelector = "8d680a9280714fd09da2c4d350aa729d8284af5b324d45d9b460f97dc59b6d9b";
+  const learning = evidence("learning", learningRoute, issued, learningSelector);
   const query = "/v1/student/courses?cursor=café&kind='";
   const applicationToken = "owned.learner.jwt";
-  const response = await inBrowser(learning.cookie, learning.proxyProof, () => send({ method: "GET", path: query, applicationToken }));
+  const response = await inBrowser(learning.cookie, learning.proxyProof, () => send({ method: "GET", path: query, applicationToken }), learningRoute);
   assert.equal(response.headers.get(INTERACTIVE_GATEWAY_PROOF_HEADER), null);
+  const enrollmentPath = `/v1/student/courses/${learnerCourse}/enrollments`;
+  const enrollmentRoute = `POST /api/academy/courses/${learnerCourse}/enrollments`;
+  const enrollment = evidence("learning", enrollmentRoute, issued, learningSelector);
+  const enrollmentKey = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const enrollmentBody = JSON.stringify({ idempotencyKey: enrollmentKey });
+  await inBrowser(enrollment.cookie, enrollment.proxyProof, () => send({ method: "POST", path: enrollmentPath, applicationToken,
+    body: enrollmentBody, idempotencyKey: enrollmentKey }), enrollmentRoute);
   const grantRoute = "POST /api/admin/courses/12345678-1234-4123-8123-123456789abc/manual-grants";
   const grant = evidence("paid-grant", grantRoute);
   const body = '{"label":"café"}\n', idempotencyKey = "owned:grant.1";
@@ -190,6 +200,7 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   }), readinessRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
+    { stage: "learning", method: "POST", target: "/course" + enrollmentPath, bytes: [enrollmentBody, applicationToken, enrollmentKey] },
     { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
     { stage: "authoring", method: "POST", target: "/course/v1/admin/courses", bytes: [draftBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [editBody, "owned.admin.jwt", ""] },
@@ -217,11 +228,13 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
 
   const request = () => send({ method: "GET", path: "/v1/courses" });
   const identity = evidence("identity", "GET /api/customer-auth/session");
-  const stale = evidence("learning", "GET /api/academy/courses", issued - 30);
+  const stale = evidence("learning", learningRoute, issued - 30, learningSelector);
+  const legacy = evidence("learning", learningRoute);
   await request();
   await inBrowser(learning.cookie, undefined, request);
   await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
   await inBrowser(stale.cookie, stale.proxyProof, request);
+  await inBrowser(legacy.cookie, legacy.proxyProof, request, learningRoute);
   await inBrowser(learning.cookie, identity.proxyProof, request);
   await inBrowser(identity.cookie, identity.proxyProof, request);
   await inBrowser(learning.cookie, learning.proxyProof, () => transport("https://foreign.example.test")({ method: "GET", path: "/v1/courses" }));
@@ -234,6 +247,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 19);
-  assert.ok(captured.slice(8).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, 21);
+  assert.ok(captured.slice(9).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

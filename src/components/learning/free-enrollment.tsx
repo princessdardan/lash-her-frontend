@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { learningErrorText, learningRequest } from "@/lib/learning/browser-request";
 import { learningAction } from "./shared";
 
-export function FreeEnrollment({ courseId }: { courseId: string }) {
+export function FreeEnrollment({ courseId, reviewedIdempotencyKey }: { courseId: string; reviewedIdempotencyKey?: string }) {
   const router = useRouter();
   const key = useRef<string | null>(null);
   const inFlight = useRef(false);
@@ -14,11 +14,12 @@ export function FreeEnrollment({ courseId }: { courseId: string }) {
   async function enroll() {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setError("");
-    key.current ??= crypto.randomUUID();
+    key.current ??= reviewedIdempotencyKey ?? crypto.randomUUID();
     try {
       const receipt = await learningRequest<{ status: "active" | "revoked" | "expired" }>(`/api/academy/courses/${courseId}/enrollments`, { method: "POST", body: { idempotencyKey: key.current } });
       if (receipt.status !== "active") { setError("This enrollment is no longer active. Open your academy to check access or contact support."); return; }
-      router.push(`/academy/courses/${courseId}`); router.refresh();
+      router.push(`/academy/courses/${courseId}`);
+      if (!reviewedIdempotencyKey) router.refresh();
     } catch (failure) { setError(learningErrorText(failure)); }
     finally { inFlight.current = false; setBusy(false); }
   }

@@ -247,6 +247,36 @@ test('fixed current certification plan joins the original release plan, terminal
     };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
+    const selectedFree = { stage: 'learning', actorId: userId, windowSeconds: 90,
+      learningAction: { operation: 'enroll-free-course', courseId, slug: 'owned-free-course',
+        idempotencyKey: '10000000-0000-4000-8000-000000000005' } };
+    const freeCourse = '/course/v1/student/courses/' + courseId;
+    const emptyBodySha256 = rawHash(Buffer.alloc(0));
+    selectedFree.requests = [
+      { method: 'GET', target: '/course/v1/courses/owned-free-course', bodySha256: emptyBodySha256, uses: 1 },
+      { method: 'GET', target: freeCourse, bodySha256: emptyBodySha256, uses: 2 },
+      { method: 'POST', target: freeCourse + '/enrollments',
+        bodySha256: rawHash(JSON.stringify({ idempotencyKey: selectedFree.learningAction.idempotencyKey })), uses: 1 },
+      { method: 'GET', target: '/course/v1/student/progress?courseId=' + courseId, bodySha256: emptyBodySha256, uses: 1 },
+    ];
+    const freeSettings = paired(selectedFree), freePair = prepareP2ProfiledCertificationOperator(freeSettings);
+    assert.equal(freePair.status, 'P2_INTERACTIVE_LEARNING_ACTIONS_PLANNED');
+    assert.deepEqual(freePair.learning.scopedAction, selectedFree);
+    assert.deepEqual(freePair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    const freeHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(freePair.learning), encoding: 'utf8' });
+    assert.equal(freeHostPlan.status, 0, freeHostPlan.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator(freeSettings, { confirmation: 'staging/owned-scoped-action' }), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...freeSettings, execution: {} },
+      { confirmation: 'staging/owned-scoped-action' }), error => error.code !== 'ENOENT');
+    const [catalogRead, learnerRead, grant, progressRead] = selectedFree.requests;
+    for (const requests of [[catalogRead, learnerRead, grant], [catalogRead, grant, learnerRead, progressRead],
+      [catalogRead, { ...learnerRead, uses: 1 }, grant, progressRead],
+      [catalogRead, learnerRead, { ...grant, bodySha256: 'd'.repeat(64) }, progressRead],
+      [catalogRead, learnerRead, grant, { ...progressRead, target: '/course/v1/student/progress' }]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedFree, requests })));
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedFree,
+      learningAction: { ...selectedFree.learningAction, idempotencyKey: userId } })));
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -542,6 +572,7 @@ test('fixed current certification plan joins the original release plan, terminal
       ...selectedPublications.map(selection => [selection, (selection.authoringAction.outcome === 'published'
         ? '7032712d617574682d7075622d763100' : '7032712d617574682d7264792d763100') + selection.actorId.replaceAll('-', '')]),
       ...selectedQuizzes.map(selection => [selection, '7032712d617574682d7175697a2d7631' + selection.actorId.replaceAll('-', '')]),
+      [selectedFree, (selectedFree.actorId + selectedFree.learningAction.idempotencyKey).replaceAll('-', '')],
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },
@@ -556,7 +587,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = selection.stage === 'authoring'
+      const selectedGatewayKey = ['authoring', 'learning'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

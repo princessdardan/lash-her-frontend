@@ -38,7 +38,8 @@ _MAX_STATE = 16_384
 _GATEWAY_GID = 65532
 _ZERO = {"newWork": 0, "recovery": 0}
 CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
-EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | {"authoring"}
+SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", "learning"))
+EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | SCOPED_GATEWAY_BROWSER_STAGES
 _CREATE_DRAFT = "create-draft"
 _EDIT_DRAFT = "edit-and-stale-draft"
 _CREATE_CURRICULUM = "create-curriculum"
@@ -127,6 +128,8 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
     stage = _browser_stage(plan)
     if stage == "authoring":
         return _authoring_case_evidence(plan, action, evidence, gateway_artifact)
+    if stage == "learning":
+        return _learning_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "lifecycle":
         return _lifecycle_case_evidence(action, evidence)
     demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
@@ -181,27 +184,13 @@ def _authoring_requests(action):
     return (("GET", course, 3, 200), (method, target, 1, 200), (method, target, 1, 409))
 
 
-def authoring_gateway_receipt(plan, artifact):
-    common = browser_receipt(plan, "GATEWAY_OBSERVED")
-    fields = set(common) | {"epoch", "gatewayStateSha256", "gatewayAcknowledgements", "gatewayActive", "gatewayUncertain"}
-    demand(common["stage"] == "authoring" and type(artifact) is dict and set(artifact) == fields and
-           _receipt_sha({key: artifact[key] for key in common}) == _receipt_sha(common) and
-           artifact["epoch"] == str(int(plan["initialEpoch"]) + 1) and _digest(artifact["gatewayStateSha256"]) and
-           all(type(artifact[key]) is int and artifact[key] == 0 for key in ("gatewayActive", "gatewayUncertain")),
-           "P2_INTERACTIVE_AUTHORING_GATEWAY_ARTIFACT_REQUIRED")
+def _gateway_sequences(plan):
+    if plan["scopedAction"]["stage"] == "learning":
+        prefix = ((0, 200), (1, 403), (2, 201))
+        return (prefix + ((1, 200), (3, 200)), prefix + ((3, 200), (1, 200)))
     selected = plan["scopedAction"]["authoringAction"]
     requests = _authoring_requests(selected)
-    rows = artifact["gatewayAcknowledgements"]
-    demand(type(rows) is list and len(rows) == sum(row[2] for row in requests) and all(
-               _closed_fields(row, "requestId proofRequestId requestIndex upstreamStatus") and
-               _matches(_UUID, row["requestId"]) and _matches(_UUID, row["proofRequestId"]) and
-               type(row["requestIndex"]) is int and 0 <= row["requestIndex"] < len(requests) and
-               type(row["upstreamStatus"]) is int and row["upstreamStatus"] == requests[row["requestIndex"]][3]
-               for row in rows) and
-           len({row["requestId"] for row in rows}) == len({row["proofRequestId"] for row in rows}) == len(rows),
-           "P2_INTERACTIVE_AUTHORING_ACKNOWLEDGEMENTS_REQUIRED")
-    indices = [row["requestIndex"] for row in rows]
-    expected_order = {
+    order = {
         _CREATE_DRAFT: [0, 1],
         _CREATE_CURRICULUM: [0, 1, 0],
         _EDIT_DRAFT: [0, 0, 1, 0, 2],
@@ -209,9 +198,53 @@ def authoring_gateway_receipt(plan, artifact):
         _QUALIFY_PUBLICATION: [0, 1, 2, 0] if selected.get("outcome") == "published" else [0, 1],
         _SAVE_QUIZ_REVISION: [0, 1, 2, 0],
     }[selected["operation"]]
-    demand(indices == expected_order,
-           "P2_INTERACTIVE_AUTHORING_ACKNOWLEDGEMENTS_REQUIRED")
+    return (tuple((index, requests[index][3]) for index in order),)
+
+
+def browser_gateway_receipt(plan, artifact):
+    common = browser_receipt(plan, "GATEWAY_OBSERVED")
+    fields = set(common) | {"epoch", "gatewayStateSha256", "gatewayAcknowledgements", "gatewayActive", "gatewayUncertain"}
+    demand(common["stage"] in SCOPED_GATEWAY_BROWSER_STAGES and type(artifact) is dict and set(artifact) == fields and
+           _receipt_sha({key: artifact[key] for key in common}) == _receipt_sha(common) and
+           artifact["epoch"] == str(int(plan["initialEpoch"]) + 1) and _digest(artifact["gatewayStateSha256"]) and
+           all(type(artifact[key]) is int and artifact[key] == 0 for key in ("gatewayActive", "gatewayUncertain")),
+           browser_status(plan, "GATEWAY_ARTIFACT_REQUIRED"))
+    sequences = _gateway_sequences(plan)
+    rows = artifact["gatewayAcknowledgements"]
+    demand(type(rows) is list and len(rows) == len(sequences[0]) and all(
+               _closed_fields(row, "requestId proofRequestId requestIndex upstreamStatus") and
+               _matches(_UUID, row["requestId"]) and _matches(_UUID, row["proofRequestId"]) and
+               type(row["requestIndex"]) is int and type(row["upstreamStatus"]) is int for row in rows) and
+           len({row["requestId"] for row in rows}) == len({row["proofRequestId"] for row in rows}) == len(rows) and
+           tuple((row["requestIndex"], row["upstreamStatus"]) for row in rows) in sequences,
+           browser_status(plan, "ACKNOWLEDGEMENTS_REQUIRED"))
     return {**artifact, "gatewayEvidenceSha256": _receipt_sha(artifact)}
+
+
+def _learning_case_evidence(plan, action, evidence, gateway_artifact):
+    selected = action["learningAction"]
+    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_LEARNING_EVIDENCE_REQUIRED")
+    gateway = browser_gateway_receipt(plan, gateway_artifact)
+    post_id = gateway["gatewayAcknowledgements"][2]["requestId"]
+    browser, witness = evidence["browserResponse"], evidence["courseWitness"]
+    academy = f'/academy/courses/{selected["courseId"]}'
+    demand(_closed_fields(browser, "method pathname status requestId academyPath body") and
+           browser["method"] == "POST" and browser["pathname"] == f"/api{academy}/enrollments" and
+           type(browser["status"]) is int and browser["status"] == 200 and browser["requestId"] == post_id and
+           browser["academyPath"] == academy, "P2_INTERACTIVE_LEARNING_ENROLLMENT_RESPONSE_REQUIRED")
+    body = browser["body"]
+    fields = "courseId grantId enrollmentId source status idempotentReplay"
+    demand(_closed_fields(body, fields) and body["courseId"] == selected["courseId"] and
+           all(_matches(_UUID, body[key]) for key in ("grantId", "enrollmentId")) and
+           body["source"] == "free" and body["status"] == "active" and body["idempotentReplay"] is False,
+           "P2_INTERACTIVE_LEARNING_ENROLLMENT_BODY_REQUIRED")
+    demand(_closed_fields(witness, f"{fields} transitionId readOnly") and witness["readOnly"] is True and
+           witness["idempotentReplay"] is False and _matches(_UUID, witness["transitionId"]) and
+           all(witness[key] == value for key, value in body.items()), "P2_INTERACTIVE_LEARNING_COURSE_WITNESS_REQUIRED")
+    return {**{key: body[key] for key in ("courseId", "grantId", "enrollmentId")}, "slug": selected["slug"],
+            "actorId": action["actorId"], "transitionId": witness["transitionId"], "gatewayPostRequestId": post_id,
+            "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
+            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
@@ -220,7 +253,7 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
     editing = selected["operation"] == _EDIT_DRAFT
     browser_key = "browserResponses" if editing or reordering else "browserResponse"
     demand(_closed_fields(evidence, f"{browser_key} courseWitness"), "P2_INTERACTIVE_AUTHORING_EVIDENCE_REQUIRED")
-    gateway = authoring_gateway_receipt(plan, gateway_artifact)
+    gateway = browser_gateway_receipt(plan, gateway_artifact)
     mutations = [row["requestId"] for row in gateway["gatewayAcknowledgements"] if row["requestIndex"] > 0]
     response, witness = evidence[browser_key], evidence["courseWitness"]
     if selected["operation"] == _QUALIFY_PUBLICATION:
@@ -445,11 +478,14 @@ def validate_interactive_action(action):
     lifecycle = type(action) is dict and action.get("stage") == "lifecycle"
     identity = type(action) is dict and action.get("stage") == "identity"
     authoring = type(action) is dict and action.get("stage") == "authoring"
+    learning = type(action) is dict and action.get("stage") == "learning"
     fields = {"stage", "actorId", "requests", "windowSeconds"}
     if lifecycle:
         fields.add("frontendAction")
     if authoring:
         fields.add("authoringAction")
+    if learning:
+        fields.add("learningAction")
     enrollment = identity and "identityEnrollment" in action
     if identity:
         fields.add("identityEnrollment" if enrollment else "identityActor")
@@ -540,10 +576,28 @@ def validate_interactive_action(action):
         if operation == _QUALIFY_PUBLICATION and selected_authoring["outcome"] == "published":
             reviewed_body = {"expectedRevision": selected_authoring["revision"], "status": "published"}
             demand(requests[2]["bodySha256"] == _receipt_sha(reviewed_body), "P2_INTERACTIVE_AUTHORING_PUBLICATION_DIGEST_REQUIRED")
+    if learning:
+        selection = action["learningAction"]
+        demand(_closed_fields(selection, "operation courseId slug idempotencyKey") and
+               selection["operation"] == "enroll-free-course" and _matches(_UUID, selection["courseId"]) and
+               _matches(_SLUG, selection["slug"]) and len(selection["slug"]) <= 120 and
+               _matches(_UUID, selection["idempotencyKey"]), "P2_INTERACTIVE_LEARNING_ENROLLMENT_SELECTION_REQUIRED")
+        course = f'/course/v1/student/courses/{selection["courseId"]}'
+        digest = _receipt_sha({"idempotencyKey": selection["idempotencyKey"]})
+        expected = [
+            {"method": "GET", "target": f'/course/v1/courses/{selection["slug"]}', "bodySha256": _EMPTY, "uses": 1},
+            {"method": "GET", "target": course, "bodySha256": _EMPTY, "uses": 2},
+            {"method": "POST", "target": f"{course}/enrollments", "bodySha256": digest, "uses": 1},
+            {"method": "GET", "target": f'/course/v1/student/progress?courseId={selection["courseId"]}',
+             "bodySha256": _EMPTY, "uses": 1},
+        ]
+        demand(requests == expected, "P2_INTERACTIVE_LEARNING_ENROLLMENT_REQUESTS_REQUIRED")
     return copy.deepcopy(action)
 
 
 def _selection_sha(action):
+    if action["stage"] == "learning":
+        return (action["actorId"] + action["learningAction"]["idempotencyKey"]).replace("-", "")
     if action["stage"] == "authoring":
         authoring = action["authoringAction"]
         prefix = {
@@ -697,8 +751,12 @@ class P2InteractiveWindow:
         demand(frontend == {"epoch": self.plan["initialEpoch"], "newWork": False, "recovery": False,
                             "active": 0, "uncertain": 0}, "P2_INTERACTIVE_FRONTEND_START_REQUIRED")
         authoring = self.action.get("authoringAction")
+        learning = self.action.get("learningAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
         paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}
+        if learning:
+            protect = ingress.observe_learning_protection
+            paths = {"course_id": learning["courseId"], "slug": learning["slug"]}
         if authoring and authoring["operation"] == _QUALIFY_PUBLICATION:
             paths["publication_readiness"] = True
         if authoring and authoring["operation"] == _SAVE_QUIZ_REVISION:
@@ -824,15 +882,16 @@ class P2InteractiveWindow:
         demand(counts == [row["uses"] for row in requests], "P2_INTERACTIVE_ACKNOWLEDGEMENT_COUNTS_REQUIRED")
         return copy.deepcopy(evidence["acknowledged"])
 
-    def observe_authoring_gateway(self):
-        demand(self.action["stage"] == "authoring" and self._permit_issued, "P2_INTERACTIVE_AUTHORING_PERMIT_REQUIRED")
+    def observe_browser_gateway(self):
+        demand(self.action["stage"] in SCOPED_GATEWAY_BROWSER_STAGES and self._permit_issued,
+               browser_status(self.plan, "PERMIT_REQUIRED"))
         rows = self.collect_gateway_effects()
-        if self.action["authoringAction"]["operation"] == _CREATE_DRAFT:
+        if self.action.get("authoringAction", {}).get("operation") == _CREATE_DRAFT:
             rows.sort(key=lambda row: row["requestIndex"])
         artifact = {**browser_receipt(self.plan, "GATEWAY_OBSERVED"), "epoch": str(int(self.plan["initialEpoch"]) + 1),
                     "gatewayStateSha256": self._scoped_sha, "gatewayActive": 0, "gatewayUncertain": 0,
                     "gatewayAcknowledgements": rows}
-        receipt = authoring_gateway_receipt(self.plan, artifact)
+        receipt = browser_gateway_receipt(self.plan, artifact)
         migrate.write_json(self.broker.directory, browser_artifact(self.plan, "gateway"), artifact)
         return receipt
 

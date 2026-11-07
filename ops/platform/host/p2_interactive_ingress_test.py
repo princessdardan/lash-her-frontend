@@ -330,6 +330,23 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_learning_probes_exact_reviewed_public_and_academy_pages_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        paths = ("/courses/owned-course", f"/academy/courses/{course}")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            for changed in ({"course_id": course, "slug": "owned-course?extra=yes"},
+                            {"course_id": course + "/lessons", "slug": "owned-course"}):
+                with self.assertRaisesRegex(ValueError, "LEARNING_COURSE_REQUIRED"):
+                    ingress.observe_learning_protection(self.base.context, self.fixture.client,
+                                                        expected_profile=self.profile, **changed)
+            receipt = ingress.observe_learning_protection(self.base.context, self.fixture.client, course_id=course,
+                                                           expected_profile=self.profile, slug="owned-course")
+        self.assertEqual([row["path"] for row in receipt["endpointDenials"]], list(paths))
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -531,7 +548,7 @@ class InteractiveWindowTests(unittest.TestCase):
                               "candidateSha256": "d" * 64, "interactiveController": {"challenge": "e" * 64}}
             broker.scoped_stage, broker.directory, broker.scoped_gate_lock = stage, Path(directory), threading.RLock()
             broker.external_armed = broker.guard_arm_verified = True
-            broker.authoring_observation_attempted = False
+            broker.gateway_observation_attempted = False
             broker.scoped_case = broker.closing_at = None
             broker.check, stage._check = lambda: None, lambda: None
             broker.selected = {"releaseId": "owned-release"}
@@ -646,12 +663,21 @@ class InteractiveWindowTests(unittest.TestCase):
         from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
 
         actor = "10000000-0000-4000-8000-000000000001"
-        action = {"stage": "learning", "actorId": actor, "windowSeconds": 90,
-                  "requests": [{"method": "GET", "target": "/course/v1/courses?limit=1",
-                                "bodySha256": window._EMPTY, "uses": 1}]}
+        course = "10000000-0000-4000-8000-000000000002"
+        key = "10000000-0000-4000-8000-000000000003"
+        target = f"/course/v1/student/courses/{course}"
+        digest = hashlib.sha256(f'{{"idempotencyKey":"{key}"}}'.encode()).hexdigest()
+        requests = [
+            {"method": "GET", "target": "/course/v1/courses/owned-course", "bodySha256": window._EMPTY, "uses": 1},
+            {"method": "GET", "target": target, "bodySha256": window._EMPTY, "uses": 2},
+            {"method": "POST", "target": f"{target}/enrollments", "bodySha256": digest, "uses": 1},
+            {"method": "GET", "target": f"/course/v1/student/progress?courseId={course}", "bodySha256": window._EMPTY, "uses": 1}]
+        selected = {"operation": "enroll-free-course", "courseId": course, "slug": "owned-course", "idempotencyKey": key}
+        action = {"stage": "learning", "actorId": actor, "windowSeconds": 90, "requests": requests, "learningAction": selected}
         self.assertEqual(window.validate_interactive_action(action), action)
         for change in ({"actorId": "wrong"}, {"windowSeconds": 301}, {"requests": action["requests"] * 2},
-                       {"stage": "lifecycle"}, {"requests": [{**action["requests"][0], "bodySha256": "b" * 64}]}):
+                       {"stage": "lifecycle"}, {"learningAction": {**selected, "idempotencyKey": course}},
+                       {"requests": [*requests[:2], {**requests[2], "bodySha256": "b" * 64}, requests[3]]}):
             with self.assertRaises(ValueError):
                 window.validate_interactive_action({**action, **change})
         with tempfile.TemporaryDirectory() as directory:
@@ -672,6 +698,7 @@ class InteractiveWindowTests(unittest.TestCase):
                 broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
                 broker.scope, broker.external_armed, broker.guard_arm_verified = scope, True, True
                 broker.certification_started = time.monotonic()
+                broker.directory = root
                 broker.admission_fd, broker.admission_identity, broker.configuration = fd, os.fstat(fd), root
                 broker.jobs, broker.selected = {"frontend": {}}, {"releaseId": "owned-release"}
                 broker.action_id, broker.check = lambda: "owned-action", lambda: None
@@ -681,6 +708,7 @@ class InteractiveWindowTests(unittest.TestCase):
                     "sourceSha256": {window._SOURCE_KEY: window._hash(window._SOURCE.read_bytes())},
                     "certificationPlan": {"mode": "interactive-browser", "startState": "already-closed", "maximumSeconds": 300,
                         "scopedAction": action, "initialEpoch": "7", "sourceCommit": "b" * 40, "targetSha256": "c" * 64,
+                        "certificationActionId": "owned-action", "planSha256": "f" * 64, "qualificationTargetProfile": {},
                         "nativePlan": {"deploymentUrl": "https://owned.vercel.app"},
                         "gatewayProcessSha256": "d" * 64, "gatewayConfigurationSha256": "e" * 64}}
                 frontend = {"epoch": "7", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
@@ -713,10 +741,11 @@ class InteractiveWindowTests(unittest.TestCase):
 
                 stage._read = read_projecting_root_ownership
                 with patch.object(window.os, "fchown") as chown, \
-                     patch.object(window.ingress, "observe_browser_protection", return_value={"status": "owned-protection"}), \
+                     patch.object(window.ingress, "observe_learning_protection", return_value={"status": "owned-protection"}) as protect, \
                      patch.object(window.native, "observe_metadata", return_value={"nativeEnabled": False}), \
                      patch.object(window.time, "time", return_value=1_794_009_600) as wall:
                     self.assertEqual(stage.prepare()["status"], "owned-protection")
+                    self.assertEqual(protect.call_args.kwargs, {"course_id": course, "slug": "owned-course"})
                     opened = stage.open_gateway()
                     self.assertEqual(opened, {"stage": "learning", "epoch": "8", "expiresAt": "2026-11-07T00:01:30.000Z",
                                               "gatewayScoped": True})
@@ -728,17 +757,22 @@ class InteractiveWindowTests(unittest.TestCase):
                         stage.take_private_browser_permit()
                     frontend.update(epoch="8", newWork=True, recovery=True)
                     permit = stage.take_private_browser_permit()
-                    self.assertTrue(permit["cookie"].startswith("v1.8.learning.1794009600.1794009690."))
+                    self.assertTrue(permit["cookie"].startswith("v2.8.learning.1794009600.1794009690."))
+                    self.assertEqual(permit["cookie"].split(".")[6], (actor + key).replace("-", ""))
                     self.assertNotIn(permit["cookie"], path.read_text())
                     self.assertNotIn(installed["key"], repr(opened))
                     with self.assertRaisesRegex(ValueError, "PERMIT_NOT_AVAILABLE"):
                         stage.take_private_browser_permit()
                     with self.assertRaisesRegex(ValueError, "COMPLETE_GATEWAY_EFFECTS"):
                         stage.collect_gateway_effects()
-                    observed.append({"requestId": "10000000-0000-4000-8000-000000000002",
-                                     "proofRequestId": "10000000-0000-4000-8000-000000000003",
-                                     "requestIndex": 0, "upstreamStatus": 200})
+                    observed.extend({"requestId": f"20000000-0000-4000-8000-{index:012d}",
+                                     "proofRequestId": f"30000000-0000-4000-8000-{index:012d}",
+                                     "requestIndex": request_index, "upstreamStatus": status}
+                                    for index, (request_index, status) in enumerate(((0, 200), (1, 403), (2, 201), (1, 200), (3, 200)), 1))
                     self.assertEqual(stage.collect_gateway_effects(), observed)
+                    receipt = stage.observe_browser_gateway()
+                    self.assertEqual(receipt["status"], "P2_INTERACTIVE_LEARNING_GATEWAY_OBSERVED")
+                    self.assertEqual(receipt["gatewayAcknowledgements"], observed)
                     wall.return_value = 1_794_009_691
                     with self.assertRaisesRegex(ValueError, "EFFECT_ORDER"):
                         stage.collect_gateway_effects()

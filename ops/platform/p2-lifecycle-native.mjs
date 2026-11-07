@@ -138,6 +138,14 @@ const reviewedQuizAuthoringDependencies = {
   "src/lib/writer-admission/interactive-proof.ts": "26c978e329a45771c9f9fbb4aefa457d02c10246c87509c1e22d0bc80daff7ff",
   "src/lib/api-integration/course-admin-handler.ts": "b813be21cbcbc374ad37f2455e383a5eeb58c10da042ace6a8eb67bb43eedc01"
 };
+const reviewedFreeEnrollmentDependencies = {
+  ...reviewedQuizAuthoringDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "13aa0012b15612582a197761772662aefad990f97beccc6d1f9b18cc19ffb083",
+  "src/lib/api-integration/academy-handler.ts": "ce8d43358fe664bc38ed732d9e1f67e162c524dcb68632454c42faa19585b1e0",
+  "src/components/learning/course-detail.tsx": "6720f91d0a09ca9fcb272a16295ec642b29e24c85237978fe2bc50d53ae6c628",
+  "src/components/learning/free-enrollment.tsx": "3988dd35931612f3152c438f59cd210693f8d13e02739bed404cc307b2363175",
+  "src/app/(site)/courses/[slug]/page.tsx": "e130fd52c62c86740fa20a5cb180c2a4833b42e637d6b577af1937de152c53e8"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -164,13 +172,15 @@ function sourcePolicy(sourceCommit) {
     [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies,
       reviewedCurriculumReorderDependencies, reviewedCurriculumCreateDependencies]],
     [reviewedPublicationSource, [reviewedPublicationDependencies, reviewedPortableTextDependencies]],
-    [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies]]]
+    [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
-    const dependencies = Object.fromEntries(Object.keys(expected[0]).map(file => [file, readSourceHash(file)]));
-    demand(expected.some(variant => same(dependencies, variant)));
-    return { ...selected, ...dependencies };
+    const files = new Set(expected.flatMap(variant => Object.keys(variant)));
+    const hashes = Object.fromEntries(Array.from(files, file => [file, readSourceHash(file)]));
+    const reviewed = expected.find(variant => Object.entries(variant).every(([file, hash]) => hashes[file] === hash));
+    demand(reviewed);
+    return { ...selected, ...reviewed };
   }
   if (same(selected, reviewedLifecyclePermitSource)) {
     const dependencies = Object.fromEntries(Object.keys(reviewedLifecyclePermitDependencies).map(file => [file, readSourceHash(file)]));

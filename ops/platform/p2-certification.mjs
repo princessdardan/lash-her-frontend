@@ -36,7 +36,8 @@ import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftC
   captureP2InteractiveCourseReorderBaseline,observeP2InteractiveCourseReorderCase,validateP2InteractiveCourseReorder,
   captureP2InteractiveCurriculumCreateBaseline,observeP2InteractiveCurriculumCreateCase,validateP2InteractiveCurriculumCreate,
   captureP2InteractivePublicationBaseline,observeP2InteractivePublicationCase,validateP2InteractivePublication,
-  captureP2InteractiveQuizSaveBaseline,observeP2InteractiveQuizSaveCase,validateP2InteractiveQuizSave} from './p2-lifecycle-persistence-probe.mjs';
+  captureP2InteractiveQuizSaveBaseline,observeP2InteractiveQuizSaveCase,validateP2InteractiveQuizSave,
+  captureP2InteractiveFreeEnrollmentBaseline,observeP2InteractiveFreeEnrollmentCase} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -57,7 +58,8 @@ const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
-const pairedBrowserStages=new Set(['lifecycle','authoring']);
+const courseBackedBrowserStages=new Set(['authoring','learning']);
+const pairedBrowserStages=new Set(['lifecycle',...courseBackedBrowserStages]);
 const emptyRequestSha256=rawHash(Buffer.alloc(0));
 const authoringCases=new Map([
   ['create-draft',{field:'authoringDraft',paired:false,validate:validateP2InteractiveCourseDraft,
@@ -113,18 +115,31 @@ function publicationActionValid(selected,requests){
     bodySha256:rawHash(JSON.stringify({expectedRevision:selected.revision,status:'published'}))});
   return isDeepStrictEqual(requests,expected);
 }
+function learningEnrollmentActionValid(selected,requests){
+  if(!exactKeys(selected,['operation','courseId','slug','idempotencyKey'])||selected.operation!=='enroll-free-course'||
+    !uuid(selected.courseId)||!authoringSlug(selected.slug)||!uuid(selected.idempotencyKey))return false;
+  const detail=`/course/v1/student/courses/${selected.courseId}`;
+  return isDeepStrictEqual(requests,[
+    {method:'GET',target:`/course/v1/courses/${selected.slug}`,uses:1,bodySha256:emptyRequestSha256},
+    {method:'GET',target:detail,uses:2,bodySha256:emptyRequestSha256},
+    {method:'POST',target:detail+'/enrollments',uses:1,bodySha256:rawHash(JSON.stringify({idempotencyKey:selected.idempotencyKey}))},
+    {method:'GET',target:`/course/v1/student/progress?courseId=${selected.courseId}`,uses:1,bodySha256:emptyRequestSha256},
+  ]);
+}
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
 function interactiveActionValid(value){
   const lifecycle=value?.stage==='lifecycle',identity=value?.stage==='identity',authoring=value?.stage==='authoring';
   const enrollment=identity&&Object.hasOwn(value,'identityEnrollment');
-  const selectionKey=lifecycle?'frontendAction':authoring?'authoringAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
+  const learning=value?.stage==='learning';
+  const selectionKey=lifecycle?'frontendAction':authoring?'authoringAction':learning?'learningAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
      !Number.isInteger(value.windowSeconds)||value.windowSeconds<30||value.windowSeconds>300||
      !Array.isArray(value.requests))return false;
+  if(learning)return learningEnrollmentActionValid(value.learningAction,value.requests);
   if(lifecycle){
     const selected=value.frontendAction;
     return value.requests.length===0&&exactKeys(selected,['actorKind','userId','operation'])&&uuid(selected.userId)&&
@@ -456,11 +471,13 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,authoring=action.stage==='authoring';
+  const learning=action.stage==='learning',courseBacked=courseBackedBrowserStages.has(action.stage);
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
-  if(authoring)demand(courseDraft?.job&&(!authoringCase.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
+  if(courseBacked)demand(courseDraft?.job&&(!authoringCase?.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
   const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase()}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
-  const selection=authoring?authoringSelection(action):
+  const {operation:_learningOperation,...learningSelection}=action.learningAction??{};
+  const selection=authoring?authoringSelection(action):learning?{...learningSelection,actorId:action.actorId}:
     enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
   const context=authoring||!enrollment&&selection.actorKind==='admin'?'owner':'learner';
   const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
@@ -469,7 +486,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const reviewed={sourceCommit:plan.sourceCommit,ordinaryProducers,runtimeProducer,
     interactiveProducer:{producerSha256,role:runtimeProducer.role}};
   const observations={verifySession,verifyEnvironment};
-  const courseObservations=authoring?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl}:undefined;
+  const courseObservations=courseBacked?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl}:undefined;
   const cancelBrowser=()=>{void Promise.resolve().then(()=>controller.close()).catch(()=>{});};
   signal?.addEventListener('abort',cancelBrowser,{once:true});
   try{
@@ -477,6 +494,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     const prepared=await stage.prepare();
     demand(prepared.status===statusPrefix+'_PREPARED');
     const baseline=authoringCase?await authoringCase.baseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
+      learning?await captureP2InteractiveFreeEnrollmentBaseline(courseDraft.job,selection,courseObservations):
       enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
       identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
         await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
@@ -489,20 +507,21 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       const opened=await stage.open();
       gatewayOpened=true;
       demand(opened.status===statusPrefix+'_OPENED');
-      if(authoring)demand(opened.gatewayScoped===true);
+      if(courseBacked)demand(opened.gatewayScoped===true);
       frontendOpened=await withOwner(()=>openFrontendInteractiveAdmission(client,policy,plan.initialEpoch,reviewed));
       demand(frontendOpened.epoch===expectedOpen&&frontendOpened.newWork===true&&frontendOpened.recovery===true);
       const installed=await stage.installPermit();
       demand(installed.context===context&&installed.epoch===expectedOpen&&installed.stage===action.stage);
       await controller.open(context);
       browserEvidence=authoringCase?.paired?await controller.captureAuthoringResponses(context):authoring?await controller.captureAuthoringResponse(context):
+        learning?await controller.captureLearningResponse(context):
         identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
         await controller.captureLifecycleResponse(context);
       record(`p2-interactive-${action.stage}-browser.json`,browserEvidence);
-      if(authoring){
+      if(courseBacked){
         const gateway=await stage.observe();
-        demand(gateway.status==='P2_INTERACTIVE_AUTHORING_GATEWAY_OBSERVED');
-        record('p2-interactive-authoring-gateway.json',gateway);
+        demand(gateway.status===statusPrefix+'_GATEWAY_OBSERVED');
+        record(`p2-interactive-${action.stage}-gateway.json`,gateway);
       }
     }finally{
       if(gatewayOpened)try{
@@ -527,12 +546,13 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     signal?.throwIfAborted();
     const witness=authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
       authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
+      learning?await observeP2InteractiveFreeEnrollmentCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
       identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
         await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
     record(`p2-interactive-${action.stage}-witness.json`,witness);
     const joined=await stage.retain(authoringCase?.paired?{browserResponses:browserEvidence,courseWitness:witness}:
-      authoring?{browserResponse:browserEvidence,courseWitness:witness}:
+      courseBacked?{browserResponse:browserEvidence,courseWitness:witness}:
       identity?{browserIdentity:browserEvidence,identityWitness:witness}:{browserResponse:browserEvidence,lifecycleWitness:witness});
     demand(joined.status===statusPrefix+'_JOINED');
     return joined;
@@ -884,7 +904,7 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
       BigInt(identity.initialEpoch)+2n===BigInt(plan.initialEpoch)&&identity.certificationActionId!==plan.certificationActionId&&
       settings.authPreparation===undefined&&settings.browser===undefined&&settings.worker===undefined);
     const {actorId}=input.scopedAction;
-    const actorKind=input.scopedAction.stage==='authoring'?'admin':input.scopedAction.frontendAction.actorKind;
+    const actorKind=input.scopedAction.stage==='authoring'?'admin':input.scopedAction.stage==='learning'?'customer':input.scopedAction.frontendAction.actorKind;
     identityPlan=prepareP2BoundedCertification(prepared,{...input,certificationActionId:identity.certificationActionId,initialEpoch:identity.initialEpoch,
       scopedAction:{stage:'identity',actorId:null,requests:[],windowSeconds:identity.windowSeconds,identityActor:{actorKind,actorId}}},candidateBytes,options);
   }else demand(settings.interactiveIdentity===undefined);
@@ -1001,7 +1021,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       }}:{})};
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
       interactiveController,...(enrollment?{identityEnrollmentEmail}:{}),
-      ...(action.scopedAction?.stage==='authoring'?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,
+      ...(courseBackedBrowserStages.has(action.scopedAction?.stage)?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,
         readCourseDatabaseUrl:()=>credentials.COURSE_STAGING_DATABASE_URL}}:{}),
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),

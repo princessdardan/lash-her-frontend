@@ -39,6 +39,9 @@ _COURSE_ID = r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-
 _AUTHORING_DETAIL_PATH = re.compile(rf"(?:/admin/courses|/api/admin/courses)/{_COURSE_ID}")
 _PUBLICATION_READINESS_PATH = re.compile(rf"/api/admin/courses/{_COURSE_ID}/publication-readiness")
 _QUIZ_PATH = re.compile(rf"/api/admin/lessons/{_COURSE_ID}/quiz")
+_COURSE_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_PUBLIC_COURSE_PATH = re.compile(rf"/courses/{_COURSE_SLUG}")
+_LEARNER_COURSE_PATH = re.compile(rf"/academy/courses/{_COURSE_ID}")
 
 
 def _digest(value):
@@ -75,7 +78,8 @@ class UnauthenticatedIngressClient:
         demand(type(origin) is str and (origin == canonical.ORIGIN or _DIRECT_DEPLOYMENT.fullmatch(origin)),
                "P2_INTERACTIVE_INGRESS_ORIGIN_REFUSED")
         demand(type(path) is str and (path in _BROWSER_PATHS + _AUTHORING_PATHS or _AUTHORING_DETAIL_PATH.fullmatch(path) or
-                                     _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path)),
+                                     _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path) or
+                                     len(path) <= 129 and _PUBLIC_COURSE_PATH.fullmatch(path) or _LEARNER_COURSE_PATH.fullmatch(path)),
                "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
         request = urllib.request.Request(url, method="GET", headers={
@@ -179,6 +183,13 @@ def observe_authoring_protection(context, client, *, expected_profile, course_id
     if quiz_lesson_id is not None:
         paths += (f"/api/admin/lessons/{quiz_lesson_id}/quiz",)
     return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
+
+
+def observe_learning_protection(context, client, *, expected_profile, course_id, slug):
+    demand(type(course_id) is str and re.fullmatch(_COURSE_ID, course_id) and type(slug) is str and
+           len(slug) <= 120 and re.fullmatch(_COURSE_SLUG, slug), "P2_INTERACTIVE_LEARNING_COURSE_REQUIRED")
+    return _observe_selected_protection(context, client, expected_profile, browser=True,
+                                        paths=(f"/courses/{slug}", f"/academy/courses/{course_id}"))
 
 
 def _observe_selected_protection(context, client, expected_profile, *, browser, paths=None):

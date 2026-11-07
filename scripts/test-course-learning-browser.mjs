@@ -428,6 +428,9 @@ try {
     await mediaClient.end();
   }
   const storagePath = join(temporary, "fixture.json");
+  const gatewayJournal = join(temporary, "gateway-requests.jsonl");
+  await writeFile(gatewayJournal, "", { mode: 0o600 });
+  fixture.gatewayJournal = gatewayJournal;
   await writeFile(storagePath, JSON.stringify(fixture), { mode: 0o600 });
   const frontendEnv = {
     ...common,
@@ -465,6 +468,7 @@ try {
     INTEGRATION_LEARNING_ROUTES_ENABLED: "true",
     COURSE_LEARNING_BROWSER_FIXTURE: "1",
     COURSE_LEARNING_API_ORIGIN: apiOrigin,
+    COURSE_LEARNING_GATEWAY_JOURNAL: gatewayJournal,
     NEXT_FONT_GOOGLE_MOCKED_RESPONSES: join(
       root,
       "tests/course-learning-browser/font-fixture.cjs",

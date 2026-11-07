@@ -12,11 +12,12 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
-  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
+  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
-  validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput,
-  validateP2LifecycleMutationReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt, validateP2LifecycleBrowserInput,
+  validateP2LifecycleMutationReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LearningEnrollment,
+  watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -234,6 +235,7 @@ function interactivePermit(input) {
   if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
+  else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
@@ -248,6 +250,41 @@ const binding = input => ({ challenge: input.challenge, bindingSha256: input.bin
 const privateFrame = (input, context, permit) => Buffer.from(JSON.stringify({
   challenge: input.challenge, bindingSha256: input.bindingSha256, context, permit,
 }) + "\n");
+
+function ownedLearning() {
+  const target = { actorId: userId, operation: "enroll-free-course", courseId: ownedCourseId, slug: ownedDraft.slug, idempotencyKey: randomUUID() };
+  const input = interactiveInput({ stage: "learning", learning: target });
+  const paths = p2LearningEnrollmentPaths(target);
+  const body = { courseId: target.courseId, grantId: randomUUID(), enrollmentId: randomUUID(), source: "free", status: "active", idempotentReplay: false };
+  const receipt = { method: "POST", pathname: paths.pathname, status: 200, requestId: randomUUID(), academyPath: paths.academyPath, body };
+  return { target, input, receipt, ...paths };
+}
+
+test("learning enrollment input, v2 permit and compact receipt bind exact learner and course", () => {
+  const { input, target, receipt, coursePath } = ownedLearning(), permit = interactivePermit(input);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), coursePath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "owner"));
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  const [version, epoch, stage, issued, expires, nonce, selector, mac] = permit.cookie.split(".");
+  assert.equal(version, "v2");
+  assert.equal(selector, (target.actorId + target.idempotencyKey).replaceAll("-", ""));
+  for (const change of [{ actorId: randomUUID() }, { idempotencyKey: randomUUID() }]) {
+    const other = { ...input, learning: { ...target, ...change } };
+    assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit(other), input));
+  }
+  const legacy = ["v1", epoch, stage, issued, expires, nonce, mac].join(".");
+  assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: legacy }, input));
+  for (const change of [{ slug: "different?x=1" }, { courseId: "invalid" }, { operation: "other" }, { body: "unexpected" }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, learning: { ...target, ...change } }));
+  }
+  assert.deepEqual(validateP2LearningEnrollmentReceipt(receipt, target), receipt);
+  assert.throws(() => validateP2LearningEnrollmentReceipt({ ...receipt, academyPath: "/academy" }, target));
+  for (const body of [{ courseId: randomUUID() }, { source: "paid" }, { status: "revoked" }, { enrollmentId: null }, { idempotentReplay: true },
+    { idempotencyKey: target.idempotencyKey }]) {
+    assert.throws(() => validateP2LearningEnrollmentReceipt({ ...receipt, body: { ...receipt.body, ...body } }, target));
+  }
+});
 
 test("interactive recorder requires the exact in-process reviewed plan and a fixed stage, epoch and actor context", async () => {
   const input = interactiveInput();
@@ -1467,6 +1504,73 @@ test("owned Chromium quiz save captures first and later revisions and refuses ta
           const expires = scenario === "wrong-path" ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
           await assert.rejects(rejected.watch.wait(expires), /AUTHORING_RESPONSE_REFUSED/u);
           assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium free enrollment qualifies the exact grant and canonical protected course arrival",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const open = async scenario => {
+      const fixture = ownedLearning(), { input, target, receipt, coursePath, academyPath, pathname } = fixture;
+      const context = await browser.newContext();
+      const destination = scenario === "wrong-destination" ? "/academy/courses/" + randomUUID() : academyPath;
+      const apiPath = scenario === "wrong-api-path" ? pathname + "/other" : pathname;
+      const key = scenario === "wrong-key" ? randomUUID() : target.idempotencyKey;
+      const grant = scenario === "replayed" ? { ...receipt.body, idempotentReplay: true }
+        : scenario === "wrong-course" ? { ...receipt.body, courseId: randomUUID() } : receipt.body;
+      const courseDocument = `<!doctype html><main><button>Enroll for free</button></main><script>
+        document.querySelector('button').onclick = async () => {
+          const result = await fetch(${JSON.stringify(apiPath)}, {method:'POST',headers:{'content-type':'application/json'},
+            body:JSON.stringify({idempotencyKey:${JSON.stringify(key)}})});
+          await result.json();
+          const destination = ${JSON.stringify(destination)}, page = await (await fetch(destination)).text();
+          history.pushState(null, '', destination);
+          document.querySelector('main').innerHTML = page;
+        };</script>`;
+      let allowDestination;
+      const destinationReady = new Promise(resolve => { allowDestination = resolve; });
+      if (scenario !== "success") allowDestination();
+      await context.route("**/*", async route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: courseDocument });
+        if (request.method() === "POST") return route.fulfill({ status: 200, body: JSON.stringify(grant),
+          headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": receipt.requestId } });
+        await destinationReady;
+        return route.fulfill({ status: 200, contentType: "text/html", body: scenario === "wrong-link"
+          ? '<a href="/courses/other-course">Course overview</a>' : `<a href="${coursePath}">Course overview</a>` });
+      });
+      const page = await context.newPage(), watch = watchP2LearningEnrollment(context, page, input);
+      await page.goto(input.browserOrigin + coursePath);
+      const enroll = page.getByRole("button", { name: "Enroll for free", exact: true });
+      return { ...fixture, page, watch, enroll, allowDestination, expires: Math.floor(Date.now() / 1000) + 60,
+        close: async () => { allowDestination(); watch.close(); await context.close(); } };
+    };
+    try {
+      const learner = await open("success");
+      try {
+        await Promise.all([learner.page.waitForRequest(request => request.url() === learner.input.browserOrigin + learner.academyPath), learner.enroll.click()]);
+        assert.throws(() => learner.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
+        learner.allowDestination();
+        await learner.watch.wait(learner.expires);
+        assert.deepEqual(learner.watch.finish(), learner.receipt);
+        assert.equal(JSON.stringify(learner.watch.finish()).includes(learner.target.idempotencyKey), false);
+        await learner.page.evaluate(async ({ pathname, idempotencyKey }) => {
+          await (await fetch(pathname, { method: "POST", body: JSON.stringify({ idempotencyKey }) })).json();
+        }, { pathname: learner.pathname, idempotencyKey: learner.target.idempotencyKey });
+        assert.throws(() => learner.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
+      } finally { await learner.close(); }
+      for (const scenario of ["wrong-key", "replayed", "wrong-course", "wrong-destination", "wrong-link", "wrong-api-path", "wrong-source"]) {
+        const rejected = await open(scenario);
+        try {
+          if (scenario === "wrong-source") await rejected.page.goto(rejected.input.browserOrigin + "/courses/other-course");
+          await rejected.enroll.click();
+          const expires = ["wrong-link", "wrong-api-path"].includes(scenario) ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
+          await assert.rejects(rejected.watch.wait(expires), /LEARNING_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }

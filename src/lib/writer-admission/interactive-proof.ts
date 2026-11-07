@@ -25,7 +25,9 @@ const authoringReviewPublicationActorPrefix = "7032712d617574682d7264792d763100"
 const authoringSaveQuizActorPrefix = "7032712d617574682d7175697a2d7631";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
   authoringOperation?: WriterAuthoringOperation };
-type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string; authoringActorId?: string };
+export type LearningEnrollmentSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
+type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string;
+  authoringActorId?: string; learningEnrollment?: LearningEnrollmentSelection };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
 const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "paid-grant"]);
@@ -74,8 +76,8 @@ const media = {
   DELETE: at(`/api/admin/lessons/${uuid}/video/${uuid}/captions/[A-Za-z0-9_-]{1,255}`),
 };
 const learning = {
-  GET: at(`/academy(?:/courses/${uuid}(?:/lessons/${uuid})?)?|/courses(?:/[a-z0-9]+(?:-[a-z0-9]+)*)?|/api/academy/(?:catalog(?:/[a-z0-9]+(?:-[a-z0-9]+)*)?|courses(?:/${uuid}(?:/lessons)?)?|lessons/${uuid}(?:/playback|/quiz(?:/attempts)?)?|progress)`),
-  POST: at(`/api/academy/(?:courses/${uuid}/enrollments|lessons/${uuid}/(?:progress|quiz/attempts))`),
+  GET: at(`/academy/courses/${uuid}|/courses/[a-z0-9]+(?:-[a-z0-9]+)*`),
+  POST: at(`/api/academy/courses/${uuid}/enrollments`),
 };
 const paidGrant = {
   GET: at(`/(?:api/)?admin/courses(?:/${uuid}(?:/manual-grants)?)?`),
@@ -111,7 +113,7 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
       if (authoringOperation === "edit-draft") return matches(authoringEdit, method, path);
       return authoringOperation === "create-draft" && ((method === "GET" && path === "/admin/courses") || (method === "POST" && path === "/api/admin/courses"));
     case "media": return matches(media, method, path) || (method === "GET" && authoringReads.test(path));
-    case "learning": return matches(learning, method, path) || (method === "GET" && path === "/api/customer-auth/session");
+    case "learning": return matches(learning, method, path);
     case "paid-grant": return matches(paidGrant, method, path);
     case "lifecycle": return matches(lifecycle, method, path) || (method === "GET" && path === "/api/customer-auth/session");
   }
@@ -141,11 +143,13 @@ function authentic(actual: string | undefined, expected: string): boolean {
   return !!actual && signedDigest.test(actual) && timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 }
 
-function decodeSelectedUuid(selection: string, prefix: string): string | undefined {
-  if (!selection.startsWith(prefix)) return undefined;
-  const hex = selection.slice(prefix.length);
+function decodeCompactUuid(hex: string): string | undefined {
   const id = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
   return canonicalUuid.test(id) ? id : undefined;
+}
+
+function decodeSelectedUuid(selection: string, prefix: string): string | undefined {
+  return selection.startsWith(prefix) ? decodeCompactUuid(selection.slice(prefix.length)) : undefined;
 }
 
 function decodeIdentityEnrollment(selection: string, nonce: string): WriterIdentityEnrollment | undefined {
@@ -158,7 +162,7 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   if (cookie.length > 256) return null;
   const fields = cookie.split(".");
   const [version, epoch, stage, started, expires, nonce, selection] = fields;
-  const hasSelection = stage === "lifecycle" || stage === "identity" || stage === "authoring";
+  const hasSelection = stage === "lifecycle" || stage === "identity" || stage === "authoring" || stage === "learning";
   if ((hasSelection ? version !== "v2" || fields.length !== 8 || !signedDigest.test(selection ?? "")
     : version !== "v1" || fields.length !== 7) ||
     !epochPattern.test(epoch ?? "") || !stages.includes(stage as Stage) ||
@@ -166,6 +170,11 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     Number(started) > now || Number(expires) <= now || Number(expires) - Number(started) > maxLeaseSeconds ||
     !authentic(fields.at(-1), signature(authority, "browser", fields.slice(0, -1).join(".")))) return null;
   const permit = { epoch, stage: stage as Stage, nonce };
+  if (stage === "learning") {
+    const actorId = decodeCompactUuid(selection.slice(0, 32));
+    const idempotencyKey = decodeCompactUuid(selection.slice(32));
+    return actorId && idempotencyKey ? { ...permit, learningEnrollment: { actorId, idempotencyKey } } : null;
+  }
   if (stage === "identity") {
     if (selection === adminIdentitySelector) return { ...permit, identityActorKind: "admin" };
     const identityCustomerId = decodeSelectedUuid(selection, customerIdentityPrefix);
@@ -235,7 +244,7 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
     lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment;
-    authoringActorId?: string; authoringOperation?: WriterAuthoringOperation } | null {
+    authoringActorId?: string; authoringOperation?: WriterAuthoringOperation; learningEnrollment?: LearningEnrollmentSelection } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
@@ -245,7 +254,8 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
     ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}),
     ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}),
     ...(browser.identityEnrollment ? { identityEnrollment: browser.identityEnrollment } : {}),
-    ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}) };
+    ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}),
+    ...(browser.learningEnrollment ? { learningEnrollment: browser.learningEnrollment } : {}) };
 }
 
 export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof readInteractiveRequest>> {

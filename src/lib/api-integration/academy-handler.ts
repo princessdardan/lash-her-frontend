@@ -1,5 +1,7 @@
 import "server-only";
 
+import { getCustomerActor } from "@/lib/customer-auth/session";
+import { readInteractiveBrowserRequest, type LearningEnrollmentSelection } from "@/lib/writer-admission/interactive-proof";
 import { createCourseClient } from "./course-client";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
 import { readSameOriginJson } from "./same-origin-json";
@@ -7,8 +9,10 @@ import { readSameOriginJson } from "./same-origin-json";
 type Client = ReturnType<typeof createCourseClient>;
 export type AcademyOperation = "catalog" | "catalog-course" | "my-courses" | "my-course" | "course-lessons" | "lesson" | "playback" | "progress" | "record-progress" | "free-enrollment" | "quiz" | "quiz-attempts" | "submit-quiz-attempt";
 
-export function createAcademyHandler(operation: AcademyOperation, dependencies: { client?: () => Client; origin?: () => string | undefined } = {}) {
+export function createAcademyHandler(operation: AcademyOperation, dependencies: { client?: () => Client; origin?: () => string | undefined;
+  getCustomer?: typeof getCustomerActor; getLearningEnrollment?: () => Promise<LearningEnrollmentSelection | undefined> } = {}) {
   const origin = dependencies.origin ?? (() => process.env.CUSTOMER_AUTH_URL);
+  const getLearningEnrollment = dependencies.getLearningEnrollment ?? (async () => (await readInteractiveBrowserRequest())?.learningEnrollment);
   return async (request: Request, params: Record<string, string> = {}): Promise<Response> => {
     let requestId = safeIntegrationRequestId();
     try {
@@ -38,7 +42,18 @@ export function createAcademyHandler(operation: AcademyOperation, dependencies: 
         case "progress": result = await course.listProgress(query); break;
         case "quiz": result = await course.getQuiz(params.lessonId); break;
         case "quiz-attempts": result = await course.listQuizAttempts(params.lessonId); break;
-        case "free-enrollment": result = await course.enrollFree(params.courseId, await readSameOriginJson(request, origin(), 16_384) as Parameters<Client["enrollFree"]>[1]); break;
+        case "free-enrollment": {
+          const body = await readSameOriginJson(request, origin(), 16_384) as Parameters<Client["enrollFree"]>[1];
+          const selected = await getLearningEnrollment();
+          if (selected) {
+            if (body?.idempotencyKey !== selected.idempotencyKey || Object.keys(body).length !== 1) throw new IntegrationServiceError("invalid_request", 400);
+            const actor = await (dependencies.getCustomer ?? getCustomerActor)();
+            if (!actor) throw new IntegrationServiceError("sign_in_required", 401);
+            if (actor.id !== selected.actorId) throw new IntegrationServiceError("forbidden", 403);
+          }
+          result = await course.enrollFree(params.courseId, body);
+          break;
+        }
         case "submit-quiz-attempt": result = await course.submitQuizAttempt(params.lessonId, await readSameOriginJson(request, origin(), 65_536) as Parameters<Client["submitQuizAttempt"]>[1]); break;
         case "record-progress": {
           const body = await readSameOriginJson(request, origin(), 16_384);

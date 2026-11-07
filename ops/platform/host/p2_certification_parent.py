@@ -1667,7 +1667,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.failure_lock = threading.RLock()
         self.scoped_gate_lock = threading.RLock()
         self.scoped_stage = self.scoped_case = self.scoped_mux_sha256 = None
-        self.authoring_observation_attempted = False
+        self.gateway_observation_attempted = False
         initial = self.initial
         plan = initial['certificationPlan']
         mode = plan['mode']
@@ -1839,7 +1839,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 release_evidence=self._release_evidence(),**self.profile_arguments())
 
     def interactive_operation(self, operation, value):
-        from p2_interactive_window import EXECUTABLE_BROWSER_STAGES, P2InteractiveWindow, browser_artifact, browser_case_evidence, browser_receipt
+        from p2_interactive_window import (EXECUTABLE_BROWSER_STAGES, SCOPED_GATEWAY_BROWSER_STAGES, P2InteractiveWindow,
+                                           browser_artifact, browser_case_evidence, browser_receipt)
         self.check()
         plan, stage = self.initial['certificationPlan'], self.scoped_stage
         fields = {'id', 'operation', 'controllerChallenge'}
@@ -1862,11 +1863,11 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         if operation == 'interactive-permit':
             return stage.take_private_browser_permit()
         if operation == 'interactive-observe':
-            require(stage.action['stage'] == 'authoring' and not self.authoring_observation_attempted,
-                    'P2_INTERACTIVE_FIXED_AUTHORING_OBSERVATION_REQUIRED')
-            self.authoring_observation_attempted = True
+            require(stage.action['stage'] in SCOPED_GATEWAY_BROWSER_STAGES and not self.gateway_observation_attempted,
+                    'P2_INTERACTIVE_FIXED_GATEWAY_OBSERVATION_REQUIRED')
+            self.gateway_observation_attempted = True
             try:
-                return stage.observe_authoring_gateway()
+                return stage.observe_browser_gateway()
             except ValueError:
                 # A rejected observation grants no receipt but still permits the fixed fence.
                 return browser_receipt(plan, 'GATEWAY_OBSERVATION_REFUSED')
@@ -1878,7 +1879,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         require(operation == 'interactive-retain', 'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
         evidence = value['caseEvidence']
         gateway_artifact = None
-        if stage.action['stage'] == 'authoring':
+        if stage.action['stage'] in SCOPED_GATEWAY_BROWSER_STAGES:
             from qualification_target_profile import decode_qualification_target_json
             gateway_artifact = decode_qualification_target_json(migrate.read_input(self.directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
         bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)

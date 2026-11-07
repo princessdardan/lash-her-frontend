@@ -80,7 +80,8 @@ initial=json.loads(sys.stdin.readline())
 plan=initial['certificationPlan'];binding=initial['interactiveController'];profile=initial['qualificationTargetProfile']
 action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpoch'])+1);behavior=sys.argv[1]
 enrollment=action.get('identityEnrollment')
-authoring=stage=='authoring';gateway_observation=None
+authoring=stage=='authoring';learning=stage=='learning';gateway_observation=None
+gateway_scoped=authoring or learning;learning_action=action.get('learningAction',{})
 authoring_action=action.get('authoringAction',{})
 editing=authoring_action.get('operation')=='edit-and-stale-draft'
 reorder=authoring_action.get('operation')=='reorder-and-stale-curriculum'
@@ -114,11 +115,15 @@ for raw in sys.stdin:
    value['receipt']={**base,'status':status('PREPARED'),'ingressSha256':'d'*64}
   elif op=='interactive-open':
    assert phase=='prepared';phase='opened'
-   value['receipt']={**base,'status':status('OPENED'),'epoch':epoch,'expiresAt':iso(expires),'gatewayScoped':authoring}
+   value['receipt']={**base,'status':status('OPENED'),'epoch':epoch,'expiresAt':iso(expires),'gatewayScoped':gateway_scoped}
   elif op=='interactive-permit':
    assert phase=='opened';phase='issued'
    selector='f'*64;nonce='e'*32
-   if authoring:
+   if learning:
+    learner=fixture_id(2) if behavior=='wrong-learner' else action['actorId']
+    key=fixture_id(2) if behavior=='wrong-idempotency-key' else learning_action['idempotencyKey']
+    selector=learner.replace('-','')+key.replace('-','')
+   elif authoring:
     owner_id=action['actorId']
     if behavior=='wrong-owner':owner_id=fixture_id(2)
     prefix='7032712d617574686f72696e672d7631'
@@ -149,7 +154,7 @@ for raw in sys.stdin:
    cookie='.'.join((version,epoch,stage,str(initial_time),str(expires),nonce,*(() if version=='v1' else (selector,)),'a'*64))
    value.update(status='CERTIFICATION_INTERACTIVE_PRIVATE',permit={'stage':stage,'epoch':epoch,'expires':expires,'cookie':cookie})
   elif op=='interactive-observe':
-   assert authoring and phase=='issued';phase='observed'
+   assert gateway_scoped and phase=='issued';phase='observed'
    if behavior=='observe-refused':
     value['receipt']={**base,'status':status('GATEWAY_OBSERVATION_REFUSED')}
    else:
@@ -162,6 +167,10 @@ for raw in sys.stdin:
     if quiz:
      observed_prior=(200 if prior_status==404 else 404) if behavior=='wrong-prior-status' else prior_status
      selected=[(11,13,0,200),(4,12,1,observed_prior),(6,18,2,200),(16,17,0,200)]
+    if learning:
+     selected=[(11,13,0,200),(12,14,1,403),(4,15,2,201),(16,17,1,200),(6,18,3,200)]
+     if behavior=='joined-progress-first':selected[3],selected[4]=selected[4],selected[3]
+     if behavior=='wrong-learning-tail':selected[4]=(6,18,1,200)
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[-1 if changes_existing else 1]['upstreamStatus']=201 if publication else 200
@@ -178,7 +187,22 @@ for raw in sys.stdin:
   elif op=='interactive-retain':
    assert phase=='fenced';phase='retained'
    evidence=p['caseEvidence']
-   if changes_existing:
+   if learning:
+    assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
+    response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
+    course_id=learning_action['courseId'];academy_path='/academy/courses/'+course_id
+    assert response=={'method':'POST','pathname':'/api'+academy_path+'/enrollments','status':200,
+     'requestId':post_request,'academyPath':academy_path,'body':body}
+    assert body=={'courseId':course_id,'grantId':fixture_id(7),'enrollmentId':fixture_id(8),
+     'source':'free','status':'active','idempotentReplay':False}
+    transition_id=fixture_id(9)
+    assert witness=={**body,'transitionId':transition_id,'readOnly':True}
+    joined={'actorId':action['actorId'],'courseId':course_id,'slug':learning_action['slug'],'grantId':body['grantId'],
+     'enrollmentId':body['enrollmentId'],'transitionId':transition_id,'browserResponseSha256':digest(response),
+     'courseWitnessSha256':digest(witness),'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256'],
+     'gatewayPostRequestId':post_request}
+    if behavior=='wrong-join':joined['transitionId']=fixture_id(2)
+   elif changes_existing:
     assert gateway_observation and set(evidence)=={'browserResponses','courseWitness'}
     responses=evidence['browserResponses'];body=responses['winner']['body'];witness=evidence['courseWitness']
     assert responses['winner']['requestId']==post_request and responses['stale']['requestId']==stale_request
@@ -286,7 +310,8 @@ const actor='12345678-1234-4123-8123-000000000001',target='12345678-1234-4123-81
 const commandId='12345678-1234-4123-8123-000000000003',requestId='12345678-1234-4123-8123-000000000004';
 const staleRequestId='12345678-1234-4123-8123-000000000006';
 const {certificationStage,actorKind,behavior,variant}=fixture;
-const identity=certificationStage==='identity',authoring=certificationStage==='authoring';
+const identity=certificationStage==='identity',authoring=certificationStage==='authoring',learning=certificationStage==='learning';
+const gatewayScoped=authoring||learning;
 const provider=identity?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
 const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const createCurriculum=authoring&&['create-module','create-lesson'].includes(variant);
@@ -296,16 +321,19 @@ const priorStatus=quizRevision===0?404:200;
 const context=actorKind==='admin'?'owner':'learner';
 const status=disposition=>'P2_INTERACTIVE_'+certificationStage.toUpperCase()+'_'+disposition;
 const refusedPermit=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider','wrong-email','wrong-owner','legacy-permit','wrong-operation-permit',
- 'wrong-outcome-permit'].includes(behavior);
+ 'wrong-outcome-permit','wrong-learner','wrong-idempotency-key'].includes(behavior);
 const installFailure=behavior==='install-failure'||refusedPermit;
 const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack','wrong-observe-order','unexpected-patch-ack',
- 'wrong-prior-status'].includes(behavior);
+ 'wrong-prior-status','wrong-learning-tail'].includes(behavior);
 const skipObserve=behavior==='fence-without-observe';
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor};
 const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'.repeat(32)}:null;
 const observedActor=identityEnrollment?{actorKind:'customer',actorId:'12345678-1234-4123-8123-000000000005'}:identityActor;
 const slug='p2q-course-draft',coursePath='/api/admin/courses/'+commandId,courseTarget='/course/v1/admin/courses/'+commandId;
+const idempotencyKey='12345678-1234-4123-8123-000000000019';
+const learningAction={operation:'enroll-free-course',courseId:commandId,slug,idempotencyKey};
+const academyPath='/academy/courses/'+commandId,student='/course/v1/student',studentCourse=student+'/courses/'+commandId;
 const kind=variant?.endsWith('-module')?'module':'lesson',parentId=kind==='module'?commandId:target;
 const curriculumPath=kind==='module'?'/courses/'+parentId+'/modules':'/modules/'+parentId+'/lessons';
 const reorderPath=curriculumPath+'/reorder',childSlug='p2q-new-child',itemId='12345678-1234-4123-8123-000000000010';
@@ -328,7 +356,12 @@ const reorderHash=ids=>rawHash(JSON.stringify({expectedCourseRevision:authoringA
 const writeMethod=reorder?'POST':'PATCH',writeTarget=reorder?'/course/v1/admin'+reorderPath:courseTarget;
 const publicationRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision,status:'published'})),uses:1};
-const requests=quiz?[
+const requests=learning?[
+  {method:'GET',target:'/course/v1/courses/'+slug,bodySha256:emptyBodySha256,uses:1},
+  {method:'GET',target:studentCourse,bodySha256:emptyBodySha256,uses:2},
+  {method:'POST',target:studentCourse+'/enrollments',bodySha256:rawHash(JSON.stringify({idempotencyKey})),uses:1},
+  {method:'GET',target:student+'/progress?courseId='+commandId,bodySha256:emptyBodySha256,uses:1},
+]:quiz?[
   {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:2},
   {method:'GET',target:'/course/v1'+quizPath,bodySha256:emptyBodySha256,uses:1},
   {method:'PUT',target:'/course/v1'+quizPath,bodySha256:rawHash(JSON.stringify({expectedCourseRevision:authoringAction.revision,document:quizDocument})),uses:1},
@@ -348,7 +381,7 @@ const requests=quiz?[
   {method:'POST',target:'/course/v1/admin/courses',bodySha256:'8'.repeat(64),uses:1},
 ]:[];
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests,windowSeconds:120,
-  ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:{frontendAction:selection})};
+  ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:learning?{learningAction}:{frontendAction:selection})};
 const plan={mode:'interactive-browser',version:2,environment:'staging',qualificationTargetProfile:profile,certificationActionId:actionId,
   initialEpoch:'7',maximumSeconds:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
   nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},
@@ -447,6 +480,15 @@ for(const changed of [
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],target:courseTarget}]}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],bodySha256:emptyBodySha256}]}}},
  ]:[]),
+ ...(learning?[
+  ...[{idempotencyKey:'invalid'},{idempotencyKey:target},{slug:'invalid/path'},{courseId:target},{operation:'enroll-paid-course'}]
+   .map(selected=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,learningAction:{...learningAction,...selected}}}})),
+  ...[
+   [...requests].reverse(),[requests[0],{...requests[1],uses:1},...requests.slice(2)],
+   [...requests.slice(0,2),{...requests[2],bodySha256:'1'.repeat(64)},requests[3]],
+   [...requests.slice(0,3),{...requests[3],target:student+'/progress'}],
+  ].map(requests=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests}}})),
+ ]:[]),
 ]) assert.throws(()=>start(changed),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
 assert.equal(starts,0);
 writeFileSync(join(directory,'p2-certification-current-database.json'),JSON.stringify(receipt),{mode:0o600});
@@ -463,7 +505,12 @@ const changePath=reorder?'/api/admin'+reorderPath:coursePath,staleProof=reorder?
 const publicationStep={method:'PATCH',pathname:coursePath,status:200,requestId:staleRequestId};
 const publicationBody={courseId:commandId,slug,revision:authoringAction.revision+(published?1:0),status:published?'published':'draft',issueCodes};
 const quizBody={courseId:commandId,slug,lessonId,quizId,revision:authoringAction.revision+1,quizRevision:quizRevision+1,documentSha256};
-const evidence=quiz?{browserResponse:{
+const [transitionId,grantId,enrollmentId]=ids;
+const freeBody={courseId:commandId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:false};
+const evidence=learning?{browserResponse:{
+ method:'POST',pathname:'/api'+academyPath+'/enrollments',status:200,requestId,academyPath,body:freeBody,
+},courseWitness:{...freeBody,transitionId,readOnly:true}}
+ :quiz?{browserResponse:{
  prior:{method:'GET',pathname:'/api'+quizPath,status:priorStatus,requestId},
  save:{method:'PUT',pathname:'/api'+quizPath,status:200,requestId:staleRequestId},body:quizBody,
 },courseWitness:{...quizBody,readOnly:true}}
@@ -484,7 +531,7 @@ const evidence=quiz?{browserResponse:{
 const invalidEvidence=quiz?{...evidence,browserResponse:{...evidence.browserResponse,prior:{...evidence.browserResponse.prior,requestId:target}}}
  :publication?{...evidence,browserResponse:{...evidence.browserResponse,readiness:{...evidence.browserResponse.readiness,requestId:target}}}
  :changesExisting?{...evidence,browserResponses:{...evidence.browserResponses,winner:{...evidence.browserResponses.winner,requestId:target}}}
- :authoring?{...evidence,browserResponse:{...evidence.browserResponse,requestId:target}}
+ :gatewayScoped?{...evidence,browserResponse:{...evidence.browserResponse,requestId:target}}
  :identity?{...evidence,identityWitness:{...evidence.identityWitness,actorId:target}}
  :{...evidence,browserResponse:{...response,unexpected:'fixture-forbidden'}};
 let handle;
@@ -495,7 +542,7 @@ const result=start()(async(_verify,_signal,host)=>{
  assert.deepEqual(Object.keys(handle),[]);
  assert.throws(()=>readP2CertificationInteractiveStage(handle,{...plan}));
  const stage=readP2CertificationInteractiveStage(handle,plan);
- if(authoring) await assert.rejects(stage.observe());
+ if(gatewayScoped) await assert.rejects(stage.observe());
  else assert.equal(stage.observe,undefined);
  await assert.rejects(host.interactiveStage(browser));
  await assert.rejects(host.gatewayStage('browser'));
@@ -517,12 +564,12 @@ const result=start()(async(_verify,_signal,host)=>{
  assert.equal(ack.context,context);
  await assert.rejects(stage.installPermit());
  await assert.rejects(stage.retain(evidence));
- if(authoring&&!skipObserve){
-  if(observeFailure) await assert.rejects(stage.observe(),{message:'P2_CERTIFICATION_INTERACTIVE_AUTHORING_OBSERVE_FAILED'});
+ if(gatewayScoped&&!skipObserve){
+  if(observeFailure) await assert.rejects(stage.observe(),{message:'P2_CERTIFICATION_INTERACTIVE_'+certificationStage.toUpperCase()+'_OBSERVE_FAILED'});
   else {
    const observed=await stage.observe();
    assert.equal(observed.status,status('GATEWAY_OBSERVED'));
-   const mutation=observed.gatewayAcknowledgements.find(row=>row.requestIndex===1);
+   const mutation=observed.gatewayAcknowledgements.find(row=>row.requestIndex===(learning?2:1));
    assert.equal(mutation.requestId,requestId);
    if(changesExisting) assert.equal(observed.gatewayAcknowledgements.at(-1).requestId,staleRequestId);
    if(published||quiz) assert.equal(observed.gatewayAcknowledgements[2].requestId,staleRequestId);
@@ -537,6 +584,17 @@ const result=start()(async(_verify,_signal,host)=>{
   throw new Error('fixture-stop-after-fence');
  }
  await assert.rejects(stage.retain(invalidEvidence));
+ if(learning){
+  for(const changed of [{source:'paid'},{status:'revoked'},{idempotentReplay:true},{courseId:target},{grantId:'invalid'}]){
+   const body={...freeBody,...changed};
+   await assert.rejects(stage.retain({browserResponse:{...evidence.browserResponse,body},courseWitness:{...body,transitionId,readOnly:true}}));
+  }
+  for(const changed of [{transitionId:'invalid'},{readOnly:false},{enrollmentId:target}]){
+   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,...changed}}));
+  }
+  await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,academyPath:'/academy'}}));
+  await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
+ }
  if(authoring){
   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,revision:evidence.courseWitness.revision+1}}));
   await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
@@ -602,6 +660,10 @@ const result=start()(async(_verify,_signal,host)=>{
  }
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
+ if(learning) assert.deepEqual(
+  [retained.actorId,retained.courseId,retained.slug,retained.grantId,retained.enrollmentId,retained.transitionId,retained.gatewayPostRequestId],
+  [actor,commandId,slug,grantId,enrollmentId,transitionId,requestId],
+ );
  if(authoring){
   if(quiz){
    assert.equal(retained.priorGatewayRequestId,requestId);
@@ -641,7 +703,7 @@ const result=start()(async(_verify,_signal,host)=>{
  await host.prepareClose(retained);await host.finish(outcome);
  return 'fixture-joined';
 });
-if(behavior!=='joined'){
+if(!['joined','joined-progress-first'].includes(behavior)){
  await assert.rejects(result,{message:'P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW'});
  assert.equal(existsSync(join(directory,'p2-host-certification-outcome.json')),false);
 }else{
@@ -652,7 +714,7 @@ assert.equal(starts,1);assert.equal(installCount,refusedPermit?0:1);
 if(privatePacket) assert.ok(!Object.hasOwn(privatePacket,'cookie'));
 assert.throws(()=>readP2CertificationInteractiveStage(handle,plan));
 assert.deepEqual(writes.filter(row=>row.operation?.startsWith('interactive-')).map(row=>row.operation),
- ['interactive-prepare','interactive-open','interactive-permit',...(authoring&&!installFailure&&!skipObserve?['interactive-observe']:[]),
+ ['interactive-prepare','interactive-open','interactive-permit',...(gatewayScoped&&!installFailure&&!skipObserve?['interactive-observe']:[]),
   'interactive-fence',...(installFailure||observeFailure||skipObserve?[]:['interactive-retain'])]);
 assert.ok(!/v[12]\.8\.|fixture-forbidden/u.test(JSON.stringify(writes)));
 `;
@@ -714,6 +776,14 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['authoring','admin','wrong-prior-status','quiz-create'],
  ['authoring','admin','wrong-prior-status','quiz-revise'],
  ['authoring','admin','wrong-join','quiz-revise'],
+ ['learning','customer','joined'],
+ ['learning','customer','joined-progress-first'],
+ ['learning','customer','wrong-learner'],
+ ['learning','customer','wrong-idempotency-key'],
+ ['learning','customer','wrong-observe-order'],
+ ['learning','customer','wrong-observe-ack'],
+ ['learning','customer','wrong-learning-tail'],
+ ['learning','customer','wrong-join'],
 ]){
  test(`fixed interactive transport handles ${certificationStage} ${variant??actorKind} ${behavior} over the guarded pipe`,()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-interactive-wire-')));chmodSync(directory,0o700);

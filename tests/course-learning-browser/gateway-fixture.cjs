@@ -2,6 +2,8 @@
 // active. This does not certify Vercel workload verification or any live provider.
 "use strict";
 if (process.env.COURSE_LEARNING_BROWSER_FIXTURE === "1") {
+  const { appendFileSync } = require("node:fs");
+  const journal = process.env.COURSE_LEARNING_GATEWAY_JOURNAL;
   const database = new URL(process.env.DATABASE_URL || "");
   const course = new URL(process.env.COURSE_LEARNING_API_ORIGIN || "");
   if (
@@ -27,10 +29,16 @@ if (process.env.COURSE_LEARNING_BROWSER_FIXTURE === "1") {
         headers.get("x-lash-workload-token") !== process.env.VERCEL_OIDC_TOKEN
       )
         throw new Error("Unexpected actual learner gateway fixture request");
-      return original(
+      const response = await original(
         new URL(`${url.pathname.slice(7)}${url.search}`, course),
         options,
       );
+      if (journal && /^\/course\/v1\/(?:courses\/[a-z0-9-]+|student\/(?:courses\/[0-9a-f-]+(?:\/enrollments)?|progress))$/u.test(url.pathname)) {
+        appendFileSync(journal, JSON.stringify({
+          method: options?.method ?? "GET", target: url.pathname + url.search, status: response.status,
+        }) + "\n", { mode: 0o600 });
+      }
+      return response;
     }
     if (
       url.hostname.endsWith(".api.sanity.io") ||

@@ -26,6 +26,7 @@ type Fixture = {
   frontendDatabaseUrl: string;
   courseDatabaseUrl: string;
   muxPublicKey: string;
+  gatewayJournal: string;
   scenarios: Record<string, Record<string, Scenario>>;
 };
 const enabled = process.env.COURSE_LEARNING_BROWSER_FIXTURE === "1";
@@ -174,10 +175,31 @@ const lessonPath = (
   mode: "practice" | "graded" = "practice",
 ) => `/academy/courses/${value.courseId}/lessons/${value.lessonIds[mode]}`;
 async function enroll(page: Page, value: Scenario) {
+  const requests = () => readFileSync(owned().gatewayJournal, "utf8").trim().split("\n").filter(Boolean)
+    .map(line => JSON.parse(line) as { method: string; target: string; status: number });
+  const start = requests().length;
+  const catalog = `/course/v1/courses/${value.slug}`;
+  const student = `/course/v1/student/courses/${value.courseId}`;
   await page.goto(`/courses/${value.slug}`);
-  await page
-    .getByRole("button", { name: "Enroll for free", exact: true })
-    .click();
+  const button = page.getByRole("button", { name: "Enroll for free", exact: true });
+  await expect(button).toBeVisible();
+  expect(requests().slice(start).filter(row => row.target === catalog || row.target === student)).toEqual([
+    { method: "GET", target: catalog, status: 200 },
+    { method: "GET", target: student, status: 403 },
+  ]);
+  const pending = page.waitForResponse(response => response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/academy/courses/${value.courseId}/enrollments`);
+  await button.click();
+  const response = await pending;
+  expect(response.status()).toBe(200);
+  expect(await response.headerValue("cache-control")).toBe("private, no-store");
+  expect(await response.json()).toMatchObject({ courseId: value.courseId, source: "free", status: "active", idempotentReplay: false });
+  await expect(page.getByRole("link", { name: "Course overview", exact: true })).toHaveAttribute("href", `/courses/${value.slug}`);
+  expect(requests().slice(start)).toEqual(expect.arrayContaining([
+    { method: "POST", target: student + "/enrollments", status: 201 },
+    { method: "GET", target: student, status: 200 },
+    { method: "GET", target: `/course/v1/student/progress?courseId=${value.courseId}`, status: 200 },
+  ]));
   await expect(
     page.getByRole("heading", {
       name: "Actual learning foundations",

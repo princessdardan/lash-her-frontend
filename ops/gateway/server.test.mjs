@@ -432,6 +432,100 @@ test("scoped interactive v3 joins exact signed requests, including GETs, to boun
     proofRequestId: input.headers["x-request-id"], requestIndex, upstreamStatus: response.status })) });
 });
 
+test("scoped learning acknowledges free enrollment after access denial and confirms private course and progress", async t => {
+  const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+  const [courseId, foreignCourseId, idempotencyKey, wrongKey, grantId, enrollmentId, moduleId, lessonId] = [1, 2, 3, 4, 5, 6, 7, 8].map(fixtureId);
+  const slug = "p2q-free-enrollment";
+  const publicTarget = `/course/v1/courses/${slug}`;
+  const studentPath = id => `/course/v1/student/courses/${id}`;
+  const studentTarget = studentPath(courseId);
+  const enrollmentTarget = `${studentTarget}/enrollments`;
+  const progressTarget = `/course/v1/student/progress?courseId=${courseId}`;
+  const body = JSON.stringify({ idempotencyKey });
+  const requests = [
+    { method: "GET", target: publicTarget, bodySha256: certificationHash(""), uses: 1 },
+    { method: "GET", target: studentTarget, bodySha256: certificationHash(""), uses: 2 },
+    { method: "POST", target: enrollmentTarget, bodySha256: certificationHash(body), uses: 1 },
+    { method: "GET", target: progressTarget, bodySha256: certificationHash(""), uses: 1 },
+  ];
+  const module = { id: moduleId, title: "Enrollment module", slug: "enrollment-module", description: null, position: 1 };
+  const course = { id: courseId, slug, title: "P2Q free course", description: null, introduction: null, currency: "CAD", accessMode: "free",
+    priceCents: 0, cover: null, seo: null, modules: [{ ...module, lessons: [] }] };
+  const studentCourse = { course: { ...course, modules: [{ ...module, lessons: [{ id: lessonId, moduleId, slug: "first-lesson", title: "First lesson",
+    content: null, contentDocument: { version: 1, blocks: [] }, transcript: null, captions: [], isPreview: false, position: 1 }] }] } };
+  const accessRequired = { error: { code: "ACTIVE_ENROLLMENT_REQUIRED", message: "Active enrollment required" } };
+  const enrollment = { grantId, enrollmentId, courseId, source: "free", status: "active", idempotentReplay: false };
+  const forwarded = [];
+  let enrolled = false;
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const payload = Buffer.concat(chunks).toString();
+    forwarded.push({ method: req.method, target: req.url, body: payload, requestId: req.headers["x-request-id"],
+      proof: req.headers[SCOPED_INTERACTIVE_HEADER], authorization: req.headers.authorization, idempotency: req.headers["x-idempotency-key"] });
+    let status, value;
+    if (req.url === publicTarget.slice("/course".length)) { status = 200; value = { course }; }
+    else if (req.method === "POST") {
+      const receivedKey = JSON.parse(payload).idempotencyKey;
+      if (receivedKey !== req.headers["x-idempotency-key"]) { status = 400; value = { error: { code: "BAD_REQUEST", message: "Invalid request" } }; }
+      else { enrolled = true; status = 201; value = enrollment; }
+    } else if (!enrolled) { status = 403; value = accessRequired; }
+    else { status = 200; value = req.url === progressTarget.slice("/course".length) ? { progress: [] } : studentCourse; }
+    res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(value));
+  }, "learning");
+
+  const post = () => f.signed({ method: "POST", path: enrollmentTarget, body, idempotency: idempotencyKey });
+  const enrolledInput = post();
+  for (const input of [f.signed({ path: publicTarget }), f.signed({ path: studentTarget, actor: foreignCourseId }),
+    f.signed({ path: progressTarget, actor: foreignCourseId }), f.signed({ path: `/course/v1/student/progress?courseId=${foreignCourseId}` }),
+    f.signed({ method: "POST", path: enrollmentTarget, body, idempotency: idempotencyKey, actor: foreignCourseId }),
+    f.signed({ method: "POST", path: `${studentPath(foreignCourseId)}/enrollments`, body, idempotency: idempotencyKey }),
+    f.signed({ method: "POST", path: enrollmentTarget, body: JSON.stringify({ idempotencyKey: wrongKey }), idempotency: wrongKey }),
+    { ...enrolledInput, headers: { ...enrolledInput.headers, "x-idempotency-key": wrongKey } }]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  const steps = [
+    { input: f.signed({ path: publicTarget, catalog: true }), requestIndex: 0, status: 200, value: { course } },
+    { input: f.signed({ path: studentTarget }), requestIndex: 1, status: 403, value: accessRequired },
+    { input: enrolledInput, requestIndex: 2, status: 201, value: enrollment },
+    { input: f.signed({ path: studentTarget }), requestIndex: 1, status: 200, value: studentCourse },
+    { input: f.signed({ path: progressTarget }), requestIndex: 3, status: 200, value: { progress: [] } },
+  ];
+  async function complete({ input, requestIndex, status, value }) {
+    const output = await f.send(input);
+    assert.equal(output.status, status);
+    assert.deepEqual(JSON.parse(output.body), value);
+    const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+    assert.match(requestId, /^[a-f0-9-]{36}$/u);
+    assert.notEqual(requestId, proofRequestId);
+    return { requestId, proofRequestId, requestIndex, upstreamStatus: status };
+  }
+  const acknowledged = [];
+  for (const step of steps.slice(0, 3)) {
+    acknowledged.push(await complete(step));
+    assert.equal((await f.send(step.input)).status, 503);
+  }
+  acknowledged.push(...await Promise.all(steps.slice(3).map(complete)));
+  for (const input of [f.signed({ path: publicTarget, catalog: true }), f.signed({ path: studentTarget }),
+    f.signed({ path: progressTarget }), post(), ...steps.slice(3).map(step => step.input)]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
+  assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
+  const expectedForwarded = steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+    body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined,
+    authorization: input.headers.authorization, idempotency: input.headers["x-idempotency-key"] }));
+  assert.deepEqual(forwarded.slice(0, 3), expectedForwarded.slice(0, 3));
+  assert.deepEqual(forwarded.slice(3).sort((a, b) => a.target.localeCompare(b.target)), expectedForwarded.slice(3));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 5);
+  assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(0, 3), acknowledged.slice(0, 3));
+  assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(3).sort((a, b) => a.requestIndex - b.requestIndex), acknowledged.slice(3));
+});
+
 test("scoped authoring acknowledges the catalog page and draft create under their returned gateway request IDs", async t => {
   const createTarget = "/course/v1/admin/courses";
   const listTarget = `${createTarget}?limit=100`;

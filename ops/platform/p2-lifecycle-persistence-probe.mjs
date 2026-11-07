@@ -150,6 +150,33 @@ const SQL = Object.freeze({
       (created_by=$3::uuid AND document=$4::jsonb AND created_at>$5::timestamptz
         AND created_at<=pg_catalog.statement_timestamp()) AS fields_match
       FROM public.quiz_revisions WHERE lesson_id=$1::uuid AND revision=$2::int`,
+    freeEnrollmentCourse: `SELECT id::text AS course_id,slug FROM public.courses WHERE slug=$1::text
+      AND status='published' AND access_mode='free' AND currency='CAD' AND price_cents=0`,
+    freeEnrollmentGrant: `SELECT id::text AS grant_id,enrollment_id::text,granted_at::text,
+      (grant_reason='free' AND status='active' AND idempotency_key=$3::text AND request_hash=$4::text
+        AND external_order_id IS NULL AND external_payment_id IS NULL AND provider IS NULL AND expires_at IS NULL
+        AND revoked_at IS NULL AND revoke_reason IS NULL AND revoke_idempotency_key IS NULL AND revoke_request_hash IS NULL) AS fields_match
+      FROM public.entitlement_grants WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
+    freeEnrollmentRecord: `SELECT id::text AS enrollment_id,granted_at::text,
+      (status='active' AND source='free' AND revoked_at IS NULL AND refunded_at IS NULL) AS fields_match
+      FROM public.enrollments WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
+    freeEnrollmentKey: `SELECT (command_type='free_grant' AND request_hash=$2::text) AS fields_match
+      FROM public.entitlement_idempotency_keys WHERE idempotency_key=$1::text`,
+    freeEnrollmentStream: `SELECT id::text AS stream_id,effective_at::text,
+      (version=1 AND state='active' AND effective_at=pg_catalog.date_trunc('milliseconds',effective_at)) AS fields_match
+      FROM public.community_enrollment_streams WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
+    freeEnrollmentOutbox: `SELECT o.event_id::text,o.canonical_digest,
+      (o.stream_version=1 AND o.state='pending' AND o.attempts_in_cycle=0 AND o.replay_cycle=0
+        AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL AND o.last_attempt_at IS NULL
+        AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL AND o.last_failure_detail IS NULL
+        AND o.available_at=s.effective_at AND o.created_at=s.effective_at AND o.updated_at=s.effective_at
+        AND o.canonical_digest=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(o.canonical_body,'UTF8')),'hex')) AS fields_match
+      FROM public.community_enrollment_outbox o JOIN public.community_enrollment_streams s ON s.id=o.stream_id
+      WHERE o.stream_id=$1::uuid LIMIT 2`,
+    freeEnrollmentProgress: `SELECT NOT EXISTS(SELECT 1 FROM public.lesson_progress p
+      JOIN public.lessons l ON l.id=p.lesson_id JOIN public.modules m ON m.id=l.module_id
+      LEFT JOIN public.enrollments e ON e.id=p.enrollment_id
+      WHERE p.user_id=$1::uuid AND (m.course_id=$2::uuid OR (e.user_id=$1::uuid AND e.course_id=$2::uuid))) AS absent`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -408,6 +435,7 @@ const courseReorderBaselines = new WeakMap();
 const curriculumCreateBaselines = new WeakMap();
 const publicationBaselines = new WeakMap();
 const quizSaveBaselines = new WeakMap();
+const freeEnrollmentBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -856,7 +884,7 @@ export async function observeP2InteractivePublicationCase(courseJob, selection, 
 
 const quizSaveSelectionFields = ["courseId", "slug", "revision", "lessonId", "quizRevision", "documentSha256", "bodySha256", "actorId"];
 const quizDocumentFields = ["version", "mode", "passingPercent", "questions"];
-const canonicalQuizDocument = document => JSON.stringify(document, (_key, value) =>
+const canonicalAsciiJson = document => JSON.stringify(document, (_key, value) =>
   value && typeof value === "object" && !Array.isArray(value)
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
 
@@ -879,7 +907,7 @@ export function validateP2InteractiveQuizSave(selection, input) {
     const optionIds = new Set(question.options.map(option => option.id));
     return optionIds.size === question.options.length && optionIds.has(question.correctOptionId);
   }), "course-quiz-save-questions");
-  demand(sha(canonicalQuizDocument(document)) === selection.documentSha256, "course-quiz-save-document-hash");
+  demand(sha(canonicalAsciiJson(document)) === selection.documentSha256, "course-quiz-save-document-hash");
   return body;
 }
 
@@ -936,6 +964,73 @@ export async function observeP2InteractiveQuizSaveCase(courseJob, selection, bas
       "course-quiz-save-persistence");
   });
   return { courseId, slug, lessonId, quizId, revision, quizRevision, documentSha256, readOnly: true };
+}
+
+const freeEnrollmentSelectionFields = ["actorId", "courseId", "slug", "idempotencyKey"];
+const freeEnrollmentBrowserFields = ["courseId", "grantId", "enrollmentId", "source", "status", "idempotentReplay"];
+const uuidV4 = value => courseUuid(value) && value[14] === "4";
+
+function selectedFreeEnrollment(value) {
+  demand(closed(value, freeEnrollmentSelectionFields) && [value.actorId, value.courseId, value.idempotencyKey].every(courseUuid)
+    && draftSlug(value.slug), "course-free-enrollment-selection");
+  return Object.freeze({ ...value });
+}
+
+async function readFreeEnrollmentPair(client, selection) {
+  const { actorId, courseId, slug, idempotencyKey } = selection;
+  const courses = await read(client, "course", "freeEnrollmentCourse", [slug]);
+  demand(courses.length === 1 && courses[0].course_id === courseId && courses[0].slug === slug, "course-free-enrollment-eligibility");
+  const pair = [actorId, courseId], requestHash = sha(JSON.stringify({ command: "free_grant", userId: actorId, courseId }));
+  const progress = await read(client, "course", "freeEnrollmentProgress", pair);
+  demand(progress.length === 1 && progress[0].absent === true, "course-free-enrollment-progress");
+  return {
+    grants: await read(client, "course", "freeEnrollmentGrant", [...pair, idempotencyKey, requestHash]),
+    enrollments: await read(client, "course", "freeEnrollmentRecord", pair),
+    keys: await read(client, "course", "freeEnrollmentKey", [idempotencyKey, requestHash]),
+    streams: await read(client, "course", "freeEnrollmentStream", pair),
+  };
+}
+
+export async function captureP2InteractiveFreeEnrollmentBaseline(courseJob, selection, dependencies) {
+  const selected = selectedFreeEnrollment(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const pair = await readFreeEnrollmentPair(client, selected);
+    demand(Object.values(pair).every(rows => rows.length === 0), "course-free-enrollment-baseline");
+  });
+  const baseline = Object.freeze({});
+  freeEnrollmentBaselines.set(baseline, { selected, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveFreeEnrollmentCase(courseJob, selection, baseline, browserBody, dependencies) {
+  const selected = selectedFreeEnrollment(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const saved = freeEnrollmentBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && freeEnrollmentSelectionFields.every(key => selected[key] === saved.selected[key])
+    && closed(browserBody, freeEnrollmentBrowserFields) && browserBody.courseId === selected.courseId
+    && [browserBody.grantId, browserBody.enrollmentId].every(courseUuid) && browserBody.source === "free"
+    && browserBody.status === "active" && browserBody.idempotentReplay === false, "course-free-enrollment-receipt");
+  freeEnrollmentBaselines.delete(baseline);
+  const { courseId, actorId } = saved.selected;
+  const { grantId, enrollmentId } = browserBody;
+  const { result: transitionId } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const pair = await readFreeEnrollmentPair(client, saved.selected);
+    demand(Object.values(pair).every(rows => rows.length === 1 && rows[0].fields_match === true), "course-free-enrollment-persistence");
+    const grant = pair.grants[0], enrollment = pair.enrollments[0], stream = pair.streams[0];
+    demand(grant.grant_id === grantId && grant.enrollment_id === enrollmentId && enrollment.enrollment_id === enrollmentId
+      && uuidV4(stream.stream_id) && grant.granted_at === enrollment.granted_at && stream.effective_at === grant.granted_at,
+    "course-free-enrollment-persistence");
+    const outbox = await read(client, "course", "freeEnrollmentOutbox", [stream.stream_id]);
+    const event = outbox[0];
+    demand(outbox.length === 1 && event.fields_match === true && uuidV4(event.event_id), "course-free-enrollment-outbox");
+    const effectiveAt = date(stream.effective_at);
+    const expected = { eventId: event.event_id, eventType: "enrollment.activated", schemaVersion: 1, producer: "lash-her-course-api",
+      occurredAt: effectiveAt, stream: { id: stream.stream_id, version: 1 }, data: { userId: actorId, courseId, state: "active", effectiveAt } };
+    demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), "course-free-enrollment-outbox");
+    return event.event_id;
+  });
+  return { courseId, grantId, enrollmentId, source: "free", status: "active", idempotentReplay: false, transitionId, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

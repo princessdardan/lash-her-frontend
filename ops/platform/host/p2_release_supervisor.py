@@ -882,10 +882,13 @@ def _fail_profiled_interrupted(initial, armed, source, result, record_name,
 
 
 def _stop_profiled_certification_runtime(initial, source, result, record_name):
+    from p2_interactive_window import SCOPED_GATEWAY_BROWSER_STAGES
+
     selected, configuration = initial['candidate'], Path(initial['configuration'])
     plan = initial['certificationPlan']
     known = plan.get('mode') == 'known-ack-recovery'
-    authoring = plan.get('mode') == 'interactive-browser' and plan.get('scopedAction', {}).get('stage') == 'authoring'
+    scoped_browser = (plan.get('mode') == 'interactive-browser' and
+                      plan.get('scopedAction', {}).get('stage') in SCOPED_GATEWAY_BROWSER_STAGES)
     mounted = None
     prior = None
     try:
@@ -918,7 +921,7 @@ def _stop_profiled_certification_runtime(initial, source, result, record_name):
             result.update(close_gateway(initial, selected, selected_configuration))
         except BaseException:
             result['gatewayAdmissionFileClosed'] = None
-    if authoring:
+    if scoped_browser:
         result['interactiveGatewayDrainBeforeStop'] = None
         try:
             verify_guard_boundary(initial, source)
@@ -1175,7 +1178,8 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
         }.get(plan.get('scopedAction', {}).get('stage')),
     }.get(plan['mode'])
     if plan['mode'] == 'interactive-browser':
-        from p2_interactive_window import (browser_artifact, browser_case_evidence, browser_evidence_limit, browser_receipt, browser_status,
+        from p2_interactive_window import (SCOPED_GATEWAY_BROWSER_STAGES, browser_artifact, browser_case_evidence,
+                                            browser_evidence_limit, browser_receipt, browser_status,
                                             require_browser_ledger, verify_browser_controller)
         scoped_status = browser_status(plan, 'JOINED')
     if scoped_status is not None:
@@ -1197,7 +1201,7 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
             witness = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'ledger')), 'carrier')
             operation_count = require_browser_ledger(plan, witness)
             gateway_artifact = None
-            if plan['scopedAction']['stage'] == 'authoring':
+            if plan['scopedAction']['stage'] in SCOPED_GATEWAY_BROWSER_STAGES:
                 gateway_artifact = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
             expected_case = {**browser_receipt(plan, 'JOINED'), **browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact),
                              'browserProgramSha256': program_sha, 'frontendAdmission': frontend,
