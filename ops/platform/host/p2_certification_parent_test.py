@@ -452,6 +452,8 @@ class ProfiledCertificationInputTests(unittest.TestCase):
         phase = {'contractPhase': 'p2', 'phase2ContractManifestSha256': 'sha256:' + 'b' * 64}
         for carrier in (fixture.release, fixture.release['frontendMigration'], *fixture.jobs.values()):
             carrier.update(phase)
+        for name in ('course', 'community'):
+            fixture.jobs[name]['target']['serverMajor'] = 18
         fixture.jobs['frontend']['target'].update(approvedPendingTags=[], allowEmptyBootstrap=False)
         fixture.release['runtime']['composeSha256'] = 'sha256:' + self.files['ops/platform/compose.yaml']
         self.profile = fixture.profiled()
@@ -778,6 +780,167 @@ class ProfiledCertificationInputTests(unittest.TestCase):
                     self.prepare()
             finally:
                 path.write_bytes(raw)
+
+    def physical_fixture(self):
+        selected, jobs = migrate.make_plan(self.bundle, expected_profile=self.profile)
+        job = jobs['frontend']['job']
+        target = self.plan['nativePlan']['target']
+        owner = self.initial['owner']
+        witness = {key: [] for key in ('commands', 'deliveries', 'orderViolations', 'operations')}
+        admission = {'epoch': self.plan['initialEpoch'], 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+        after = [{'hash': '1' * 64, 'created_at': '100'}]
+        receipt = {**job, 'target': target, 'status': 'P2_CERTIFICATION_DATABASE_CURRENT', 'service': 'frontend',
+                   'certificationActionId': self.initial['certificationActionId'], 'planSha256': self.plan['planSha256'],
+                   'candidateSha256': self.initial['candidateSha256'], 'targetSha256': self.initial['targetSha256'],
+                   'after': after, 'journalSha256': self.hash(after), 'witness': witness, 'witnessSha256': self.hash(witness),
+                   'owner': owner, 'runtime': self.plan['nativePlan']['producer']['role'], 'retiredLogins': [], 'admission': admission,
+                   'schemaVerified': True, 'runtimeRoleVerified': True, 'oldLoginsDenied': True, 'oldRoleSessions': 0,
+                   'sqlReplayed': False, 'trafficAuthorized': False}
+        request = {'version': 2, 'qualificationTargetProfile': self.profile, 'marker': '7' * 64, 'backendPid': 1234,
+                   'backendStart': '2026-11-07 00:00:00+00', 'job': job, 'baseline': self.initial['frontendBaseline'],
+                   'owner': owner, 'producers': self.initial['inventory']['producers'], 'plan': self.plan, 'receipt': receipt,
+                   'historicalLogins': {'version': 2, 'qualificationTargetProfile': self.profile, 'target': target, 'retiredLogins': []}}
+        expected = {'version': 2, 'qualificationTargetProfile': self.profile, 'status': 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',
+                    **{key: request[key] for key in ('marker', 'backendPid', 'backendStart')},
+                    **{key: receipt[key] for key in ('environment', 'releaseId', 'sourceCommit', 'targetSha256', 'journalSha256',
+                                                    'witnessSha256', 'admission')}}
+        guard = self.configuration.parent / 'physical'
+        guard.mkdir(mode=0o700)
+        program = guard / 'p2-certification-current-probe.mjs'
+        program.write_bytes((self.source / parent.OBSERVER).read_bytes())
+        original_core = patch.object(parent, '_core', None)
+        original_core.start()
+        self.addCleanup(original_core.stop)
+        parent.cache_certification_core(self.initial, self.source, expected_profile=self.profile)
+        kwargs = {'program': program, 'program_sha256': self.files[parent.OBSERVER], 'expected_profile': self.profile}
+        observer = parent.P2CertificationPhysicalObserver(selected, request, self.source, 'owned-frontend-input', **kwargs)
+        lock = guard / 'host.lock'
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_EXCL, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return SimpleNamespace(selected=selected, jobs=jobs, receipt=receipt, request=request, expected=expected, observer=observer,
+                               observer_kwargs=kwargs, lock=lock, fd=fd, calls=[])
+
+    def physical_child(self, fixture, args, **kwargs):
+        fixture.calls.append(args)
+        if args[1] == 'run':
+            self.assertEqual(args[-2:], [parent.OBSERVER, '--profiled-current'])
+            self.assertEqual(args[args.index('--pull') + 1], 'never')
+            self.assertIn('dst=/app/' + parent.OBSERVER + ',readonly', ' '.join(args))
+            self.assertEqual(kwargs['env']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], 'owned-frontend-input')
+            request = json.loads(kwargs['input'])
+            operation = request.pop('operation')
+            self.assertEqual(request, fixture.request)
+            value = {**fixture.expected, **({'witness': fixture.receipt['witness']} if operation == 'witness' else {})}
+            return subprocess.CompletedProcess(args, 0, json.dumps(value), '')
+        self.assertIn(args[1:3], (['rm', '--force'], ['container', 'ls']))
+        return subprocess.CompletedProcess(args, 0, '', '')
+
+    def physical_scope(self, fixture, **overrides):
+        kwargs = {'release': fixture.selected, 'jobs': fixture.jobs, 'configuration_sha256': self.initial['configurationSha256'],
+                  'certification_plan': self.plan, 'expected_profile': self.profile, 'physical_observer': fixture.observer}
+        return parent.P2CertificationScope(fixture.fd, fixture.lock, lambda: None, fixture.receipt,
+                                          self.initial['candidateSha256'], **{**kwargs, **overrides})
+
+    def test_profiled_observer_uses_only_the_fixed_read_only_source_and_checks_current_identity(self):
+        fixture = self.physical_fixture()
+        observer = fixture.observer
+        with patch.object(parent.subprocess, 'run', side_effect=lambda args, **kwargs: self.physical_child(fixture, args, **kwargs)):
+            with self.assertRaisesRegex(ValueError, 'READ_ONLY_OBSERVER_REQUIRED'):
+                observer.probe('fence')
+            self.assertEqual(fixture.calls, [])
+            self.assertEqual(observer.probe('verify-schema'), fixture.expected)
+            self.assertEqual(observer.probe('witness')['witness'], fixture.receipt['witness'])
+            for field, value in (('version', 1), ('backendPid', 4321), ('backendStart', 'foreign'), ('targetSha256', 'a' * 64),
+                                 ('journalSha256', 'b' * 64), ('admission', {**fixture.receipt['admission'], 'active': 1})):
+                with self.subTest(field=field):
+                    saved = fixture.expected[field]
+                    fixture.expected[field] = value
+                    with self.assertRaises(ValueError):
+                        observer.probe('verify-schema')
+                    fixture.expected[field] = saved
+
+    def test_profiled_scope_requires_exact_live_observer_and_original_host_flock(self):
+        fixture = self.physical_fixture()
+        observer = fixture.observer
+        with self.assertRaisesRegex(ValueError, 'PHYSICAL_SESSION_LOST'):
+            self.physical_scope(fixture)
+        with self.assertRaisesRegex(ValueError, 'PHYSICAL_SCOPE_REQUIRED'):
+            self.physical_scope(fixture, physical_observer=None)
+        with self.assertRaisesRegex(ValueError, 'PROFILE_POLICY_REFUSED'):
+            parent.P2CertificationPhysicalObserver(fixture.selected, fixture.request, self.source, 'owned-frontend-input',
+                                                  **{**fixture.observer_kwargs, 'expected_profile': None})
+        with patch.object(parent.subprocess, 'run', side_effect=lambda args, **kwargs: self.physical_child(fixture, args, **kwargs)):
+            observer.start(lambda: None)
+            try:
+                scope = self.physical_scope(fixture)
+                self.assertEqual(scope.require_frontend(fixture.selected, fixture.jobs['frontend']), fixture.receipt)
+                contender = os.open(fixture.lock, os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(contender)
+                with self.assertRaisesRegex(ValueError, 'BINDING_REQUIRED'):
+                    scope.require_frontend(fixture.selected, {**fixture.jobs['frontend'], 'schema': b'{}'})
+                fixture.lock.rename(fixture.lock.with_name('old.lock'))
+                fixture.lock.touch(mode=0o600)
+                with self.assertRaisesRegex(ValueError, 'LOCK_IDENTITY_CHANGED'):
+                    scope.verify()
+            finally:
+                observer.stop()
+        with self.assertRaisesRegex(ValueError, 'PHYSICAL_SESSION_LOST'):
+            observer.verify()
+
+    def test_profiled_api_call_site_consumes_real_typed_checker_and_readback(self):
+        from current_databases import read_certification_api_proof
+        fixture = self.physical_fixture()
+        observer = fixture.observer
+        credentials = {'course': 'owned-course-input', 'community': 'owned-community-input'}
+        output = self.configuration.parent / 'api-check'
+        checked = []
+        def command(args, **options):
+            if args[1] != 'run':
+                self.assertIn(args[1:3], (['rm', '--force'], ['container', 'ls']))
+                return subprocess.CompletedProcess(args, 0, b'', b'')
+            mount = next(part for part in args if part.endswith('dst=/check/input,readonly'))
+            inputs = Path(mount.split(',src=', 1)[1].split(',dst=', 1)[0])
+            name = inputs.name.removesuffix('-input')
+            checked.append(name)
+            self.assertEqual(args[-4:], ['/check/input/current.mjs', '--profiled-current', '/check/input/job.json', '/check/input/schema.json'])
+            self.assertEqual((inputs / 'job.json').read_bytes(), (self.bundle / 'jobs' / (name + '.json')).read_bytes())
+            self.assertEqual(json.loads(options['input']), {'connectionUrl': credentials[name]})
+            self.assertNotIn('FRONTEND_STAGING_MIGRATION_DATABASE_URL', options['env'])
+            job = fixture.jobs[name]['job']
+            proof = {'version': 2, 'qualificationTargetProfile': self.profile, 'status': 'CURRENT_API_DATABASE_READ_ONLY_PASS',
+                     'environment': 'staging', 'service': fixture.jobs[name]['service'], 'pendingTags': [], 'appliedCount': 1,
+                     'migrationsExecuted': False, 'transportVerifier': 'selected-image/hasVerifiedMigrationTransport',
+                     'checks': ['selected-image-operator-role-policy'], 'checkerSha256': self.files[parent.API_CHECKER],
+                     'manifestSha256': self.initial['apiJobSha256'][name], 'schemaBaselineSha256': job['schemaBaselineSha256'],
+                     'artifactSha256': job['target']['artifactSha256'],
+                     'target': {key: job['target'][key] for key in ('host', 'port', 'database', 'user', 'serverMajor')},
+                     **migrate.contract_identity(job)}
+            return subprocess.CompletedProcess(args, 0, json.dumps(proof).encode(), b'')
+        with patch.object(parent.subprocess, 'run', side_effect=lambda args, **kwargs: self.physical_child(fixture, args, **kwargs)):
+            observer.start(lambda: None)
+            try:
+                scope = self.physical_scope(fixture)
+                with self.assertRaisesRegex(ValueError, 'ACTUAL_API_SCOPE_REQUIRED'):
+                    parent.observe_certification_api(scope, fixture.jobs, self.source, 'course', output)
+                with patch.object(scope, 'run', side_effect=command):
+                    proof, outcome = parent.check_profiled_certification_apis(scope, fixture.jobs, self.source, self.bundle,
+                        output, credentials, self.files, expected_profile=self.profile)
+                self.assertEqual(checked, ['course', 'community'])
+                self.assertEqual(outcome['status'], 'P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED')
+                self.assertIs(outcome['migrationsExecuted'], False)
+                self.assertIs(outcome['frontendSqlApplied'], False)
+                self.assertNotIn('owned-course-input', json.dumps(outcome))
+                raw = output / 'community/database-receipt.json'
+                raw.write_bytes(raw.read_bytes() + b'\n')
+                with self.assertRaisesRegex(ValueError, 'API_RECEIPT_CHANGED'):
+                    read_certification_api_proof(proof, scope, fixture.selected, fixture.jobs, expected_profile=self.profile)
+            finally:
+                observer.stop()
 
 
 if __name__=='__main__':unittest.main()

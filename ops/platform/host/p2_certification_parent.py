@@ -46,6 +46,7 @@ from p2_lifecycle_worker_evidence import P2LifecycleWorkerEvidenceStage
 require=migrate.demand
 CORE='ops/platform/p2-recovery-current-probe.mjs'
 OBSERVER='ops/platform/p2-certification-current-probe.mjs'
+API_CHECKER='ops/platform/host/database_current.mjs'
 PRIVATE_ROOT=Path('/run/lash-her-p2-certification-private')
 _core=None
 
@@ -454,9 +455,17 @@ def _iso(value):
     return datetime.datetime.fromisoformat(value.removesuffix('Z')+'+00:00').timestamp()
 
 
-def cache_certification_core(initial,source):
+def cache_certification_core(initial,source,*,expected_profile=None):
     global _core
-    verify_source_closure(initial,source)
+    if expected_profile is None:
+        migrate.require_profile(None, initial)
+        verify_source_closure(initial,source)
+    else:
+        expected = _profiled_context()
+        require(migrate.profile_context(expected_profile) == expected and initial.get('mode') == PROFILED_CERTIFICATION_MODE,
+                'P2_PROFILED_CERTIFICATION_SOURCE_CONTEXT_REQUIRED')
+        vercel.require_record_profile(expected, initial)
+        verify_profiled_current_source_closure(initial,source)
     raw=migrate.read_input(source,CORE)
     require(_sha(raw)==initial['sourceSha256'][CORE],'P2_CERTIFICATION_CORE_SOURCE_REQUIRED')
     _core=raw
@@ -533,55 +542,201 @@ def contain_certification_native(initial,armed,source):
 
 
 class P2CertificationPhysicalObserver(PhysicalObserver):
+    def __init__(self, selected, request, source, credential, *, program=None, program_sha256=None, expected_profile=None):
+        self._expected_profile = migrate.profile_context(expected_profile)
+        if self._expected_profile is None:
+            job, plan, receipt = (request.get(key, {}) for key in ('job', 'plan', 'receipt'))
+            migrate.require_profile(None, selected, request, plan, job, job.get('target'), receipt, receipt.get('target'))
+            require(selected.get('version') != 3 and all(row.get('version', 1) == 1 for row in (request, plan, job, receipt)),
+                    'QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED')
+        else:
+            expected = _profiled_context()
+            require(self._expected_profile == expected and set(request) == {
+                'version', 'qualificationTargetProfile', 'marker', 'backendPid', 'backendStart', 'job', 'baseline',
+                'owner', 'producers', 'historicalLogins', 'plan', 'receipt'}, 'P2_PROFILED_CERTIFICATION_PHYSICAL_REQUEST_REQUIRED')
+            job, history, plan, receipt = (request[key] for key in ('job', 'historicalLogins', 'plan', 'receipt'))
+            migrate.candidate_profile(selected, expected)
+            migrate.require_job_profile(expected, job, frontend=True)
+            vercel.require_record_profile(expected, request, history, plan, plan.get('nativePlan'), receipt)
+            migrate.require_profile(expected, history.get('target'), plan['nativePlan'].get('target'), receipt.get('target'))
+            require(plan.get('startState') == 'already-closed' and plan.get('mode') in PROFILED_MODES and
+                    type(request['backendPid']) is int and request['backendPid'] > 0 and
+                    type(request['backendStart']) is str and 0 < len(request['backendStart']) <= 80 and
+                    _profiled_digest(request['marker']) and
+                    _profiled_digest(receipt.get('journalSha256')) and _profiled_digest(receipt.get('witnessSha256')) and
+                    program is not None and _profiled_digest(program_sha256) and
+                    _sha(migrate.read_input(source, OBSERVER)) == program_sha256,
+                    'P2_PROFILED_CERTIFICATION_PHYSICAL_REQUEST_REQUIRED')
+            selected, request = copy.deepcopy(selected), copy.deepcopy(request)
+            self._request_sha256 = _sha(_profiled_compact(request))
+        super().__init__(selected, request, source, credential, program=program, program_sha256=program_sha256)
+
+    def verify(self):
+        if self._expected_profile is not None:
+            require(self.thread is not None and self.thread.is_alive() and not self.stop_event.is_set() and
+                    _sha(_profiled_compact(self.request)) == self._request_sha256,
+                    'P2_PROFILED_CERTIFICATION_PHYSICAL_SESSION_LOST')
+        super().verify()
+
     def probe(self,operation):
         require(operation in ('observe','verify-schema','witness','fence'),'P2_CERTIFICATION_OBSERVATION_REQUIRED')
+        profiled = self._expected_profile is not None
+        if profiled:
+            require(operation != 'fence' and _sha(_profiled_compact(self.request)) == self._request_sha256,
+                    'P2_PROFILED_CERTIFICATION_READ_ONLY_OBSERVER_REQUIRED')
+        payload = json.dumps({**self.request, 'operation': operation})
+        if profiled:
+            require(len(payload.encode()) <= 2_000_000, 'P2_PROFILED_CERTIFICATION_PHYSICAL_REQUEST_REQUIRED')
         program=self.program;require(program is not None and _sha(program.read_bytes())==self.program_sha256,'P2_CERTIFICATION_OBSERVER_CHANGED')
+        if profiled:
+            require(isinstance(_core, bytes) and _sha(migrate.read_input(self.source, CORE)) == _sha(_core),
+                    'P2_PROFILED_CERTIFICATION_CORE_SOURCE_REQUIRED')
         core=_cache_core(program.parent)
         image=self.selected['artifacts']['frontendMigration']['image']
         from uuid import uuid4
         container='lash-p2-certification-observer-'+uuid4().hex
-        args=['docker','run','--rm','--name',container,'--interactive','--network','host','--read-only','--cap-drop','ALL',
+        entry = OBSERVER if profiled else 'ops/platform/p2-frontend-live-probe.mjs'
+        args=['docker','run','--rm',*(['--pull','never'] if profiled else []),'--name',container,'--interactive','--network','host','--read-only','--cap-drop','ALL',
             '--security-opt','no-new-privileges','--memory','256m','--pids-limit','64','--env','FRONTEND_STAGING_MIGRATION_DATABASE_URL',
-            '--mount',f'type=bind,src={program},dst=/app/ops/platform/p2-frontend-live-probe.mjs,readonly',
+            '--mount',f'type=bind,src={program},dst=/app/{entry},readonly',
             '--mount',f'type=bind,src={core},dst=/app/ops/platform/p2-recovery-current-probe.mjs,readonly',
-            '--entrypoint','node',image,'ops/platform/p2-frontend-live-probe.mjs']
+            '--entrypoint','node',image,entry,*(['--profiled-current'] if profiled else [])]
         environment={**runtime.SAFE_ENV,'FRONTEND_STAGING_MIGRATION_DATABASE_URL':self.credential}
-        try:result=subprocess.run(args,input=json.dumps({**self.request,'operation':operation}),capture_output=True,text=True,env=environment,timeout=30,check=True)
+        try:result=subprocess.run(args,input=payload,capture_output=True,text=True,env=environment,timeout=30,check=True)
         finally:
             subprocess.run(['docker','rm','--force',container],env=runtime.SAFE_ENV,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,check=False)
             require(not runtime.command(['docker','container','ls','--all','--filter','name=^/'+container+'$','--format','{{.ID}}'],runtime.SAFE_ENV,15),'P2_CERTIFICATION_OBSERVER_REMAINS')
         maximum=2_000_000 if operation=='witness' else 16384
         require(not result.stderr and 0<len(result.stdout)<=maximum and _sha(program.read_bytes())==self.program_sha256 and _sha(core.read_bytes())==_sha(_core),'P2_CERTIFICATION_OBSERVER_OUTPUT_REFUSED')
+        if profiled:
+            return self._profiled_result(result.stdout, operation)
         value=json.loads(result.stdout)
         require(value.get('status')==('P2_FRONTEND_ADMISSION_CLOSED' if operation=='fence' else 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED'),'P2_CERTIFICATION_PHYSICAL_OBSERVATION_REFUSED')
         if operation!='fence':require(value.get('marker')==self.request['marker'] and value.get('backendPid')==self.request['backendPid'] and value.get('sourceCommit')==self.request['job']['sourceCommit'],'P2_CERTIFICATION_PHYSICAL_BINDING_REFUSED')
         return value
 
+    def _profiled_result(self, raw, operation):
+        value = _profiled_record(raw, self._expected_profile)
+        request, receipt = self.request, self.request['receipt']
+        fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'releaseId', 'sourceCommit',
+                  'targetSha256', 'marker', 'backendPid', 'backendStart', 'admission', 'journalSha256', 'witnessSha256'}
+        if operation == 'witness':
+            fields.add('witness')
+        require(set(value) == fields and value['status'] == 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED' and
+                all(value[key] == request[key] for key in ('marker', 'backendPid', 'backendStart')) and
+                type(value['backendPid']) is int and value['environment'] == 'staging' and
+                all(value[key] == request['job'][key] for key in ('releaseId', 'sourceCommit')) and
+                value['targetSha256'] == request['plan']['targetSha256'] and value['journalSha256'] == receipt['journalSha256'] and
+                _profiled_digest(value['witnessSha256']) and
+                (operation != 'witness' or _sha(_profiled_compact(value['witness'])) == value['witnessSha256']),
+                'P2_PROFILED_CERTIFICATION_PHYSICAL_BINDING_REQUIRED')
+        admission = value['admission']
+        require(type(admission) is dict and set(admission) == {'epoch', 'newWork', 'recovery', 'active', 'uncertain'} and
+                type(admission['epoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', admission['epoch']) and
+                all(type(admission[key]) is bool for key in ('newWork', 'recovery')) and
+                all(type(admission[key]) is int and admission[key] >= 0 for key in ('active', 'uncertain')),
+                'P2_PROFILED_CERTIFICATION_PHYSICAL_ADMISSION_REQUIRED')
+        if operation == 'verify-schema':
+            require(admission == receipt['admission'] == {'epoch': request['plan']['initialEpoch'], 'newWork': False,
+                    'recovery': False, 'active': 0, 'uncertain': 0} and value['witnessSha256'] == receipt['witnessSha256'],
+                    'P2_PROFILED_CERTIFICATION_INITIAL_CLOSED_BOUNDARY_REQUIRED')
+        return value
+
 
 class P2CertificationScope(P2ReleaseScope):
-    def __init__(self,*args,certification_plan,**kwargs):
-        self.certification_plan=copy.deepcopy(certification_plan)
-        super().__init__(*args,**kwargs)
+    def __init__(self, descriptor, path, verify_frontend, receipt, candidate_sha256=None, *, release=None, jobs=None,
+                 configuration_sha256=None, certification_plan, expected_profile=None, physical_observer=None):
+        self.certification_plan = copy.deepcopy(certification_plan)
+        self._expected_profile = migrate.profile_context(expected_profile)
+        self._physical_observer = physical_observer
+        if self._expected_profile is None:
+            require(physical_observer is None, 'P2_CERTIFICATION_FIXED_SCOPE_REQUIRED')
+            job = jobs['frontend']['job']
+            migrate.require_profile(None, release, certification_plan, job, job.get('target'), receipt, receipt.get('target'))
+            require(release.get('version') != 3 and all(row.get('version', 1) == 1 for row in (certification_plan, job, receipt)),
+                    'QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED')
+        else:
+            expected = _profiled_context()
+            require(self._expected_profile == expected and type(physical_observer) is P2CertificationPhysicalObserver and
+                    physical_observer._expected_profile == expected, 'P2_PROFILED_CERTIFICATION_PHYSICAL_SCOPE_REQUIRED')
+            migrate.candidate_profile(release, expected)
+            migrate.require_job_profile(expected, jobs['frontend']['job'], frontend=True)
+            vercel.require_record_profile(expected, certification_plan, receipt)
+            migrate.require_profile(expected, receipt.get('target'))
+            require(type(configuration_sha256) is dict and set(configuration_sha256) == set(staging_state.CONFIGURATION_FILES) and
+                    all(_profiled_digest(value) for value in configuration_sha256.values()) and
+                    certification_plan.get('configurationCanonicalSha256') == _sha(_canonical(configuration_sha256)) and
+                    certification_plan.get('planSha256') == _profiled_plan_hash(certification_plan),
+                    'P2_PROFILED_CERTIFICATION_CONFIGURATION_SCOPE_REQUIRED')
+        super().__init__(descriptor, path, verify_frontend, receipt, candidate_sha256, release=release, jobs=jobs,
+                         configuration_sha256=configuration_sha256)
         self.require_frontend(self.release,self.jobs['frontend'])
+
+    def verify(self):
+        super().verify()
+        if self._expected_profile is not None:
+            self._physical_observer.verify()
 
     def require_frontend(self,release,info):
         self.verify();job,receipt=info['job'],self.receipt;plan=self.certification_plan
+        target = {key: job['target'][key] for key in ('host', 'port', 'database', 'user', 'serverMajor')}
+        if self._expected_profile is not None:
+            self._require_profiled_frontend(release, info)
+            target['qualificationTargetProfile'] = self._expected_profile
         migrate.require_contract_identity(release,receipt)
         fields=('environment','releaseId','sourceCommit','migrationImageDigest','sqlArtifactSha256','schemaBaselineSha256','contractManifestSha256')
         require(release==self.release and info==self.jobs['frontend'] and all(receipt.get(key)==job.get(key) for key in fields) and
             receipt.get('status')=='P2_CERTIFICATION_DATABASE_CURRENT' and receipt.get('certificationActionId')==plan['certificationActionId'] and
             receipt.get('candidateSha256')==self.candidate_sha256==plan['candidateSha256'] and receipt.get('planSha256')==plan['planSha256'] and
-            receipt.get('targetSha256')==plan['targetSha256']==frontend_target_sha256(job['target']) and receipt.get('target')=={key:job['target'][key] for key in ('host','port','database','user','serverMajor')} and
+            receipt.get('targetSha256')==plan['targetSha256']==frontend_target_sha256(job['target']) and receipt.get('target')==target and
             receipt.get('schemaVerified') is True and receipt.get('runtimeRoleVerified') is True and receipt.get('oldLoginsDenied') is True and receipt.get('oldRoleSessions')==0 and
             receipt.get('sqlReplayed') is False and receipt.get('trafficAuthorized') is False and isinstance(receipt.get('after'),list) and receipt['after'],
             'P2_CERTIFICATION_FRESH_CURRENT_PROOF_REQUIRED')
         return copy.deepcopy(receipt)
 
+    def _require_profiled_frontend(self, release, info):
+        from qualification_target_profile import decode_qualification_target_json
+        expected, observer, receipt = self._expected_profile, self._physical_observer, self.receipt
+        request, job = observer.request, info['job']
+        migrate.candidate_profile(release, expected)
+        migrate.require_job_profile(expected, job, frontend=True)
+        vercel.require_record_profile(expected, self.certification_plan, receipt)
+        migrate.require_profile(expected, receipt.get('target'))
+        migrate.require_contract_identity(release, job, receipt, self.certification_plan)
+        require(_canonical(observer.selected) == _canonical(release) and _canonical(request['job']) == _canonical(job) and
+                request['plan'] == self.certification_plan and request['receipt'] == receipt and
+                _canonical(request['baseline']) == _canonical(decode_qualification_target_json(info['schema'], 'carrier')) and
+                job['target'].get('approvedPendingTags') == [] and job['target'].get('allowEmptyBootstrap') is False and
+                receipt.get('service') == 'frontend' and type(receipt.get('oldRoleSessions')) is int and
+                receipt.get('owner') == request['owner'] == self.certification_plan['nativePlan']['owner'] and
+                receipt.get('runtime') == self.certification_plan['nativePlan']['producer']['role'] and
+                receipt.get('retiredLogins') == request['historicalLogins'].get('retiredLogins') and
+                receipt.get('journalSha256') == _sha(_profiled_compact(receipt.get('after'))) and
+                receipt.get('witnessSha256') == _sha(_profiled_compact(receipt.get('witness'))),
+                'P2_PROFILED_CERTIFICATION_FRONTEND_SCOPE_BINDING_REQUIRED')
+
     def initialize_runtime(self,*_):raise ValueError('P2_CERTIFICATION_RUNTIME_REPLACEMENT_FORBIDDEN')
 
 
+def check_profiled_certification_apis(scope, jobs, source, bundle, output, credentials, source_sha256, *, expected_profile):
+    """Run both fixed selected-image read-only checks under the same held scope."""
+    from current_databases import check_certification_apis, read_certification_api_proof
+    expected = _profiled_context()
+    require(migrate.profile_context(expected_profile) == expected and type(scope) is P2CertificationScope and
+            scope._expected_profile == expected and scope._physical_observer.source == source and
+            type(source_sha256) is dict and _profiled_digest(source_sha256.get(API_CHECKER)),
+            'P2_PROFILED_CERTIFICATION_API_SCOPE_REQUIRED')
+    scope.require_release(scope.release, jobs)
+    scope.require_frontend(scope.release, jobs['frontend'])
+    raw_jobs = {name: migrate.read_input(bundle, f'jobs/{name}.json') for name in ('course', 'community')}
+    proof = check_certification_apis(scope.release, jobs, output, credentials, source / API_CHECKER,
+        source_sha256[API_CHECKER], raw_jobs, expected_profile=expected, _certification_scope=scope)
+    _, outcome = read_certification_api_proof(proof, scope, scope.release, jobs, expected_profile=expected)
+    return proof, outcome
+
+
 def observe_certification_api(scope,jobs,source,name,directory):
-    require(type(scope) is P2CertificationScope and name in ('course','community'),'P2_CERTIFICATION_ACTUAL_API_SCOPE_REQUIRED')
+    require(type(scope) is P2CertificationScope and scope._expected_profile is None and name in ('course','community'),'P2_CERTIFICATION_ACTUAL_API_SCOPE_REQUIRED')
     scope.require_frontend(scope.release,jobs['frontend']);info=jobs[name]
     external,internal=migrate.credential_names(name,'staging');credential=os.environ.get(external)
     require(isinstance(credential,str) and credential,'P2_CERTIFICATION_API_CREDENTIAL_REQUIRED')
