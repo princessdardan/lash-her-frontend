@@ -477,5 +477,68 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "privateBrowserAndLifecycleSelection": {
+    "frontendSourceCommit": "4ebef695ad373eec8bc3d51b35f488021f0988c7",
+    "lifecyclePermit": {
+      "version": 2,
+      "selectedActorAccountOperationAndPreferenceValue": true,
+      "pythonAndNodeSelectionMacMatched": true,
+      "scopedExportDownloadSeparatelyAuthorized": true
+    },
+    "frontendActorFocused": {"passed": 28, "typeCheckPassed": true, "focusedLintPassed": true},
+    "frontendSourceUnitsNode24": {
+      "passed": 2525,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "8bfe98a539333ce1205b2f0f61d891b9cd271b932135f2acd2fe1eb81aa74b6e"
+    },
+    "certificationPlatformNode24": {
+      "passed": 44,
+      "failed": 0,
+      "ownedChromiumCasesRunSeparately": 2,
+      "logSha256": "1fbafc527fed4d1060433d5a21e313006298659df40f0b5cea9b10d7f481abeb"
+    },
+    "browserRecorderWithOwnedChromium": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "actualCookieIsolationAndPermitRotation": true,
+      "stagingNavigation": false,
+      "logSha256": "8291a96f9507168b40e7769bf0d76389718a3d469ed655dbe4730e8ebfcf831b"
+    },
+    "p2ContractCheckPassed": true,
+    "host": {"passed": 89, "failed": 0, "ownedFixtures": true},
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "certificationPhysicalChecks": 16,
+      "lifecycleEvidenceChecks": 11,
+      "lifecycleWitnessSourceSha256": "d959b92a4b9dc7927e6a3b43f82ba5cc059bcc5ae2b0c3dbe3f51e1885e6fb33"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42599462,
+      "expandedBytes": 56878815,
+      "wireBytes": 18502475,
+      "wireSha256": "d1c3a970ca7efa14db26539da9e2f5c1a7354216cbb95e529b9482b61456d09b",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "githubReadback": {
+      "coursePolicyPr": {"number": 10, "state": "open", "merged": false, "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3"},
+      "communityPolicyPr": {"number": 9, "state": "open", "merged": false, "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff"},
+      "frontendPr": {"number": 93, "state": "open", "draft": true, "head": "f78cf3af38665acca73d111fe1241e0a3d99bfe0"}
+    },
+    "browserStdinHandoffImplemented": true,
+    "frontendOnlyActorAndResourceEnforced": true,
+    "heldLifecycleWitnessImplemented": true,
+    "actualBrowserMutationResponseCaptureImplemented": false,
+    "composedGuardedWindowVerified": false,
+    "interactiveApplyEligible": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
