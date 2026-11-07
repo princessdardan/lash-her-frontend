@@ -37,6 +37,13 @@ from qualification_target_profile import decode_qualification_target_json
 
 require = migrate.demand
 PROGRAM = 'ops/platform/p2-profiled-current-probe.mjs'
+FRONTEND_PROVIDER_BINDINGS = frozenset((
+    'CUSTOMER_AUTH_URL', 'CUSTOMER_AUTH_SECRET', 'CUSTOMER_AUTH_GOOGLE_ID',
+    'CUSTOMER_AUTH_GOOGLE_SECRET', 'CUSTOMER_AUTH_RESEND_KEY', 'CUSTOMER_AUTH_EMAIL_FROM',
+    'COURSE_LEARNER_JWT_CURRENT_SECRET', 'COURSE_ADMIN_JWT_CURRENT_SECRET',
+    'COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET', 'COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET',
+))
+ADMIN_ORIGIN_BINDINGS = frozenset(('AUTH_URL', 'NEXTAUTH_URL'))
 FALSE_FIELDS = ('frontendSqlApplied', 'historicalProviderClosureClaimed', 'oldP200Qualified',
                 'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted')
 PROOF_FIELDS = frozenset(('version', 'qualificationTargetProfile', 'status', 'environment', 'actionId',
@@ -378,6 +385,7 @@ class P2ProfiledCurrentBroker(Broker):
         migrate.write_json(self.directory, 'p2-profiled-current-started.json',
                            {**self.outcome, 'apiJobSha256': copy.deepcopy(self.api_job_sha256)})
         self.check()
+        self.preflight_frontend_bindings()
         self.prior_gateway = None
         self.prior_gateway_preflight = self.preflight_prior_gateway()
         migrate.write_json(self.directory, 'prior-gateway-preflight.json', self.prior_gateway_preflight)
@@ -413,6 +421,30 @@ class P2ProfiledCurrentBroker(Broker):
     def preflight_prior_gateway(self):
         import p2_prior_gateway
         return p2_prior_gateway.preflight_prior_gateway(self.initial, self.selected, self.check, expected_profile=PROFILE)
+
+    def preflight_frontend_bindings(self):
+        # Recovery can restore the fenced API runtime after incomplete frontend
+        # setup. Only a new release needs these bindings before arming.
+        if type(self) is not P2ProfiledCurrentBroker:
+            return
+        _, project, _ = vercel.release_identity(self.selected, expected_profile=PROFILE)
+        response = self.vercel.request('GET', f'/v10/projects/{project}/env?decrypt=false')
+        rows = response.get('envs')
+        require(type(rows) is list and len(rows) <= 512 and all(type(row) is dict for row in rows),
+                'P2_PROFILED_CURRENT_FRONTEND_BINDING_METADATA_REQUIRED')
+        accepted_names = FRONTEND_PROVIDER_BINDINGS | ADMIN_ORIGIN_BINDINGS
+        names = [row['key'] for row in rows
+                 if type(row.get('key')) is str and row['key'] in accepted_names
+                 and type(row.get('target')) is list and 'production' in row['target']
+                 and not row.get('gitBranch') and not row.get('customEnvironmentIds')]
+        names_set = set(names)
+        require(len(names) == len(names_set) and FRONTEND_PROVIDER_BINDINGS <= names_set and
+                names_set & ADMIN_ORIGIN_BINDINGS, 'P2_PROFILED_CURRENT_FRONTEND_BINDINGS_REQUIRED')
+        self.check()
+        receipt = {**self.record_base('P2_PROFILED_CURRENT_FRONTEND_BINDING_NAMES_VERIFIED'),
+                   'projectId': project, 'vercelTarget': 'production', 'names': sorted(names_set),
+                   'valuesVerified': False, 'providerSignInVerified': False}
+        self.retain('frontend-binding-preflight.json', encoded(receipt) + b'\n')
 
     def retain(self, name, raw):
         retain_raw(self.directory, name, raw)

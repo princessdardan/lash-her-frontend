@@ -34,6 +34,46 @@ def packet(value):
     return base64.b64encode(parent.encoded(value) + b'\n').decode()
 
 
+class FrontendBindingPreflightTests(unittest.TestCase):
+    def test_release_requires_unique_staging_target_names_and_retains_no_values(self):
+        broker = object.__new__(parent.P2ProfiledCurrentBroker)
+        broker.selected = {}
+        broker.check = lambda: None
+        broker.record_base = lambda status: {'status': status}
+        calls, retained = [], []
+        broker.retain = lambda name, raw: retained.append((name, json.loads(raw)))
+        keys = parent.FRONTEND_PROVIDER_BINDINGS | {'AUTH_URL'}
+        rows = [{'key': key, 'target': ['production'], 'value': 'private-canary'} for key in sorted(keys)]
+
+        def request(method, path):
+            calls.append((method, path))
+            return {'envs': rows}
+
+        broker.vercel = SimpleNamespace(request=request)
+        with patch.object(vercel, 'release_identity', return_value=('staging', 'prj_owned', 'a' * 40)) as identity:
+            broker.preflight_frontend_bindings()
+            identity.assert_called_once_with(broker.selected, expected_profile=PROFILE)
+            self.assertEqual(calls, [('GET', '/v10/projects/prj_owned/env?decrypt=false')])
+            name, receipt = retained.pop()
+            self.assertEqual(name, 'frontend-binding-preflight.json')
+            self.assertEqual(set(receipt['names']), keys)
+            self.assertFalse(receipt['valuesVerified'])
+            self.assertNotIn('private-canary', json.dumps(receipt))
+            first = rows[0]
+            rows[0] = {**first, 'target': ['preview']}
+            with self.assertRaisesRegex(ValueError, 'FRONTEND_BINDINGS_REQUIRED'):
+                broker.preflight_frontend_bindings()
+            rows[0] = first
+            rows.append(dict(first))
+            with self.assertRaisesRegex(ValueError, 'FRONTEND_BINDINGS_REQUIRED'):
+                broker.preflight_frontend_bindings()
+            self.assertFalse(retained)
+
+    def test_recovery_does_not_require_preexisting_frontend_provider_configuration(self):
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker
+        object.__new__(P2ProfiledCurrentRecoveryBroker).preflight_frontend_bindings()
+
+
 class FixedEntryTests(unittest.TestCase):
     def test_isolated_main_uses_canonical_class_objects_before_platform_refusal(self):
         # Record the actual first failed demand, without overriding any guard.
