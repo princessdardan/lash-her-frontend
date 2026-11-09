@@ -14,10 +14,12 @@ import { applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES as roles, prepar
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import { createP2FrontendReplacementProbe, observeP2FrontendReplacement, verifyP2FrontendReplacementSession } from "./p2-frontend-replacement-probe.mjs";
-import { observeP2FrontendReplacementWritten } from "./p2-frontend-replacement-written.mjs";
+import { observeP2FrontendReplacementWritten, prepareP2FrontendReplacementWrittenReadback } from "./p2-frontend-replacement-written.mjs";
+import { observeP2FrontendReplacementClosed } from "./p2-frontend-replacement-closed.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const refusal = { message: "P2_FRONTEND_REPLACEMENT_WRITTEN_OBSERVATION_REFUSED" };
+const closedRefusal = { message: "P2_FRONTEND_REPLACEMENT_CLOSED_OBSERVATION_REFUSED" };
 const artifact = frontendMigrationArtifact();
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const encode = value => Buffer.from(JSON.stringify(value, null, 2) + "\n").toString("base64");
@@ -119,6 +121,30 @@ test("written replacement rejects malformed, substituted and partial retained ev
   }
 });
 
+test("closure rejects unbound original written receipts before reading credentials", async () => {
+  const probe = { ...selection(), marker: "f".repeat(64), backendPid: 42, backendStart: "2026-11-07T00:00:00.000000Z" };
+  const after = artifact.migrations.map(({ hash, folderMillis }) => ({ hash, created_at: String(folderMillis) }));
+  const written = packetFor(probe, physicalProof(probe), { name: roles.owner, oid: "44" }, { name: roles.runtime, oid: "45" }, after);
+  const packet = { ...written, writtenObservation: encode(prepareP2FrontendReplacementWrittenReadback(written).proof) };
+  let reads = 0;
+  const dependencies = { getUrl() { reads++; throw new Error("owned credential refusal"); } };
+  await assert.rejects(observeP2FrontendReplacementClosed(packet, dependencies), closedRefusal);
+  assert.equal(reads, 1);
+  for (const [label, mutate] of [
+    ["unexpected field", value => { value.extra = true; }],
+    ["invalid base64", value => { value.writtenObservation += "\n"; }],
+    ["wrong raw database receipt digest", value => editReceipt(value, "writtenObservation", proof => { proof.databaseReceiptSha256 = "0".repeat(64); })],
+    ["wrong written backend", value => editReceipt(value, "writtenObservation", proof => { proof.backendPid++; })],
+    ["wrong write proof outcome", value => editReceipt(value, "writtenObservation", proof => { proof.trafficAuthorized = true; })],
+    ["changed closed scope", value => editReceipt(value, "writtenObservation", proof => { proof.recovery = true; })],
+  ]) {
+    const invalid = structuredClone(packet);
+    mutate(invalid);
+    await assert.rejects(observeP2FrontendReplacementClosed(invalid, dependencies), closedRefusal, label);
+  }
+  assert.equal(reads, 1);
+});
+
 async function applySql(client) {
   await client.query("CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations(id serial PRIMARY KEY,hash text NOT NULL,created_at bigint)");
   for (const migration of artifact.migrations) {
@@ -131,14 +157,14 @@ async function applySql(client) {
   }
 }
 
-function packagedWritten(packet, url, cert, args = []) {
+function packagedReadback(mode, packet, url, cert, args = []) {
   return spawnSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "/candidate/ops/platform/frontend-image.mjs",
-    "--observe-replacement-written", ...args], { input: typeof packet === "string" ? packet : JSON.stringify(packet),
+    mode, ...args], { input: typeof packet === "string" ? packet : JSON.stringify(packet),
     encoding: "utf8", timeout: 30_000, env: { PATH: process.env.PATH, NODE_EXTRA_CA_CERTS: cert,
       FRONTEND_STAGING_MIGRATION_DATABASE_URL: url } });
 }
 
-test("owned TLS PostgreSQL independently reads the full written journal and refuses drift while original locks remain held", {
+test("owned TLS PostgreSQL independently verifies written and closed state at the original backend boundary", {
   skip: process.env.P2_FRONTEND_REPLACEMENT_WRITTEN_OWNED_TEST !== "true", timeout: 120_000,
 }, async () => {
   const pgBin = process.env.PG_BIN;
@@ -218,7 +244,7 @@ test("owned TLS PostgreSQL independently reads the full written journal and refu
     });
     assert.equal(JSON.stringify(result).includes(password), false);
     if (packaged) {
-      const accepted = packagedWritten(packet, url, cert);
+      const accepted = packagedReadback("--observe-replacement-written", packet, url, cert);
       assert.equal(accepted.status, 0, accepted.stderr);
       assert.equal(accepted.stdout.includes(password), false);
       assert.deepEqual(JSON.parse(accepted.stdout), result);
@@ -230,7 +256,7 @@ test("owned TLS PostgreSQL independently reads the full written journal and refu
         [{ ...packet, extra: true }, []],
         [packet, ["--unreviewed"]],
       ]) {
-        const denied = packagedWritten(input, url, cert, args);
+        const denied = packagedReadback("--observe-replacement-written", input, url, cert, args);
         assert.equal(denied.status, 1);
         assert.equal(denied.stdout, "");
         assert.equal(denied.stderr.trim(), "FRONTEND_PACKAGED_SOURCE_REFUSED");
@@ -318,8 +344,69 @@ test("owned TLS PostgreSQL independently reads the full written journal and refu
     await verifySession();
     assert.deepEqual(await observe(packet), result);
     assert.deepEqual((await admin.query(journalSql)).rows, after);
+    const closedPacket = { ...packet, writtenObservation: encode(result) };
+    const observeClosed = () => observeP2FrontendReplacementClosed(closedPacket, dependencies);
+    await assert.rejects(observeClosed(), closedRefusal, "original backend holds both locks");
+    await verifySession();
+    for (const key of [probe.marker, FRONTEND_MIGRATION_LOCK]) await unlock(migration, key);
+    await assert.rejects(observeClosed(), closedRefusal, "original backend is still alive without locks");
+    assert.deepEqual((await migration.query("SELECT 1 AS alive")).rows, [{ alive: 1 }]);
     await migration.end();
     await assert.rejects(observe(packet), refusal);
+
+    for (const key of [probe.marker, FRONTEND_MIGRATION_LOCK]) {
+      await lock(admin, key);
+      try { await assert.rejects(observeClosed(), closedRefusal, "competing backend holds a migration key"); }
+      finally { await unlock(admin, key); }
+    }
+    await admin.query("UPDATE frontend_admission.control SET recovery=true");
+    try { await assert.rejects(observeClosed(), closedRefusal, "closed admission drift"); }
+    finally { await admin.query("UPDATE frontend_admission.control SET recovery=false"); }
+    await admin.query("UPDATE drizzle.__drizzle_migrations SET hash='post-session-drift' WHERE id=1");
+    try { await assert.rejects(observeClosed(), closedRefusal, "closed journal drift"); }
+    finally { await admin.query("UPDATE drizzle.__drizzle_migrations SET hash=$1 WHERE id=1", [after[0].hash]); }
+
+    const expected = { ...result, operation: "verify-replacement-closed", status: "P2_FRONTEND_REPLACEMENT_SESSION_CLOSED",
+      writtenObservationSha256: encodedHash(closedPacket.writtenObservation), originalBackendAbsent: true,
+      originalLocksAbsent: true, observationLockReleased: true };
+    assert.deepEqual(await observeClosed(), expected);
+    const tryLock = () => admin.query("SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS acquired", [FRONTEND_MIGRATION_LOCK]);
+    await admin.query("BEGIN; LOCK TABLE drizzle.__drizzle_migrations IN ACCESS EXCLUSIVE MODE");
+    const closing = observeClosed();
+    void closing.catch(() => {});
+    try {
+      const deadline = Date.now() + 1500;
+      let waiting = false;
+      do {
+        const { rows: [activity] } = await setup.query(`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_stat_activity
+          WHERE datid=$1::oid AND application_name='lash-her-frontend-replacement-closed' AND wait_event_type='Lock'
+          AND query ILIKE '%from drizzle.__drizzle_migrations%') AS waiting`, [probe.databaseOid]);
+        waiting = activity.waiting;
+        if (!waiting) await delay(20);
+      } while (!waiting && Date.now() < deadline);
+      assert.equal(waiting, true);
+      assert.deepEqual((await tryLock()).rows, [{ acquired: false }]);
+    } finally { await admin.query("ROLLBACK"); }
+    assert.deepEqual(await closing, expected);
+    assert.deepEqual((await tryLock()).rows, [{ acquired: true }]);
+    await unlock(admin, FRONTEND_MIGRATION_LOCK);
+    assert.deepEqual((await admin.query(journalSql)).rows, after);
+
+    if (packaged) {
+      const accepted = packagedReadback("--observe-replacement-closed", closedPacket, url, cert);
+      assert.equal(accepted.status, 0, accepted.stderr);
+      assert.deepEqual(JSON.parse(accepted.stdout), expected);
+      assert.equal(accepted.stdout.includes(password), false);
+      const wrongSource = structuredClone(closedPacket);
+      wrongSource.probe.job.sourceCommit = sourceCommit === "a".repeat(40) ? "b".repeat(40) : "a".repeat(40);
+      for (const [input, args] of [[wrongSource, []], [closedPacket, ["--unreviewed"]]]) {
+        const denied = packagedReadback("--observe-replacement-closed", input, url, cert, args);
+        assert.equal(denied.status, 1);
+        assert.equal(denied.stdout, "");
+        assert.equal(denied.stderr.trim(), "FRONTEND_PACKAGED_SOURCE_REFUSED");
+        assert.equal(denied.stderr.includes(password), false);
+      }
+    }
   } finally {
     try { await Promise.allSettled(clients.map(client => client.end())); }
     finally {

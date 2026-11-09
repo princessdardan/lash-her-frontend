@@ -16,7 +16,7 @@ function fixture() {
   for (const file of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"]) copyFileSync(join(source, "scripts", file), join(root, "scripts", file));
   for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs",
     "source-policy", "release", "p2-profiled-current-probe", "p2-recovery-current-probe", "p2-frontend-replacement-probe",
-    "p2-frontend-replacement-abort", "p2-frontend-replacement-written", "frontend-admission-bootstrap"])
+    "p2-frontend-replacement-abort", "p2-frontend-replacement-written", "p2-frontend-replacement-closed", "frontend-admission-bootstrap"])
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
   for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
     copyFileSync(join(source, "ops/platform", name), join(root, "ops/platform", name));
@@ -47,7 +47,7 @@ test("packaged physical probes bind their executable source and dependencies", (
   try {
     const manifest = writePackagedFrontendSource("a".repeat(40), root);
     for (const name of ["p2-profiled-current-probe", "p2-recovery-current-probe", "p2-frontend-replacement-probe",
-      "p2-frontend-replacement-abort", "p2-frontend-replacement-written", "frontend-admission-bootstrap"]) {
+      "p2-frontend-replacement-abort", "p2-frontend-replacement-written", "p2-frontend-replacement-closed", "frontend-admission-bootstrap"]) {
       const path = `ops/platform/${name}.mjs`;
       assert.equal(manifest.files[path], sha256(readFileSync(join(source, path))));
     }
@@ -56,6 +56,9 @@ test("packaged physical probes bind their executable source and dependencies", (
     assert.throws(() => verifyPackagedFrontendSource(root));
     copyFileSync(join(source, "ops/platform/p2-frontend-replacement-probe.mjs"), join(root, "ops/platform/p2-frontend-replacement-probe.mjs"));
     writeFileSync(join(root, "ops/platform/p2-frontend-replacement-abort.mjs"), "modified replacement abort\n");
+    assert.throws(() => verifyPackagedFrontendSource(root));
+    copyFileSync(join(source, "ops/platform/p2-frontend-replacement-abort.mjs"), join(root, "ops/platform/p2-frontend-replacement-abort.mjs"));
+    writeFileSync(join(root, "ops/platform/p2-frontend-replacement-closed.mjs"), "modified replacement closure\n");
     assert.throws(() => verifyPackagedFrontendSource(root));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -144,7 +147,8 @@ test("minimal image dependencies stay aligned with the application lock", () => 
 
 test("image entrypoint never offers checkout or environment source-verification bypasses", () => {
   // The real entrypoint refuses outside an image before inspecting job inputs.
-  for (const mode of ["--manifest-only", "--observe-replacement-lock", "--abort-replacement", "--observe-replacement-written"]) {
+  for (const mode of ["--manifest-only", "--observe-replacement-lock", "--abort-replacement",
+    "--observe-replacement-written", "--observe-replacement-closed"]) {
     const result = spawnSync(process.execPath, ["ops/platform/frontend-image.mjs", mode], {
       cwd: source, input: "{}", encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH },
     });

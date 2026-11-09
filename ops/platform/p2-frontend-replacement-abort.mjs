@@ -25,6 +25,7 @@ async function readBoundary(client, values, serverMajor) {
     current_user=$3 AND session_user=$3 AND pg_catalog.current_database()=$4
       AND pg_catalog.current_setting('server_version_num')::int/10000=$10::int
       AND pg_catalog.current_setting('transaction_read_only')='on'
+      AND pg_catalog.hashtext($8)<>pg_catalog.hashtext($9)
       AND EXISTS(SELECT 1 FROM pg_catalog.pg_roles r WHERE r.oid=$5::oid AND r.rolname=session_user)
       AND EXISTS(SELECT 1 FROM pg_catalog.pg_database d WHERE d.oid=$6::oid AND d.datname=pg_catalog.current_database()) AS target_verified,
     EXISTS(SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.pid=$1) AS pid_present,
@@ -37,6 +38,67 @@ async function readBoundary(client, values, serverMajor) {
   demand(row?.target_verified === true && row.prepared_transaction === false &&
     row.conflicting_lock === false && row.pid_present === row.exact_backend);
   return row;
+}
+
+async function withReadOnlyReplacementSession(probe, getUrl, applicationName, work) {
+  demand(typeof getUrl === "function");
+  const target = probe.job.target;
+  const options = frontendConnectionOptions(await getUrl(), target);
+  const client = new Client({ ...options, application_name: applicationName,
+    options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on -c row_security=off",
+    statement_timeout: 7000, query_timeout: 8000, lock_timeout: 2000 });
+  let lost = false;
+  client.on("error", () => { lost = true; });
+  try {
+    await client.connect();
+    demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
+    const values = [probe.backendPid, probe.backendStart, target.user, target.database, probe.migrationRoleOid,
+      probe.databaseOid, P2_PROFILED_CURRENT_LOCK_APPLICATION, FRONTEND_MIGRATION_LOCK, probe.marker];
+    const boundary = async () => {
+      const result = await readBoundary(client, values, target.serverMajor);
+      demand(!lost);
+      return result;
+    };
+    return await work(client, values, boundary);
+  } finally {
+    await client.end();
+    demand(!lost);
+  }
+}
+
+async function readAfterOriginalClosure(client, boundary, read) {
+  const requireOriginalAbsent = async observerLockHeld => {
+    const actual = await boundary();
+    demand(!actual.pid_present && !actual.original_lock_present && actual.observer_lock_held === observerLockHeld);
+  };
+  await requireOriginalAbsent(false);
+  // Hold the canonical lock before taking the journal snapshot so a second
+  // coordinated migration cannot complete between the observation checks.
+  const { rows: [locked] } = await client.query("SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS acquired",
+    [FRONTEND_MIGRATION_LOCK]);
+  demand(locked?.acquired === true);
+  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  let result;
+  try {
+    await requireOriginalAbsent(true);
+    result = await read(client);
+    await client.query("SELECT pg_catalog.pg_stat_clear_snapshot()");
+    await requireOriginalAbsent(true);
+  } finally {
+    await client.query("ROLLBACK");
+  }
+  await requireOriginalAbsent(true);
+  const { rows: [unlocked] } = await client.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS released",
+    [FRONTEND_MIGRATION_LOCK]);
+  demand(unlocked?.released === true);
+  await requireOriginalAbsent(false);
+  return result;
+}
+
+export function withP2FrontendReplacementClosedProbe(probe, getUrl, read) {
+  validateP2FrontendReplacementProbe(probe);
+  return withReadOnlyReplacementSession(probe, getUrl, "lash-her-frontend-replacement-closed",
+    (client, _values, boundary) => readAfterOriginalClosure(client, boundary, read));
 }
 
 async function readJournal(client, migrations, migrationRoleOid) {
@@ -62,72 +124,36 @@ async function readJournal(client, migrations, migrationRoleOid) {
 // its own lock and source custody before invoking this kernel. Matching JSON
 // alone cannot prove custody or authorize a release.
 export async function abortP2FrontendReplacement(input, retainedPhysicalObservationBytes, { getUrl }) {
-  let client;
-  let lost = false;
   try {
     const artifact = validateP2FrontendReplacementProbe(input);
-    const probe = structuredClone(input), target = probe.job.target;
+    const probe = structuredClone(input);
     demand(Buffer.isBuffer(retainedPhysicalObservationBytes) && retainedPhysicalObservationBytes.length <= 8192);
     const raw = Buffer.from(retainedPhysicalObservationBytes);
     const expected = verifyP2FrontendReplacementObservation(probe, raw);
-    demand(typeof getUrl === "function");
-    const options = frontendConnectionOptions(await getUrl(), target);
-    client = new Client({ ...options, application_name: "lash-her-frontend-replacement-abort",
-      options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on -c row_security=off",
-      statement_timeout: 7000, query_timeout: 8000, lock_timeout: 2000 });
-    client.on("error", () => { lost = true; });
-    await client.connect();
-    demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
-    const values = [probe.backendPid, probe.backendStart, target.user, target.database, probe.migrationRoleOid,
-      probe.databaseOid, P2_PROFILED_CURRENT_LOCK_APPLICATION, FRONTEND_MIGRATION_LOCK, probe.marker];
-    const boundary = () => readBoundary(client, values, target.serverMajor);
-    const requireOriginalAbsent = async (observerLockHeld) => {
-      const actual = await boundary();
-      demand(!actual.pid_present && !actual.original_lock_present && actual.observer_lock_held === observerLockHeld && !lost);
-    };
-    const before = await boundary();
-    let backendTerminated = false;
-    if (before.exact_backend) {
-      // The prior observation binds both locks. The same backend may have
-      // subsequently lost either lock. Recheck its entire tuple in the
-      // terminating statement. PostgreSQL accepts only a PID, so this does
-      // not eliminate the server's interval between the check and signal.
-      const { rows } = await client.query(`SELECT pg_catalog.pg_terminate_backend(a.pid,5000) AS terminated
-        FROM pg_catalog.pg_stat_activity a WHERE ${originalBackend}
-        AND NOT EXISTS(SELECT 1 ${matchingLocks} AND l.pid IS DISTINCT FROM $1)`, values);
-      demand(rows.length === 0 || rows.length === 1 && rows[0].terminated === true);
-      backendTerminated = rows.length === 1;
-    }
-    await requireOriginalAbsent(false);
-
-    // Hold the canonical lock before taking the journal snapshot so a second
-    // coordinated migration cannot complete between the observation checks.
-    const { rows: [locked] } = await client.query("SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS acquired",
-      [FRONTEND_MIGRATION_LOCK]);
-    demand(locked?.acquired === true);
-    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    let journal;
-    try {
-      await requireOriginalAbsent(true);
-      journal = await readJournal(client, artifact.migrations, probe.migrationRoleOid);
-      await client.query("SELECT pg_catalog.pg_stat_clear_snapshot()");
-      await requireOriginalAbsent(true);
-    } finally { await client.query("ROLLBACK"); }
-    await requireOriginalAbsent(true);
-    const { rows: [unlocked] } = await client.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS released",
-      [FRONTEND_MIGRATION_LOCK]);
-    demand(unlocked?.released === true);
-    await requireOriginalAbsent(false);
-    return { ...expected, operation: "observe-after-replacement-abort",
-      status: "P2_FRONTEND_REPLACEMENT_ABORT_OBSERVED", physicalObservationSha256: hash(raw),
-      observedAt: new Date().toISOString(), backendTerminated, originalBackendAbsent: true, originalLocksAbsent: true,
-      observationLockReleased: true, ...journal, appliedPrefixSha256: hash(JSON.stringify(journal.appliedPrefix)), replayAuthorized: false };
+    return await withReadOnlyReplacementSession(probe, getUrl, "lash-her-frontend-replacement-abort",
+      async (client, values, boundary) => {
+        const before = await boundary();
+        let backendTerminated = false;
+        if (before.exact_backend) {
+          // The prior observation binds both locks. The same backend may have
+          // subsequently lost either lock. Recheck its entire tuple in the
+          // terminating statement. PostgreSQL accepts only a PID, so this does
+          // not eliminate the server's interval between the check and signal.
+          const { rows } = await client.query(`SELECT pg_catalog.pg_terminate_backend(a.pid,5000) AS terminated
+            FROM pg_catalog.pg_stat_activity a WHERE ${originalBackend}
+            AND NOT EXISTS(SELECT 1 ${matchingLocks} AND l.pid IS DISTINCT FROM $1)`, values);
+          demand(rows.length === 0 || rows.length === 1 && rows[0].terminated === true);
+          backendTerminated = rows.length === 1;
+        }
+        const journal = await readAfterOriginalClosure(client, boundary,
+          observer => readJournal(observer, artifact.migrations, probe.migrationRoleOid));
+        return { ...expected, operation: "observe-after-replacement-abort",
+          status: "P2_FRONTEND_REPLACEMENT_ABORT_OBSERVED", physicalObservationSha256: hash(raw),
+          observedAt: new Date().toISOString(), backendTerminated, originalBackendAbsent: true, originalLocksAbsent: true,
+          observationLockReleased: true, ...journal, appliedPrefixSha256: hash(JSON.stringify(journal.appliedPrefix)), replayAuthorized: false };
+      });
   } catch {
     throw new Error(refusal);
-  } finally {
-    if (client) {
-      try { await client.end(); demand(!lost); } catch { throw new Error(refusal); }
-    }
   }
 }
 
