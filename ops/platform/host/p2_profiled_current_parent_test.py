@@ -42,7 +42,7 @@ class FrontendBindingPreflightTests(unittest.TestCase):
         broker.record_base = lambda status: {'status': status}
         calls, retained = [], []
         broker.retain = lambda name, raw: retained.append((name, json.loads(raw)))
-        keys = parent.FRONTEND_PROVIDER_BINDINGS | {'AUTH_URL'}
+        keys = parent.FRONTEND_PROVIDER_BINDINGS
         rows = [{'key': key, 'target': ['production'], 'value': 'private-canary'} for key in sorted(keys)]
 
         def request(method, path):
@@ -59,6 +59,12 @@ class FrontendBindingPreflightTests(unittest.TestCase):
             self.assertEqual(set(receipt['names']), keys)
             self.assertFalse(receipt['valuesVerified'])
             self.assertNotIn('private-canary', json.dumps(receipt))
+            origin_index = next(index for index, row in enumerate(rows) if row['key'] == 'AUTH_URL')
+            origin = rows[origin_index]
+            rows[origin_index] = {**origin, 'key': 'NEXTAUTH_URL'}
+            with self.assertRaisesRegex(ValueError, 'FRONTEND_BINDINGS_REQUIRED'):
+                broker.preflight_frontend_bindings()
+            rows[origin_index] = origin
             first = rows[0]
             rows[0] = {**first, 'target': ['preview']}
             with self.assertRaisesRegex(ValueError, 'FRONTEND_BINDINGS_REQUIRED'):

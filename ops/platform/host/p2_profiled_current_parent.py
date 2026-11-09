@@ -38,12 +38,12 @@ from qualification_target_profile import decode_qualification_target_json
 require = migrate.demand
 PROGRAM = 'ops/platform/p2-profiled-current-probe.mjs'
 FRONTEND_PROVIDER_BINDINGS = frozenset((
+    'AUTH_URL', 'AUTH_SECRET', 'AUTH_GOOGLE_ID', 'AUTH_GOOGLE_SECRET', 'ADMIN_OWNER_EMAILS',
     'CUSTOMER_AUTH_URL', 'CUSTOMER_AUTH_SECRET', 'CUSTOMER_AUTH_GOOGLE_ID',
     'CUSTOMER_AUTH_GOOGLE_SECRET', 'CUSTOMER_AUTH_RESEND_KEY', 'CUSTOMER_AUTH_EMAIL_FROM',
     'COURSE_LEARNER_JWT_CURRENT_SECRET', 'COURSE_ADMIN_JWT_CURRENT_SECRET',
     'COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET', 'COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET',
 ))
-ADMIN_ORIGIN_BINDINGS = frozenset(('AUTH_URL', 'NEXTAUTH_URL'))
 FALSE_FIELDS = ('frontendSqlApplied', 'historicalProviderClosureClaimed', 'oldP200Qualified',
                 'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted')
 PROOF_FIELDS = frozenset(('version', 'qualificationTargetProfile', 'status', 'environment', 'actionId',
@@ -433,14 +433,13 @@ class P2ProfiledCurrentBroker(Broker):
         rows = response.get('envs')
         require(type(rows) is list and len(rows) <= 512 and all(type(row) is dict for row in rows),
                 'P2_PROFILED_CURRENT_FRONTEND_BINDING_METADATA_REQUIRED')
-        accepted_names = FRONTEND_PROVIDER_BINDINGS | ADMIN_ORIGIN_BINDINGS
         names = [row['key'] for row in rows
-                 if type(row.get('key')) is str and row['key'] in accepted_names
+                 if type(row.get('key')) is str and row['key'] in FRONTEND_PROVIDER_BINDINGS
                  and type(row.get('target')) is list and 'production' in row['target']
                  and not row.get('gitBranch') and not row.get('customEnvironmentIds')]
         names_set = set(names)
-        require(len(names) == len(names_set) and FRONTEND_PROVIDER_BINDINGS <= names_set and
-                names_set & ADMIN_ORIGIN_BINDINGS, 'P2_PROFILED_CURRENT_FRONTEND_BINDINGS_REQUIRED')
+        require(len(names) == len(names_set) and names_set == FRONTEND_PROVIDER_BINDINGS,
+                'P2_PROFILED_CURRENT_FRONTEND_BINDINGS_REQUIRED')
         self.check()
         receipt = {**self.record_base('P2_PROFILED_CURRENT_FRONTEND_BINDING_NAMES_VERIFIED'),
                    'projectId': project, 'vercelTarget': 'production', 'names': sorted(names_set),
