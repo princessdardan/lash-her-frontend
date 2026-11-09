@@ -562,18 +562,29 @@ async function getAllLandingPageSlugs(): Promise<Array<{ slug: string }>> {
   });
 }
 
-// Signup admission must not use a cached page that has since been unpublished
-// or renamed, and must never resolve a Studio draft.
 async function getLandingPageSignupDetails(
   slug: string,
 ): Promise<Pick<TLandingPage, "_id" | "title" | "slug"> | null> {
-  return client
-    .withConfig({ useCdn: false, perspective: "published" })
-    .fetch(
-      groq`*[_type == "landingPage" && slug.current == $slug][0]{ _id, title, "slug": slug.current }`,
-      { slug },
-      { cache: "no-store" },
-    );
+  const query = groq`*[_type == "landingPage" && slug.current == $slug][0]{ _id, title, "slug": slug.current }`;
+  const options = { perspective: "published", cache: "no-store" } as const;
+
+  try {
+    return await client.fetch(query, { slug }, { ...options, useCdn: false });
+  } catch (error) {
+    // Sanity returns 402 when a plan quota is exhausted. The CDN can still
+    // serve published content while the live API is blocked.
+    if (
+      !(
+        error instanceof Error &&
+        "statusCode" in error &&
+        error.statusCode === 402
+      )
+    ) {
+      throw error;
+    }
+
+    return client.fetch(query, { slug }, { ...options, useCdn: true });
+  }
 }
 
 async function getPolicyPageBySlug(
