@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,8 +20,8 @@ const refusal = { message: "P2_FRONTEND_REPLACEMENT_ABORT_REFUSED" };
 const artifact = frontendMigrationArtifact();
 const hash = value => createHash("sha256").update(value).digest("hex");
 const raw = value => Buffer.from(JSON.stringify(value) + "\n");
-function selection(port = 5432, serverMajor = 16) {
-  const sourceCommit = "a".repeat(40), releaseId = "owned-replacement-abort", migrationImageDigest = "sha256:" + "b".repeat(64);
+function selection(port = 5432, serverMajor = 16, sourceCommit = "a".repeat(40)) {
+  const releaseId = "owned-replacement-abort", migrationImageDigest = "sha256:" + "b".repeat(64);
   const target = { host: "127.0.0.1", port, database: "owned_replacement", user: "owned_migrator",
     runtimeRole: "owned_runtime", serverMajor };
   const predecessorTarget = { ...target, database: "owned_previous", runtimeRole: "owned_previous_runtime" };
@@ -68,6 +68,8 @@ test("owned TLS PostgreSQL aborts only the retained backend and observes committ
   const directory = mkdtempSync(join(realpathSync(tmpdir()), "p2-replacement-abort-"));
   const key = join(directory, "server.key"), cert = join(directory, "server.crt"), clients = [];
   const originalCa = getCACertificates("default");
+  const packaged = process.env.P2_FRONTEND_REPLACEMENT_PACKAGED_TEST === "true";
+  const packagedCommit = packaged ? JSON.parse(readFileSync("/candidate/migration-source.json", "utf8")).commit : undefined;
   let cluster;
   try {
     execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
@@ -79,11 +81,22 @@ test("owned TLS PostgreSQL aborts only the retained backend and observes committ
     cluster = await openOwnedFrontendReplacementCluster(workspace, pgBin, "owned_frontend_admin", key, cert);
     const setup = await cluster.connect("postgres");
     clients.push(setup);
-    const password = randomUUID(), selected = selection(cluster.port, serverMajor), target = selected.job.target;
+    const password = randomUUID(), selected = selection(cluster.port, serverMajor, packagedCommit), target = selected.job.target;
     await setup.query(`CREATE ROLE owned_migrator LOGIN PASSWORD '${password}'`);
     await setup.query("CREATE DATABASE owned_replacement OWNER owned_migrator");
     const url = `postgresql://${target.user}:${password}@${target.host}:${target.port}/${target.database}?sslmode=verify-full`;
     const dependencies = { getUrl: () => url };
+    const executePackaged = (input, args = []) => spawnSync(process.execPath, ["/candidate/ops/platform/frontend-image.mjs",
+      "--abort-replacement", ...args], { encoding: "utf8", input, timeout: 30_000, env: {
+      PATH: process.env.PATH, NODE_EXTRA_CA_CERTS: cert, FRONTEND_STAGING_MIGRATION_DATABASE_URL: url,
+    } });
+    const abort = async (probe, physicalObservation) => {
+      if (!packaged) return abortP2FrontendReplacement(probe, physicalObservation, dependencies);
+      const accepted = executePackaged(JSON.stringify({ probe, physicalObservation: physicalObservation.toString("base64") }));
+      assert.equal(accepted.status, 0);
+      assert.ok(!accepted.stdout.includes(password));
+      return JSON.parse(accepted.stdout);
+    };
     const connect = async () => {
       const client = new Client(frontendConnectionOptions(url, target));
       client.on("error", () => {});
@@ -145,7 +158,31 @@ test("owned TLS PostgreSQL aborts only the retained backend and observes committ
       NOT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE locktype='advisory' AND database=$1::oid) AS "locksAbsent"`, [databaseOid]);
     assert.deepEqual(beforeArmEffects, { journalAbsent: true, admissionAbsent: true, locksAbsent: true });
     const absent = await makeProbe(beforeJournal), absentRaw = raw(absent.observation);
-    const empty = await abortP2FrontendReplacement(absent.probe, absentRaw, dependencies);
+    if (packaged) {
+      const packet = { probe: absent.probe, physicalObservation: absentRaw.toString("base64") };
+      const wrongCommit = packagedCommit === "a".repeat(40) ? "b".repeat(40) : "a".repeat(40);
+      const wrongProbe = structuredClone(packet.probe);
+      wrongProbe.job.sourceCommit = wrongCommit;
+      wrongProbe.candidate.sources.frontend.commit = wrongCommit;
+      wrongProbe.candidate.frontendMigration.sourceCommit = wrongCommit;
+      for (const [input, args] of [
+        [JSON.stringify({ ...packet, probe: wrongProbe,
+          physicalObservation: raw({ ...absent.observation, sourceCommit: wrongCommit }).toString("base64") })],
+        [JSON.stringify({ ...packet, physicalObservation: packet.physicalObservation + "\n" })],
+        [JSON.stringify({ ...packet, extra: true })],
+        [`{"probe":${JSON.stringify(packet.probe)},"physicalObservation":"e30=","physicalObservation":${JSON.stringify(packet.physicalObservation)}}`],
+        [Buffer.alloc(2_000_001, 32)],
+        [JSON.stringify(packet), ["--unreviewed"]],
+      ]) {
+        const refused = executePackaged(input, args);
+        assert.equal(refused.status, 1);
+        assert.equal(refused.stdout, "");
+        assert.equal(refused.stderr.trim().split("\n").at(-1), "FRONTEND_PACKAGED_SOURCE_REFUSED");
+        assert.ok(!refused.stderr.includes(password));
+        assert.equal((await beforeJournal.query("SELECT 1 AS alive")).rows[0].alive, 1);
+      }
+    }
+    const empty = await abort(absent.probe, absentRaw);
     assert.equal(empty.backendTerminated, true);
     assert.equal(empty.journalPresent, false);
     assert.deepEqual(empty.appliedPrefix, []);
@@ -180,7 +217,7 @@ test("owned TLS PostgreSQL aborts only the retained backend and observes committ
     await beginMigration(first);
     await migration.query("COMMIT");
     await beginMigration(second);
-    const result = await abortP2FrontendReplacement(probe, observationRaw, dependencies);
+    const result = await abort(probe, observationRaw);
     assert.equal(result.status, "P2_FRONTEND_REPLACEMENT_ABORT_OBSERVED");
     for (const key of ["backendTerminated", "originalBackendAbsent", "originalLocksAbsent", "observationLockReleased",
       "journalPresent", "readOnlyVerified"]) {

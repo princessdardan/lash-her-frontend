@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { readSync } from "node:fs";
 import { Client } from "pg";
 import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { validateP2FrontendReplacementProbe, verifyP2FrontendReplacementObservation } from "./p2-frontend-replacement-probe.mjs";
 import { P2_PROFILED_CURRENT_LOCK_APPLICATION } from "./p2-profiled-current-probe.mjs";
+import { decodeQualificationTargetJson } from "./qualification-target-profile.mjs";
 
 const refusal = "P2_FRONTEND_REPLACEMENT_ABORT_REFUSED";
 const demand = value => { if (!value) throw new Error(refusal); };
@@ -127,4 +129,28 @@ export async function abortP2FrontendReplacement(input, retainedPhysicalObservat
       try { await client.end(); demand(!lost); } catch { throw new Error(refusal); }
     }
   }
+}
+
+export async function runP2FrontendReplacementAbortCli(sourceCommit) {
+  // The abort command accepts only the retained host observation and its
+  // original probe. Source custody is checked before resolving the credential.
+  const input = Buffer.alloc(2_000_001);
+  let length = 0;
+  while (length < input.length) {
+    const count = readSync(0, input, length, input.length - length, null);
+    if (!count) break;
+    length += count;
+  }
+  demand(length > 0 && length < input.length);
+  const packet = decodeQualificationTargetJson(input.subarray(0, length), "carrier");
+  demand(packet && Object.getPrototypeOf(packet) === Object.prototype && Object.keys(packet).length === 2 &&
+    Object.hasOwn(packet, "probe") && Object.hasOwn(packet, "physicalObservation") &&
+    packet.probe?.job?.sourceCommit === sourceCommit &&
+    typeof packet.physicalObservation === "string" && packet.physicalObservation.length <= 10_924);
+  const observation = Buffer.from(packet.physicalObservation, "base64");
+  demand(observation.length > 0 && observation.length <= 8192 && observation.toString("base64") === packet.physicalObservation);
+  const result = await abortP2FrontendReplacement(packet.probe, observation, {
+    getUrl: () => process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
+  });
+  console.log(JSON.stringify(result));
 }
