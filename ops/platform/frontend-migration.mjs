@@ -287,12 +287,18 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
       demand(target.allowEmptyBootstrap && (await client.query("select count(*)::int as count from pg_class where relnamespace='public'::regnamespace and relkind in ('r','p','v','m','f')")).rows[0].count === 0, "FRONTEND_UNJOURNALED_DATABASE_REFUSED");
     }
     await verifyRuntime(client, target, false);
-    phase = "forward-apply";
     if (pending.length) {
+      phase = "journal-initialization";
       if (ownedReplacement) await verifySession();
-      await client.query("create schema if not exists drizzle");
-      await client.query("create table if not exists drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");
+      await client.query("begin");
+      try {
+        await client.query("create schema if not exists drizzle");
+        await client.query("create table if not exists drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");
+        if (ownedReplacement) await verifySession();
+        await client.query("commit");
+      } catch (error) { await client.query("rollback"); throw error; }
     }
+    phase = "forward-apply";
     for (const migration of pending) {
       if (ownedReplacement) await verifySession();
       await client.query("begin");

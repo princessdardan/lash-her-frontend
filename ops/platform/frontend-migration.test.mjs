@@ -244,7 +244,24 @@ test("frontend apply uses one locked session, records before unlock and separate
   assert.equal(r.records[0].value.schemaVerified, true);
   assert.equal(r.records[0].value.applied.length, f.artifact.migrations.length);
   assert.ok(!JSON.stringify(r.records).includes("owned-private-marker"));
-  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
+  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length + 1);
+});
+
+test("failed migration journal creation rolls back initialization before applying any migration", async () => {
+  const r = runner(fixture());
+  const query = r.client.query;
+  r.client.query = async (sql) => {
+    const result = await query(sql);
+    if (sql.startsWith("create table if not exists drizzle.")) throw new Error("owned journal creation failure");
+    return result;
+  };
+  await assert.rejects(r.run(), /FRONTEND_MIGRATION_FAILED_REVIEW_REQUIRED/u);
+  const start = r.calls.indexOf("begin");
+  assert.deepEqual(r.calls.slice(start, start + 4).map(sql => sql.split(" ").slice(0, 2).join(" ")),
+    ["begin", "create schema", "create table", "rollback"]);
+  assert.equal(r.calls.includes("commit"), false);
+  assert.deepEqual(r.records.map(record => [record.name, record.value.status]), [["job-outcome.json", "FAILED_REQUIRES_REVIEW"]]);
+  assert.equal(r.records[0].value.phase, "journal-initialization");
 });
 
 test("compatible frontend continuation retains the physical lock after the durable database receipt", async () => {
@@ -270,7 +287,7 @@ test("failed or uncertain frontend continuation preserves successful SQL and nev
   r.dependencies.afterDatabaseVerified = async () => { called++; throw new Error("lost-promotion-response owned-private-marker"); };
   await assert.rejects(r.run(), (error) => !error.message.includes("owned-private-marker"));
   assert.equal(called, 1);
-  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
+  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length + 1);
   assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
   assert.equal(r.records[0].value.applied.length, f.artifact.migrations.length);
   assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");

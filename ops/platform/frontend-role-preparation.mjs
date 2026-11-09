@@ -259,8 +259,8 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
     phase = "retain-private-credential-before-sql"; retain(privatePath, "frontend-role-credentials.json", privateRecord);
     demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
     phase = "durable-intent"; retain(directory, "roles-preparation-started.json", { ...base, status: "FRONTEND_ROLE_PREPARATION_STARTED", physicalSessionPid: identity.pid }); started = true;
-    await verify();
     demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
+    await verify();
     phase = "role-transaction"; await client.query("BEGIN"); transaction = true;
     let observed;
     try {
@@ -282,9 +282,10 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
         await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO ${runtime}`);
         await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO ${runtime}`);
       }
-      phase = "role-grant-verification"; observed = await observeRoles(client, plan); await verify();
+      phase = "role-grant-verification"; observed = await observeRoles(client, plan);
       retain(directory, "roles-precommit-observed.json", { ...base, status: "FRONTEND_ROLES_OBSERVED_UNCOMMITTED", observed });
       demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
+      await verify();
       phase = "commit"; commitAttempted = true; await client.query("COMMIT"); committed = true; transaction = false;
     } catch (error) {
       if (!commitAttempted) { try { await client.query("ROLLBACK"); rollbackAcknowledged = true; transaction = false; } catch { /* Unknown state retained. */ } }
