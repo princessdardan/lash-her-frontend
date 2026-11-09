@@ -428,7 +428,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   if(replacement!==undefined){
     demand(profile&&validP2CertificationReplacementDescriptor(replacement)&&
       isDeepStrictEqual(replacement,inventory.replacementRelease)&&replacement.reviewedPlanSha256===profiledRelease.planSha256&&
-      job.target.allowEmptyBootstrap===true&&job.target.approvedPendingTags.length>0&&input.mode!=='known-ack-recovery');
+      job.target.allowEmptyBootstrap===true&&job.target.approvedPendingTags.length>0);
   }else demand(!Object.hasOwn(inventory??{},'replacementRelease')&&
     (!profile||job.target.allowEmptyBootstrap===false&&job.target.approvedPendingTags.length===0));
   const scoped=scopedPlanningModes.has(input?.mode);
@@ -526,6 +526,8 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     base.knownAckConfigurationInputDirectory=recovery.configurationInputDirectory;
     const intent={...fields,recoveryActionId:recovery.recoveryActionId,certificationActionId:base.certificationActionId,
       ...Object.fromEntries(['candidateSha256','sourceCommit','operatorSourceCommit','targetSha256','configurationSha256','gatewayProcessSha256','runtimeInventorySha256','operatorSourceClosureSha256'].map(key=>[key,base[key]])),
+      ...(replacement?{replacementRelease:base.replacementRelease,originalReleaseReceiptSha256:base.originalReleaseReceiptSha256,
+        originalReleasePlanSha256:base.originalReleasePlanSha256}:{}),
       configurationInputDirectory:base.knownAckConfigurationInputDirectory,nativePlanSha256:nativePlan.planSha256,receiverTargetsSha256:p2NativeHash(base.knownAckReceiverTargets),profile:'known-ack-same-session-ordered-replacement-v1',runtimeReplacements:1,nativeWindowSeconds:nativePlan.windowSeconds,
       sqlReplayAllowed:false,roleChangeAllowed:false,ordinaryClosedZeroGate:false,automaticFailureRecoveryAllowed:false};
     base.knownAckRecovery={...fields,recoveryActionId:recovery.recoveryActionId,intent,intentSha256:p2NativeHash(intent)};
@@ -560,6 +562,10 @@ export function deriveP2CertificationNativePlan(plan,closedAdmission){
 async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,verify,withOwner,directory){
   const context=p2CertificationParentContext(plan),prepared=context.prepared,policy={environment:'staging',targetSha256:plan.targetSha256};
   const profile=plan.qualificationTargetProfile;
+  const replacementMatches=receipt=>!plan.replacementRelease||
+    isDeepStrictEqual(receipt.replacementRelease,plan.replacementRelease)&&
+    receipt.originalReleaseReceiptSha256===plan.originalReleaseReceiptSha256&&
+    receipt.originalReleasePlanSha256===plan.originalReleasePlanSha256;
   const handle=await host.knownAckStage(plan),stage=readP2CertificationKnownAckStage(handle,plan);
   await stage.armFault();let barrier,enableAttempted=false,domainJoined=false,closureFailed=false;
   try{
@@ -597,10 +603,12 @@ async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,v
     requireQualificationTargetProfile(profile,confirmed);
     demand(confirmed.version===2&&confirmed.status==='P2_KNOWN_ACK_RECONCILIATION_OBSERVED_FENCED'&&confirmed.operationId===settlement.operationId&&
       confirmed.settlementSha256===settlement.evidenceSha256&&sha(confirmed.reconciliationObservedSha256)&&confirmed.frontendGlobalClosedZero===true&&
-      isDeepStrictEqual(confirmed.oldGatewayUncertain,{newWork:0,recovery:1})&&confirmed.runtimeReplaced===false&&confirmed.ordinaryClosedZeroGate===false);
+      isDeepStrictEqual(confirmed.oldGatewayUncertain,{newWork:0,recovery:1})&&confirmed.runtimeReplaced===false&&confirmed.ordinaryClosedZeroGate===false&&
+      replacementMatches(confirmed));
   }
   const result=await stage.replace();demand(result.status==='P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED'&&result.recoveryActionId===plan.knownAckRecovery.recoveryActionId&&
-    result.ordinaryClosedZeroGate===false&&result.originalGatewayUncertaintyPreserved===true&&result.runtimeReplacements===1&&result.sqlReplayed===false);
+    result.ordinaryClosedZeroGate===false&&result.originalGatewayUncertaintyPreserved===true&&result.runtimeReplacements===1&&result.sqlReplayed===false&&
+    replacementMatches(result));
   return result;
 }
 
@@ -1250,8 +1258,9 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const firstOwner=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.firstOwner;
   const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment||!!firstOwner;
+  const replacementKnownAck=plan.mode==='known-ack-recovery'&&plan.replacementRelease!==undefined;
   demand(confirmation==='staging/'+plan.certificationActionId&&
-    (scoped||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
+    (scoped||replacementKnownAck||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
   let identityEnrollmentEmail,authoringDraft;
   if(firstOwner)demand(execution===undefined);
   if(enrollment){

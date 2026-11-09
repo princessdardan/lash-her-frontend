@@ -83,6 +83,8 @@ export const P2_OWNED_FIXTURES = Object.freeze([
       'predecessor-unreviewed-login-and-revoked-live-client-refusal',
       'journal-admission-marker-backend-and-database-identity-refusal',
       'independent-guard-fence-without-sql-replay',
+      'replacement-known-ack-exact-uncertainty-and-selected-settlement',
+      'replacement-known-ack-guard-preserves-uncertainty-and-fresh-interrupted-closure',
     ]) }),
 ]);
 

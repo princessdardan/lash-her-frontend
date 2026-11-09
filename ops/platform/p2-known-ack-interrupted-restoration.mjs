@@ -17,6 +17,7 @@ import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOpe
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh,sshCommand} from './recreation_ssh.mjs';
 import {prepareP2ProfiledCurrentRelease,verifyP2ProfiledCurrentReleaseConfiguration} from './p2-profiled-current-release.mjs';
+import {prepareP2CertificationReplacementRelease,validP2CertificationReplacementDescriptor} from './p2-certification-replacement-release.mjs';
 import {assertSourceCheckout} from './source-checkout.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,resolveQualificationTargetProfile,
@@ -42,6 +43,13 @@ const hash=raw=>createHash('sha256').update(raw).digest('hex');
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value);
 const action=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort());
+const replacementFields=['replacementRelease','originalReleaseReceiptSha256','originalReleasePlanSha256'];
+const pick=(value,keys)=>Object.fromEntries(keys.map(key=>[key,value[key]]));
+
+function requireReplacementProvenance(value,provenance){
+  demand(replacementFields.every(key=>Object.hasOwn(value,key)===!!provenance&&
+    (!provenance||isDeepStrictEqual(value[key],provenance[key]))));
+}
 
 export function prepareInterruptedKnownAckAction(candidate,rawCandidate,selection,configurationSha256){
   demand(candidate?.environment==='staging'&&candidate.contractPhase==='p2'&&Buffer.isBuffer(rawCandidate)&&rawCandidate.length>0&&
@@ -120,7 +128,9 @@ function profiledFrontier(selection, host){
 }
 
 export function prepareProfiledInterruptedKnownAckOperator(settings){
-  demand(exact(settings,['version','qualificationTargetProfile','environment','operatorSourceCommit','releaseSettings','interruptedRestoration','receiverTargets','operationId'])&&
+  const replacing=Object.hasOwn(settings??{},'replacementRelease');
+  demand(exact(settings,['version','qualificationTargetProfile','environment','operatorSourceCommit','releaseSettings','interruptedRestoration','receiverTargets','operationId',
+    ...(replacing?['replacementRelease']:[])])&&
     settings.version===2&&settings.environment==='staging'&&/^[a-f0-9]{40}$/u.test(settings.operatorSourceCommit??'')&&
     /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(settings.operationId??''));
   const selection=settings.interruptedRestoration;
@@ -129,12 +139,18 @@ export function prepareProfiledInterruptedKnownAckOperator(settings){
     'originalOperatorSourceCommit','causalReceiptSha256','replacementReceiptSha256','priorGatewayReference'])&&selection.version===2&&selection.mode===PROFILED_MODE&&
     [selection.restorationActionId,selection.originalCertificationActionId,selection.originalRecoveryActionId].every(action)&&
     /^[a-f0-9]{40}$/u.test(selection.originalOperatorSourceCommit??''));
-  const releaseSettings=settings.releaseSettings;
-  const original=prepareP2ProfiledCurrentRelease(releaseSettings), release=original.plan;
+  const releaseInput=settings.releaseSettings;
+  const selected=replacing?prepareP2CertificationReplacementRelease(releaseInput,settings.replacementRelease):undefined;
+  const original=selected?.original??prepareP2ProfiledCurrentRelease(releaseInput), release=original.plan;
+  const releaseSettings=selected?{...pick(releaseInput.arm,['results','knownHosts','sshKey']),host:selected.host,
+    providerContext:releaseInput.providerContext}:releaseInput;
+  const provenance=selected?{replacementRelease:selected.profiledRelease.replacementRelease,
+    originalReleaseReceiptSha256:selected.profiledRelease.receiptSha256,originalReleasePlanSha256:selected.profiledRelease.planSha256}:undefined;
   demand(new Set([release.releaseId,selection.restorationActionId,selection.originalCertificationActionId,selection.originalRecoveryActionId]).size===4);
   const frontier=profiledFrontier(selection,releaseSettings.host);
   const retainedDirectory=join(releaseSettings.results,selection.originalCertificationActionId);
   const originalPlanRaw=readFrontendReleaseEvidence(retainedDirectory,'p2-certification-started.json');
+  demand(originalPlanRaw.length<=65_536);
   const originalCertificationPlan=decodeQualificationTargetJson(originalPlanRaw,'carrier');
   const {planSha256,...body}=originalCertificationPlan, nativePlan=body.nativePlan;
   requireQualificationTargetProfile(currentProfile,originalCertificationPlan,nativePlan,nativePlan?.target,body.knownAckRecovery,body.knownAckRecovery?.intent);
@@ -147,6 +163,19 @@ export function prepareProfiledInterruptedKnownAckOperator(settings){
     body.knownAckRecovery.recoveryActionId===selection.originalRecoveryActionId&&body.knownAckRecovery.intentSha256===p2NativeHash(body.knownAckRecovery.intent)&&
     nativePlan.version===2&&nativeSha256===p2NativeHash(nativeBody)&&/^[1-9][0-9]{0,17}$/u.test(nativePlan.initialEpoch??'')&&
     nativePlan.commandWitnesses?.length===1&&nativePlan.commandWitnesses[0].action==='suspend');
+  if(provenance){
+    const inputDirectory=body.knownAckConfigurationInputDirectory;
+    demand(validP2CertificationReplacementDescriptor(provenance.replacementRelease)&&
+      isDeepStrictEqual(original.inventory.replacementRelease,provenance.replacementRelease)&&
+      body.operatorSourceCommit===release.sourceCommit&&hash(selected.originalReleaseReceipt)===provenance.originalReleaseReceiptSha256&&
+      typeof inputDirectory==='string'&&resolve(inputDirectory)===inputDirectory&&inputDirectory.startsWith(stagingRoot+'/')&&
+      !inputDirectory.includes(',')&&inputDirectory!==selected.host.configuration&&body.knownAckRecovery.intent.configurationInputDirectory===inputDirectory&&
+      ['host','port','database','user','serverMajor'].every(key=>nativePlan.target[key]===original.migration.job.target[key])&&
+      nativePlan.targetSha256===release.targetSha256&&isDeepStrictEqual(nativePlan.owner,original.inventory.owner)&&
+      original.inventory.producers.length===1&&isDeepStrictEqual(nativePlan.producer,original.inventory.producers[0]));
+    requireReplacementProvenance(body,provenance);
+  }else demand(!Object.hasOwn(body,'replacementRelease')&&!Object.hasOwn(original.inventory,'replacementRelease'));
+  requireReplacementProvenance(body.knownAckRecovery.intent,provenance);
   const receivers=settings.receiverTargets;
   demand(exact(receivers,['course','community'])&&isDeepStrictEqual(receivers,body.knownAckReceiverTargets)&&
     p2NativeHash(receivers)===body.knownAckRecovery.intent.receiverTargetsSha256);
@@ -162,29 +191,29 @@ export function prepareProfiledInterruptedKnownAckOperator(settings){
     apiJobSha256:release.apiJobSha256,
     phase2ContractManifestSha256:release.phase2ContractManifestSha256,configurationCanonicalSha256:p2NativeHash(release.configurationSha256),
     nativePlan,initialEpoch:(BigInt(nativePlan.initialEpoch)+2n).toString(),operationId:settings.operationId,
-    reconciliationSha256:selection.causalReceiptSha256['settlement.json']};
+    reconciliationSha256:selection.causalReceiptSha256['settlement.json'],...provenance};
   const frontendPlan={...frontend,planSha256:p2NativeHash(frontend)};
   const plan={...profileFields,mode:PROFILED_MODE,environment:'staging',restorationActionId:selection.restorationActionId,
     originalReleaseId:release.releaseId,sourceCommit:release.sourceCommit,operatorSourceCommit:settings.operatorSourceCommit,
     candidateSha256:release.candidateSha256,apiJobSha256:release.apiJobSha256,configurationSha256:release.configurationSha256,
-    inventorySha256:release.inventorySha256,targetSha256:release.targetSha256,hostMachineId:release.hostMachineId,
+    inventorySha256:release.inventorySha256,targetSha256:release.targetSha256,hostMachineId:releaseSettings.host.machineId,
     originalCertificationPlanSha256:planSha256,originalCertificationPlanBytesSha256:hash(originalPlanRaw),frontendPlan,
     configurationInputDirectory:body.knownAckConfigurationInputDirectory,
     interruptedRestoration:structuredClone(selection),receiverTargets:structuredClone(receivers),requestedFrontier:frontier,
     runtimeStages:5,runtimeReplacements:1,maximumSeconds:900,frontendSqlApplied:false,sqlReplayAllowed:false,rolePreparationAllowed:false,
     loginChangeAllowed:false,frontendBuildAllowed:false,frontendPromotionAllowed:false,admissionOpeningAllowed:false,nativeSchedulesEnabled:false,
-    trafficAuthorized:false,liveExecutionEligible:false,releaseAccepted:false};
-  return {original,plan,originalCertificationPlan:originalPlanRaw.toString('base64')};
+    trafficAuthorized:false,liveExecutionEligible:false,releaseAccepted:false,...provenance};
+  return {original,plan,releaseSettings,originalCertificationPlan:originalPlanRaw.toString('base64'),
+    ...(selected?{originalReleaseReceipt:selected.originalReleaseReceipt.toString('base64')}:{})};
 }
 
 export function prepareProfiledInterruptedKnownAckHostPacket(settings){
   const checked=prepareProfiledInterruptedKnownAckOperator(settings);
-  return profiledInterruptedHostPacket(settings,checked,committedProfiledCurrentOperatorSource(root,checked.plan.operatorSourceCommit));
+  return profiledInterruptedHostPacket(checked,committedProfiledCurrentOperatorSource(root,checked.plan.operatorSourceCommit));
 }
 
-function profiledInterruptedHostPacket(settings,checked,source){
-  const {original,plan}=checked;
-  const {host}=settings.releaseSettings;
+function profiledInterruptedHostPacket(checked,source){
+  const {original,plan,releaseSettings:{host}}=checked;
   const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
   return {...profileFields,mode:PROFILED_MODE,environment:'staging',sourceCommit:plan.operatorSourceCommit,sourceSha256,
     sourceClosureSha256:hash(JSON.stringify(Object.entries(sourceSha256).sort(([a],[b])=>a<b?-1:a>b?1:0))),
@@ -194,7 +223,8 @@ function profiledInterruptedHostPacket(settings,checked,source){
     frontendJob:original.migration.job,frontendBaseline:original.migration.baseline,restorationActionId:plan.restorationActionId,recoveryActionId:plan.restorationActionId,
     interruptedRestoration:plan.interruptedRestoration,receiverTargets:plan.receiverTargets,priorGatewayReference:plan.interruptedRestoration.priorGatewayReference,
     originalCertificationPlanSha256:plan.originalCertificationPlanSha256,originalCertificationPlanBytesSha256:plan.originalCertificationPlanBytesSha256,
-    operationId:plan.frontendPlan.operationId,reviewedPlan:plan,originalCertificationPlan:checked.originalCertificationPlan};
+    operationId:plan.frontendPlan.operationId,reviewedPlan:plan,originalCertificationPlan:checked.originalCertificationPlan,
+    ...(checked.originalReleaseReceipt?{originalReleaseReceipt:checked.originalReleaseReceipt}:{})};
 }
 
 export function interruptedKnownAckEnvironmentLock(settings,initial,directory,{launch=spawn}={}){
@@ -278,8 +308,9 @@ function requireProfiledGateway(gateway,running,uncertain){
     (running?process.pid>0:process.pid===0)&&/^[a-f0-9]{12,64}$/u.test(process.containerId??''));
 }
 
-function requireProfiledRestored(initial,receipt,current,apiDatabases){
+function requireProfiledRestored(initial,receipt,current,apiDatabases,provenance){
   profiledReceipt(receipt,profiledStatus);
+  requireReplacementProvenance(receipt,provenance);
   const plan=initial.reviewedPlan;
   demand(receipt.environment==='staging'&&receipt.releaseId===plan.originalReleaseId&&receipt.candidateSha256===plan.candidateSha256&&
     receipt.restorationActionId===plan.restorationActionId&&receipt.recoveryActionId===plan.restorationActionId&&
@@ -298,6 +329,42 @@ function requireProfiledRestored(initial,receipt,current,apiDatabases){
     gatewayId.startsWith(receipt.containers.find(row=>row.service==='gateway').containerId));
 }
 
+function profiledTransportProvenance(initial){
+  const plan=initial.reviewedPlan, replacing=Object.hasOwn(plan,'replacementRelease');
+  const provenance=replacing?pick(plan,replacementFields):undefined;
+  requireReplacementProvenance(plan,provenance);
+  requireReplacementProvenance(plan.frontendPlan,provenance);
+  demand(Object.hasOwn(initial,'originalReleaseReceipt')===replacing&&Object.hasOwn(initial.inventory,'replacementRelease')===replacing&&
+    replacementFields.every(key=>!Object.hasOwn(initial,key)));
+  const target=initial.frontendJob.target;
+  if(!replacing){
+    demand(target.allowEmptyBootstrap===false&&isDeepStrictEqual(target.approvedPendingTags,[]));
+    return;
+  }
+  const {replacementRelease,originalReleaseReceiptSha256,originalReleasePlanSha256}=provenance;
+  const encoded=initial.originalReleaseReceipt;
+  demand(validP2CertificationReplacementDescriptor(replacementRelease)&&sha(originalReleaseReceiptSha256)&&
+    !/^0+$/u.test(originalReleaseReceiptSha256)&&originalReleasePlanSha256===replacementRelease.reviewedPlanSha256&&
+    isDeepStrictEqual(initial.inventory.replacementRelease,replacementRelease)&&!Object.hasOwn(initial.inventory,'historicalLogins')&&
+    target.allowEmptyBootstrap===true&&Array.isArray(target.approvedPendingTags)&&target.approvedPendingTags.length>0&&
+    typeof encoded==='string'&&encoded.length<=87_384);
+  const raw=Buffer.from(encoded,'base64');
+  demand(raw.length>0&&raw.length<=65_536&&raw.at(-1)===10&&raw.toString('base64')===encoded&&hash(raw)===originalReleaseReceiptSha256);
+  const terminal=decodeQualificationTargetJson(raw,'carrier');
+  profiledReceipt(terminal,'P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION');
+  demand(terminal.environment==='staging'&&terminal.releaseId===plan.originalReleaseId&&terminal.sourceCommit===plan.sourceCommit&&
+    terminal.candidateSha256===plan.candidateSha256&&terminal.targetSha256===plan.targetSha256&&
+    terminal.contractPhase===plan.frontendPlan.contractPhase&&terminal.phase2ContractManifestSha256===plan.frontendPlan.phase2ContractManifestSha256&&
+    ['reviewedPlanSha256','runtimeReviewSha256','postflightSha256','frontendSessionClosedSha256','frontendDatabaseReceiptSha256']
+      .every(key=>terminal[key]===replacementRelease[key])&&isDeepStrictEqual(terminal.configurationSha256,plan.configurationSha256)&&
+    terminal.migrationMode==='apply-forward'&&terminal.frontendSqlApplied===true&&terminal.frontendSessionClosed===true&&
+    terminal.frontendSqlReplayed===false&&terminal.trafficAuthorized===false&&terminal.releaseAccepted===false&&
+    isDeepStrictEqual(terminal.owner,initial.owner)&&initial.inventory.producers?.length===1&&
+    isDeepStrictEqual(initial.inventory.producers[0],{role:terminal.runtime,producerSha256:terminal.producerSha256})&&
+    terminal.runtime.name===target.runtimeRole);
+  return provenance;
+}
+
 async function withProfiledInterruptedEnvironmentLock(settings,initial,directory,task,launch=spawn){
   const plan=initial.reviewedPlan;
   requireQualificationTargetProfile(currentProfile,initial,plan,plan?.frontendPlan,initial.candidate,
@@ -310,8 +377,8 @@ async function withProfiledInterruptedEnvironmentLock(settings,initial,directory
     plan.frontendPlan.certificationActionId===plan.restorationActionId&&initial.candidateSha256===plan.candidateSha256&&
     initial.targetSha256===plan.targetSha256&&initial.candidate.version===3&&initial.candidate.releaseId===plan.originalReleaseId&&
     initial.frontendJob.version===2&&initial.frontendJob.releaseId===plan.originalReleaseId&&
-    initial.frontendJob.sourceCommit===plan.sourceCommit&&initial.candidate.sources?.frontend?.commit===plan.sourceCommit&&
-    initial.frontendJob.target.allowEmptyBootstrap===false&&isDeepStrictEqual(initial.frontendJob.target.approvedPendingTags,[]));
+    initial.frontendJob.sourceCommit===plan.sourceCommit&&initial.candidate.sources?.frontend?.commit===plan.sourceCommit);
+  const provenance=profiledTransportProvenance(initial);
   const rawInitial=JSON.stringify(initial);
   demand(Buffer.byteLength(rawInitial)+1<=profiledFrameLimit);
   const remote=['sudo','-n','/usr/bin/python3','-I','-u',
@@ -372,6 +439,11 @@ async function withProfiledInterruptedEnvironmentLock(settings,initial,directory
       demand(probe.version===2&&isDeepStrictEqual(probe.plan,plan.frontendPlan)&&isDeepStrictEqual(probe.job,initial.frontendJob)&&
         isDeepStrictEqual(probe.baseline,initial.frontendBaseline)&&isDeepStrictEqual(probe.owner,initial.owner)&&
         isDeepStrictEqual(probe.receipt,receipt)&&receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT');
+      if(provenance)demand(isDeepStrictEqual(probe.replacementRelease,provenance.replacementRelease)&&
+        !Object.hasOwn(probe,'historicalLogins')&&isDeepStrictEqual(probe.producers,initial.inventory.producers)&&
+        isDeepStrictEqual(receipt.replacementRelease,provenance.replacementRelease)&&receipt.effectiveLoginBoundaryVerified===true&&
+        receipt.predecessorRuntimeRoleAbsent===true);
+      else demand(!Object.hasOwn(probe,'replacementRelease')&&!Object.hasOwn(receipt,'replacementRelease'));
       const raw=readFrontendReleaseEvidence(directory,profiledCurrent);
       demand(isDeepStrictEqual(decodeQualificationTargetJson(raw,'carrier'),receipt));
       const ready=await transition('locked','armed','arm-interrupted-restoration','INTERRUPTED_RESTORATION_ARMED',{receipt:raw.toString('base64'),probe},240_000);
@@ -386,7 +458,7 @@ async function withProfiledInterruptedEnvironmentLock(settings,initial,directory
     },
     async restore(){
       restored=await transition('prepared','restored','restore-runtime','INTERRUPTED_RUNTIME_READY',{},900_000);
-      requireProfiledRestored(initial,restored,current,apiDatabases);return structuredClone(restored);
+      requireProfiledRestored(initial,restored,current,apiDatabases,provenance);return structuredClone(restored);
     },
     async prepareClose(){
       const ready=await transition('restored','closing','prepare-close','INTERRUPTED_CLOSE_PREPARED',{},240_000);
@@ -438,12 +510,12 @@ function runProfiledInterruptedKnownAckRestoration(settings,initial,prepared,dir
 
 export async function p2ProfiledInterruptedKnownAckOperator(settings,{confirmation}={}){
   demand(process.versions.node.split('.')[0]==='24');
-  const checked=prepareProfiledInterruptedKnownAckOperator(settings),{original,plan}=checked;
+  const checked=prepareProfiledInterruptedKnownAckOperator(settings),{original,plan,releaseSettings}=checked;
   demand(confirmation==='staging/'+plan.restorationActionId);
-  const releaseSettings=settings.releaseSettings,directory=join(releaseSettings.results,plan.restorationActionId);
+  const directory=join(releaseSettings.results,plan.restorationActionId);
   frontendPrivateReceiptDirectory(releaseSettings.results);demand(lstatSync(directory,{throwIfNoEntry:false})===undefined);
-  verifyP2ProfiledCurrentReleaseConfiguration(original);
-  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit),packet=profiledInterruptedHostPacket(settings,checked,source);
+  if(!plan.replacementRelease)verifyP2ProfiledCurrentReleaseConfiguration(original);
+  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit),packet=profiledInterruptedHostPacket(checked,source);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
     sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
   const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');

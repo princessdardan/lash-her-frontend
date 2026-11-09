@@ -24,6 +24,7 @@ const exact=(value,fields)=>value&&Object.getPrototypeOf(value)===Object.prototy
   fields.every(key=>{const field=Object.getOwnPropertyDescriptor(value,key);return field?.enumerable&&Object.hasOwn(field,'value');});
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
 const interruptedMode='p2-profiled-known-ack-interrupted-restoration';
+const knownAckMode='known-ack-recovery';
 const replacementBackendStart=`pg_catalog.to_char(backend_start AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 const replacementStart=value=>typeof value==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/u.test(value);
 const replacementProof=replacementRelease=>({replacementRelease,effectiveLoginBoundaryVerified:true,predecessorRuntimeRoleAbsent:true});
@@ -38,7 +39,7 @@ const options=(value,target,interrupted=false)=>({...frontendConnectionOptions(v
 function profileFields(expectedProfile,plan,job,historicalLogins,interrupted=false,replacementRelease){
   demand((plan?.mode===interruptedMode)===interrupted&&(!interrupted||expectedProfile!==undefined),'current-source-context');
   const replacing=replacementRelease!==undefined;
-  demand(Object.hasOwn(plan??{},'replacementRelease')===replacing&&(!replacing||!interrupted&&expectedProfile!==undefined&&historicalLogins===undefined),
+  demand(Object.hasOwn(plan??{},'replacementRelease')===replacing&&(!replacing||expectedProfile!==undefined&&historicalLogins===undefined),
     'current-replacement-context');
   const carriers=[plan,plan?.nativePlan,plan?.nativePlan?.target,job,job?.target,
     ...(replacing?[replacementRelease]:[historicalLogins,historicalLogins?.target])];
@@ -50,7 +51,7 @@ function profileFields(expectedProfile,plan,job,historicalLogins,interrupted=fal
   demand(plan.version===2&&plan.nativePlan.version===2&&job.version===2&&plan.startState==='already-closed'&&Array.isArray(job.target.approvedPendingTags));
   if(replacing)requireReplacementPlan(plan,job,replacementRelease);
   else demand(historicalLogins.version===2&&job.target.approvedPendingTags.length===0);
-  if(interrupted)requireInterruptedPlan(plan,job);
+  if(interrupted)requireInterruptedPlan(plan,job,replacing);
   if(plan.mode===interactiveMode)requireInteractivePlan(plan,job);
   return {qualificationTargetProfile};
 }
@@ -63,7 +64,6 @@ function requireReplacementPlan(plan,job,replacement){
     isDeepStrictEqual(replacement,plan.replacementRelease)&&provenance.every(key=>digest(replacement[key]))&&
     replacement.reviewedPlanSha256===plan.originalReleasePlanSha256&&digest(plan.originalReleaseReceiptSha256)&&
     plan.environment==='staging'&&job.environment==='staging'&&plan.contractPhase==='p2'&&job.contractPhase==='p2'&&
-    plan.mode!=='known-ack-recovery'&&
     plan.originalReleaseId===job.releaseId&&native.actionId===job.releaseId&&action(plan.certificationActionId)&&
     plan.certificationActionId!==job.releaseId&&/^(?!0+$)[a-f0-9]{40}$/u.test(job.sourceCommit??'')&&
     plan.sourceCommit===job.sourceCommit&&plan.sourceCommit===native.sourceCommit&&
@@ -74,6 +74,9 @@ function requireReplacementPlan(plan,job,replacement){
     exact(owner,['name','oid'])&&name(owner.name)&&replacementOid(owner.oid)&&exact(runtime,['name','oid'])&&
     runtime.name===target.runtimeRole&&replacementOid(runtime.oid)&&digest(native.producer.producerSha256)&&
     name(replacement.predecessorRuntimeRole),'current-replacement-plan');
+  if(plan.mode===knownAckMode)demand(exactSuspendWitness(native)&&epoch(plan.initialEpoch)&&
+    native.initialEpoch===(BigInt(plan.initialEpoch)+1n).toString()&&
+    epoch((BigInt(native.initialEpoch)+2n).toString()),'current-replacement-known-ack-plan');
   const names=[target.user,owner.name,runtime.name,replacement.predecessorRuntimeRole];
   const oids=[replacement.migrationRoleOid,owner.oid,runtime.oid];
   const admins=replacement.administrativeLogins;
@@ -126,14 +129,20 @@ function requireInteractivePlan(plan,job){
     digest(native.producer.producerSha256), 'current-interactive-plan');
 }
 
-function requireInterruptedPlan(plan,job){
+function exactSuspendWitness(native){
+  const command=native.commandWitnesses?.[0];
+  return Array.isArray(native.commandWitnesses)&&native.commandWitnesses.length===1&&
+    command?.action==='suspend'&&uuid(command.commandId)&&epoch(command.accountVersion);
+}
+
+function requireInterruptedPlan(plan,job,replacing){
   const original=plan.nativePlan;
   demand(plan.environment==='staging'&&job.environment==='staging'&&plan.originalReleaseId===job.releaseId&&original.actionId===job.releaseId&&
     [plan.certificationActionId,plan.originalCertificationActionId,job.releaseId].every(action)&&
     new Set([plan.certificationActionId,plan.originalCertificationActionId,job.releaseId]).size===3&&
     typeof plan.sourceCommit==='string'&&/^[a-f0-9]{40}$/u.test(plan.sourceCommit)&&!/^0+$/u.test(plan.sourceCommit)&&
     plan.sourceCommit===job.sourceCommit&&plan.sourceCommit===original.sourceCommit&&plan.targetSha256===original.targetSha256&&
-    plan.targetSha256===targetHash(job.target)&&plan.targetSha256===targetHash(original.target)&&job.target.allowEmptyBootstrap===false&&
+    plan.targetSha256===targetHash(job.target)&&plan.targetSha256===targetHash(original.target)&&job.target.allowEmptyBootstrap===replacing&&
     plan.contractPhase===job.contractPhase&&plan.contractPhase==='p2'&&
     plan.phase2ContractManifestSha256===job.phase2ContractManifestSha256&&plan.phase2ContractManifestSha256===original.phase2ContractManifestSha256&&
     typeof plan.phase2ContractManifestSha256==='string'&&plan.phase2ContractManifestSha256.startsWith('sha256:')&&digest(plan.phase2ContractManifestSha256.slice(7))&&
@@ -141,8 +150,7 @@ function requireInterruptedPlan(plan,job){
     epoch(plan.initialEpoch)&&epoch(original.initialEpoch)&&BigInt(plan.initialEpoch)===BigInt(original.initialEpoch)+2n&&
     name(original.owner?.name)&&oid(original.owner.oid)&&name(original.producer?.role?.name)&&oid(original.producer.role.oid)&&
     digest(original.producer.producerSha256)&&
-    uuid(plan.operationId)&&Array.isArray(original.commandWitnesses)&&original.commandWitnesses.length===1&&
-    original.commandWitnesses[0].action==='suspend'&&uuid(original.commandWitnesses[0].commandId)&&epoch(original.commandWitnesses[0].accountVersion),
+    uuid(plan.operationId)&&exactSuspendWitness(original),
     'current-interrupted-plan');
 }
 
@@ -221,9 +229,41 @@ export function readP2CertificationCurrent(client,prepared,plan,verify,initial=f
   return readCurrent(client,prepared,plan,verify,initial,expectedProfile,false);
 }
 
+function verifyReplacementKnownAckOperations(plan,admission,operations){
+  const native=plan.nativePlan,windowEpoch=(BigInt(native.initialEpoch)+1n).toString();
+  const settlements=operations.filter(row=>row.reconciliation_sha256!==null);
+  demand(operations.length<=2&&(BigInt(admission.epoch)>=BigInt(windowEpoch)||operations.length===0)&&
+    operations.every(row=>uuid(row.id)&&row.epoch===windowEpoch&&row.kind==='recovery'&&
+    row.source_sha===plan.sourceCommit&&row.producer_sha256===native.producer.producerSha256&&row.role_oid===native.producer.role.oid&&
+    (row.state==='completed'?row.completed_at instanceof Date&&Number.isFinite(+row.completed_at):
+      ['active','uncertain'].includes(row.state)&&row.completed_at===null)&&
+    (row.reconciliation_sha256===null||row.state==='completed'&&digest(row.reconciliation_sha256)))&&
+    admission.active<=1&&admission.uncertain<=1&&
+    operations.filter(row=>row.state==='active').length===admission.active&&operations.filter(row=>row.state==='uncertain').length===admission.uncertain&&
+    (settlements.length===0||settlements.length===1&&admission.epoch===(BigInt(native.initialEpoch)+2n).toString()&&
+      !admission.newWork&&!admission.recovery&&admission.active===0&&admission.uncertain===0&&operations.length===2),
+    'current-replacement-known-ack-operations');
+  return settlements.length===1;
+}
+
+function verifyReplacementKnownAckClosure(plan,current){
+  const {admission,witness}=current;
+  demand(admission.epoch===(BigInt(plan.nativePlan.initialEpoch)+2n).toString()&&
+    witness.operations.length===2&&witness.operations.every(row=>row.state==='completed')&&
+    witness.operations.filter(row=>digest(row.reconciliation_sha256)).length===1&&witness.orderViolations.length===0,
+    'current-replacement-known-ack-closure');
+}
+
+function requireAcknowledgedDeliveries(deliveries,checkpoint){
+  demand(deliveries.length===2&&deliveries.every(row=>row.status==='acknowledged'&&row.acknowledged_at instanceof Date&&
+    Number.isFinite(+row.acknowledged_at)&&Number.isInteger(row.attempts)&&row.attempts>0&&row.lease_until===null&&row.lease_id===null),
+    checkpoint);
+}
+
 async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,interrupted){
   const {job,artifact,baseline}=prepared.migration,target=job.target,owner=prepared.plan.owner;
   const {historicalLogins,replacementRelease}=prepared.plan;
+  const replacementKnownAck=replacementRelease&&plan.mode===knownAckMode;
   const selectedProfile=profileFields(expectedProfile,plan,job,historicalLogins,interrupted,replacementRelease);
   if(replacementRelease)requireReplacementArtifact(job,artifact,baseline);
   demand(name(owner.name)&&plan.sourceCommit===job.sourceCommit&&plan.targetSha256===prepared.plan.targetSha256&&plan.targetSha256===targetHash(target)&&
@@ -302,14 +342,10 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
     const commandRows=(await client.query('SELECT command_id::text,user_id::text,account_version::text,action,issued_at,command FROM public.customer_account_commands WHERE command_id=ANY($1::uuid[]) ORDER BY command_id',[ids])).rows;
     const commands=commandRows.map(row=>({commandId:row.command_id,accountVersion:row.account_version,action:row.action,issuedAt:new Date(row.issued_at).toISOString(),canonicalSha256:createHash('sha256').update(canonical(row.command)).digest('hex')}));
     demand(commands.length===ids.length&&commands.every(row=>nativePlan.commandWitnesses.some(expected=>expected.commandId===row.commandId&&expected.accountVersion===row.accountVersion&&expected.action===row.action)));
-    const deliveries=(await client.query(`SELECT command_id::text,receiver,status,attempts,acknowledged_at,lease_until${interrupted?',lease_id::text':''}
+    const deliveries=(await client.query(`SELECT command_id::text,receiver,status,attempts,acknowledged_at,lease_until${interrupted||replacementKnownAck?',lease_id::text':''}
       FROM public.customer_account_deliveries WHERE command_id=ANY($1::uuid[]) ORDER BY command_id,receiver`,[ids])).rows;
     demand(deliveries.length===commands.length*2&&commands.every(command=>['course','community'].every(receiver=>deliveries.filter(row=>row.command_id===command.commandId&&row.receiver===receiver).length===1)));
-    if(interrupted){
-      demand(deliveries.every(row=>row.status==='acknowledged'&&row.acknowledged_at instanceof Date&&Number.isFinite(+row.acknowledged_at)&&
-        Number.isInteger(row.attempts)&&row.attempts>0&&row.lease_until===null&&row.lease_id===null),'current-interrupted-deliveries');
-      for(const row of deliveries)delete row.lease_id;
-    }
+    if(interrupted)requireAcknowledgedDeliveries(deliveries,'current-interrupted-deliveries');
     const orderViolations=(await client.query(`SELECT later.command_id::text AS later_command_id,prior.command_id::text AS prior_command_id,d.receiver
       FROM public.customer_account_commands later JOIN public.customer_account_deliveries d ON d.command_id=later.command_id
       JOIN public.customer_account_commands prior ON prior.user_id=later.user_id AND prior.account_version<later.account_version
@@ -323,6 +359,11 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
       checkpoint='current-interactive-operations';
       requireInteractiveOperations(plan,admission,operations,interactive);
     }
+    if(replacementKnownAck&&verifyReplacementKnownAckOperations(plan,admission,operations)){
+      requireAcknowledgedDeliveries(deliveries,'current-replacement-known-ack-deliveries');
+      demand(orderViolations.length===0,'current-replacement-known-ack-deliveries');
+    }
+    if(interrupted||replacementKnownAck)for(const row of deliveries)delete row.lease_id;
     if(interrupted){
       const selected=operations.find(row=>row.id===plan.operationId), windowEpoch=(BigInt(nativePlan.initialEpoch)+1n).toString();
       demand(operations.length===2&&selected?.reconciliation_sha256===plan.reconciliationSha256&&orderViolations.length===0&&
@@ -411,6 +452,10 @@ export function observeP2ProfiledInterruptedFrontendPhysical(input,dependencies)
 
 export function observeP2ProfiledReplacementFrontendPhysical(input,dependencies){
   return observeCertificationPhysical(input,dependencies,currentProfile,false,true);
+}
+
+export function observeP2ProfiledInterruptedReplacementFrontendPhysical(input,dependencies){
+  return observeCertificationPhysical(input,dependencies,currentProfile,true,true);
 }
 
 function requireReplacementReceipt(input,artifact){
@@ -540,6 +585,7 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
     }
     if(interrupted)demand(current.journalSha256===input.receipt.journalSha256&&current.witnessSha256===input.receipt.witnessSha256,
       'current-interrupted-witness-changed');
+    if(closing&&replacing&&input.plan.mode===knownAckMode)verifyReplacementKnownAckClosure(input.plan,current);
     if(closing)demand(current.admission.newWork===false&&current.admission.recovery===false&&current.admission.active===0&&current.admission.uncertain===0&&
       (input.plan.mode!==interactiveMode||current.admission.epoch===interactiveClosedEpoch(input.plan)&&
         current.witness.operations.every(row=>row.reconciliation_sha256===null)), 'current-admission-closure');
@@ -630,12 +676,19 @@ async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
     await client.query(`SET LOCAL ROLE "${owner.name}"`);
     const closed=(await client.query('SELECT epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton AND environment=$1 AND target_sha256=$2',['staging',plan.targetSha256])).rows;
     demand(closed.length===1&&closed[0].epoch===epoch&&closed[0].new_work===false&&closed[0].recovery===false);
+    let knownAckLedger;
+    if(replacing&&plan.mode===knownAckMode){
+      const {rows:[counts]}=await client.query(`SELECT count(*) FILTER(WHERE state='active')::int AS active,
+        count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations WHERE state<>'completed'`);
+      demand(counts&&['active','uncertain'].every(key=>Number.isInteger(counts[key])&&counts[key]>=0),'guard-replacement-known-ack-ledger');
+      knownAckLedger={...counts,closedZero:counts.active===0&&counts.uncertain===0};
+    }
     await client.query('ROLLBACK');started=false;await verify();
     return {version:2,...selectedProfile,status:'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED',environment:'staging',
       releaseId:job.releaseId,sourceCommit:job.sourceCommit,certificationActionId:plan.certificationActionId,
       candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
       epoch,frontendAdmissionClosed:true,admissionChanged:changed,sqlReplayed:false,releaseAccepted:false,
-      ...(replacing?replacementProof(replacementRelease):{})};
+      ...(replacing?replacementProof(replacementRelease):{}),...(knownAckLedger?{knownAckLedger}:{})};
   }finally{
     if(started)try{await client.query('ROLLBACK');}catch{lost=true;}
     try{await client.end();}catch{lost=true;}
@@ -646,7 +699,8 @@ async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
     const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence',
-      '--profiled-known-ack-interrupted','--profiled-replacement','--profiled-replacement-guard-fence'].includes(flags[0])));
+      '--profiled-known-ack-interrupted','--profiled-replacement','--profiled-replacement-guard-fence',
+      '--profiled-replacement-known-ack-interrupted'].includes(flags[0])));
     const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);
     const expectedProfile=flags.length?currentProfile:undefined;
     const input=expectedProfile?decodeQualificationTargetJson(raw,'carrier'):JSON.parse(raw);
@@ -657,9 +711,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
         ?await containP2ProfiledReplacementCertificationAdmission(input,dependencies)
       :flags[0]==='--profiled-replacement'
         ?await observeP2ProfiledReplacementFrontendPhysical(input,dependencies)
-      :flags[0]==='--profiled-known-ack-interrupted'
-        ?await observeP2ProfiledInterruptedFrontendPhysical(input,dependencies)
-        :await observeP2CertificationPhysical(input,dependencies,expectedProfile);
+      :flags[0]==='--profiled-replacement-known-ack-interrupted'
+        ?await observeP2ProfiledInterruptedReplacementFrontendPhysical(input,dependencies)
+        :flags[0]==='--profiled-known-ack-interrupted'
+          ?await observeP2ProfiledInterruptedFrontendPhysical(input,dependencies)
+          :await observeP2CertificationPhysical(input,dependencies,expectedProfile);
     console.log(JSON.stringify(output));
   }
   catch{console.error('P2_CERTIFICATION_PHYSICAL_REFUSED');process.exitCode=1;}

@@ -221,12 +221,35 @@ class KnownAckSourceTests(unittest.TestCase):
             with self.subTest(kind=kind),self.assertRaises(ValueError):source.validate_settled(plan,before,actual,operation_id,'e'*64)
 
 
+def replacement_runtime_review_fixture(profile):
+    return source.canonical({'version':1,'qualificationTargetProfile':profile,'certification':{'owned':'fixture'}})+b'\n'
+
+
+def replacement_release_fixture(profile):
+    descriptor={'version':1,'kind':'frontend-replacement','qualificationTargetProfile':profile,
+        'databaseOid':'234','migrationRoleOid':'345','predecessorRuntimeRole':'predecessor_runtime',
+        'administrativeLogins':[{'name':'administrative_login','oid':'456'}],
+        **{key:str(index)*64 for index,key in enumerate(parent.REPLACEMENT_RELEASE_HASHES,1)}}
+    descriptor['runtimeReviewSha256']=source.digest(replacement_runtime_review_fixture(profile))
+    terminal=source.canonical({'version':2,'qualificationTargetProfile':profile,
+        'status':'P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION','frontendSqlApplied':True,
+        'frontendSqlReplayed':False,'frontendSessionClosed':True,
+        **{key:descriptor[key] for key in parent.REPLACEMENT_RELEASE_HASHES}})+b'\n'
+    return {'replacementRelease':descriptor,'originalReleaseReceiptSha256':source.digest(terminal),
+        'originalReleasePlanSha256':descriptor['reviewedPlanSha256']},terminal
+
+
 class ProfiledKnownAckSourceTests(unittest.TestCase):
     """Actual source types, flock, configuration, and bytes with projected I/O."""
 
-    def setUp(self):
+    def setUp(self,replacement=False):
         runtime=release_test.RuntimeReleaseTests();runtime.setUp();self.addCleanup(runtime.tearDown)
         root=runtime.root.resolve();bundle=runtime.bundle.resolve();configuration=runtime.configuration.resolve()
+        if replacement:
+            mounted=root/'runtime-profiled-frontend-replacement-test-release'/'configuration'
+            mounted.parent.mkdir(mode=0o700)
+            configuration.rename(mounted)
+            configuration=runtime.configuration=mounted
         source_root=Path(source.__file__).resolve().parents[3]
         runtime.compose.write_bytes(migrate.read_input(source_root,'ops/platform/compose.yaml'))
         runtime.fixture.release['runtime']['composeSha256']='sha256:'+source.digest(runtime.compose.read_bytes())
@@ -236,7 +259,8 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             carrier.update(pair)
         for name in ('course','community'):
             runtime.fixture.jobs[name]['target']['serverMajor']=18
-        runtime.fixture.jobs['frontend']['target'].update(approvedPendingTags=[],allowEmptyBootstrap=False)
+        if not replacement:
+            runtime.fixture.jobs['frontend']['target'].update(approvedPendingTags=[],allowEmptyBootstrap=False)
         self.profile=runtime.fixture.profiled();self.fields={'version':2,'qualificationTargetProfile':self.profile}
         runtime.target.update(self.fields)
         runtime.gateway.update(ownerId=parent.vercel.TEAM,projectId=parent.vercel.PROJECTS['staging'],publicHost='api-staging.lashher.com')
@@ -270,6 +294,8 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             'operatorSourceClosureSha256':closure,'knownAckConfigurationInputDirectory':str(input_configuration),
             'knownAckReceiverTargets':self.receiver_targets,'nativePlan':native,'apiJobSha256':job_hashes,
             'faultSelection':{'stageId':'owned-fault','receiver':'course','commandIndex':0,'commandSha256':test_plan['commandSha256']}}
+        pins,terminal=replacement_release_fixture(self.profile) if replacement else ({},None)
+        cert.update(pins)
         intent=source.replacement_intent(cert,self.recovery,expected_profile=self.profile)
         cert['knownAckRecovery']={**self.fields,'recoveryActionId':self.recovery,'intent':intent,'intentSha256':source.digest(source.canonical(intent))}
         cert['planSha256']=parent._profiled_plan_hash(cert)
@@ -285,10 +311,17 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
         observer._expected_profile=self.profile;observer.selected=selected;observer.source=source_root
         observer.request={'job':job,'plan':cert,'receipt':receipt,'baseline':json.loads(jobs['frontend']['schema']),
             'owner':owner,'historicalLogins':{'retiredLogins':[]}}
+        if replacement:
+            for key in parent.HISTORICAL_PROOF_FIELDS:del receipt[key]
+            receipt.update(replacementRelease=pins['replacementRelease'],effectiveLoginBoundaryVerified=True,predecessorRuntimeRoleAbsent=True)
+            del observer.request['historicalLogins']
+            observer.request['replacementRelease']=pins['replacementRelease']
+            observer._replacement=pins['replacementRelease']
         observer.verify=Mock()
         lock=root/'owned-flock';fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600);self.addCleanup(os.close,fd);fcntl.flock(fd,fcntl.LOCK_EX)
         self.scope=parent.P2CertificationScope(fd,lock,observer.verify,receipt,candidate_sha,release=selected,jobs=jobs,
-            configuration_sha256=configuration_hashes,certification_plan=cert,expected_profile=self.profile,physical_observer=observer)
+            configuration_sha256=configuration_hashes,certification_plan=cert,expected_profile=self.profile,physical_observer=observer,
+            original_replacement_receipt=terminal)
         stage=source.P2CertificationFaultStage.__new__(source.P2CertificationFaultStage)
         stage.expected_profile=self.profile;stage.scope=self.scope;stage.arm_called=False;stage.lease_sha256='2'*64
         stage.gateway={'containerId':'1'*64}
@@ -303,6 +336,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
         broker=parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker);self.broker=broker
         broker.initial={**self.fields,'certificationPlan':cert,'certificationActionId':action,'nativePlan':native,'configurationSha256':configuration_hashes,
             'candidateSha256':candidate_sha,'sourceSha256':source_files,'sourceClosureSha256':closure}
+        if replacement:broker.initial['originalReleaseReceipt']=base64.b64encode(terminal).decode()
         broker.scope=self.scope;broker.fault_stage=stage;broker.external_armed=True;broker.native_enable_attempted=False;broker.native_expected=False
         broker.configuration=configuration;broker.selected=selected;broker.jobs=jobs;broker.bundle=bundle;broker.source=source_root
         broker.certification_started=time.monotonic();broker.directory=root/'certification';broker.directory.mkdir(mode=0o700)
@@ -418,11 +452,36 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'PROFILED_SQL_READBACK_REQUIRED'):recorder._sql('course','d'*64)
         args,payload,env=calls[0]
         self.assertEqual(payload['version'],1);self.assertNotIn('qualificationTargetProfile',payload)
+        self.assertNotIn('replacementFrontend',payload)
         self.assertEqual(set(payload['target']),{'host','port','database','user','serverMajor'})
         self.assertEqual(args[2:4],['--pull','never']);self.assertNotIn(env['FRONTEND_STAGING_MIGRATION_DATABASE_URL'],args)
         args,payload,env=calls[1]
         self.assertEqual(payload['target'],self.receiver_targets['course']);self.assertIn('STAGING_DATABASE_URL',env)
         self.assertNotIn(env['STAGING_DATABASE_URL'],args)
+
+    def test_replacement_original_job_and_provenance_stay_bound_through_same_session_restore(self):
+        fixture=ProfiledKnownAckSourceTests();fixture.setUp(replacement=True);self.addCleanup(fixture.doCleanups)
+        broker=fixture.broker;plan=broker.initial['certificationPlan']
+        pins=source.replacement_release_pins(plan,fixture.profile)
+        self.assertEqual({key:plan['knownAckRecovery']['intent'][key] for key in pins},pins)
+        original=broker.initial['originalReleaseReceipt']
+        broker.initial['originalReleaseReceipt']=base64.b64encode(base64.b64decode(original)+b'\n').decode()
+        with self.assertRaisesRegex(ValueError,'REPLACEMENT_TERMINAL_BYTES_CHANGED'):fixture.recorder()
+        broker.initial['originalReleaseReceipt']=original
+        runtime=fixture.replacement_fixture()
+        recorder=broker.known_ack_recorder
+        broker.armed_probe={'marker':'owned','backendPid':123,'backendStart':'2026-11-06T01:00:00.123456Z'}
+        broker.initial['owner']=recorder.plan['nativePlan']['owner']
+        broker.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL']='owned-private-input'
+        recorder._sql('frontend')
+        self.assertEqual(fixture.sql_payloads[-1]['replacementFrontend'],{'databaseOid':'234','migrationRoleOid':'345'})
+        observed=json.loads(migrate.read_input(broker.known_ack_recorder.directory,'reconciliation-observed.json'))
+        self.assertEqual({key:observed[key] for key in pins},pins)
+        outcome=runtime.restore()
+        self.assertEqual({key:outcome[key] for key in pins},pins)
+        self.assertEqual(outcome['currentApiBeforeReceiptSha256'],outcome['currentApiAfterReceiptSha256'])
+        self.assertEqual(broker.jobs['frontend']['job']['target']['approvedPendingTags'],['0000_test'])
+        self.assertTrue(all('--execute' not in call for call in fixture.calls))
 
     def test_domain_refuses_other_lease_and_retained_candidate_bytes_drift(self):
         recorder=self.begin_window();effect=self.broker.fault_stage.effects.return_value[0]
@@ -482,7 +541,7 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             for index,service in enumerate(source.runtime.SERVICES)}
         self.replace=lambda stage:KnownTransitionTests.replace(self,stage)
         self.metadata=lambda *args:KnownTransitionTests.metadata(self,*args)
-        self.calls=[];self.api_fault=None;self.api_after_drift=False;self.new_uncertain=0
+        self.calls=[];self.sql_payloads=[];self.api_fault=None;self.api_after_drift=False;self.new_uncertain=0
         broker.runtime_current=[{'service':service,'containerId':rows[0]['Id']} for service,rows in self.model.items()]
         broker.process_snapshot=[{'service':service,'pid':str(rows[0]['State']['Pid']),'startedAt':rows[0]['State']['StartedAt']}
             for service,rows in self.model.items()]
@@ -520,8 +579,10 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
                     'target':{key:job['target'][key] for key in ('host','port','database','user','serverMajor')}}
             elif '/app/p2-known-ack-loss-probe.mjs' in args:
                 payload=json.loads(kwargs['input']);service=payload['service']
+                self.sql_payloads.append(payload)
                 value={**self.current[service],'version':1,'status':'P2_KNOWN_ACK_SQL_CURRENT','service':service,
-                    'commandId':payload['commandId'],'roleOid':self.receiver_targets[service]['roleOid'],'readOnly':True}
+                    'commandId':payload['commandId'],'readOnly':True}
+                if service!='frontend':value['roleOid']=self.receiver_targets[service]['roleOid']
             else:value=KnownTransitionTests.docker(self,args)
             raw=value if isinstance(value,str) else json.dumps(value)
             return subprocess.CompletedProcess(args,0,stdout=raw if kwargs.get('text') else raw.encode(),stderr='' if kwargs.get('text') else b'')

@@ -411,13 +411,14 @@ class RetainedChainTests(unittest.TestCase):
 class ProfiledRetainedChainTests(unittest.TestCase):
     """Use the actual B recorder/boundary writers and projected runtime I/O."""
 
-    def setUp(self):
-        fixture = b.ProfiledKnownAckSourceTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+    def setUp(self, replacement=False):
+        fixture = b.ProfiledKnownAckSourceTests(); fixture.setUp(replacement=replacement); self.addCleanup(fixture.doCleanups)
         self.fixture = fixture; broker = fixture.broker; profile = fixture.profile; self.fields = fixture.fields
         self.root = b.source.ROOT; self.selected = broker.selected; self.jobs = broker.jobs
         self.cert = self.root / ('p2-profiled-current-certification-' + broker.action_id())
         self.cert.mkdir(mode=0o700); broker.directory = self.cert
-        release = self.root / self.selected['releaseId']; release.mkdir(mode=0o700)
+        prefix = 'migration-profiled-frontend-replacement-' if replacement else ''
+        release = self.root / (prefix + self.selected['releaseId']); release.mkdir(mode=0o700)
         c.migrate.write_exact_bytes(release, 'candidate.json', fixture.candidate_raw)
         actual_capture, actual_stopped = c.prior.capture_before_stop, c.prior.observe_stopped_prior_gateway
         actual_reference = c.prior._reference
@@ -440,6 +441,9 @@ class ProfiledRetainedChainTests(unittest.TestCase):
                      nativePlanSha256=native['planSha256'], operatorSourceClosureSha256=closure)
         cert['operatorSourceClosureSha256'] = closure
         cert['configurationSha256'] = c.sha(b.parent._profiled_compact(broker.initial['configurationSha256']))
+        if replacement:
+            for field in b.parent.PROFILED_PLAN_FIELDS: cert.setdefault(field, None)
+            cert['readyReceiptSha256'] = {'frontend-workload-outcome.json': 'a' * 64}
         rows = [{'service': name, 'containerId': format(index + 1, '064x'),
                  'image': self.selected['artifacts'][c.runtime.IMAGE_KEYS[name]]['image'],
                  'health': 'none' if name.endswith('-tls') else 'healthy'} for index, name in enumerate(c.runtime.SERVICES)]
@@ -474,16 +478,31 @@ class ProfiledRetainedChainTests(unittest.TestCase):
             dict.fromkeys(('course', 'community'), 'owned-private-input'), manifest, expected_profile=profile)
         self.write(self.cert, 'p2-certification-current-ready.json', {'status': 'P2_CERTIFICATION_CURRENT_READY', 'apiDatabases': api,
             'containers': rows, 'sqlReplayed': False, 'runtimeReplaced': False})
+        pins = c.known.replacement_release_pins(cert, profile)
         self.write(self.cert, 'p2-profiled-certification-input-verified.json', {**self.fields, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
             'environment': 'staging', 'releaseId': self.selected['releaseId'], 'certificationActionId': broker.action_id(),
             'sourceCommit': source_commit, 'candidateSha256': candidate_hash, 'targetSha256': cert['targetSha256'],
-            'planSha256': cert['planSha256'], 'originalReleasePlanHashHostVerified': True})
+            'planSha256': cert['planSha256'], 'originalReleasePlanHashHostVerified': True,
+            **({**pins, 'readyReceiptSha256': cert['readyReceiptSha256'],
+                'hostOriginalReleaseReceiptSha256': pins['originalReleaseReceiptSha256']} if replacement else {})})
         self.initial = {**self.fields, 'mode': c.PROFILED_MODE, 'environment': 'staging', 'recoveryActionId': 'new-profiled-c',
             'candidateSha256': candidate_hash, 'bundle': str(broker.bundle), 'results': str(self.root),
             'configuration': cert['knownAckConfigurationInputDirectory'], 'configurationSha256': broker.initial['configurationSha256'],
             'targetSha256': cert['targetSha256'], 'hostMachineId': '1' * 32, 'apiJobSha256': cert['apiJobSha256'],
             'receiverTargets': fixture.receiver_targets, 'originalCertificationPlanSha256': cert['planSha256'],
             'originalCertificationPlanBytesSha256': '1' * 64, 'operationId': broker.known_ack_recorder.domain['operationId']}
+        if replacement:
+            from p2_frontend_replacement_parent import RUNTIME_REVIEW
+            from p2_replacement_terminal import TERMINAL
+            raw = c.canonical(cert) + b'\n'
+            terminal = base64.b64decode(broker.initial['originalReleaseReceipt'], validate=True)
+            self.initial.update(reviewedPlan=pins, inventory={'certification':{'owned':'fixture'}},
+                originalReleaseReceipt=broker.initial['originalReleaseReceipt'],
+                originalCertificationPlan=base64.b64encode(raw).decode(), originalCertificationPlanBytesSha256=c.sha(raw))
+            self.guardian = self.root / ('p2-profiled-replacement-write-' + self.selected['releaseId'])
+            self.guardian.mkdir(mode=0o700)
+            c.migrate.write_exact_bytes(self.guardian, RUNTIME_REVIEW, b.replacement_runtime_review_fixture(profile))
+            c.migrate.write_exact_bytes(self.guardian, TERMINAL, terminal)
         self.cert_id, self.recovery_id, self.source_commit = broker.action_id(), fixture.recovery, source_commit
         self.stop_dir = self.cert / 'prior-gateway-after-quiescence'
         self.stop_dir.mkdir(mode=0o700)
@@ -588,6 +607,35 @@ class ProfiledRetainedChainTests(unittest.TestCase):
         value = json.loads(intent.read_bytes()); value.update(authorization=auth, authorizationRawSha256=c.sha(authorization.read_bytes()))
         intent.write_bytes(c.canonical(value) + b'\n'); self.refresh_pins()
         with self.assertRaisesRegex(ValueError, 'CAUSAL_CONTEXT_REQUIRED'): self.load()
+
+    def test_replacement_interruption_rejoins_exact_original_guardian_and_causal_pins(self):
+        from p2_frontend_replacement_parent import RUNTIME_REVIEW
+        from p2_replacement_terminal import TERMINAL
+        fixture = ProfiledRetainedChainTests(); fixture.setUp(replacement=True); self.addCleanup(fixture.doCleanups)
+        fixture.component.restore(); fixture.stop(); fixture.refresh_pins()
+        pins = fixture.initial['reviewedPlan']
+
+        def rejoin(carrier, original, selected, results, profile):
+            self.assertEqual(carrier['configuration'], str(fixture.fixture.broker.configuration))
+            self.assertEqual(carrier['certification'], {'owned': 'fixture'})
+            self.assertEqual(original, fixture.fixture.broker.initial['certificationPlan'])
+            self.assertEqual(selected, fixture.selected)
+            self.assertEqual(results, fixture.root)
+            raw = base64.b64decode(carrier['originalReleaseReceipt'], validate=True)
+            self.assertEqual(raw, (fixture.guardian / TERMINAL).read_bytes())
+            self.assertEqual(profile, fixture.fixture.profile)
+            return c.sha(raw), True
+
+        with patch.object(b.parent, '_profiled_replacement_original_terminal', side_effect=rejoin) as join:
+            evidence = fixture.load()
+            self.assertEqual(evidence['frontier'], 'replacement-stopped-zero')
+            self.assertEqual(evidence['originalAuxiliarySha256']['originalReplacementRelease'][TERMINAL],
+                             pins['originalReleaseReceiptSha256'])
+            join.assert_called_once()
+            review = fixture.guardian / RUNTIME_REVIEW
+            review.write_bytes(review.read_bytes() + b'\n')
+            with self.assertRaisesRegex(ValueError, 'ORIGINAL_REPLACEMENT_REVIEW_CHANGED'): fixture.load()
+            join.assert_called_once()
 
 
 class AuthorityTests(unittest.TestCase):

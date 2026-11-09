@@ -52,7 +52,7 @@ class ProfiledInterruptedRuntimeTests(unittest.TestCase):
                 },
                 'causalReceiptSha256': copy.deepcopy(self.causal),
             },
-            'plan': {}, 'values': {}, 'stages': {},
+            'plan': {}, 'values': {'recovery-intent.json': {'intent': {}}}, 'stages': {},
             'originalGateway': {'process': copy.deepcopy(self.processes['gateway']), 'binding': {'owned': 'old'},
                                 'admission': {'newWork': False, 'recovery': False,
                                               'active': {'newWork': 0, 'recovery': 0},
@@ -161,6 +161,7 @@ class ProfiledInterruptedRuntimeTests(unittest.TestCase):
         parent = object.__new__(P2CertificationScope)
         parent.descriptor, parent.path, parent.identity = descriptor, lock, os.fstat(descriptor)
         parent.receipt = {'journalSha256': '1' * 64}
+        parent.certification_plan = {}
         parent.candidate_sha256 = self.candidate
         parent.release = {'environment': 'staging', 'releaseId': 'owned-release',
                           'contractPhase': 'p2', 'phase2ContractManifestSha256': 'sha256:' + '2' * 64}
@@ -223,15 +224,16 @@ class ProfiledInterruptedRuntimeTests(unittest.TestCase):
                'releaseId': parent.release['releaseId'], 'candidateSha256': self.candidate,
                'databases': {'course': {'journal': 'a'}, 'community': {'journal': 'b'}},
                'migrationsExecuted': False, 'frontendSqlApplied': False, 'trafficAuthorized': False}
-        broker = SimpleNamespace(reader=SimpleNamespace(snapshot=Mock()), require_native_off=Mock(),
+        broker = SimpleNamespace(source=self.root / 'source',reader=SimpleNamespace(snapshot=Mock()), require_native_off=Mock(),
                                  _read_api_current=Mock(side_effect=[copy.deepcopy(api), copy.deepcopy(api)]))
         boundary.broker = broker
-        runtime_component = source.ProfiledInterruptedKnownAckRuntime.__new__(source.ProfiledInterruptedKnownAckRuntime)
-        runtime_component.scope, runtime_component.selected, runtime_component.jobs = scope, parent.release, parent.jobs
-        runtime_component.configuration, runtime_component.output = boundary.input_configuration, output
-        runtime_component.compose_file, runtime_component.source = boundary.compose_file, self.root / 'source'
-        runtime_component.snapshot, runtime_component.api_before = None, None
-        scope.boundary = boundary
+        from p2_known_ack_loss_test import replacement_release_fixture
+        pins, _ = replacement_release_fixture(self.profile)
+        parent.certification_plan = copy.deepcopy(pins)
+        with self.assertRaisesRegex(ValueError, 'RUNTIME_ORIGINAL_RELEASE_CHANGED'):
+            source.ProfiledInterruptedKnownAckRuntime(scope)
+        boundary.retained['values']['recovery-intent.json']['intent'].update(pins)
+        runtime_component = source.ProfiledInterruptedKnownAckRuntime(scope)
         scope.verify = Mock()
 
         def fixed_restore(*, expected_profile):
@@ -246,6 +248,7 @@ class ProfiledInterruptedRuntimeTests(unittest.TestCase):
         runtime_component._restore = fixed_restore
         result = runtime_component.restore()
         self.assertEqual(result['status'], 'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED')
+        self.assertEqual({key: result[key] for key in pins}, pins)
         self.assertFalse(result['sqlReplayed'])
         self.assertFalse(result['migrationsExecuted'])
         self.assertFalse(result['rolePreparationRepeated'])

@@ -4,6 +4,7 @@ The only constructor authority is the fixed live certification broker and its
 actual fault-stage instance. Source integration hooks must call this BEFORE the
 fault arm. Retained JSON is evidence, never a constructor capability.
 """
+import base64
 import copy
 import hashlib
 import json
@@ -26,6 +27,7 @@ ROOT=Path('/var/lib/lash-her/releases/staging')
 MODULE='ops/platform/p2-known-ack-loss-probe.mjs'
 GATEWAY_STARTED='known-ack-gateway-replacement-started.json'
 HOST_MODULE='ops/platform/host/p2_known_ack_loss.py'
+REPLACEMENT_RELEASE_FIELDS=('replacementRelease','originalReleaseReceiptSha256','originalReleasePlanSha256')
 require=migrate.demand
 _ISSUER=object()
 _PROFILED_ISSUER=object()
@@ -52,6 +54,16 @@ def _profile_record(expected_profile):
 def _profile_arguments(source):
     expected=getattr(source,'expected_profile',None)
     return {} if expected is None else {'expected_profile':expected}
+
+def replacement_release_pins(plan, expected_profile):
+    if 'replacementRelease' not in plan:
+        return {}
+    from p2_certification_parent import _profiled_digest, require_certification_replacement_release
+    descriptor=require_certification_replacement_release(plan['replacementRelease'],expected_profile)
+    require(plan.get('originalReleasePlanSha256')==descriptor['reviewedPlanSha256'] and
+            _profiled_digest(plan.get('originalReleaseReceiptSha256')),
+            'P2_KNOWN_ACK_ORIGINAL_REPLACEMENT_PINS_REQUIRED')
+    return {key:copy.deepcopy(plan[key]) for key in REPLACEMENT_RELEASE_FIELDS}
 
 def _delivery_receipts(frontend):
     # Readiness is a clock-derived observation. The ACK identity is not.
@@ -225,6 +237,8 @@ class P2KnownAckLossRecorder:
         require(digest(raw)==broker.initial['candidateSha256']==cert['candidateSha256']==self.scope.candidate_sha256 and
             selected==broker.selected and digest(canonical(selected))==cert['candidateObjectSha256'],
             'P2_KNOWN_ACK_EXACT_ORIGINAL_CANDIDATE_REQUIRED')
+        if replacement_release_pins(cert,self.expected_profile):
+            self.scope.require_replacement_original(base64.b64decode(broker.initial['originalReleaseReceipt'],validate=True))
         read_certification_api_proof(broker.api_proof,self.scope,broker.selected,broker.jobs,expected_profile=self.expected_profile)
 
     def _gateway(self,*,require_disarmed=False):
@@ -253,6 +267,9 @@ class P2KnownAckLossRecorder:
                 backendPid=broker.armed_probe['backendPid'],backendStart=broker.armed_probe['backendStart'],targetSha256=self.plan['targetSha256'])
             if profile:
                 payload['target']={key:payload['target'][key] for key in ('host','port','database','user','serverMajor')}
+                pins=replacement_release_pins(self.scope.certification_plan,self.expected_profile)
+                if pins:
+                    payload['replacementFrontend']={key:pins['replacementRelease'][key] for key in ('databaseOid','migrationRoleOid')}
             identifier='lash-p2-certification-observer-'+uuid.uuid4().hex
             args=['docker','run','--rm','--name',identifier,'--interactive','--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
                 '--memory','128m','--pids-limit','64','--env','FRONTEND_STAGING_MIGRATION_DATABASE_URL','--mount',f'type=bind,src={broker.source/MODULE},dst=/app/p2-known-ack-loss-probe.mjs,readonly',
@@ -396,6 +413,7 @@ class P2KnownAckLossRecorder:
             'P2_KNOWN_ACK_PROFILED_CONFIRMATION_REQUIRED')
         self.reconciliation_attempted=True
         record={**_profile_record(self.expected_profile),'status':'P2_KNOWN_ACK_RECONCILIATION_OBSERVED_FENCED',
+            **replacement_release_pins(self.scope.certification_plan,self.expected_profile),
             'operationId':self.domain['operationId'],'baselineSha256':self.baseline_sha256,'domainSha256':self.domain_sha256,
             'requestDetailsSha256':self.request_sha256,'settlementSha256':self.settlement_sha256,
             'frontendGlobalClosedZero':True,'oldGatewayUncertain':{'newWork':0,'recovery':1},
@@ -482,6 +500,7 @@ def replacement_intent(cert,recovery_action_id,*,expected_profile=None):
     vercel.require_record_profile(expected,cert,cert['nativePlan'])
     return {'version':1,**_profile_record(expected),'recoveryActionId':recovery_action_id,'certificationActionId':cert['certificationActionId'],
         **{key:cert[key] for key in ('candidateSha256','sourceCommit','operatorSourceCommit','targetSha256','configurationSha256','gatewayProcessSha256','runtimeInventorySha256','operatorSourceClosureSha256')},
+        **replacement_release_pins(cert,expected),
         'configurationInputDirectory':cert['knownAckConfigurationInputDirectory'],'nativePlanSha256':cert['nativePlan']['planSha256'],'receiverTargetsSha256':digest(canonical(cert['knownAckReceiverTargets'])),
         'profile':'known-ack-same-session-ordered-replacement-v1','runtimeReplacements':1,'nativeWindowSeconds':cert['nativePlan']['windowSeconds'],
         'sqlReplayAllowed':False,'roleChangeAllowed':False,'ordinaryClosedZeroGate':False,'automaticFailureRecoveryAllowed':False}
@@ -1089,6 +1108,7 @@ class ProfiledKnownAckRecoveryRuntime(KnownAckRecoveryRuntime):
         boundary.verify_healthy_boundary()
         outcome={**result,**migrate.contract_identity(self.selected),'status':'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED',
             'originalGateway':boundary.old_gateway,'newGateway':boundary.new_gateway,'currentApiDatabasesAfter':after['databases'],
+            **replacement_release_pins(boundary.parent.certification_plan,boundary.expected_profile),
             'currentApiBeforeReceiptSha256':self.before_apis_sha256,'currentApiAfterReceiptSha256':after_sha,
             'frontendJournalSha256':boundary.parent.receipt['journalSha256'],
             'ordinaryClosedZeroGate':False,'originalGatewayUncertaintyPreserved':True,'frontendOperationId':boundary.record['operationId'],

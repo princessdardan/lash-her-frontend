@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import p2_certification_parent as certification
 import p2_known_ack_interrupted_restoration as interrupted
+import p2_known_ack_loss as known
 import p2_lifecycle_native as native
 import p2_prior_gateway as prior
 import release as runtime
@@ -92,10 +93,35 @@ def _raw_original(initial, expected):
             _sha(raw) == initial['originalCertificationPlanBytesSha256'], 'P2_PROFILED_INTERRUPTED_ORIGINAL_PLAN_BYTES_REQUIRED')
     original = decode_qualification_target_json(raw, 'carrier')
     vercel.require_record_profile(expected, original, original.get('nativePlan'), original.get('knownAckRecovery'))
-    require(set(original) == certification.PROFILED_PLAN_FIELDS | {'knownAckRecovery','knownAckReceiverTargets','knownAckConfigurationInputDirectory'} and
+    fields = {'knownAckRecovery','knownAckReceiverTargets','knownAckConfigurationInputDirectory'}
+    if 'replacementRelease' in original:
+        fields.add('replacementRelease')
+    require(set(original) == certification.PROFILED_PLAN_FIELDS | fields and
             original['planSha256'] == initial['originalCertificationPlanSha256'] == _plan_body_hash(original),
             'P2_PROFILED_INTERRUPTED_ORIGINAL_PLAN_HASH_REQUIRED')
     return original
+
+
+def profiled_interrupted_review(initial):
+    fields = INITIAL_FIELDS | ({'originalReleaseReceipt'} if 'originalReleaseReceipt' in initial else set())
+    return {key: initial[key] for key in fields}
+
+
+def _replacement_original_receipt(initial, plan, expected):
+    pins = known.replacement_release_pins(plan, expected)
+    require(bool(pins) == ('originalReleaseReceipt' in initial),
+            'P2_PROFILED_INTERRUPTED_ORIGINAL_REPLACEMENT_RECEIPT_REQUIRED')
+    if not pins:
+        return None
+    from p2_replacement_terminal import TERMINAL_STATUS
+    terminal = certification._profiled_wire_receipt(initial['originalReleaseReceipt'],
+                                                    pins['originalReleaseReceiptSha256'], expected)
+    descriptor = pins['replacementRelease']
+    require(terminal.get('status') == TERMINAL_STATUS and terminal.get('frontendSqlApplied') is True and
+            terminal.get('frontendSqlReplayed') is False and terminal.get('frontendSessionClosed') is True and
+            all(terminal.get(key) == descriptor[key] for key in certification.REPLACEMENT_RELEASE_HASHES),
+            'P2_PROFILED_INTERRUPTED_ORIGINAL_REPLACEMENT_RECEIPT_REQUIRED')
+    return base64.b64decode(initial['originalReleaseReceipt'], validate=True)
 
 
 def _requested_frontier(selection, results):
@@ -130,7 +156,7 @@ def _requested_frontier(selection, results):
 def validate_profiled_interrupted_packet(initial):
     """Check the exact source-owned wire without reading credentials or host state."""
     expected = certification._profiled_context()
-    require(type(initial) is dict and set(initial) == INITIAL_FIELDS and initial['mode'] == MODE and
+    require(type(initial) is dict and set(initial) in (INITIAL_FIELDS, INITIAL_FIELDS | {'originalReleaseReceipt'}) and initial['mode'] == MODE and
             initial['environment'] == 'staging' and migrate.source_commit(initial['sourceCommit']) and
             _action(initial['restorationActionId']) and initial['recoveryActionId'] == initial['restorationActionId'] and
             all(_digest(initial[key]) for key in ('candidateSha256','targetSha256','inventorySha256','sourceClosureSha256',
@@ -150,14 +176,22 @@ def validate_profiled_interrupted_packet(initial):
             len({candidate['releaseId'],initial['restorationActionId'],selection['originalCertificationActionId'],selection['originalRecoveryActionId']}) == 4 and
             migrate.source_commit(selection['originalOperatorSourceCommit']) and selection['priorGatewayReference'] == initial['priorGatewayReference'],
             'P2_PROFILED_INTERRUPTED_SELECTION_REQUIRED')
-    require(set(plan) == PLAN_FIELDS and plan['mode'] == MODE and plan['environment'] == 'staging' and
+    original = _raw_original(initial, expected)
+    pins = known.replacement_release_pins(original, expected)
+    _replacement_original_receipt(initial, original, expected)
+    inventory = initial['inventory']
+    require(('replacementRelease' in inventory) == bool(pins) and
+            (not pins or 'historicalLogins' not in inventory and
+                _canonical(inventory['replacementRelease']) == _canonical(pins['replacementRelease'])),
+            'P2_PROFILED_INTERRUPTED_REPLACEMENT_INVENTORY_REQUIRED')
+    require(set(plan) == PLAN_FIELDS | set(pins) and plan['mode'] == MODE and plan['environment'] == 'staging' and
+            all(_canonical(plan[key]) == _canonical(value) for key, value in pins.items()) and
             all(_canonical(plan[key]) == _canonical(initial[key]) for key in IDENTITY_FIELDS) and
             plan['originalReleaseId'] == candidate['releaseId'] and plan['sourceCommit'] == candidate['sources']['frontend']['commit'] and
             plan['operatorSourceCommit'] == initial['sourceCommit'] and plan['runtimeStages'] == 5 and
             type(plan['runtimeReplacements']) is int and plan['runtimeReplacements'] == 1 and
             plan['maximumSeconds'] == 900 and all(plan[key] is False for key in FALSE_FIELDS) and
             plan['requestedFrontier'] == _requested_frontier(selection, initial['results']), 'P2_PROFILED_INTERRUPTED_REVIEWED_PLAN_REQUIRED')
-    original = _raw_original(initial, expected)
     require(original['mode'] == 'known-ack-recovery' and original['environment'] == 'staging' and original['startState'] == 'already-closed' and
             original['sourceCommit'] == plan['sourceCommit'] and original['operatorSourceCommit'] == selection['originalOperatorSourceCommit'] and
             original['certificationActionId'] == selection['originalCertificationActionId'] and original['originalReleaseId'] == candidate['releaseId'] and
@@ -179,7 +213,8 @@ def validate_profiled_interrupted_packet(initial):
         'originalReleaseId':candidate['releaseId'],'sourceCommit':plan['sourceCommit'],'candidateSha256':initial['candidateSha256'],
         'targetSha256':initial['targetSha256'],'apiJobSha256':api,**migrate.contract_identity(candidate),
         'configurationCanonicalSha256':_sha(_canonical(hashes)), 'nativePlan':native,'initialEpoch':str(int(native['initialEpoch'])+2),
-        'operationId':initial['operationId'],'reconciliationSha256':selection['causalReceiptSha256']['settlement.json']}
+        'operationId':initial['operationId'],'reconciliationSha256':selection['causalReceiptSha256']['settlement.json'],
+        **pins}
     require(plan['frontendPlan'] == {**frontend,'planSha256':_sha(_canonical(frontend))},
             'P2_PROFILED_INTERRUPTED_FRESH_FRONTEND_PLAN_CHANGED')
     return plan, original
@@ -202,6 +237,8 @@ def prepare_profiled_interrupted_input(initial, source):
     selected, jobs, runtime_plan, _ = runtime.make_plan(bundle, configuration, source / 'ops/platform/compose.yaml', expected_profile=expected)
     inventory = initial['inventory']
     job = jobs['frontend']['job']
+    target = job['target']
+    replacement = 'replacementRelease' in original
     native = original['nativePlan']
     producer = inventory.get('runtimeProducerSha256')
     producers = [row for row in inventory['producers'] if row['producerSha256'] == producer]
@@ -209,11 +246,13 @@ def prepare_profiled_interrupted_input(initial, source):
     require(selected == initial['candidate'] and _sha(migrate.read_input(bundle,'release.candidate.json')) == initial['candidateSha256'] and
             migrate.profiled_current_job_hashes(bundle) == initial['apiJobSha256'] and
             job == initial['frontendJob'] and decode_qualification_target_json(jobs['frontend']['schema'],'carrier') == initial['frontendBaseline'] and
-            job['target']['approvedPendingTags'] == [] and job['target']['allowEmptyBootstrap'] is False and
-            certification.frontend_target_sha256(job['target']) == initial['targetSha256'] and
+            (type(target['approvedPendingTags']) is list and bool(target['approvedPendingTags']) and target['allowEmptyBootstrap'] is True
+             if replacement else target['approvedPendingTags'] == [] and target['allowEmptyBootstrap'] is False) and
+            certification.frontend_target_sha256(target) == initial['targetSha256'] and
             _sha(certification._profiled_compact(inventory)) == initial['inventorySha256'] and inventory['owner'] == initial['owner'] == native['owner'] and
             len(producers) == 1 and native['producer'] == {'producerSha256':producer,'role':producers[0]['role']} and
-            native['producer']['role']['name'] == job['target']['runtimeRole'] and restoration['providerIngress'] == 'keep-retired' and
+            native['producer']['role']['name'] == target['runtimeRole'] and
+            restoration['providerIngress'] == ('replacement-closed' if replacement else 'keep-retired') and
             all(restoration.get(key) is False for key in ('newWork','recovery','nativeSchedulesEnabled')) and
             inventory['targetSha256'] == initial['targetSha256'] and inventory['admissionMode'] == 'existing' and
             runtime_plan['hostMachineId'] == initial['hostMachineId'] and staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
@@ -268,7 +307,7 @@ def _read_receipt(value):
 
 def _guard_context(initial, armed, source):
     from p2_release_supervisor import require_profiled_interrupted_guard_arm
-    review = {key: initial[key] for key in INITIAL_FIELDS}
+    review = profiled_interrupted_review(initial)
     plan, _, selected, _ = prepare_profiled_interrupted_input(review, source)
     require_profiled_interrupted_guard_arm(initial, armed)
     return plan, selected
@@ -352,7 +391,8 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
         self.failure_lock = threading.RLock()
         self.authority = self.reader = self.armed_probe = self.runtime_transition = self.prepared_terminal = None
         initial = self.initial
-        require(set(initial) == INITIAL_FIELDS | PRIVATE_FIELDS | GUARD_FIELDS and
+        review = profiled_interrupted_review(initial)
+        require(set(initial) == set(review) | PRIVATE_FIELDS | GUARD_FIELDS and
                 initial['confirmation'] == 'staging/' + self.action_id() and
                 self.shared_lock_fd is not None and self.shared_lock_fd == initial['_guardLockDescriptor'] and
                 self.safety_write is not None and self.guard_read is not None and os.geteuid() == 0 and
@@ -360,7 +400,6 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
                 'P2_PROFILED_INTERRUPTED_FIXED_GUARDED_START_REQUIRED')
         self.start_parent_watch()
         self.source = Path(__file__).resolve().parents[3]
-        review = {key: initial[key] for key in INITIAL_FIELDS}
         self.plan, _, self.selected, self.jobs = prepare_profiled_interrupted_input(review, self.source)
         self.bundle, self.configuration, self.results = (Path(initial[key]) for key in ('bundle', 'configuration', 'results'))
         credentials = initial['credentials']
@@ -427,6 +466,11 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
         pins.extend((cert_directory / 'fault', name, pin) for name, pin in retained['originalFaultReceiptSha256'].items())
         pins.extend((cert_directory if name == 'known-ack-replacement-joined.json' else replacement / 'runtime-known-ack',
                      name, pin) for name, pin in auxiliary['completion'].items())
+        if 'originalReplacementRelease' in auxiliary:
+            directory, original_pins = interrupted.profiled_original_replacement_paths(initial, self.selected)
+            require(original_pins == auxiliary['originalReplacementRelease'],
+                    'P2_PROFILED_INTERRUPTED_ORIGINAL_REPLACEMENT_RECEIPT_CHANGED')
+            pins.extend((directory, name, pin) for name, pin in original_pins.items())
         for directory, name, pin in pins:
             path = directory / name
             if pin is None:
@@ -460,13 +504,16 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
                 'P2_PROFILED_INTERRUPTED_FRESH_SCOPE_REQUIRED')
         self.scope.verify()
         self.verify_original()
+        if 'replacementRelease' in self.plan:
+            self.scope.require_replacement_original(_replacement_original_receipt(
+                self.initial, self.plan, self.certification_profile()))
         self.reader.snapshot()
         self.require_native_off()
 
     def _accept_guard_arm(self, probe):
         from p2_release_supervisor import require_profiled_interrupted_guard_arm
         self.safety({'operation': 'armed', 'probe': probe})
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + (45 if 'replacementRelease' in self.plan else 10)
         while True:
             self.check()
             try:
@@ -484,10 +531,11 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
         frontend_plan = self.plan['frontendPlan']
         job = self.jobs['frontend']
         inventory = self.initial['inventory']
+        boundary = 'replacementRelease' if 'replacementRelease' in frontend_plan else 'historicalLogins'
         require(type(probe) is dict and probe.get('receipt') == receipt and probe.get('plan') == frontend_plan and
                 probe.get('owner') == self.initial['owner'] and probe.get('job') == job['job'] and
                 probe.get('baseline') == decode_qualification_target_json(job['schema'], 'carrier') and
-                probe.get('historicalLogins') == inventory['historicalLogins'] and probe.get('producers') == inventory['producers'],
+                _canonical(probe.get(boundary)) == _canonical(inventory[boundary]) and probe.get('producers') == inventory['producers'],
                 'P2_PROFILED_INTERRUPTED_FRONTEND_RECEIPT_REQUIRED')
         self.armed_probe = copy.deepcopy(probe)
         self.observer = self.observer_type(
@@ -500,6 +548,7 @@ class P2ProfiledInterruptedKnownAckBroker(Broker):
             self.lock_fd, LOCK, self.check, receipt, self.initial['candidateSha256'],
             release=self.selected, jobs=self.jobs, configuration_sha256=self.initial['configurationSha256'],
             certification_plan=frontend_plan, expected_profile=self.certification_profile(), physical_observer=self.observer,
+            original_replacement_receipt=_replacement_original_receipt(self.initial, frontend_plan, self.certification_profile()),
         )
         self._accept_guard_arm(probe)
         self.reader = _ProfiledFreshSettledReader(self, self.scope, self.retained)
@@ -658,9 +707,10 @@ def main():
     source = Path(__file__).resolve().parents[3]
     if guarded:
         from p2_release_supervisor import PROFILED_INTERRUPTED_LAYOUT, supervise
-        require(set(initial) == INITIAL_FIELDS | PRIVATE_FIELDS and initial['mode'] == MODE,
+        review = profiled_interrupted_review(initial)
+        require(set(initial) == set(review) | PRIVATE_FIELDS and initial['mode'] == MODE,
                 'P2_PROFILED_INTERRUPTED_FIXED_PRIVATE_PACKET_REQUIRED')
-        validate_profiled_interrupted_packet({key: initial[key] for key in INITIAL_FIELDS})
+        validate_profiled_interrupted_packet(review)
         supervise(initial, broker_type=P2ProfiledInterruptedKnownAckBroker,
                   observer_type=certification.P2CertificationPhysicalObserver, observer_source=CERTIFICATION_OBSERVER,
                   layout=PROFILED_INTERRUPTED_LAYOUT, native_containment=contain_profiled_interrupted_native,

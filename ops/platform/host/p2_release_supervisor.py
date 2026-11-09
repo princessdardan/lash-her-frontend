@@ -176,7 +176,8 @@ def _profiled_interrupted_arm_record(initial, probe):
             'restorationActionId': action_id(initial), 'operatorSourceCommit': initial['sourceCommit'],
             'sourceCommit': app_source, 'candidateSha256': initial['candidateSha256'],
             'targetSha256': initial['targetSha256'], 'reviewedPlanSha256': _canonical_sha(plan),
-            'frontendPlanSha256': frontend['planSha256'], 'probeSha256': _canonical_sha(probe)}
+            'frontendPlanSha256': frontend['planSha256'], 'probeSha256': _canonical_sha(probe),
+            **({'replacementRelease': frontend['replacementRelease']} if 'replacementRelease' in frontend else {})}
 
 
 def _profiled_interrupted_arm_ready(record, raw):
@@ -225,6 +226,10 @@ def require_profiled_interrupted_frontend_closed(initial, probe):
     fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'releaseId', 'sourceCommit',
               'targetSha256', 'marker', 'backendPid', 'backendStart', 'admission', 'journalSha256',
               'witnessSha256', 'backendAbsent', 'migrationLockReleased', 'nonceLockReleased'}
+    if 'replacementRelease' in plan:
+        from p2_certification_parent import REPLACEMENT_PROOF_FIELDS, require_certification_replacement_proof
+        fields.update(REPLACEMENT_PROOF_FIELDS)
+        require_certification_replacement_proof(value, plan['replacementRelease'])
     migrate.require_profile(expected, value)
     require(type(value.get('version')) is int and value['version'] == 2 and set(value) == fields and
             value['status'] == 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED' and value['environment'] == 'staging' and
@@ -233,8 +238,8 @@ def require_profiled_interrupted_frontend_closed(initial, probe):
             value['targetSha256'] == plan['targetSha256'] and value['journalSha256'] == receipt['journalSha256'] and
             value['witnessSha256'] == receipt['witnessSha256'] and
             all(value[key] is True for key in ('backendAbsent', 'migrationLockReleased', 'nonceLockReleased')) and
-            value['admission'] == {'epoch': plan['initialEpoch'], 'newWork': False, 'recovery': False,
-                                   'active': 0, 'uncertain': 0},
+            _canonical_sha(value['admission']) == _canonical_sha({'epoch': plan['initialEpoch'], 'newWork': False, 'recovery': False,
+                                                                 'active': 0, 'uncertain': 0}),
             'P2_PROFILED_INTERRUPTED_FRONTEND_SESSION_CLOSE_REQUIRED')
     return value
 
@@ -242,13 +247,22 @@ def require_profiled_interrupted_frontend_closed(initial, probe):
 def _validate_profiled_interrupted_arm(initial, probe, job_info):
     from qualification_target_profile import decode_qualification_target_json
     expected = _guard_profile(initial)
+    plan, frontend = initial['reviewedPlan'], initial['reviewedPlan']['frontendPlan']
+    replacement = 'replacementRelease' in frontend
+    boundary = 'replacementRelease' if replacement else 'historicalLogins'
     require(type(probe) is dict and set(probe) == {'version', 'qualificationTargetProfile', 'marker',
-            'backendPid', 'backendStart', 'job', 'baseline', 'owner', 'producers', 'historicalLogins',
+            'backendPid', 'backendStart', 'job', 'baseline', 'owner', 'producers', boundary,
             'plan', 'receipt'}, 'P2_PROFILED_INTERRUPTED_GUARD_PROBE_REQUIRED')
-    plan, frontend, receipt = initial['reviewedPlan'], initial['reviewedPlan']['frontendPlan'], probe['receipt']
+    receipt = probe['receipt']
     job = job_info['job']
     migrate.require_profile(expected, probe, probe['job'], probe['job'].get('target'), probe['plan'], receipt,
-                            receipt.get('target'), probe['historicalLogins'], probe['historicalLogins'].get('target'))
+                            receipt.get('target'))
+    from p2_certification_parent import require_certification_replacement_lineage
+    require_certification_replacement_lineage(frontend, plan)
+    if replacement:
+        _require_replacement_certification_probe(frontend, probe, job, expected)
+    else:
+        migrate.require_profile(expected, probe[boundary], probe[boundary].get('target'))
     app_source = initial['candidate']['sources']['frontend']['commit']
     closed = {'epoch': frontend['initialEpoch'], 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
     require(type(probe['version']) is int and probe['version'] == 2 and
@@ -257,7 +271,7 @@ def _validate_profiled_interrupted_arm(initial, probe, job_info):
                 decode_qualification_target_json(job_info['schema'], 'carrier')) and
             _canonical_sha(probe['plan']) == _canonical_sha(frontend) and
             probe['owner'] == initial['owner'] and probe['producers'] == initial['inventory']['producers'] and
-            probe['historicalLogins'] == initial['inventory']['historicalLogins'] and
+            _canonical_sha(probe[boundary]) == _canonical_sha(initial['inventory'][boundary]) and
             plan['sourceCommit'] == frontend['sourceCommit'] == job['sourceCommit'] == app_source and
             plan['operatorSourceCommit'] == initial['sourceCommit'] and
             type(probe['marker']) is str and re.fullmatch(r'[a-f0-9]{64}', probe['marker']) and
@@ -342,14 +356,7 @@ def _validate_profiled_certification_arm(initial, probe, job_info):
     receipt, job = probe['receipt'], job_info['job']
     migrate.require_profile(expected, probe, probe['job'], probe['job'].get('target'), probe['plan'], receipt, receipt.get('target'))
     if replacement:
-        from p2_certification_parent import require_certification_replacement_proof, require_certification_replacement_release
-        require(plan['mode'] != 'known-ack-recovery' and _canonical_sha(probe[boundary]) == _canonical_sha(plan[boundary]) and
-                type(probe['backendStart']) is str and
-                re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z', probe['backendStart']) and
-                type(job['target'].get('approvedPendingTags')) is list and bool(job['target']['approvedPendingTags']) and
-                job['target'].get('allowEmptyBootstrap') is True, 'P2_PROFILED_CERTIFICATION_REPLACEMENT_GUARD_REQUIRED')
-        require_certification_replacement_release(plan[boundary], expected)
-        require_certification_replacement_proof(receipt, plan[boundary])
+        _require_replacement_certification_probe(plan, probe, job, expected)
     else:
         migrate.require_profile(expected, probe[boundary], probe[boundary].get('target'))
     inventory = initial['inventory']
@@ -373,16 +380,29 @@ def _validate_profiled_certification_arm(initial, probe, job_info):
     migrate.require_contract_identity(initial['candidate'], receipt)
 
 
+def _require_replacement_certification_probe(plan, probe, job, expected):
+    from p2_certification_parent import require_certification_replacement_proof, require_certification_replacement_release
+    replacement = require_certification_replacement_release(plan['replacementRelease'], expected)
+    require(_canonical_sha(probe['replacementRelease']) == _canonical_sha(replacement) and
+            type(probe['backendStart']) is str and re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z', probe['backendStart']) and
+            type(job['target'].get('approvedPendingTags')) is list and bool(job['target']['approvedPendingTags']) and
+            job['target'].get('allowEmptyBootstrap') is True, 'P2_PROFILED_CERTIFICATION_REPLACEMENT_GUARD_REQUIRED')
+    require_certification_replacement_proof(probe['receipt'], replacement)
+
+
 def _observe_profiled_replacement_certification(initial, probe, source, operation):
     from p2_certification_parent import P2CertificationPhysicalObserver
-    require(operation in ('verify-schema', 'verify-closed') and 'replacementRelease' in initial['certificationPlan'],
+    interrupted = fixed_layout(initial) == PROFILED_INTERRUPTED_LAYOUT
+    plan = initial['reviewedPlan']['frontendPlan'] if interrupted else initial['certificationPlan']
+    require(operation in ('verify-schema', 'verify-closed') and 'replacementRelease' in plan,
             'P2_PROFILED_CERTIFICATION_REPLACEMENT_GUARD_REQUIRED')
     verify_guard_boundary(initial, source)
-    directory = _profiled_certification_directory(initial)
+    directory = _profiled_interrupted_directory(initial) if interrupted else _profiled_certification_directory(initial)
     program = private_observer_program(initial, directory / ('guard-replacement-' + operation))
     observer = P2CertificationPhysicalObserver(initial['candidate'], probe, source,
         initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=program,
-        program_sha256=initial['sourceSha256'][CERTIFICATION_OBSERVER], expected_profile=_guard_profile(initial))
+        program_sha256=initial['sourceSha256'][CERTIFICATION_OBSERVER], expected_profile=_guard_profile(initial),
+        interrupted=interrupted)
     observed = observer.probe(operation)
     verify_guard_boundary(initial, source)
     return observed
@@ -1260,17 +1280,13 @@ def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None,
 
 
 def _require_profiled_certification_terminal(initial, raw, committed, *, source=None):
+    from p2_certification_parent import require_certification_replacement_lineage
     from qualification_target_profile import decode_qualification_target_json
     expected = _guard_profile(initial)
     terminal = decode_qualification_target_json(raw, 'carrier')
     migrate.require_profile(expected, terminal)
     plan = initial['certificationPlan']
-    if 'replacementRelease' in plan:
-        require(all(_canonical_sha(terminal.get(key)) == _canonical_sha(plan[key])
-                    for key in ('replacementRelease', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256')),
-                'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REFUSED')
-    else:
-        require('replacementRelease' not in terminal, 'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REFUSED')
+    require_certification_replacement_lineage(plan, terminal)
     require(migrate.file_hash(raw) == committed and type(terminal.get('version')) is int and terminal['version'] == 2 and
             terminal.get('status') == PROFILED_CERTIFICATION_LAYOUT['terminalStatus'] and
             all(terminal.get(key) == plan[key] for key in ('environment', 'certificationActionId', 'originalReleaseId',
@@ -1341,6 +1357,7 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
         runtime_outcome = decode_qualification_target_json(retained, 'carrier')
         migrate.require_profile(expected, runtime_outcome)
         migrate.require_contract_identity(initial['candidate'], runtime_outcome)
+        require_certification_replacement_lineage(plan, runtime_outcome)
         known = terminal['knownAckLoss']
         require(joined == retained and terminal.get('knownAckRuntimeReceiptSha256') == migrate.file_hash(retained) and
                 terminal.get('runtimeReplaced') is True and known['replacementCompletedClosed'] is True and
@@ -1359,10 +1376,12 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
 
 
 def _require_profiled_interrupted_terminal(initial, raw, committed):
+    from p2_certification_parent import require_certification_replacement_lineage
     from qualification_target_profile import decode_qualification_target_json
     expected = _guard_profile(initial)
     terminal = decode_qualification_target_json(raw, 'carrier')
     migrate.require_profile(expected, terminal)
+    require_certification_replacement_lineage(initial.get('reviewedPlan', {}).get('frontendPlan', {}), terminal)
     directory = _profiled_interrupted_directory(initial)
     retained = migrate.read_input(directory / 'runtime-interrupted',
                                   'profiled-interrupted-runtime-outcome.json')
@@ -1526,7 +1545,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
         try:
             verified_plan, _original, verified_selected, verified_interrupted_jobs = \
                 interrupted_parent.prepare_profiled_interrupted_input(
-                    {key: initial[key] for key in interrupted_parent.INITIAL_FIELDS}, source)
+                    interrupted_parent.profiled_interrupted_review(initial), source)
             require(verified_plan == initial['reviewedPlan'] and verified_selected == selected and
                     verified_interrupted_jobs == verified_jobs,
                     'P2_PROFILED_INTERRUPTED_GUARD_INPUT_REQUIRED')
@@ -1586,6 +1605,8 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     os.close(safety_write); os.close(health_read)
     armed = None
     replacement_certification = profiled_certification and 'replacementRelease' in initial['certificationPlan']
+    replacement_interrupted = profiled_interrupted and 'replacementRelease' in initial['reviewedPlan']['frontendPlan']
+    replacement_guarded = replacement_certification or replacement_interrupted
     try:
         def arm(probe):
             nonlocal armed
@@ -1601,6 +1622,8 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             if profiled_interrupted:
                 verify_guard_boundary(initial, source)
                 _validate_profiled_interrupted_arm(initial, probe, verified_jobs['frontend'])
+                if replacement_interrupted:
+                    return observer_worker.submit(arm_replacement, probe)
                 armed = probe
                 _retain_profiled_interrupted_arm(initial, probe)
                 return
@@ -1612,11 +1635,12 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             nonlocal armed
             _observe_profiled_replacement_certification(initial, probe, source, 'verify-schema')
             armed = probe
-            _retain_profiled_certification_arm(initial, probe)
+            retain_arm = _retain_profiled_interrupted_arm if replacement_interrupted else _retain_profiled_certification_arm
+            retain_arm(initial, probe)
 
-        with (ThreadPoolExecutor(max_workers=1) if replacement_certification else contextlib.nullcontext()) as observer_worker:
+        with (ThreadPoolExecutor(max_workers=1) if replacement_guarded else contextlib.nullcontext()) as observer_worker:
             committed = (watch_broker(child, safety_read, health_write, arm, profiled_certification=True,
-                                      async_arm=replacement_certification)
+                                      async_arm=replacement_guarded)
                          if profiled_certification or profiled_interrupted else
                          watch_broker(child, safety_read, health_write, arm))
         result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
@@ -1644,7 +1668,11 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             require(not members(child), 'P2_PROFILED_INTERRUPTED_TERMINAL_CHILD_REMAINS')
             verify_guard_boundary(initial, source)
             require_profiled_interrupted_guard_arm(initial, armed)
-            require_profiled_interrupted_frontend_closed(initial, armed)
+            closed = require_profiled_interrupted_frontend_closed(initial, armed)
+            if replacement_interrupted:
+                fresh = _observe_profiled_replacement_certification(initial, armed, source, 'verify-closed')
+                require(_canonical_sha(fresh) == _canonical_sha(closed), 'P2_PROFILED_INTERRUPTED_REPLACEMENT_PHYSICAL_CHANGED')
+                _profiled_certification_containers(remove=False)
             terminal = _require_profiled_interrupted_terminal(initial, result, committed)
             _require_profiled_interrupted_gateway_after_reap(initial, source, terminal)
             return

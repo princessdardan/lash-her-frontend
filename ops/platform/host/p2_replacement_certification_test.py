@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import subprocess
 import sys
 import threading
 import unittest
@@ -103,6 +104,7 @@ class ReplacementCertificationTests(unittest.TestCase):
         job = {**self.job, **profiled, 'version': 2, 'target': {**self.job['target'], **profiled}}
         plan = self.cert_plan
         plan.update(**profiled, version=2)
+        plan['nativePlan'].update(**profiled, version=2)
         receipt = {**profiled, 'version': 2, 'status': 'P2_CERTIFICATION_DATABASE_CURRENT', 'service': 'frontend',
             'releaseId': self.release_id, 'sourceCommit': self.commit, 'contractPhase': self.candidate['contractPhase'],
             'phase2ContractManifestSha256': self.candidate['phase2ContractManifestSha256'],
@@ -128,8 +130,131 @@ class ReplacementCertificationTests(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 supervisor._validate_profiled_certification_arm(self.cert_initial,
                     {**probe, 'receipt': {**probe['receipt'], **changed}}, job_info)
-        with patch.dict(self.cert_plan, mode='known-ack-recovery'), self.assertRaises(ValueError):
+        with patch.dict(self.cert_plan, mode='known-ack-recovery'):
             supervisor._validate_profiled_certification_arm(self.cert_initial, probe, job_info)
+        current = {**self.cert_initial, 'certificationPlan': {key: value for key, value in self.cert_plan.items() if key != 'replacementRelease'}}
+        with self.assertRaises(ValueError):
+            supervisor._validate_profiled_certification_arm(current, probe, job_info)
+
+    def interrupted_probe(self):
+        probe, info = self.guard_probe()
+        frontend = {**self.cert_plan, 'mode': supervisor.PROFILED_INTERRUPTED_MODE, 'startState': 'already-closed'}
+        frontend['planSha256'] = certification._profiled_plan_hash(frontend)
+        probe['plan'] = frontend
+        probe['receipt'].update(planSha256=frontend['planSha256'], journalSha256='4' * 64, witnessSha256='5' * 64)
+        operator = 'd' * 40
+        reviewed = {'sourceCommit': self.commit, 'operatorSourceCommit': operator, 'frontendPlan': frontend,
+                    **{key: frontend[key] for key in certification.REPLACEMENT_LINEAGE_FIELDS}}
+        initial = {**self.cert_initial, '_guardLayout': supervisor.PROFILED_INTERRUPTED_LAYOUT,
+                   'mode': supervisor.PROFILED_INTERRUPTED_MODE, 'sourceCommit': operator,
+                   'restorationActionId': frontend['certificationActionId'], 'reviewedPlan': reviewed}
+        return initial, probe, info
+
+    def test_interrupted_guard_requires_replacement_probe_and_original_review_lineage(self):
+        initial, probe, info = self.interrupted_probe()
+        supervisor._validate_profiled_interrupted_arm(initial, probe, info)
+        bad = {**initial['reviewedPlan'], 'originalReleaseReceiptSha256': '9' * 64}
+        with self.assertRaisesRegex(ValueError, 'REPLACEMENT_LINEAGE_CHANGED'):
+            supervisor._validate_profiled_interrupted_arm({**initial, 'reviewedPlan': bad}, probe, info)
+        history = {key: value for key, value in probe.items() if key != 'replacementRelease'}
+        with self.assertRaisesRegex(ValueError, 'GUARD_PROBE_REQUIRED'):
+            supervisor._validate_profiled_interrupted_arm(initial, {**history, 'historicalLogins': {}}, info)
+        record = supervisor._profiled_interrupted_arm_record(initial, probe)
+        self.assertEqual(record['replacementRelease'], self.descriptor)
+        self.assertEqual(record['operatorSourceCommit'], initial['sourceCommit'])
+        self.assertEqual(record['sourceCommit'], self.commit)
+
+    def test_interrupted_closed_and_runtime_receipts_preserve_replacement_provenance(self):
+        initial, probe, _ = self.interrupted_probe()
+        directory = self.results / (supervisor.PROFILED_INTERRUPTED_LAYOUT['receiptPrefix'] + initial['restorationActionId'])
+        directory.mkdir(mode=0o700)
+        closed = {'version': 2, 'qualificationTargetProfile': replacement.PROFILE,
+                  'status': 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED', 'environment': 'staging',
+                  'releaseId': self.release_id, 'sourceCommit': self.commit, 'targetSha256': self.target_sha,
+                  **{key: probe[key] for key in ('marker', 'backendPid', 'backendStart')},
+                  **{key: probe['receipt'][key] for key in ('admission', 'journalSha256', 'witnessSha256',
+                      *certification.REPLACEMENT_PROOF_FIELDS)},
+                  'backendAbsent': True, 'migrationLockReleased': True, 'nonceLockReleased': True}
+        migrate.write_json(directory, supervisor.PROFILED_INTERRUPTED_FRONTEND_CLOSED, closed)
+        self.assertEqual(supervisor.require_profiled_interrupted_frontend_closed(initial, probe), closed)
+        (directory / supervisor.PROFILED_INTERRUPTED_FRONTEND_CLOSED).write_text(
+            json.dumps({**closed, 'predecessorRuntimeRoleAbsent': False}))
+        with self.assertRaisesRegex(ValueError, 'REPLACEMENT_BOUNDARY_REQUIRED'):
+            supervisor.require_profiled_interrupted_frontend_closed(initial, probe)
+
+        plan = initial['reviewedPlan']['frontendPlan']
+        lineage = {key: plan[key] for key in certification.REPLACEMENT_LINEAGE_FIELDS}
+        certification.require_certification_replacement_lineage(plan, lineage)
+        for key in lineage:
+            altered = {name: value for name, value in lineage.items() if name != key}
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'REPLACEMENT_LINEAGE_CHANGED'):
+                certification.require_certification_replacement_lineage(plan, altered)
+
+    def test_interrupted_observer_dispatches_only_fixed_replacement_readback(self):
+        _, probe, _ = self.interrupted_probe()
+        program, core = (self.root / relative for relative in (certification.OBSERVER, certification.CORE))
+        program.parent.mkdir(parents=True, exist_ok=True)
+        program.write_bytes(b'owned observer\n')
+        core.write_bytes(b'owned core\n')
+        expected = {'version': 2, 'qualificationTargetProfile': replacement.PROFILE,
+                    'status': 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED', 'environment': 'staging',
+                    'releaseId': self.release_id, 'sourceCommit': self.commit, 'targetSha256': self.target_sha,
+                    **{key: probe[key] for key in ('marker', 'backendPid', 'backendStart')},
+                    **{key: probe['receipt'][key] for key in ('admission', 'journalSha256', 'witnessSha256',
+                       *certification.REPLACEMENT_PROOF_FIELDS)}}
+        candidate = {**self.candidate, 'artifacts': {'frontendMigration': {'image': self.image}}}
+        args = (candidate, probe, self.root, 'owned-fixture')
+        options = {'program': program, 'program_sha256': migrate.file_hash(program.read_bytes()),
+                   'expected_profile': replacement.PROFILE}
+
+        def command(argv, **kwargs):
+            if argv[1] == 'run':
+                self.assertEqual(argv[-2:], [certification.OBSERVER, '--profiled-replacement-known-ack-interrupted'])
+                self.assertEqual(json.loads(kwargs['input']), {**probe, 'operation': 'verify-schema'})
+                return subprocess.CompletedProcess(argv, 0, json.dumps(expected), '')
+            self.assertEqual(argv[1:3], ['rm', '--force'])
+            return subprocess.CompletedProcess(argv, 0, '', '')
+
+        with (patch.object(migrate, 'candidate_profile'), patch.object(migrate, 'require_job_profile'),
+              patch.object(certification, '_core', core.read_bytes()), patch.object(certification, '_cache_core', return_value=core),
+              patch.object(certification.runtime, 'command', return_value=''),
+              patch.object(certification.subprocess, 'run', side_effect=command) as process):
+            with self.assertRaisesRegex(ValueError, 'PHYSICAL_REQUEST_REQUIRED'):
+                certification.P2CertificationPhysicalObserver(*args, **options)
+            observer = certification.P2CertificationPhysicalObserver(*args, **options, interrupted=True)
+            with self.assertRaisesRegex(ValueError, 'READ_ONLY_OBSERVER_REQUIRED'):
+                observer.probe('fence')
+            self.assertFalse(process.called)
+            self.assertEqual(observer.probe('verify-schema'), expected)
+            expected['admission'] = {**expected['admission'], 'uncertain': 1}
+            with self.assertRaisesRegex(ValueError, 'INITIAL_CLOSED_BOUNDARY_REQUIRED'):
+                observer.probe('verify-schema')
+
+    def test_replacement_known_ack_emergency_fence_preserves_uncertainty(self):
+        probe, _ = self.guard_probe()
+        with patch.dict(self.cert_plan, mode='known-ack-recovery'):
+            directory = self.results / ('p2-profiled-current-certification-' + self.cert_plan['certificationActionId'])
+            directory.mkdir(mode=0o700)
+            initial = {**self.cert_initial, 'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-fixture'},
+                       'candidate': {**self.candidate, 'artifacts': {'frontendMigration': {'image': self.image}}}}
+            value = {'version': 2, 'qualificationTargetProfile': replacement.PROFILE,
+                     'status': 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED', 'environment': 'staging',
+                     'releaseId': self.release_id,
+                     **{key: self.cert_plan[key] for key in ('sourceCommit', 'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256')},
+                     **{key: probe['receipt'][key] for key in certification.REPLACEMENT_PROOF_FIELDS},
+                     'epoch': '3', 'admissionChanged': True, 'frontendAdmissionClosed': True, 'sqlReplayed': False,
+                     'releaseAccepted': False,
+                     'knownAckLedger': {'active': 0, 'uncertain': 1, 'closedZero': False}}
+            raw = json.dumps(value) + '\n'
+            with (patch.object(certification, '_profiled_guard_context', return_value=replacement.PROFILE),
+                  patch.object(certification, 'private_observer_program', return_value=self.root / 'owned-program'),
+                  patch.object(certification, '_cache_core', return_value=self.root / 'owned-core'),
+                  patch.object(certification.runtime, 'command', return_value=''),
+                  patch.object(certification.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, raw, '')) as process):
+                observed = certification.contain_profiled_certification_frontend(initial, probe, self.root)
+            self.assertEqual(observed, {'frontendAdmissionClosed': True, 'frontendCloseAttempted': True})
+            self.assertIn('--profiled-replacement-guard-fence', process.call_args_list[0].args[0])
+            self.assertEqual((directory / 'p2-known-ack-guard-frontend-ledger.json').read_bytes(), raw.encode())
 
     def test_held_scope_exposes_only_the_original_rejoined_terminal_bytes(self):
         probe, info = self.guard_probe()
@@ -168,12 +293,6 @@ class ReplacementCertificationTests(unittest.TestCase):
         fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        probe, _ = self.guard_probe()
-        directory = self.results / ('p2-profiled-current-certification-' + self.cert_plan['certificationActionId'])
-        directory.mkdir(mode=0o700)
-        initial = {**self.cert_initial, '_guardLockDescriptor': fd,
-                   'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-fixture'},
-                   'sourceSha256': {certification.OBSERVER: 'c' * 64}}
         phases = []
 
         def readback(operation):
@@ -187,10 +306,23 @@ class ReplacementCertificationTests(unittest.TestCase):
               patch.object(supervisor, 'private_observer_program', return_value=self.root / 'owned-observer'),
               patch.object(certification, 'P2CertificationPhysicalObserver') as observer):
             observer.return_value.probe.side_effect = readback
-            for operation in ('verify-schema', 'verify-closed'):
-                self.assertEqual(supervisor._observe_profiled_replacement_certification(initial, probe, self.root, operation)
-                                 ['replacementRelease'], self.descriptor)
-        self.assertEqual(phases, ['verify-schema', 'verify-closed'])
+            for interrupted in (False, True):
+                with self.subTest(interrupted=interrupted):
+                    if interrupted:
+                        initial, probe, _ = self.interrupted_probe()
+                    else:
+                        probe, _ = self.guard_probe()
+                        initial = self.cert_initial
+                    layout = supervisor.fixed_layout(initial)
+                    (self.results / (layout['receiptPrefix'] + supervisor.action_id(initial))).mkdir(mode=0o700)
+                    initial = {**initial, '_guardLockDescriptor': fd,
+                               'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-fixture'},
+                               'sourceSha256': {certification.OBSERVER: 'c' * 64}}
+                    for operation in ('verify-schema', 'verify-closed'):
+                        self.assertEqual(supervisor._observe_profiled_replacement_certification(initial, probe, self.root, operation)
+                                         ['replacementRelease'], self.descriptor)
+                        self.assertIs(observer.call_args.kwargs['interrupted'], interrupted)
+        self.assertEqual(phases, ['verify-schema', 'verify-closed'] * 2)
 
 
 if __name__ == '__main__':

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { frontendCandidateSurfaces } from "./frontend-release-inventory.mjs";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-role-preparation.mjs";
@@ -31,11 +32,11 @@ const artifact = frontendMigrationArtifact();
 const profileDefinition = resolveQualificationTargetProfile(profile);
 const source = frontendWriterInventory(root);
 const { phase2ContractRevisions } = phase2ContractManifestBinding(root, { requireReleased: true });
-const sourceCommit = "a".repeat(40), environment = "staging", releaseId = "owned-certification-replacement";
+const environment = "staging", releaseId = "owned-certification-replacement";
 const phase2 = { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
 const contractManifestSha256 = artifact.contractManifestSha256, sqlArtifactSha256 = artifact.sqlArtifactSha256;
 
-function reviewedFixture(t) {
+function reviewedFixture(t, sourceCommit) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "p2-replacement-plan-")));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bundle = join(directory, "bundle");
@@ -112,7 +113,7 @@ function reviewedFixture(t) {
       ...phase2, sourceCommit: sources[name].commit, migrationImageDigest: artifacts[name + "Migration"].image.split("@")[1],
       runtimeImageDigest: artifacts[name + "Runtime"].image.split("@")[1], contractSha256: contractManifestSha256.slice(7),
       target: { schemaVersion: 2, qualificationTargetProfile: profile, service: `lash-her-${name}-api`, environment,
-        host: `${name}.example.invalid`, port: 5432, database: name, user: "owned_migration", approvedPendingTags: [] },
+        host: `${name}.example.invalid`, port: 5432, database: name, user: "owned_migration", serverMajor: 18, approvedPendingTags: [] },
       schemaBaselineSha256, runtimeRole: "owned_runtime",
     });
   }
@@ -143,8 +144,8 @@ function reviewedFixture(t) {
   return { settings, plan, probe, administrativeLogins, runtimeReview, writerReview, bundle, directory };
 }
 
-function fixture(t) {
-  const review = reviewedFixture(t);
+function fixture(t, sourceCommit = "a".repeat(40)) {
+  const review = reviewedFixture(t, sourceCommit);
   const { plan, probe, administrativeLogins, settings, runtimeReview } = review;
   const action = join(settings.arm.results, plan.releaseId + "-replacement-write");
   const frontend = join(action, "frontend"), vercel = join(frontend, "vercel");
@@ -314,8 +315,8 @@ test("replacement certification requires the private digest-named terminal withi
   assert.throws(() => load(f.selection), refuse);
 });
 
-test("profiled certification planner consumes the replacement descriptor and six original ready receipts", t => {
-  const f = fixture(t);
+test("profiled certification planner consumes replacement readiness and binds the known acknowledgement intent", t => {
+  const sourceCommit = nativeSourceCommit(), f = fixture(t, sourceCommit);
   const { original } = prepareP2CertificationReplacementRelease(f.settings, f.selection);
   const { plan, inventory } = original;
   const deploymentId = f.terminal.deploymentId, deploymentUrl = "https://owned-candidate.vercel.app";
@@ -348,6 +349,31 @@ test("profiled certification planner consumes the replacement descriptor and six
   assert.deepEqual(selected.readyReceiptSha256, readyReceiptSha256);
   assert.equal(selected.nativePlan.deploymentId, deploymentId);
   assert.equal(selected.frontendSqlReplay, false);
+  const known = structuredClone(certification);
+  delete known.scopedAction;
+  delete known.persistenceReviewedSha256;
+  known.mode = "known-ack-recovery";
+  known.requestEvidence = { kind: "operator-recorded-request-details", path: join(f.directory, "known-request.json") };
+  known.fault = { stageId: "owned-drop", receiver: "course", commandIndex: 0, commandSha256: "7".repeat(64) };
+  known.native.commandWitnesses = [{ commandId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", accountVersion: "1", action: "suspend" }];
+  known.knownAckRecovery = { version: 2, qualificationTargetProfile: profile, recoveryActionId: "owned-known-replacement",
+    configurationInputDirectory: "/var/lib/lash-her/releases/staging/owned-known-input",
+    receiverTargets: Object.fromEntries(Object.entries(original.apiJobs).map(([service, job]) => {
+      const { host, port, database, serverMajor } = job.target;
+      return [service, { host, port, database, serverMajor, user: job.runtimeRole, roleOid: "102" }];
+    })) };
+  const knownSettings = { ...settings, certification: known };
+  const knownPlan = prepareP2ProfiledCertificationOperator(knownSettings);
+  const intent = knownPlan.knownAckRecovery.intent;
+  assert.deepEqual(intent.replacementRelease, inventory.replacementRelease);
+  assert.equal(intent.originalReleaseReceiptSha256, f.selection.terminalSha256);
+  assert.equal(intent.originalReleasePlanSha256, f.settings.arm.reviewedPlanSha256);
+  assert.equal(intent.sqlReplayAllowed, false);
+  assert.equal(intent.roleChangeAllowed, false);
+  assert.equal(intent.runtimeReplacements, 1);
+  const wrong = structuredClone(knownSettings);
+  wrong.certification.knownAckRecovery.receiverTargets.course.database = "foreign";
+  assert.throws(() => prepareP2ProfiledCertificationOperator(wrong));
   const path = join(f.vercel, "frontend-build-outcome.json"), originalReady = readFileSync(path);
   writeFileSync(path, Buffer.concat([originalReady, Buffer.from("\n")]));
   assert.throws(() => prepareP2ProfiledCertificationOperator(settings));

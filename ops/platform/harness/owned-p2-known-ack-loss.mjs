@@ -204,6 +204,20 @@ async function main(){
    assert.deepEqual(await observeKnownAckSql(frontend,{getUrl:()=>`postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`}),front);return receipts;
   };
   const before=await readAll();assert.equal(before.frontend.outstanding.length,2);assert.equal(before.frontend.exports,0);assert.equal(before.course.command,null);assert.equal(before.community.command,null);
+  phase='replacement-frontend-readonly-identity';
+  const {rows:[replacementBackend]}=await operator.query(`SELECT datid::text AS "databaseOid",usesysid::text AS "migrationRoleOid",
+    pg_catalog.to_char(backend_start AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "backendStart"
+    FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()`);
+  const {databaseOid,migrationRoleOid,backendStart}=replacementBackend;
+  const replacementFrontend={databaseOid,migrationRoleOid};
+  const replacementRead={...projection,service:'frontend',target,owner,marker,backendPid:backend.pid,backendStart,targetSha256,replacementFrontend};
+  const replacementCredential={getUrl:()=>`postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`};
+  assert.deepEqual(await observeKnownAckSql(replacementRead,replacementCredential),before.frontend);
+  for(const changed of [
+   {replacementFrontend:{...replacementFrontend,databaseOid:'4294967295'}},
+   {replacementFrontend:{...replacementFrontend,migrationRoleOid:'4294967295'}},
+   {backendStart:backend.started},{marker:'f'.repeat(64)},
+  ])await assert.rejects(observeKnownAckSql({...replacementRead,...changed},replacementCredential),/P2_KNOWN_ACK_READ_REFUSED/u);
   assert.equal((await ledger()).length,0);assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:0});
   const nativeInitialEpoch=opened.epoch;
   opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},opened.epoch,{newWork:false,recovery:true}));

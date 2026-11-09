@@ -8,6 +8,7 @@ import test from "node:test";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact, frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { reconcileFrontendOperation } from "./frontend-admission.mjs";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES as roles, prepareFrontendRolesPlan } from "./frontend-role-preparation.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
@@ -15,7 +16,8 @@ import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-re
 import {
   containP2ProfiledCertificationAdmission, containP2ProfiledReplacementCertificationAdmission,
   observeP2CertificationPhysical, observeP2ProfiledInterruptedFrontendPhysical, observeP2ProfiledReplacementFrontendPhysical,
-  withP2CertificationFrontendSession,
+  observeP2ProfiledInterruptedReplacementFrontendPhysical, readP2CertificationCurrent,
+  withP2CertificationFrontendSession, withP2ProfiledInterruptedFrontendSession,
 } from "./p2-certification-current-probe.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -88,8 +90,8 @@ async function rejectUnboundReplacementSelection() {
     ["missing source tag", ({ prepared }) => { prepared.migration.job.target.approvedPendingTags.pop(); }],
     ["reordered source tags", ({ prepared }) => { prepared.migration.job.target.approvedPendingTags.reverse(); }],
     ["unreviewed artifact", ({ prepared }) => { prepared.migration.job.sqlArtifactSha256 = digest("6"); }],
-    ["known ACK", ({ plan }) => { plan.mode = "known-ack-recovery"; }],
-    ["interrupted known ACK", ({ plan }) => { plan.mode = "p2-profiled-known-ack-interrupted-restoration"; }],
+    ["known ACK without its reviewed witness", ({ plan }) => { plan.mode = "known-ack-recovery"; }],
+    ["interrupted known ACK at the ordinary entry point", ({ plan }) => { plan.mode = "p2-profiled-known-ack-interrupted-restoration"; }],
   ]) {
     const invalid = selection();
     edit(invalid);
@@ -108,6 +110,140 @@ async function applySourceJournal(client) {
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; }
   }
+}
+
+async function verifyKnownAckRecovery({ admin, selected, dependencies, command, hold, observer }) {
+  const { plan, prepared } = selected;
+  const policy = { environment: "staging", targetSha256: plan.targetSha256 };
+  const operate = async (initialEpoch, interrupted) => {
+    const nativeEpoch = String(initialEpoch + 1), windowEpoch = String(initialEpoch + 2), finalEpoch = String(initialEpoch + 3);
+    const commandId = randomUUID(), userId = randomUUID(), issuedAt = new Date().toISOString();
+    const uncertainId = randomUUID(), replayId = randomUUID();
+    const commandValue = { version: 1, commandId, userId, accountVersion: 1, action: "suspend", issuedAt };
+    await admin.query("INSERT INTO public.customer_users(id,email,status,account_version) VALUES($1,$2,'suspended',1)",
+      [userId, `owned-${initialEpoch}@example.invalid`]);
+    await admin.query(`INSERT INTO public.customer_account_commands(command_id,user_id,account_version,idempotency_key,action,issued_at,command)
+      VALUES($1,$2,1,$3,'suspend',$4,$5)`, [commandId, userId, randomUUID(), issuedAt, commandValue]);
+    await admin.query(`INSERT INTO public.customer_account_deliveries(command_id,receiver,status,attempts)
+      VALUES($1,'course','pending',0),($1,'community','pending',0)`, [commandId]);
+    const nativePlan = { ...plan.nativePlan, initialEpoch: nativeEpoch, planSha256: digest("7"),
+      commandWitnesses: [{ commandId, accountVersion: "1", action: "suspend" }] };
+    const known = { ...plan, mode: "known-ack-recovery", certificationActionId: `owned-known-ack-${initialEpoch}`,
+      planSha256: digest("8"), initialEpoch: String(initialEpoch), nativePlan };
+    const settlement = hash({ operationId: uncertainId, epoch: finalEpoch, sourceCommit });
+    const settle = async client => {
+      await client.query(`SET ROLE "${nativePlan.owner.name}"`);
+      try {
+        await assert.rejects(reconcileFrontendOperation(client, policy, windowEpoch, uncertainId, settlement));
+        await reconcileFrontendOperation(client, policy, finalEpoch, uncertainId, settlement);
+      } finally { await client.query("RESET ROLE"); }
+    };
+    let retained;
+    const probe = await hold(async ({ client, verify, probe, receipt }) => {
+      assert.deepEqual(receipt.admission, { ...closed, epoch: known.initialEpoch });
+      assert.equal(receipt.witness.operations.length, 0);
+      await admin.query("UPDATE frontend_admission.control SET recovery=true,epoch=$1", [nativeEpoch]);
+      await readP2CertificationCurrent(client, prepared, known, verify, false, profile);
+      await admin.query("UPDATE frontend_admission.control SET epoch=$1", [windowEpoch]);
+      for (const [id, state] of [[uncertainId, "uncertain"], [replayId, "completed"]]) {
+        await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+          VALUES($1,$2,$3,$4,$5,'recovery',$6,CASE WHEN $6='completed' THEN pg_catalog.clock_timestamp() ELSE NULL END)`,
+        [id, producerSha256, sourceCommit, nativePlan.producer.role.oid, windowEpoch, state]);
+      }
+      await admin.query(`UPDATE public.customer_account_deliveries SET status='acknowledged',acknowledged_at=$1,attempts=1
+        WHERE command_id=$2`, [issuedAt, commandId]);
+      const physical = await observer(probe, "witness");
+      assert.deepEqual(physical.admission, { ...closed, epoch: windowEpoch, recovery: true, uncertain: 1 });
+      assert.deepEqual(physical.witness.operations.map(row => [row.id, row.state]), [[uncertainId, "uncertain"], [replayId, "completed"]]);
+      assert.deepEqual(physical.replacementRelease, plan.replacementRelease);
+      await admin.query("UPDATE frontend_admission.operations SET source_sha=$1 WHERE id=$2", ["f".repeat(40), replayId]);
+      try { await assert.rejects(observer(probe, "witness"), { checkpoint: "current-replacement-known-ack-operations" }); }
+      finally { await admin.query("UPDATE frontend_admission.operations SET source_sha=$1 WHERE id=$2", [sourceCommit, replayId]); }
+      if (interrupted) return probe;
+      await admin.query("UPDATE frontend_admission.control SET recovery=false,epoch=$1", [finalEpoch]);
+      await settle(client);
+      retained = await observer(probe, "witness");
+      assert.deepEqual(retained.admission, { ...closed, epoch: finalEpoch });
+      assert.deepEqual(retained.witness.operations.map(row => row.reconciliation_sha256), [settlement, null]);
+      return probe;
+    }, { plan: known, prepared });
+    if (!interrupted) {
+      const terminal = await observer(probe, "verify-closed");
+      assert.equal(terminal.status, "P2_CERTIFICATION_FRONTEND_SESSION_CLOSED");
+      assert.equal(terminal.witnessSha256, retained.witnessSha256);
+      return;
+    }
+
+    const pending = () => admin.query(`SELECT id::text,state,completed_at,reconciliation_sha256 FROM frontend_admission.operations
+      WHERE epoch=$1 ORDER BY started_at,id`, [windowEpoch]).then(({ rows }) => rows);
+    const untouched = await pending();
+    const guarded = await containP2ProfiledReplacementCertificationAdmission(probe, dependencies);
+    assert.equal(guarded.epoch, finalEpoch);
+    assert.equal(guarded.admissionChanged, true);
+    assert.deepEqual(guarded.knownAckLedger, { active: 0, uncertain: 1, closedZero: false });
+    assert.deepEqual(await pending(), untouched);
+    const fixedFence = command("--profiled-replacement-guard-fence", probe);
+    assert.equal(fixedFence.status, 0, fixedFence.stderr);
+    assert.deepEqual(JSON.parse(fixedFence.stdout), { ...guarded, admissionChanged: false });
+    await assert.rejects(observer(probe, "verify-closed"), { checkpoint: "current-replacement-known-ack-closure" });
+
+    const interruptedPlan = { ...known, mode: "p2-profiled-known-ack-interrupted-restoration",
+      certificationActionId: "owned-interrupted-replacement", originalCertificationActionId: known.certificationActionId,
+      configurationCanonicalSha256: digest("9"), planSha256: digest("4"),
+      initialEpoch: finalEpoch, operationId: uncertainId, reconciliationSha256: settlement };
+    const holdInterrupted = (task, reviewed = interruptedPlan) => withP2ProfiledInterruptedFrontendSession(prepared, reviewed, dependencies, task);
+    await assert.rejects(holdInterrupted(() => assert.fail("unsettled interrupted path")), { checkpoint: "current-interrupted-closed" });
+    await settle(admin);
+    await assert.rejects(holdInterrupted(() => assert.fail("wrong selected operation"), { ...interruptedPlan, operationId: replayId }),
+      { checkpoint: "current-interrupted-settlement" });
+    await assert.rejects(holdInterrupted(() => assert.fail("wrong settlement"), { ...interruptedPlan, reconciliationSha256: digest("5") }),
+      { checkpoint: "current-interrupted-settlement" });
+
+    const fixedFlag = "--profiled-replacement-known-ack-interrupted";
+    const verifyInterrupted = (fresh, operation) => observeP2ProfiledInterruptedReplacementFrontendPhysical({ ...fresh, operation }, dependencies);
+    let readRetained;
+    const fresh = await holdInterrupted(async context => {
+      assert.deepEqual(Object.keys(context).sort(), ["probe", "readCurrent", "receipt", "verify"]);
+      const { probe: fresh, receipt, readCurrent, verify } = context;
+      readRetained = readCurrent;
+      assert.notEqual(fresh.marker, probe.marker);
+      assert.notDeepEqual([fresh.backendPid, fresh.backendStart], [probe.backendPid, probe.backendStart]);
+      assert.deepEqual(receipt.admission, { ...closed, epoch: finalEpoch });
+      assert.deepEqual(receipt.replacementRelease, plan.replacementRelease);
+      assert.deepEqual(receipt.witness.operations.map(row => row.reconciliation_sha256), [settlement, null]);
+      const observed = await verifyInterrupted(fresh, "witness");
+      assert.equal(observed.witnessSha256, receipt.witnessSha256);
+      assert.deepEqual(observed.replacementRelease, plan.replacementRelease);
+      const fixed = command(fixedFlag, { ...fresh, operation: "witness" });
+      assert.equal(fixed.status, 0, fixed.stderr);
+      assert.deepEqual(JSON.parse(fixed.stdout), JSON.parse(JSON.stringify(observed)));
+      for (const wrong of ["--profiled-current", "--profiled-known-ack-interrupted", "--profiled-replacement"]) {
+        const refused = command(wrong, { ...fresh, operation: "witness" });
+        assert.equal(refused.status, 1, wrong);
+        assert.equal(refused.stdout, "", wrong);
+      }
+      const deniedFence = command("--profiled-replacement-guard-fence", fresh);
+      assert.equal(deniedFence.status, 1);
+      await assert.rejects(verifyInterrupted(fresh, "verify-closed"), { checkpoint: "current-replacement-backend-still-present" });
+      await admin.query("UPDATE frontend_admission.operations SET completed_at=completed_at+interval '1 second' WHERE id=$1", [replayId]);
+      try { await assert.rejects(readCurrent(), { checkpoint: "current-interrupted-witness-changed" }); }
+      finally { await admin.query("UPDATE frontend_admission.operations SET completed_at=completed_at-interval '1 second' WHERE id=$1", [replayId]); }
+      await verify();
+      assert.equal((await readCurrent()).witnessSha256, receipt.witnessSha256);
+      return fresh;
+    });
+    await assert.rejects(readRetained(), { checkpoint: "current-interrupted-session-closed" });
+    const closure = await verifyInterrupted(fresh, "verify-closed");
+    assert.equal(closure.status, "P2_CERTIFICATION_FRONTEND_SESSION_CLOSED");
+    assert.equal(closure.backendAbsent && closure.migrationLockReleased && closure.nonceLockReleased, true);
+    assert.equal(closure.witnessSha256, fresh.receipt.witnessSha256);
+    assert.equal(closure.journalSha256, probe.receipt.journalSha256);
+    const fixedClosure = command(fixedFlag, { ...fresh, operation: "verify-closed" });
+    assert.equal(fixedClosure.status, 0, fixedClosure.stderr);
+    assert.deepEqual(JSON.parse(fixedClosure.stdout), closure);
+  };
+  await operate(3, false);
+  await operate(6, true);
 }
 
 async function verifyOwnedReplacementCertification() {
@@ -285,6 +421,8 @@ async function verifyOwnedReplacementCertification() {
     assert.deepEqual(JSON.parse(fixedFence.stdout), { ...fenced, admissionChanged: false });
     assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
     assert.deepEqual((await admin.query("SELECT new_work,recovery FROM frontend_admission.control")).rows, [{ new_work: false, recovery: false }]);
+    await verifyKnownAckRecovery({ admin, selected, dependencies, command, hold, observer });
+    assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
     assert.equal(expectedJournal.length, 83);
     return { version: 1, status: "P2_CERTIFICATION_REPLACEMENT_OWNED_PASS", serverMajor, frontendMigrations: expectedJournal.length,
       checks: ["pinned-original-replacement-full-journal-and-reviewed-role-boundary",
@@ -292,7 +430,9 @@ async function verifyOwnedReplacementCertification() {
         "fixed-replacement-observer-and-guard-dispatch",
         "predecessor-unreviewed-login-and-revoked-live-client-refusal",
         "journal-admission-marker-backend-and-database-identity-refusal",
-        "independent-guard-fence-without-sql-replay"],
+        "independent-guard-fence-without-sql-replay",
+        "replacement-known-ack-exact-uncertainty-and-selected-settlement",
+        "replacement-known-ack-guard-preserves-uncertainty-and-fresh-interrupted-closure"],
       skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, fixtureOnly: true };
   } finally {
     await Promise.allSettled(clients.map(client => client.end()));

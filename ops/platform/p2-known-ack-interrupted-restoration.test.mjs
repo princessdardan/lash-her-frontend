@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {fork,spawn,spawnSync} from 'node:child_process';
-import {mkdtempSync,realpathSync,writeFileSync,readFileSync,rmSync,existsSync,unlinkSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,existsSync,unlinkSync} from 'node:fs';
 import {registerHooks} from 'node:module';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {MODE,PROFILED_MODE,STATUS,TERMINAL,CAUSAL_FILES,REPLACEMENT_FILES,prepareInterruptedKnownAckAction,interruptedKnownAckEnvironmentLock} from './p2-known-ack-interrupted-restoration.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
+import {p2NativeHash} from './p2-lifecycle-native.mjs';
+const rawReceipt=value=>Buffer.from(JSON.stringify(value,null,2)+'\n');
+const receiptSha256=raw=>createHash('sha256').update(raw).digest('hex');
 function fixture(){
  const candidate={version:2,environment:'staging',contractPhase:'p2',releaseId:'original-candidate'},bytes=Buffer.from(JSON.stringify(candidate)+'\n');
  const configuration=Object.fromEntries(Array.from({length:19},(_,i)=>['owned-file-'+i,'a'.repeat(64)]));
@@ -115,11 +119,19 @@ restored={**base,'status':'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED','env
  'stoppedGateway':gateway(False,'f'*64,{'newWork':0,'recovery':1 if plan['requestedFrontier']=='original-stopped-one' else 0}),
  'newGateway':gateway(True,format(10,'064x'),zero.copy())}
 restored.update({name:False for name in ('sqlReplayed','migrationsExecuted','rolePreparationRepeated','frontendSqlApplied','newWorkOpened','recoveryOpened','trafficAuthorized')})
+replacement_fields=('replacementRelease','originalReleaseReceiptSha256','originalReleasePlanSha256')
+if 'replacementRelease' in plan:
+ assert all(plan[key]==frontend[key] for key in replacement_fields)
+ assert json.loads(base64.b64decode(initial['originalReleaseReceipt']))['frontendSqlApplied'] is True
+ assert initial['frontendJob']['target']['allowEmptyBootstrap'] is True
+ restored.update({key:plan[key] for key in replacement_fields})
 mutations={'foreign-runtime-profile':lambda:restored.update(version=1),'changed-journal':lambda:restored.update(frontendJournalSha256='0'*64),
  'changed-api':lambda:restored['currentApiDatabasesAfter'].update(course={**databases['course'],'receiptSha256':'0'*64}),
  'open-gateway':lambda:restored['newGateway']['admission'].update(recovery=True),
  'wrong-frontier-count':lambda:restored['stoppedGateway']['admission']['uncertain'].update(recovery=2),
- 'duplicate-service':lambda:restored['containers'][0].update(service='gateway')}
+ 'duplicate-service':lambda:restored['containers'][0].update(service='gateway'),
+ 'changed-replacement-terminal':lambda:restored.update(originalReleaseReceiptSha256='0'*64),
+ 'missing-replacement-terminal':lambda:restored.pop('replacementRelease')}
 if scenario in mutations:mutations[scenario]()
 steps=['arm-interrupted-restoration','prepare-interrupted-restoration','restore-runtime','prepare-close','finish','commit'];seen=[];heartbeat_during_restore=False
 for raw in sys.stdin:
@@ -174,7 +186,14 @@ async function projectedProfiledLock(){
  try{return (await import(projection.href)).withProfiledInterruptedEnvironmentLock;}finally{hook.deregister();}
 }
 
-function profiledFixture(run,scenario='ready',frontier='original-stopped-one'){
+function replacementDescriptor(){
+ return {version:1,kind:'frontend-replacement',qualificationTargetProfile:profile,reviewedPlanSha256:'1'.repeat(64),
+  runtimeReviewSha256:'2'.repeat(64),postflightSha256:'3'.repeat(64),frontendSessionClosedSha256:'4'.repeat(64),
+  frontendDatabaseReceiptSha256:'5'.repeat(64),databaseOid:'412',migrationRoleOid:'413',predecessorRuntimeRole:'owned_prior',
+  administrativeLogins:[{name:'owned_admin',oid:'415'}]};
+}
+
+function profiledFixture(run,scenario='ready',frontier='original-stopped-one',replacing=false){
  const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-profiled-interrupted-pipe-'))),lock=join(directory,'host-lock'),held=join(directory,'frontend-session-model');
  const base={version:2,qualificationTargetProfile:profile},actionId='restoration-owned-c',sourceCommit='a'.repeat(40),operatorSourceCommit='b'.repeat(40);
  const targetSha256='c'.repeat(64),candidateSha256='d'.repeat(64),releaseId='candidate-owned';
@@ -189,6 +208,22 @@ function profiledFixture(run,scenario='ready',frontier='original-stopped-one'){
    candidateSha256,targetSha256,requestedFrontier:frontier,frontendPlan}};
  const receipt={...base,status:'P2_CERTIFICATION_DATABASE_CURRENT',journalSha256:'8'.repeat(64)};
  const probe={...base,plan:frontendPlan,job:initial.frontendJob,baseline:initial.frontendBaseline,owner:initial.owner,receipt};
+ if(replacing){
+  const replacementRelease=replacementDescriptor(),runtime={name:'owned_runtime',oid:'414'},producerSha256='6'.repeat(64);
+  const configurationSha256={'gateway.json':'7'.repeat(64)};
+  const terminalRaw=rawReceipt({...base,status:'P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION',environment:'staging',releaseId,sourceCommit,
+   targetSha256,candidateSha256,contractPhase:frontendPlan.contractPhase,phase2ContractManifestSha256:frontendPlan.phase2ContractManifestSha256,
+   ...Object.fromEntries(['reviewedPlanSha256','runtimeReviewSha256','postflightSha256','frontendSessionClosedSha256','frontendDatabaseReceiptSha256']
+    .map(key=>[key,replacementRelease[key]])),configurationSha256,owner:initial.owner,runtime,producerSha256,
+   migrationMode:'apply-forward',frontendSqlApplied:true,frontendSqlReplayed:false,frontendSessionClosed:true,trafficAuthorized:false,releaseAccepted:false});
+  const provenance={replacementRelease,originalReleaseReceiptSha256:receiptSha256(terminalRaw),originalReleasePlanSha256:replacementRelease.reviewedPlanSha256};
+  Object.assign(frontendPlan,provenance);Object.assign(initial.reviewedPlan,provenance,{configurationSha256});
+  initial.originalReleaseReceipt=terminalRaw.toString('base64');
+  Object.assign(initial.inventory,{replacementRelease,producers:[{role:runtime,producerSha256}]});
+  Object.assign(initial.frontendJob.target,{allowEmptyBootstrap:true,approvedPendingTags:['0001_fixture'],runtimeRole:runtime.name});
+  Object.assign(receipt,{replacementRelease,effectiveLoginBoundaryVerified:true,predecessorRuntimeRoleAbsent:true});
+  Object.assign(probe,{replacementRelease,producers:initial.inventory.producers});
+ }
  const prepared=join(directory,'p2-profiled-interrupted-close-prepared.json'),terminal=join(directory,'p2-profiled-interrupted-host-outcome.json');
  let launched;
  const launch=(executable,args,options)=>{launched={executable,args,options};return spawn('python3',['-I','-u','-c',profiledProgram,lock,held,scenario],options);};
@@ -204,7 +239,7 @@ function profiledFixture(run,scenario='ready',frontier='original-stopped-one'){
    assert.equal(existsSync(prepared),true);assert.equal(existsSync(terminal),false);
   }finally{unlinkSync(held);}
  }
- return{initial,prepared,terminal,restore,execute,launched:()=>launched,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
+ return{initial,probe,receipt,prepared,terminal,restore,execute,launched:()=>launched,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
 }
 
 test('profiled transport accepts each stopped frontier only after a close join and zero child exit',async()=>{
@@ -252,6 +287,42 @@ test('profiled close preparation remains only evidence if independent close, com
   const fixture=profiledFixture(run,scenario);try{
    await assert.rejects(fixture.execute(fixture.restore));
    assert.equal(existsSync(fixture.prepared),true,scenario);assert.equal(existsSync(fixture.terminal),false,scenario);
+  }finally{fixture.cleanup();}
+ }
+});
+
+test('replacement transport retains the original terminal provenance through a fenced restore',async()=>{
+ const run=await projectedProfiledLock(),fixture=profiledFixture(run,'ack-exit-zero','replacement-stopped-zero',true);
+ try{
+  const result=await fixture.execute(fixture.restore);
+  for(const key of ['replacementRelease','originalReleaseReceiptSha256','originalReleasePlanSha256'])
+   assert.deepEqual(result[key],fixture.initial.reviewedPlan[key]);
+  assert.equal(result.frontendSqlApplied,false);
+  assert.equal(result.sqlReplayed,false);
+  assert.equal(result.trafficAuthorized,false);
+  assert.deepEqual(JSON.parse(readFileSync(fixture.terminal)),result);
+ }finally{fixture.cleanup();}
+});
+
+test('replacement transport refuses mixed provenance, unbound login proof and changed terminal',async()=>{
+ const run=await projectedProfiledLock();
+ for(const mutate of [initial=>{delete initial.originalReleaseReceipt;},initial=>{initial.originalReleaseReceipt+='\n';},
+  initial=>{initial.reviewedPlan.frontendPlan.originalReleasePlanSha256='9'.repeat(64);},
+  initial=>{initial.inventory.historicalLogins={};},initial=>{initial.frontendJob.target.allowEmptyBootstrap=false;},
+  initial=>{delete initial.inventory.replacementRelease;},initial=>{delete initial.reviewedPlan.originalReleaseReceiptSha256;},
+  initial=>{initial.replacementRelease=initial.reviewedPlan.replacementRelease;},
+ ]){
+  const fixture=profiledFixture(run,'ready','original-stopped-one',true);try{
+   mutate(fixture.initial);
+   await assert.rejects(fixture.execute(()=>assert.fail('replacement must refuse before launch')));
+   assert.equal(fixture.launched(),undefined);
+  }finally{fixture.cleanup();}
+ }
+ for(const scenario of ['changed-replacement-terminal','missing-replacement-terminal','missing-login-proof']){
+  const fixture=profiledFixture(run,scenario,'original-stopped-one',true);try{
+   if(scenario==='missing-login-proof')delete fixture.receipt.effectiveLoginBoundaryVerified;
+   await assert.rejects(fixture.execute(fixture.restore));
+   assert.equal(existsSync(fixture.terminal),false);
   }finally{fixture.cleanup();}
  }
 });
@@ -371,4 +442,105 @@ test('generated C child keeps its source-owned temp root through the actual TSX 
    return {status:1,stdout:'',stderr:''};
   },join:paths.join,dirname:paths.dirname,resolve:paths.resolve,tmpdir,createRequire,createHash,pathToFileURL,fileURLToPath},{timeout:30000});
  assert.equal(launched,true);assert.equal(fakeProcess.exitCode,1);assert.equal(existsSync(folder),false);
+});
+
+async function projectedReplacementPlanner(select){
+ const source=new URL('./p2-known-ack-interrupted-restoration.mjs',import.meta.url),projection=new URL(source);
+ projection.search='?owned-replacement-planner';
+ const reader=new URL('./p2-certification-replacement-release.mjs',import.meta.url),stub=new URL(reader);
+ stub.search='?owned-replacement-reader';
+ const key=Symbol.for('p2-interrupted-owned-replacement-reader');
+ globalThis[key]=select;
+ const hook=registerHooks({
+  resolve(specifier,context,next){
+   const resolved=next(specifier,context);
+   return context.parentURL===projection.href&&resolved.url===reader.href?{url:stub.href,shortCircuit:true}:resolved;
+  },
+  load(url,context,next){
+   if(url===projection.href)return{format:'module',shortCircuit:true,source:readFileSync(source,'utf8')+'\nexport {profiledInterruptedHostPacket};'};
+   if(url===stub.href)return{format:'module',shortCircuit:true,source:
+    `export {validP2CertificationReplacementDescriptor} from ${JSON.stringify(reader.href)};
+      export const prepareP2CertificationReplacementRelease=(settings,selection)=>globalThis[Symbol.for(${JSON.stringify(Symbol.keyFor(key))})](settings,selection);`};
+   return next(url,context);
+  },
+ });
+ try{return await import(projection.href);}finally{hook.deregister();}
+}
+
+test('replacement interrupted planner joins retained certification and exact original host packet',async t=>{
+ const results=realpathSync(mkdtempSync(join(tmpdir(),'p2-interrupted-replacement-plan-')));
+ t.after(()=>{delete globalThis[Symbol.for('p2-interrupted-owned-replacement-reader')];rmSync(results,{recursive:true,force:true});});
+ const base={version:2,qualificationTargetProfile:profile},environment='staging',releaseId='owned-frontend-replacement',sourceCommit='a'.repeat(40);
+ const targetSha256='b'.repeat(64),candidateSha256='c'.repeat(64),inventorySha256='d'.repeat(64),apiJobSha256={course:'e'.repeat(64),community:'f'.repeat(64)};
+ const configurationSha256={'gateway.json':'6'.repeat(64)},originalCertificationActionId='owned-cert-b',originalRecoveryActionId='owned-known-b';
+ const restorationActionId='owned-restore-c', operatorSourceCommit='7'.repeat(40);
+ const replacementRelease=replacementDescriptor();
+ const originalReleaseReceipt=rawReceipt({...base,status:'P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION',releaseId,sourceCommit});
+ const provenance={replacementRelease,originalReleaseReceiptSha256:receiptSha256(originalReleaseReceipt),
+  originalReleasePlanSha256:replacementRelease.reviewedPlanSha256};
+ const hostRoot='/var/lib/lash-her/releases/staging/owned-replacement';
+ const host={machineId:'8'.repeat(32),bundle:hostRoot+'/bundle',results:hostRoot+'/results',
+  configuration:hostRoot+'/results/runtime-profiled-frontend-replacement-'+releaseId+'/configuration'};
+ const releaseSettings={arm:{results,knownHosts:join(results,'known-hosts'),sshKey:join(results,'ssh-key')},providerContext:join(results,'provider.json')};
+ const replacementSelection={terminalFile:join(results,'owned-terminal.json'),terminalSha256:provenance.originalReleaseReceiptSha256};
+ const receiverTargets=Object.fromEntries(['course','community'].map(service=>[service,{host:service+'.invalid',port:5432,database:service,
+  user:service+'_runtime',serverMajor:18,roleOid:service==='course'?'421':'422'}]));
+ const apiJobs=Object.fromEntries(Object.entries(receiverTargets).map(([service,{user,roleOid,...target}])=>[service,{target,runtimeRole:user}]));
+ const frontendTarget={qualificationTargetProfile:profile,host:'frontend.invalid',port:5432,database:'frontend',user:'owned_migration',serverMajor:18};
+ const job={...base,sourceCommit,releaseId,target:{...frontendTarget,allowEmptyBootstrap:true,approvedPendingTags:['0001_fixture']}};
+ const producer={producerSha256:'2'.repeat(64),role:{name:'owned_runtime',oid:'418'}};
+ const inventory={...base,owner:{name:'owned_owner',oid:'416'},producers:[producer],replacementRelease};
+ const contractPhase='p2',phase2ContractManifestSha256='sha256:'+'9'.repeat(64);
+ const original={migration:{candidate:{...base,version:3,releaseId,environment,contractPhase,sources:{frontend:{commit:sourceCommit}}},job,baseline:{catalog:{}}},
+  plan:{...base,releaseId,sourceCommit,targetSha256,candidateSha256,inventorySha256,apiJobSha256,configurationSha256,contractPhase,phase2ContractManifestSha256},
+  inventory,apiJobs};
+ const normalized={original,host,profiledRelease:{replacementRelease,receiptSha256:provenance.originalReleaseReceiptSha256,
+  planSha256:provenance.originalReleasePlanSha256},originalReleaseReceipt};
+ const {prepareProfiledInterruptedKnownAckOperator:prepare,profiledInterruptedHostPacket:packetFor}=await projectedReplacementPlanner((settings,selection)=>{
+  assert.deepEqual(settings,releaseSettings);assert.deepEqual(selection,replacementSelection);return normalized;
+ });
+ const native={...base,target:frontendTarget,targetSha256,owner:inventory.owner,producer,initialEpoch:'4',commandWitnesses:[{action:'suspend'}]};
+ const nativePlan={...native,planSha256:p2NativeHash(native)};
+ const configurationInputDirectory=hostRoot+'/owned-original-recovery-config';
+ const intent={...base,...provenance,receiverTargetsSha256:p2NativeHash(receiverTargets),configurationInputDirectory};
+ const body={...base,...provenance,mode:'known-ack-recovery',environment,startState:'already-closed',certificationActionId:originalCertificationActionId,
+  originalReleaseId:releaseId,operatorSourceCommit:sourceCommit,sourceCommit,targetSha256,candidateSha256,inventorySha256,
+  configurationCanonicalSha256:p2NativeHash(configurationSha256),apiJobSha256,nativePlan,knownAckReceiverTargets:receiverTargets,
+  knownAckConfigurationInputDirectory:configurationInputDirectory,knownAckRecovery:{...base,recoveryActionId:originalRecoveryActionId,intent,intentSha256:p2NativeHash(intent)}};
+ const retained=join(results,originalCertificationActionId);
+ mkdirSync(retained,{mode:0o700});
+ const retain=body=>{
+  const bytes=rawReceipt({...body,planSha256:p2NativeHash(body)});
+  writeFileSync(join(retained,'p2-certification-started.json'),bytes,{mode:0o600});
+  return bytes;
+ };
+ const settings={...base,environment,operatorSourceCommit,releaseSettings,replacementRelease:replacementSelection,receiverTargets,
+  operationId:'00000000-0000-4000-8000-000000000001',interruptedRestoration:{...base,mode:PROFILED_MODE,restorationActionId,
+   originalCertificationActionId,originalRecoveryActionId,originalOperatorSourceCommit:sourceCommit,
+   causalReceiptSha256:Object.fromEntries([...CAUSAL_FILES,'reconciliation-observed.json'].map(name=>[name,'a'.repeat(64)])),
+   replacementReceiptSha256:Object.fromEntries(REPLACEMENT_FILES.map(name=>[name,name==='known-ack-replacement-intent.json'?'b'.repeat(64):null])),
+   priorGatewayReference:{kind:'stopped-current-candidate',stopReceiptDirectory:join(host.results,'p2-profiled-current-certification-'+originalCertificationActionId),
+    stopReceiptSha256:'c'.repeat(64)}}};
+ const certificationRaw=retain(body),prepared=prepare(settings),packet=packetFor(prepared,{files:[{path:'owned',sha256:'d'.repeat(64)}]});
+ for(const [key,value] of Object.entries(provenance)){
+  assert.deepEqual(prepared.plan[key],value);
+  assert.deepEqual(prepared.plan.frontendPlan[key],value);
+  assert.equal(Object.hasOwn(packet,key),false);
+ }
+ assert.deepEqual(Buffer.from(packet.originalReleaseReceipt,'base64'),originalReleaseReceipt);
+ assert.deepEqual(Buffer.from(packet.originalCertificationPlan,'base64'),certificationRaw);
+ assert.deepEqual(packet.frontendJob,job);
+ assert.equal(packet.configuration,configurationInputDirectory);
+ assert.equal(packet.hostMachineId,host.machineId);
+ assert.equal(prepared.plan.frontendSqlApplied,false);
+ for(const mutate of [
+  selected=>{delete selected.replacementRelease;},selected=>{selected.originalReleaseReceiptSha256='e'.repeat(64);},
+  selected=>{selected.originalReleasePlanSha256='e'.repeat(64);},selected=>{selected.knownAckRecovery.intent.replacementRelease.databaseOid='419';},
+  selected=>{delete selected.knownAckRecovery.intent.originalReleasePlanSha256;},
+  selected=>{selected.knownAckRecovery.intent.configurationInputDirectory=host.configuration;},
+ ]){
+  const invalid=structuredClone(body);mutate(invalid);
+  invalid.knownAckRecovery.intentSha256=p2NativeHash(invalid.knownAckRecovery.intent);
+  retain(invalid);assert.throws(()=>prepare(settings));
+ }
 });

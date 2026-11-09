@@ -53,7 +53,8 @@ CAUSAL_FILES = ('recovery-intent.json', 'baseline.json', 'domain.json', 'request
 B_GATEWAY_MARKER = 'known-ack-gateway-replacement-started.json'
 B_FRONTIER_MODULE = 'ops/platform/host/p2_known_ack_loss.py'
 B_FRONTIER_SHA256 = '445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db'
-PROFILED_B_FRONTIER_SHA256 = '133e2e383857149c8f82a0a0d85458805ae003f6b1a51667babbb414a99a0d78'
+PROFILED_LEGACY_B_FRONTIER_SHA256 = '133e2e383857149c8f82a0a0d85458805ae003f6b1a51667babbb414a99a0d78'
+PROFILED_B_FRONTIER_SHA256 = '425504e269373ffbc7d6f43ebcb5d30b7ba40fbac4e03cc8e6398e2400a5c983'
 PROFILED_CAUSAL_FILES = (*CAUSAL_FILES, 'reconciliation-observed.json')
 REPLACEMENT_FILES = ('known-ack-replacement-intent.json', B_GATEWAY_MARKER, *(
     'known-ack-stage-' + str(i) + '-' + suffix + '.json'
@@ -472,6 +473,7 @@ def _profiled_causal(initial, selection, selected, values, profile):
     source_keys = {'recoveryActionId', 'candidateSha256', 'certificationActionId', 'sourceModuleSha256',
                    'operatorSourceClosureSha256', 'recoveryIntentReceiptSha256'}
     causal_keys = {'operationId', 'baselineSha256', 'domainSha256', 'requestDetailsSha256', 'settlementSha256'}
+    replacement_pins = known.replacement_release_pins(reviewed, profile)
     for row, status, fields in zip((baseline, domain, requests, settlement, authorization, reconciled), names, (
             {'plan', 'sourceModuleSha256', 'candidateSha256', 'gateway', 'databases', 'recoveryActionId'},
             {'gateway', 'databases', 'effect', 'operationId'},
@@ -480,7 +482,7 @@ def _profiled_causal(initial, selection, selected, values, profile):
             source_keys | causal_keys | {'originalGateway', 'recoveryIntentSha256', 'reconciliationObservedSha256',
                 'ordinaryClosedZeroGate', 'sqlReplayAllowed', 'roleChangeAllowed'},
             source_keys | causal_keys | {'gateway', 'databases', 'frontendGlobalClosedZero', 'oldGatewayUncertain',
-                'runtimeReplaced', 'ordinaryClosedZeroGate'})):
+                'runtimeReplaced', 'ordinaryClosedZeroGate'} | set(replacement_pins))):
         require(set(row) == common | fields and row.get('status') == status, 'P2_INTERRUPTED_PROFILED_CAUSAL_RECORD_REQUIRED')
     require(
             all(row['candidateSha256'] == candidate for row in (baseline, authorization, reconciled)) and
@@ -492,6 +494,8 @@ def _profiled_causal(initial, selection, selected, values, profile):
             reconciled['frontendGlobalClosedZero'] is True and reconciled['runtimeReplaced'] is False and
             reconciled['ordinaryClosedZeroGate'] is False and canonical(reconciled['oldGatewayUncertain']) == canonical({'newWork': 0, 'recovery': 1}),
             'P2_INTERRUPTED_PROFILED_CAUSAL_CONTEXT_REQUIRED')
+    require(all(canonical(reconciled[key]) == canonical(value) for key, value in replacement_pins.items()),
+            'P2_INTERRUPTED_PROFILED_REPLACEMENT_CAUSAL_PINS_CHANGED')
     pins = selection['causalReceiptSha256']
     for field, name, carriers in (
             ('baselineSha256', 'baseline.json', (settlement, authorization, reconciled)),
@@ -537,9 +541,58 @@ def _profiled_process(value, *, running):
             type(value['restartCount']) is int and value['restartCount'] >= 0)
 
 
+def profiled_original_replacement_paths(initial, selected):
+    from p2_frontend_replacement_parent import RUNTIME_REVIEW, WRITTEN_OBSERVATION
+    from p2_replacement_terminal import SESSION_CLOSED, TERMINAL
+    plan = initial['reviewedPlan']
+    descriptor = plan['replacementRelease']
+    return (Path(initial['results']) / ('p2-profiled-replacement-write-' + selected['releaseId']), {
+        TERMINAL: plan['originalReleaseReceiptSha256'],
+        'reviewed-plan.json': plan['originalReleasePlanSha256'],
+        RUNTIME_REVIEW: descriptor['runtimeReviewSha256'],
+        WRITTEN_OBSERVATION: descriptor['postflightSha256'],
+        SESSION_CLOSED: descriptor['frontendSessionClosedSha256'],
+        'frontend-original-database-receipt.json': descriptor['frontendDatabaseReceiptSha256'],
+    })
+
+
+def _profiled_original_replacement(initial, selected, reviewed, inputs, profile):
+    import p2_certification_parent as cert
+    from p2_frontend_replacement_parent import RUNTIME_REVIEW, private_record
+    from p2_profiled_known_ack_restoration_parent import _raw_original
+    original = _raw_original(initial, profile)
+    pins = known.replacement_release_pins(original, profile)
+    require(original['knownAckRecovery']['intent'] == reviewed and
+            canonical(known.replacement_release_pins(reviewed, profile)) == canonical(pins) and
+            canonical(known.replacement_release_pins(initial['reviewedPlan'], profile)) == canonical(pins) and
+            all(canonical(inputs.get(key)) == canonical(value) for key, value in pins.items()) and
+            inputs.get('hostOriginalReleaseReceiptSha256') == pins['originalReleaseReceiptSha256'] and
+            inputs.get('readyReceiptSha256') == original['readyReceiptSha256'],
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_INPUT_REQUIRED')
+    directory, records = profiled_original_replacement_paths(initial, selected)
+    runtime_review = private_record(directory, RUNTIME_REVIEW)
+    require(sha(runtime_review) == records[RUNTIME_REVIEW], 'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_REVIEW_CHANGED')
+    review = decode_qualification_target_json(runtime_review, 'carrier')
+    migrate.require_profile(profile, review)
+    reviewed_controls = initial['inventory']['certification']
+    require(type(review.get('version')) is int and review['version'] == 1 and
+            canonical(review.get('certification')) == canonical(reviewed_controls),
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_REVIEW_CHANGED')
+    results = Path(initial['results'])
+    configuration = results / ('runtime-profiled-frontend-replacement-' + selected['releaseId']) / 'configuration'
+    carrier = {**initial, 'sourceCommit': original['sourceCommit'], 'configuration': str(configuration),
+               'certification': reviewed_controls}
+    receipt, verified = cert._profiled_replacement_original_terminal(carrier, original, selected, results, profile)
+    require(verified is True and receipt == pins['originalReleaseReceiptSha256'],
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_TERMINAL_REQUIRED')
+    return records
+
+
 def _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile):
     bundle = root_path(initial['bundle'])
-    retained_release = root_path(str(Path(initial['results']) / selected['releaseId']))
+    replacement = bool(known.replacement_release_pins(reviewed, profile))
+    release_directory = ('migration-profiled-frontend-replacement-' if replacement else '') + selected['releaseId']
+    retained_release = root_path(str(Path(initial['results']) / release_directory))
     candidate_raw = migrate.read_input(bundle, 'release.candidate.json')
     require(candidate_raw == migrate.read_input(retained_release, 'candidate.json') and
             sha(candidate_raw) == initial['candidateSha256'] and decode_qualification_target_json(candidate_raw, 'carrier') == selected,
@@ -552,6 +605,9 @@ def _profiled_original_release(initial, selected, jobs, certification, selection
             inputs['candidateSha256'] == initial['candidateSha256'] and digest(inputs['planSha256']) and
             inputs['planSha256'] == initial['originalCertificationPlanSha256'] and
             inputs['originalReleasePlanHashHostVerified'] is True, 'P2_INTERRUPTED_PROFILED_ORIGINAL_INPUT_REQUIRED')
+    require(('replacementRelease' in inputs) == ('originalReleaseReceipt' in initial) == replacement,
+            'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_INPUT_REQUIRED')
+    original_pins = _profiled_original_replacement(initial, selected, reviewed, inputs, profile) if replacement else None
     ready_raw = migrate.read_input(certification, 'p2-certification-current-ready.json')
     # This outer ready receipt is unchanged by the profiled certification
     # parent. The source API proof nested in it carries the v2 profile.
@@ -592,7 +648,10 @@ def _profiled_original_release(initial, selected, jobs, certification, selection
                 receipt['target'] == {key: job['target'][key] for key in ('host', 'port', 'database', 'user', 'serverMajor')} and
                 'selected-image-operator-role-policy' in receipt['checks'] and receipt['pendingTags'] == [],
                 'P2_INTERRUPTED_PROFILED_EXACT_ORIGINAL_API_JOB_REQUIRED')
-    return ready, {'inputVerifiedSha256': sha(inputs_raw), 'readySha256': sha(ready_raw), 'apiCurrentSha256': sha(api_raw)}
+    auxiliary = {'inputVerifiedSha256': sha(inputs_raw), 'readySha256': sha(ready_raw), 'apiCurrentSha256': sha(api_raw)}
+    if original_pins is not None:
+        auxiliary['originalReplacementRelease'] = original_pins
+    return ready, auxiliary
 
 
 def _profiled_replacement(initial, selected, selection, values, stages, old, ready, replacement):
@@ -677,7 +736,10 @@ def _profiled_gateway_frontier(initial, selected, selection, stages, old, active
                 stopped['admission']['uncertain'] == {'newWork': 0, 'recovery': 1} and
                 (stop_dir != replacement or active == ('gateway',)), 'P2_INTERRUPTED_PROFILED_LATEST_STOPPED_ONE_REQUIRED')
         if active == ('gateway',):
-            require(manifest[known.HOST_MODULE] == PROFILED_B_FRONTIER_SHA256,
+            frontier_sources = {PROFILED_B_FRONTIER_SHA256}
+            if 'originalReleaseReceipt' not in initial:
+                frontier_sources.add(PROFILED_LEGACY_B_FRONTIER_SHA256)
+            require(manifest[known.HOST_MODULE] in frontier_sources,
                     'P2_INTERRUPTED_PROFILED_GATEWAY_FRONTIER_UNKNOWN')
         return 'original-stopped-one', stopped, stop_pins
 
@@ -736,7 +798,10 @@ def _profiled_completion(certification, replacement, frontier, stopped, old, pro
         if records[1] is not None:
             outcome = _profiled_record(records[1], profile)
             migrate.require_contract_identity(selected, outcome)
+            release_pins = known.replacement_release_pins(values['recovery-intent.json']['intent'], profile)
             require(outcome['status'] == 'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED' and outcome['readinessReceiptSha256'] == sha(records[0]) and
+                    all(canonical(outcome.get(key)) == canonical(value) for key, value in release_pins.items()) and
+                    ('replacementRelease' in outcome) == bool(release_pins) and
                     known._same_process(outcome['newGateway'], stopped) and prior._zero(outcome['newGateway']) and
                     known._same_process(outcome['originalGateway'], old) and outcome['originalGatewayUncertaintyPreserved'] is True and
                     outcome['originalGateway']['admission']['uncertain'] == {'newWork': 0, 'recovery': 1} and
@@ -783,6 +848,9 @@ def load_profiled_retained(initial, selected, jobs, verify, command=None, *, exp
     snapshot = replacement / 'runtime-known-ack/configuration'
     require(str(input_directory) == reviewed['configurationInputDirectory'] and len({input_directory, old_mount, snapshot}) == 3,
             'P2_INTERRUPTED_PROFILED_ORIGINAL_CONFIGURATION_PATH_REQUIRED')
+    if 'originalReplacementRelease' in auxiliary:
+        require(old_mount == Path(initial['results']) / ('runtime-profiled-frontend-replacement-' + selected['releaseId']) / 'configuration',
+                'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_RUNTIME_MOUNT_REQUIRED')
     runtime.validate_snapshot_source(input_directory, selected, jobs, expected_profile=profile)
     for directory in (input_directory, old_mount):
         require(staging_state.configuration_hashes(directory) == initial['configurationSha256'],

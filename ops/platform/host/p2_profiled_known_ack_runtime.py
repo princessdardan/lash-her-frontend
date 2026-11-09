@@ -18,7 +18,7 @@ import migrate
 import release as runtime
 import staging_admission
 from p2_known_ack_loss import (KnownAckLossBoundary, _same_process, _source_command,
-                               _zero, canonical, digest)
+                               _zero, canonical, digest, replacement_release_pins)
 from p2_recovery_runtime import P2RecoveryRuntime
 from p2_release_scope import P2ReleaseScope
 
@@ -506,6 +506,10 @@ class ProfiledInterruptedKnownAckRuntime(P2RecoveryRuntime):
         scope.verify()
         boundary = scope.boundary
         self.scope, self.selected, self.jobs = scope, boundary.selected, boundary.jobs
+        self.release_pins = replacement_release_pins(scope.parent.certification_plan, scope.expected_profile)
+        retained_pins = replacement_release_pins(boundary.retained['values']['recovery-intent.json']['intent'], scope.expected_profile)
+        require(canonical(self.release_pins) == canonical(retained_pins),
+                'P2_PROFILED_INTERRUPTED_RUNTIME_ORIGINAL_RELEASE_CHANGED')
         self.configuration, self.output = boundary.input_configuration, boundary.output
         self.compose_file, self.source = boundary.compose_file, Path(boundary.broker.source)
         self.snapshot = None
@@ -553,6 +557,7 @@ class ProfiledInterruptedKnownAckRuntime(P2RecoveryRuntime):
             **result,
             **migrate.contract_identity(self.selected),
             **_profile_fields(self.scope.expected_profile),
+            **self.release_pins,
             'status': 'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED',
             'restorationActionId': self.scope.recovery_action_id,
             'frontier': boundary.retained['frontier'],

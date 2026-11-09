@@ -7,6 +7,7 @@ const demand=ok=>{if(!ok)throw new Error('P2_KNOWN_ACK_READ_REFUSED');};
 const sha=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value,(_key,child)=>child&&typeof child==='object'&&!Array.isArray(child)?Object.fromEntries(Object.entries(child).sort(([a],[b])=>a.localeCompare(b))):child)).digest('hex');
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const name=value=>typeof value==='string'&&/^[a-z][a-z0-9_]{0,62}$/u.test(value);
+const oid=value=>typeof value==='string'&&/^[1-9][0-9]{0,9}$/u.test(value)&&Number(value)<=4294967295;
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const lockSql=`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE locktype='advisory' AND pid=$2 AND granted AND mode='ExclusiveLock'
  AND database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND objsubid=1
@@ -89,6 +90,10 @@ export async function observeKnownAckSql(input,{getUrl}){
   demand(input?.version===1&&['frontend','course','community'].includes(input.service)&&uuid(input.commandId)&&/^[a-f0-9]{64}$/u.test(input.commandSha256??'')&&
     /^[1-9][0-9]{0,17}$/u.test(input.accountVersion??'')&&/^[1-9][0-9]{0,17}$/u.test(input.windowEpoch??'')&&typeof getUrl==='function');
   const target=input.target;demand(target&&typeof target.host==='string'&&Number.isInteger(target.port)&&target.port>0&&target.port<=65535&&name(target.database)&&name(target.user)&&[16,18].includes(target.serverMajor));
+  const replacement=input.replacementFrontend;
+  if(Object.hasOwn(input,'replacementFrontend'))demand(input.service==='frontend'&&replacement&&
+    Object.keys(replacement).length===2&&oid(replacement.databaseOid)&&oid(replacement.migrationRoleOid)&&
+    /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/u.test(input.backendStart??''));
   let url;try{url=new URL(await getUrl());}catch{throw new Error('P2_KNOWN_ACK_READ_REFUSED');}
   demand(['postgres:','postgresql:'].includes(url.protocol)&&url.hostname===target.host&&Number(url.port||5432)===target.port&&decodeURIComponent(url.pathname)==='/'+target.database&&decodeURIComponent(url.username)===target.user&&url.password&&!url.hash&&[...url.searchParams].length===1&&url.searchParams.get('sslmode')==='verify-full');
   const client=new Client({host:target.host,port:target.port,database:target.database,user:target.user,password:decodeURIComponent(url.password),ssl:{rejectUnauthorized:true},enableChannelBinding:true,
@@ -101,7 +106,16 @@ export async function observeKnownAckSql(input,{getUrl}){
       demand(actual.database===target.database&&actual.role===target.user&&actual.major===target.serverMajor&&actual.readonly==='on'&&(input.service==='frontend'||actual.role_oid===target.roleOid));
       if(input.service==='frontend'){
         demand(Number.isSafeInteger(input.backendPid)&&typeof input.backendStart==='string'&&/^[a-f0-9]{64}$/u.test(input.marker??'')&&name(input.owner?.name)&&/^[1-9][0-9]*$/u.test(input.owner.oid??''));
-        demand((await client.query('SELECT backend_start::text AS value FROM pg_catalog.pg_stat_activity WHERE pid=$1',[input.backendPid])).rows[0]?.value===input.backendStart);
+        if(replacement){
+          demand(actual.role_oid===replacement.migrationRoleOid&&input.backendPid!==client.processID);
+          const {rows}=await client.query(`SELECT pg_catalog.to_char(held.backend_start AT TIME ZONE 'UTC',
+              'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS value
+            FROM pg_catalog.pg_stat_activity AS held JOIN pg_catalog.pg_stat_activity AS observer
+              ON observer.pid=pg_catalog.pg_backend_pid() AND observer.datid=held.datid AND observer.usesysid=held.usesysid
+            WHERE held.pid=$1 AND held.datid=$2::oid AND held.usesysid=$3::oid AND held.backend_type='client backend'`,
+          [input.backendPid,replacement.databaseOid,replacement.migrationRoleOid]);
+          demand(rows.length===1&&rows[0].value===input.backendStart);
+        }else demand((await client.query('SELECT backend_start::text AS value FROM pg_catalog.pg_stat_activity WHERE pid=$1',[input.backendPid])).rows[0]?.value===input.backendStart);
         for(const key of ['lash-her:private-db:migrations',input.marker])demand((await client.query(lockSql,[key,input.backendPid])).rows[0].held===true);
         const rows=(await client.query('SELECT command_id::text,user_id::text,account_version::text,action,issued_at,command FROM public.customer_account_commands WHERE command_id=$1::uuid',[input.commandId])).rows;
         demand(rows.length===1);const row=rows[0];demand(row.account_version===input.accountVersion&&row.action==='suspend'&&row.command.commandId===row.command_id&&row.command.userId===row.user_id&&String(row.command.accountVersion)===row.account_version&&row.command.action==='suspend'&&sha(row.command)===input.commandSha256);

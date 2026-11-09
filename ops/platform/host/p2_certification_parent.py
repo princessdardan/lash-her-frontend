@@ -154,6 +154,7 @@ REPLACEMENT_RELEASE_FIELDS = frozenset((
 REPLACEMENT_RELEASE_HASHES = ('reviewedPlanSha256', 'runtimeReviewSha256', 'postflightSha256',
                               'frontendSessionClosedSha256', 'frontendDatabaseReceiptSha256')
 REPLACEMENT_PROOF_FIELDS = frozenset(('replacementRelease', 'effectiveLoginBoundaryVerified', 'predecessorRuntimeRoleAbsent'))
+REPLACEMENT_LINEAGE_FIELDS = ('replacementRelease', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256')
 HISTORICAL_PROOF_FIELDS = frozenset(('retiredLogins', 'oldLoginsDenied', 'oldRoleSessions'))
 
 
@@ -200,6 +201,16 @@ def require_certification_replacement_proof(value, replacement):
             _canonical(value.get('replacementRelease')) == _canonical(replacement) and
             value.get('effectiveLoginBoundaryVerified') is True and value.get('predecessorRuntimeRoleAbsent') is True,
             'P2_PROFILED_CERTIFICATION_REPLACEMENT_BOUNDARY_REQUIRED')
+
+
+def require_certification_replacement_lineage(plan, *records):
+    if 'replacementRelease' in plan:
+        require(all(key in plan for key in REPLACEMENT_LINEAGE_FIELDS) and
+                all(type(record) is dict and all(_canonical(record.get(key)) == _canonical(plan[key]) for key in REPLACEMENT_LINEAGE_FIELDS)
+                    for record in records), 'P2_PROFILED_CERTIFICATION_REPLACEMENT_LINEAGE_CHANGED')
+    else:
+        require(all('replacementRelease' not in record for record in records),
+                'P2_PROFILED_CERTIFICATION_REPLACEMENT_LINEAGE_CHANGED')
 
 
 def _profiled_record(raw, expected):
@@ -268,7 +279,7 @@ def _profiled_initial(initial, expected):
     if 'replacementRelease' in plan:
         replacement = require_certification_replacement_release(plan['replacementRelease'], expected)
         inventory = initial['inventory']
-        require(mode != 'known-ack-recovery' and type(inventory) is dict and 'historicalLogins' not in inventory and
+        require(type(inventory) is dict and 'historicalLogins' not in inventory and
                 _canonical(inventory.get('replacementRelease')) == _canonical(replacement) and
                 plan.get('originalReleasePlanSha256') == replacement['reviewedPlanSha256'],
                 'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
@@ -377,6 +388,7 @@ def _profiled_known_ack_selection(plan, mounted, expected):
     require(type(selection) is dict and set(selection) == {'version','qualificationTargetProfile','recoveryActionId','intent','intentSha256'},
             'P2_PROFILED_KNOWN_ACK_SELECTION_REQUIRED')
     vercel.require_record_profile(expected, selection, selection['intent'])
+    require_certification_replacement_lineage(plan, selection['intent'])
     action = selection['recoveryActionId']
     path = plan['knownAckConfigurationInputDirectory']
     require(type(action) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', action) and
@@ -941,12 +953,39 @@ def contain_profiled_certification_frontend(initial, armed, source):
         if replacement is not None:
             require_certification_replacement_proof(value, replacement)
         plan = armed['plan']
+        replacement_known_ack = replacement is not None and plan['mode'] == 'known-ack-recovery'
+        if replacement is not None:
+            fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'releaseId', 'sourceCommit',
+                      'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256', 'frontendAdmissionClosed',
+                      'epoch', 'admissionChanged', 'sqlReplayed', 'releaseAccepted', *REPLACEMENT_PROOF_FIELDS}
+            require(set(value) == fields | ({'knownAckLedger'} if replacement_known_ack else set()) and
+                    type(value['epoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', value['epoch']) and
+                    type(value['admissionChanged']) is bool,
+                    'P2_PROFILED_CERTIFICATION_REPLACEMENT_GUARD_FRONTEND_BINDING_REQUIRED')
         require(value.get('status') == 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED' and
                 value.get('environment') == 'staging' and value.get('releaseId') == plan['originalReleaseId'] and
                 all(value.get(key) == plan[key] for key in ('sourceCommit', 'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256')) and
                 value.get('frontendAdmissionClosed') is True and value.get('sqlReplayed') is False and value.get('releaseAccepted') is False,
                 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_BINDING_REQUIRED')
         _profiled_guard_context(initial, armed, source)
+        if replacement_known_ack:
+            ledger = value.get('knownAckLedger')
+            require(type(ledger) is dict and set(ledger) == {'active', 'uncertain', 'closedZero'} and
+                    all(type(ledger[key]) is int and 0 <= ledger[key] <= 2**53 - 1 for key in ('active', 'uncertain')) and
+                    ledger['closedZero'] is (ledger['active'] == ledger['uncertain'] == 0),
+                    'P2_PROFILED_CERTIFICATION_KNOWN_ACK_GUARD_LEDGER_REQUIRED')
+            # Closed flags are compatible with retained uncertainty. Preserve
+            # the actual readback without deriving a drain or retry authority.
+            name = 'p2-known-ack-guard-frontend-ledger.json'
+            raw = child.stdout.encode()
+            require(raw.endswith(b'\n'), 'P2_PROFILED_CERTIFICATION_KNOWN_ACK_GUARD_LEDGER_REQUIRED')
+            if not os.path.lexists(directory / name):
+                migrate.write_exact_bytes(directory, name, raw)
+            else:
+                require(migrate.read_input(directory, name, 8192) == raw,
+                        'P2_PROFILED_CERTIFICATION_KNOWN_ACK_GUARD_LEDGER_CHANGED')
+        else:
+            require('knownAckLedger' not in value, 'P2_PROFILED_CERTIFICATION_KNOWN_ACK_GUARD_LEDGER_REQUIRED')
         result['frontendAdmissionClosed'] = True
     except Exception:
         pass
@@ -983,8 +1022,7 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
                 vercel.require_record_profile(expected, history)
                 migrate.require_profile(expected, history.get('target'))
             else:
-                require(not interrupted and plan.get('mode') != 'known-ack-recovery' and
-                        _canonical(request[boundary]) == _canonical(self._replacement) and
+                require(_canonical(request[boundary]) == _canonical(self._replacement) and
                         type(request['backendStart']) is str and
                         re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z', request['backendStart']),
                         'P2_PROFILED_CERTIFICATION_REPLACEMENT_OBSERVER_REQUIRED')
@@ -1029,8 +1067,10 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
         from uuid import uuid4
         container='lash-p2-certification-observer-'+uuid4().hex
         entry = OBSERVER if profiled else 'ops/platform/p2-frontend-live-probe.mjs'
-        observer_flag = ('--profiled-known-ack-interrupted' if self._interrupted else
-                         '--profiled-replacement' if self._replacement is not None else '--profiled-current')
+        if self._replacement is not None:
+            observer_flag = '--profiled-replacement-known-ack-interrupted' if self._interrupted else '--profiled-replacement'
+        else:
+            observer_flag = '--profiled-known-ack-interrupted' if self._interrupted else '--profiled-current'
         args=['docker','run','--rm',*(['--pull','never'] if profiled else []),'--name',container,'--interactive','--network','host','--read-only','--cap-drop','ALL',
             '--security-opt','no-new-privileges','--memory','256m','--pids-limit','64','--env','FRONTEND_STAGING_MIGRATION_DATABASE_URL',
             '--mount',f'type=bind,src={program},dst=/app/{entry},readonly',
@@ -1719,6 +1759,7 @@ class P2CertificationBroker(Broker):
             outcome=restored.restore()
             if expected is not None:
                 vercel.require_record_profile(expected,outcome)
+                require_certification_replacement_lineage(cert, outcome)
                 require(outcome['recoveryIntentSha256']==cert['knownAckRecovery']['intentSha256'] and
                     outcome['frontendOperationId']==self.known_ack_reconciliation['operationId'] and
                     outcome['frontendJournalSha256']==self.scope.receipt['journalSha256'] and
@@ -1953,7 +1994,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         initial = self.initial
         plan = initial['certificationPlan']
         mode = plan['mode']
-        require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
+        require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'} or
+                mode == 'known-ack-recovery' and 'replacementRelease' in plan,
                 'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
         if mode == 'interactive-browser':
             from p2_interactive_window import EXECUTABLE_BROWSER_STAGES
@@ -2249,8 +2291,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.prepared_terminal['configurationSha256'] = self.initial['configurationSha256']
         plan = self.initial['certificationPlan']
         if 'replacementRelease' in plan:
-            self.prepared_terminal.update({key: plan[key] for key in (
-                'replacementRelease', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256')})
+            self.prepared_terminal.update({key: plan[key] for key in REPLACEMENT_LINEAGE_FIELDS})
         if self.authority_timing_sha256 is not None:
             self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
         if self.initial['certificationPlan']['mode'] == 'known-ack-recovery':
