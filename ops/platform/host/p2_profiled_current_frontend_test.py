@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 import p2_profiled_current_frontend as subject
+from p2_certification_profile import PROFILE as CERTIFICATION_PROFILE
 
 
 PROFILE = dict(subject.PROFILE)
@@ -293,72 +294,139 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
             with self.assertRaises(ValueError): subject.observe_recovery(initial, provider, lambda: None)
 
     def test_deploy_uses_profiled_primitives_and_checkpoints_every_provider_request(self):
+        self.exercise_profiled_deploy()
+
+    def test_replacement_deploy_preserves_apply_forward_proof_and_observes_without_mutations(self):
+        self.exercise_profiled_deploy(replacement=True)
+
+    def exercise_profiled_deploy(self, replacement=False):
         root = self.private(); checks = []
         controls = {name: name != "INTEGRATION_CHECKOUT_ENABLED" for name in subject.FEATURES}
-        writer = {"mode": "enforce", "targetSha256": "b" * 64, "producerSha256": "c" * 64,
-                  "sourceCommit": SOURCE, "roleName": "frontend_runtime"}
+        if replacement:
+            controls = CERTIFICATION_PROFILE["featureControls"]
+        runtime_role = subject.REPLACEMENT_ROLES[1] if replacement else "frontend_runtime"
+        job_target = {"qualificationTargetProfile": PROFILE, "host": "db.example.com", "port": 5432,
+                      "database": "frontend", "user": "operator", "runtimeRole": runtime_role, "serverMajor": 18,
+                      "allowEmptyBootstrap": replacement, "approvedPendingTags": ["0001_owned"] if replacement else []}
+        target_sha = subject.json_sha({"environment": "staging", **{key: job_target[key]
+                                      for key in ("host", "port", "database", "user", "serverMajor")}})
+        writer = {"mode": "enforce", "targetSha256": target_sha, "producerSha256": "c" * 64,
+                  "sourceCommit": SOURCE, "roleName": runtime_role}
         gateway = {"owned": True}
         plan = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging", "actionId": "owned-release",
-            "sourceCommit": SOURCE, "targetSha256": "b" * 64, "restoration": {"gatewayBindingSha256": subject.json_sha(gateway)}}
+            "sourceCommit": SOURCE, "targetSha256": target_sha, "restoration": {"gatewayBindingSha256": subject.json_sha(gateway)}}
         candidate = {"version": 3, "qualificationTargetProfile": PROFILE, "environment": "staging", "releaseId": "owned-release",
             "contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "d" * 64,
-            "sources": {"frontend": {"commit": SOURCE}}, "frontendMigration": {"qualificationTargetProfile": PROFILE}}
+            "sourceApproval": {"qualificationTargetProfile": PROFILE}, "integration": {"qualificationTargetProfile": PROFILE},
+            "approval": {"qualificationTargetProfile": PROFILE},
+            "workload": {"qualificationTargetProfile": PROFILE, "projectId": PROJECT, "environment": "production"},
+            "sources": {"frontend": {"commit": SOURCE, "qualificationTargetProfile": PROFILE, "requiredChecks": "passed",
+                         "repository": "https://github.com/princessdardan/lash-her-frontend.git"},
+                        **{service: {"qualificationTargetProfile": PROFILE} for service in ("course", "community")}},
+            "frontendMigration": {"qualificationTargetProfile": PROFILE}}
         job = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging", "releaseId": "owned-release",
-               "sourceCommit": SOURCE, "target": {"qualificationTargetProfile": PROFILE}}
+               "sourceCommit": SOURCE, "target": job_target}
         configuration = {name: str(index % 9 + 1) * 64 for index, name in enumerate(sorted(subject.CONFIGURATION_NAMES))}
-        target = {"qualificationTargetProfile": PROFILE, "environment": "staging", "targetSha256": "b" * 64,
-                  "host": "db.example.com", "port": 5432, "database": "frontend", "user": "frontend_runtime", "serverMajor": 18}
+        target = {"qualificationTargetProfile": PROFILE, "environment": "staging", "targetSha256": target_sha,
+                  "host": "db.example.com", "port": 5432, "database": "frontend", "user": runtime_role, "serverMajor": 18}
         context = {"qualificationTargetProfile": PROFILE, "plan": plan, "candidate": candidate, "job": job,
             "candidateSha256": "e" * 64, "inventorySha256": subject.json_sha(plan), "configurationSha256": configuration,
             "directory": str(root), "vercelToken": "private-token", "bindings": {"gatewayObservation": gateway},
             "expectedFeatureControls": controls, "writerAdmissionBinding": writer, "bootstrapRuntimeTarget": target,
-            "frontendRuntimeDatabaseUrl": "postgresql://frontend_runtime:private@db.example.com/frontend?sslmode=verify-full"}
-        environment_rows = []
+            "frontendRuntimeDatabaseUrl": f"postgresql://{runtime_role}:private@db.example.com/frontend?sslmode=verify-full"}
+        if replacement:
+            plan.update(owner={"name": subject.REPLACEMENT_ROLES[0], "oid": "17001"},
+                        producers=[{"producerSha256": writer["producerSha256"], "role": {"name": runtime_role, "oid": "17002"}}],
+                        runtimeProducerSha256=writer["producerSha256"], certification=CERTIFICATION_PROFILE,
+                        configurationSha256=configuration)
+            job.update(contractPhase=candidate["contractPhase"], phase2ContractManifestSha256=candidate["phase2ContractManifestSha256"])
+            context.update(inventorySha256=subject.json_sha(plan), replacementProvenance={
+                key: str(index + 1) * 64 for index, key in enumerate(sorted(subject.REPLACEMENT_PINS))})
+        environment_rows, workload = [], []
+        previous = "dpl_Previous123"
+        state = {"cronDisabled": False, "built": False, "promoted": False}
 
         class Provider:
             calls = []
             def __init__(self, _token): pass
             def request(self, method, path, body=None):
                 self.calls.append((method, path, body))
-                if path.endswith("/env?decrypt=false"): return {"envs": environment_rows}
-                if "/env?upsert=true" in path:
+                if method == "GET" and path in (f"/v9/projects/{PROJECT}", f"/v9/projects/{PROJECT}?rollbackInfo=true"):
+                    return {"id": PROJECT, "accountId": subject.vercel.TEAM, "link": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID},
+                            "targets": {"production": {"id": DEPLOYMENT if state["promoted"] else previous}},
+                            "crons": {"disabledAt": 1 if state["cronDisabled"] else None, "deploymentId": DEPLOYMENT,
+                                      "definitions": [{"path": "/api/cron/account-lifecycle", "schedule": "* * * * *", "host": "owned.vercel.app"}]},
+                            "lastAliasRequest": {"jobStatus": "succeeded", "type": "promote", "toDeploymentId": DEPLOYMENT,
+                                                 "requestedAt": 11} if state["promoted"] else None,
+                            "protectionBypass": {"fixture-bypass": {"scope": "automation-bypass"}}}
+                if method == "PATCH" and path == f"/v1/projects/{PROJECT}/crons" and body == {"enabled": False}:
+                    state["cronDisabled"] = True
+                    return {}
+                if method == "GET" and path == f"/v10/projects/{PROJECT}/env?decrypt=false":
+                    return {"envs": environment_rows}
+                if method == "POST" and path == f"/v10/projects/{PROJECT}/env?upsert=true":
                     environment_rows.append({"key": body["key"], "value": body["value"], "type": body["type"],
                                              "target": ["production"], "gitBranch": None, "customEnvironmentIds": []})
                     return {"failed": [], "created": environment_rows[-1]}
-                return {}
+                if method == "POST" and path == "/v13/deployments" and not state["built"]:
+                    state["built"] = True
+                    return {"id": DEPLOYMENT}
+                if method == "GET" and path == f"/v13/deployments/{DEPLOYMENT}?withGitRepoInfo=true" and state["built"]:
+                    return {"id": DEPLOYMENT, "projectId": PROJECT, "url": "owned.vercel.app", "readyState": "READY",
+                            "target": "production", "gitSource": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID,
+                                                                  "sha": SOURCE}, "meta": {"lashReleaseId": "owned-release"}}
+                if method == "POST" and path == f"/v10/projects/{PROJECT}/promote/{DEPLOYMENT}" and workload and not state["promoted"]:
+                    state["promoted"] = True
+                    return {}
+                raise AssertionError("unexpected provider operation")
 
-        staged = {"version": 2, "qualificationTargetProfile": PROFILE, "environment": "staging", "projectId": PROJECT,
-            "sourceCommit": SOURCE, "releaseId": "owned-release", "deploymentId": DEPLOYMENT, "previousDeploymentId": "dpl_Previous123"}
+        class Workload:
+            def request(self, url, secret, bypass, challenge, mode=None):
+                if (url, bypass, mode) != ("https://owned.vercel.app", "fixture-bypass", "phase2") or state["promoted"]:
+                    raise AssertionError("workload was not checked before promotion")
+                if not any(row["key"] == "LASH_RELEASE_PROBE_SECRET" and row["value"] == secret for row in environment_rows):
+                    raise AssertionError("workload probe used a different credential")
+                workload.append(challenge)
+                return {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": challenge,
+                        "checks": ["gateway-course-catalog-p2"], "contractPhase": "p2",
+                        "featureControls": controls, "writerAdmissionBinding": writer, "gatewayOrigin": "https://api-staging.lashher.com",
+                        "environment": "staging", "projectId": PROJECT, "sourceCommit": SOURCE}
 
-        def disable(client, _candidate, **_kwargs): client.request("PATCH", "/v1/projects/owned/crons", {"enabled": False})
-        def prepare(client, *_args, **_kwargs): client.request("POST", "/v10/projects/owned/env?upsert=true", {
-            "key": "LASH_RELEASE_PROBE_SECRET", "value": "private", "type": "sensitive", "target": ["production"],
-            "gitBranch": None, "customEnvironmentIds": []})
-        def stage(client, _candidate, attempt, **_kwargs):
-            client.request("POST", "/v13/deployments", {}); subject.migrate.write_json(attempt, "frontend-build-outcome.json",
-                {**staged, "status": "FRONTEND_STAGED", "readyState": "READY", "trafficAuthorized": False, "promotionAuthorized": False})
-        def promote(client, _candidate, attempt, _verify, **_kwargs):
-            subject.migrate.write_json(attempt, "frontend-promotion-started.json", {**staged, "previousAliasRequestedAt": 10})
-            client.request("POST", "/v10/projects/owned/promote/dpl_Owned123", {})
-            subject.migrate.write_json(attempt, "frontend-workload-outcome.json", {**staged, "status": "FRONTEND_VERIFIED",
-                "contractPhase": "p2", "phase2ContractManifestSha256": candidate["phase2ContractManifestSha256"],
-                "featureControls": controls, "writerAdmissionBinding": writer})
-
-        project = {"targets": {"production": {"id": DEPLOYMENT}}, "crons": {"disabledAt": 1, "deploymentId": DEPLOYMENT,
-            "definitions": [{"path": "/api/cron/account-lifecycle", "schedule": "* * * * *", "host": "owned.vercel.app"}]}}
         with mock.patch.object(subject.vercel, "Client", Provider), \
-             mock.patch.object(subject.vercel, "release_identity", return_value=("staging", PROJECT, SOURCE)), \
-             mock.patch.object(subject.vercel, "disable_schedules", side_effect=disable), \
-             mock.patch.object(subject.vercel, "stage_frontend", side_effect=stage), \
-             mock.patch.object(subject.vercel, "promote_frontend", side_effect=promote), \
-             mock.patch.object(subject.vercel, "_staged_identity", return_value=staged), \
-             mock.patch.object(subject.vercel, "deployment_state", return_value={"readyState": "READY", "url": "https://owned.vercel.app"}), \
-             mock.patch.object(subject.vercel, "promotion_state", return_value={"cronsEnabled": False, "productionDeploymentId": DEPLOYMENT,
-                 "aliasJob": {"jobStatus": "succeeded", "type": "promote", "toDeploymentId": DEPLOYMENT, "requestedAt": 11}}), \
-             mock.patch.object(subject.vercel, "_project", return_value=project), \
-             mock.patch.object(subject.frontend_probe, "prepare", side_effect=prepare):
-            result = subject.deploy(context, lambda: checks.append("checked"))
-        self.assertEqual(result["status"], "P2_PROFILED_CURRENT_FRONTEND_VERIFIED")
+             mock.patch.object(subject.frontend_probe, "ProbeClient", Workload):
+            if replacement:
+                with self.assertRaisesRegex(ValueError, "PROFILED_CURRENT_ORIGINAL_JOB_REQUIRED"):
+                    subject.deploy(context, lambda: self.fail("unexpected checkpoint"))
+                self.assertEqual(Provider.calls, [])
+                for supplied in ({**context, "replacementProvenance": {}}, {**context, "job": {**job,
+                    "target": {**job_target, "allowEmptyBootstrap": False, "approvedPendingTags": []}}}):
+                    with self.assertRaises(ValueError):
+                        subject.deploy(supplied, lambda: self.fail("unexpected checkpoint"), replacement=True)
+                self.assertEqual(Provider.calls, [])
+            result = subject.deploy(context, lambda: checks.append("checked"), replacement=replacement)
+            if replacement:
+                calls = list(Provider.calls)
+                read_context = {key: value for key, value in context.items() if key != "frontendRuntimeDatabaseUrl"}
+                self.assertEqual(subject.observe(read_context, lambda: checks.append("checked"), replacement=True), result)
+                self.assertTrue(all(call[0] == "GET" for call in Provider.calls[len(calls):]))
+                saved = (root / "vercel" / "frontend-promotion-outcome.json").read_bytes()
+                self.assertEqual(result["frontendPromotionReceiptSha256"], subject.sha(saved))
+                self.assertTrue(result["frontendSqlApplied"])
+                self.assertFalse(result["frontendSqlReplayed"])
+                for key, value in context["replacementProvenance"].items():
+                    self.assertEqual(result[key], value)
+                self.assertEqual([(body["key"], body["value"], body["type"]) for _, path, body in Provider.calls
+                    if "/env?upsert=true" in path and body["key"] in ("DATABASE_URL", "FRONTEND_WRITER_ADMISSION_DATABASE_URL")],
+                    [("FRONTEND_WRITER_ADMISSION_DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive"),
+                     ("DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive")])
+        self.assertEqual(result["status"], subject.REPLACEMENT_STATUS if replacement else "P2_PROFILED_CURRENT_FRONTEND_VERIFIED")
+        self.assertEqual(len(workload), 1)
+        self.assertEqual([path for method, path, _ in Provider.calls if method == "POST" and
+                          (path == "/v13/deployments" or "/promote/" in path)],
+                         ["/v13/deployments", f"/v10/projects/{PROJECT}/promote/{DEPLOYMENT}"])
+        build = next(body for _, path, body in Provider.calls if path == "/v13/deployments")
+        self.assertEqual(build["gitSource"]["sha"], SOURCE)
+        self.assertFalse(build["autoAssignCustomDomains"])
         self.assertEqual(len(checks), len(Provider.calls))
         intents = sorted((root / "vercel").glob("provider-mutation-intent-*.json"))
         self.assertEqual(len(intents), len([call for call in Provider.calls if call[0] in ("POST", "PATCH", "DELETE")]))

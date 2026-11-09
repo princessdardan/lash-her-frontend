@@ -13,6 +13,9 @@ import { FRONTEND_MIGRATION_LOCK, frontendMigrationArtifact, prepareFrontendMigr
 import { FRONTEND_PREPARATION_ROLES as roles } from "./frontend-role-preparation.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
+import { observeP2FrontendReplacement } from "./p2-frontend-replacement-probe.mjs";
+import { observeP2FrontendReplacementWritten } from "./p2-frontend-replacement-written.mjs";
+import { observeP2FrontendReplacementClosed } from "./p2-frontend-replacement-closed.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const source = fileURLToPath(new URL("../..", import.meta.url));
@@ -22,6 +25,7 @@ const host = "127.0.0.1", migrationUser = "owned_frontend_migration", oldUser = 
 const predecessorDatabase = "owned_frontend_predecessor", oldRuntime = "owned_frontend_previous_runtime";
 const producerSha256 = "a".repeat(64), inventorySha256 = "b".repeat(64);
 const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const rawDigest = value => createHash("sha256").update(value).digest("hex");
 const run = (program, args, options) => execFileSync(program, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 const privateDir = directory => { mkdirSync(directory, { mode: 0o700 }); return directory; };
 const readJson = (directory, name) => JSON.parse(readFileSync(join(directory, name), "utf8"));
@@ -75,7 +79,7 @@ function plan(sourceCommit, artifact, baseline, target, predecessorTarget, relea
     administrativeLogins: [], producerSha256, inventorySha256 };
 }
 
-async function invoke(directory, name, input, cluster, predecessorCluster, success, { ordinary = false, confirmation, continueRelease } = {}) {
+async function invoke(directory, name, input, cluster, predecessorCluster, success, { ordinary = false, confirmation, continueRelease, withOwnedHost } = {}) {
   phase = name;
   const results = privateDir(join(directory, name));
   const outputs = { directory: privateDir(join(results, "release")), rolesDirectory: privateDir(join(results, "roles")),
@@ -92,6 +96,7 @@ async function invoke(directory, name, input, cluster, predecessorCluster, succe
       ...outputs, cluster, predecessorCluster, getUrl,
       confirmation: confirmation ?? `owned-frontend-bootstrap/${input.job.releaseId}`,
       ...(continueRelease ? { continueRelease: value => continueRelease(value, outputs) } : {}),
+      ...(withOwnedHost ? { withOwnedHost: (lease, task) => withOwnedHost({ ...lease, getUrl }, task) } : {}),
     });
   } catch (failure) { error = failure; }
   assert.equal(String(error?.message ?? "").includes(password), false);
@@ -104,6 +109,65 @@ async function invoke(directory, name, input, cluster, predecessorCluster, succe
     for (const file of readdirSync(evidenceDirectory))
       assert.equal(readFileSync(join(evidenceDirectory, file), "utf8").includes(password), false);
   return { ...outputs, outcome, replacementOutcome, credentialRead };
+}
+
+function hostedFixture(cluster, input, operations, { wrongCustody = false, afterCustody } = {}) {
+  return async ({ verifyEnvironment, signal, getUrl }, task) => {
+    let probe, physical, armReceiptSha256, writtenPacket, writtenBytes;
+    const arm = {
+      async armReplacement(locked) {
+        operations.push("arm");
+        probe = locked;
+        physical = Buffer.from(JSON.stringify(await observeP2FrontendReplacement(probe, { getUrl })) + "\n");
+        armReceiptSha256 = rawDigest(physical);
+        return { physicalObservation: physical.toString("base64"), physicalObservationSha256: rawDigest(physical), armReceiptSha256 };
+      },
+      async authorizeReplacementWrite(boundary) {
+        operations.push("custody");
+        await assertPristine(cluster, input.job.target.database);
+        assert.equal(boundary.status, "FRONTEND_REPLACEMENT_BOUNDARY_VERIFIED");
+        await afterCustody?.();
+        const receipt = { status: "P2_FRONTEND_REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED", armReceiptSha256,
+          physicalObservationSha256: wrongCustody ? "f".repeat(64) : rawDigest(physical),
+          bootstrapAuthorized: false, migrationAuthorized: false, deploymentAuthorized: false, trafficAuthorized: false };
+        return { receipt, writeIntentSha256: digest(receipt) };
+      },
+      async verifyReplacementWritten({ databaseReceipt, continuationStarted, owner, runtime, producerSha256 }) {
+        operations.push("written");
+        writtenPacket = { probe, physicalObservation: physical.toString("base64"),
+          databaseReceipt: databaseReceipt.toString("base64"), continuationStarted: continuationStarted.toString("base64"),
+          owner, runtime, producerSha256, administrativeLogins: input.administrativeLogins };
+        const receipt = await observeP2FrontendReplacementWritten(writtenPacket, { getUrl });
+        writtenBytes = Buffer.from(JSON.stringify(receipt) + "\n");
+        return { receipt, bytes: writtenBytes, postflightSha256: rawDigest(writtenBytes) };
+      },
+      async startReplacementRuntime() {
+        operations.push("runtime");
+        return { status: "OWNED_REPLACEMENT_API_RUNTIME_READY" };
+      },
+      async prepareReplacementClose() {
+        operations.push("prepare-close");
+        await observeP2FrontendReplacement(probe, { getUrl });
+      },
+      async observeReplacementClosed() {
+        operations.push("closed");
+        const receipt = await observeP2FrontendReplacementClosed({
+          ...writtenPacket, writtenObservation: writtenBytes.toString("base64"),
+        }, { getUrl });
+        assert.equal(receipt.originalLocksAbsent, true);
+        assert.equal(receipt.writtenObservationSha256, rawDigest(writtenBytes));
+      },
+      async finishReplacement({ terminal, continuationCompleted, releaseOutcome }) {
+        operations.push("finish");
+        assert.equal(JSON.parse(terminal).migrationMode, "apply-forward");
+        assert.equal(JSON.parse(terminal).phase, "completed");
+        assert.equal(JSON.parse(continuationCompleted).status, "FRONTEND_CONTINUATION_COMPLETED");
+        assert.equal(JSON.parse(releaseOutcome).status, "OWNED_REPLACEMENT_FRONTEND_VERIFIED");
+        await verifyEnvironment();
+      },
+    };
+    return task(verifyEnvironment, signal, arm);
+  };
 }
 
 const journalSql = "select hash,created_at from drizzle.__drizzle_migrations order by created_at,id";
@@ -222,8 +286,30 @@ async function fixture() {
     await attempt("shared-predecessor-role", false);
     await assertPristine(replacement, target.database);
     await withDatabase(replacement, "postgres", client => client.query(`drop role ${oldRuntime}`));
-    const applied = await attempt("apply", true, { async continueRelease(continuation, outputs) {
+    const refusedOperations = [];
+    const wrongCustody = await attempt("foreign-host-custody", false, {
+      withOwnedHost: hostedFixture(replacement, selected, refusedOperations, { wrongCustody: true }),
+      continueRelease() { assert.fail("foreign host custody reached continuation"); },
+    });
+    assert.deepEqual(refusedOperations, ["arm", "custody"]);
+    assert.equal(wrongCustody.replacementOutcome.intentRetained, false);
+    await assertPristine(replacement, target.database);
+    const drift = await attempt("catalog-drift-after-custody", false, {
+      withOwnedHost: hostedFixture(replacement, selected, [], { afterCustody: () => withDatabase(replacement, target.database,
+        client => client.query("create table public.unreviewed_after_custody(value text)")) }),
+      continueRelease() { assert.fail("drifted catalog reached continuation"); },
+    });
+    assert.equal(drift.replacementOutcome.intentRetained, false);
+    await assertPristine(replacement, target.database);
+    await withDatabase(replacement, target.database, client => client.query("drop table public.unreviewed_after_custody"));
+    const hostOperations = [];
+    const applied = await attempt("apply", true, {
+      withOwnedHost: hostedFixture(replacement, selected, hostOperations),
+      async continueRelease(continuation, outputs) {
       const { database, owner, runtime, roleProofSha256, admission, verifyLockedSession } = continuation;
+      assert.deepEqual(hostOperations, ["arm", "custody", "written", "runtime"]);
+      assert.equal(continuation.ready.status, "OWNED_REPLACEMENT_API_RUNTIME_READY");
+      assert.ok(existsSync(join(outputs.directory, "replacement-write-custody.json")));
       assert.equal(database.applied.length, artifact.migrations.length);
       assert.deepEqual(admission, { migrationCount: artifact.migrations.length, admissionEpoch: "1", newWork: false, recovery: false, operations: 0 });
       const written = readJson(outputs.directory, "replacement-written-observation.json");
@@ -254,7 +340,9 @@ async function fixture() {
       });
       await verifyApplied(replacement, selected, artifact, outputs);
       await verifyLockedSession();
+      return { status: "OWNED_REPLACEMENT_FRONTEND_VERIFIED" };
     } });
+    assert.deepEqual(hostOperations, ["arm", "custody", "written", "runtime", "prepare-close", "closed", "finish"]);
     assert.equal(applied.replacementOutcome?.status, "OWNED_FRONTEND_REPLACEMENT_DATABASE_VERIFIED");
     assert.equal(applied.replacementOutcome?.deploymentAuthorized, false);
     assert.equal(applied.replacementOutcome?.automaticReplayAllowed, false);
@@ -325,6 +413,8 @@ async function fixture() {
         "exact-schema", "closed-runtime-admission", "predecessor-preserved",
         "fresh-directory-replay-refused", "late-schema-drift-retains-commits-and-refuses-replay",
         "independent-physical-proof-before-write", "independent-written-readback-of-original-receipts", "both-locks-held-through-compatible-continuation",
+        "foreign-host-custody-refused-before-roles", "catalog-drift-after-host-custody-refused-before-roles",
+        "host-readback-and-api-readiness-on-original-locked-session", "independent-closure-before-original-receipt-join",
         "closed-admission-rechecked-after-continuation", "failed-continuation-preserves-commits-and-refuses-replay"] };
   } finally {
     let allStopped = true;

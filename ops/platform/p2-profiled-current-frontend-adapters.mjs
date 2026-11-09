@@ -8,8 +8,10 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { Client } from "pg";
 import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
+import { FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
 import { frontendPrivateReceiptDirectory, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { prepareP2CertificationProfile } from "./p2-certification-profile.mjs";
+import { validateP2FrontendReplacementProbe, verifyP2FrontendReplacementSession } from "./p2-frontend-replacement-probe.mjs";
 import { requireQualificationTargetProfile, resolveQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -37,6 +39,15 @@ const controlNames = Object.freeze([
 ]);
 const falseFields = Object.freeze(["frontendSqlApplied", "historicalProviderClosureClaimed", "oldP200Qualified",
   "nativeSchedulesEnabled", "trafficAuthorized", "releaseAccepted"]);
+const replacementStatus = "P2_FRONTEND_REPLACEMENT_FRONTEND_VERIFIED";
+const replacementPins = Object.freeze(["postflightSha256", "reviewedPlanSha256", "runtimeReviewSha256",
+  "runtimeOutcomeSha256", "migrationOutcomeSha256"]);
+const replacementProofFields = Object.freeze(["version", "qualificationTargetProfile", "status", "environment",
+  "actionId", "releaseId", "sourceCommit", "targetSha256", "candidateSha256", "configurationSha256", "contractPhase",
+  "phase2ContractManifestSha256", "projectId", "deploymentId", "readyState", "aliasJobState", "aliasDeploymentId",
+  "aliasJobDeploymentId", "aliasJobMatchesIntent", "aliasJobType", "workloadVerified", "workloadReceiptSha256",
+  "configurationRecordSha256", "featureControls", "writerAdmissionBinding", "certificationSchedule", "admissionNewWork",
+  "admissionRecovery", ...falseFields, ...replacementPins, "frontendSqlReplayed", "frontendPromotionReceiptSha256"]);
 const recoveryPinNames = Object.freeze(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome",
   "apiRuntimeOutcome", "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]);
 const lostBuildPinNames = Object.freeze(["deployStarted", "buildStarted", "buildIntent"]);
@@ -72,24 +83,25 @@ function featureControls(plan) {
   demand(isDeepStrictEqual(Object.keys(value).sort(), [...controlNames].sort()) &&
     Object.values(value).every(item => typeof item === "boolean")); return value;
 }
-function providerContext(value, recovery) {
+function providerContext(value, recovery, replacement = false) {
   demand(value && typeof value === "object");
   const version = own(value, "version"), selectedProfile = plain(own(value, "qualificationTargetProfile"));
   requireQualificationTargetProfile(profile, { qualificationTargetProfile: selectedProfile });
   demand(version === 2); plain(value);
-  const required = ["version", "qualificationTargetProfile", "vercelToken", "bindings", ...(recovery ? ["originalDirectory"] : ["frontendRuntimeDatabaseUrl"])];
+  const required = ["version", "qualificationTargetProfile", "vercelToken", "bindings",
+    ...(recovery ? ["originalDirectory"] : replacement ? [] : ["frontendRuntimeDatabaseUrl"])];
   const optional = recovery && Object.hasOwn(value, "frontendRuntimeDatabaseUrl") ? ["frontendRuntimeDatabaseUrl"] : [];
   demand(isDeepStrictEqual(Object.keys(value).sort(), [...required, ...optional].sort()));
   demand(typeof value.vercelToken === "string" &&
     value.vercelToken.length > 0 && value.vercelToken.length <= 8192 && /^[!-~]+$/u.test(value.vercelToken) &&
     value.bindings && typeof value.bindings === "object");
   if (recovery) frontendPrivateReceiptDirectory(value.originalDirectory);
-  else demand(typeof value.frontendRuntimeDatabaseUrl === "string" && value.frontendRuntimeDatabaseUrl.length > 0 &&
+  else if (!replacement) demand(typeof value.frontendRuntimeDatabaseUrl === "string" && value.frontendRuntimeDatabaseUrl.length > 0 &&
     value.frontendRuntimeDatabaseUrl.length <= 16_384 && !/[\r\n]/u.test(value.frontendRuntimeDatabaseUrl));
   return value;
 }
 
-function validateRelease(context) {
+function validateRelease(context, replacement = false) {
   demand(context && typeof context === "object");
   const plan = plain(own(context, "plan")), candidate = plain(own(context, "candidate")), job = plain(own(context, "job"));
   const configurationSha256 = configurationMap(own(context, "configurationSha256"));
@@ -106,14 +118,21 @@ function validateRelease(context) {
     candidate.sources.frontend.repository === "https://github.com/princessdardan/lash-her-frontend.git" &&
     candidate.sources.frontend.requiredChecks === "passed" && candidate.workload?.projectId === definition.frontend.projectId &&
     candidate.workload.environment === definition.frontend.workloadEnvironment && Array.isArray(job.target.approvedPendingTags) &&
-    job.target.approvedPendingTags.length === 0 && job.target.allowEmptyBootstrap === false &&
+    Boolean(job.target.approvedPendingTags.length) === replacement && job.target.allowEmptyBootstrap === replacement &&
     digest(own(context, "candidateSha256")) && digest(own(context, "inventorySha256")) && context.inventorySha256 === jsonHash(plan) &&
     (!plan.configurationSha256 || isDeepStrictEqual(plan.configurationSha256, configurationSha256)));
   demand(target.environment === "staging" && target.targetSha256 === plan.targetSha256 && digest(target.targetSha256) &&
     target.host === job.target.host && target.port === job.target.port && target.database === job.target.database &&
     target.user === job.target.runtimeRole && target.serverMajor === job.target.serverMajor);
-  demand(typeof admission.epoch === "string" && /^[1-9][0-9]{0,17}$/u.test(admission.epoch) && admission.newWork === false &&
-    admission.recovery === false && admission.ledgerDrained === true && admission.active === 0 && admission.uncertain === 0);
+  if (replacement) {
+    demand(admission.epoch === "1" && admission.newWork === false && admission.recovery === false &&
+      (admission.operations === 0 || admission.active === 0 && admission.uncertain === 0) &&
+      ["operations", "active", "uncertain"].every(key => !Object.hasOwn(admission, key) || admission[key] === 0));
+  } else {
+    demand(!Object.hasOwn(context, "replacementProvenance") && !Object.hasOwn(context, "replacementProbe") &&
+      typeof admission.epoch === "string" && /^[1-9][0-9]{0,17}$/u.test(admission.epoch) && admission.newWork === false &&
+      admission.recovery === false && admission.ledgerDrained === true && admission.active === 0 && admission.uncertain === 0);
+  }
   demand(typeof own(context, "getProviderContext") === "function" && typeof own(context, "verifyLockedSession") === "function" &&
     typeof own(context, "databaseClient")?.query === "function" && (!context.environmentSignal ||
       typeof context.environmentSignal.addEventListener === "function"));
@@ -125,9 +144,25 @@ function validateRelease(context) {
     job.target.user !== target.user && Array.isArray(plan.producers));
   const producers = plan.producers.filter(row => row.producerSha256 === writerAdmissionBinding.producerSha256);
   demand(producers.length === 1 && producers[0].role?.name === target.user && oid(producers[0].role.oid));
-  return { plan, candidate, job, configurationSha256, target, admission, expectedFeatureControls, writerAdmissionBinding,
+  let replacementProbe, replacementProvenance;
+  if (replacement) {
+    replacementProbe = plain(own(context, "replacementProbe"));
+    validateP2FrontendReplacementProbe(replacementProbe);
+    replacementProvenance = plain(own(context, "replacementProvenance"));
+    demand(isDeepStrictEqual(replacementProbe.job, job) && isDeepStrictEqual(replacementProbe.candidate, candidate) &&
+      replacementProbe.targetSha256 === target.targetSha256 && plan.owner?.name === FRONTEND_PREPARATION_ROLES.owner &&
+      oid(plan.owner.oid) && isDeepStrictEqual(Object.keys(plan.owner).sort(), ["name", "oid"]) &&
+      isDeepStrictEqual(Object.keys(producers[0].role).sort(), ["name", "oid"]) &&
+      plan.producers.length === 1 && target.user === FRONTEND_PREPARATION_ROLES.runtime &&
+      new Set([plan.owner.oid, producers[0].role.oid, replacementProbe.migrationRoleOid]).size === 3 &&
+      isDeepStrictEqual(plan.configurationSha256, configurationSha256) &&
+      isDeepStrictEqual(Object.keys(replacementProvenance).sort(), [...replacementPins].sort()) &&
+      Object.values(replacementProvenance).every(digest) && digest(plan.restoration?.gatewayBindingSha256));
+  }
+  const selected = { plan, candidate, job, configurationSha256, target, admission, expectedFeatureControls, writerAdmissionBinding,
     runtimeOid: producers[0].role.oid,
-    candidateSha256: context.candidateSha256, inventorySha256: context.inventorySha256 };
+    candidateSha256: context.candidateSha256, inventorySha256: context.inventorySha256, replacementProbe, replacementProvenance };
+  return replacement ? structuredClone(selected) : selected;
 }
 
 function validateRecovery(context) {
@@ -205,6 +240,32 @@ async function closedAdmission(context, selected) {
   demand(actual.epoch === selected.admission.epoch);
 }
 
+async function replacementClosedAdmission(context, selected) {
+  const { databaseClient: client } = context, { replacementProbe: probe, plan, runtimeOid } = selected;
+  const verify = async () => {
+    await context.verifyLockedSession();
+    demand(!context.environmentSignal?.aborted);
+    await verifyP2FrontendReplacementSession(client, probe);
+  };
+  await verify();
+  await client.query("BEGIN READ ONLY");
+  try {
+    const owner = (await client.query("SELECT nspowner::text AS oid FROM pg_catalog.pg_namespace WHERE nspname='frontend_admission'")).rows;
+    demand(isDeepStrictEqual(owner, [{ oid: plan.owner.oid }]));
+    await client.query(`SET LOCAL ROLE "${plan.owner.name}"`);
+    const controls = (await client.query("SELECT singleton,environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control LIMIT 2")).rows;
+    demand(isDeepStrictEqual(controls, [{ singleton: true, environment: "staging", target_sha256: plan.targetSha256,
+      epoch: selected.admission.epoch, new_work: false, recovery: false }]));
+    const producers = (await client.query("SELECT producer_sha256,source_sha,database_role::text AS role_oid,enabled FROM frontend_admission.producers LIMIT 2")).rows;
+    demand(isDeepStrictEqual(producers, [{ producer_sha256: selected.writerAdmissionBinding.producerSha256,
+      source_sha: plan.sourceCommit, role_oid: runtimeOid, enabled: true }]));
+    demand((await client.query("SELECT 1 FROM frontend_admission.operations LIMIT 1")).rows.length === 0);
+  } finally {
+    await client.query("ROLLBACK");
+    await verify();
+  }
+}
+
 const runtimeIdentitySql = `SELECT pg_catalog.pg_backend_pid() AS pid, current_user AS username,
   session_user AS login, d.datname AS database, d.oid::text AS database_oid,
   pg_catalog.current_setting('server_version_num')::int / 10000 AS major,
@@ -228,8 +289,9 @@ async function readRuntimeIdentity(client, target, runtimeOid, runtimeRole, migr
 }
 
 async function proveRuntimeDatabase(selected, runtimeDatabaseUrl, migration) {
-  const target = { ...selected.target, approvedPendingTags: [] };
-  const runtime = new Client({ ...frontendConnectionOptions(runtimeDatabaseUrl, target),
+  const target = selected.target;
+  const options = frontendConnectionOptions(runtimeDatabaseUrl, target);
+  const runtime = new Client({ ...options, options: "-c search_path=public -c default_transaction_read_only=on",
     application_name: "lash-her-profiled-runtime-credential", statement_timeout: 10_000, query_timeout: 12_000 });
   let lost = false;
   runtime.on("error", () => { lost = true; });
@@ -286,12 +348,14 @@ function releasePayload(selected, provider, directory, runtimeDatabaseUrl = prov
     configurationSha256: selected.configurationSha256, directory, vercelToken: provider.vercelToken,
     bindings: provider.bindings, expectedFeatureControls: selected.expectedFeatureControls,
     writerAdmissionBinding: selected.writerAdmissionBinding, bootstrapRuntimeTarget: selected.target,
-    frontendRuntimeDatabaseUrl: runtimeDatabaseUrl };
+    ...(runtimeDatabaseUrl === undefined ? {} : { frontendRuntimeDatabaseUrl: runtimeDatabaseUrl }),
+    ...(selected.replacementProvenance === undefined ? {} : { replacementProvenance: selected.replacementProvenance }) };
 }
 
 function releaseProof(result, selected) {
   plain(result); profiles(result);
-  demand(result.version === 2 && result.status === "P2_PROFILED_CURRENT_FRONTEND_VERIFIED" &&
+  const replacement = selected.replacementProvenance !== undefined;
+  demand(result.version === 2 && result.status === (replacement ? replacementStatus : "P2_PROFILED_CURRENT_FRONTEND_VERIFIED") &&
     result.environment === "staging" && result.actionId === selected.candidate.releaseId &&
     result.releaseId === selected.candidate.releaseId && result.sourceCommit === selected.plan.sourceCommit &&
     result.targetSha256 === selected.plan.targetSha256 && result.candidateSha256 === selected.candidateSha256 &&
@@ -306,7 +370,11 @@ function releaseProof(result, selected) {
     result.configurationRecordSha256 === result.workloadReceiptSha256 && digest(result.workloadReceiptSha256) &&
     result.certificationSchedule?.path === "/api/cron/account-lifecycle" && result.certificationSchedule.schedule === "* * * * *" &&
     result.certificationSchedule.nativeEnabled === false && result.certificationSchedule.deploymentId === result.deploymentId &&
-    digest(result.certificationSchedule.definitionsSha256) && falseFields.every(key => result[key] === false));
+    digest(result.certificationSchedule.definitionsSha256) &&
+    falseFields.every(key => result[key] === (replacement && key === "frontendSqlApplied")));
+  if (replacement) demand(isDeepStrictEqual(Object.keys(result).sort(), [...replacementProofFields].sort()) &&
+    replacementPins.every(key => result[key] === selected.replacementProvenance[key]) &&
+    result.frontendSqlReplayed === false && digest(result.frontendPromotionReceiptSha256));
   const evidence = Buffer.from(JSON.stringify(result)); demand(evidence.length > 0 && evidence.length <= 2_000_000);
   return { ...result, evidence, evidenceSha256: hash(evidence) };
 }
@@ -444,4 +512,57 @@ export async function readProfiledCurrentWorkloadReceipt(context, observation) {
     const bytes = readFrontendReleaseEvidence(resolve(frontendPrivateReceiptDirectory(directory), "vercel"), "frontend-workload-outcome.json");
     demand(hash(bytes) === observation.workloadReceiptSha256); return bytes;
   } catch { refuse(); }
+}
+
+async function runReplacementFrontend(context, deploy) {
+  try {
+    const selected = validateRelease(context, true);
+    const checkpoint = () => replacementClosedAdmission(context, selected);
+    await checkpoint();
+    let runtimeDatabaseUrl;
+    if (deploy) {
+      const minted = Object.getOwnPropertyDescriptor(context, "frontendRuntimeDatabaseUrl");
+      demand(minted?.enumerable === false && Object.hasOwn(minted, "value") && typeof minted.value === "string" &&
+        minted.value.length > 0 && minted.value.length <= 16_384 && !/[\r\n]/u.test(minted.value));
+      runtimeDatabaseUrl = minted.value;
+      await proveRuntimeDatabase(selected, runtimeDatabaseUrl, {
+        pid: selected.replacementProbe.backendPid, databaseOid: selected.replacementProbe.databaseOid,
+      });
+    }
+    const provider = providerContext(await context.getProviderContext(Object.freeze({ qualificationTargetProfile: profile,
+      actionId: selected.plan.actionId, sourceCommit: selected.plan.sourceCommit, targetSha256: selected.plan.targetSha256 })), false, true);
+    demand(jsonHash(provider.bindings.gatewayObservation) === selected.plan.restoration.gatewayBindingSha256);
+    await checkpoint();
+    const result = await runWorker(deploy ? "replacement-deploy" : "replacement-observe",
+      releasePayload(selected, provider, context.directory, runtimeDatabaseUrl), checkpoint, context.environmentSignal);
+    return releaseProof(result, selected);
+  } catch { refuse(); }
+}
+
+export function deployProfiledReplacementFrontend(context) {
+  return runReplacementFrontend(context, true);
+}
+
+export function observeProfiledReplacementFrontend(context) {
+  return runReplacementFrontend(context, false);
+}
+
+function readReplacementReceipt(context, observation, filename, pin) {
+  try {
+    const selected = validateRelease(context, true);
+    const { evidence, evidenceSha256, ...record } = observation;
+    const checked = releaseProof(record, selected);
+    demand(Buffer.isBuffer(evidence) && evidence.equals(checked.evidence) && evidenceSha256 === checked.evidenceSha256);
+    const bytes = readFrontendReleaseEvidence(resolve(frontendPrivateReceiptDirectory(context.directory), "vercel"), filename);
+    demand(hash(bytes) === record[pin]);
+    return bytes;
+  } catch { refuse(); }
+}
+
+export function readProfiledReplacementWorkloadReceipt(context, observation) {
+  return readReplacementReceipt(context, observation, "frontend-workload-outcome.json", "workloadReceiptSha256");
+}
+
+export function readProfiledReplacementPromotionReceipt(context, observation) {
+  return readReplacementReceipt(context, observation, "frontend-promotion-outcome.json", "frontendPromotionReceiptSha256");
 }

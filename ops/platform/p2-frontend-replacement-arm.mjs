@@ -29,7 +29,7 @@ const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.
 const hostPath = value => typeof value === "string" && /^\/var\/lib\/lash-her\/releases\/staging\/[A-Za-z0-9_/.-]+$/u.test(value) &&
   !value.split("/").some(part => part === "." || part === "..") && !value.includes("//") && !value.endsWith("/");
 
-function reviewedPlan(settings) {
+export function readReviewedFrontendReplacementArm(settings) {
   demand(exact(settings, ["version", "qualificationTargetProfile", "environment", "bundle", "reviewFile", "reviewSha256",
     "lineageFile", "reviewedPlanFile", "reviewedPlanSha256", "host", "results", "knownHosts", "sshKey"]) &&
     settings.version === 1 && settings.environment === "staging" && digest(settings.reviewedPlanSha256));
@@ -117,7 +117,7 @@ export async function observeHeldFrontendReplacement(prepared, url, { verifyEnvi
 
 export async function verifyFrontendReplacementArm(settings, confirmation) {
   demand(process.versions.node.split(".")[0] === "24");
-  const { prepared, bytes } = reviewedPlan(settings);
+  const { prepared, bytes } = readReviewedFrontendReplacementArm(settings);
   const { plan } = prepared;
   demand(confirmation === `staging/${plan.releaseId}/replacement-arm/${settings.reviewedPlanSha256}`);
   const source = committedProfiledCurrentOperatorSource(root, plan.sourceCommit);

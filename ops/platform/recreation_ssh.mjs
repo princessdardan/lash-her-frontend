@@ -197,6 +197,12 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
       return run(["sudo","-n","/usr/bin/python3",`/opt/lash-her/operators/${commit}/ops/platform/host/recreation_files.py`],payload,
         120_000,payload.operation==="receipts"?14_000_000:4_000_000,payload.operation==="receipts");
     },
+    replacementEvidence:(commit,payload)=> {
+      assert.match(commit,/^(?!0+$)[a-f0-9]{40}$/u);
+      return run(["sudo","-n","/usr/bin/python3","-I","-u",
+        `/opt/lash-her/operators/${commit}/ops/platform/host/p2_replacement_operator_evidence.py`],
+        payload,15_000,2_700_000,false,8192);
+    },
     prepare:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
       assert.ok(["bootstrap","cache-compatible","cache-current"].includes(payload.operation));

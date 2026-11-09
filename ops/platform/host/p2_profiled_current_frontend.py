@@ -1,4 +1,4 @@
-"""Source-selected fixed-current frontend deployment and GET-only recovery.
+"""Source-selected frontend deployment and GET-only recovery.
 
 The parent owns the live database/session guard. This child requests a fresh
 checkpoint before every provider request and retains a durable intent before
@@ -13,9 +13,11 @@ import secrets
 import sys
 import time
 from pathlib import Path
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import frontend_probe
 import migrate
+from p2_certification_profile import require_profile as require_certification_profile
 import vercel
 from qualification_target_profile import (
     STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as PROFILE,
@@ -29,6 +31,10 @@ MAXIMUM = 2_000_000
 FEATURES = frontend_probe.FEATURE_CONTROL_NAMES
 FALSE_FIELDS = ("frontendSqlApplied", "historicalProviderClosureClaimed", "oldP200Qualified",
                 "nativeSchedulesEnabled", "trafficAuthorized", "releaseAccepted")
+REPLACEMENT_STATUS = "P2_FRONTEND_REPLACEMENT_FRONTEND_VERIFIED"
+REPLACEMENT_PINS = frozenset(("postflightSha256", "reviewedPlanSha256", "runtimeReviewSha256",
+                             "runtimeOutcomeSha256", "migrationOutcomeSha256"))
+REPLACEMENT_ROLES = ("lash_her_frontend_staging_admission_owner_p2", "lash_her_frontend_staging_runtime_p2")
 CONFIGURATION_NAMES = {
     "runtime.json", "gateway.json", "course-tls.json", "community-tls.json", "tls/ca.pem",
     "tls/gateway/ca.pem", "tls/gateway/key.pem", "tls/gateway/cert.pem", "tls/course/key.pem",
@@ -132,7 +138,41 @@ class GuardedClient:
         return self.client.request(method, path, body)
 
 
-def release_identity(context):
+def require_replacement_release(context, expected, plan, candidate, job, controls, writer):
+    target, runtime_target = job["target"], context["bootstrapRuntimeTarget"]
+    provenance = context.get("replacementProvenance")
+    demand(type(provenance) is dict and set(provenance) == REPLACEMENT_PINS and
+           all(type(value) is str and re.fullmatch(r"(?!0+$)[a-f0-9]{64}", value) for value in provenance.values()),
+           "PROFILED_REPLACEMENT_PROVENANCE_REFUSED")
+    tags = target.get("approvedPendingTags")
+    demand(target.get("allowEmptyBootstrap") is True and type(tags) is list and bool(tags) and
+           all(type(tag) is str and re.fullmatch(r"[0-9]{4}_[a-z0-9_]+", tag) for tag in tags) and len(set(tags)) == len(tags),
+           "PROFILED_REPLACEMENT_ORIGINAL_JOB_REQUIRED")
+    migrate.require_contract_identity(candidate, job)
+    require_qualification_target_profile(expected, runtime_target)
+    target_keys = ("host", "port", "database", "serverMajor")
+    expected_target = {"qualificationTargetProfile": expected, "environment": "staging",
+                       "targetSha256": plan["targetSha256"], **{key: target[key] for key in target_keys},
+                       "user": target["runtimeRole"]}
+    target_binding = {"environment": "staging", **{key: target[key] for key in ("host", "port", "database", "user", "serverMajor")}}
+    certification = require_certification_profile(plan.get("certification"))
+    producers, owner = plan.get("producers"), plan.get("owner")
+    demand(runtime_target == expected_target and target["runtimeRole"] == REPLACEMENT_ROLES[1] != target["user"] and
+           plan["targetSha256"] == json_sha(target_binding) and
+           plan.get("configurationSha256") == context["configurationSha256"] and
+           context["candidateSha256"] != "0" * 64 and
+           type(owner) is dict and set(owner) == {"name", "oid"} and owner["name"] == REPLACEMENT_ROLES[0] and
+           type(producers) is list and len(producers) == 1 and type(producers[0]) is dict and
+           producers[0].get("producerSha256") == plan.get("runtimeProducerSha256") == writer["producerSha256"] and
+           type(producers[0].get("role")) is dict and set(producers[0]["role"]) == {"name", "oid"} and
+           producers[0]["role"]["name"] == target["runtimeRole"] and
+           all(type(role["oid"]) is str and re.fullmatch(r"[1-9][0-9]{0,9}", role["oid"]) and
+               int(role["oid"]) <= 4294967295 for role in (owner, producers[0]["role"])) and
+           owner["oid"] != producers[0]["role"]["oid"] and
+           controls == certification["featureControls"], "PROFILED_REPLACEMENT_RUNTIME_CONFIGURATION_REFUSED")
+
+
+def release_identity(context, *, replacement=False):
     expected, plan, candidate, job = profile_context(context)
     environment, project_id, source_commit = vercel.release_identity(candidate, expected_profile=expected)
     demand(environment == "staging" and plan.get("actionId") == candidate["releaseId"] and
@@ -149,10 +189,15 @@ def release_identity(context):
     bindings = context.get("bindings")
     demand(isinstance(bindings, dict) and json_sha(bindings.get("gatewayObservation")) ==
            plan.get("restoration", {}).get("gatewayBindingSha256"), "PROFILED_CURRENT_GATEWAY_BINDING_REFUSED")
+    if replacement:
+        require_replacement_release(context, expected, plan, candidate, job, controls, writer)
+    else:
+        demand("replacementProvenance" not in context and job["target"].get("approvedPendingTags") == [] and
+               job["target"].get("allowEmptyBootstrap") is False, "PROFILED_CURRENT_ORIGINAL_JOB_REQUIRED")
     return expected, plan, candidate, job, project_id, controls, writer
 
 
-def configure_runtime(client, context, attempt, project_id, controls, writer):
+def configure_runtime(client, context, attempt, project_id, controls, writer, *, replacement=False):
     target, runtime_url = context["bootstrapRuntimeTarget"], context.get("frontendRuntimeDatabaseUrl")
     demand(isinstance(runtime_url, str) and 0 < len(runtime_url) <= 16_384 and "\n" not in runtime_url and "\r" not in runtime_url,
            "PROFILED_CURRENT_RUNTIME_DATABASE_REFUSED")
@@ -166,7 +211,8 @@ def configure_runtime(client, context, attempt, project_id, controls, writer):
         ("FRONTEND_WRITER_ADMISSION_DATABASE_URL", runtime_url, "sensitive"),
         ("DATABASE_URL", runtime_url, "sensitive"),
     ]
-    migrate.write_json(attempt, "p2-current-configuration-started.json", {
+    configuration_record = "p2-replacement-configuration-started.json" if replacement else "p2-current-configuration-started.json"
+    migrate.write_json(attempt, configuration_record, {
         "version": 2, "qualificationTargetProfile": dict(PROFILE), "projectId": project_id,
         "configurationSha256": context["configurationSha256"], "featureControls": controls,
         "writerAdmissionBinding": writer, "trafficAuthorized": False,
@@ -174,7 +220,8 @@ def configure_runtime(client, context, attempt, project_id, controls, writer):
     for key, value, kind in variables:
         response = client.request("POST", f"/v10/projects/{project_id}/env?upsert=true", {
             "key": key, "value": value, "type": kind, "target": ["production"], "gitBranch": None,
-            "customEnvironmentIds": [], "comment": "Profiled current frontend " + context["candidate"]["releaseId"],
+            "customEnvironmentIds": [], "comment": ("Profiled replacement frontend " if replacement else "Profiled current frontend ") +
+            context["candidate"]["releaseId"],
         })
         created = response.get("created")
         demand(response.get("failed") == [] and isinstance(created, dict) and created.get("key") == key and
@@ -190,8 +237,8 @@ def configure_runtime(client, context, attempt, project_id, controls, writer):
                (kind == "sensitive" or found[0].get("value") == value), "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
 
 
-def observe_release(context, client, attempt):
-    expected, plan, candidate, _job, project_id, controls, writer = release_identity(context)
+def observe_release(context, client, attempt, *, replacement=False):
+    expected, plan, candidate, _job, project_id, controls, writer = release_identity(context, replacement=replacement)
     staged = vercel._staged_identity(candidate, attempt, expected_profile=expected)
     deployment = vercel.deployment_state(client, staged["deploymentId"], project_id,
                                          staged["sourceCommit"], staged["releaseId"])
@@ -237,23 +284,51 @@ def observe_release(context, client, attempt):
             "nativeEnabled": False, "definitionsSha256": sha(json.dumps(definitions, separators=(",", ":")).encode())},
         "admissionNewWork": False, "admissionRecovery": False,
         **{key: False for key in FALSE_FIELDS}}
+    if replacement:
+        promotion_raw = migrate.read_input(attempt, "frontend-promotion-outcome.json", 65_536)
+        promotion = decode_qualification_target_json(promotion_raw, "carrier")
+        vercel.require_record_profile(expected, promotion)
+        demand(promotion.get("status") == "FRONTEND_DOMAINS_PROMOTED" and promotion.get("phase") == "completed" and
+               promotion.get("frontendDomainsPromoted") is True and promotion.get("trafficAuthorized") is False and
+               promotion.get("gatewayTrafficAuthorized") is False and
+               all(key in promotion and promotion[key] == staged[key]
+                   for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId", "previousDeploymentId")) and
+               type(promotion.get("previousAliasRequestedAt")) is int and
+               promotion["previousAliasRequestedAt"] == intent.get("previousAliasRequestedAt") and
+               type(promotion.get("aliasRequestedAt")) is int and promotion["aliasRequestedAt"] == alias["requestedAt"],
+               "PROFILED_REPLACEMENT_PROMOTION_RECEIPT_REFUSED")
+        outcome.update(status=REPLACEMENT_STATUS, frontendSqlApplied=True, frontendSqlReplayed=False,
+                       frontendPromotionReceiptSha256=sha(promotion_raw), **context["replacementProvenance"])
     return outcome
 
 
-def deploy(context, verify=checkpoint):
+def deploy(context, verify=checkpoint, *, replacement=False):
     """Mutating release path. The fixed call graph contains every mutation."""
-    expected, plan, candidate, _job, project_id, controls, writer = release_identity(context)
+    expected, plan, candidate, _job, project_id, controls, writer = release_identity(context, replacement=replacement)
+    if replacement:
+        runtime_url = context.get("frontendRuntimeDatabaseUrl")
+        demand(type(runtime_url) is str and 0 < len(runtime_url) <= 16_384 and
+               all(32 <= ord(character) < 127 for character in runtime_url),
+               "PROFILED_REPLACEMENT_RUNTIME_DATABASE_REFUSED")
+        url, target = urlsplit(runtime_url), context["bootstrapRuntimeTarget"]
+        demand(url.scheme in ("postgres", "postgresql") and url.hostname == target["host"] and
+               (url.port or 5432) == target["port"] and unquote(url.path) == "/" + target["database"] and
+               unquote(url.username or "") == target["user"] and bool(url.password) and not url.fragment and
+               parse_qsl(url.query, keep_blank_values=True) == [("sslmode", "verify-full")],
+               "PROFILED_REPLACEMENT_RUNTIME_DATABASE_REFUSED")
     parent = private_directory(context["directory"])
     attempt, private = child_directory(parent, "vercel"), child_directory(parent, "vercel-private")
     client = GuardedClient(vercel.Client(context["vercelToken"]), attempt, verify)
-    migrate.write_json(attempt, "p2-profiled-current-deploy-started.json", {
+    deployment_record = "p2-profiled-replacement-deploy-started.json" if replacement else "p2-profiled-current-deploy-started.json"
+    migrate.write_json(attempt, deployment_record, {
         "version": 2, "qualificationTargetProfile": dict(PROFILE), "environment": "staging",
         "releaseId": candidate["releaseId"], "sourceCommit": plan["sourceCommit"],
         "candidateSha256": context["candidateSha256"], "configurationSha256": context["configurationSha256"],
         "trafficAuthorized": False,
+        **(context["replacementProvenance"] if replacement else {}),
     })
     vercel.disable_schedules(client, candidate, expected_profile=expected)
-    configure_runtime(client, context, attempt, project_id, controls, writer)
+    configure_runtime(client, context, attempt, project_id, controls, writer, replacement=replacement)
     gateway_host = resolve_qualification_target_profile(expected)["gateway"]["publicOrigin"].removeprefix("https://")
     frontend_probe.prepare(client, candidate, private, attempt, gateway_host,
                            scheduler_qualification=False, expected_profile=expected)
@@ -262,16 +337,18 @@ def deploy(context, verify=checkpoint):
         lambda release, _deployment: frontend_probe.verify(client, release, attempt, private,
             expected_feature_controls=controls, expected_writer_admission_binding=writer,
             expected_profile=expected), expected_profile=expected)
-    return observe_release(context, client, attempt)
+    return observe_release(context, client, attempt, replacement=replacement)
 
 
-def observe(context, verify=checkpoint):
+def observe(context, verify=checkpoint, *, replacement=False):
     """Release readback only; it never creates a missing provider effect."""
-    release_identity(context)
+    release_identity(context, replacement=replacement)
+    if replacement:
+        demand("frontendRuntimeDatabaseUrl" not in context, "PROFILED_REPLACEMENT_READBACK_CREDENTIAL_REFUSED")
     parent = private_directory(context["directory"])
     attempt = existing_child(parent, "vercel")
     client = GuardedClient(vercel.Client(context["vercelToken"]), attempt, verify, read_only=True)
-    return observe_release(context, client, attempt)
+    return observe_release(context, client, attempt, replacement=replacement)
 
 
 def recovery_context(initial, provider):
@@ -611,6 +688,9 @@ def main():
             result = deploy(context)
         elif operation == "observe":
             result = observe(context)
+        elif operation in ("replacement-deploy", "replacement-observe"):
+            context = decode_qualification_target_json(raw, "private-packet")
+            result = deploy(context, replacement=True) if operation == "replacement-deploy" else observe(context, replacement=True)
         elif operation == "recovery-observe":
             provider = {"version": 2, "qualificationTargetProfile": dict(PROFILE),
                         "vercelToken": context["vercelToken"], "originalDirectory": context["originalDirectory"],
