@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "scope": "Owned replacement database continuation and packaged containment",
+  "ownedDatabase": {
+    "sourceCommit": "1dccd5641f505ac70cf075aae50c4aa978875008",
+    "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+    "postgres": {
+      "16": {
+        "status": "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_PASSED",
+        "migrationsApplied": 83,
+        "checksPassed": 20,
+        "trafficAuthorized": false
+      },
+      "18": {
+        "status": "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_PASSED",
+        "migrationsApplied": 83,
+        "checksPassed": 20,
+        "trafficAuthorized": false
+      }
+    },
+    "independentPhysicalProofBeforeWrites": true,
+    "bothLocksHeldThroughOwnedContinuation": true,
+    "admissionClosedAfterContinuation": true,
+    "failedContinuationPreservesOriginalDatabaseReceiptAndRefusesReplay": true,
+    "focusedNodeTestsPassed": 68,
+    "contractsPassed": true,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-write-20261109",
+    "privateArtifactSha256": {
+      "guarded-frontier-pg16.log": "7938b2bf4787b75a47dab9bc09cf69f450d2e3bfcd96333c0527933ed932c841",
+      "guarded-frontier-pg18.log": "672fcb9f1f22409417593d5a63f45500f42cc7f1fca9e4b40c2c0af27fa25582",
+      "guarded-frontier-unit.log": "cfd809296749d8b2a9f1e1d4ec4256a482f33169531dfb99c9fe349c694c50ba"
+    }
+  },
+  "packagedObserverAndAbort": {
+    "sourceCommit": "363cdbc5cc4cd57b5f51160ef069f624c2dbb6c9",
+    "architecture": "linux/arm64",
+    "postgresMajor": 18,
+    "migrationImageId": "sha256:53cf44613fd8b42bbaded7c583b4ab3d8bc7370c5ce56096953a7f9949aa83c5",
+    "fixtureImageId": "sha256:f668eece59dff962c8902e1178ca4329e312a6542e4b3996770fbde167283b10",
+    "testsPassed": 4,
+    "testsSkipped": 0,
+    "manifestOnlyPassed": true,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-exact-oci-363cdbc5",
+    "privateArtifactSha256": {
+      "packaged-pg18.log": "97492f33df38c659782fff1b1e059f8c0488506e1377d1d53697e7135c041695",
+      "distroless-manifest.json": "104091fd9949efbdc6449e8dab166509f70ba0141121fde9b9b5309c4d83a39a",
+      "image-build.log": "225ea52e211f25b6968bfef58e76259bb5087cf5c76eefb55104de05e40db715",
+      "fixture-build.log": "0d63e8b5ac4fac033ee94310223520ff0b54a4ce90d3193f46e11ea7e7ee2427",
+      "image-ids": "ffdf385fb5c3215b4b38908e300512d3c1265d511e46f0436000d442b6e6db74",
+      "source-revision-and-tree": "28a07e14a059dd52d635ff91c41f38126e13ff890f7df82a0bb8f8a5eccc56ea"
+    },
+    "sourceTree": "18571492b61c853242139f2d290aaf0b5795083c"
+  },
+  "actualReplacementTargetSelected": false,
+  "installedWriteActionVerified": false,
+  "providerContinuationImplemented": false,
+  "stagingApplicationSqlApplied": false,
+  "stagingDeploymentAuthorized": false,
+  "trafficAuthorized": false,
+  "hostCustody": {
+    "sourceCommit": "363cdbc5cc4cd57b5f51160ef069f624c2dbb6c9",
+    "architecture": "linux/arm64",
+    "fixtureImageId": "sha256:22502cac6d0d297a6643cae8558fccdde8c68db092c80493bf712dcf18c30cb8",
+    "testsPassed": 38,
+    "actualForkFlockAndSignalLoss": true,
+    "ociObserverTransportSimulated": true,
+    "sourceOnly": true,
+    "receiptGrantsSqlAuthority": false,
+    "observerLauncherUncertaintyRetained": true,
+    "log": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-write-host/linux-exact-363cdbc5.log",
+    "logSha256": "8aa227cfe5b08ddbea2eb2216def2cf0af7f217832d46f2b79a5de28f70dd012"
+  },
+  "priorPackagedObserverAndAbort": {
+    "sourceCommit": "88be852d00170b2d14c7f43bac7f8217735488c3",
+    "architecture": "linux/arm64",
+    "postgresMajor": 18,
+    "migrationImageId": "sha256:62d12c6a8838cf73510848142d607623ec4f31da98658149b004abfe9af5189653",
+    "fixtureImageId": "sha256:fa89401a42f2f94b28001ba20628bce9b6586bfcd15241373c90bab7de1fb1fc",
+    "testsPassed": 4,
+    "testsSkipped": 0,
+    "manifestOnlyPassed": true,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-exact-oci-88be852d",
+    "privateArtifactSha256": {
+      "packaged-pg18.log": "aa06717e585c4dc64560c5a4b2a824adf1f8743ff6bbaf7e9d3a4033fe83b27e",
+      "distroless-manifest.json": "104091fd9949efbdc6449e8dab166509f70ba0141121fde9b9b5309c4d83a39a",
+      "image-ids": "fef4641cd7928bbef23b761aec0709aaa20c5b5f6b23630ad1d5c3978ea5dd30"
+    }
+  }
+}
