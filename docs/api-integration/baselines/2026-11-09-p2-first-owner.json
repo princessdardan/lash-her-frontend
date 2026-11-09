@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "scope": "Owned first-owner certification, restricted runtime role and exact-source closure",
+  "applicationCommit": "23cc6f93f9714df20e7a87253e729843331900bd",
+  "reviewedSourceCommit": "33c800e2774c36d31c7d1e8d96165fc130d69fd9",
+  "focusedTestsPassed": 8,
+  "restrictedRolePostgres": {
+    "16": {
+      "passed": 2,
+      "skipped": 0
+    },
+    "18": {
+      "passed": 2,
+      "skipped": 0
+    }
+  },
+  "sameSecondExistingJwtRefused": true,
+  "foreignIdentityRefused": true,
+  "concurrentExactReplayPreservedOneOwner": true,
+  "sourceAllowlistInitialRun": {
+    "commit": "23cc6f93f9714df20e7a87253e729843331900bd",
+    "failed": 4,
+    "reason": "New first-owner application bytes needed their own reviewed hash entry"
+  },
+  "exactSourceTransportAndBrowserEvidence": {
+    "passed": 247,
+    "failed": 0,
+    "skipped": 22,
+    "optInFixturesRun": false
+  },
+  "hostInteractiveAndCertificationTestsPassed": 71,
+  "typecheck": {
+    "commit": "23cc6f93f9714df20e7a87253e729843331900bd",
+    "passed": true
+  },
+  "releasedContractAndGeneratedTypesPassed": true,
+  "scopedLint": {
+    "errors": 0,
+    "existingWarnings": 6
+  },
+  "privateArtifacts": [
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-first-owner-local",
+      "sha256": {
+        "final-focused.log": "57b69315d39818c33c3296b6e54f8f207b9291ab70c872ae1c7e9104c54b5aad",
+        "final-pg16.log": "0bc71fd6cc69963b8719d04f2173934021f3735cb58ab87df61ee8bc54e5362a",
+        "final-pg18.log": "aec5431e75b9bdff0f9e58e35ff220a72379e57475cf866ea73efe29ef176ac9",
+        "host.log": "fe008aab760eb03ccac7578e2b84665b1b50b0d7f855b17a0c7a8d039435b658",
+        "final-static.log": "b05c176755cade54771f091e32e30064f56116cd7de6d8dbdaf8602482e1953a"
+      }
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-first-owner-20261109",
+      "sha256": {
+        "host-interactive.log": "c1dfeba66626d36cb5ae2f326ff09d41a13edc94517d440efb494b249ba3962f",
+        "committed-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "contracts.log": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+        "exact-source-browser-transport.log": "9bde93d6653a1d405f4dafa4f271b3db6f1195024122b81f03075523dabc1eb1",
+        "exact-source-final.log": "bd96831431ca43032989eb441e711d49cb4fc029c6491d167af355ffe1237375"
+      }
+    }
+  ],
+  "actualGoogleProviderUsed": false,
+  "stagingSignInCertified": false,
+  "releaseAccepted": false,
+  "frontendUnit": {
+    "commit": "33c800e2774c36d31c7d1e8d96165fc130d69fd9",
+    "passed": 2633,
+    "failed": 0,
+    "skipped": 0,
+    "suiteCounts": [
+      1893,
+      684,
+      42,
+      14
+    ],
+    "logSha256": "687ba0b194905f18ac39598df280f620b95cdf82575dd69ff14411c8a2017035"
+  }
+}
