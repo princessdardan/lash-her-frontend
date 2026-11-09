@@ -411,13 +411,16 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
   demand(ownedTarget(job.target) && ownedTarget(input.predecessorTarget) && job.target.allowEmptyBootstrap === true &&
     isDeepStrictEqual(job.target.approvedPendingTags, artifact.migrations.map(({ tag }) => tag)) &&
     dependencies.confirmation === `owned-frontend-bootstrap/${job.releaseId}`, refuse);
-  const [{ verifyEmptyFrontendReplacement }, { withFrontendEnvironmentLock }, { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore },
+  const [{ verifyEmptyFrontendReplacement }, { withFrontendEnvironmentLock },
+    { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore, readFrontendReleaseEvidence },
     { applyPreparedFrontendRoles, prepareFrontendRolesPlan, FRONTEND_PREPARATION_ROLES },
     { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact }, { assertOwnedFrontendReplacementCluster },
-    { createP2FrontendReplacementProbe, observeP2FrontendReplacement, verifyP2FrontendReplacementSession }] = await Promise.all([
+    { createP2FrontendReplacementProbe, observeP2FrontendReplacement, verifyP2FrontendReplacementSession },
+    { observeP2FrontendReplacementWritten }] = await Promise.all([
     import("./frontend-replacement-boundary.mjs"), import("./frontend-environment-lock.mjs"), import("./frontend-release-receipts.mjs"),
     import("./frontend-role-preparation.mjs"), import("./frontend-admission-bootstrap.mjs"),
     import("./harness/owned-frontend-replacement-cluster.mjs"), import("./p2-frontend-replacement-probe.mjs"),
+    import("./p2-frontend-replacement-written.mjs"),
   ]);
   const { directory, rolesDirectory, privateDirectory, getUrl, cluster, predecessorCluster, continueRelease } = dependencies;
   const ownedCluster = assertOwnedFrontendReplacementCluster(cluster, job.target);
@@ -515,6 +518,16 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
             phase = "replacement-forward-sql";
           },
           ...(continueRelease ? { async afterDatabaseVerified(database, verifyLockedSession) {
+            phase = "replacement-independent-written-readback";
+            const original = name => readFrontendReleaseEvidence(directory, name).toString("base64");
+            const written = await observeP2FrontendReplacementWritten({
+              probe, physicalObservation: original("replacement-physical-observation.json"),
+              databaseReceipt: original("database-receipt.json"),
+              continuationStarted: original("frontend-continuation-started.json"),
+              owner: roles.owner, runtime: roles.runtime, producerSha256: input.producerSha256,
+            }, { getUrl: () => url });
+            await verifyLockedSession();
+            store.record("replacement-written-observation.json", written);
             phase = "owned-compatible-continuation";
             const continuation = { database, owner: Object.freeze({ ...roles.owner }),
               runtime: Object.freeze({ ...roles.runtime }), roleProofSha256: roles.proofSha256, admission: closed, verifyLockedSession };

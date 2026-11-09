@@ -6,7 +6,7 @@ COPY ops/platform/frontend-migration.mjs ops/platform/frontend-schema.mjs ops/pl
 COPY ops/platform/qualification-target-profile.mjs ops/platform/qualification-target-profiles.json ./ops/platform/
 COPY ops/platform/p2-profiled-current-probe.mjs ops/platform/p2-recovery-current-probe.mjs ./ops/platform/
 COPY ops/platform/p2-frontend-replacement-probe.mjs ops/platform/frontend-admission-bootstrap.mjs ./ops/platform/
-COPY ops/platform/p2-frontend-replacement-abort.mjs ./ops/platform/
+COPY ops/platform/p2-frontend-replacement-abort.mjs ops/platform/p2-frontend-replacement-written.mjs ./ops/platform/
 COPY src/lib/private-db/migration-lineage.ts ./src/lib/private-db/
 COPY scripts/api-contract-tools.mjs scripts/api-contract-compatibility-review.mjs ./scripts/
 COPY contracts/api-integration/v1/manifest.json ./contracts/api-integration/v1/

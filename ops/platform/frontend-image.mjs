@@ -2,6 +2,7 @@ import { frontendMigrationCli } from "./frontend-migration.mjs";
 import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
 import { runP2FrontendReplacementProbeCli } from "./p2-frontend-replacement-probe.mjs";
 import { runP2FrontendReplacementAbortCli } from "./p2-frontend-replacement-abort.mjs";
+import { runP2FrontendReplacementWrittenCli } from "./p2-frontend-replacement-written.mjs";
 
 try {
   const args = process.argv.slice(2);
@@ -13,6 +14,9 @@ try {
   } else if (args[0] === "--abort-replacement") {
     if (args.length !== 1) throw new Error("FRONTEND_PACKAGED_SOURCE_REFUSED");
     await runP2FrontendReplacementAbortCli(commit);
+  } else if (args[0] === "--observe-replacement-written") {
+    if (args.length !== 1) throw new Error("FRONTEND_PACKAGED_SOURCE_REFUSED");
+    await runP2FrontendReplacementWrittenCli(commit);
   } else {
     await frontendMigrationCli(args, { assertSource: verifyPackagedFrontendSource });
   }

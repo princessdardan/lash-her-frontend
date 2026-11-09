@@ -226,6 +226,13 @@ async function fixture() {
       const { database, owner, runtime, roleProofSha256, admission, verifyLockedSession } = continuation;
       assert.equal(database.applied.length, artifact.migrations.length);
       assert.deepEqual(admission, { migrationCount: artifact.migrations.length, admissionEpoch: "1", newWork: false, recovery: false, operations: 0 });
+      const written = readJson(outputs.directory, "replacement-written-observation.json");
+      assert.equal(written.status, "P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED");
+      assert.equal(written.appliedMigrationCount, artifact.migrations.length);
+      for (const [field, name] of [["physicalObservationSha256", "replacement-physical-observation.json"],
+        ["databaseReceiptSha256", "database-receipt.json"], ["continuationStartedSha256", "frontend-continuation-started.json"]]) {
+        assert.equal(written[field], createHash("sha256").update(readFileSync(join(outputs.directory, name))).digest("hex"));
+      }
       const rolesReceipt = readJson(outputs.rolesDirectory, "roles-preparation-outcome.json");
       assert.deepEqual({ owner, runtime }, { owner: rolesReceipt.owner, runtime: rolesReceipt.runtime });
       assert.equal(roleProofSha256, rolesReceipt.proofSha256);
@@ -317,7 +324,7 @@ async function fixture() {
         "database-lock-contention", "nonempty-target-refused", "predecessor-role-refused", "full-migration-lineage",
         "exact-schema", "closed-runtime-admission", "predecessor-preserved",
         "fresh-directory-replay-refused", "late-schema-drift-retains-commits-and-refuses-replay",
-        "independent-physical-proof-before-write", "both-locks-held-through-compatible-continuation",
+        "independent-physical-proof-before-write", "independent-written-readback-of-original-receipts", "both-locks-held-through-compatible-continuation",
         "closed-admission-rechecked-after-continuation", "failed-continuation-preserves-commits-and-refuses-replay"] };
   } finally {
     let allStopped = true;

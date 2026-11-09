@@ -137,23 +137,29 @@ export async function createP2FrontendReplacementProbe(input, client, verifySess
   }
 }
 
-export async function observeP2FrontendReplacement(input, { getUrl }) {
+export async function withP2FrontendReplacementReadOnlyProbe(input, getUrl, read) {
   validateP2FrontendReplacementProbe(input);
   demand(typeof getUrl === "function");
   const probe = structuredClone(input), options = frontendConnectionOptions(await getUrl(), probe.job.target);
   const client = new Client({ ...options, application_name: "lash-her-frontend-replacement-observer",
-    options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on",
+    options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on -c row_security=off",
     statement_timeout: 5000, query_timeout: 7000, lock_timeout: 2000 });
-  let lost = false;
+  let lost = false, result;
   client.on("error", () => { lost = true; });
   try {
     await client.connect();
+    await verifyLockedBackend(client, probe, true);
+    result = await read(client, replacementObservation(probe));
     await verifyLockedBackend(client, probe, true);
   } finally {
     await client.end();
   }
   demand(!lost);
-  return replacementObservation(probe);
+  return result;
+}
+
+export function observeP2FrontendReplacement(input, { getUrl }) {
+  return withP2FrontendReplacementReadOnlyProbe(input, getUrl, (_client, observation) => observation);
 }
 
 export async function runP2FrontendReplacementProbeCli(verifySource) {

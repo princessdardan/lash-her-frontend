@@ -3,10 +3,10 @@ import { createHash, createHmac, pbkdf2Sync, randomBytes, randomUUID } from "nod
 import { constants, openSync, closeSync, fstatSync, lstatSync, realpathSync, readFileSync, writeFileSync, fsyncSync, linkSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Client } from "pg";
-import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { frontendAdmissionTargetSha256, FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
 import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
-export const FRONTEND_PREPARATION_ROLES = Object.freeze({ owner: "lash_her_frontend_staging_admission_owner_p2", runtime: "lash_her_frontend_staging_runtime_p2" });
+export { FRONTEND_PREPARATION_ROLES };
 const roleSpecification = {
   owner: { login: false, inherit: false, superuser: false, createdb: false, createrole: false, replication: false, bypassrls: false,
     database: ["CREATE"], persistentObjectOwnershipBeforeBootstrap: false, operatorSetRole: true },

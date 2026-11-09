@@ -126,13 +126,14 @@ export async function verifyP2RecoveryForwardMutation(session,context,runtimeCre
   await verifyForwardRuntimeCredential(record,context,runtimeCredential);
 }
 
-async function verifyRecoveryMemberships(client, runtimeOid, owner) {
+async function verifyRuntimeMemberships(client, runtimeOid, owner, replacement) {
   require(owner && /^[1-9][0-9]*$/u.test(owner.oid));
   const operator = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolcreaterole,rolcreatedb,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=session_user')).rows[0];
   // The reviewed Neon target is a non-superuser provisioner. Its other admin
   // attributes (including replication/RLS powers) are provider policy, not the
   // restricted owner/runtime policy; do not invent static false requirements.
-  require(operator?.rolcanlogin===true && operator.rolcreaterole===true && operator.rolsuper===false,'operator-role-policy');
+  require(operator?.rolcanlogin===true && operator.rolcreaterole===true &&
+    (operator.rolsuper===false || replacement && operator.rolsuper===true),'operator-role-policy');
   const rows = (await client.query(`SELECT m.roleid::text,m.member::text,m.grantor::text,m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super
     FROM pg_auth_members m JOIN pg_roles g ON g.oid=m.grantor WHERE m.roleid=ANY($1::oid[]) OR m.member=ANY($1::oid[])
     ORDER BY m.roleid,m.member,m.grantor`, [[owner.oid,runtimeOid]])).rows;
@@ -140,13 +141,21 @@ async function verifyRecoveryMemberships(client, runtimeOid, owner) {
   // operator. Only its explicit owner SET grant and PG16+ creator administration
   // survive. No selected role has an outbound membership or another member.
   const creators=rows.filter(row=>row.admin_option===true),ownerSet=rows.filter(row=>row.admin_option===false);
-  require(rows.length===3 && creators.length===2 &&
+  require(rows.length===(operator.rolsuper ? 1 : 3) && creators.length===(operator.rolsuper ? 0 : 2) &&
     creators.every(row=>row.member===operator.oid && [owner.oid,runtimeOid].includes(row.roleid) && row.grantor_super===true && row.inherit_option===false && row.set_option===false) &&
     new Set(creators.map(row=>row.roleid)).size===creators.length && ownerSet.length===1 && ownerSet[0].roleid===owner.oid &&
     ownerSet[0].member===operator.oid && ownerSet[0].grantor===operator.oid && ownerSet[0].inherit_option===false && ownerSet[0].set_option===true,'role-memberships');
 }
 
-export async function verifyRecoveryRuntimeGrants(client, target, owner) {
+export function verifyRecoveryRuntimeGrants(client, target, owner) {
+  return verifyRuntimeGrants(client, target, owner, false);
+}
+
+export function verifyReplacementRuntimeGrants(client, target, owner) {
+  return verifyRuntimeGrants(client, target, owner, true);
+}
+
+async function verifyRuntimeGrants(client, target, owner, replacement) {
   let checkpoint='runtime-role-flags';
   try {
   const roles = (await client.query(`SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil,
@@ -154,7 +163,7 @@ export async function verifyRecoveryRuntimeGrants(client, target, owner) {
     FROM pg_roles WHERE rolname=$1`, [target.runtimeRole, target.user])).rows;
   require(roles.length === 1 && roles[0].rolcanlogin === true && ['rolinherit','rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','migration_member','ddl'].every(key => roles[0][key] === false));
   require(roles[0].rolconfig===null && roles[0].rolconnlimit===-1 && roles[0].rolvaliduntil===null,'runtime-role-settings');
-  checkpoint='role-memberships';await verifyRecoveryMemberships(client,roles[0].oid,owner);
+  checkpoint='role-memberships';await verifyRuntimeMemberships(client,roles[0].oid,owner,replacement);
   require((await client.query('SELECT 1 FROM pg_catalog.pg_db_role_setting WHERE setrole=ANY($1::oid[]) LIMIT 1',[[owner.oid,roles[0].oid]])).rows.length===0,'selected-role-database-settings');
   checkpoint='runtime-ownership';require((await client.query(`SELECT 1 WHERE has_database_privilege($1,current_database(),'CREATE') OR
     EXISTS(SELECT 1 FROM pg_shdepend WHERE refclassid='pg_authid'::regclass AND refobjid=$1::regrole AND deptype='o') OR

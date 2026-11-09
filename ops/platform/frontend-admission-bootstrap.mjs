@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
+export const FRONTEND_PREPARATION_ROLES = Object.freeze({ owner: "lash_her_frontend_staging_admission_owner_p2", runtime: "lash_her_frontend_staging_runtime_p2" });
+
 const demand = ok => { if (!ok) throw new Error("FRONTEND_ADMISSION_BOOTSTRAP_REFUSED"); };
 const digest = (value, size = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${size}}$`, "u").test(value) && !/^0+$/u.test(value);
 const name = value => typeof value === "string" && /^[a-z][a-z0-9_]{0,62}$/u.test(value);
