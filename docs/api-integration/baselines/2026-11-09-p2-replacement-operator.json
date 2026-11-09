@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "scope": "Guarded replacement operator dispatch and owned terminal qualification",
+  "sourceCommit": "894ae64fddd618d8933a7bd356ef02ab76f17297",
+  "sourceTree": "dce8d46703e507b027150aae8ffd46cb176320a2",
+  "operatorSourceFiles": 392,
+  "installedDispatch": {
+    "reviewedPlanAndRuntimeConfirmationBound": true,
+    "refusalBeforeProviderAccess": true,
+    "hostLinuxTestsPassed": 136,
+    "nodeDispatchTestsPassed": 17,
+    "actualForkFlockAndBrokerReap": true,
+    "transportProviderAndDockerEffectsSimulated": true
+  },
+  "ownedContinuation": {
+    "sourceCommit": "40c7aa157545e4ada2b59acafbfb567bb009b79e",
+    "postgresMajors": [
+      16,
+      18
+    ],
+    "checksPassedPerMajor": 25,
+    "migrationsAppliedPerMajor": 83,
+    "heldCustodyAndIndependentClosureVerified": true,
+    "runtimeAndProviderEffectsSimulated": true,
+    "focusedNodeTestsPassed": 116,
+    "pythonProviderAndHttpsTestsPassed": 59,
+    "reviewedPredecessorRequiredBeforeProviderWrites": true,
+    "contractsAndScopedLintPassed": true
+  },
+  "packagedImage": {
+    "sourceCommit": "40c7aa157545e4ada2b59acafbfb567bb009b79e",
+    "sourceTree": "9ed9b65b895bc2d0b9cf15c06aa210f9d6132640",
+    "architecture": "linux/arm64",
+    "postgresMajor": 18,
+    "testsPassed": 7,
+    "testsSkipped": 0,
+    "migrationImageId": "sha256:90c2c761497b88e312f00c093a66b9f723dafcd8dace68543b5062745ab9d088",
+    "fixtureImageId": "sha256:5e7e32717193803af75f724ab02af620d848196c7cc33dba792466913d947b55",
+    "uid": 65532,
+    "journalEntries": 83,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-integrated-oci-40c7aa15",
+    "privateArtifactSha256": {
+      "packaged-pg18.log": "a07fc59711233aab3f192b8dc45c67ece723c06abe9bac8b03be557c3ea18cfd",
+      "distroless-manifest.json": "104091fd9949efbdc6449e8dab166509f70ba0141121fde9b9b5309c4d83a39a",
+      "image-ids": "d2ffe503d7b91590bb2c5be6f55a24ed9e82c7d2a3b245ff3cde3c1560c7b554",
+      "image-build.log": "09dfea7e01bd4bba7beef6adf84cf15461de245af32b19e01ab7e483139d58b2",
+      "fixture-build.log": "3e085cba08966c1d6318d3d80c3995f2de7cd96216b95946e41a0e7f267a5e87"
+    }
+  },
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-operator",
+  "privateArtifactSha256": {
+    "final-operator-pg16.log": "b25f243d7bcb89958d23a0cf6fece32eb2733a851f0e01f55f5d35e5af8ef302",
+    "final-operator-pg18.log": "8e5cb9f4d2ef8150e1d3cc346675d159812de3aa8353a80e2eacbebe8d407fcc",
+    "linux-dispatch-894ae64f.log": "8535f6027c87ab04a47e118755a6ae3021e6c4a0e3900e3582f8c2a4b3c5cc00",
+    "node-final.log": "b452b01093d0dddb3a8ccb40512b3ca235f2e24724cbd7b91f55db0c8c61ff8e",
+    "provider-final.log": "1f347e2941eaa6d5ea60a53b1644013787d21e792ffc3c5e2f75db488c77e382",
+    "dispatch-node.log": "29dc088bfd6e390e49d474ab2756c86c9cd18dde3de45ff8b3ab9e106fe9110e",
+    "operator-source-dispatch.log": "8e769ebc4df6a5ec69f0fd03334992b183d97fd6725dd409d15f6294f0502830"
+  },
+  "actualReplacementTargetSelected": false,
+  "stagingApplyStarted": false,
+  "actualProviderPromotionVerified": false,
+  "replacementCertificationJoinImplemented": false
+}
