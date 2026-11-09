@@ -18,7 +18,8 @@ class WorkerEvidenceTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="owned-worker-evidence-")
         self.addCleanup(self.temporary.cleanup)
-        self.directory = Path(self.temporary.name); self.directory.chmod(0o700)
+        self.directory = Path(self.temporary.name) / "worker"
+        self.directory.mkdir(mode=0o700)
         self.stage = worker.P2LifecycleWorkerEvidenceStage.__new__(worker.P2LifecycleWorkerEvidenceStage)
         self.stage.directory = self.directory
         self.stage.plan = {"version": 1, "profile": "direct-known-suspension-v1", "canonicalCommandSha256": "a"*64}

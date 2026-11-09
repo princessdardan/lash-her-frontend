@@ -99,7 +99,11 @@ async function main() {
       phase = "missing-private-receipt";
       const missing = fixture("missing-private"); let environmentChecks = 0;
       await assert.rejects(run(missing, operator, { verifyEnvironment: async () => { await verifyEnvironment(); if (++environmentChecks === 2) unlinkSync(join(missing.privateDirectory, "frontend-role-credentials.json")); } }));
-      assert.equal((await existingNewRoles()).length, 0); const missingOutcome=JSON.parse(readFileSync(join(missing.directory, "roles-preparation-outcome.json"))); assert.equal(missingOutcome.sqlOutcome,"not-started"); outcomes.push(missingOutcome); record("missing-private-credential-receipt-refuses-before-role-sql");
+      assert.equal((await existingNewRoles()).length, 0);
+      const missingOutcome = JSON.parse(readFileSync(join(missing.directory, "roles-preparation-outcome.json")));
+      assert.equal(missingOutcome.sqlOutcome, "not-started");
+      assert.equal(missingOutcome.roleSqlAttempted, false);
+      outcomes.push(missingOutcome); record("missing-private-credential-receipt-refuses-before-role-sql");
       phase = "prepare-real-roles";
       const positive = fixture("positive"); let prepared;
       try { prepared = await run(positive); } catch {

@@ -259,12 +259,13 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
     phase = "retain-private-credential-before-sql"; retain(privatePath, "frontend-role-credentials.json", privateRecord);
     demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
     phase = "durable-intent"; retain(directory, "roles-preparation-started.json", { ...base, status: "FRONTEND_ROLE_PREPARATION_STARTED", physicalSessionPid: identity.pid }); started = true;
-    demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
     await verify();
+    demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
     phase = "role-transaction"; await client.query("BEGIN"); transaction = true;
     let observed;
     try {
       await verify();
+      demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
       await client.query("SET LOCAL createrole_self_grant = ''");
       if (!plan.reuse) {
         const owner = identifier(FRONTEND_PREPARATION_ROLES.owner), runtime = identifier(FRONTEND_PREPARATION_ROLES.runtime), operator = identifier(plan.target.user), database = identifier(plan.target.database);
@@ -284,8 +285,8 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
       }
       phase = "role-grant-verification"; observed = await observeRoles(client, plan);
       retain(directory, "roles-precommit-observed.json", { ...base, status: "FRONTEND_ROLES_OBSERVED_UNCOMMITTED", observed });
-      demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
       await verify();
+      demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
       phase = "commit"; commitAttempted = true; await client.query("COMMIT"); committed = true; transaction = false;
     } catch (error) {
       if (!commitAttempted) { try { await client.query("ROLLBACK"); rollbackAcknowledged = true; transaction = false; } catch { /* Unknown state retained. */ } }
