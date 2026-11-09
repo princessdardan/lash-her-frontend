@@ -3,6 +3,7 @@ import copy
 from contextvars import ContextVar
 import fcntl
 import os
+from pathlib import Path
 import re
 import stat
 import time
@@ -196,3 +197,142 @@ class P2ProfiledCurrentScope(P2ReleaseScope):
         observed = P2ProfiledCurrentPhysicalObserver.probe(observer, 'verify-closed')
         self.verify_close()
         return observed
+
+
+def _replacement_producer_bytes(probe, physical, database_raw, started_raw, postflight_raw, owner, runtime, producer, administrative_logins):
+    import p2_frontend_replacement_parent as replacement
+    from qualification_target_profile import decode_qualification_target_json
+
+    database, started, postflight = (
+        decode_qualification_target_json(raw, 'carrier') for raw in (database_raw, started_raw, postflight_raw)
+    )
+    require_profiled(database, started, postflight)
+    require = migrate.demand
+    job, target = probe['job'], probe['job']['target']
+    require(all(type(role) is dict and set(role) == {'name', 'oid'} and replacement.oid(role['oid'])
+                for role in (owner, runtime)) and owner['name'] == 'lash_her_frontend_staging_admission_owner_p2' and
+            runtime['name'] == target['runtimeRole'] and
+            len({owner['oid'], runtime['oid'], probe['migrationRoleOid']}) == 3 and replacement.digest(producer),
+            'P2_REPLACEMENT_ROLE_BINDING_REFUSED')
+    base = {'version': 2, 'qualificationTargetProfile': PROFILE, 'service': 'frontend',
+            **{key: job[key] for key in COMMON}, 'operator': 'Dardan', 'migrationMode': 'apply-forward',
+            'target': {key: target[key] for key in TARGET}, 'recoveryRef': job['recoveryRef'], 'trafficAuthorized': False}
+    require(replacement.canonical(started) == replacement.canonical({
+        **base, 'status': 'FRONTEND_CONTINUATION_STARTED', 'databaseVerified': True}),
+        'P2_REPLACEMENT_CONTINUATION_RECEIPT_REFUSED')
+    require(type(database) is dict and set(database) == {*base, 'status', 'before', 'after', 'applied',
+                'schemaVerified', 'runtimeRoleVerified', 'readOnlyVerified'} and
+            all(replacement.canonical(database[key]) == replacement.canonical(value) for key, value in base.items()) and
+            database['status'] == 'DATABASE_VERIFIED' and database['before'] == [] and
+            database['schemaVerified'] is True and database['runtimeRoleVerified'] is True and
+            database['readOnlyVerified'] is False, 'P2_REPLACEMENT_DATABASE_RECEIPT_REFUSED')
+    tags, after, applied = target['approvedPendingTags'], database['after'], database['applied']
+    require(bool(tags) and target.get('allowEmptyBootstrap') is True and len(set(tags)) == len(tags) and
+            type(after) is list and type(applied) is list and len(after) == len(applied) == len(tags),
+            'P2_REPLACEMENT_JOURNAL_RECEIPT_REFUSED')
+    previous = 0
+    for tag, row, migration in zip(tags, after, applied):
+        require(type(row) is dict and set(row) == {'hash', 'created_at'} and replacement.digest(row['hash']) and
+                replacement.match(row['created_at'], r'[1-9][0-9]{0,18}') and
+                previous < int(row['created_at']) <= (1 << 53) - 1 and
+                migration == {'tag': tag, 'hash': row['hash']}, 'P2_REPLACEMENT_JOURNAL_RECEIPT_REFUSED')
+        previous = int(row['created_at'])
+    observed = replacement.observation(probe, physical)
+    expected = {**observed, 'status': 'P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED',
+                'operation': 'verify-replacement-written', 'physicalObservationSha256': migrate.file_hash(physical),
+                'databaseReceiptSha256': migrate.file_hash(database_raw), 'continuationStartedSha256': migrate.file_hash(started_raw),
+                'owner': owner, 'runtime': runtime, 'producerSha256': producer, 'appliedMigrationCount': len(tags),
+                'epoch': '1', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0,
+                'schemaVerified': True, 'runtimeRoleVerified': True,
+                'administrativeLogins': sorted(administrative_logins, key=lambda role: role['name']),
+                'effectiveLoginBoundaryVerified': True}
+    require(replacement.canonical(postflight) == replacement.canonical(expected),
+            'P2_REPLACEMENT_INDEPENDENT_POSTFLIGHT_REFUSED')
+    return database
+
+
+class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
+    """Fixed apply-forward continuation. Only the source broker can construct it."""
+
+    _guard_written_observation = 'p2-frontend-replacement-written-observation.json'
+    _frontend_records = ('frontend-original-database-receipt.json', 'frontend-continuation-started.json',
+                         'frontend-replacement-written-observation.json')
+
+    def __init__(self, parent, *, postflight_raw, database_raw, started_raw, owner, runtime, producer_sha256,
+                 api_job_sha256, configuration_sha256):
+        import p2_frontend_replacement_parent as replacement
+        from staging_state import CONFIGURATION_FILES
+        require = migrate.demand
+        require(type(parent) is replacement.ReplacementWriteBroker and parent.initial['mode'] == replacement.WRITE_MODE and
+                getattr(parent, 'scope', None) is None and parent.probe is not None and parent.write_observation is not None,
+                'P2_REPLACEMENT_SOURCE_PARENT_REQUIRED')
+        require(type(api_job_sha256) is dict and set(api_job_sha256) == set(migrate.SERVICES) and
+                all(replacement.digest(value) for value in api_job_sha256.values()) and
+                type(configuration_sha256) is dict and set(configuration_sha256) == set(CONFIGURATION_FILES) and
+                all(replacement.digest(value) for value in configuration_sha256.values()),
+                'P2_REPLACEMENT_RUNTIME_REVIEW_REQUIRED')
+        self.bundle, self.directory = Path(parent.initial['bundle']), parent.directory
+        release, jobs = migrate.make_plan(self.bundle, expected_profile=PROFILE)
+        probe = parent.probe
+        replacement.verify_bundle(self.bundle, parent.plan, probe)
+        require(set(jobs) == {*migrate.SERVICES, 'frontend'} and release == probe['candidate'] and
+                jobs['frontend']['job'] == probe['job'] and
+                parent.initial['candidateSha256'] == parent.plan['candidateSha256'] and
+                parent.initial['sourceCommit'] == parent.plan['sourceCommit'] == probe['job']['sourceCommit'] and
+                migrate.profiled_current_job_hashes(self.bundle) == api_job_sha256,
+                'P2_REPLACEMENT_RUNTIME_INPUTS_CHANGED')
+        require(all(type(raw) is bytes and 0 < len(raw) <= maximum and raw.endswith(b'\n')
+                    for raw, maximum in ((postflight_raw, 8192), (database_raw, 65_536), (started_raw, 8192))),
+                'P2_REPLACEMENT_RECEIPT_BYTES_REFUSED')
+        require(replacement.private_record(self.directory, self._guard_written_observation, 8192) == postflight_raw,
+                'P2_REPLACEMENT_GUARD_READBACK_CHANGED')
+        receipt = _replacement_producer_bytes(probe, parent.write_observation, database_raw, started_raw,
+                                               postflight_raw, owner, runtime, producer_sha256,
+                                               parent.plan['replacement']['administrativeLogins'])
+        self.api_job_sha256 = copy.deepcopy(api_job_sha256)
+        self.original_frontend_bytes = (database_raw, started_raw, postflight_raw)
+        super().__init__(parent.lock_fd, replacement.LOCK, lambda: replacement.ReplacementWriteBroker.verify_replacement_runtime(parent),
+                         receipt, parent.initial['candidateSha256'], release=release, jobs=jobs,
+                         configuration_sha256=configuration_sha256)
+        self.runtime_parent = parent
+        for name, raw in zip(self._frontend_records, self.original_frontend_bytes):
+            migrate.write_exact_bytes(self.directory, name, raw)
+
+    def require_frontend(self, release, info):
+        migrate.demand(release == self.release and info == self.jobs['frontend'],
+                       'P2_REPLACEMENT_FRONTEND_INPUTS_CHANGED')
+        return P2ReleaseScope.require_frontend(self, release, info)
+
+    def _require_parent(self):
+        from p2_frontend_replacement_parent import ReplacementWriteBroker
+        self.verify()
+        parent = self.runtime_parent
+        migrate.demand(type(parent) is ReplacementWriteBroker and parent.scope is self and parent.lock_fd == self.descriptor,
+                       'P2_REPLACEMENT_SOURCE_PARENT_REQUIRED')
+        return parent
+
+    def api_job_bytes(self, name):
+        from qualification_target_profile import decode_qualification_target_json
+        self._require_parent()
+        migrate.demand(name in migrate.SERVICES, 'P2_REPLACEMENT_API_JOB_REQUIRED')
+        raw = migrate.read_input(self.bundle, f'jobs/{name}.json')
+        migrate.demand(migrate.file_hash(raw) == self.api_job_sha256[name] and
+                       decode_qualification_target_json(raw, 'carrier') == self.jobs[name]['job'],
+                       'P2_REPLACEMENT_API_JOB_BYTES_CHANGED')
+        self.verify()
+        return raw
+
+    def frontend_replacement_receipt_bytes(self):
+        import p2_frontend_replacement_parent as replacement
+        self._require_parent()
+        raw = tuple(replacement.private_record(self.directory, name, 65_536) for name in self._frontend_records)
+        migrate.demand(raw == self.original_frontend_bytes, 'P2_REPLACEMENT_RETAINED_BYTES_CHANGED')
+        migrate.demand(replacement.private_record(self.directory, self._guard_written_observation, 8192) == raw[2],
+                       'P2_REPLACEMENT_GUARD_READBACK_CHANGED')
+        self.verify()
+        return raw
+
+    def runtime_ready(self, attempt, migration_attempt, snapshot, selected, outcome):
+        from p2_frontend_replacement_parent import ReplacementWriteBroker
+        return ReplacementWriteBroker.replacement_runtime_ready(
+            self._require_parent(), attempt, migration_attempt, snapshot, selected, outcome)

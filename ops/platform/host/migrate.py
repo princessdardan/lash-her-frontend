@@ -435,8 +435,8 @@ def cleanup_migration_container(runner, name, env):
 
 def profiled_current_action_id(scope, selected):
     """Fixed source scope selects only a canonical action identity, never a path."""
-    from p2_profiled_current_scope import P2ProfiledCurrentScope
-    demand(type(scope) is P2ProfiledCurrentScope, "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
+    from p2_profiled_current_scope import P2ProfiledCurrentScope, P2ProfiledReplacementScope
+    demand(type(scope) in (P2ProfiledCurrentScope, P2ProfiledReplacementScope), "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
     recovery = scope.recovery_action_id
     if recovery is None:
         return selected["releaseId"]
@@ -453,29 +453,38 @@ def profiled_current_job_hashes(bundle):
 def profiled_current_attempt(scope, results, selected, kind):
     action = profiled_current_action_id(scope, selected)
     demand(kind in ("migration", "runtime"), "PROFILED_CURRENT_ATTEMPT_KIND_REFUSED")
+    from p2_profiled_current_scope import P2ProfiledReplacementScope
+    if type(scope) is P2ProfiledReplacementScope:
+        return results / (kind + "-profiled-frontend-replacement-" + action)
     if scope.recovery_action_id is not None:
         return results / (kind + "-profiled-current-recovery-" + action)
     return results / (("runtime-" if kind == "runtime" else "") + action)
 
 
-def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None):
+def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None, _profiled_replacement_scope=None):
     expected = profile_context(expected_profile)
+    replacement = _profiled_replacement_scope is not None
+    demand(not replacement or _profiled_current_scope is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    profiled_scope = _profiled_replacement_scope if replacement else _profiled_current_scope
+    if _p2_scope is not None:
+        from p2_profiled_current_scope import P2ProfiledReplacementScope
+        demand(type(_p2_scope) is not P2ProfiledReplacementScope, "PROFILED_REPLACEMENT_PROCESS_LOCAL_SCOPE_REQUIRED")
     # Only the fixed host parent can supply this actual process-local scope.
     # Public profiled CLI apply and JSON/callback lookalikes still refuse before I/O.
-    demand(_profiled_current_scope is None or apply and expected is not None and _p2_scope is None
+    demand(profiled_scope is None or apply and expected is not None and _p2_scope is None
            and before_frontend_migration is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
     if apply and expected is not None:
-        demand(_profiled_current_scope is not None and _p2_scope is None
+        demand(profiled_scope is not None and _p2_scope is None
                and before_frontend_migration is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
-        from p2_profiled_current_scope import P2ProfiledCurrentScope
-        demand(type(_profiled_current_scope) is P2ProfiledCurrentScope,
+        from p2_profiled_current_scope import P2ProfiledCurrentScope, P2ProfiledReplacementScope
+        demand(type(profiled_scope) is (P2ProfiledReplacementScope if replacement else P2ProfiledCurrentScope),
                "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
         import release as runtime
         demand(after_migrations is not None and
-               runtime.profiled_current_migration_continuation(_profiled_current_scope) is after_migrations,
+               runtime.profiled_current_migration_continuation(profiled_scope) is after_migrations,
                "PROFILED_CURRENT_FIXED_RUNTIME_CONTINUATION_REQUIRED")
-        _profiled_current_scope.verify()
-    active_scope = _profiled_current_scope if _profiled_current_scope is not None else _p2_scope
+        profiled_scope.verify()
+    active_scope = profiled_scope if profiled_scope is not None else _p2_scope
     release, jobs = make_plan(bundle, expected_profile=expected)
     environment, release_id = release["environment"], release["releaseId"]
     frontend_read_only = "frontend" in jobs and jobs["frontend"]["job"]["target"]["approvedPendingTags"] == []
@@ -502,8 +511,9 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
         from p2_release_scope import P2ReleaseScope
         demand(isinstance(active_scope, P2ReleaseScope) and "frontend" in jobs
                and before_frontend_migration is None, "P2_PROCESS_LOCAL_SCOPE_REQUIRED")
-        if _profiled_current_scope is not None:
-            demand(frontend_read_only and release.get("contractPhase") == "p2",
+        if profiled_scope is not None:
+            demand(frontend_read_only is not replacement and release.get("contractPhase") == "p2",
+                   "PROFILED_REPLACEMENT_FRONTEND_APPLY_FORWARD_REQUIRED" if replacement else
                    "PROFILED_CURRENT_FRONTEND_CURRENT_ONLY_REQUIRED")
         active_scope.require_release(release, jobs)
         active_scope.require_frontend(release, jobs["frontend"])
@@ -512,11 +522,11 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
     try:
         demand(stat.S_ISREG(os.fstat(lock_fd).st_mode) and os.fstat(lock_fd).st_uid == os.getuid(), "RELEASE_LOCK_REFUSED")
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        attempt = (profiled_current_attempt(_profiled_current_scope, results, release, "migration")
-                   if _profiled_current_scope is not None else results / release_id)
+        attempt = (profiled_current_attempt(profiled_scope, results, release, "migration")
+                   if profiled_scope is not None else results / release_id)
         attempt.mkdir(mode=0o700)  # Existing/uncertain attempts never overwrite or retry.
         write_json(attempt, "started.json", plan)
-        if _profiled_current_scope is None:
+        if profiled_scope is None:
             write_json(attempt, "candidate.json", release)
         else:
             original_candidate = read_input(bundle, "release.candidate.json")
@@ -525,22 +535,43 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             write_exact_bytes(attempt, "candidate.json", original_candidate)
         outcome = {"status": "FAILED_REQUIRES_REVIEW", "releaseId": release_id, "environment": environment, "trafficAuthorized": False}
         outcome.update(contract_identity(release))
-        if _profiled_current_scope is not None:
+        if profiled_scope is not None:
             outcome.update(version=2, qualificationTargetProfile=expected,
-                           frontendSqlApplied=False, historicalProviderClosureClaimed=False,
+                           frontendSqlApplied=replacement, historicalProviderClosureClaimed=False,
                            oldP200Qualified=False, nativeSchedulesEnabled=False, releaseAccepted=False)
         base_env = dict(docker_env) if docker_env is not None else {
             key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG") if key in os.environ}
         uid, gid = (65532, 65532) if os.getuid() == 0 else (os.getuid(), os.getgid())
         prepared = []
         try:
+            if replacement:
+                # The original source already applied FE SQL while retaining
+                # its advisory lock. Preserve its bytes without ever preparing
+                # or starting a frontend migration container.
+                outcome["phase"] = "retain-replacement-frontend-proof"
+                original_database, original_started, postflight = active_scope.frontend_replacement_receipt_bytes()
+                frontend_receipts = attempt / "frontend"
+                frontend_receipts.mkdir(mode=0o700)
+                for name, raw in (("database-receipt.json", original_database),
+                                  ("frontend-continuation-started.json", original_started),
+                                  ("frontend-replacement-written-observation.json", postflight)):
+                    write_exact_bytes(frontend_receipts, name, raw)
+                write_json(frontend_receipts, "frontend-continuation-open.json", {
+                    "version": 2, "qualificationTargetProfile": expected, "status": "FRONTEND_CONTINUATION_STILL_OPEN",
+                    "environment": environment, "releaseId": release_id, "frontendSqlApplied": True,
+                    "sqlReplayed": False, "trafficAuthorized": False})
+                outcome.update(frontendMigrationMode="apply-forward", frontendReadOnlyVerified=False,
+                               frontendSqlReplayed=False, frontendReplacementReadbackSha256=file_hash(postflight),
+                               frontendContinuationStartedSha256=file_hash(original_started))
             for name, info in jobs.items():
+                if replacement and name == "frontend":
+                    continue
                 if active_scope is not None:
                     active_scope.verify()
                 outcome["phase"] = f"image-preflight-{name}"
                 inputs, receipts = attempt / f"{name}-input", attempt / name
                 inputs.mkdir(mode=0o700); receipts.mkdir(mode=0o700)
-                if _profiled_current_scope is None:
+                if profiled_scope is None:
                     write_json(inputs, "job.json", info["job"])
                     if info.get("frontend"):
                         write_json(inputs, "candidate.json", release)
@@ -559,20 +590,20 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                         os.chown(file, uid, gid)
                 if os.getuid() == 0:
                     os.chown(inputs, uid, gid)
-                    if _profiled_current_scope is None or name != "frontend":
+                    if profiled_scope is None or name != "frontend":
                         os.chown(receipts, uid, gid)
                 prepared.append((name, info, inputs, receipts))
                 runner = active_scope.run if active_scope is not None else subprocess.run
                 runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
                 preflight_name = (f"lash-p2-profiled-current-image-check-{uuid4().hex}"
-                                  if _profiled_current_scope is not None else f"lash-check-{name}-{release_id}")
+                                  if profiled_scope is not None else f"lash-check-{name}-{release_id}")
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", preflight_name, True, info.get("frontend", False), expected_profile=expected)
-                if _profiled_current_scope is not None:
+                if profiled_scope is not None:
                     args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
                 try:
                     runner(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
                 finally:
-                    if _profiled_current_scope is not None:
+                    if profiled_scope is not None:
                         cleanup_migration_container(runner, preflight_name, base_env)
             # Validate every job in its exact migration image before database credentials are read.
             outcome["phase"] = "credential-validation"
@@ -601,7 +632,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 # An empty reviewed list alone never establishes a no-op.
                 prepared.sort(key=lambda item: item[0] != "frontend")
             outcome["phase"] = "suspend-runtime"
-            if _profiled_current_scope is not None:
+            if profiled_scope is not None:
                 outcome["stoppedRuntimeContainers"] = active_scope.suspend_api_runtime(environment, base_env)
             else:
                 if active_scope is not None:
@@ -618,7 +649,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                         # Preserve that original stage; do not fabricate its
                         # terminal receipt, invoke SQL again or reacquire PG.
                         receipt = active_scope.require_frontend(release, info)
-                        if _profiled_current_scope is None:
+                        if profiled_scope is None:
                             write_json(receipts, "database-receipt.json", receipt)
                         else:
                             original_database, original_started = active_scope.frontend_current_receipt_bytes()
@@ -638,22 +669,22 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                         continuation = {
                             "status": "FRONTEND_CONTINUATION_STILL_OPEN", "environment": environment,
                             "releaseId": release_id, "sqlReplayed": False, "trafficAuthorized": False}
-                        if _profiled_current_scope is not None:
+                        if profiled_scope is not None:
                             continuation.update(version=2, qualificationTargetProfile=expected,
                                                 frontendSqlApplied=False)
                             outcome.update(frontendMigrationMode="verify-current-only", frontendReadOnlyVerified=True)
                         write_json(receipts, "frontend-continuation-open.json", continuation)
                         continue
                 outcome["phase"] = f"apply-{name}"
-                if _profiled_current_scope is not None:
+                if profiled_scope is not None:
                     demand(read_input(inputs, "job.json") == active_scope.api_job_bytes(name),
                            "PROFILED_CURRENT_API_JOB_BYTES_CHANGED")
                 env = {**base_env, credential_names(name, environment)[1]: credentials[name],
                        **({} if info.get("frontend") else {"DATABASE_TARGET": environment})}
-                action = profiled_current_action_id(_profiled_current_scope, release) if _profiled_current_scope is not None else release_id
+                action = profiled_current_action_id(profiled_scope, release) if profiled_scope is not None else release_id
                 container_name = f"lash-migrate-{name}-{action}"
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", container_name, frontend=info.get("frontend", False), expected_profile=expected)
-                if _profiled_current_scope is not None:
+                if profiled_scope is not None:
                     args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
                 log_fd = os.open(receipts / "container.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
@@ -662,7 +693,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 finally:
                     os.close(log_fd)
                     # Also cleans up a container left running by a timed-out/interrupted Docker CLI.
-                    cleanup = active_scope.run if _profiled_current_scope is not None else subprocess.run
+                    cleanup = active_scope.run if profiled_scope is not None else subprocess.run
                     cleanup_migration_container(cleanup, container_name, base_env)
                 receipt = read_json(receipts, "database-receipt.json", expected_profile=expected)
                 terminal = read_json(receipts, "job-outcome.json", expected_profile=expected)
@@ -692,6 +723,13 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             outcome["phase"] = "completed"
             outcome["candidateSha256"] = file_hash(read_input(attempt, "candidate.json"))
             outcome["databaseReceiptSha256"] = {name: file_hash(read_input(receipts, "database-receipt.json")) for name, _info, _inputs, receipts in prepared}
+            if replacement:
+                current_frontend_bytes = active_scope.frontend_replacement_receipt_bytes()
+                demand(current_frontend_bytes == (original_database, original_started, postflight)
+                       and tuple(read_input(frontend_receipts, name) for name in (
+                           "database-receipt.json", "frontend-continuation-started.json", "frontend-replacement-written-observation.json"))
+                           == current_frontend_bytes, "P2_REPLACEMENT_RETAINED_BYTES_CHANGED")
+                outcome["databaseReceiptSha256"]["frontend"] = file_hash(original_database)
         except BaseException as error:
             outcome["status"] = "FAILED_REQUIRES_REVIEW"
             code = str(error)

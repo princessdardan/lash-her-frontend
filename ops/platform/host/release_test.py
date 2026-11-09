@@ -237,6 +237,178 @@ class RuntimeReleaseTests(unittest.TestCase):
             scope.revoke()
             os.close(fd)
 
+    def test_replacement_continuation_runs_only_pinned_api_jobs_and_retains_original_frontend_bytes(self):
+        from unittest.mock import Mock
+        import p2_frontend_replacement_parent as replacement
+        from p2_profiled_current_scope import COMMON, TARGET, P2ProfiledReplacementScope, _replacement_producer_bytes
+        from staging_state import configuration_hashes
+
+        self.root = self.fixture.root = self.root.resolve()
+        self.bundle = self.fixture.bundle = self.bundle.resolve()
+        self.results, self.configuration, self.compose = self.results.resolve(), self.configuration.resolve(), self.compose.resolve()
+        self.fixture.add_frontend()
+        ref = self.fixture.profiled()
+        for carrier in (self.fixture.release, self.fixture.release["frontendMigration"], *self.fixture.jobs.values()):
+            carrier.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "e" * 64)
+        runtime_role = {"name": "lash_her_frontend_staging_runtime_p2", "oid": "18"}
+        owner = {"name": "lash_her_frontend_staging_admission_owner_p2", "oid": "17"}
+        self.fixture.jobs["frontend"]["target"].update(runtimeRole=runtime_role["name"],
+                                                      approvedPendingTags=["0000_test", "0001_test"])
+        self.fixture.save()
+        self.target.update(version=2, qualificationTargetProfile=ref)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com")
+        self.save("runtime.json", self.target)
+        candidate_raw = migrate.read_input(self.bundle, "release.candidate.json")
+        candidate_sha = migrate.file_hash(candidate_raw)
+        self.gateway["admission"] = {"file": "/admission/state.json", "releaseId": "test-release", "candidateSha256": candidate_sha}
+        self.save("gateway.json", self.gateway)
+        selected, jobs, _, _ = release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        job, schema = jobs["frontend"]["job"], jobs["frontend"]["schema"]
+        probe = {"version": 1, "qualificationTargetProfile": ref, "operation": "verify-pre-bootstrap-lock",
+                 "targetSha256": "d" * 64, "databaseOid": "11", "migrationRoleOid": "16", "marker": "a" * 64,
+                 "backendPid": 123, "backendStart": "2026-11-09T12:30:01.123456Z"}
+        physical_fields = {**probe, "status": "P2_FRONTEND_REPLACEMENT_PHYSICAL_LOCK_VERIFIED", "environment": "staging",
+                           "releaseId": "test-release", "sourceCommit": job["sourceCommit"], "readOnlyVerified": True,
+                           "authorityIssued": False, "trafficAuthorized": False}
+        raw = lambda value: (json.dumps(value, indent=2) + "\n").encode()
+        physical = raw(physical_fields)
+        probe.update(job=job, candidate=selected, baseline=json.loads(schema))
+        base = {**{key: job[key] for key in COMMON}, "version": 2, "qualificationTargetProfile": ref, "service": "frontend",
+                "operator": "Dardan", "migrationMode": "apply-forward", "target": {key: job["target"][key] for key in TARGET},
+                "recoveryRef": job["recoveryRef"], "trafficAuthorized": False}
+        rows = [{"hash": char * 64, "created_at": stamp} for char, stamp in (("b", "1000"), ("c", "1001"))]
+        database = {**base, "status": "DATABASE_VERIFIED", "before": [], "after": rows,
+                    "applied": [{"tag": tag, "hash": row["hash"]} for tag, row in zip(job["target"]["approvedPendingTags"], rows)],
+                    "schemaVerified": True, "runtimeRoleVerified": True, "readOnlyVerified": False}
+        database_raw = raw(database)
+        started_raw = raw({**base, "status": "FRONTEND_CONTINUATION_STARTED", "databaseVerified": True})
+        administrative_logins = [{"name": "reviewed_provider_admin", "oid": "21"}]
+        readback = {**physical_fields, "status": "P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED",
+                    "operation": "verify-replacement-written", "physicalObservationSha256": migrate.file_hash(physical),
+                    "databaseReceiptSha256": migrate.file_hash(database_raw), "continuationStartedSha256": migrate.file_hash(started_raw),
+                    "owner": owner, "runtime": runtime_role, "producerSha256": "a" * 64, "appliedMigrationCount": 2,
+                    "epoch": "1", "newWork": False, "recovery": False, "active": 0, "uncertain": 0,
+                    "schemaVerified": True, "runtimeRoleVerified": True, "administrativeLogins": administrative_logins,
+                    "effectiveLoginBoundaryVerified": True}
+        readback_raw = raw(readback)
+        for changed, code in (({**database, "sourceCommit": "c" * 40}, "DATABASE_RECEIPT"),
+                              ({**database, "after": rows[::-1]}, "JOURNAL_RECEIPT"),
+                              ({**database, "before": rows}, "DATABASE_RECEIPT")):
+            altered = raw(changed)
+            with self.assertRaisesRegex(ValueError, code):
+                _replacement_producer_bytes(probe, physical, altered, started_raw,
+                    raw({**readback, "databaseReceiptSha256": migrate.file_hash(altered)}), owner, runtime_role,
+                    "a" * 64, administrative_logins)
+        for altered in ({"active": False}, {"administrativeLogins": []}, {"effectiveLoginBoundaryVerified": False}):
+            with self.assertRaisesRegex(ValueError, "INDEPENDENT_POSTFLIGHT"):
+                _replacement_producer_bytes(probe, physical, database_raw, started_raw, raw({**readback, **altered}),
+                                            owner, runtime_role, "a" * 64, administrative_logins)
+
+        broker = object.__new__(replacement.ReplacementWriteBroker)
+        broker.initial = {"mode": replacement.WRITE_MODE, "bundle": str(self.bundle), "candidateSha256": candidate_sha,
+                          "sourceCommit": job["sourceCommit"]}
+        broker.plan = {"candidateSha256": candidate_sha, "sourceCommit": job["sourceCommit"],
+                       "schemaBaselineFileSha256": migrate.file_hash(schema),
+                       "replacement": {"administrativeLogins": administrative_logins},
+                       "frontendJobSha256": migrate.file_hash(migrate.read_input(self.bundle, "jobs/frontend.json"))}
+        broker.directory, broker.probe, broker.write_observation = self.root / "broker", probe, physical
+        broker.directory.mkdir(mode=0o700)
+        guard_readback = broker.directory / "p2-frontend-replacement-written-observation.json"
+        migrate.write_exact_bytes(broker.directory, guard_readback.name, readback_raw)
+        lock = self.root / "release.lock"
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        broker.lock_fd = fd
+        api_pins = migrate.profiled_current_job_hashes(self.bundle)
+        credentials = {f"{name.upper()}_STAGING_DATABASE_URL": f"owned-{name}-private" for name in migrate.SERVICES}
+        applied_apis = []
+        attempt = self.results / "migration-profiled-frontend-replacement-test-release"
+
+        def docker(args, *, env, **kwargs):
+            self.assertNotIn("ops/platform/frontend-image.mjs", args)
+            self.assertNotIn(jobs["frontend"]["image"], args)
+            self.assertNotIn(replacement.CREDENTIAL, env)
+            if "--execute-profiled-current" in args:
+                name = next(name for name in migrate.SERVICES if f"lash-migrate-{name}-test-release" in args)
+                applied_apis.append(name)
+                self.assertEqual(env["STAGING_DATABASE_URL"], credentials[f"{name.upper()}_STAGING_DATABASE_URL"])
+                mount = next(value for value in args if value.endswith("dst=/run/release-receipts"))
+                receipts = Path(mount.split(",src=")[1].split(",dst=")[0])
+                info = jobs[name]
+                receipt = {**info["job"], "service": info["service"], "status": "DATABASE_VERIFIED"}
+                terminal = {**migrate.contract_identity(selected), "status": "DATABASE_VERIFIED", "qualificationTargetProfile": ref}
+                if name == "community":
+                    terminal["schemaVersion"] = 2
+                (receipts / "database-receipt.json").write_bytes(raw(receipt))
+                (receipts / "job-outcome.json").write_bytes(raw(terminal))
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if args[1] == "compose" and "up" in args:
+                self.calls.append(args)
+                self.running.update(args[args.index("90") + 1:])
+                with lock.open() as contender, self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertEqual(migrate.read_json(attempt, "migration-outcome.json", expected_profile=ref)["status"],
+                                 "API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN")
+                return subprocess.CompletedProcess(args, 0, "", "")
+            return self.docker(args, env=env, **kwargs)
+
+        def scope_for_replacement():
+            return P2ProfiledReplacementScope(broker, postflight_raw=readback_raw, database_raw=database_raw,
+                started_raw=started_raw, owner=owner, runtime=runtime_role, producer_sha256="a" * 64,
+                api_job_sha256=api_pins, configuration_sha256=configuration_hashes(self.configuration))
+
+        with (patch.object(replacement, "LOCK", lock),
+              patch.object(replacement.ReplacementWriteBroker, "verify_replacement_runtime", create=True),
+              patch.object(replacement.ReplacementWriteBroker, "replacement_runtime_ready", create=True) as ready):
+            candidate_path = self.bundle / "release.candidate.json"
+            candidate_path.write_bytes(candidate_raw + b" ")
+            with self.assertRaisesRegex(ValueError, replacement.REFUSED):
+                scope_for_replacement()
+            candidate_path.write_bytes(candidate_raw)
+            guard_readback.write_bytes(readback_raw + b" ")
+            with self.assertRaisesRegex(ValueError, "GUARD_READBACK_CHANGED"):
+                scope_for_replacement()
+            guard_readback.write_bytes(readback_raw)
+            scope = broker.scope = scope_for_replacement()
+            self.addCleanup(scope.revoke)
+            scope.prior_gateway = Mock(stopped=False, api_suspension_started=False, api_suspension_finished=False)
+            scope.prior_gateway.before_api_suspension.side_effect = lambda: setattr(scope.prior_gateway, "api_suspension_started", True)
+            scope.prior_gateway.after_api_suspension.side_effect = lambda: setattr(scope.prior_gateway, "api_suspension_finished", True)
+            with patch.object(release, "make_plan", side_effect=AssertionError("wrong mode reached I/O")):
+                with self.assertRaisesRegex(ValueError, "CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED"):
+                    release.execute(self.bundle, self.configuration, self.results, self.compose, True,
+                                    expected_profile=ref, _profiled_current_scope=scope)
+                with self.assertRaisesRegex(ValueError, "REPLACEMENT_PROCESS_LOCAL_SCOPE_REQUIRED"):
+                    release.execute(self.bundle, self.configuration, self.results, self.compose, True, _p2_scope=scope)
+            with patch.object(migrate, "make_plan", side_effect=AssertionError("direct migration reached I/O")):
+                with self.assertRaisesRegex(ValueError, "FIXED_RUNTIME_CONTINUATION_REQUIRED"):
+                    migrate.execute(self.bundle, self.results, True, expected_profile=ref, _profiled_replacement_scope=scope)
+            course = self.bundle / "jobs/course.json"
+            original_course = course.read_bytes()
+            course.write_bytes(original_course + b" ")
+            with self.assertRaisesRegex(ValueError, "API_JOB_BYTES_CHANGED"):
+                scope.api_job_bytes("course")
+            course.write_bytes(original_course)
+            with (patch.object(scope, "run", side_effect=docker), patch.object(release, "assert_host"),
+                  patch.dict(os.environ, credentials, clear=True)):
+                outcome = release.execute_profiled_replacement_runtime(self.bundle, self.configuration, self.results,
+                    self.compose, expected_profile=ref, _profiled_replacement_scope=scope)
+            self.assertEqual(ready.call_args.args[2], attempt)
+        self.assertEqual(applied_apis, ["course", "community"])
+        self.assertEqual(self.running, set(release.SERVICES))
+        self.assertEqual((attempt / "candidate.json").read_bytes(), candidate_raw)
+        self.assertEqual(tuple((attempt / "frontend" / name).read_bytes() for name in (
+            "database-receipt.json", "frontend-continuation-started.json", "frontend-replacement-written-observation.json")),
+            (database_raw, started_raw, readback_raw))
+        self.assertFalse((attempt / "frontend-input").exists())
+        self.assertTrue(outcome["frontendSqlApplied"])
+        self.assertFalse(outcome["frontendSqlReplayed"])
+        self.assertFalse(outcome["frontendReadOnlyVerified"])
+        self.assertFalse(outcome["releaseAccepted"])
+        self.assertEqual(outcome["frontendReplacementReadbackSha256"], migrate.file_hash(readback_raw))
+
     def test_profiled_runtime_requires_the_registered_project_and_gateway_origin(self):
         ref = self.fixture.profiled()
         self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)

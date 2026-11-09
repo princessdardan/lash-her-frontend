@@ -277,8 +277,8 @@ def configuration_container(arguments, *, expected_profile=None):
     profiled = expected_profile is not None and scope is not None
     prefix = "lash-config-"
     if profiled:
-        from p2_profiled_current_scope import P2ProfiledCurrentScope
-        if type(scope) is P2ProfiledCurrentScope:
+        from p2_profiled_current_scope import P2ProfiledCurrentScope, P2ProfiledReplacementScope
+        if type(scope) in (P2ProfiledCurrentScope, P2ProfiledReplacementScope):
             prefix = "lash-p2-profiled-current-image-check-"
         else:
             from p2_known_ack_loss import ProfiledKnownAckRecoveryScope
@@ -365,9 +365,18 @@ def check_containers(release, snapshot, *, expected_profile=None):
 
 
 
-def _runtime_scope(expected, apply, legacy_scope, profiled_scope, before, after):
+def _runtime_scope(expected, apply, legacy_scope, profiled_scope, before, after, replacement_scope=None):
+    if replacement_scope is not None:
+        from p2_profiled_current_scope import P2ProfiledReplacementScope
+        demand(expected is not None and apply and all(value is None for value in (legacy_scope, profiled_scope, before, after))
+               and type(replacement_scope) is P2ProfiledReplacementScope, "PROFILED_REPLACEMENT_PROCESS_LOCAL_SCOPE_REQUIRED")
+        replacement_scope._require_parent()
+        return replacement_scope
     if expected is None:
         demand(profiled_scope is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+        if legacy_scope is not None:
+            from p2_profiled_current_scope import P2ProfiledReplacementScope
+            demand(type(legacy_scope) is not P2ProfiledReplacementScope, "PROFILED_REPLACEMENT_PROCESS_LOCAL_SCOPE_REQUIRED")
         return legacy_scope
     demand(legacy_scope is None and before is None and after is None,
            "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
@@ -381,10 +390,12 @@ def _runtime_scope(expected, apply, legacy_scope, profiled_scope, before, after)
     return profiled_scope
 
 
-def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None, _current_database_proof=None):
+def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None, _current_database_proof=None, _profiled_replacement_scope=None):
     expected = migrate.profile_context(expected_profile)
+    replacement = _profiled_replacement_scope is not None
+    profiled_scope = _profiled_replacement_scope if replacement else _profiled_current_scope
     active_scope = _runtime_scope(expected, apply, _p2_scope, _profiled_current_scope,
-                                  before_frontend_migration, after_runtime_ready)
+                                  before_frontend_migration, after_runtime_ready, _profiled_replacement_scope)
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file, expected_profile=expected)
     verified_current = None
     if _current_database_proof is not None:
@@ -398,8 +409,9 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
         active_scope.require_configuration(configuration)
     if not apply:
         return plan
-    if _profiled_current_scope is not None:
-        demand("frontend" in jobs and jobs["frontend"]["job"]["target"]["approvedPendingTags"] == [],
+    if profiled_scope is not None:
+        demand("frontend" in jobs and bool(jobs["frontend"]["job"]["target"]["approvedPendingTags"]) is replacement,
+               "PROFILED_REPLACEMENT_FRONTEND_APPLY_FORWARD_REQUIRED" if replacement else
                "PROFILED_CURRENT_FRONTEND_CURRENT_ONLY_REQUIRED")
         active_scope.require_frontend(release, jobs["frontend"])
         after_runtime_ready = active_scope.runtime_ready
@@ -410,8 +422,8 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
     for directory in (results.resolve(), configuration.resolve(), bundle.resolve()):
         demand(not any((parent / ".git").exists() for parent in (directory, *directory.parents)), "PRIVATE_RUNTIME_OUTSIDE_CHECKOUT_REQUIRED")
         demand("," not in str(directory), "MOUNT_PATH_REFUSED")
-    attempt = (migrate.profiled_current_attempt(_profiled_current_scope, results, release, "runtime")
-               if _profiled_current_scope is not None else results / f'runtime-{release["releaseId"]}')
+    attempt = (migrate.profiled_current_attempt(profiled_scope, results, release, "runtime")
+               if profiled_scope is not None else results / f'runtime-{release["releaseId"]}')
     attempt.mkdir(mode=0o700)
     migrate.write_json(attempt, "started.json", plan)
     snapshot = attempt / "configuration"
@@ -419,8 +431,8 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
                "trafficAuthorized": False, "frontendPromotionAuthorized": False, "releaseAccepted": False,
                "realVercelOidcVerified": False, "externalIngressVerified": False, "phase": "configuration-preflight"}
     outcome.update(migrate.contract_identity(release))
-    if _profiled_current_scope is not None:
-        outcome.update(version=2, qualificationTargetProfile=expected, frontendSqlApplied=False,
+    if profiled_scope is not None:
+        outcome.update(version=2, qualificationTargetProfile=expected, frontendSqlApplied=replacement,
                        sourceCommit=release["sources"]["frontend"]["commit"],
                        candidateSha256=migrate.file_hash(migrate.read_input(bundle, "release.candidate.json")),
                        configurationSha256=copy.deepcopy(active_scope.configuration_sha256),
@@ -438,14 +450,30 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             demand(verified_release == release and database_outcome.get("status") == expected_database_status, "DATABASE_STAGE_BINDING_REFUSED")
             migrate.require_contract_identity(release, database_outcome)
             migrate.require_profile(expected, database_outcome)
-            if _profiled_current_scope is not None:
+            if profiled_scope is not None:
                 demand(database_outcome.get("candidateSha256") == outcome["candidateSha256"]
-                       and database_outcome.get("frontendSqlApplied") is False,
+                       and database_outcome.get("frontendSqlApplied") is replacement,
                        "PROFILED_CURRENT_DURABLE_DATABASE_STAGE_REQUIRED")
                 if verified_current is not None:
                     demand(database_outcome.get("frontendProofHeld") is True
                            and database_outcome.get("migrationsExecuted") is False,
                            "PROFILED_CURRENT_READ_ONLY_DATABASE_STAGE_REQUIRED")
+                elif replacement:
+                    from qualification_target_profile import decode_qualification_target_json
+                    raw_database, raw_started, raw_readback = active_scope.frontend_replacement_receipt_bytes()
+                    durable = migrate.read_input(migration_attempt, "migration-outcome.json")
+                    demand(decode_qualification_target_json(durable, "carrier") == database_outcome and
+                           database_outcome.get("frontendMigrationMode") == "apply-forward" and
+                           database_outcome.get("frontendReadOnlyVerified") is False and
+                           database_outcome.get("frontendSqlReplayed") is False and
+                           database_outcome.get("databaseReceiptSha256", {}).get("frontend") == migrate.file_hash(raw_database)
+                           and database_outcome.get("frontendContinuationStartedSha256") == migrate.file_hash(raw_started)
+                           and database_outcome.get("frontendReplacementReadbackSha256") == migrate.file_hash(raw_readback),
+                           "P2_REPLACEMENT_DURABLE_DATABASE_STAGE_REQUIRED")
+                    outcome.update(frontendMigrationMode="apply-forward", frontendReadOnlyVerified=False,
+                                   frontendSqlReplayed=False,
+                                   frontendReplacementReadbackSha256=migrate.file_hash(raw_readback),
+                                   frontendContinuationStartedSha256=migrate.file_hash(raw_started))
                 else:
                     demand(database_outcome.get("frontendReadOnlyVerified") is True,
                            "PROFILED_CURRENT_DURABLE_DATABASE_STAGE_REQUIRED")
@@ -490,7 +518,7 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             if outcome["phase"] == "completed":
                 outcome["phase"] = "retain-runtime-receipt"
             outcome["status"] = "FAILED_REQUIRES_REVIEW"
-            if _profiled_current_scope is not None:
+            if profiled_scope is not None:
                 # The source guard stops runtime after revoking and reaping
                 # this worker. Starting a second stop here would race it.
                 outcome["runtimeStopped"] = None
@@ -505,7 +533,7 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
     try:
         immutable_bundle = attempt / "migration-input"
         snapshot_bundle(bundle, immutable_bundle, release, jobs, expected_profile=expected)
-        if _profiled_current_scope is not None:
+        if profiled_scope is not None:
             demand(migrate.file_hash(migrate.read_input(immutable_bundle, "release.candidate.json")) == active_scope.candidate_sha256,
                    "PROFILED_CURRENT_ORIGINAL_CANDIDATE_CHANGED")
         snapshot_configuration(configuration, snapshot, release, jobs, compose, expected_profile=expected)
@@ -525,11 +553,12 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             active_scope.suspend_api_runtime(release["environment"], SAFE_ENV)
             return start_runtime(current_directory, release, current_outcome)
         outcome["phase"] = "migrations"
-        continuation_token = _profiled_current_migration.set((_profiled_current_scope, start_runtime)) if _profiled_current_scope is not None else None
+        continuation_token = _profiled_current_migration.set((profiled_scope, start_runtime)) if profiled_scope is not None else None
         try:
             return migrate.execute(immutable_bundle, results, True, confirmation, lock_path, after_migrations=start_runtime, docker_env=SAFE_ENV,
                                    before_frontend_migration=before_frontend_migration, _p2_scope=_p2_scope,
-                                   expected_profile=expected, _profiled_current_scope=_profiled_current_scope)
+                                   expected_profile=expected, _profiled_current_scope=_profiled_current_scope,
+                                   **({"_profiled_replacement_scope": _profiled_replacement_scope} if replacement else {}))
         finally:
             if continuation_token is not None:
                 _profiled_current_migration.reset(continuation_token)
@@ -550,6 +579,21 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
         return _execute(bundle, configuration, results, compose_file, apply, confirmation, lock_path,
                         before_frontend_migration, after_runtime_ready, _p2_scope, expected_profile=expected,
                         _profiled_current_scope=_profiled_current_scope)
+    finally:
+        _command_scope.reset(token)
+
+
+def execute_profiled_replacement_runtime(bundle, configuration, results, compose_file, *,
+                                        expected_profile, _profiled_replacement_scope):
+    """Continue a verified replacement into the existing guarded API runtime."""
+    expected = migrate.profile_context(expected_profile)
+    scope = _runtime_scope(expected, True, None, None, None, None, _profiled_replacement_scope)
+    selected = scope.release
+    scope.require_release(selected, scope.jobs)
+    token = _command_scope.set(scope)
+    try:
+        return _execute(bundle, configuration, results, compose_file, True, "staging/" + selected["releaseId"],
+                        scope.path, expected_profile=expected, _profiled_replacement_scope=scope)
     finally:
         _command_scope.reset(token)
 
