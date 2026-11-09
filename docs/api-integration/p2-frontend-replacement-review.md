@@ -48,13 +48,25 @@ node ops/platform/p2-frontend-replacement-release.mjs --plan /absolute/private/r
 node ops/platform/p2-frontend-replacement-release.mjs --apply /absolute/private/replacement-settings.json --confirm EXACT_REVIEWED_CONFIRMATION
 ```
 
-The apply entry requires passing CI for the exact source, the selected host and all three reviewed migration credentials through the existing private runtime handoff. The Node transport carries the original receipts into the supervisor and joins the replacement runtime, reviewed predecessor promotion and independent PostgreSQL closure. The supervisor returns a certification-readiness receipt after broker exit and fresh readback. Candidate CI, actual target selection, operator start and the replacement certification join are open. [Operator and terminal qualification](baselines/2026-11-09-p2-replacement-operator.json).
+The apply entry requires passing CI for the exact source, the selected host and all three reviewed migration credentials through the existing private runtime handoff. The Node transport carries the original receipts into the supervisor and joins the replacement runtime, reviewed predecessor promotion and independent PostgreSQL closure. The supervisor returns a certification-readiness receipt after broker exit and fresh readback. Retain the original digest-named terminal and session-closure files in the private frontend action directory. [Operator and terminal qualification](baselines/2026-11-09-p2-replacement-operator.json).
+
+## Bounded certification after the replacement release
+
+Use version 2 certification settings with the same `staging-current` profile. Set `releaseSettings` to the reviewed replacement operator settings and add `replacementRelease` with exactly two fields, `terminalFile` and `terminalSha256`. Use the absolute path to the original digest-named terminal under `RESULTS/RELEASE_ID-replacement-write/frontend` and its independently retained raw SHA-256. The original PostgreSQL, API, workload and promotion receipts stay in that same release directory structure.
+
+```sh
+node ops/platform/p2-certification.mjs plan-profiled-current /absolute/private/certification-plan.json
+node ops/platform/p2-certification.mjs host-plan-profiled-current /absolute/private/certification-plan.json
+node ops/platform/p2-certification.mjs apply-profiled-current /absolute/private/certification-apply.json --confirm staging/CERTIFICATION_ACTION_ID
+```
+
+The planner verifies the original apply-forward bytes and the supported stage's ready receipts. The host separately joins the installed guardian's original terminal, runtime configuration and provider receipts. Before opening the selected stage, it holds the staging flock and independently observes the fresh PostgreSQL session and both advisory locks. It verifies the complete journal, schema, exact login OIDs, connected client roles and closed admission on the replacement database. The read-only API checks use the original jobs. A final observer rechecks session and lock closure. Each apply is a separate owner-started action. The known-acknowledgement recovery modes still require the current-only release. Exact candidate CI, actual target selection, operator start and real staging certification remain open.
 
 ## Fresh admin initialization
 
 After compatible deployment is verified, prepare a separate first-owner `interactive-browser` action with stage `identity`, an empty `requests` list, and `firstOwner` containing the reviewed `nonce` and `identitySha256`. Use a new nonzero 16-byte hexadecimal nonce. Compute the digest with `p2FirstOwnerIdentitySha256` from the normalized allowlisted owner email and exact Google subject in the private handoff. Keep both identity inputs private.
 
-The profiled certification preview is `node ops/platform/p2-certification.mjs plan-profiled-current /absolute/private/settings.json`. The replacement continuation must supply a supported release receipt to that planner. After the release and admission prerequisites pass, Dardan starts the reviewed `apply-profiled-current` action with `--confirm staging/CERTIFICATION_ACTION_ID`.
+Use the replacement certification settings above to preview the first-owner action. After the release and admission prerequisites pass, Dardan starts the reviewed `apply-profiled-current` action with `--confirm staging/CERTIFICATION_ACTION_ID`.
 
 Use the normal verified Google administrator sign-in in the scoped browser. The permitted routes cover sign-in, the Google callback and the dedicated protected first-owner route. The scoped callback binds the session to that window. The protected route materializes the reviewed owner, and the held database witness requires zero prior admin rows and exactly one fresh active owner row before closing the window. Use the observed UUID for authoring and the audited grant cases. Create the separate non-editor through the owner staff workflow and bind it through its own verified sign-in. [Approved first-owner setup](decisions/2026-11-06-isolated-p2-qualification-lane.md).
 
