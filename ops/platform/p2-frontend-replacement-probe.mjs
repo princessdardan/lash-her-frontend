@@ -89,6 +89,27 @@ async function verifyLockedBackend(client, input, independent) {
     row.locks === 2 && (independent ? row.current_pid !== row.pid && row.read_only === "on" : row.current_pid === row.pid));
 }
 
+export function verifyP2FrontendReplacementSession(client, probe) {
+  return verifyLockedBackend(client, probe, false);
+}
+
+export function verifyP2FrontendReplacementObservation(probe, bytes) {
+  demand(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 8192);
+  const value = decodeQualificationTargetJson(bytes, "carrier");
+  const expected = replacementObservation(probe);
+  demand(isDeepStrictEqual(value, expected));
+  return expected;
+}
+
+function replacementObservation(probe) {
+  return { version: 1, qualificationTargetProfile: profile, operation,
+    status: "P2_FRONTEND_REPLACEMENT_PHYSICAL_LOCK_VERIFIED", environment: "staging",
+    releaseId: probe.job.releaseId, sourceCommit: probe.job.sourceCommit, targetSha256: probe.targetSha256,
+    databaseOid: probe.databaseOid, migrationRoleOid: probe.migrationRoleOid, marker: probe.marker,
+    backendPid: probe.backendPid, backendStart: probe.backendStart,
+    readOnlyVerified: true, authorityIssued: false, trafficAuthorized: false };
+}
+
 // The migration owner holds the physical lock. This nonce stays on that
 // backend and makes the independent observer's result specific to this probe.
 export async function createP2FrontendReplacementProbe(input, client, verifySession) {
@@ -132,12 +153,7 @@ export async function observeP2FrontendReplacement(input, { getUrl }) {
     await client.end();
   }
   demand(!lost);
-  return { version: 1, qualificationTargetProfile: profile, operation,
-    status: "P2_FRONTEND_REPLACEMENT_PHYSICAL_LOCK_VERIFIED", environment: "staging",
-    releaseId: probe.job.releaseId, sourceCommit: probe.job.sourceCommit, targetSha256: probe.targetSha256,
-    databaseOid: probe.databaseOid, migrationRoleOid: probe.migrationRoleOid, marker: probe.marker,
-    backendPid: probe.backendPid, backendStart: probe.backendStart,
-    readOnlyVerified: true, authorityIssued: false, trafficAuthorized: false };
+  return replacementObservation(probe);
 }
 
 export async function runP2FrontendReplacementProbeCli(verifySource) {

@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import { Client } from "pg";
 import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
-import { validateP2FrontendReplacementProbe } from "./p2-frontend-replacement-probe.mjs";
+import { validateP2FrontendReplacementProbe, verifyP2FrontendReplacementObservation } from "./p2-frontend-replacement-probe.mjs";
 import { P2_PROFILED_CURRENT_LOCK_APPLICATION } from "./p2-profiled-current-probe.mjs";
-import { decodeQualificationTargetJson } from "./qualification-target-profile.mjs";
 
 const refusal = "P2_FRONTEND_REPLACEMENT_ABORT_REFUSED";
 const demand = value => { if (!value) throw new Error(refusal); };
@@ -19,15 +17,6 @@ const matchingLocks = `FROM pg_catalog.pg_locks l
   WHERE l.locktype='advisory' AND l.database=$6::oid AND l.objsubid=1`;
 const observerLock = `l.pid=pg_catalog.pg_backend_pid() AND required.key=pg_catalog.hashtext($8)::bigint
   AND l.mode='ExclusiveLock' AND l.granted`;
-
-function expectedPhysicalObservation(probe) {
-  const { version, qualificationTargetProfile, operation, targetSha256, databaseOid, migrationRoleOid,
-    marker, backendPid, backendStart } = probe;
-  return { version, qualificationTargetProfile, operation, status: "P2_FRONTEND_REPLACEMENT_PHYSICAL_LOCK_VERIFIED",
-    environment: "staging", releaseId: probe.job.releaseId, sourceCommit: probe.job.sourceCommit, targetSha256,
-    databaseOid, migrationRoleOid, marker, backendPid, backendStart,
-    readOnlyVerified: true, authorityIssued: false, trafficAuthorized: false };
-}
 
 async function readBoundary(client, values, serverMajor) {
   const { rows: [row] } = await client.query(`SELECT
@@ -78,8 +67,8 @@ export async function abortP2FrontendReplacement(input, retainedPhysicalObservat
     const probe = structuredClone(input), target = probe.job.target;
     demand(Buffer.isBuffer(retainedPhysicalObservationBytes) && retainedPhysicalObservationBytes.length <= 8192);
     const raw = Buffer.from(retainedPhysicalObservationBytes);
-    const expected = expectedPhysicalObservation(probe);
-    demand(isDeepStrictEqual(decodeQualificationTargetJson(raw, "carrier"), expected) && typeof getUrl === "function");
+    const expected = verifyP2FrontendReplacementObservation(probe, raw);
+    demand(typeof getUrl === "function");
     const options = frontendConnectionOptions(await getUrl(), target);
     client = new Client({ ...options, application_name: "lash-her-frontend-replacement-abort",
       options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on -c row_security=off",

@@ -28,7 +28,8 @@ import staging_state
 import p2_prior_gateway
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
 from p2_source_closure import verify_source_closure, verify_profiled_current_source_closure, private_observer_program
-from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE
+from p2_source_closure import (CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE,
+                               PROFILED_REPLACEMENT_ARM_MODE)
 
 require = migrate.demand
 
@@ -61,6 +62,9 @@ PROFILED_INTERRUPTED_LAYOUT = {'actionIdKey': 'restorationActionId',
                                'runtimePrefix': 'runtime-profiled-known-ack-restoration-',
                                'terminalName': 'p2-profiled-known-ack-interrupted-restoration-outcome.json',
                                'terminalStatus': 'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED'}
+PROFILED_REPLACEMENT_ARM_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-profiled-replacement-arm-',
+                                   'terminalName': 'p2-frontend-replacement-arm-outcome.json',
+                                   'terminalStatus': 'P2_FRONTEND_REPLACEMENT_ARM_COMMITTED'}
 PROFILED_CERTIFICATION_ARM = 'p2-profiled-current-certification-guard-armed.json'
 PROFILED_CERTIFICATION_ARM_READY = 'p2-profiled-current-certification-guard-ready.json'
 PROFILED_INTERRUPTED_ARM = 'p2-profiled-known-ack-restoration-guard-armed.json'
@@ -77,7 +81,8 @@ PROFILED_CERTIFICATION_CONTAINMENT_NAMES = (
 def _guard_profile(initial):
     # The supervisor replaces this layout from its fixed source argument.
     if fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT,
-                                     PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT):
+                                     PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT,
+                                     PROFILED_REPLACEMENT_ARM_LAYOUT):
         return None
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
@@ -490,9 +495,10 @@ def sticky_cleanup_signals():
             signal.signal(item, handler)
 
 
-def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False):
+def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False, async_arm=False):
     buffer, last_alive, committed, status = b'', time.monotonic(), None, None
     armed = False
+    pending_arm = None
     while True:
         readable, _, _ = select.select([safety_read], [], [], 0.25)
         if readable:
@@ -515,7 +521,11 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                 if value.get('operation') == 'alive':
                     last_alive = time.monotonic()
                 elif value.get('operation') == 'armed':
-                    arm(value['probe'])
+                    if async_arm:
+                        require(not armed, 'P2_SAFETY_REARM_REFUSED')
+                        pending_arm = arm(value['probe'])
+                    else:
+                        arm(value['probe'])
                     armed = True
                 elif value.get('operation') == 'committed':
                     if profiled_certification:
@@ -524,6 +534,9 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                     committed = value['sha256']
                 else:
                     raise ValueError('P2_BROKER_ABORTED')
+        if pending_arm is not None and pending_arm.done():
+            pending_arm.result()
+            pending_arm = None
         if status is None:
             pid, observed_status = os.waitpid(child, os.WNOHANG)
             if pid:
@@ -547,6 +560,8 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
     if status is None:
         _, status = os.waitpid(child, 0)
     require(os.waitstatus_to_exitcode(status) == 0 and committed is not None, 'P2_BROKER_TERMINAL_FAILED')
+    if pending_arm is not None:
+        pending_arm.result()
     return committed
 
 
@@ -1296,6 +1311,7 @@ def _require_profiled_interrupted_gateway_after_reap(initial, source, terminal):
 def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
               observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None,
               frontend_containment=None):
+    require(initial.get('mode') != PROFILED_REPLACEMENT_ARM_MODE, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     layout = dict(DEFAULT_LAYOUT if layout is None else layout)
     require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
     rotation_types = None

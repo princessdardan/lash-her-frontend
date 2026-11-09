@@ -27,6 +27,16 @@ PROFILED_CURRENT_REQUIRED = {
 }
 PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
 PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
+PROFILED_REPLACEMENT_ARM_MODE = 'p2-profiled-frontend-replacement-arm'
+PROFILED_REPLACEMENT_ARM_REQUIRED = {
+    'ops/platform/host/p2_frontend_replacement_parent.py',
+    'ops/platform/p2-frontend-replacement-arm.mjs',
+    'ops/platform/p2-frontend-replacement-arm-transport.mjs',
+    'ops/platform/p2-frontend-replacement-plan.mjs',
+    'ops/platform/p2-frontend-replacement-probe.mjs',
+    'ops/platform/qualification-target-profiles.json',
+    'ops/platform/host/qualification_target_profile.py',
+}
 CERTIFICATION_OBSERVER = 'ops/platform/p2-certification-current-probe.mjs'
 PROFILED_CERTIFICATION_REQUIRED = {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
                                    CERTIFICATION_OBSERVER, 'ops/platform/p2-lifecycle-native.mjs',
@@ -48,10 +58,13 @@ def verify_profiled_current_source_closure(initial, root):
     import migrate
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
-                                  PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
+                                  PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE,
+                                  PROFILED_REPLACEMENT_ARM_MODE):
         raise ValueError('PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
     migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     required = REQUIRED | PROFILED_CURRENT_REQUIRED
+    if initial['mode'] == PROFILED_REPLACEMENT_ARM_MODE:
+        required |= PROFILED_REPLACEMENT_ARM_REQUIRED
     if initial['mode'] in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
         required |= PROFILED_CERTIFICATION_REQUIRED
     if initial['mode'] == PROFILED_INTERRUPTED_MODE:

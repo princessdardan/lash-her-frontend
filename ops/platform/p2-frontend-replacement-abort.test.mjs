@@ -12,6 +12,7 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendConnectionOptions, frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import { abortP2FrontendReplacement } from "./p2-frontend-replacement-abort.mjs";
+import { observeHeldFrontendReplacement } from "./p2-frontend-replacement-arm.mjs";
 import { createP2FrontendReplacementProbe, observeP2FrontendReplacement } from "./p2-frontend-replacement-probe.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -100,7 +101,49 @@ test("owned TLS PostgreSQL aborts only the retained backend and observes committ
       const observation = await observeP2FrontendReplacement(probe, dependencies);
       return { probe, observation };
     };
+    const catalogSetup = await connect();
+    await catalogSetup.query("REVOKE ALL ON DATABASE owned_replacement FROM PUBLIC; REVOKE CREATE ON SCHEMA public FROM PUBLIC");
+    const { rows: [identities] } = await catalogSetup.query(`SELECT
+      datid::text AS "databaseOid",usesysid::text AS "migrationRoleOid",
+      (SELECT oid::text FROM pg_catalog.pg_roles WHERE rolname='owned_frontend_admin') AS "adminOid"
+      FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()`);
+    await catalogSetup.end();
+    const { databaseOid, migrationRoleOid, adminOid } = identities;
+    const heldPlan = { probe: { ...selected, databaseOid, migrationRoleOid },
+      plan: { replacement: { target: Object.fromEntries(Object.keys(selected.predecessorTarget).map(key => [key, target[key]])) } },
+      administrativeLogins: [{ name: "owned_frontend_admin", oid: adminOid }] };
+    let guardChecks = 0;
+    const independent = async (probe, corrupt = false) => {
+      const physical = await observeP2FrontendReplacement(probe, dependencies);
+      if (corrupt) physical.databaseOid = "1";
+      const bytes = raw(physical);
+      return { physicalObservation: bytes.toString("base64"), physicalObservationSha256: hash(bytes), armReceiptSha256: "d".repeat(64) };
+    };
+    const custody = { signal: new AbortController().signal, arm: independent,
+      async verifyEnvironment() { guardChecks++; } };
+    const verified = await observeHeldFrontendReplacement(heldPlan, url, custody);
+    assert.equal(verified.boundary.databaseOid, databaseOid);
+    assert.equal(verified.boundary.readOnlyVerified, true);
+    assert.equal(verified.boundary.authorityIssued, false);
+    assert.ok(guardChecks >= 4);
+    await assert.rejects(observeHeldFrontendReplacement(heldPlan, url, {
+      ...custody, arm: probe => independent(probe, true),
+    }), /ARM_REVIEW_REQUIRED/u);
+    const droppedGuard = new AbortController();
+    await assert.rejects(observeHeldFrontendReplacement(heldPlan, url, {
+      ...custody, signal: droppedGuard.signal, async arm(probe) {
+        const observed = await independent(probe);
+        droppedGuard.abort();
+        return observed;
+      },
+    }), /ARM_REVIEW_REQUIRED/u);
+
     const beforeJournal = await connect();
+    const { rows: [beforeArmEffects] } = await beforeJournal.query(`SELECT
+      pg_catalog.to_regclass('drizzle.__drizzle_migrations') IS NULL AS "journalAbsent",
+      pg_catalog.to_regnamespace('frontend_admission') IS NULL AS "admissionAbsent",
+      NOT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE locktype='advisory' AND database=$1::oid) AS "locksAbsent"`, [databaseOid]);
+    assert.deepEqual(beforeArmEffects, { journalAbsent: true, admissionAbsent: true, locksAbsent: true });
     const absent = await makeProbe(beforeJournal), absentRaw = raw(absent.observation);
     const empty = await abortP2FrontendReplacement(absent.probe, absentRaw, dependencies);
     assert.equal(empty.backendTerminated, true);
