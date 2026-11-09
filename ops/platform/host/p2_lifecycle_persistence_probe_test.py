@@ -14,7 +14,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import release as runtime
 import p2_lifecycle_persistence_probe as probe
-from p2_lifecycle_persistence_scope import CurrentLifecyclePersistenceScope
+from p2_lifecycle_persistence_scope import (
+    CurrentLifecyclePersistenceScope, PERSISTENCE_PROGRAM_CHUNK, PERSISTENCE_PROGRAM_LOADER,
+    PERSISTENCE_PROGRAM_MAXIMUM, persistence_program_arguments,
+)
 
 
 class PersistenceProbeTests(unittest.TestCase):
@@ -23,7 +26,7 @@ class PersistenceProbeTests(unittest.TestCase):
 
     def test_private_program_is_exact_source_bound_and_has_fixed_entry(self):
         program = probe.private_program(self.source)
-        self.assertLess(len(program), 131_072)
+        self.assertLessEqual(len(program), PERSISTENCE_PROGRAM_MAXIMUM)
         self.assertIn(b"runPrivatePersistenceProbeFromStdin", program)
         self.assertEqual(program, probe.private_program(self.source))
         with tempfile.TemporaryDirectory() as directory:
@@ -110,16 +113,31 @@ class PersistenceProbeTests(unittest.TestCase):
         ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
         for expected in (None, ref):
             program = probe.private_program(self.source, expected)
+            args = persistence_program_arguments(program)
+            self.assertEqual(args[:5], ['node', '--input-type=module', '--eval', PERSISTENCE_PROGRAM_LOADER, '--'])
+            self.assertTrue(all(0 < len(chunk) <= PERSISTENCE_PROGRAM_CHUNK for chunk in args[5:]))
+            self.assertEqual("".join(args[5:]).encode("ascii"), program)
             encoded = program.split(b'import("data:text/javascript;base64,', 1)[1].split(b'")', 1)[0]
-            url = 'data:text/javascript;base64,' + encoded.decode()
-            imported = subprocess.run(['node', '--input-type=module', '--eval',
-                'import(process.argv[1]).then(m=>process.stdout.write(typeof m.runPrivatePersistenceProbeFromStdin)).catch(()=>process.exitCode=1)', url],
-                capture_output=True, timeout=10)
-            self.assertEqual(imported.returncode, 0, imported.stderr); self.assertEqual(imported.stdout, b'function')
-            invoked = subprocess.run(['node', '--input-type=module', '--eval', program.decode()], input=b'{}', capture_output=True, timeout=10)
+            module = base64.b64decode(encoded, validate=True)
+            self.assertIn(b'export async function runPrivatePersistenceProbeFromStdin(', module)
+            self.assertEqual(program, probe.private_program(self.source, expected))
+            payload = {} if expected is None else {'qualificationTargetProfile': ref, 'target': {'qualificationTargetProfile': ref}}
+            invoked = subprocess.run(args, input=json.dumps(payload).encode(), capture_output=True, timeout=10)
             self.assertEqual(invoked.returncode, 1, invoked.stderr)
             result = json.loads(invoked.stdout)
             self.assertEqual(result['version'], 1); self.assertEqual(result['status'], 'P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED')
+            self.assertEqual(result['check'], 'private-child-mode')
+
+    def test_private_program_refuses_oversized_argument_total(self):
+        read = probe._read
+        extra = b"\n// " + b"x" * 160_000
+        def selected(source, name, bound=524_288):
+            return read(source, name, bound) + (extra if name == probe.PROGRAM_FILES[1] else b"")
+        with mock.patch.object(probe, '_read', side_effect=selected):
+            with self.assertRaisesRegex(ValueError, 'P2_PERSISTENCE_PRIVATE_PROGRAM_ARGUMENT_BOUND'):
+                probe.private_program(self.source)
+        with self.assertRaisesRegex(ValueError, 'P2_PERSISTENCE_PRIVATE_PROGRAM_ARGUMENT_BOUND'):
+            persistence_program_arguments(b"x" * (PERSISTENCE_PROGRAM_MAXIMUM + 1))
 
     def test_profiled_reviewed_source_accepts_544_while_legacy_stays_at_512(self):
         ref, reviewed = self.profiled_reviewed()
@@ -193,7 +211,8 @@ class PersistenceProbeTests(unittest.TestCase):
         scope.persistence_program = b"fixed-program"
         payload = json.dumps({"version": 1, "mode": "frontend", "environment": "staging"}).encode()
         args = ["docker", "exec", "-i", "--workdir", "/app", "--env", "NODE_OPTIONS=--max-old-space-size=128",
-            "--env", "DOTENV_CONFIG_QUIET=true", "1" * 64, "node", "--input-type=module", "--eval", "fixed-program"]
+            "--env", "DOTENV_CONFIG_QUIET=true", "1" * 64, "node", "--input-type=module", "--eval",
+            PERSISTENCE_PROGRAM_LOADER, "--", "fixed-program"]
         scope._allowed(args, payload, runtime.SAFE_ENV)
         with self.assertRaises(Exception):
             scope._allowed(args[:-1] + ["changed"], payload, runtime.SAFE_ENV)
@@ -498,6 +517,186 @@ class PersistenceProbeTests(unittest.TestCase):
             'originalReleaseReceipt': base64.b64encode(original_raw).decode(),
             'readyReceipts': {'frontend-promotion-outcome.json': base64.b64encode(promotion_raw).decode()}}
         return broker, private, frontend, gateway, output
+
+    def replacement_persistence_fixture(self, directory):
+        from p2_certification_parent import _canonical, _profiled_plan_hash
+        from p2_replacement_terminal import FALSE_FLAGS, TERMINAL_STATUS
+        broker, private, _frontend, _gateway, _output = self.scoped_persistence_fixture(directory, 'capture-export-ready')
+        initial, scope = broker.initial, broker.scope
+        reviewed, cert = initial['persistenceReviewed'], scope.certification_plan
+        plan = reviewed['plan']
+        configuration = {'runtime.json': '1' * 64, 'gateway.json': '2' * 64}
+        plan['configurationSha256'] = cert['configurationCanonicalSha256'] = probe._hash(probe._canonical(configuration))
+        ref = scope._expected_profile
+        source = cert['sourceCommit']
+        target = plan['targets']['frontend']
+        native = {'owner': {'name': 'owned_owner', 'oid': '51'},
+                  'producer': {'producerSha256': '5' * 64, 'role': {'name': target['runtimeRole'], 'oid': target['runtimeRoleOid']}},
+                  'deploymentId': 'dpl_ownedReplacement', 'projectId': 'prj_owned'}
+        descriptor = {'version': 1, 'kind': 'frontend-replacement', 'qualificationTargetProfile': ref,
+                      'reviewedPlanSha256': '3' * 64, 'runtimeReviewSha256': '4' * 64, 'postflightSha256': '6' * 64,
+                      'frontendSessionClosedSha256': '7' * 64, 'frontendDatabaseReceiptSha256': '8' * 64,
+                      'databaseOid': '50', 'migrationRoleOid': '52', 'predecessorRuntimeRole': 'owned_prior', 'administrativeLogins': []}
+        contract = {'contractPhase': 'p2', 'phase2ContractManifestSha256': 'sha256:' + 'd' * 64}
+        cert.update(replacementRelease=descriptor, targetSha256='9' * 64, nativePlan=native,
+                    originalReleasePlanSha256=descriptor['reviewedPlanSha256'], **contract)
+        promotion = {**json.loads(base64.b64decode(initial['readyReceipts']['frontend-promotion-outcome.json'])),
+                     'projectId': native['projectId'], 'deploymentId': native['deploymentId'], 'gatewayTrafficAuthorized': False}
+        from p2_lifecycle_suspension_evidence import READY_FILES
+        identity = {key: promotion[key] for key in ('version', 'qualificationTargetProfile', 'environment', 'releaseId',
+                                                   'sourceCommit', 'projectId', 'deploymentId')}
+        feature = {'INTEGRATION_CHECKOUT_ENABLED': False}
+        writer = {'mode': 'enforce', 'targetSha256': cert['targetSha256'],
+                  'producerSha256': native['producer']['producerSha256'], 'sourceCommit': source,
+                  'roleName': native['producer']['role']['name']}
+        ready = {name: {**identity} for name in READY_FILES}
+        ready['frontend-promotion-outcome.json'] = promotion
+        ready['frontend-workload-outcome.json'].update(status='FRONTEND_VERIFIED', featureControls=feature,
+                                                       writerAdmissionBinding=writer, trafficAuthorized=False, nativeSchedulerVerified=False)
+        ready_raw = {name: json.dumps(value).encode() + b'\n' for name, value in ready.items()}
+        promotion_raw = ready_raw['frontend-promotion-outcome.json']
+        cert['readyReceiptSha256'] = {name: probe._hash(raw) for name, raw in ready_raw.items()}
+        plan['frontendDeploymentSha256'] = cert['readyReceiptSha256']['frontend-promotion-outcome.json'] = probe._hash(promotion_raw)
+        workload_sha = cert['readyReceiptSha256']['frontend-workload-outcome.json']
+        original = {'version': 2, 'qualificationTargetProfile': ref, 'status': TERMINAL_STATUS, 'environment': 'staging',
+                    'releaseId': plan['releaseId'], 'sourceCommit': source, 'candidateSha256': plan['candidateSha256'],
+                    'targetSha256': cert['targetSha256'], 'configurationSha256': configuration,
+                    **{key: value for key, value in descriptor.items() if key.endswith('Sha256')},
+                    'frontendSessionClosed': True, 'migrationMode': 'apply-forward', 'frontendSqlApplied': True,
+                    'owner': native['owner'], 'runtime': native['producer']['role'], 'producerSha256': native['producer']['producerSha256'],
+                    'deploymentId': native['deploymentId'], 'frontendWorkloadReceiptSha256': workload_sha,
+                    'frontendPromotionReceiptSha256': probe._hash(promotion_raw), **dict.fromkeys(FALSE_FLAGS, False), **contract}
+        original_raw = json.dumps(original).encode() + b'\n'
+        def attest(raw):
+            probe.demand(raw == original_raw, "OWNED_GUARDIAN_TERMINAL_CHANGED")
+            return copy.deepcopy(original)
+        scope.require_replacement_original = mock.Mock(side_effect=attest)
+        initial['readyReceipts'] = {name: base64.b64encode(raw).decode() for name, raw in ready_raw.items()}
+
+        def bind_original(raw):
+            plan['originalReleaseSha256'] = cert['originalReleaseReceiptSha256'] = probe._hash(raw)
+            cert['persistenceReviewedSha256'] = probe._hash(_canonical(reviewed))
+            cert['planSha256'] = _profiled_plan_hash(cert)
+            initial['certificationPlan'] = copy.deepcopy(cert)
+            initial['originalReleaseReceipt'] = base64.b64encode(raw).decode()
+            return {'originalReleaseReceipt': initial['originalReleaseReceipt'],
+                    'frontendDeploymentRecord': initial['readyReceipts']['frontend-promotion-outcome.json']}
+
+        return broker, private, reviewed, original, original_raw, bind_original
+
+    def test_replacement_evidence_requires_held_lifecycle_stage_and_exact_guardian_terminal(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp).resolve()
+            with mock.patch.object(probe, 'ROOT', directory):
+                broker, private, reviewed, _original, raw, bind_original = self.replacement_persistence_fixture(directory)
+                evidence = bind_original(raw)
+                ref, scope = broker.scope._expected_profile, broker.scope
+                for selected_profile in (None, ref):
+                    with self.assertRaisesRegex(Exception, 'ORIGINAL_RELEASE_RECEIPT_REQUIRED'):
+                        probe._release_evidence(reviewed, evidence, selected_profile)
+                with self.assertRaisesRegex(Exception, 'REPLACEMENT_HELD_SCOPE_REQUIRED'):
+                    probe.HeldCertificationPersistenceScope.release_evidence(scope, reviewed, evidence, ref)
+                component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                result = {'version': 2, 'qualificationTargetProfile': ref, 'status': probe.SCOPED_PERSISTENCE_STATUS['capture-export-ready'],
+                          'readOnly': True, 'providerTouched': False, 'releaseAccepted': False}
+                with mock.patch.object(probe, 'execute_profiled', return_value=result) as reader:
+                    self.assertIs(component.observe(), result)
+                    self.assertEqual(reader.call_args.args[5], evidence)
+                    self.assertIs(reader.call_args.args[6], scope)
+                    self.assertEqual(reader.call_args.kwargs['_scoped_stage'], component)
+                scope.require_replacement_original.assert_called_once_with(raw)
+                self.assertEqual(private, {})
+
+    def test_replacement_evidence_refuses_review_rehash_and_wrong_join_before_reader(self):
+        changes = {
+            'rehashed original': lambda _original, raw: raw + b' ',
+            'wrong deployment': lambda original, raw: original.update(deploymentId='dpl_other') or raw,
+            'wrong provenance': lambda original, raw: original.update(postflightSha256='0' * 64) or raw,
+            'sql replay': lambda original, raw: original.update(frontendSqlReplayed=True) or raw,
+            'historical claim': lambda original, raw: original.update(historicalProviderClosureClaimed=True) or raw,
+        }
+        for name, mutate in changes.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp).resolve()
+                with mock.patch.object(probe, 'ROOT', directory):
+                    broker, private, _reviewed, original, raw, bind_original = self.replacement_persistence_fixture(directory)
+                    selected = mutate(original, raw)
+                    bind_original(selected)
+                    component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                    with mock.patch.object(probe, 'execute_profiled') as reader:
+                        with self.assertRaises(probe.PersistenceFailure):
+                            component.observe()
+                        reader.assert_not_called()
+                    broker.scope.require_replacement_original.assert_called_once_with(selected)
+                    self.assertEqual(private, {})
+
+    def test_replacement_suspension_evidence_uses_exact_browser_or_worker_plan(self):
+        import p2_lifecycle_suspension_evidence as suspension
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp).resolve()
+            with mock.patch.object(probe, 'ROOT', directory):
+                broker, _private, reviewed, original, raw, bind_original = self.replacement_persistence_fixture(directory)
+                bind_original(raw)
+                cert, ref = broker.scope.certification_plan, broker.scope._expected_profile
+                workload = json.loads(base64.b64decode(broker.initial['readyReceipts']['frontend-workload-outcome.json']))
+                plan = {'releaseId': original['releaseId'], 'sourceCommit': original['sourceCommit'],
+                        'deploymentId': original['deploymentId'], 'configurationRecordSha256': original['frontendWorkloadReceiptSha256'],
+                        'featureControls': workload['featureControls'], 'writerAdmissionBinding': workload['writerAdmissionBinding']}
+                plan_sha = suspension.digest(suspension.canonical(plan))
+                carrier = {key: broker.initial[key] for key in ('originalReleaseReceipt', 'readyReceipts')}
+                for mode in ('browser-pending', 'direct-worker'):
+                    with self.subTest(mode=mode):
+                        cert.update(mode=mode, browserPlanSha256=plan_sha, workerPlan={'suspensionPlanSha256': plan_sha})
+                        result = suspension._release_evidence(broker.scope, reviewed, plan, carrier, ref)
+                        self.assertEqual(result['originalReleaseReceiptSha256'], probe._hash(raw))
+                        with self.assertRaisesRegex(ValueError, 'REPLACEMENT_HELD_PLAN_REQUIRED'):
+                            suspension._release_evidence(broker.scope, reviewed, {**plan, 'deploymentId': 'dpl_wrong'}, carrier, ref)
+                cert['mode'] = 'known-ack-recovery'
+                with self.assertRaisesRegex(ValueError, 'REPLACEMENT_HELD_PLAN_REQUIRED'):
+                    suspension._release_evidence(broker.scope, reviewed, plan, carrier, ref)
+                self.assertEqual(broker.scope.require_replacement_original.call_args_list, [mock.call(raw), mock.call(raw)])
+
+    def test_replacement_direct_worker_requires_attempted_stage_bound_to_scope_and_review(self):
+        from p2_lifecycle_worker_evidence import P2LifecycleWorkerEvidenceStage
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp).resolve()
+            with mock.patch.object(probe, 'ROOT', directory):
+                broker, _private, reviewed, _original, raw, bind_original = self.replacement_persistence_fixture(directory)
+                evidence = bind_original(raw)
+                scope, ref = broker.scope, broker.scope._expected_profile
+                scope.certification_plan.update(mode='direct-worker', workerPlan={'actionId': 'owned-worker'})
+                worker = object.__new__(P2LifecycleWorkerEvidenceStage)
+                worker.scope, worker.expected_profile, worker.reviewed = scope, ref, reviewed
+                worker.plan = copy.deepcopy(scope.certification_plan['workerPlan'])
+                worker.invocation_attempted = True
+                worker.invocation = {'status': 'P2_DIRECT_WORKER_HTTP_OBSERVED', 'httpStatus': 200}
+                resolve = probe.HeldCertificationPersistenceScope.release_evidence
+                with self.assertRaisesRegex(ValueError, 'REPLACEMENT_HELD_SCOPE_REQUIRED'):
+                    resolve(scope, reviewed, evidence, ref)
+                self.assertEqual(resolve(scope, reviewed, evidence, ref, worker_stage=worker)['originalReleaseReceipt'], raw)
+                worker.invocation['httpStatus'] = 503
+                with self.assertRaisesRegex(ValueError, 'REPLACEMENT_HELD_SCOPE_REQUIRED'):
+                    resolve(scope, reviewed, evidence, ref, worker_stage=worker)
+                worker.invocation['httpStatus'] = 200
+                worker.reviewed = {**reviewed, 'probeId': 'different'}
+                with self.assertRaisesRegex(ValueError, 'REPLACEMENT_HELD_SCOPE_REQUIRED'):
+                    resolve(scope, reviewed, evidence, ref, worker_stage=worker)
+                scope.require_replacement_original.assert_called_once_with(raw)
+                worker.reviewed = reviewed
+                worker.database_proof, worker.selected, worker.jobs = broker.api_proof, broker.selected, broker.jobs
+                worker.bundle, worker.configuration, worker.source = broker.bundle, broker.configuration, broker.source
+                command = {'userId': '00000000-0000-4000-8000-000000000001', 'commandId': 'owned-command', 'accountVersion': 1}
+                worker.prior = {'pendingRecord': {'pending': {'command': command}}}
+                private = {'frontendRuntimeDatabaseUrl': 'owned-private-url', 'witness': {'version': 1, 'environment': 'staging',
+                           'stage': 'lifecycle-account', 'userId': command['userId'],
+                           'selectedCommand': {'commandId': 'wrong-command', 'accountVersion': 1}}}
+                with mock.patch.object(probe, '_make_plan_details', return_value=({}, worker.selected, worker.jobs, {})), \
+                        mock.patch.object(runtime, 'assert_host') as runtime_check:
+                    with self.assertRaises(probe.PersistenceFailure):
+                        probe.execute_profiled(worker.bundle, worker.configuration, reviewed, worker.source, private,
+                            evidence, scope, worker.database_proof, expected_profile=ref, _worker_stage=worker)
+                    runtime_check.assert_not_called()
+                self.assertEqual(private['frontendRuntimeDatabaseUrl'], '')
 
     def test_scoped_stage_uses_exact_broker_scope_proof_and_retained_bytes_once(self):
         for stage, status in probe.SCOPED_PERSISTENCE_STATUS.items():

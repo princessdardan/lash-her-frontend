@@ -229,6 +229,32 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse(self.output.exists())
 
+    def test_certification_api_check_preserves_original_replacement_frontend_job(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        frontend = self.jobs["frontend"]
+        original = ["0000_original_forward"]
+        frontend["job"]["target"].update(approvedPendingTags=original, allowEmptyBootstrap=True)
+        with self.assertRaisesRegex(ValueError, "FRONTEND_CURRENT_ONLY_REQUIRED"):
+            self.execute_certification(scope, raw, ref)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.calls, [])
+        scope.certification_plan["replacementRelease"] = {"kind": "frontend-replacement"}
+        frontend["job"]["target"]["approvedPendingTags"] = []
+        with self.assertRaisesRegex(ValueError, "FRONTEND_REPLACEMENT_JOB_REQUIRED"):
+            self.execute_certification(scope, raw, ref)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.calls, [])
+        frontend["job"]["target"]["approvedPendingTags"] = original
+        proof = self.execute_certification(scope, raw, ref)
+        _, outcome = checks.read_certification_api_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+        self.assertFalse(outcome["frontendSqlApplied"])
+        self.assertFalse(outcome["migrationsExecuted"])
+        self.assertEqual(frontend["job"]["target"]["approvedPendingTags"], ["0000_original_forward"])
+        runs = [args for args, _, _ in self.calls if args[1] == "run"]
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(all("/check/input/current.mjs" in args for args in runs))
+
     def test_certification_native_role_policy_is_mandatory(self):
         ref = self.profiled()
         scope, raw = self.certification_scope(ref)

@@ -45,6 +45,7 @@ const gatewayClosed = value => value?.valid === true && value.version === 1 && v
 export function readP2LessonRestorePrior({ results, plan, identityPlan }) {
   try {
     const selected = plan?.scopedAction?.restoreAction, prior = selected?.prior, actorId = plan?.scopedAction?.actorId;
+    const releasePins = plan?.replacementRelease ? [...planFields, "replacementRelease"] : planFields;
     demand(plan?.mode === "interactive-browser" && plan.scopedAction.stage === "lesson-restore" &&
       selected?.operation === "restore-resume" && validateP2LessonRestorePriorSelection(prior) &&
       action(plan.certificationActionId) && action(identityPlan?.certificationActionId) &&
@@ -53,7 +54,8 @@ export function readP2LessonRestorePrior({ results, plan, identityPlan }) {
       BigInt(plan.initialEpoch) === BigInt(identityPlan.initialEpoch) + 2n &&
       identityPlan.mode === "interactive-browser" && identityPlan.scopedAction?.stage === "identity" &&
       isDeepStrictEqual(identityPlan.scopedAction.identityActor, { actorKind: "customer", actorId }) &&
-      same(plan, identityPlan, planFields) && same(plan.nativePlan, identityPlan.nativePlan, deploymentFields));
+      same(plan, identityPlan, releasePins) && isDeepStrictEqual(plan.replacementRelease, identityPlan.replacementRelease) &&
+      same(plan.nativePlan, identityPlan.nativePlan, deploymentFields));
     frontendPrivateReceiptDirectory(results);
     const directory = join(results, prior.actionId);
     const outcomeBytes = readFrontendReleaseEvidence(directory, "p2-certification-outcome.json");
@@ -73,7 +75,8 @@ export function readP2LessonRestorePrior({ results, plan, identityPlan }) {
       firstPlan.startState === "already-closed" && epoch(firstPlan.initialEpoch) &&
       BigInt(firstPlan.initialEpoch) + 2n === BigInt(closedEpoch) &&
       sha(planSha256) && p2NativeHash(firstBody) === planSha256 &&
-      same(firstPlan, plan, planFields) && same(firstPlan.nativePlan, plan.nativePlan, deploymentFields) &&
+      same(firstPlan, plan, releasePins) && isDeepStrictEqual(firstPlan.replacementRelease, plan.replacementRelease) &&
+      same(firstPlan.nativePlan, plan.nativePlan, deploymentFields) &&
       firstPlan.scopedAction?.stage === "lesson-resume" && firstPlan.scopedAction.actorId === actorId &&
       isDeepStrictEqual(firstPlan.scopedAction.resumeAction, {
         operation: "play-and-rewind", courseId: selected.courseId, lessonId: selected.lessonId, grantId: selected.grantId,
@@ -81,6 +84,7 @@ export function readP2LessonRestorePrior({ results, plan, identityPlan }) {
     demand(outcome.version === 2 && outcome.status === "P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED" &&
       outcome.mode === firstPlan.mode && outcome.certificationActionId === prior.actionId && outcome.releaseId === plan.originalReleaseId &&
       outcome.planSha256 === planSha256 && same(outcome, plan, releaseFields) &&
+      isDeepStrictEqual(outcome.replacementRelease, plan.replacementRelease) &&
       p2NativeHash(outcome.configurationSha256) === plan.configurationCanonicalSha256 &&
       outcome.caseStatus === joinedStatus && outcome.caseOutcomeSha256 === p2NativeHash(joined) &&
       outcome.nativeDisabled === true && outcome.sqlReplayed === false && outcome.frontendSqlApplied === false &&

@@ -76,8 +76,16 @@ def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=
         "P2_SUSPENSION_RELEASE_EVIDENCE_CHANGED")
     original_value = decode_qualification_target_json(original_raw, "carrier")
     migrate.require_profile(expected, original_value)
-    persistence._release_evidence(reviewed, {"originalReleaseReceipt": original,
-        "frontendDeploymentRecord": release_evidence["readyReceipts"]["frontend-promotion-outcome.json"]}, expected)
+    persistence_evidence = {"originalReleaseReceipt": original,
+        "frontendDeploymentRecord": release_evidence["readyReceipts"]["frontend-promotion-outcome.json"]}
+    if "replacementRelease" in certification:
+        suspension_sha = digest(canonical(plan))
+        demand((certification.get("mode") == "browser-pending" and certification.get("browserPlanSha256") == suspension_sha) or
+            (certification.get("mode") == "direct-worker" and certification.get("workerPlan", {}).get("suspensionPlanSha256") == suspension_sha),
+            "P2_SUSPENSION_REPLACEMENT_HELD_PLAN_REQUIRED")
+        persistence.HeldCertificationPersistenceScope._replacement_release_evidence(scope, reviewed, persistence_evidence, expected)
+    else:
+        persistence._release_evidence(reviewed, persistence_evidence, expected)
     workload = values["frontend-workload-outcome.json"]
     promotion = values["frontend-promotion-outcome.json"]
     demand(digest(raw["frontend-workload-outcome.json"]) == plan.get("configurationRecordSha256")

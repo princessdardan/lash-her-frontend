@@ -146,6 +146,15 @@ TERMINAL_FALSE_FIELDS = (
     'frontendSqlApplied', 'historicalProviderClosureClaimed', 'oldP200Qualified',
     'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted',
 )
+REPLACEMENT_RELEASE_FIELDS = frozenset((
+    'version', 'kind', 'qualificationTargetProfile', 'reviewedPlanSha256', 'runtimeReviewSha256', 'postflightSha256',
+    'frontendSessionClosedSha256', 'frontendDatabaseReceiptSha256', 'databaseOid', 'migrationRoleOid',
+    'predecessorRuntimeRole', 'administrativeLogins',
+))
+REPLACEMENT_RELEASE_HASHES = ('reviewedPlanSha256', 'runtimeReviewSha256', 'postflightSha256',
+                              'frontendSessionClosedSha256', 'frontendDatabaseReceiptSha256')
+REPLACEMENT_PROOF_FIELDS = frozenset(('replacementRelease', 'effectiveLoginBoundaryVerified', 'predecessorRuntimeRoleAbsent'))
+HISTORICAL_PROOF_FIELDS = frozenset(('retiredLogins', 'oldLoginsDenied', 'oldRoleSessions'))
 
 
 def _profiled_digest(value):
@@ -163,6 +172,34 @@ def _profiled_plan_hash(plan):
 def _profiled_context():
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+
+
+def require_certification_replacement_release(value, expected):
+    from p2_frontend_replacement_parent import oid
+    require(type(value) is dict and set(value) == REPLACEMENT_RELEASE_FIELDS and
+            type(value['version']) is int and value['version'] == 1 and value['kind'] == 'frontend-replacement' and
+            all(_profiled_digest(value[key]) for key in REPLACEMENT_RELEASE_HASHES) and
+            oid(value['databaseOid']) and oid(value['migrationRoleOid']) and
+            type(value['predecessorRuntimeRole']) is str and
+            re.fullmatch(r'[a-z][a-z0-9_]{0,62}', value['predecessorRuntimeRole']) and
+            type(value['administrativeLogins']) is list and len(value['administrativeLogins']) <= 32 and all(
+                type(row) is dict and set(row) == {'name', 'oid'} and type(row['name']) is str and
+                re.fullmatch(r'[a-z][a-z0-9_]{0,62}', row['name']) and oid(row['oid'])
+                for row in value['administrativeLogins']), 'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
+    admins = value['administrativeLogins']
+    require([row['name'] for row in admins] == sorted({row['name'] for row in admins}) and
+            len({row['oid'] for row in admins}) == len(admins) and
+            value['migrationRoleOid'] not in {row['oid'] for row in admins},
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
+    migrate.require_profile(expected, value)
+    return value
+
+
+def require_certification_replacement_proof(value, replacement):
+    require(type(value) is dict and not (HISTORICAL_PROOF_FIELDS & set(value)) and
+            _canonical(value.get('replacementRelease')) == _canonical(replacement) and
+            value.get('effectiveLoginBoundaryVerified') is True and value.get('predecessorRuntimeRoleAbsent') is True,
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_BOUNDARY_REQUIRED')
 
 
 def _profiled_record(raw, expected):
@@ -228,6 +265,17 @@ def _profiled_initial(initial, expected):
     if mode in PERSISTENCE_MODES:
         extra.add('persistenceReviewedSha256')
         require(_profiled_digest(plan.get('persistenceReviewedSha256')), 'P2_PROFILED_PERSISTENCE_REVIEW_REQUIRED')
+    if 'replacementRelease' in plan:
+        replacement = require_certification_replacement_release(plan['replacementRelease'], expected)
+        inventory = initial['inventory']
+        require(mode != 'known-ack-recovery' and type(inventory) is dict and 'historicalLogins' not in inventory and
+                _canonical(inventory.get('replacementRelease')) == _canonical(replacement) and
+                plan.get('originalReleasePlanSha256') == replacement['reviewedPlanSha256'],
+                'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
+        extra.add('replacementRelease')
+    else:
+        require(type(initial['inventory']) is dict and 'replacementRelease' not in initial['inventory'],
+                'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
     require(set(initial) == PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set()) and
             set(plan) == PROFILED_PLAN_FIELDS | extra and plan['startState'] == 'already-closed' and
             plan['environment'] == 'staging' and plan['certificationActionId'] == initial['certificationActionId'] and
@@ -441,6 +489,8 @@ def _profiled_ready_receipts(initial, plan, selected, expected):
 
 
 def _profiled_original_terminal(initial, plan, selected, results, expected):
+    if 'replacementRelease' in plan:
+        return _profiled_replacement_original_terminal(initial, plan, selected, results, expected)
     local = _profiled_wire_receipt(initial['originalReleaseReceipt'], plan['originalReleaseReceiptSha256'], expected)
     original = results / ('p2-profiled-current-' + selected['releaseId'])
     terminal, terminal_sha = _profiled_host_receipt(original, 'p2-profiled-current-outcome.json', expected)
@@ -464,6 +514,99 @@ def _profiled_original_terminal(initial, plan, selected, results, expected):
     return terminal_sha, plan_hash_verified
 
 
+def _profiled_replacement_original_terminal(initial, plan, selected, results, expected):
+    """Rejoin the installed guardian's original apply-forward bytes."""
+    import p2_frontend_replacement_parent as replacement
+    import p2_replacement_terminal as terminal
+    from p2_replacement_runtime_review import FIELDS as REVIEW_FIELDS
+    from qualification_target_profile import decode_qualification_target_json
+
+    descriptor = require_certification_replacement_release(plan['replacementRelease'], expected)
+    directory = results / ('p2-profiled-replacement-write-' + selected['releaseId'])
+    migrate.private_directory(directory)
+    require(directory == directory.resolve() and Path(initial['configuration']) ==
+            results / ('runtime-profiled-frontend-replacement-' + selected['releaseId']) / 'configuration',
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_RUNTIME_MOUNT_REQUIRED')
+    local = _profiled_wire_receipt(initial['originalReleaseReceipt'], plan['originalReleaseReceiptSha256'], expected)
+    raw = replacement.private_record(directory, terminal.TERMINAL)
+    require(raw == base64.b64decode(initial['originalReleaseReceipt'], validate=True),
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_BYTES_CHANGED')
+    reviewed_plan = replacement.private_record(directory, 'reviewed-plan.json', 2_000_000)
+    reviewed_runtime = replacement.private_record(directory, replacement.RUNTIME_REVIEW)
+    original_plan = decode_qualification_target_json(reviewed_plan, 'carrier')
+    original_review = decode_qualification_target_json(reviewed_runtime, 'carrier')
+    migrate.require_profile(expected, original_plan, original_review)
+    require(_sha(reviewed_plan) == descriptor['reviewedPlanSha256'] == plan['originalReleasePlanSha256'] and
+            _sha(reviewed_runtime) == descriptor['runtimeReviewSha256'] and
+            set(original_plan) == replacement.PLAN_FIELDS and type(original_plan['version']) is int and original_plan['version'] == 1 and
+            original_plan['operation'] == 'profiled-frontend-replacement' and
+            original_plan['status'] == 'P2_FRONTEND_REPLACEMENT_PLAN_PREPARED' and
+            all(original_plan[key] is False for key in (*replacement.NO_AUTHORITY, 'releaseAccepted', 'replacementObserved')) and
+            set(original_review) in (REVIEW_FIELDS, REVIEW_FIELDS | {'priorGatewayReference'}) and
+            type(original_review['version']) is int and original_review['version'] == 1 and
+            all(original_plan[key] == original_review[key] == plan[key]
+                for key in ('environment', 'sourceCommit', 'candidateSha256', 'targetSha256')) and
+            original_plan['releaseId'] == original_review['releaseId'] == selected['releaseId'] and
+            all(original_review[key] == initial[key] for key in ('hostMachineId', 'configurationSha256', 'apiJobSha256', 'certification')) and
+            original_review['reviewedPlanSha256'] == descriptor['reviewedPlanSha256'],
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_REVIEW_CHANGED')
+    target = initial['frontendJob']['target']
+    original_target = original_plan['replacement']
+    native_plan = plan['nativePlan']
+    require(original_target['target'] == {key: target[key] for key in replacement.TARGET_FIELDS} and
+            original_target['approvedPendingTags'] == target['approvedPendingTags'] and
+            all(original_target[key] == descriptor[key] for key in ('databaseOid', 'migrationRoleOid')) and
+            sorted(original_target['administrativeLogins'], key=lambda row: row['name']) == descriptor['administrativeLogins'] and
+            original_plan['predecessor']['target']['runtimeRole'] == descriptor['predecessorRuntimeRole'] and
+            original_review['producerSha256'] == native_plan['producer']['producerSha256'] and
+            local.get('owner') == native_plan['owner'] == initial['owner'] and
+            local.get('runtime') == native_plan['producer']['role'] and local.get('producerSha256') == original_review['producerSha256'],
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_TARGET_CHANGED')
+    replacement_initial = {**initial, 'mode': replacement.WRITE_MODE, 'configuration': original_review['configuration'],
+                           **{key: descriptor[key] for key in ('reviewedPlanSha256', 'runtimeReviewSha256')}}
+    arm = decode_qualification_target_json(replacement.private_record(directory, replacement.ARM), 'carrier')
+    physical = replacement.unbase64(arm['physicalObservation'], 8192)
+    identity = decode_qualification_target_json(physical, 'carrier')
+    probe = {'version': 1, 'qualificationTargetProfile': expected, 'operation': 'verify-pre-bootstrap-lock',
+             'candidate': selected, 'job': initial['frontendJob'], 'baseline': initial['frontendBaseline'],
+             'predecessorTarget': original_plan['predecessor']['target'], 'targetSha256': plan['targetSha256'],
+             **{key: descriptor[key] for key in ('databaseOid', 'migrationRoleOid')},
+             **{key: identity[key] for key in replacement.PROBE_IDENTITY}}
+    replacement.verify_bundle(Path(initial['bundle']), original_plan, probe)
+    _, arm_sha = replacement.require_arm(replacement_initial, original_plan, probe, directory)
+    boundary = decode_qualification_target_json(replacement.private_record(directory, replacement.WRITE_BOUNDARY), 'carrier')
+    _, write_sha, held = replacement.require_write_custody(replacement_initial, original_plan, probe, directory, arm_sha, boundary)
+    database = replacement.private_record(directory, 'frontend-original-database-receipt.json')
+    started = replacement.private_record(directory, 'frontend-continuation-started.json', 8192)
+    postflight = replacement.private_record(directory, replacement.WRITTEN_OBSERVATION, 8192)
+    closed = replacement.private_record(directory, terminal.SESSION_CLOSED, 8192)
+    require(_sha(database) == descriptor['frontendDatabaseReceiptSha256'] and
+            _sha(postflight) == descriptor['postflightSha256'] and _sha(closed) == descriptor['frontendSessionClosedSha256'],
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_RECEIPT_BYTES_CHANGED')
+    written = replacement.written_packet(original_plan, probe, held, {
+        'writeIntentSha256': write_sha, 'databaseReceipt': base64.b64encode(database).decode(),
+        'continuationStarted': base64.b64encode(started).decode(), 'owner': native_plan['owner'],
+        'runtime': native_plan['producer']['role'], 'producerSha256': original_review['producerSha256']})
+    replacement.require_write_observer_returned(replacement_initial, probe, held, directory, written=True)
+    replacement.require_observer_pair(replacement_initial, probe, held, directory, (
+        (replacement.CLOSED_OBSERVER_STARTED, 'CLOSED_STARTED'), (replacement.CLOSED_OBSERVER_RETURNED, 'CLOSED_RETURNED')))
+    replacement.closed_result(written, postflight, closed)
+    api = terminal.read_api(replacement_initial, original_plan, original_review, selected, directory, written, postflight)
+    base = terminal.release_base(replacement_initial, original_plan, original_review, selected, postflight, api)
+    provider = tuple(replacement.private_record(directory, name) for name in terminal.PROVIDER_FILES)
+    node = tuple(replacement.private_record(directory, name) for name in terminal.NODE_FILES)
+    proof, workload, promotion = (terminal.exact_receipt(value) for value in provider)
+    require(proof['deploymentId'] == workload['deploymentId'] == promotion['deploymentId'] == native_plan['deploymentId'] and
+            workload['previousDeploymentId'] == promotion['previousDeploymentId'] == original_plan['predecessor']['deploymentId'] and
+            all(_sha(value) == plan['readyReceiptSha256'][name] for name, value in zip(terminal.PROVIDER_FILES[1:], provider[1:])),
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_PROVIDER_CHANGED')
+    intent = terminal.exact_receipt(replacement.private_record(directory, terminal.INTENT))
+    expected_terminal = terminal.join_terminal(base, written, provider, node, closed, status=terminal.TERMINAL_STATUS)
+    require(_canonical(intent) == _canonical({**expected_terminal, 'status': terminal.INTENT_STATUS}) and
+            _canonical(local) == _canonical(expected_terminal), 'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REQUIRED')
+    return _sha(raw), True
+
+
 _RESUME_SOURCE_TERMINAL = 'p2-interactive-lesson-resume-source-terminal.json'
 _RESUME_GUARD_RECEIPT = 'p2-interactive-lesson-resume-guard.json'
 _RESUME_RELEASE_PINS = ('environment', 'originalReleaseId', 'sourceCommit', 'operatorSourceCommit', 'candidateSha256',
@@ -475,6 +618,7 @@ _RESUME_DEPLOYMENT_PINS = ('projectId', 'deploymentId', 'deploymentUrl', 'config
 
 def _profiled_resume_binding(plan):
     return {**{key: plan[key] for key in _RESUME_RELEASE_PINS},
+            **({'replacementRelease': plan['replacementRelease']} if 'replacementRelease' in plan else {}),
             'deployment': {key: plan['nativePlan'][key] for key in _RESUME_DEPLOYMENT_PINS}}
 
 
@@ -553,6 +697,7 @@ def prepare_profiled_current_certification_input(initial, source):
     require(set(jobs) == {'frontend', 'course', 'community'}, 'P2_PROFILED_CERTIFICATION_THREE_TARGETS_REQUIRED')
     frontend, inventory, native_plan = jobs['frontend']['job'], initial['inventory'], plan['nativePlan']
     target = frontend['target']
+    replacement = 'replacementRelease' in plan
     require(type(inventory) is dict, 'P2_PROFILED_CERTIFICATION_FENCED_INVENTORY_REQUIRED')
     vercel.require_record_profile(expected, inventory, inventory.get('restoration'))
     require(_canonical(selected) == _canonical(initial['candidate']) and selected['contractPhase'] == 'p2' and
@@ -563,7 +708,8 @@ def prepare_profiled_current_certification_input(initial, source):
             migrate.profiled_current_job_hashes(bundle) == initial['apiJobSha256'] and
             _canonical(frontend) == _canonical(initial['frontendJob']) and
             _canonical(decode_qualification_target_json(jobs['frontend']['schema'], 'carrier')) == _canonical(initial['frontendBaseline']) and
-            target.get('approvedPendingTags') == [] and target.get('allowEmptyBootstrap') is False and
+            (type(target.get('approvedPendingTags')) is list and bool(target['approvedPendingTags']) and target.get('allowEmptyBootstrap') is True
+             if replacement else target.get('approvedPendingTags') == [] and target.get('allowEmptyBootstrap') is False) and
             frontend_target_sha256(target) == initial['targetSha256'] and
             runtime_plan['hostMachineId'] == initial['hostMachineId'] and
             staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
@@ -573,7 +719,8 @@ def prepare_profiled_current_certification_input(initial, source):
     require(_sha(_profiled_compact(inventory)) == initial['inventorySha256'] and inventory.get('admissionMode') == 'existing' and
             inventory.get('actionId') == selected['releaseId'] and inventory.get('sourceCommit') == initial['sourceCommit'] and
             inventory.get('targetSha256') == initial['targetSha256'] and inventory.get('owner') == initial['owner'] and
-            inventory.get('certification') == initial['certification'] and restoration.get('providerIngress') == 'keep-retired' and
+            inventory.get('certification') == initial['certification'] and
+            restoration.get('providerIngress') == ('replacement-closed' if replacement else 'keep-retired') and
             all(restoration.get(key) is False for key in ('newWork', 'recovery', 'nativeSchedulesEnabled')),
             'P2_PROFILED_CERTIFICATION_FENCED_INVENTORY_REQUIRED')
     certification = require_certification_profile(initial['certification'])
@@ -609,7 +756,8 @@ def prepare_profiled_current_certification_input(initial, source):
             'planSha256': plan['planSha256'], 'readyReceiptSha256': plan['readyReceiptSha256'],
             'originalReleaseReceiptSha256': plan['originalReleaseReceiptSha256'], 'hostOriginalReleaseReceiptSha256': terminal_sha,
             'originalReleasePlanSha256': plan['originalReleasePlanSha256'], 'originalReleasePlanHashHostVerified': plan_hash_verified,
-            'executionEligible': False, 'providerTouched': False, 'admissionChanged': False, 'releaseAccepted': False}
+            'executionEligible': False, 'providerTouched': False, 'admissionChanged': False, 'releaseAccepted': False,
+            **({'replacementRelease': plan['replacementRelease']} if replacement else {})}
 
 
 def _iso(value):
@@ -766,6 +914,8 @@ def contain_profiled_certification_frontend(initial, armed, source):
         directory = Path(initial['results']) / ('p2-profiled-current-certification-' + initial['certificationActionId'])
         program = private_observer_program(initial, directory / 'guard-frontend-source')
         core = _cache_core(program.parent)
+        replacement = armed['plan'].get('replacementRelease')
+        fence = '--profiled-replacement-guard-fence' if replacement is not None else '--profiled-current-guard-fence'
         from uuid import uuid4
         container = 'lash-p2-profiled-certification-guard-close-' + uuid4().hex
         args = ['docker', 'run', '--rm', '--pull', 'never', '--name', container, '--interactive', '--network', 'host',
@@ -774,7 +924,7 @@ def contain_profiled_certification_frontend(initial, armed, source):
                 '--mount', f'type=bind,src={program},dst=/app/ops/platform/p2-frontend-live-probe.mjs,readonly',
                 '--mount', f'type=bind,src={core},dst=/app/ops/platform/p2-recovery-current-probe.mjs,readonly',
                 '--entrypoint', 'node', initial['candidate']['artifacts']['frontendMigration']['image'],
-                'ops/platform/p2-frontend-live-probe.mjs', '--profiled-current-guard-fence']
+                'ops/platform/p2-frontend-live-probe.mjs', fence]
         environment = {**runtime.SAFE_ENV, 'FRONTEND_STAGING_MIGRATION_DATABASE_URL': credential}
         result['frontendCloseAttempted'] = True
         try:
@@ -788,6 +938,8 @@ def contain_profiled_certification_frontend(initial, armed, source):
         require(not child.stderr and 0 < len(child.stdout) <= 8192, 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_OUTPUT_REFUSED')
         value = decode_qualification_target_json(child.stdout, 'carrier')
         vercel.require_record_profile(expected, value)
+        if replacement is not None:
+            require_certification_replacement_proof(value, replacement)
         plan = armed['plan']
         require(value.get('status') == 'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED' and
                 value.get('environment') == 'staging' and value.get('releaseId') == plan['originalReleaseId'] and
@@ -803,24 +955,41 @@ def contain_profiled_certification_frontend(initial, armed, source):
 class P2CertificationPhysicalObserver(PhysicalObserver):
     def __init__(self, selected, request, source, credential, *, program=None, program_sha256=None, expected_profile=None, interrupted=False):
         self._expected_profile = migrate.profile_context(expected_profile)
+        self._replacement = None
         require(type(interrupted) is bool and (not interrupted or self._expected_profile is not None),
                 'P2_PROFILED_CERTIFICATION_OBSERVER_MODE_REQUIRED')
         self._interrupted = interrupted
         if self._expected_profile is None:
             job, plan, receipt = (request.get(key, {}) for key in ('job', 'plan', 'receipt'))
             migrate.require_profile(None, selected, request, plan, job, job.get('target'), receipt, receipt.get('target'))
-            require(selected.get('version') != 3 and all(row.get('version', 1) == 1 for row in (request, plan, job, receipt)),
+            require('replacementRelease' not in request and 'replacementRelease' not in plan and
+                    selected.get('version') != 3 and all(row.get('version', 1) == 1 for row in (request, plan, job, receipt)),
                     'QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED')
         else:
             expected = _profiled_context()
+            plan = request['plan']
+            self._replacement = copy.deepcopy(plan.get('replacementRelease'))
+            boundary = 'historicalLogins' if self._replacement is None else 'replacementRelease'
             require(self._expected_profile == expected and set(request) == {
                 'version', 'qualificationTargetProfile', 'marker', 'backendPid', 'backendStart', 'job', 'baseline',
-                'owner', 'producers', 'historicalLogins', 'plan', 'receipt'}, 'P2_PROFILED_CERTIFICATION_PHYSICAL_REQUEST_REQUIRED')
-            job, history, plan, receipt = (request[key] for key in ('job', 'historicalLogins', 'plan', 'receipt'))
+                'owner', 'producers', boundary, 'plan', 'receipt'}, 'P2_PROFILED_CERTIFICATION_PHYSICAL_REQUEST_REQUIRED')
+            job, receipt = request['job'], request['receipt']
             migrate.candidate_profile(selected, expected)
             migrate.require_job_profile(expected, job, frontend=True)
-            vercel.require_record_profile(expected, request, history, plan, plan.get('nativePlan'), receipt)
-            migrate.require_profile(expected, history.get('target'), plan['nativePlan'].get('target'), receipt.get('target'))
+            vercel.require_record_profile(expected, request, plan, plan.get('nativePlan'), receipt)
+            migrate.require_profile(expected, plan['nativePlan'].get('target'), receipt.get('target'))
+            if self._replacement is None:
+                history = request['historicalLogins']
+                vercel.require_record_profile(expected, history)
+                migrate.require_profile(expected, history.get('target'))
+            else:
+                require(not interrupted and plan.get('mode') != 'known-ack-recovery' and
+                        _canonical(request[boundary]) == _canonical(self._replacement) and
+                        type(request['backendStart']) is str and
+                        re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z', request['backendStart']),
+                        'P2_PROFILED_CERTIFICATION_REPLACEMENT_OBSERVER_REQUIRED')
+                require_certification_replacement_release(self._replacement, expected)
+                require_certification_replacement_proof(receipt, self._replacement)
             allowed_modes = (PROFILED_INTERRUPTED_MODE,) if interrupted else PROFILED_MODES
             require(plan.get('startState') == 'already-closed' and plan.get('mode') in allowed_modes and
                     type(request['backendPid']) is int and request['backendPid'] > 0 and
@@ -860,7 +1029,8 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
         from uuid import uuid4
         container='lash-p2-certification-observer-'+uuid4().hex
         entry = OBSERVER if profiled else 'ops/platform/p2-frontend-live-probe.mjs'
-        observer_flag = '--profiled-known-ack-interrupted' if self._interrupted else '--profiled-current'
+        observer_flag = ('--profiled-known-ack-interrupted' if self._interrupted else
+                         '--profiled-replacement' if self._replacement is not None else '--profiled-current')
         args=['docker','run','--rm',*(['--pull','never'] if profiled else []),'--name',container,'--interactive','--network','host','--read-only','--cap-drop','ALL',
             '--security-opt','no-new-privileges','--memory','256m','--pids-limit','64','--env','FRONTEND_STAGING_MIGRATION_DATABASE_URL',
             '--mount',f'type=bind,src={program},dst=/app/{entry},readonly',
@@ -885,6 +1055,9 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
         request, receipt = self.request, self.request['receipt']
         fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'releaseId', 'sourceCommit',
                   'targetSha256', 'marker', 'backendPid', 'backendStart', 'admission', 'journalSha256', 'witnessSha256'}
+        if self._replacement is not None:
+            fields.update(REPLACEMENT_PROOF_FIELDS)
+            require_certification_replacement_proof(value, self._replacement)
         if operation == 'witness':
             fields.add('witness')
         closed = operation == 'verify-closed'
@@ -918,10 +1091,17 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
 
 class P2CertificationScope(P2ReleaseScope):
     def __init__(self, descriptor, path, verify_frontend, receipt, candidate_sha256=None, *, release=None, jobs=None,
-                 configuration_sha256=None, certification_plan, expected_profile=None, physical_observer=None):
+                 configuration_sha256=None, certification_plan, expected_profile=None, physical_observer=None,
+                 original_replacement_receipt=None):
         self.certification_plan = copy.deepcopy(certification_plan)
         self._expected_profile = migrate.profile_context(expected_profile)
         self._physical_observer = physical_observer
+        self._original_replacement_receipt = original_replacement_receipt
+        replacement = self.certification_plan.get('replacementRelease')
+        require((replacement is None and original_replacement_receipt is None) or
+                (self._expected_profile is not None and type(original_replacement_receipt) is bytes and
+                 _sha(original_replacement_receipt) == self.certification_plan['originalReleaseReceiptSha256']),
+                'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REQUIRED')
         if self._expected_profile is None:
             require(physical_observer is None, 'P2_CERTIFICATION_FIXED_SCOPE_REQUIRED')
             job = jobs['frontend']['job']
@@ -937,6 +1117,14 @@ class P2CertificationScope(P2ReleaseScope):
             migrate.require_job_profile(expected, jobs['frontend']['job'], frontend=True)
             vercel.require_record_profile(expected, certification_plan, receipt)
             migrate.require_profile(expected, receipt.get('target'))
+            if replacement is not None:
+                from p2_replacement_terminal import TERMINAL_STATUS
+                original = _profiled_record(original_replacement_receipt, expected)
+                require(_canonical(self._physical_observer._replacement) == _canonical(replacement) and
+                        original.get('status') == TERMINAL_STATUS and original.get('frontendSqlApplied') is True and
+                        original.get('frontendSqlReplayed') is False and original.get('frontendSessionClosed') is True and
+                        all(original.get(key) == replacement[key] for key in REPLACEMENT_RELEASE_HASHES),
+                        'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REQUIRED')
             require(type(configuration_sha256) is dict and set(configuration_sha256) == set(staging_state.CONFIGURATION_FILES) and
                     all(_profiled_digest(value) for value in configuration_sha256.values()) and
                     certification_plan.get('configurationCanonicalSha256') == _sha(_canonical(configuration_sha256)) and
@@ -963,10 +1151,18 @@ class P2CertificationScope(P2ReleaseScope):
             receipt.get('status')=='P2_CERTIFICATION_DATABASE_CURRENT' and receipt.get('certificationActionId')==plan['certificationActionId'] and
             receipt.get('candidateSha256')==self.candidate_sha256==plan['candidateSha256'] and receipt.get('planSha256')==plan['planSha256'] and
             receipt.get('targetSha256')==plan['targetSha256']==frontend_target_sha256(job['target']) and receipt.get('target')==target and
-            receipt.get('schemaVerified') is True and receipt.get('runtimeRoleVerified') is True and receipt.get('oldLoginsDenied') is True and receipt.get('oldRoleSessions')==0 and
+            receipt.get('schemaVerified') is True and receipt.get('runtimeRoleVerified') is True and
+            ('replacementRelease' in plan or receipt.get('oldLoginsDenied') is True and receipt.get('oldRoleSessions')==0) and
             receipt.get('sqlReplayed') is False and receipt.get('trafficAuthorized') is False and isinstance(receipt.get('after'),list) and receipt['after'],
             'P2_CERTIFICATION_FRESH_CURRENT_PROOF_REQUIRED')
         return copy.deepcopy(receipt)
+
+    def require_replacement_original(self, raw):
+        self.verify()
+        require(type(raw) is bytes and raw == self._original_replacement_receipt and
+                _sha(raw) == self.certification_plan.get('originalReleaseReceiptSha256'),
+                'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_BYTES_CHANGED')
+        return _profiled_record(raw, self._expected_profile)
 
     def _require_profiled_frontend(self, release, info):
         from qualification_target_profile import decode_qualification_target_json
@@ -977,14 +1173,23 @@ class P2CertificationScope(P2ReleaseScope):
         vercel.require_record_profile(expected, self.certification_plan, receipt)
         migrate.require_profile(expected, receipt.get('target'))
         migrate.require_contract_identity(release, job, receipt, self.certification_plan)
+        replacement = self.certification_plan.get('replacementRelease')
+        if replacement is not None:
+            require_certification_replacement_release(replacement, expected)
+            require_certification_replacement_proof(receipt, replacement)
+            boundary_ok = (_canonical(request.get('replacementRelease')) == _canonical(replacement) and
+                           type(job['target'].get('approvedPendingTags')) is list and bool(job['target']['approvedPendingTags']) and
+                           job['target'].get('allowEmptyBootstrap') is True)
+        else:
+            boundary_ok = (job['target'].get('approvedPendingTags') == [] and job['target'].get('allowEmptyBootstrap') is False and
+                           type(receipt.get('oldRoleSessions')) is int and
+                           receipt.get('retiredLogins') == request['historicalLogins'].get('retiredLogins'))
         require(_canonical(observer.selected) == _canonical(release) and _canonical(request['job']) == _canonical(job) and
                 request['plan'] == self.certification_plan and request['receipt'] == receipt and
                 _canonical(request['baseline']) == _canonical(decode_qualification_target_json(info['schema'], 'carrier')) and
-                job['target'].get('approvedPendingTags') == [] and job['target'].get('allowEmptyBootstrap') is False and
-                receipt.get('service') == 'frontend' and type(receipt.get('oldRoleSessions')) is int and
+                boundary_ok and receipt.get('service') == 'frontend' and
                 receipt.get('owner') == request['owner'] == self.certification_plan['nativePlan']['owner'] and
                 receipt.get('runtime') == self.certification_plan['nativePlan']['producer']['role'] and
-                receipt.get('retiredLogins') == request['historicalLogins'].get('retiredLogins') and
                 receipt.get('journalSha256') == _sha(_profiled_compact(receipt.get('after'))) and
                 receipt.get('witnessSha256') == _sha(_profiled_compact(receipt.get('witness'))),
                 'P2_PROFILED_CERTIFICATION_FRONTEND_SCOPE_BINDING_REQUIRED')
@@ -1145,9 +1350,15 @@ class P2CertificationBroker(Broker):
     def arm(self,request):
         self.check();require(self.scope is None and self.observer is None and not self.external_armed,'P2_CERTIFICATION_ALREADY_ARMED')
         raw,receipt=decode(request['receipt']);probe=request['probe'];cert=self.initial['certificationPlan']
+        boundary = 'replacementRelease' if 'replacementRelease' in cert else 'historicalLogins'
+        if boundary == 'replacementRelease':
+            require(base64.b64encode(raw).decode() == request['receipt'] and 'historicalLogins' not in probe and
+                    _canonical(probe.get(boundary)) == _canonical(cert[boundary]),
+                    'P2_PROFILED_CERTIFICATION_REPLACEMENT_ARM_REQUIRED')
+            require_certification_replacement_proof(receipt, cert[boundary])
         require(probe.get('job')==self.jobs['frontend']['job'] and probe.get('baseline')==json.loads(self.jobs['frontend']['schema']) and probe.get('receipt')==receipt and
             probe.get('plan')==cert and probe.get('owner')==self.initial['owner'] and probe.get('producers')==self.initial['producers'] and
-            probe.get('historicalLogins')==self.initial['historicalLogins'],'P2_CERTIFICATION_CURRENT_PROBE_BINDING_REQUIRED')
+            probe.get(boundary)==self.initial[boundary],'P2_CERTIFICATION_CURRENT_PROBE_BINDING_REQUIRED')
         self.frontend_raw=raw;self.armed_probe=probe
         self.observer=self.observer_type(self.selected,probe,self.source,self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'],
             program=self.observer_program,program_sha256=self.initial['sourceSha256'][OBSERVER],**self.profile_arguments())
@@ -1809,7 +2020,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.vercel = vercel.Client(initial['vercelToken'])
         initial['nativePlan'] = plan['nativePlan']
         initial['producers'] = initial['inventory']['producers']
-        initial['historicalLogins'] = initial['inventory']['historicalLogins']
+        boundary = 'replacementRelease' if 'replacementRelease' in plan else 'historicalLogins'
+        initial[boundary] = initial['inventory'][boundary]
         if mode in BROWSER_MODES:
             initial['browserPlan'] = initial['sourceSuspensionPlan']
         if mode == 'direct-worker':
@@ -1824,12 +2036,14 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.check()
 
     def _scope_arguments(self):
-        return {**self.profile_arguments(), 'physical_observer': self.observer}
+        return {**self.profile_arguments(), 'physical_observer': self.observer,
+                **({'original_replacement_receipt': base64.b64decode(self.initial['originalReleaseReceipt'], validate=True)}
+                   if 'replacementRelease' in self.initial['certificationPlan'] else {})}
 
     def _accept_guard_arm(self,probe):
         from p2_release_supervisor import require_profiled_certification_guard_arm
         self.safety({'operation':'armed','probe':probe})
-        expires = time.monotonic() + 10
+        expires = time.monotonic() + (45 if 'replacementRelease' in self.initial['certificationPlan'] else 10)
         while True:
             self.check()
             try:
@@ -2033,6 +2247,10 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             qualificationTargetProfile=self.certification_profile(),frontendSqlApplied=False,
             releaseAccepted=False,releaseId=self.selected['releaseId'])
         self.prepared_terminal['configurationSha256'] = self.initial['configurationSha256']
+        plan = self.initial['certificationPlan']
+        if 'replacementRelease' in plan:
+            self.prepared_terminal.update({key: plan[key] for key in (
+                'replacementRelease', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256')})
         if self.authority_timing_sha256 is not None:
             self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
         if self.initial['certificationPlan']['mode'] == 'known-ack-recovery':
@@ -2060,6 +2278,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.check()
         require(self.closing_at is not None and not self.finished, 'P2_PROFILED_CERTIFICATION_CLOSE_NOT_PREPARED')
         observed = self.observer.probe('verify-closed')
+        if 'replacementRelease' in self.initial['certificationPlan']:
+            require_certification_replacement_proof(observed, self.initial['certificationPlan']['replacementRelease'])
         require(observed['admission'] == self.prepared_terminal['frontendAdmission'],
                 'P2_PROFILED_CERTIFICATION_LATE_FRONTEND_STATE_CHANGED')
         migrate.write_json(self.directory,'p2-certification-frontend-session-closed.json',observed)

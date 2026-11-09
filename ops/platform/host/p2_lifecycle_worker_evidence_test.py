@@ -87,10 +87,11 @@ class WorkerEvidenceTests(unittest.TestCase):
         reader = worker.HeldWorkerPersistenceScope(stage)
         calls = []
         parent.run = lambda args, **options: (calls.append((args, options)), subprocess.CompletedProcess(args, 0, b"{}", b""))[1]
-        args = ["docker", "exec", "-i", "--workdir", "/app", "--env", "NODE_OPTIONS=--max-old-space-size=128", "--env", "DOTENV_CONFIG_QUIET=true",
-            "1"*64, "node", "--input-type=module", "--eval", reader.persistence_program.decode()]
+        args = reader._persistence_command("frontend")
         payload = json.dumps({"mode": "frontend", "environment": "staging"}).encode()
         reader.run(args, timeout=30, input=payload, env=worker.runtime.SAFE_ENV)
+        with self.assertRaises(ValueError):
+            reader.run([*args[:-1], args[-1] + "changed"], timeout=30, input=payload, env=worker.runtime.SAFE_ENV)
         with self.assertRaises(ValueError):
             reader.run([*args, "foreign"], timeout=30, input=payload, env=worker.runtime.SAFE_ENV)
         self.assertEqual(len(calls), 1)
@@ -144,6 +145,15 @@ class WorkerEvidenceTests(unittest.TestCase):
         self.assertNotIn("owned-private-runtime-url", (stage.directory / "lifecycle-account.json").read_text())
         with self.assertRaisesRegex(ValueError, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED"):
             worker.persistence.load_retained_capture({**stage.reviewed["plan"]}, stage.directory, "lifecycle-account")
+
+        from p2_certification_parent import P2CertificationScope
+        stage.scope = object.__new__(P2CertificationScope)
+        stage.scope.certification_plan = {"replacementRelease": {}}
+        with patch.object(worker.persistence, "execute_profiled", side_effect=ValueError("owned-stop-before-reader")) as replacement:
+            with self.assertRaisesRegex(ValueError, "owned-stop-before-reader"):
+                stage.observe_lifecycle_witness("owned-private-runtime-url")
+            self.assertIs(replacement.call_args.kwargs["_worker_stage"], stage)
+            self.assertIs(replacement.call_args.args[6], stage.scope)
 
     def test_profiled_native_boundary_requires_both_source_selected_readbacks(self):
         stage = self.stage

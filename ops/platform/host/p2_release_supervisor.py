@@ -6,6 +6,7 @@ broker/guard death leaves a survivor that revokes mutations before final stop.
 """
 import ctypes
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import json
 import os
@@ -288,7 +289,8 @@ def _profiled_certification_arm_record(initial, probe):
             'environment': 'staging', 'originalReleaseId': initial['candidate']['releaseId'],
             'certificationActionId': action_id(initial), 'sourceCommit': initial['sourceCommit'],
             'candidateSha256': initial['candidateSha256'], 'targetSha256': initial['targetSha256'],
-            'planSha256': plan['planSha256'], 'probeSha256': _canonical_sha(probe)}
+            'planSha256': plan['planSha256'], 'probeSha256': _canonical_sha(probe),
+            **({'replacementRelease': plan['replacementRelease']} if 'replacementRelease' in plan else {})}
 
 
 def require_profiled_certification_guard_arm(initial, probe):
@@ -331,18 +333,31 @@ def _retain_profiled_certification_arm(initial, probe):
 def _validate_profiled_certification_arm(initial, probe, job_info):
     from qualification_target_profile import decode_qualification_target_json
     expected = _guard_profile(initial)
+    plan = initial['certificationPlan']
+    replacement = 'replacementRelease' in plan
+    boundary = 'replacementRelease' if replacement else 'historicalLogins'
     require(type(probe) is dict and set(probe) == {'version', 'qualificationTargetProfile', 'marker', 'backendPid',
-            'backendStart', 'job', 'baseline', 'owner', 'producers', 'historicalLogins', 'plan', 'receipt'},
+            'backendStart', 'job', 'baseline', 'owner', 'producers', boundary, 'plan', 'receipt'},
             'P2_PROFILED_CERTIFICATION_GUARD_PROBE_REQUIRED')
-    plan, receipt, job = initial['certificationPlan'], probe['receipt'], job_info['job']
-    migrate.require_profile(expected, probe, probe['job'], probe['job'].get('target'), probe['plan'], receipt, receipt.get('target'),
-                            probe['historicalLogins'], probe['historicalLogins'].get('target'))
+    receipt, job = probe['receipt'], job_info['job']
+    migrate.require_profile(expected, probe, probe['job'], probe['job'].get('target'), probe['plan'], receipt, receipt.get('target'))
+    if replacement:
+        from p2_certification_parent import require_certification_replacement_proof, require_certification_replacement_release
+        require(plan['mode'] != 'known-ack-recovery' and _canonical_sha(probe[boundary]) == _canonical_sha(plan[boundary]) and
+                type(probe['backendStart']) is str and
+                re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z', probe['backendStart']) and
+                type(job['target'].get('approvedPendingTags')) is list and bool(job['target']['approvedPendingTags']) and
+                job['target'].get('allowEmptyBootstrap') is True, 'P2_PROFILED_CERTIFICATION_REPLACEMENT_GUARD_REQUIRED')
+        require_certification_replacement_release(plan[boundary], expected)
+        require_certification_replacement_proof(receipt, plan[boundary])
+    else:
+        migrate.require_profile(expected, probe[boundary], probe[boundary].get('target'))
     inventory = initial['inventory']
     require(type(probe['version']) is int and probe['version'] == 2 and type(receipt.get('version')) is int and receipt['version'] == 2 and
             _canonical_sha(probe['job']) == _canonical_sha(job) and _canonical_sha(probe['plan']) == _canonical_sha(plan) and
             _canonical_sha(probe['baseline']) == _canonical_sha(decode_qualification_target_json(job_info['schema'], 'carrier')) and
             probe['owner'] == initial['owner'] and probe['producers'] == inventory['producers'] and
-            probe['historicalLogins'] == inventory['historicalLogins'] and
+            _canonical_sha(probe[boundary]) == _canonical_sha(inventory[boundary]) and
             type(probe['marker']) is str and re.fullmatch(r'[a-f0-9]{64}', probe['marker']) and probe['marker'] != '0' * 64 and
             type(probe['backendPid']) is int and probe['backendPid'] > 0 and type(probe['backendStart']) is str and
             0 < len(probe['backendStart']) <= 80 and receipt.get('status') == 'P2_CERTIFICATION_DATABASE_CURRENT' and
@@ -356,6 +371,21 @@ def _validate_profiled_certification_arm(initial, probe, job_info):
             _canonical_sha(receipt.get('admission')) == _canonical_sha({'epoch': plan['initialEpoch'], 'newWork': False,
                 'recovery': False, 'active': 0, 'uncertain': 0}), 'P2_PROFILED_CERTIFICATION_GUARD_PROBE_REQUIRED')
     migrate.require_contract_identity(initial['candidate'], receipt)
+
+
+def _observe_profiled_replacement_certification(initial, probe, source, operation):
+    from p2_certification_parent import P2CertificationPhysicalObserver
+    require(operation in ('verify-schema', 'verify-closed') and 'replacementRelease' in initial['certificationPlan'],
+            'P2_PROFILED_CERTIFICATION_REPLACEMENT_GUARD_REQUIRED')
+    verify_guard_boundary(initial, source)
+    directory = _profiled_certification_directory(initial)
+    program = private_observer_program(initial, directory / ('guard-replacement-' + operation))
+    observer = P2CertificationPhysicalObserver(initial['candidate'], probe, source,
+        initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=program,
+        program_sha256=initial['sourceSha256'][CERTIFICATION_OBSERVER], expected_profile=_guard_profile(initial))
+    observed = observer.probe(operation)
+    verify_guard_boundary(initial, source)
+    return observed
 
 
 def _profiled_certification_containers(*, remove):
@@ -1235,6 +1265,12 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
     terminal = decode_qualification_target_json(raw, 'carrier')
     migrate.require_profile(expected, terminal)
     plan = initial['certificationPlan']
+    if 'replacementRelease' in plan:
+        require(all(_canonical_sha(terminal.get(key)) == _canonical_sha(plan[key])
+                    for key in ('replacementRelease', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256')),
+                'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REFUSED')
+    else:
+        require('replacementRelease' not in terminal, 'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_REFUSED')
     require(migrate.file_hash(raw) == committed and type(terminal.get('version')) is int and terminal['version'] == 2 and
             terminal.get('status') == PROFILED_CERTIFICATION_LAYOUT['terminalStatus'] and
             all(terminal.get(key) == plan[key] for key in ('environment', 'certificationActionId', 'originalReleaseId',
@@ -1475,8 +1511,11 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     initial['_guardLockDescriptor'] = fd
     if profiled_certification:
         try:
+            plan_mode = initial['certificationPlan']['mode']
+            input_fields = certification_parent.PROFILED_INITIAL_FIELDS | (
+                {'sourceSuspensionPlan'} if plan_mode in certification_parent.SUSPENSION_MODES else set())
             verified = certification_parent.prepare_profiled_current_certification_input(
-                {key: initial[key] for key in certification_parent.PROFILED_INITIAL_FIELDS}, source)
+                {key: initial[key] for key in input_fields}, source)
             require(verified.get('status') == 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED' and
                     verified.get('executionEligible') is False and verified.get('planSha256') == initial['certificationPlan']['planSha256'],
                     'P2_PROFILED_CERTIFICATION_GUARD_INPUT_REQUIRED')
@@ -1546,6 +1585,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
         os._exit(0 if committed else 1)
     os.close(safety_write); os.close(health_read)
     armed = None
+    replacement_certification = profiled_certification and 'replacementRelease' in initial['certificationPlan']
     try:
         def arm(probe):
             nonlocal armed
@@ -1553,6 +1593,8 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             if profiled_certification:
                 verify_guard_boundary(initial, source)
                 _validate_profiled_certification_arm(initial, probe, verified_jobs['frontend'])
+                if replacement_certification:
+                    return observer_worker.submit(arm_replacement, probe)
                 armed = probe
                 _retain_profiled_certification_arm(initial, probe)
                 return
@@ -1565,9 +1607,18 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             armed = probe
             require(probe['job'] == verified_jobs['frontend']['job']
                     and probe['baseline'] == json.loads(verified_jobs['frontend']['schema']), 'P2_SAFETY_SCOPE_REFUSED')
-        committed = (watch_broker(child, safety_read, health_write, arm, profiled_certification=True)
-                     if profiled_certification or profiled_interrupted else
-                     watch_broker(child, safety_read, health_write, arm))
+
+        def arm_replacement(probe):
+            nonlocal armed
+            _observe_profiled_replacement_certification(initial, probe, source, 'verify-schema')
+            armed = probe
+            _retain_profiled_certification_arm(initial, probe)
+
+        with (ThreadPoolExecutor(max_workers=1) if replacement_certification else contextlib.nullcontext()) as observer_worker:
+            committed = (watch_broker(child, safety_read, health_write, arm, profiled_certification=True,
+                                      async_arm=replacement_certification)
+                         if profiled_certification or profiled_interrupted else
+                         watch_broker(child, safety_read, health_write, arm))
         result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
         if profiled_certification:
             require(not members(child), 'P2_PROFILED_CERTIFICATION_TERMINAL_CHILD_REMAINS')
@@ -1575,6 +1626,15 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             require_profiled_certification_guard_arm(initial, armed)
             _profiled_certification_containers(remove=False)
             terminal = _require_profiled_certification_terminal(initial, result, committed, source=source)
+            if replacement_certification:
+                from qualification_target_profile import decode_qualification_target_json
+                closed = decode_qualification_target_json(migrate.read_input(_profiled_certification_directory(initial),
+                    'p2-certification-frontend-session-closed.json', 16_384), 'carrier')
+                fresh = _observe_profiled_replacement_certification(initial, armed, source, 'verify-closed')
+                require(_canonical_sha(fresh) == _canonical_sha(closed) and
+                        _canonical_sha(fresh['admission']) == _canonical_sha(terminal['frontendAdmission']),
+                        'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_PHYSICAL_CHANGED')
+                _profiled_certification_containers(remove=False)
             verify_guard_boundary(initial, source)
             if initial['certificationPlan'].get('scopedAction', {}).get('stage') == 'lesson-resume':
                 from p2_certification_parent import retain_profiled_resume_guard

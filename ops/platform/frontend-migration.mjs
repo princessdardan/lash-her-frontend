@@ -483,7 +483,7 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
   try {
     const hosted = await authority.withEnvironmentLock(async (verifyEnvironment, signal, host) => {
       demand(owned || host, refuse);
-      let databaseClient, roles, probe, url, physicalRaw;
+      let databaseClient, roles, probe, url, physicalRaw, postflightSha256;
       const abort = () => { databaseClient?.connection?.stream?.destroy(); };
       signal.addEventListener("abort", abort, { once: true });
       const verifyHeld = async () => {
@@ -597,7 +597,7 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
             }, { getUrl: () => url });
             await verifyLockedSession();
             store.record("replacement-written-observation.json", written);
-            let ready, postflightSha256;
+            let ready;
             if (host) {
               const retained = await host.verifyReplacementWritten({ databaseReceipt, continuationStarted,
                 owner: roles.owner, runtime: roles.runtime, producerSha256: input.producerSha256 });
@@ -637,7 +637,12 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
         }, profile, { verifyEnvironment: verifyHeld, verifyClosed });
         if (host) {
           phase = "replacement-session-closure";
-          await host.observeReplacementClosed();
+          const observation = await host.observeReplacementClosed();
+          if (!owned) {
+            demand(Buffer.isBuffer(observation?.bytes) && digest(observation.sessionClosedSha256) &&
+              hash(observation.bytes) === observation.sessionClosedSha256, refuse);
+            store.retain(`${observation.sessionClosedSha256}-${postflightSha256}.json`, observation.bytes);
+          }
           await host.finishReplacement({
             terminal: readFrontendReleaseEvidence(directory, "job-outcome.json"),
             continuationCompleted: readFrontendReleaseEvidence(directory, "frontend-continuation-completed.json"),

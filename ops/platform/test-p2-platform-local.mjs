@@ -12,7 +12,7 @@ const require = ok => { if (!ok) throw new Error('P2_PLATFORM_OWNED_FIXTURE_REFU
 const maximumOutput = 4_000_000;
 const failureStatuses = new Set(['FRONTEND_ROLES_OWNED_FAILED', 'FRONTEND_RELEASE_OWNED_POSTGRES_FAILED',
   'OWNED_ROLE_COMPOSITION_DETAIL', 'P2_LIFECYCLE_NATIVE_OWNED_FAILED', 'P2_NATIVE_OWNED_CHILD_FAILED',
-  'P2_CERTIFICATION_CURRENT_OWNED_FAILED']);
+  'P2_CERTIFICATION_CURRENT_OWNED_FAILED', 'P2_CERTIFICATION_REPLACEMENT_OWNED_FAILED']);
 export const P2_OWNED_FIXTURES = Object.freeze([
   Object.freeze({ id: 'roles', file: 'test-frontend-roles-local.mjs', flag: 'FRONTEND_ROLES_OWNED_TEST', status: 'FRONTEND_ROLES_OWNED_PASS', required: Object.freeze([
     'actual-environment-flock-contention-refuses-second-parent',
@@ -69,6 +69,15 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'actual-profiled-current-certification-lock-readback-and-fence-refusal',
     'actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback',
   ]) }),
+  Object.freeze({ id: 'replacement-certification', file: 'p2-certification-replacement-probe.test.mjs',
+    flag: 'P2_CERTIFICATION_REPLACEMENT_OWNED_TEST', status: 'P2_CERTIFICATION_REPLACEMENT_OWNED_PASS', required: Object.freeze([
+      'pinned-original-replacement-full-journal-and-reviewed-role-boundary',
+      'fresh-two-lock-witness-and-independent-read-only-closure',
+      'fixed-replacement-observer-and-guard-dispatch',
+      'predecessor-unreviewed-login-and-revoked-live-client-refusal',
+      'journal-admission-marker-backend-and-database-identity-refusal',
+      'independent-guard-fence-without-sql-replay',
+    ]) }),
 ]);
 
 export function p2OwnedFixtureEnvironment(ambient, fixture, major) {
@@ -81,8 +90,9 @@ export function p2OwnedFixtureEnvironment(ambient, fixture, major) {
 }
 
 export function validateP2FixtureReceipt(fixture, value, major) {
+  const certification = fixture?.id === 'certification', replacement = fixture?.id === 'replacement-certification';
   require(P2_OWNED_FIXTURES.includes(fixture) && [16, 18].includes(major) && value && typeof value === 'object' && !Array.isArray(value) &&
-    value.status === fixture.status && (fixture.id === 'certification' ? value.serverMajor : value.postgresMajor) === major && value.providerTouched === false &&
+    value.status === fixture.status && (certification || replacement ? value.serverMajor : value.postgresMajor) === major && value.providerTouched === false &&
     (value.skipped === undefined || value.skipped === 0) && Array.isArray(value.checks) && value.checks.length > 0 &&
     value.checks.every(check => typeof check === 'string' && /^[a-z0-9][a-z0-9-]{0,240}$/u.test(check)) &&
     new Set(value.checks).size === value.checks.length && fixture.required.every(check => value.checks.includes(check)));
@@ -90,12 +100,14 @@ export function validateP2FixtureReceipt(fixture, value, major) {
     value.actualScram === true && value.actualFlockContention === true && value.actualPhysicalLockContention === true &&
     value.executedChecks === value.checks.length && value.migrationAuthorized === false);
   if (fixture.id === 'release') require(value.liveAdapterQualified === false && value.migrationAuthorized === false && value.trafficAuthorized === false);
-  if (fixture.id === 'certification') {
+  if (certification || replacement) {
     const fields = ['version', 'status', 'serverMajor', 'frontendMigrations', 'checks', 'skipped', 'actualTlsPostgres',
-      'noSqlReplay', 'providerTouched', 'actualHostDocker', 'browserQualified', 'nativeInvocationQualified', 'fixtureOnly'];
+      'noSqlReplay', 'providerTouched', 'fixtureOnly'];
+    if (certification) fields.push('actualHostDocker', 'browserQualified', 'nativeInvocationQualified');
     require(JSON.stringify(Object.keys(value).sort()) === JSON.stringify(fields.sort()) && value.version === 1 && value.frontendMigrations === 83 &&
       JSON.stringify(value.checks) === JSON.stringify(fixture.required) && value.skipped === 0 && value.actualTlsPostgres === true &&
-      value.noSqlReplay === true && value.actualHostDocker === false && value.browserQualified === false && value.nativeInvocationQualified === false && value.fixtureOnly === true);
+      value.noSqlReplay === true && value.fixtureOnly === true);
+    if (certification) require(value.actualHostDocker === false && value.browserQualified === false && value.nativeInvocationQualified === false);
   }
   if (fixture.id === 'native') require(value.fixtureOnly === true && value.skipped === 0 && value.executedChecks === value.checks.length &&
     value.actualTlsPostgres === true && value.actualTlsReceivers === true && value.actualAppCron === true &&
@@ -140,7 +152,8 @@ export function runP2PlatformOwned() {
   const summaries = [];
   for (const fixture of P2_OWNED_FIXTURES) {
     const program = join(root, 'ops/platform', fixture.file);
-    const child = spawnSync(process.execPath, [program], { cwd: root,
+    const args = fixture.id === 'replacement-certification' ? [program, '--owned-json'] : [program];
+    const child = spawnSync(process.execPath, args, { cwd: root,
       env: p2OwnedFixtureEnvironment(process.env, fixture, major), encoding: 'utf8', timeout: 240_000, maxBuffer: maximumOutput });
     let failureCode = 'P2_OWNED_CHILD_EXECUTION_FAILED';
     try {

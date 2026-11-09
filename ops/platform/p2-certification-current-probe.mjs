@@ -4,7 +4,7 @@ import {createHash,randomBytes} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
-import {frontendConnectionOptions,FRONTEND_MIGRATION_LOCK} from './frontend-migration.mjs';
+import {frontendConnectionOptions,frontendMigrationArtifact,FRONTEND_MIGRATION_LOCK} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {assertAppliedMigrationLineage} from '../../src/lib/private-db/migration-lineage.ts';
 import {verifyRecoveryRuntimeGrants,RECOVERY_HELD_LOCK} from './p2-recovery-current-probe.mjs';
@@ -19,8 +19,14 @@ const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value)&&!/^0
 const action=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
 const epoch=value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value);
 const oid=value=>typeof value==='string'&&/^[1-9][0-9]{0,9}$/u.test(value);
+const replacementOid=value=>oid(value)&&Number(value)<=4294967295;
+const exact=(value,fields)=>value&&Object.getPrototypeOf(value)===Object.prototype&&Reflect.ownKeys(value).length===fields.length&&
+  fields.every(key=>{const field=Object.getOwnPropertyDescriptor(value,key);return field?.enumerable&&Object.hasOwn(field,'value');});
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
 const interruptedMode='p2-profiled-known-ack-interrupted-restoration';
+const replacementBackendStart=`pg_catalog.to_char(backend_start AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+const replacementStart=value=>typeof value==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/u.test(value);
+const replacementProof=replacementRelease=>({replacementRelease,effectiveLoginBoundaryVerified:true,predecessorRuntimeRoleAbsent:true});
 const interactiveMode='interactive-browser';
 const interactiveWindowEpoch=plan=>(BigInt(plan.initialEpoch)+1n).toString();
 const interactiveClosedEpoch=plan=>(BigInt(plan.initialEpoch)+2n).toString();
@@ -29,19 +35,81 @@ const options=(value,target,interrupted=false)=>({...frontendConnectionOptions(v
   options:'-c search_path=pg_catalog,public'+(interrupted?' -c default_transaction_read_only=on':''),
   application_name:'lash-her-p2-bounded-certification'});
 
-function profileFields(expectedProfile,plan,job,historicalLogins,interrupted=false){
+function profileFields(expectedProfile,plan,job,historicalLogins,interrupted=false,replacementRelease){
   demand((plan?.mode===interruptedMode)===interrupted&&(!interrupted||expectedProfile!==undefined),'current-source-context');
-  const carriers=[plan,plan?.nativePlan,plan?.nativePlan?.target,job,job?.target,historicalLogins,historicalLogins?.target];
+  const replacing=replacementRelease!==undefined;
+  demand(Object.hasOwn(plan??{},'replacementRelease')===replacing&&(!replacing||!interrupted&&expectedProfile!==undefined&&historicalLogins===undefined),
+    'current-replacement-context');
+  const carriers=[plan,plan?.nativePlan,plan?.nativePlan?.target,job,job?.target,
+    ...(replacing?[replacementRelease]:[historicalLogins,historicalLogins?.target])];
   if(expectedProfile===undefined){
     demand(plan?.version===1&&plan.mode!==interactiveMode&&job?.version===1&&!carriers.some(row=>row&&Object.hasOwn(row,'qualificationTargetProfile')));
     return {};
   }
   const qualificationTargetProfile=requireQualificationTargetProfile(currentProfile,{qualificationTargetProfile:expectedProfile},...carriers);
-  demand(plan.version===2&&plan.nativePlan.version===2&&job.version===2&&historicalLogins.version===2&&
-    plan.startState==='already-closed'&&Array.isArray(job.target.approvedPendingTags)&&job.target.approvedPendingTags.length===0);
+  demand(plan.version===2&&plan.nativePlan.version===2&&job.version===2&&plan.startState==='already-closed'&&Array.isArray(job.target.approvedPendingTags));
+  if(replacing)requireReplacementPlan(plan,job,replacementRelease);
+  else demand(historicalLogins.version===2&&job.target.approvedPendingTags.length===0);
   if(interrupted)requireInterruptedPlan(plan,job);
   if(plan.mode===interactiveMode)requireInteractivePlan(plan,job);
   return {qualificationTargetProfile};
+}
+
+function requireReplacementPlan(plan,job,replacement){
+  const native=plan.nativePlan, owner=native.owner, runtime=native.producer?.role, target=job.target;
+  const provenance=['reviewedPlanSha256','runtimeReviewSha256','postflightSha256','frontendSessionClosedSha256','frontendDatabaseReceiptSha256'];
+  demand(exact(replacement,['version','kind','qualificationTargetProfile',...provenance,'databaseOid','migrationRoleOid',
+    'predecessorRuntimeRole','administrativeLogins'])&&replacement.version===1&&replacement.kind==='frontend-replacement'&&
+    isDeepStrictEqual(replacement,plan.replacementRelease)&&provenance.every(key=>digest(replacement[key]))&&
+    replacement.reviewedPlanSha256===plan.originalReleasePlanSha256&&digest(plan.originalReleaseReceiptSha256)&&
+    plan.environment==='staging'&&job.environment==='staging'&&plan.contractPhase==='p2'&&job.contractPhase==='p2'&&
+    plan.mode!=='known-ack-recovery'&&
+    plan.originalReleaseId===job.releaseId&&native.actionId===job.releaseId&&action(plan.certificationActionId)&&
+    plan.certificationActionId!==job.releaseId&&/^(?!0+$)[a-f0-9]{40}$/u.test(job.sourceCommit??'')&&
+    plan.sourceCommit===job.sourceCommit&&plan.sourceCommit===native.sourceCommit&&
+    plan.targetSha256===targetHash(target)&&plan.targetSha256===native.targetSha256&&plan.targetSha256===targetHash(native.target)&&
+    plan.phase2ContractManifestSha256===job.phase2ContractManifestSha256&&plan.phase2ContractManifestSha256===native.phase2ContractManifestSha256&&
+    target.allowEmptyBootstrap===true&&target.approvedPendingTags.length>0&&name(target.user)&&name(target.runtimeRole)&&
+    replacementOid(replacement.databaseOid)&&replacementOid(replacement.migrationRoleOid)&&
+    exact(owner,['name','oid'])&&name(owner.name)&&replacementOid(owner.oid)&&exact(runtime,['name','oid'])&&
+    runtime.name===target.runtimeRole&&replacementOid(runtime.oid)&&digest(native.producer.producerSha256)&&
+    name(replacement.predecessorRuntimeRole),'current-replacement-plan');
+  const names=[target.user,owner.name,runtime.name,replacement.predecessorRuntimeRole];
+  const oids=[replacement.migrationRoleOid,owner.oid,runtime.oid];
+  const admins=replacement.administrativeLogins;
+  demand(Array.isArray(admins)&&admins.length<=32&&admins.every((login,index)=>exact(login,['name','oid'])&&
+    name(login.name)&&replacementOid(login.oid)&&(index===0||admins[index-1].name<login.name))&&
+    new Set([...names,...admins.map(login=>login.name)]).size===names.length+admins.length&&
+    new Set([...oids,...admins.map(login=>login.oid)]).size===oids.length+admins.length,'current-replacement-logins');
+}
+
+function requireReplacementArtifact(job,artifact,baseline){
+  demand(isDeepStrictEqual(job.target.approvedPendingTags,artifact.migrations.map(({tag})=>tag))&&
+    artifact.sqlArtifactSha256===job.sqlArtifactSha256&&artifact.contractManifestSha256===job.contractManifestSha256&&
+    artifact.contractPhase==='p2'&&artifact.phase2ContractManifestSha256===job.phase2ContractManifestSha256&&
+    baseline.version===1&&baseline.serverMajor===job.target.serverMajor&&baseline.sqlArtifactSha256===job.sqlArtifactSha256&&
+    hash(baseline)===job.schemaBaselineSha256,'current-replacement-artifact');
+}
+
+async function verifyReplacementIdentity(client,target,replacement){
+  const {rows:[identity]}=await client.query(`SELECT datid::text AS database_oid,usesysid::text AS migration_role_oid,
+    current_user AS role,session_user AS login,pg_catalog.current_database() AS database,
+    pg_catalog.current_setting('server_version_num')::int/10000 AS major
+    FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()`);
+  demand(identity?.database_oid===replacement.databaseOid&&identity.migration_role_oid===replacement.migrationRoleOid&&
+    identity.role===target.user&&identity.login===target.user&&identity.database===target.database&&identity.major===target.serverMajor,
+    'current-replacement-database-identity');
+}
+
+async function verifyReplacementLogins(client,target,replacement,runtime){
+  const {verifyReplacementLoginBoundary}=await import('./p2-frontend-replacement-written.mjs');
+  await verifyReplacementLoginBoundary(client,{...replacement,migrationRole:target.user,runtime});
+  await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
+  const allowed=[replacement.migrationRoleOid,runtime.oid,...replacement.administrativeLogins.map(login=>login.oid)];
+  const {rows}=await client.query(`SELECT 1 FROM pg_catalog.pg_stat_activity
+    WHERE datid=$1::oid AND backend_type='client backend' AND (usesysid IS NULL OR usesysid<>ALL($2::oid[])) LIMIT 1`,
+  [replacement.databaseOid,allowed]);
+  demand(rows.length===0,'current-replacement-unapproved-session');
 }
 
 function requireInteractivePlan(plan,job){
@@ -155,27 +223,49 @@ export function readP2CertificationCurrent(client,prepared,plan,verify,initial=f
 
 async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,interrupted){
   const {job,artifact,baseline}=prepared.migration,target=job.target,owner=prepared.plan.owner;
-  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins,interrupted);
+  const {historicalLogins,replacementRelease}=prepared.plan;
+  const selectedProfile=profileFields(expectedProfile,plan,job,historicalLogins,interrupted,replacementRelease);
+  if(replacementRelease)requireReplacementArtifact(job,artifact,baseline);
   demand(name(owner.name)&&plan.sourceCommit===job.sourceCommit&&plan.targetSha256===prepared.plan.targetSha256&&plan.targetSha256===targetHash(target)&&
     artifact.sqlArtifactSha256===job.sqlArtifactSha256&&artifact.contractManifestSha256===job.contractManifestSha256,'current-target');await verify();
   await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
   let checkpoint='current-transaction';
   try{
     demand((await client.query('SHOW transaction_read_only')).rows[0]?.transaction_read_only==='on');
-    checkpoint='current-lineage-schema';const after=(await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC')).rows;
+    checkpoint='current-lineage-schema';
+    if(replacementRelease){
+      await verifyReplacementIdentity(client,target,replacementRelease);
+      const {verifyReplacementJournalTable}=await import('./p2-frontend-replacement-written.mjs');
+      await verifyReplacementJournalTable(client,replacementRelease.migrationRoleOid);
+    }
+    const journalSql='SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC';
+    const after=(await (replacementRelease?client.query(journalSql+' LIMIT $1',[artifact.migrations.length+1]):client.query(journalSql))).rows;
     demand(after.length===artifact.migrations.length&&assertAppliedMigrationLineage(artifact.expected,after)===artifact.migrations.at(-1).folderMillis&&
       isDeepStrictEqual(await readMigrationCatalog(client),baseline.catalog));
-    checkpoint='current-runtime';const runtime=await verifyRecoveryRuntimeGrants(client,target,owner);
+    checkpoint='current-runtime';
+    const verifyRuntime=replacementRelease?(await import('./p2-recovery-current-probe.mjs')).verifyReplacementRuntimeGrants:verifyRecoveryRuntimeGrants;
+    const runtime=await verifyRuntime(client,target,owner);
     demand(prepared.plan.producers.some(row=>row.role.name===runtime.name&&row.role.oid===runtime.oid));
-    if(interrupted)demand(isDeepStrictEqual(owner,plan.nativePlan.owner)&&isDeepStrictEqual(runtime,plan.nativePlan.producer.role));
+    if(interrupted||replacementRelease)demand(isDeepStrictEqual(owner,plan.nativePlan.owner)&&isDeepStrictEqual(runtime,plan.nativePlan.producer.role));
+    if(replacementRelease)demand(prepared.plan.producers.length===1&&isDeepStrictEqual(prepared.plan.producers[0],plan.nativePlan.producer));
     checkpoint='current-owner';const owners=(await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil FROM pg_catalog.pg_roles WHERE rolname=$1',[owner.name])).rows;
     demand(owners.length===1&&owners[0].oid===owner.oid&&owners[0].rolconfig===null&&owners[0].rolconnlimit===-1&&owners[0].rolvaliduntil===null&&
       ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key=>owners[0][key]===false));
-    checkpoint='current-retired';const retired=prepared.plan.historicalLogins.retiredLogins;
-    const logins=(await client.query('SELECT oid::text,rolname,rolcanlogin FROM pg_catalog.pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname',[retired.map(row=>row.name)])).rows;
-    demand(logins.length===retired.length&&logins.every(row=>row.rolcanlogin===false&&retired.some(expected=>expected.oid===row.oid&&expected.name===row.rolname)));
-    await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
-    demand((await client.query('SELECT count(*)::int AS count FROM pg_catalog.pg_stat_activity WHERE usesysid=ANY($1::oid[])',[retired.map(row=>row.oid)])).rows[0].count===0);
+    let loginProof;
+    if(replacementRelease){
+      checkpoint='current-replacement-logins';
+      await verifyReplacementLogins(client,target,replacementRelease,runtime);
+      const {verifyReplacementAdmissionRelations}=await import('./p2-frontend-replacement-written.mjs');
+      await verifyReplacementAdmissionRelations(client,owner.oid);
+      loginProof=replacementProof(replacementRelease);
+    }else{
+      checkpoint='current-retired';const retired=historicalLogins.retiredLogins;
+      const logins=(await client.query('SELECT oid::text,rolname,rolcanlogin FROM pg_catalog.pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname',[retired.map(row=>row.name)])).rows;
+      demand(logins.length===retired.length&&logins.every(row=>row.rolcanlogin===false&&retired.some(expected=>expected.oid===row.oid&&expected.name===row.rolname)));
+      await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
+      demand((await client.query('SELECT count(*)::int AS count FROM pg_catalog.pg_stat_activity WHERE usesysid=ANY($1::oid[])',[retired.map(row=>row.oid)])).rows[0].count===0);
+      loginProof={retiredLogins:retired,oldLoginsDenied:true,oldRoleSessions:0};
+    }
     await client.query(`SET LOCAL ROLE "${owner.name}"`);
     demand((await client.query("SELECT nspowner::text AS oid FROM pg_catalog.pg_namespace WHERE nspname='frontend_admission'")).rows[0]?.oid===owner.oid);
     checkpoint='current-admission-routines';const routines=(await client.query(`SELECT p.proname,p.prosecdef,p.proowner::text AS owner,p.proconfig,p.prosrc,p.prokind,
@@ -187,6 +277,7 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
     const counts=(await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
     demand(controls.length===1&&controls[0].environment==='staging'&&controls[0].target_sha256===plan.targetSha256);
     checkpoint='current-admission-state';const admission={epoch:controls[0].epoch,newWork:controls[0].new_work,recovery:controls[0].recovery,...counts};admissionPolicy(plan,admission,initial,interrupted);
+    if(replacementRelease&&initial)demand(isDeepStrictEqual(admission,{epoch:plan.initialEpoch,newWork:false,recovery:false,active:0,uncertain:0}));
     let interactive;
     if(plan.mode===interactiveMode){
       checkpoint='current-interactive-producers';
@@ -245,7 +336,7 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
       sourceCommit:job.sourceCommit,candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
       ...Object.fromEntries(['migrationImageDigest','sqlArtifactSha256','schemaBaselineSha256','contractManifestSha256','contractPhase','phase2ContractManifestSha256'].map(key=>[key,job[key]])),
       target:{...Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,target[key]])),...selectedProfile},after,journalSha256:hash(after),schemaVerified:true,runtimeRoleVerified:true,
-      owner,runtime,retiredLogins:retired,oldLoginsDenied:true,oldRoleSessions:0,admission,witness,witnessSha256:hash(witness),sqlReplayed:false,trafficAuthorized:false};
+      owner,runtime,...loginProof,admission,witness,witnessSha256:hash(witness),sqlReplayed:false,trafficAuthorized:false};
   }catch(error){if(!error.checkpoint)error.checkpoint=checkpoint;throw error;}finally{await client.query('ROLLBACK');}
 }
 
@@ -259,7 +350,9 @@ export function withP2ProfiledInterruptedFrontendSession(prepared,frontendPlan,d
 
 async function withCertificationSession(prepared,plan,{getUrl,verifyEnvironment},task,expectedProfile,interrupted){
   const job=prepared.migration.job, target=job.target;
-  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins,interrupted);
+  const {historicalLogins,replacementRelease}=prepared.plan;
+  const selectedProfile=profileFields(expectedProfile,plan,job,historicalLogins,interrupted,replacementRelease);
+  if(replacementRelease)requireReplacementArtifact(job,prepared.migration.artifact,prepared.migration.baseline);
   const client=new Client(options(await getUrl(),target,interrupted));let lost=false,locked=false,identity,marker;
   client.on('error',()=>{lost=true;});
   const verify=async()=>{
@@ -267,16 +360,24 @@ async function withCertificationSession(prepared,plan,{getUrl,verifyEnvironment}
     const actual=(await client.query("SELECT pg_catalog.pg_backend_pid() AS pid,current_user AS username,session_user AS session_username,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
     demand(actual.username===target.user&&actual.session_username===target.user&&actual.database===target.database&&actual.major===target.serverMajor&&(!identity||identity.pid===actual.pid));identity=actual;
     if(interrupted)await requireReadOnlySession(client);
+    if(replacementRelease)await verifyReplacementIdentity(client,target,replacementRelease);
     if(locked)demand((await client.query(RECOVERY_HELD_LOCK,[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true);
     if(marker)demand((await client.query(RECOVERY_HELD_LOCK,[marker])).rows[0]?.held===true);
   };
   try{
     await client.connect();await verify();locked=(await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',[FRONTEND_MIGRATION_LOCK])).rows[0]?.locked===true;demand(locked);
-    marker=randomBytes(32).toString('hex');await client.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
-    const backendStart=(await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0]?.backend_start;demand(typeof backendStart==='string');
+    marker=randomBytes(32).toString('hex');
+    if(replacementRelease){
+      const {rows:[nonce]}=await client.query(`SELECT CASE WHEN pg_catalog.hashtext($1)<>pg_catalog.hashtext($2)
+        THEN pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) ELSE false END AS locked`,[marker,FRONTEND_MIGRATION_LOCK]);
+      demand(nonce?.locked===true,'current-replacement-nonce-lock');
+    }else await client.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
+    const backendStart=(await client.query(`SELECT ${replacementRelease?replacementBackendStart:'backend_start::text'} AS backend_start
+      FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()`)).rows[0]?.backend_start;
+    demand(replacementRelease?replacementStart(backendStart):typeof backendStart==='string');
     const receipt=await readCurrent(client,prepared,plan,verify,true,expectedProfile,interrupted);
     const probe={version:plan.version,...selectedProfile,marker,backendPid:identity.pid,backendStart,job:prepared.migration.job,baseline:prepared.migration.baseline,
-      owner:prepared.plan.owner,producers:prepared.plan.producers,historicalLogins:prepared.plan.historicalLogins,plan,receipt};
+      owner:prepared.plan.owner,producers:prepared.plan.producers,...(replacementRelease?{replacementRelease}:{historicalLogins}),plan,receipt};
     let result;
     if(interrupted){
       const {journalSha256,witnessSha256}=receipt;
@@ -308,8 +409,63 @@ export function observeP2ProfiledInterruptedFrontendPhysical(input,dependencies)
   return observeCertificationPhysical(input,dependencies,currentProfile,true);
 }
 
-async function observeCertificationPhysical(input,{getUrl},expectedProfile,interrupted){
-  const selectedProfile=profileFields(expectedProfile,input?.plan,input?.job,input?.historicalLogins,interrupted);
+export function observeP2ProfiledReplacementFrontendPhysical(input,dependencies){
+  return observeCertificationPhysical(input,dependencies,currentProfile,false,true);
+}
+
+function requireReplacementReceipt(input,artifact){
+  const {job,plan,receipt,owner,producers,replacementRelease}=input;
+  requireQualificationTargetProfile(currentProfile,receipt,receipt?.target);
+  requireReplacementArtifact(job,artifact,input.baseline);
+  demand(receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT'&&receipt.service==='frontend'&&
+    receipt.environment==='staging'&&receipt.releaseId===job.releaseId&&receipt.sourceCommit===job.sourceCommit&&
+    ['certificationActionId','candidateSha256','targetSha256','planSha256'].every(key=>receipt[key]===plan[key])&&
+    ['migrationImageDigest','sqlArtifactSha256','schemaBaselineSha256','contractManifestSha256','contractPhase','phase2ContractManifestSha256']
+      .every(key=>receipt[key]===job[key])&&
+    isDeepStrictEqual(receipt.replacementRelease,replacementRelease)&&receipt.effectiveLoginBoundaryVerified===true&&
+    receipt.predecessorRuntimeRoleAbsent===true&&['oldLoginsDenied','oldRoleSessions','retiredLogins'].every(key=>!Object.hasOwn(receipt,key))&&
+    targetHash(receipt.target)===plan.targetSha256&&receipt.sqlReplayed===false&&receipt.trafficAuthorized===false&&
+    receipt.schemaVerified===true&&receipt.runtimeRoleVerified===true&&
+    isDeepStrictEqual(receipt.admission,{epoch:plan.initialEpoch,newWork:false,recovery:false,active:0,uncertain:0})&&
+    isDeepStrictEqual(receipt.owner,owner)&&isDeepStrictEqual(owner,plan.nativePlan.owner)&&
+    isDeepStrictEqual(receipt.runtime,plan.nativePlan.producer.role)&&isDeepStrictEqual(producers,[plan.nativePlan.producer])&&
+    isDeepStrictEqual(receipt.after,artifact.migrations.map(({hash,folderMillis})=>({hash,created_at:String(folderMillis)})))&&
+    receipt.journalSha256===hash(receipt.after)&&receipt.witnessSha256===hash(receipt.witness)&&
+    digest(input.marker)&&Number.isSafeInteger(input.backendPid)&&input.backendPid>0&&input.backendPid<=2147483647&&
+    replacementStart(input.backendStart),'current-replacement-receipt');
+}
+
+async function verifyReplacementParent(client,input,closing,observationLocked){
+  await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
+  const replacement=input.replacementRelease;
+  const {rows:parents}=await client.query(`SELECT ${replacementBackendStart} AS backend_start,application_name,
+    datid::text AS database_oid,usesysid::text AS migration_role_oid,backend_type
+    FROM pg_catalog.pg_stat_activity WHERE pid=$1`,[input.backendPid]);
+  if(closing)demand(parents.length===0,'current-replacement-backend-still-present');
+  else demand(isDeepStrictEqual(parents,[{backend_start:input.backendStart,application_name:'lash-her-p2-bounded-certification',
+    database_oid:replacement.databaseOid,migration_role_oid:replacement.migrationRoleOid,backend_type:'client backend'}]),
+    'current-replacement-backend-identity');
+  const {rows:[key]}=await client.query('SELECT pg_catalog.hashtext($1)<>pg_catalog.hashtext($2) AS keys_distinct',
+    [FRONTEND_MIGRATION_LOCK,input.marker]);
+  demand(key?.keys_distinct===true,'current-replacement-lock-identity');
+  const {rows:locks}=await client.query(`SELECT required.slot,l.pid,l.mode,l.granted
+    FROM pg_catalog.pg_locks l JOIN (VALUES
+      (1,pg_catalog.hashtext($1)::bigint),(2,pg_catalog.hashtext($2)::bigint)) required(slot,key)
+    ON l.classid=((required.key>>32)&4294967295)::oid AND l.objid=(required.key&4294967295)::oid
+    WHERE l.locktype='advisory' AND l.database=$3::oid AND l.objsubid=1 ORDER BY required.slot`,
+  [FRONTEND_MIGRATION_LOCK,input.marker,replacement.databaseOid]);
+  const holder=observationLocked?client.processID:input.backendPid;
+  const slots=closing?(observationLocked?[1]:[]):[1,2];
+  demand(isDeepStrictEqual(locks,slots.map(slot=>({slot,pid:holder,mode:'ExclusiveLock',granted:true}))),
+    'current-replacement-lock-identity');
+}
+
+async function observeCertificationPhysical(input,{getUrl},expectedProfile,interrupted,replacing=false){
+  const replacementRelease=replacing?input?.replacementRelease:undefined;
+  demand(Object.hasOwn(input??{},'replacementRelease')===replacing&&
+    (!replacing||exact(input,['operation','version','qualificationTargetProfile','marker','backendPid','backendStart','job','baseline',
+      'owner','producers','replacementRelease','plan','receipt'])),'current-replacement-probe');
+  const selectedProfile=profileFields(expectedProfile,input?.plan,input?.job,input?.historicalLogins,interrupted,replacementRelease);
   if(expectedProfile===undefined)demand(!Object.hasOwn(input,'qualificationTargetProfile'));
   else requireQualificationTargetProfile(currentProfile,input);
   const closing=input.operation==='verify-closed';
@@ -327,13 +483,20 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
       digest(input.marker)&&input.backendPid>0&&input.backendStart.length>0&&input.backendStart.length<=80,
       'current-interrupted-receipt');
   }
-  const client=new Client(options(await getUrl(),input.job.target,interrupted));let lost=false;client.on('error',()=>{lost=true;});
+  const replacementArtifact=replacing?frontendMigrationArtifact():undefined;
+  if(replacing)requireReplacementReceipt(input,replacementArtifact);
+  const client=new Client(options(await getUrl(),input.job.target,interrupted||replacing));let lost=false,observationLocked=false;client.on('error',()=>{lost=true;});
   try{
     await client.connect();demand(client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
     const verify=async()=>{
       demand(!lost);const actual=(await client.query("SELECT current_user AS role,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
       demand(actual.role===input.job.target.user&&actual.database===input.job.target.database&&actual.major===input.job.target.serverMajor);
       if(interrupted)await requireReadOnlySession(client);
+      if(replacing){
+        await verifyReplacementIdentity(client,input.job.target,replacementRelease);
+        demand((await client.query('SHOW default_transaction_read_only')).rows[0]?.default_transaction_read_only==='on',
+          'current-replacement-read-only');
+      }
     };await verify();
     const owner=(await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil FROM pg_catalog.pg_roles WHERE rolname=$1',[input.owner.name])).rows[0];
     demand(owner?.oid===input.owner.oid&&owner.rolconfig===null&&owner.rolconnlimit===-1&&owner.rolvaliduntil===null&&
@@ -348,6 +511,7 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
       return{version:1,status:'P2_FRONTEND_ADMISSION_CLOSED',frontendAdmissionClosed:true};
     }
     const verifyParent=async()=>{
+      if(replacing)return verifyReplacementParent(client,input,closing,observationLocked);
       if(closing)await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
       const parent=(await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=$1',[input.backendPid])).rows[0];
       demand(closing?parent?.backend_start!==input.backendStart:parent?.backend_start===input.backendStart);
@@ -358,11 +522,22 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
       }
     };
     await verifyParent();
+    if(replacing&&closing){
+      const {rows:[lock]}=await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS acquired',[FRONTEND_MIGRATION_LOCK]);
+      demand(lock?.acquired===true,'current-replacement-observation-lock');
+      observationLocked=true;
+    }
     const verifyCurrent=expectedProfile===undefined?verify:async()=>{await verify();await verifyParent();};
-    const artifact=await import('./frontend-migration.mjs');
-    const prepared={migration:{job:input.job,artifact:artifact.frontendMigrationArtifact(),baseline:input.baseline},plan:{owner:input.owner,producers:input.producers,historicalLogins:input.historicalLogins,targetSha256:input.plan.targetSha256}};
+    const prepared={migration:{job:input.job,artifact:replacementArtifact??frontendMigrationArtifact(),baseline:input.baseline},plan:{owner:input.owner,producers:input.producers,
+      ...(replacing?{replacementRelease}:{historicalLogins:input.historicalLogins}),targetSha256:input.plan.targetSha256}};
     const current=await readCurrent(client,prepared,input.plan,verifyCurrent,false,expectedProfile,interrupted);
     if(expectedProfile!==undefined)await verifyCurrent();
+    if(observationLocked){
+      const {rows:[lock]}=await client.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS released',[FRONTEND_MIGRATION_LOCK]);
+      demand(lock?.released===true,'current-replacement-observation-lock');
+      observationLocked=false;
+      await verifyCurrent();
+    }
     if(interrupted)demand(current.journalSha256===input.receipt.journalSha256&&current.witnessSha256===input.receipt.witnessSha256,
       'current-interrupted-witness-changed');
     if(closing)demand(current.admission.newWork===false&&current.admission.recovery===false&&current.admission.active===0&&current.admission.uncertain===0&&
@@ -370,6 +545,7 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
         current.witness.operations.every(row=>row.reconciliation_sha256===null)), 'current-admission-closure');
     return{version:input.version,...selectedProfile,status:closing?'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED':'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
       ...(expectedProfile===undefined?{}:{backendStart:input.backendStart,environment:current.environment,releaseId:current.releaseId,targetSha256:current.targetSha256}),
+      ...(replacing?replacementProof(replacementRelease):{}),
       witnessSha256:current.witnessSha256,...(input.operation==='witness'?{witness:current.witness}:{}),
       ...(closing?{backendAbsent:true,migrationLockReleased:true,nonceLockReleased:true}:{})};
   }finally{try{await client.end();demand(!lost);}catch{throw new Error('P2_CERTIFICATION_OBSERVER_CLEANUP_UNCERTAIN');}}
@@ -377,9 +553,22 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
 
 // The Linux guard invokes this fixed command only after independently accepting
 // the physical probe, retaining its canonical flock, and reaping its mutators.
-export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
+export function containP2ProfiledCertificationAdmission(probe,dependencies){
+  return containProfiledCertificationAdmission(probe,dependencies,false);
+}
+
+export function containP2ProfiledReplacementCertificationAdmission(probe,dependencies){
+  return containProfiledCertificationAdmission(probe,dependencies,true);
+}
+
+async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
   const {job,plan,owner,historicalLogins,receipt}=probe;
-  const selectedProfile=profileFields(currentProfile,plan,job,historicalLogins);
+  demand(Object.hasOwn(probe,'replacementRelease')===replacing&&
+    (!replacing||exact(probe,['version','qualificationTargetProfile','marker','backendPid','backendStart','job','baseline',
+      'owner','producers','replacementRelease','plan','receipt'])),'current-replacement-probe');
+  const replacementRelease=replacing?probe.replacementRelease:undefined;
+  const selectedProfile=profileFields(currentProfile,plan,job,historicalLogins,false,replacementRelease);
+  if(replacing)requireReplacementReceipt(probe,frontendMigrationArtifact());
   requireQualificationTargetProfile(currentProfile,probe,receipt,receipt.target);
   const target=job.target;
   demand(probe.version===2&&receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT'&&
@@ -399,12 +588,30 @@ export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
     demand(!lost&&client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
     const identity=(await client.query("SELECT current_user AS role,session_user AS session_role,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
     demand(identity?.role===target.user&&identity.session_role===target.user&&identity.database===target.database&&identity.major===target.serverMajor);
+    if(replacing)await verifyReplacementIdentity(client,target,replacementRelease);
     if(lock)demand((await client.query(RECOVERY_HELD_LOCK,[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true);
   };
   try{
     await client.connect();await verify();
     lock=(await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS held',[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true;
     demand(lock,'guard-physical-lock');await verify();
+    if(replacing){
+      await verifyReplacementParent(client,probe,true,true);
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');started=true;
+      const {verifyReplacementJournalTable,verifyReplacementAdmissionRelations}=await import('./p2-frontend-replacement-written.mjs');
+      await verifyReplacementJournalTable(client,replacementRelease.migrationRoleOid);
+      await verifyReplacementAdmissionRelations(client,owner.oid);
+      const rows=(await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC LIMIT $1',
+        [receipt.after.length+1])).rows;
+      demand(isDeepStrictEqual(rows,receipt.after)&&isDeepStrictEqual(await readMigrationCatalog(client),probe.baseline.catalog),
+        'guard-replacement-journal-schema');
+      const {verifyReplacementRuntimeGrants}=await import('./p2-recovery-current-probe.mjs');
+      const runtime=await verifyReplacementRuntimeGrants(client,target,owner);
+      demand(isDeepStrictEqual(runtime,receipt.runtime),'guard-replacement-runtime');
+      await verifyReplacementLogins(client,target,replacementRelease,runtime);
+      await client.query('ROLLBACK');started=false;await verify();
+      await verifyReplacementParent(client,probe,true,true);
+    }
     await client.query('BEGIN');started=true;
     const role=(await client.query('SELECT oid::text,rolcanlogin,rolsuper FROM pg_catalog.pg_roles WHERE rolname=$1',[owner.name])).rows[0];
     demand(role?.oid===owner.oid&&role.rolcanlogin===false&&role.rolsuper===false);
@@ -427,7 +634,8 @@ export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
     return {version:2,...selectedProfile,status:'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED',environment:'staging',
       releaseId:job.releaseId,sourceCommit:job.sourceCommit,certificationActionId:plan.certificationActionId,
       candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
-      epoch,frontendAdmissionClosed:true,admissionChanged:changed,sqlReplayed:false,releaseAccepted:false};
+      epoch,frontendAdmissionClosed:true,admissionChanged:changed,sqlReplayed:false,releaseAccepted:false,
+      ...(replacing?replacementProof(replacementRelease):{})};
   }finally{
     if(started)try{await client.query('ROLLBACK');}catch{lost=true;}
     try{await client.end();}catch{lost=true;}
@@ -437,13 +645,18 @@ export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
-    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence','--profiled-known-ack-interrupted'].includes(flags[0])));
+    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence',
+      '--profiled-known-ack-interrupted','--profiled-replacement','--profiled-replacement-guard-fence'].includes(flags[0])));
     const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);
     const expectedProfile=flags.length?currentProfile:undefined;
     const input=expectedProfile?decodeQualificationTargetJson(raw,'carrier'):JSON.parse(raw);
     const dependencies={getUrl:()=>process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL};
     const output=flags[0]==='--profiled-current-guard-fence'
       ?await containP2ProfiledCertificationAdmission(input,dependencies)
+      :flags[0]==='--profiled-replacement-guard-fence'
+        ?await containP2ProfiledReplacementCertificationAdmission(input,dependencies)
+      :flags[0]==='--profiled-replacement'
+        ?await observeP2ProfiledReplacementFrontendPhysical(input,dependencies)
       :flags[0]==='--profiled-known-ack-interrupted'
         ?await observeP2ProfiledInterruptedFrontendPhysical(input,dependencies)
         :await observeP2CertificationPhysical(input,dependencies,expectedProfile);

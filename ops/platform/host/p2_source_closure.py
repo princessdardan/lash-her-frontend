@@ -80,6 +80,15 @@ def verify_profiled_current_source_closure(initial, root):
     if initial['mode'] == PROFILED_INTERRUPTED_MODE:
         required |= PROFILED_INTERRUPTED_REQUIRED
     if initial['mode'] == PROFILED_CERTIFICATION_MODE:
+        if 'replacementRelease' in initial.get('certificationPlan', {}):
+            required |= {'ops/platform/p2-certification-replacement-release.mjs',
+                         'ops/platform/p2-frontend-replacement-release-review.mjs',
+                         'ops/platform/p2-frontend-replacement-closed.mjs',
+                         'ops/platform/p2-frontend-replacement-written.mjs',
+                         'ops/platform/host/p2_frontend_replacement_parent.py',
+                         'ops/platform/host/p2_replacement_runtime_review.py',
+                         'ops/platform/host/p2_replacement_runtime_containment.py',
+                         'ops/platform/host/p2_replacement_terminal.py'}
         scoped = {
             'export-cleanup': {'ops/platform/host/p2_scoped_export_cleanup.py', 'ops/platform/host/p2_interactive_ingress.py'},
             'mux-callback-recovery': {'ops/platform/host/p2_scoped_mux.py', 'ops/gateway/admission.mjs',

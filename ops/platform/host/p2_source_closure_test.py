@@ -88,6 +88,24 @@ class SourceClosureTests(unittest.TestCase):
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
 
+    def test_replacement_certification_requires_original_release_verifiers(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        for name in PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED:
+            if name in manifest:
+                continue
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned profiled certification source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        current = {**self.make(manifest), 'mode': PROFILED_CERTIFICATION_MODE,
+                   'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+                   'certificationPlan': {'mode': 'contain-native'}}
+        self.assertEqual(verify_profiled_current_source_closure(current, self.root), current['sourceClosureSha256'])
+        replacement = {**current, 'certificationPlan': {**current['certificationPlan'], 'replacementRelease': {}}}
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure(replacement, self.root)
+
     def test_profiled_mux_gateway_closure_requires_shared_request_parsers(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)

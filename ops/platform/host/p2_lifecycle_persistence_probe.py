@@ -16,7 +16,7 @@ import release as runtime
 import staging_state
 import p2_identity_negative_probe as identity_probe
 import current_databases
-from p2_lifecycle_persistence_scope import CurrentLifecyclePersistenceScope
+from p2_lifecycle_persistence_scope import CurrentLifecyclePersistenceScope, PERSISTENCE_PROGRAM_MAXIMUM
 
 ROOT = Path("/var/lib/lash-her/releases/staging")
 OPERATOR_ROOT = Path("/opt/lash-her/operators")
@@ -81,9 +81,11 @@ def private_program(source, expected_profile=None):
     probe = probe.replace('"./qualification-target-profile.mjs"', '"data:text/javascript;base64,' + profile_module + '"')
     module = base64.b64encode(probe.encode()).decode()
     argument = "" if expected is None else json.dumps(expected, sort_keys=True, separators=(",", ":"))
-    return (f'import("data:text/javascript;base64,{module}")'
+    program = (f'import("data:text/javascript;base64,{module}")'
         f'.then(module=>module.runPrivatePersistenceProbeFromStdin({argument}))'
         '.catch(()=>{process.stdout.write(JSON.stringify({version:1,status:"P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED",check:"private-observation-failed",readOnly:true})+"\\n");process.exitCode=1})').encode()
+    demand(len(program) <= PERSISTENCE_PROGRAM_MAXIMUM, "P2_PERSISTENCE_PRIVATE_PROGRAM_ARGUMENT_BOUND")
+    return program
 
 
 def _reviewed(value, expected_profile=None):
@@ -353,6 +355,9 @@ def _release_evidence(reviewed, release_evidence, expected_profile=None):
         demand(0 < len(raw) <= 65_536 and _hash(raw) == expected_sha, "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
         if expected is None:
             value = json.loads(raw)
+            if name == "originalReleaseReceipt" and isinstance(value, dict):
+                from p2_replacement_terminal import TERMINAL_STATUS
+                demand(value.get("status") != TERMINAL_STATUS, "P2_PERSISTENCE_ORIGINAL_RELEASE_RECEIPT_REQUIRED")
         else:
             from qualification_target_profile import decode_qualification_target_json
             value = decode_qualification_target_json(raw, "carrier")
@@ -381,6 +386,83 @@ def _release_evidence(reviewed, release_evidence, expected_profile=None):
 
 class HeldCertificationPersistenceScope(CurrentLifecyclePersistenceScope):
     """Fixed reader under the original certification scope; owns no lock."""
+    @staticmethod
+    def release_evidence(parent, reviewed, release_evidence, expected_profile, scoped_stage=None, worker_stage=None):
+        certification = getattr(parent, "certification_plan", {})
+        if "replacementRelease" not in certification:
+            return _release_evidence(reviewed, release_evidence, expected_profile)
+        expected = migrate.profile_context(expected_profile)
+        if certification.get("mode") == "direct-worker":
+            from p2_lifecycle_worker_evidence import P2LifecycleWorkerEvidenceStage
+            demand(scoped_stage is None and type(worker_stage) is P2LifecycleWorkerEvidenceStage
+                and worker_stage.scope is parent and worker_stage.expected_profile == expected
+                and worker_stage.plan == certification.get("workerPlan")
+                and worker_stage.invocation_attempted is True and worker_stage.invocation.get("status") == "P2_DIRECT_WORKER_HTTP_OBSERVED"
+                and worker_stage.invocation.get("httpStatus") == 200 and worker_stage.reviewed == reviewed,
+                "P2_PERSISTENCE_REPLACEMENT_HELD_SCOPE_REQUIRED")
+        else:
+            demand(worker_stage is None and type(scoped_stage) is P2ScopedLifecyclePersistenceStage
+                and scoped_stage._expected == expected and certification.get("mode") == "lifecycle-persistence",
+                "P2_PERSISTENCE_REPLACEMENT_HELD_SCOPE_REQUIRED")
+            scoped_stage._verify_binding(parent)
+        return HeldCertificationPersistenceScope._replacement_release_evidence(parent, reviewed, release_evidence, expected)
+
+    @staticmethod
+    def _replacement_release_evidence(parent, reviewed, release_evidence, expected):
+        from p2_certification_parent import P2CertificationScope
+        from p2_replacement_terminal import FALSE_FLAGS, TERMINAL_STATUS
+        from qualification_target_profile import decode_qualification_target_json
+        certification = getattr(parent, "certification_plan", {})
+        demand(expected is not None and type(parent) is P2CertificationScope and parent._expected_profile == expected
+            and "replacementRelease" in certification
+            and certification.get("mode") in ("lifecycle-persistence", "browser-pending", "direct-worker"),
+            "P2_PERSISTENCE_REPLACEMENT_HELD_SCOPE_REQUIRED")
+        demand(_closed(release_evidence, ("originalReleaseReceipt", "frontendDeploymentRecord")),
+            "P2_PERSISTENCE_RELEASE_EVIDENCE_REQUIRED")
+        plan = reviewed["plan"]
+        evidence = {}
+        for name, pin in (("originalReleaseReceipt", plan["originalReleaseSha256"]),
+                          ("frontendDeploymentRecord", plan["frontendDeploymentSha256"])):
+            encoded = release_evidence[name]
+            demand(isinstance(encoded, str) and 0 < len(encoded) <= 87_384, "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
+            raw = base64.b64decode(encoded, validate=True)
+            demand(0 < len(raw) <= 65_536 and base64.b64encode(raw).decode("ascii") == encoded and _hash(raw) == pin,
+                "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
+            evidence[name] = raw
+        promotion_name = "frontend-promotion-outcome.json"
+        demand(plan["originalReleaseSha256"] == certification.get("originalReleaseReceiptSha256")
+            and plan["frontendDeploymentSha256"] == certification.get("readyReceiptSha256", {}).get(promotion_name)
+            and plan["originalReleaseSha256"] != plan["frontendDeploymentSha256"],
+            "P2_PERSISTENCE_SCOPED_RELEASE_PINS_CHANGED")
+        original = parent.require_replacement_original(evidence["originalReleaseReceipt"])
+        promoted = decode_qualification_target_json(evidence["frontendDeploymentRecord"], "carrier")
+        migrate.require_profile(expected, original, promoted)
+        migrate.require_contract_identity(certification, original)
+        replacement = certification["replacementRelease"]
+        native = certification["nativePlan"]
+        demand(all(isinstance(value, dict) and type(value.get("version")) is int and value["version"] == 2
+            and value.get("environment") == "staging" and value.get("releaseId") == plan["releaseId"]
+            and value.get("sourceCommit") == plan["sources"]["frontend"] for value in (original, promoted))
+            and original.get("status") == TERMINAL_STATUS and original.get("migrationMode") == "apply-forward"
+            and original.get("frontendSqlApplied") is True and original.get("frontendSessionClosed") is True
+            and all(original.get(key) is False for key in FALSE_FLAGS)
+            and original.get("candidateSha256") == certification.get("candidateSha256") == plan["candidateSha256"]
+            and original.get("targetSha256") == certification.get("targetSha256")
+            and original.get("reviewedPlanSha256") == certification.get("originalReleasePlanSha256")
+            and all(original.get(key) == replacement[key] for key in ("reviewedPlanSha256", "runtimeReviewSha256",
+                "postflightSha256", "frontendSessionClosedSha256", "frontendDatabaseReceiptSha256"))
+            and _hash(_canonical(original.get("configurationSha256"))) == plan["configurationSha256"]
+            and original.get("owner") == native["owner"] and original.get("runtime") == native["producer"]["role"]
+            and original.get("producerSha256") == native["producer"]["producerSha256"]
+            and original.get("frontendWorkloadReceiptSha256") == certification["readyReceiptSha256"].get("frontend-workload-outcome.json")
+            and original.get("frontendPromotionReceiptSha256") == plan["frontendDeploymentSha256"]
+            and original.get("deploymentId") == native["deploymentId"] == promoted.get("deploymentId")
+            and promoted.get("projectId") == native["projectId"] and promoted.get("status") == "FRONTEND_DOMAINS_PROMOTED"
+            and promoted.get("phase") == "completed" and promoted.get("frontendDomainsPromoted") is True
+            and promoted.get("trafficAuthorized") is False and promoted.get("gatewayTrafficAuthorized") is False,
+            "P2_PERSISTENCE_REPLACEMENT_ORIGINAL_RELEASE_REQUIRED")
+        return evidence
+
     def __init__(self, parent, selected, jobs, reviewed, configuration, source, database_proof, expected_profile, verify_inputs):
         from p2_certification_parent import P2CertificationScope
         expected = migrate.profile_context(expected_profile)
@@ -515,7 +597,7 @@ class P2ScopedLifecyclePersistenceStage:
             "P2_PERSISTENCE_SCOPED_RELEASE_PINS_CHANGED")
         evidence = {"originalReleaseReceipt": initial["originalReleaseReceipt"],
             "frontendDeploymentRecord": initial["readyReceipts"][promotion_name]}
-        _release_evidence(reviewed, evidence, expected)
+        HeldCertificationPersistenceScope.release_evidence(self._scope, reviewed, evidence, expected, self)
         return reviewed, evidence
 
     def observe(self):
@@ -601,7 +683,7 @@ def execute(bundle, configuration, reviewed, source, private, release_evidence):
 
 
 def _execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
-                      certification_scope, database_proof, *, expected_profile, _scoped_stage=None):
+                      certification_scope, database_proof, *, expected_profile, _scoped_stage=None, _worker_stage=None):
     """Read through the existing certification scope; never acquires or closes authority."""
     expected = migrate.profile_context(expected_profile)
     demand(expected is not None, "P2_PERSISTENCE_PROFILE_REQUIRED")
@@ -613,7 +695,17 @@ def _execute_profiled(bundle, configuration, reviewed, source, private, release_
     credential = private["frontendRuntimeDatabaseUrl"]
     private["frontendRuntimeDatabaseUrl"] = ""
     _plan_receipt, selected, jobs, runtime_plan = _make_plan_details(bundle, configuration, reviewed, source, expected)
-    _release_evidence(reviewed, release_evidence, expected)
+    HeldCertificationPersistenceScope.release_evidence(certification_scope, reviewed, release_evidence, expected, _scoped_stage, _worker_stage)
+    if _worker_stage is not None:
+        from p2_lifecycle_worker_evidence import P2LifecycleWorkerEvidenceStage
+        demand(type(_worker_stage) is P2LifecycleWorkerEvidenceStage and _worker_stage.scope is certification_scope
+            and _worker_stage.database_proof is database_proof and _worker_stage.selected == selected and _worker_stage.jobs == jobs
+            and _worker_stage.bundle == Path(bundle) and _worker_stage.configuration == Path(configuration) and _worker_stage.source == Path(source)
+            and operation == "lifecycle-account", "P2_PERSISTENCE_REPLACEMENT_WORKER_REQUIRED")
+        command = _worker_stage.prior["pendingRecord"]["pending"]["command"]
+        demand(private["witness"] == {"version": 1, "environment": "staging", "stage": "lifecycle-account", "userId": command["userId"],
+            "selectedCommand": {"commandId": command["commandId"], "accountVersion": command["accountVersion"]}},
+            "P2_PERSISTENCE_REPLACEMENT_WORKER_REQUIRED")
     certification_scope.require_release(selected, jobs)
     certification_scope.require_frontend(selected, jobs["frontend"])
     certification_scope.require_configuration(Path(configuration))
@@ -684,10 +776,10 @@ def _execute_profiled(bundle, configuration, reviewed, source, private, release_
 
 
 def execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
-                     certification_scope, database_proof, *, expected_profile, _scoped_stage=None):
+                     certification_scope, database_proof, *, expected_profile, _scoped_stage=None, _worker_stage=None):
     try:
         return _execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
-            certification_scope, database_proof, expected_profile=expected_profile, _scoped_stage=_scoped_stage)
+            certification_scope, database_proof, expected_profile=expected_profile, _scoped_stage=_scoped_stage, _worker_stage=_worker_stage)
     except PersistenceFailure:
         raise
     except BaseException:

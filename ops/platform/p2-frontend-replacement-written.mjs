@@ -65,7 +65,9 @@ function prepare(packet) {
     observation, journal, physical, database, started };
 }
 
-async function verifyLoginBoundary(client, { probe, runtime, administrativeLogins }) {
+export async function verifyReplacementLoginBoundary(client, {
+  databaseOid, migrationRoleOid, migrationRole, predecessorRuntimeRole, runtime, administrativeLogins,
+}) {
   const access = (await client.query(`SELECT
     pg_catalog.has_database_privilege('public',$1::oid,'CONNECT,TEMP,CREATE') AS public_database_access,
     pg_catalog.has_schema_privilege('public','public','CREATE') AS public_schema_create,
@@ -73,40 +75,49 @@ async function verifyLoginBoundary(client, { probe, runtime, administrativeLogin
     EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=$2) AS predecessor_role_present,
     pg_catalog.has_schema_privilege($3::oid,'public','USAGE') AS runtime_public_usage,
     pg_catalog.has_database_privilege($3::oid,$1::oid,'TEMP') AS runtime_temporary
-    `, [probe.databaseOid, probe.predecessorTarget.runtimeRole, runtime.oid])).rows;
+    `, [databaseOid, predecessorRuntimeRole, runtime.oid])).rows;
   demand(isDeepStrictEqual(access, [{ public_database_access: false, public_schema_create: false,
     public_admission_access: false, predecessor_role_present: false, runtime_public_usage: true, runtime_temporary: false }]));
   const logins = (await client.query(`SELECT rolname AS name,oid::text AS oid FROM pg_catalog.pg_roles
-    WHERE rolcanlogin AND pg_catalog.has_database_privilege(oid,$1::oid,'CONNECT') LIMIT 35`, [probe.databaseOid])).rows;
-  const expected = [...administrativeLogins, runtime, { name: probe.job.target.user, oid: probe.migrationRoleOid }];
+    WHERE rolcanlogin AND pg_catalog.has_database_privilege(oid,$1::oid,'CONNECT') LIMIT 35`, [databaseOid])).rows;
+  const expected = [...administrativeLogins, runtime, { name: migrationRole, oid: migrationRoleOid }];
   demand(isDeepStrictEqual(logins.sort(compareLogins), expected.sort(compareLogins)));
 }
 
-async function verifyWrittenState(client, selected) {
-  const { probe, owner, runtime, producerSha256, journal } = selected;
+export async function verifyReplacementJournalTable(client, migrationRoleOid) {
   const relation = (await client.query(`SELECT c.relkind, c.relpersistence, c.relowner::text AS owner, c.relrowsecurity,
     EXISTS(SELECT 1 FROM pg_catalog.pg_inherits i WHERE c.oid IN (i.inhrelid,i.inhparent)) AS inherits
     FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='drizzle' AND c.relname='__drizzle_migrations'`)).rows;
-  demand(isDeepStrictEqual(relation, [{ relkind: "r", relpersistence: "p", owner: probe.migrationRoleOid,
+  demand(isDeepStrictEqual(relation, [{ relkind: "r", relpersistence: "p", owner: migrationRoleOid,
     relrowsecurity: false, inherits: false }]));
+}
+
+export async function verifyReplacementAdmissionRelations(client, ownerOid) {
+  const tables = (await client.query(`SELECT c.relname FROM pg_catalog.pg_class c
+    WHERE c.relnamespace='frontend_admission'::regnamespace AND c.relkind='r' AND c.relpersistence='p'
+      AND c.relowner=$1::oid AND NOT c.relrowsecurity AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_inherits i WHERE c.oid IN (i.inhrelid,i.inhparent))
+    ORDER BY c.relname`, [ownerOid])).rows;
+  demand(isDeepStrictEqual(tables.map(row => row.relname), ["control", "operations", "producers"]));
+}
+
+async function verifyWrittenState(client, selected) {
+  const { probe, owner, runtime, producerSha256, administrativeLogins, journal } = selected;
+  await verifyReplacementJournalTable(client, probe.migrationRoleOid);
   const actual = (await client.query(`SELECT hash,created_at::text FROM drizzle.__drizzle_migrations
     ORDER BY created_at::bigint ASC NULLS FIRST,id ASC LIMIT $1`, [journal.length + 1])).rows;
   demand(isDeepStrictEqual(actual, journal) && isDeepStrictEqual(await readMigrationCatalog(client), probe.baseline.catalog));
   demand(isDeepStrictEqual(await verifyReplacementRuntimeGrants(client, probe.job.target, owner), runtime));
-  await verifyLoginBoundary(client, selected);
+  await verifyReplacementLoginBoundary(client, { databaseOid: probe.databaseOid, migrationRoleOid: probe.migrationRoleOid,
+    migrationRole: probe.job.target.user, predecessorRuntimeRole: probe.predecessorTarget.runtimeRole, runtime, administrativeLogins });
   const ownership = (await client.query(`SELECT r.oid::text AS owner FROM pg_catalog.pg_roles r
     JOIN pg_catalog.pg_namespace n ON n.nspowner=r.oid
     WHERE n.nspname='frontend_admission' AND r.rolname=$1 AND NOT (
       r.rolcanlogin OR r.rolsuper OR r.rolinherit OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
       AND r.rolconfig IS NULL AND r.rolvaliduntil IS NULL AND r.rolconnlimit=-1`, [owner.name])).rows;
   demand(isDeepStrictEqual(ownership, [{ owner: owner.oid }]));
-  const tables = (await client.query(`SELECT c.relname FROM pg_catalog.pg_class c
-    WHERE c.relnamespace='frontend_admission'::regnamespace AND c.relkind='r' AND c.relpersistence='p'
-      AND c.relowner=$1::oid AND NOT c.relrowsecurity AND NOT EXISTS (
-        SELECT 1 FROM pg_catalog.pg_inherits i WHERE c.oid IN (i.inhrelid,i.inhparent))
-    ORDER BY c.relname`, [owner.oid])).rows;
-  demand(isDeepStrictEqual(tables.map(row => row.relname), ["control", "operations", "producers"]));
+  await verifyReplacementAdmissionRelations(client, owner.oid);
   await client.query(`SET LOCAL ROLE "${owner.name}"`);
   const control = (await client.query("SELECT singleton,environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control LIMIT 2")).rows;
   demand(isDeepStrictEqual(control, [{ singleton: true, environment: "staging", target_sha256: probe.targetSha256,

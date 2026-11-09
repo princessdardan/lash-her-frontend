@@ -166,8 +166,16 @@ def check_certification_apis(selected, jobs, output, credentials, checker, check
     for info in jobs.values():
         migrate.require_contract_identity(selected, info["job"])
         migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
-    demand(jobs["frontend"]["job"]["target"].get("approvedPendingTags") == [],
-           "P2_CERTIFICATION_FRONTEND_CURRENT_ONLY_REQUIRED")
+    frontend_target = jobs["frontend"]["job"]["target"]
+    original_tags = frontend_target.get("approvedPendingTags")
+    if "replacementRelease" in scope.certification_plan:
+        # The exact held scope verified that the original apply-forward job
+        # and current database agree. The API checker still runs read-only.
+        demand(frontend_target.get("allowEmptyBootstrap") is True
+               and type(original_tags) is list and bool(original_tags),
+               "P2_CERTIFICATION_FRONTEND_REPLACEMENT_JOB_REQUIRED")
+    else:
+        demand(original_tags == [], "P2_CERTIFICATION_FRONTEND_CURRENT_ONLY_REQUIRED")
     demand(set(credentials) == {"course", "community"}
            and all(isinstance(value, str) and value for value in credentials.values()),
            "P2_CERTIFICATION_NAMED_PRIVATE_CREDENTIALS_REQUIRED")

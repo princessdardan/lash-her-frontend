@@ -299,9 +299,10 @@ class P2LifecycleWorkerEvidenceStage:
         else:
             release_evidence = {"originalReleaseReceipt": self.release_evidence["originalReleaseReceipt"],
                 "frontendDeploymentRecord": self.release_evidence["readyReceipts"]["frontend-promotion-outcome.json"]}
+            replacement = "replacementRelease" in getattr(self.scope, "certification_plan", {})
             receipt = persistence.execute_profiled(self.bundle, self.configuration, self.reviewed, self.source,
                 {"frontendRuntimeDatabaseUrl": frontend_runtime_database_url, "witness": private}, release_evidence,
-                self.scope, self.database_proof, expected_profile=expected)
+                self.scope, self.database_proof, expected_profile=expected, **({"_worker_stage": self} if replacement else {}))
             migrate.require_profile(expected, receipt)
             retained = persistence.load_retained_capture(self.reviewed["plan"], self.directory, "lifecycle-account", subject_binding,
                 expected_profile=expected)

@@ -18,6 +18,9 @@ import {collectP2CertificationRequestDetails} from './p2-certification-request-e
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {prepareP2OperatorRelease} from './p2-release.mjs';
 import {prepareP2ProfiledCurrentRelease,verifyP2ProfiledCurrentReleaseConfiguration} from './p2-profiled-current-release.mjs';
+import {prepareP2CertificationReplacementRelease,validP2CertificationReplacementDescriptor} from './p2-certification-replacement-release.mjs';
+import {frontendConnectionOptions} from './frontend-migration.mjs';
+import {frontendRolesHash} from './frontend-role-preparation.mjs';
 import {assertSourceCheckout} from './source-checkout.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
@@ -421,6 +424,13 @@ export function bindP2CertificationReadyReceipts(directory,plan){
 export function prepareP2BoundedCertification(prepared,input,candidateBytes,{frontendReceipts,configurationSha256,profiledRelease}){
   const candidate=prepared?.migration?.candidate,inventory=prepared?.plan,job=prepared?.migration?.job;
   const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
+  const replacement=profiledRelease?.replacementRelease;
+  if(replacement!==undefined){
+    demand(profile&&validP2CertificationReplacementDescriptor(replacement)&&
+      isDeepStrictEqual(replacement,inventory.replacementRelease)&&replacement.reviewedPlanSha256===profiledRelease.planSha256&&
+      job.target.allowEmptyBootstrap===true&&job.target.approvedPendingTags.length>0&&input.mode!=='known-ack-recovery');
+  }else demand(!Object.hasOwn(inventory??{},'replacementRelease')&&
+    (!profile||job.target.allowEmptyBootstrap===false&&job.target.approvedPendingTags.length===0));
   const scoped=scopedPlanningModes.has(input?.mode);
   if(scoped)demand(profile&&scopedActionValid(input.mode,input.scopedAction));
   else demand(input?.scopedAction===undefined);
@@ -489,6 +499,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     readyReceiptSha256:structuredClone(input.readyReceiptSha256),maximumSeconds:scoped||input.mode==='auth-preparation'?300:900,finalDisposition:'native-disabled-and-both-admissions-closed',
     frontendSqlReplay:false,apiSqlReplay:false,rolePreparationAllowed:false,historicalLoginRestorationAllowed:false,buildAllowed:false,promotionAllowed:false,
     wholeReleaseAccepted:false};
+  if(replacement)base.replacementRelease=structuredClone(replacement);
   if(scoped)base.scopedAction=structuredClone(input.scopedAction);
   if(persistenceModes.has(input.mode))base.persistenceReviewedSha256=input.persistenceReviewedSha256;
   if(input.mode==='known-ack-recovery'){
@@ -1008,7 +1019,10 @@ async function runBoundedCertification(plan,dependencies,profile){
         if(!profile||plan.mode!=='known-ack-recovery')await host.gatewayStage('closed');
       }
       phase='fresh-contained-terminal';await verify();
-      terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status===terminalStatus&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===(plan.mode==='known-ack-recovery'));
+      terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status===terminalStatus&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===(plan.mode==='known-ack-recovery')&&
+        isDeepStrictEqual(terminal.replacementRelease,plan.replacementRelease)&&
+        (!plan.replacementRelease||terminal.originalReleaseReceiptSha256===plan.originalReleaseReceiptSha256&&
+          terminal.originalReleasePlanSha256===plan.originalReleasePlanSha256));
       store.record('p2-certification-close-prepared.json',terminal);
     },profile);
     if(profile)requireQualificationTargetProfile(currentProfile,terminal);
@@ -1035,16 +1049,28 @@ function privateBytes(path,maximum=2_000_000){
 }
 function privateObject(path,maximum){const value=JSON.parse(privateBytes(path,maximum));demand(value&&typeof value==='object'&&!Array.isArray(value));return value;}
 
-function prepareProfiledCertification(settings){
-  const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
-    :settings?.certification?.mode==='direct-worker'?['worker']
-      :settings?.certification?.mode==='interactive-browser'&&pairedBrowserStages.has(settings.certification.scopedAction?.stage)?['interactiveIdentity']:[];
-  demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra])&&
-    settings.version===2&&settings.environment==='staging');
-  requireQualificationTargetProfile(currentProfile,settings);
-  const original=prepareP2ProfiledCurrentRelease(settings.releaseSettings), release=original.plan;
-  demand(settings.operatorSourceCommit===release.sourceCommit);
-  const directory=join(settings.releaseSettings.results,release.releaseId);
+function replacementRuntimeUrl(directory,original){
+  const credential=decodeQualificationTargetJson(privateBytes(join(directory,'credentials','frontend-role-credentials.json'),16_384),'private-packet');
+  const result=decodeQualificationTargetJson(readFrontendReleaseEvidence(join(directory,'roles'),'roles-preparation-outcome.json'),'carrier');
+  requireQualificationTargetProfile(currentProfile,credential,result,result.target);
+  const {proofSha256,...proof}=result;
+  const {inventory,migration:{job}}=original;
+  const {target}=job;
+  demand(exactKeys(credential,['version','qualificationTargetProfile','planSha256','targetSha256','role','password','runtimeDatabaseUrl'])&&
+    credential.version===2&&proof.version===2&&proof.status==='FRONTEND_ROLES_PREPARED'&&proof.committed===true&&proof.runtimeCredentialVerified===true&&
+    proofSha256===frontendRolesHash(proof)&&proof.actionId===job.releaseId&&proof.sourceCommit===job.sourceCommit&&
+    sha(proof.planSha256)&&credential.planSha256===proof.planSha256&&credential.targetSha256===inventory.targetSha256&&proof.targetSha256===inventory.targetSha256&&
+    isDeepStrictEqual(proof.owner,inventory.owner)&&isDeepStrictEqual(proof.runtime,inventory.producers[0].role)&&credential.role===target.runtimeRole&&
+    typeof credential.runtimeDatabaseUrl==='string'&&credential.runtimeDatabaseUrl.length<=8192&&
+    typeof credential.password==='string'&&/^[A-Za-z0-9_-]{64}$/u.test(credential.password));
+  const options=frontendConnectionOptions(credential.runtimeDatabaseUrl,{...target,user:target.runtimeRole});
+  demand(options.password===credential.password);
+  return credential.runtimeDatabaseUrl;
+}
+
+function readProfiledCurrentCertificationRelease(releaseSettings){
+  const original=prepareP2ProfiledCurrentRelease(releaseSettings), release=original.plan;
+  const directory=join(releaseSettings.results,release.releaseId);
   const frontend=join(directory,'frontend'), frontendReceipts=join(frontend,'vercel');
   const retainedPlan=decodeQualificationTargetJson(readFrontendReleaseEvidence(directory,'reviewed-plan.json'),'carrier');
   demand(isDeepStrictEqual(retainedPlan,release));
@@ -1058,17 +1084,36 @@ function prepareProfiledCertification(settings){
   demand(exactKeys(receipt,['version','qualificationTargetProfile','status','configurationSha256',...identity,...flags,...pins])&&
     receipt.version===2&&receipt.status==='P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION'&&identity.every(key=>receipt[key]===release[key])&&
     isDeepStrictEqual(receipt.configurationSha256,release.configurationSha256)&&flags.every(key=>receipt[key]===false)&&pins.every(key=>sha(receipt[key])));
-  const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
-  demand(input.gatewayConfigurationSha256===release.configurationSha256['gateway.json']&&
-    input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
-    input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
   const candidateBytes=readFrontendReleaseEvidence(directory,'release.candidate.json');
   demand(rawHash(candidateBytes)===release.candidateSha256);
   const profiledRelease={receiptSha256:rawHash(raw),planSha256:rawHash(release),apiJobSha256:release.apiJobSha256,apiJobs:original.apiJobs,
-    configurationDirectory:settings.releaseSettings.host.configuration};
-  const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,settings,
+    configurationDirectory:releaseSettings.host.configuration};
+  return {original,frontendReceipts,originalReleaseReceipt:raw,candidateBytes,profiledRelease,directory,host:releaseSettings.host};
+}
+
+function prepareProfiledCertification(settings){
+  const replacement=Object.hasOwn(settings??{},'replacementRelease');
+  const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
+    :settings?.certification?.mode==='direct-worker'?['worker']
+      :settings?.certification?.mode==='interactive-browser'&&pairedBrowserStages.has(settings.certification.scopedAction?.stage)?['interactiveIdentity']:[];
+  demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra,
+    ...(replacement?['replacementRelease']:[])])&&settings.version===2&&settings.environment==='staging');
+  requireQualificationTargetProfile(currentProfile,settings);
+  const checked=replacement?prepareP2CertificationReplacementRelease(settings.releaseSettings,settings.replacementRelease)
+    :readProfiledCurrentCertificationRelease(settings.releaseSettings);
+  const {original,frontendReceipts,originalReleaseReceipt,candidateBytes,profiledRelease,host}=checked;
+  const {plan:release}=original;
+  const receipt=decodeQualificationTargetJson(originalReleaseReceipt,'carrier');
+  const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
+  demand(replacement===Object.hasOwn(profiledRelease,'replacementRelease')&&settings.operatorSourceCommit===release.sourceCommit&&
+    input.gatewayConfigurationSha256===release.configurationSha256['gateway.json']&&
+    input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
+    input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
+  const {results,knownHosts,sshKey}=replacement?settings.releaseSettings.arm:settings.releaseSettings;
+  const releaseSettings={results,knownHosts,sshKey,host,providerContext:settings.releaseSettings.providerContext};
+  const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,{...settings,releaseSettings},
     {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease},currentProfile);
-  return {...stages,original,frontendReceipts,originalReleaseReceipt:raw};
+  return {...checked,...stages,releaseSettings};
 }
 
 export function prepareP2ProfiledCertificationOperator(settings){
@@ -1087,10 +1132,10 @@ function profiledCertificationHostPlan(settings,authentication=false){
   demand(plan);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
-  return bindProfiledCertificationHostPlan(settings,checked,source,plan);
+  return bindProfiledCertificationHostPlan(checked,source,plan);
 }
 
-function bindProfiledCertificationHostPlan(settings,checked,source,plan){
+function bindProfiledCertificationHostPlan(checked,source,plan){
   const {suspensionPlan,original,frontendReceipts,originalReleaseReceipt}=checked;
   const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
   const sourceClosureSha256=rawHash(JSON.stringify(Object.entries(sourceSha256).sort(([a],[b])=>a<b?-1:a>b?1:0)));
@@ -1101,7 +1146,7 @@ function bindProfiledCertificationHostPlan(settings,checked,source,plan){
     return [name,bytes.toString('base64')];
   }));
   const {plan:release,inventory,migration}=original;
-  const {machineId:hostMachineId,bundle,configuration,results}=settings.releaseSettings.host;
+  const {machineId:hostMachineId,bundle,configuration,results}=checked.host;
   return {version:2,qualificationTargetProfile:currentProfile,environment:'staging',mode:'p2-bounded-certification-profiled-current',
     sourceCommit:plan.operatorSourceCommit,sourceSha256,sourceClosureSha256,hostMachineId,bundle,configuration,results,
     candidate:migration.candidate,candidateSha256:release.candidateSha256,configurationSha256:release.configurationSha256,
@@ -1219,18 +1264,18 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     authoringDraft=validate(authoringSelection(plan.scopedAction),field?execution[field]:undefined);
   }
   demand(plan.mode!=='mux-callback-recovery'||[scopedMuxCourseSource,paidRevokeCourseSource].includes(original.migration.candidate.sources.course.commit));
-  const releaseSettings=selection.releaseSettings;
+  const {releaseSettings}=checked;
   const directory=releaseSettings.results;
   frontendPrivateReceiptDirectory(directory);
   for(const action of [plan,authPlan,identityPlan].filter(Boolean)){
     demand(lstatSync(join(directory,action.certificationActionId),{throwIfNoEntry:false})===undefined);
   }
-  verifyP2ProfiledCurrentReleaseConfiguration(original);
+  if(!plan.replacementRelease)verifyP2ProfiledCurrentReleaseConfiguration(original);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
-  const packet=bindProfiledCertificationHostPlan(selection,checked,source,plan);
-  const authPacket=authPlan?bindProfiledCertificationHostPlan(selection,checked,source,authPlan):null;
-  const identityPacket=identityPlan?bindProfiledCertificationHostPlan(selection,checked,source,identityPlan):null;
+  const packet=bindProfiledCertificationHostPlan(checked,source,plan);
+  const authPacket=authPlan?bindProfiledCertificationHostPlan(checked,source,authPlan):null;
+  const identityPacket=identityPlan?bindProfiledCertificationHostPlan(checked,source,identityPlan):null;
   const needsPersistence=['browser-pending','direct-worker'].includes(plan.mode)||persistenceModes.has(plan.mode);
   let persistenceReviewed;
   if(needsPersistence){
@@ -1257,9 +1302,14 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }else if(!enrollment&&!authoring&&!paidGrant&&!paidRevoke)demand(execution===undefined);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
     sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
-  const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
+  let provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
   requireQualificationTargetProfile(currentProfile,provider);
   const needsRuntimeUrl=['direct-worker','lifecycle-persistence'].includes(plan.mode);
+  if(plan.replacementRelease){
+    demand(exactKeys(provider,['version','qualificationTargetProfile','vercelToken','bindings'])&&
+      rawHash(JSON.stringify(provider.bindings?.gatewayObservation))===original.inventory.restoration.gatewayBindingSha256);
+    if(needsRuntimeUrl)provider={...provider,frontendRuntimeDatabaseUrl:replacementRuntimeUrl(checked.directory,original)};
+  }
   demand(provider.version===2&&typeof provider.vercelToken==='string'&&provider.vercelToken.length>0&&provider.vercelToken.length<=8192&&
     (!needsRuntimeUrl||typeof provider.frontendRuntimeDatabaseUrl==='string'&&provider.frontendRuntimeDatabaseUrl.length>0&&provider.frontendRuntimeDatabaseUrl.length<=8192));
   const scopedCronSecret=scoped?readP2LifecycleWorkerCronSecret(createP2LifecycleWorkerPrivateResolvers(()=>provider)):undefined;
@@ -1267,7 +1317,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     const value=process.env[key];demand(typeof value==='string'&&value.length>0&&value.length<=16384);return[key,value];}));
   let privateProbe;
   if(plan.mode!=='contain-native'&&!scoped){
-    const path=join(directory,plan.originalReleaseId,'frontend','vercel-private','frontend-probe-private.json');
+    const path=join(checked.directory,'frontend','vercel-private','frontend-probe-private.json');
     privateProbe=decodeQualificationTargetJson(privateBytes(path,8192),'carrier');
     requireQualificationTargetProfile(currentProfile,privateProbe);
     demand(privateProbe.version===2&&privateProbe.environment==='staging'&&privateProbe.releaseId===plan.originalReleaseId&&

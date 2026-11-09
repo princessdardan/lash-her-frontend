@@ -10,9 +10,9 @@ function receipt(fixture, major = 18) {
   if (fixture.id === 'roles') return { ...common, fixtureOnly: true, skipped: 0, actualTls: true, actualScram: true,
     actualFlockContention: true, actualPhysicalLockContention: true, executedChecks: common.checks.length, migrationAuthorized: false };
   if (fixture.id === 'release') return { ...common, liveAdapterQualified: false, migrationAuthorized: false, trafficAuthorized: false };
-  if (fixture.id === 'certification') return { version: 1, status: common.status, serverMajor: major, frontendMigrations: 83, checks: common.checks,
-    skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, actualHostDocker: false,
-    browserQualified: false, nativeInvocationQualified: false, fixtureOnly: true };
+  if (['certification', 'replacement-certification'].includes(fixture.id)) return { version: 1, status: common.status, serverMajor: major,
+    frontendMigrations: 83, checks: common.checks, skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, fixtureOnly: true,
+    ...(fixture.id === 'certification' ? { actualHostDocker: false, browserQualified: false, nativeInvocationQualified: false } : {}) };
   return { ...common, fixtureOnly: true, skipped: 0, executedChecks: common.checks.length, actualTlsPostgres: true, actualTlsReceivers: true,
     actualAppCron: true, actualRuntimeTrace: true, actualProvider: false, actualVercelNativeEvidence: false, modeledProviderNativeClassification: true,
     result: { status: 'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED', nativeEnabled: false,
@@ -38,7 +38,7 @@ test('receipt must prove the selected actual major, every required physical scen
   for (const fixture of P2_OWNED_FIXTURES) {
     const actual = receipt(fixture);
     assert.equal(validateP2FixtureReceipt(fixture, actual, 18).executedChecks, fixture.required.length);
-    for (const changed of [null, {}, { ...actual, [fixture.id === 'certification' ? 'serverMajor' : 'postgresMajor']: 16 }, { ...actual, skipped: 1 },
+    for (const changed of [null, {}, { ...actual, [Object.hasOwn(actual, 'serverMajor') ? 'serverMajor' : 'postgresMajor']: 16 }, { ...actual, skipped: 1 },
       { ...actual, checks: [] }, { ...actual, checks: actual.checks.slice(1) },
       { ...actual, checks: [...actual.checks, actual.checks[0]] }, { ...actual, providerTouched: true }]) {
       assert.throws(() => validateP2FixtureReceipt(fixture, changed, 18));
