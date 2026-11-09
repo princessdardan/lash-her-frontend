@@ -68,6 +68,12 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'independent-fence-after-parent-session-loss-and-without-native-credential',
     'actual-profiled-current-certification-lock-readback-and-fence-refusal',
     'actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback',
+    'actual-profiled-scoped-export-ledger-and-read-only-epoch-fences',
+    'actual-interactive-producer-swap-same-role-denial-drain-and-independent-fence-recovery',
+    'actual-interactive-physical-window-witness-and-independent-closure',
+    'actual-composed-lifecycle-preference-and-clean-fences',
+    'actual-composed-browser-loss-and-ledger-uncertainty',
+    'actual-composed-owner-identity-held-mapping-and-clean-fences',
   ]) }),
   Object.freeze({ id: 'replacement-certification', file: 'p2-certification-replacement-probe.test.mjs',
     flag: 'P2_CERTIFICATION_REPLACEMENT_OWNED_TEST', status: 'P2_CERTIFICATION_REPLACEMENT_OWNED_PASS', required: Object.freeze([
