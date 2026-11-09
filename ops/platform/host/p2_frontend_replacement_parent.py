@@ -17,12 +17,17 @@ import sys
 import threading
 import time
 
+if __name__ == '__main__':
+    previous = sys.modules.get('p2_frontend_replacement_parent')
+    if previous is not None and previous is not sys.modules[__name__]:
+        raise SystemExit('P2_FRONTEND_REPLACEMENT_MODULE_IDENTITY_REFUSED')
+    sys.modules['p2_frontend_replacement_parent'] = sys.modules[__name__]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import p2_release_supervisor as supervisor
 import release as runtime
 import staging_state
-from p2_release_broker import Broker, LOCK, MAXIMUM
+from p2_release_broker import Broker, LOCK, MAXIMUM, PhysicalObserver
 from p2_source_closure import (PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE,
                                verify_profiled_current_source_closure)
 from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, decode_qualification_target_json
@@ -44,12 +49,21 @@ WRITE_INTENT = 'p2-frontend-replacement-write-intent.json'
 WRITE_READY = 'p2-frontend-replacement-write-ready.json'
 WRITE_OBSERVER_STARTED = 'p2-frontend-replacement-write-observer-started.json'
 WRITE_OBSERVER_RETURNED = 'p2-frontend-replacement-write-observer-returned.json'
+WRITTEN_OBSERVER_STARTED = 'p2-frontend-replacement-written-observer-started.json'
+WRITTEN_OBSERVER_RETURNED = 'p2-frontend-replacement-written-observer-returned.json'
+WRITTEN_OBSERVATION = 'p2-frontend-replacement-written-observation.json'
+RUNTIME_REVIEW = 'p2-frontend-replacement-runtime-review.json'
+RUNTIME_INTENT = 'p2-frontend-replacement-runtime-intent.json'
+RUNTIME_REVIEW_FIELDS = frozenset(('runtimeReviewBytes', 'runtimeReviewSha256'))
+API_CREDENTIALS = ('COURSE_STAGING_DATABASE_URL', 'COMMUNITY_STAGING_DATABASE_URL')
 WRITE_CONTAINMENT = 'p2-frontend-replacement-write-containment.json'
 ABORT_ATTEMPT = 'p2-frontend-replacement-abort-attempt.json'
 ABORT_OBSERVATION = 'p2-frontend-replacement-abort-observation.json'
 ABORT_MAXIMUM = 65_536
 NO_AUTHORITY = {'bootstrapAuthorized': False, 'migrationAuthorized': False,
                 'deploymentAuthorized': False, 'trafficAuthorized': False}
+WRITTEN_REQUEST_FIELDS = frozenset(('writeIntentSha256', 'databaseReceipt', 'continuationStarted',
+                                    'owner', 'runtime', 'producerSha256'))
 TARGET_FIELDS = ('host', 'port', 'database', 'user', 'runtimeRole', 'serverMajor')
 PROBE_IDENTITY = ('marker', 'backendPid', 'backendStart')
 INITIAL_FIELDS = {'version', 'mode', 'qualificationTargetProfile', 'environment', 'sourceCommit', 'sourceSha256',
@@ -108,11 +122,15 @@ def exact_host_directory(value):
 
 def reviewed_plan(initial, *, mode=MODE):
     require(mode in (MODE, WRITE_MODE), REFUSED)
-    require(type(initial) is dict and set(initial) == INITIAL_FIELDS and
+    require(type(initial) is dict, REFUSED)
+    has_runtime = mode == WRITE_MODE and bool(RUNTIME_REVIEW_FIELDS & set(initial))
+    require(set(initial) == INITIAL_FIELDS | (RUNTIME_REVIEW_FIELDS if has_runtime else set()) and
             type(initial['version']) is int and initial['version'] == 1 and initial['mode'] == mode and
             initial['environment'] == 'staging' and migrate.source_commit(initial['sourceCommit']) and
             match(initial['hostMachineId'], r'[a-f0-9]{32}') and
             all(digest(initial[key]) for key in ('sourceClosureSha256', 'candidateSha256', 'reviewedPlanSha256')), REFUSED)
+    if has_runtime:
+        require(digest(initial['runtimeReviewSha256']), REFUSED)
     raw = unbase64(initial['reviewedPlanBytes'], 2_000_000)
     require(migrate.file_hash(raw) == initial['reviewedPlanSha256'], REFUSED)
     plan = decode_qualification_target_json(raw, 'carrier')
@@ -126,12 +144,13 @@ def reviewed_plan(initial, *, mode=MODE):
                                                  'schemaBaselineFileSha256'))
             and all(plan[key] is False for key in (*NO_AUTHORITY, 'replacementObserved', 'releaseAccepted'))
             and initial['confirmation'] == 'staging/' + plan['releaseId'] +
-                ('/replacement-write/' if mode == WRITE_MODE else '/replacement-arm/') + initial['reviewedPlanSha256'],
+                ('/replacement-write/' if mode == WRITE_MODE else '/replacement-arm/') + initial['reviewedPlanSha256'] +
+                ('/' + initial['runtimeReviewSha256'] if has_runtime else ''),
             REFUSED)
     credentials = initial['credentials']
-    require(type(credentials) is dict and set(credentials) == {CREDENTIAL} and
-            type(credentials[CREDENTIAL]) is str and 0 < len(credentials[CREDENTIAL]) <= 16_384
-            and all(ord(character) >= 32 for character in credentials[CREDENTIAL]), REFUSED)
+    require(type(credentials) is dict and set(credentials) == ({CREDENTIAL, *API_CREDENTIALS} if has_runtime else {CREDENTIAL}) and
+            all(type(value) is str and 0 < len(value) <= 16_384 and
+                all(ord(character) >= 32 for character in value) for value in credentials.values()), REFUSED)
     return raw, plan
 
 
@@ -225,12 +244,15 @@ def remove_container(name, plan_sha):
     return bool(found)
 
 
-def run_replacement_image(initial, image, probe, *, abort_observation=None):
+def run_replacement_image(initial, image, probe, *, abort_observation=None, written_packet=None):
     aborting = abort_observation is not None
+    require(not aborting or written_packet is None, REFUSED)
     name = container_name(initial, probe, aborting=aborting)
     plan_sha = initial['reviewedPlanSha256']
     entry = '--abort-replacement' if aborting else '--observe-replacement-lock'
     payload = {'probe': probe, 'physicalObservation': base64.b64encode(abort_observation).decode()} if aborting else probe
+    if written_packet is not None:
+        entry, payload = '--observe-replacement-written', written_packet
     args = ['docker', 'run', '--rm', '--pull=never', '--name', name,
             '--label', 'io.lash-her.replacement-arm=' + plan_sha, '--interactive', '--network', 'host',
             '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
@@ -238,15 +260,17 @@ def run_replacement_image(initial, image, probe, *, abort_observation=None):
             image, 'ops/platform/frontend-image.mjs', entry]
     env = {**runtime.SAFE_ENV, CREDENTIAL: initial['credentials'][CREDENTIAL]}
     if aborting:
-        return run_bounded_abort(args, encoded(payload), env)
+        return run_bounded_image(args, encoded(payload), env)
     try:
+        if written_packet is not None:
+            return run_bounded_image(args, encoded(payload), env)
         result = subprocess.run(args, input=encoded(payload), capture_output=True, env=env, timeout=25, check=True)
     finally:
         remove_container(name, plan_sha)
     return result.stdout
 
 
-def run_bounded_abort(args, packet, env):
+def run_bounded_image(args, packet, env):
     require(0 < len(packet) <= MAXIMUM, REFUSED)
     deadline = time.monotonic() + 25
     output = bytearray()
@@ -374,8 +398,10 @@ def write_observer_receipt(initial, probe, physical, status):
             'physicalObservationSha256': migrate.file_hash(physical)}
 
 
-def require_write_observer_returned(initial, probe, physical, directory):
-    for filename, status in ((WRITE_OBSERVER_STARTED, 'STARTED'), (WRITE_OBSERVER_RETURNED, 'RETURNED')):
+def require_write_observer_returned(initial, probe, physical, directory, *, written=False):
+    names = ((WRITTEN_OBSERVER_STARTED, 'WRITTEN_STARTED'), (WRITTEN_OBSERVER_RETURNED, 'WRITTEN_RETURNED')) if written else (
+        (WRITE_OBSERVER_STARTED, 'STARTED'), (WRITE_OBSERVER_RETURNED, 'RETURNED'))
+    for filename, status in names:
         actual = decode_qualification_target_json(private_record(directory, filename), 'carrier')
         require(canonical(actual) == canonical(write_observer_receipt(initial, probe, physical, status)), REFUSED)
 
@@ -419,6 +445,79 @@ def verify_and_retain_write_custody(initial, plan, base_probe, image, directory,
     return raw
 
 
+def written_packet(plan, probe, physical, request):
+    require(digest(request['writeIntentSha256']) and digest(request['producerSha256']), REFUSED)
+    for role, name in ((request['owner'], 'lash_her_frontend_staging_admission_owner_p2'),
+                       (request['runtime'], probe['job']['target']['runtimeRole'])):
+        require(type(role) is dict and set(role) == {'name', 'oid'} and role['name'] == name and oid(role['oid']), REFUSED)
+    require(len({request['owner']['oid'], request['runtime']['oid'], probe['migrationRoleOid']}) == 3, REFUSED)
+    for name, maximum in (('databaseReceipt', 65_536), ('continuationStarted', 8192)):
+        require(unbase64(request[name], maximum).endswith(b'\n'), REFUSED)
+    return {key: request[key] for key in WRITTEN_REQUEST_FIELDS - {'writeIntentSha256'}} | {
+        'probe': probe, 'physicalObservation': base64.b64encode(physical).decode(),
+        'administrativeLogins': sorted(plan['replacement']['administrativeLogins'], key=lambda login: login['name'])}
+
+
+def written_result(packet, raw):
+    from p2_profiled_current_scope import _replacement_producer_bytes
+    require(0 < len(raw) <= 8192 and raw.endswith(b'\n'), REFUSED)
+    _replacement_producer_bytes(packet['probe'], unbase64(packet['physicalObservation'], 8192),
+                                unbase64(packet['databaseReceipt'], 65_536), unbase64(packet['continuationStarted'], 8192),
+                                raw, packet['owner'], packet['runtime'], packet['producerSha256'], packet['administrativeLogins'])
+    return decode_qualification_target_json(raw, 'carrier')
+
+
+def verify_and_retain_written(initial, plan, base_probe, image, directory, source, probe, custody, request, cancelled):
+    supervisor.verify_guard_boundary(initial, source)
+    probe_identity(probe, base_probe)
+    verify_bundle(Path(initial['bundle']), plan, base_probe)
+    def current_custody():
+        return require_write_custody(initial, plan, probe, directory,
+                                     custody['armReceiptSha256'], custody['emptyCatalogReceipt'])[1:]
+    intent_sha, physical = current_custody()
+    require(request['writeIntentSha256'] == intent_sha and not cancelled.is_set(), REFUSED)
+    packet = written_packet(plan, probe, physical, request)
+    migrate.write_json(directory, WRITTEN_OBSERVER_STARTED, write_observer_receipt(initial, probe, physical, 'WRITTEN_STARTED'))
+    raw = run_replacement_image(initial, image, probe, written_packet=packet)
+    migrate.write_json(directory, WRITTEN_OBSERVER_RETURNED, write_observer_receipt(initial, probe, physical, 'WRITTEN_RETURNED'))
+    written_result(packet, raw)
+    supervisor.verify_guard_boundary(initial, source)
+    verify_bundle(Path(initial['bundle']), plan, base_probe)
+    require(not cancelled.is_set() and current_custody() == (intent_sha, physical), REFUSED)
+    migrate.write_exact_bytes(directory, WRITTEN_OBSERVATION, raw)
+
+
+def runtime_intent_record(initial, plan, review, postflight):
+    return {key: plan[key] for key in ('version', 'qualificationTargetProfile', 'environment', 'releaseId',
+                                      'sourceCommit', 'candidateSha256', 'targetSha256')} | {
+        'status': 'P2_FRONTEND_REPLACEMENT_RUNTIME_STARTED', 'reviewedPlanSha256': initial['reviewedPlanSha256'],
+        'runtimeReviewSha256': initial['runtimeReviewSha256'], 'postflightSha256': migrate.file_hash(postflight),
+        'apiJobSha256': review['apiJobSha256'], 'configurationSha256': review['configurationSha256'],
+        'trafficAuthorized': False}
+
+
+def retain_runtime_intent(initial, plan, review, source, directory, probe, physical, custody, written_request, request, cancelled):
+    from p2_replacement_runtime_review import prepare_runtime_review
+    supervisor.verify_guard_boundary(initial, source)
+    require(not cancelled.is_set() and prepare_runtime_review(initial, plan, source, probe) == review and
+            migrate.file_hash(private_record(directory, RUNTIME_REVIEW)) == initial['runtimeReviewSha256'], REFUSED)
+    require(require_write_custody(initial, plan, probe, directory, custody['armReceiptSha256'],
+                                  custody['emptyCatalogReceipt'])[1:] == (written_request['writeIntentSha256'], physical), REFUSED)
+    require_write_observer_returned(initial, probe, physical, directory, written=True)
+    readback = private_record(directory, WRITTEN_OBSERVATION, 8192)
+    written_result(written_packet(plan, probe, physical, written_request), readback)
+    require(migrate.file_hash(readback) == request['postflightSha256'] and not cancelled.is_set(), REFUSED)
+    migrate.write_json(directory, RUNTIME_INTENT, runtime_intent_record(initial, plan, review, readback))
+
+
+def contain_runtime_if_started(initial, plan, selected, directory, review, reaped):
+    if review is not None and os.path.lexists(directory / RUNTIME_INTENT):
+        from p2_replacement_runtime_containment import contain_replacement_runtime_after_reap
+        contain_replacement_runtime_after_reap(
+            {**initial, 'configuration': review['configuration']}, plan, selected, directory,
+            configuration_sha256=review['configurationSha256'], worker_reaped=reaped)
+
+
 def abort_result(plan, probe, physical, raw):
     require(0 < len(raw) <= ABORT_MAXIMUM and raw.endswith(b'\n'), REFUSED)
     value = decode_qualification_target_json(raw, 'carrier')
@@ -445,7 +544,8 @@ def abort_result(plan, probe, physical, raw):
     return value
 
 
-def contain_replacement_write(initial, plan, image, directory, probe, physical, *, process_reconciled=True):
+def contain_replacement_write(initial, plan, image, directory, probe, physical, *, process_reconciled=True,
+                              runtime_observer_reconciled=False):
     receipt = {**receipt_base(initial, plan, 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN'),
                'physicalObservationSha256': migrate.file_hash(physical), 'automaticReplayAuthorized': False,
                'abortObservationSha256': None, 'appliedPrefixCount': None, 'backendClosureVerified': False,
@@ -465,13 +565,14 @@ def contain_replacement_write(initial, plan, image, directory, probe, physical, 
         # flock. Later checkout or bundle drift cannot suppress containment.
         supervisor.verify_guard_lock(initial)
         require(process_reconciled, REFUSED)
-        observer_reconciled = not (has_record(WRITE_OBSERVER_STARTED) or has_record(WRITE_OBSERVER_RETURNED))
-        if not observer_reconciled:
-            try:
-                require_write_observer_returned(initial, probe, physical, directory)
-                observer_reconciled = True
-            except (OSError, ValueError):
-                pass
+        observer_reconciled = not has_record(RUNTIME_INTENT) or runtime_observer_reconciled
+        for written, started, returned in ((False, WRITE_OBSERVER_STARTED, WRITE_OBSERVER_RETURNED),
+                                           (True, WRITTEN_OBSERVER_STARTED, WRITTEN_OBSERVER_RETURNED)):
+            if has_record(started) or has_record(returned):
+                try:
+                    require_write_observer_returned(initial, probe, physical, directory, written=written)
+                except (OSError, ValueError):
+                    observer_reconciled = False
         receipt['observerLauncherReconciled'] = observer_reconciled
         receipt['processScopeReconciled'] = observer_reconciled
         if has_record(WRITE_CONTAINMENT):
@@ -593,20 +694,60 @@ class ReplacementArmBroker(Broker):
         self.send(value['id'], 'COMMITTED', receipt=receipt)
 
 
+class ReplacementRuntimeObserver(PhysicalObserver):
+    def __init__(self, broker, packet, original):
+        super().__init__(broker.probe['candidate'], packet, broker.source, broker.initial['credentials'][CREDENTIAL])
+        self.broker, self.original = broker, original
+        self.probe_lock = threading.Lock()
+
+    def probe(self, operation):
+        require(operation in ('verify-schema', 'observe'), REFUSED)
+        broker = self.broker
+        try:
+            with self.probe_lock:
+                raw = run_replacement_image(broker.initial, broker.image, broker.probe, written_packet=self.request)
+            require(raw == self.original, REFUSED)
+            return written_result(self.request, raw)
+        except BaseException:
+            broker.runtime_observer_cleanup_uncertain = True
+            raise
+
+    def verify_live_lock(self):
+        broker = self.broker
+        try:
+            with self.probe_lock:
+                require(not broker.failed.is_set(), REFUSED)
+                raw = observe(broker.initial, broker.image, broker.probe)
+            require(raw == broker.write_observation, REFUSED)
+        except BaseException:
+            broker.runtime_observer_cleanup_uncertain = True
+            raise
+
+
 class ReplacementWriteBroker(ReplacementArmBroker):
     """Write frontier only, pending a separately verified release continuation."""
 
-    def __init__(self, *args, image, **kwargs):
+    def __init__(self, *args, image, runtime_review=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.image = image
         self.write_mutex = threading.Lock()
         self.write_observation = None
-        self.fallback_started = False
+        self.custody = None
+        self.write_intent_sha = None
+        self.verified_written = None
+        self.written_request = None
+        self.runtime_review = runtime_review
+        self.runtime_intent = None
+        self.runtime_observer_cleanup_uncertain = False
 
     def command(self, value):
         operation = value.get('operation') if type(value) is dict else None
         if operation in ('check', 'arm-replacement'):
             return super().command(value)
+        if operation == 'verify-replacement-written':
+            return self.verify_written(value)
+        if operation == 'start-replacement-runtime':
+            return self.start_replacement_runtime(value)
         require(operation == 'authorize-replacement-write' and set(value) == {
             'id', 'operation', 'armReceiptSha256', 'emptyCatalogReceipt'} and
             type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1 and
@@ -633,23 +774,171 @@ class ReplacementWriteBroker(ReplacementArmBroker):
         with self.write_mutex:
             self.check()
             require(physical == self.write_observation, REFUSED)
+            self.custody = {'armReceiptSha256': arm_sha, 'emptyCatalogReceipt': value['emptyCatalogReceipt']}
+            self.write_intent_sha = intent_sha
             self.send(value['id'], 'REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED', receipt=receipt, writeIntentSha256=intent_sha)
 
+    def verify_written(self, value):
+        require(set(value) == {'id', 'operation', *WRITTEN_REQUEST_FIELDS} and
+                type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1 and
+                self.custody is not None and self.verified_written is None, REFUSED)
+        self.last_command = time.monotonic()
+        self.check()
+        _, intent_sha, physical = require_write_custody(self.initial, self.plan, self.probe, self.directory,
+                                                        self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'])
+        require(value['writeIntentSha256'] == intent_sha and physical == self.write_observation, REFUSED)
+        packet = written_packet(self.plan, self.probe, physical, value)
+        require(self.runtime_review is None or packet['producerSha256'] == self.runtime_review['producerSha256'], REFUSED)
+        self.safety({'operation': 'replacement-written', **{key: value[key] for key in WRITTEN_REQUEST_FIELDS}})
+        deadline = time.monotonic() + 60
+        while True:
+            require(not self.failed.is_set() and self.guard_alive and time.monotonic() < deadline, REFUSED)
+            try:
+                raw = private_record(self.directory, WRITTEN_OBSERVATION, 8192)
+                break
+            except FileNotFoundError:
+                time.sleep(0.05)
+        self.check()
+        require_write_observer_returned(self.initial, self.probe, physical, self.directory, written=True)
+        written_result(packet, raw)
+        self.verified_written = raw
+        self.written_request = packet
+        self.send(value['id'], 'REPLACEMENT_WRITTEN_VERIFIED', postflightSha256=migrate.file_hash(raw))
+
+    def verify_replacement_runtime(self):
+        self.check()
+        require(self.runtime_review is not None and self.runtime_intent is not None and
+                type(self.observer) is ReplacementRuntimeObserver, REFUSED)
+        require(private_record(self.directory, RUNTIME_INTENT) == self.runtime_intent and
+                private_record(self.directory, WRITTEN_OBSERVATION, 8192) == self.verified_written and
+                migrate.file_hash(private_record(self.directory, RUNTIME_REVIEW, 65_536)) == self.initial['runtimeReviewSha256'],
+                REFUSED)
+
+        require(require_write_custody(self.initial, self.plan, self.probe, self.directory,
+                                      self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'])[1:] ==
+                (self.write_intent_sha, self.write_observation), REFUSED)
+        verify_bundle(Path(self.initial['bundle']), self.plan, self.probe)
+        require(migrate.profiled_current_job_hashes(Path(self.initial['bundle'])) == self.runtime_review['apiJobSha256'] and
+                staging_state.configuration_hashes(Path(self.runtime_review['configuration'])) == self.runtime_review['configurationSha256'],
+                REFUSED)
+
+    def verify_replacement_mutation(self):
+        self.verify_replacement_runtime()
+        # The fresh observer runs outside the runtime command ContextVar.
+        # It must be able to reap its own Docker helper on scope revocation.
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            worker.submit(self.observer.verify_live_lock).result()
+        self.verify_replacement_runtime()
+
+    def start_replacement_runtime(self, value):
+        require(set(value) == {'id', 'operation', 'postflightSha256'} and
+                type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1 and
+                self.runtime_review is not None and self.verified_written is not None and self.worker is None and
+                migrate.file_hash(self.verified_written) == value['postflightSha256'], REFUSED)
+        self.last_command = time.monotonic()
+        self.check()
+        self.safety({'operation': 'replacement-runtime', 'postflightSha256': value['postflightSha256']})
+        deadline = time.monotonic() + 60
+        while True:
+            require(not self.failed.is_set() and self.guard_alive and time.monotonic() < deadline, REFUSED)
+            try:
+                raw = private_record(self.directory, RUNTIME_INTENT)
+                break
+            except FileNotFoundError:
+                time.sleep(0.05)
+        require(canonical(decode_qualification_target_json(raw, 'carrier')) ==
+                canonical(runtime_intent_record(self.initial, self.plan, self.runtime_review, self.verified_written)), REFUSED)
+        with self.write_mutex:
+            self.check()
+            self.runtime_intent, self.runtime_identity = raw, value['id']
+            self.worker = threading.Thread(target=self.run_replacement_runtime, daemon=True)
+            self.worker.start()
+
+    def run_replacement_runtime(self):
+        from p2_profiled_current_scope import P2ProfiledReplacementScope
+        import p2_prior_gateway
+        old_credentials = {}
+        observer = None
+        try:
+            review, packet = self.runtime_review, self.written_request
+            observer = ReplacementRuntimeObserver(self, packet, self.verified_written)
+            self.check()
+            observer.start(self.abort)
+            with self.write_mutex:
+                self.check()
+                self.observer = observer
+            self.verify_replacement_runtime()
+            self.scope = P2ProfiledReplacementScope(
+                self, postflight_raw=self.verified_written, database_raw=unbase64(packet['databaseReceipt'], 65_536),
+                started_raw=unbase64(packet['continuationStarted'], 8192), owner=packet['owner'], runtime=packet['runtime'],
+                producer_sha256=packet['producerSha256'], api_job_sha256=review['apiJobSha256'],
+                configuration_sha256=review['configurationSha256'])
+            prior_input = {**self.initial, 'candidate': self.probe['candidate'],
+                           **{key: review[key] for key in ('configurationSha256', 'priorGatewayReference') if key in review}}
+            self.verify_replacement_mutation()
+            prior_gateway = p2_prior_gateway.prepare_prior_gateway(prior_input, self.probe['candidate'], self.directory,
+                                                                   self.verify_replacement_runtime, expected_profile=PROFILE)
+            self.scope.bind_prior_gateway(prior_gateway)
+            for key in API_CREDENTIALS:
+                old_credentials[key] = os.environ.get(key)
+                os.environ[key] = self.initial['credentials'][key]
+            runtime.execute_profiled_replacement_runtime(
+                Path(self.initial['bundle']), Path(review['configuration']), Path(self.initial['results']),
+                self.source / 'ops/platform/compose.yaml', expected_profile=PROFILE, _profiled_replacement_scope=self.scope)
+        except BaseException:
+            self.abort()
+        finally:
+            if observer is not None:
+                try:
+                    observer.stop()
+                except BaseException:
+                    self.runtime_observer_cleanup_uncertain = True
+                    self.abort()
+            for key, previous in old_credentials.items():
+                if previous is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = previous
+            self.worker_done.set()
+
+    def replacement_runtime_ready(self, attempt, migration_attempt, snapshot, selected, outcome):
+        self.verify_replacement_runtime()
+        raw = migrate.read_input(attempt, 'runtime-outcome.json')
+        migration_raw = migrate.read_input(migration_attempt, 'migration-outcome.json')
+        require(selected == self.probe['candidate'] and decode_qualification_target_json(raw, 'carrier') == outcome and
+                outcome.get('status') == 'API_RUNTIME_READY' and
+                outcome.get('candidateSha256') == self.initial['candidateSha256'] and
+                outcome.get('migrationOutcomeSha256') == migrate.file_hash(migration_raw) and
+                outcome.get('frontendReplacementReadbackSha256') == migrate.file_hash(self.verified_written) and
+                outcome.get('frontendSqlApplied') is True and outcome.get('frontendSqlReplayed') is False and
+                outcome.get('trafficAuthorized') is False and outcome.get('releaseAccepted') is False, REFUSED)
+        self.verify_replacement_gateway_closed(selected, snapshot, outcome)
+        self.runtime_snapshot, self.ready = snapshot, outcome
+        self.send(self.runtime_identity, 'REPLACEMENT_API_RUNTIME_READY', runtimeOutcomeSha256=migrate.file_hash(raw),
+                  migrationOutcomeSha256=migrate.file_hash(migration_raw))
+        # The provider continuation will consume this same still-held scope.
+        # This source-only entry cannot complete the release on its own.
+        next_gateway_check = time.monotonic() + 1
+        while not self.released.wait(0.1):
+            self.verify_replacement_runtime()
+            if time.monotonic() >= next_gateway_check:
+                self.verify_replacement_gateway_closed(selected, snapshot, outcome)
+                next_gateway_check = time.monotonic() + 1
+        raise ValueError(REFUSED)
+
+    def verify_replacement_gateway_closed(self, selected, snapshot, outcome):
+        self.verify_replacement_runtime()
+        require(runtime.check_containers(selected, snapshot, expected_profile=PROFILE) == outcome['containers'], REFUSED)
+        self.scope.prior_gateway.verify_replacement_closed_zero()
+        self.verify_replacement_runtime()
+
     def abort(self):
-        # Keep the inherited flock held until a surviving broker's cleanup
-        # finishes. The main reader also calls abort before exiting.
         with self.write_mutex:
             super().abort()
-            if (not self.guard_alive and os.getppid() != self.initial['_guardPid']
-                    and self.write_observation is not None and not self.fallback_started):
-                self.fallback_started = True
-                try:
-                    contain_replacement_write(self.initial, self.plan, self.image, self.directory, self.probe,
-                                              self.write_observation)
-                except Exception:
-                    # The containment helper retains uncertainty on failure.
-                    # The surviving process still exits without an authority receipt.
-                    pass
+            if self.scope is not None:
+                self.scope.revoked.set()
+            if self.observer is not None:
+                self.observer.stop_event.set()
 
     def finish_failed_reader(self):
         self.abort()
@@ -664,7 +953,30 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             deadline = time.monotonic() + 3
             while os.getppid() == self.initial['_guardPid'] and time.monotonic() < deadline:
                 time.sleep(0.05)
-            self.abort()
+            reaped = os.getppid() != self.initial['_guardPid']
+            try:
+                if self.scope is not None:
+                    self.scope.revoke()
+                    reaped = reaped and not getattr(self.scope, 'cleanup_uncertain', False)
+                if self.worker is not None and not self.worker_done.wait(45):
+                    reaped = False
+                if self.observer is not None:
+                    try:
+                        self.observer.stop()
+                    except BaseException:
+                        self.runtime_observer_cleanup_uncertain = True
+            except BaseException:
+                reaped = False
+            try:
+                try:
+                    contain_runtime_if_started(self.initial, self.plan, self.probe['candidate'], self.directory,
+                                               self.runtime_review, reaped)
+                finally:
+                    contain_replacement_write(self.initial, self.plan, self.image, self.directory, self.probe,
+                                              self.write_observation, process_reconciled=reaped,
+                                              runtime_observer_reconciled=reaped and not self.runtime_observer_cleanup_uncertain)
+            except Exception:
+                pass  # Each containment stage retains its own uncertainty.
 
     def read_frames(self):
         fd = sys.stdin.buffer.fileno()
@@ -685,7 +997,7 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             require(len(buffer) < MAXIMUM, REFUSED)
 
 
-def broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image=None):
+def broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image=None, runtime_review=None):
     writing = initial['mode'] == WRITE_MODE
     broker_type = ReplacementWriteBroker if writing else ReplacementArmBroker
     output_fd = sys.stdout.fileno() if writing else None
@@ -703,7 +1015,7 @@ def broker_child(initial, source, plan, base_probe, directory, fd, safety_write,
 
     broker = broker_type(initial, emit,
                          shared_lock_fd=fd, safety_write=safety_write, guard_read=health_read,
-                         **({'image': image} if writing else {}))
+                         **({'image': image, 'runtime_review': runtime_review} if writing else {}))
     try:
         broker.initialize_arm(source, plan, base_probe, directory)
         broker.send(0, 'LOCKED')
@@ -756,6 +1068,10 @@ def _supervise_replacement(initial, source, *, writing):
         layout = supervisor.PROFILED_REPLACEMENT_WRITE_LAYOUT if writing else LAYOUT
         initial = {**initial, '_guardLayout': layout, '_guardLockDescriptor': fd, '_guardPid': os.getpid()}
         supervisor.verify_guard_boundary(initial, source)
+        runtime_review = None
+        if writing and 'runtimeReviewSha256' in initial:
+            from p2_replacement_runtime_review import prepare_runtime_review
+            runtime_review = prepare_runtime_review(initial, plan, source, base_probe)
         directory.mkdir(mode=0o700)
         results_fd = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -763,6 +1079,8 @@ def _supervise_replacement(initial, source, *, writing):
         finally:
             os.close(results_fd)
         migrate.write_exact_bytes(directory, 'reviewed-plan.json', raw)
+        if runtime_review is not None:
+            migrate.write_exact_bytes(directory, RUNTIME_REVIEW, unbase64(initial['runtimeReviewBytes'], 65_536))
         safety_read, safety_write = os.pipe()
         health_read, health_write = os.pipe()
         child = os.fork()
@@ -770,7 +1088,7 @@ def _supervise_replacement(initial, source, *, writing):
             os.close(safety_read)
             os.close(health_write)
             os.setsid()
-            os._exit(broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image))
+            os._exit(broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image, runtime_review))
         os.close(safety_write)
         os.close(health_read)
         cancelled = threading.Event()
@@ -778,22 +1096,38 @@ def _supervise_replacement(initial, source, *, writing):
         write_physical = None
         try:
             with ThreadPoolExecutor(max_workers=1) as worker:
+                custody_request = None
+                written_request = None
                 def arm(probe):
                     nonlocal armed_probe
                     probe_identity(probe, base_probe)
                     armed_probe = probe
                     return worker.submit(verify_and_retain, initial, plan, base_probe, image, directory, source, probe, cancelled)
                 def authorize_write(request):
-                    nonlocal write_physical
+                    nonlocal write_physical, custody_request
                     require(armed_probe is not None and write_physical is None, REFUSED)
                     armed, _ = require_arm(initial, plan, armed_probe, directory)
                     write_physical = unbase64(armed['physicalObservation'], 8192)
+                    custody_request = request
                     return worker.submit(verify_and_retain_write_custody, initial, plan, base_probe, image,
                                          directory, source, armed_probe, request, cancelled)
+                def verify_written(request):
+                    nonlocal written_request
+                    require(custody_request is not None and write_physical is not None, REFUSED)
+                    require(runtime_review is None or request['producerSha256'] == runtime_review['producerSha256'], REFUSED)
+                    written_request = request
+                    return worker.submit(verify_and_retain_written, initial, plan, base_probe, image, directory,
+                                         source, armed_probe, custody_request, request, cancelled)
+                def start_runtime(request):
+                    require(written_request is not None and write_physical is not None, REFUSED)
+                    return worker.submit(retain_runtime_intent, initial, plan, runtime_review, source, directory,
+                                         armed_probe, write_physical, custody_request, written_request, request, cancelled)
                 try:
                     committed = supervisor.watch_broker(child, safety_read, health_write, arm,
                                                         profiled_certification=True, async_arm=True,
-                                                        authorize_replacement_write=authorize_write if writing else None)
+                                                        authorize_replacement_write=authorize_write if writing else None,
+                                                        verify_replacement_written=verify_written if writing else None,
+                                                        start_replacement_runtime=start_runtime if runtime_review is not None else None)
                 except BaseException:
                     cancelled.set()
                     raise
@@ -814,8 +1148,11 @@ def _supervise_replacement(initial, source, *, writing):
                     require(reaped, REFUSED)
                 finally:
                     if write_physical is not None:
-                        contain_replacement_write(initial, plan, image, directory, armed_probe, write_physical,
-                                                  process_reconciled=reaped)
+                        try:
+                            contain_runtime_if_started(initial, plan, base_probe['candidate'], directory, runtime_review, reaped)
+                        finally:
+                            contain_replacement_write(initial, plan, image, directory, armed_probe, write_physical,
+                                                      process_reconciled=reaped)
                     elif reaped and armed_probe is not None:
                         remove_container(container_name(initial, armed_probe), initial['reviewedPlanSha256'])
             raise

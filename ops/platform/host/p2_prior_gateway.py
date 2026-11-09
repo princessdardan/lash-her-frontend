@@ -34,13 +34,15 @@ def _action_directories(action, expected=None):
     legacy = ('p2-'+action, 'p2-recovery-'+action, 'p2-certification-'+action)
     return legacy if expected is None else (*legacy, 'p2-profiled-current-'+action,
         'p2-profiled-current-recovery-'+action, 'p2-profiled-current-certification-'+action,
-        'p2-profiled-known-ack-'+action, 'p2-profiled-known-ack-restoration-'+action)
+        'p2-profiled-known-ack-'+action, 'p2-profiled-known-ack-restoration-'+action,
+        'p2-profiled-replacement-write-'+action)
 
 
 _GUARDED_RECEIPT_LABELS = ('prior-gateway-after-quiescence', 'prior-gateway-broker-fallback',
                            'prior-gateway-api-suspension')
 _PROFILED_RECEIPT_PREFIXES = ('p2-profiled-current-certification-',
-                              'p2-profiled-known-ack-restoration-', 'p2-profiled-known-ack-')
+                              'p2-profiled-known-ack-restoration-', 'p2-profiled-known-ack-',
+                              'p2-profiled-replacement-write-')
 
 
 def _profiled_receipt_root(directory, expected):
@@ -429,6 +431,13 @@ class PriorGatewayBoundary:
             before['observation']['process'] == self.observation['process'] and before['observation']['binding'] == self.observation['binding'],
             'PRIOR_GATEWAY_API_PRESTOP_ZERO_REQUIRED')
         self.api_suspension_before = before
+
+    def verify_replacement_closed_zero(self):
+        require(self.replacement_finished, 'PRIOR_GATEWAY_REPLACEMENT_NOT_READY')
+        actual = observe_prior_gateway(self.initial, self.selected, self.verify_session, self.command,
+                                       self.assert_host, **_profile_kwargs(self.expected_profile))
+        require(actual['process'] == self.current['process'] and actual['binding'] == self.current['binding'] and _zero(actual),
+                'PRIOR_GATEWAY_REPLACEMENT_NOT_CLOSED_ZERO')
 
     def after_api_suspension(self):
         require(self.api_suspension_started and not self.api_suspension_finished and hasattr(self,'api_suspension_before'),

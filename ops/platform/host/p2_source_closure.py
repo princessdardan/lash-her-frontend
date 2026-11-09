@@ -67,7 +67,9 @@ def verify_profiled_current_source_closure(initial, root):
     if initial['mode'] in (PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE):
         required |= PROFILED_REPLACEMENT_ARM_REQUIRED
     if initial['mode'] == PROFILED_REPLACEMENT_WRITE_MODE:
-        required |= {'ops/platform/p2-frontend-replacement-abort.mjs', 'ops/platform/frontend-image.mjs'}
+        required |= {'ops/platform/p2-frontend-replacement-abort.mjs', 'ops/platform/p2-frontend-replacement-written.mjs',
+                     'ops/platform/frontend-image.mjs', 'ops/platform/host/p2_replacement_runtime_review.py',
+                     'ops/platform/host/p2_replacement_runtime_containment.py'}
     if initial['mode'] in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
         required |= PROFILED_CERTIFICATION_REQUIRED
     if initial['mode'] == PROFILED_INTERRUPTED_MODE:

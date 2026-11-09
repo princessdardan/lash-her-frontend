@@ -175,7 +175,7 @@ class ReplacementArmTests(unittest.TestCase):
     def test_abort_uses_exact_packaged_entry_and_retains_prefix_without_replay(self):
         self.write_directory.mkdir(mode=0o700)
         with (patch.object(supervisor, 'verify_guard_lock') as verify,
-              patch.object(parent, 'run_bounded_abort', return_value=self.raw_abort) as execute,
+              patch.object(parent, 'run_bounded_image', return_value=self.raw_abort) as execute,
               patch.object(parent, 'remove_container', return_value=False) as cleanup):
             for _ in range(2):
                 parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
@@ -272,11 +272,11 @@ class ReplacementArmTests(unittest.TestCase):
 
     def test_packaged_abort_stdout_is_bounded(self):
         packet = b'input' * 8_000
-        exact = parent.run_bounded_abort([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'],
+        exact = parent.run_bounded_image([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'],
                                          packet, {})
         self.assertEqual(exact, packet)
         with self.assertRaisesRegex(ValueError, parent.REFUSED):
-            parent.run_bounded_abort([sys.executable, '-c',
+            parent.run_bounded_image([sys.executable, '-c',
                                       'import sys; sys.stdin.buffer.read(); sys.stdout.buffer.write(b"x" * 70_000)'],
                                      b'input', {})
 

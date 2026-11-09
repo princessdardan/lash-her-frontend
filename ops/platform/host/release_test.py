@@ -241,6 +241,7 @@ class RuntimeReleaseTests(unittest.TestCase):
         from unittest.mock import Mock
         import p2_frontend_replacement_parent as replacement
         from p2_profiled_current_scope import COMMON, TARGET, P2ProfiledReplacementScope, _replacement_producer_bytes
+        from p2_replacement_runtime_containment import INTENT, REVIEW, replacement_write_label
         from staging_state import configuration_hashes
 
         self.root = self.fixture.root = self.root.resolve()
@@ -307,8 +308,10 @@ class RuntimeReleaseTests(unittest.TestCase):
 
         broker = object.__new__(replacement.ReplacementWriteBroker)
         broker.initial = {"mode": replacement.WRITE_MODE, "bundle": str(self.bundle), "candidateSha256": candidate_sha,
-                          "sourceCommit": job["sourceCommit"]}
-        broker.plan = {"candidateSha256": candidate_sha, "sourceCommit": job["sourceCommit"],
+                          "sourceCommit": job["sourceCommit"], "environment": "staging", "qualificationTargetProfile": ref,
+                          "reviewedPlanSha256": "e" * 64, "runtimeReviewSha256": "f" * 64}
+        broker.plan = {"candidateSha256": candidate_sha, "sourceCommit": job["sourceCommit"], "targetSha256": probe["targetSha256"],
+                       "environment": "staging", "releaseId": job["releaseId"], "qualificationTargetProfile": ref,
                        "schemaBaselineFileSha256": migrate.file_hash(schema),
                        "replacement": {"administrativeLogins": administrative_logins},
                        "frontendJobSha256": migrate.file_hash(migrate.read_input(self.bundle, "jobs/frontend.json"))}
@@ -322,6 +325,18 @@ class RuntimeReleaseTests(unittest.TestCase):
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         broker.lock_fd = fd
         api_pins = migrate.profiled_current_job_hashes(self.bundle)
+        config_pins = configuration_hashes(self.configuration)
+        raw_review = raw({"apiJobSha256": api_pins, "configurationSha256": config_pins,
+                          "configuration": str(self.configuration)})
+        broker.initial["runtimeReviewSha256"] = migrate.file_hash(raw_review)
+        migrate.write_exact_bytes(broker.directory, REVIEW, raw_review)
+        intent = {"version": 1, "qualificationTargetProfile": ref, "environment": "staging",
+                  "releaseId": job["releaseId"], "sourceCommit": job["sourceCommit"], "candidateSha256": candidate_sha,
+                  "targetSha256": probe["targetSha256"], "reviewedPlanSha256": broker.initial["reviewedPlanSha256"],
+                  "runtimeReviewSha256": broker.initial["runtimeReviewSha256"], "status": "P2_FRONTEND_REPLACEMENT_RUNTIME_STARTED",
+                  "apiJobSha256": api_pins, "configurationSha256": config_pins, "postflightSha256": migrate.file_hash(readback_raw),
+                  "trafficAuthorized": False}
+        migrate.write_json(broker.directory, INTENT, intent)
         credentials = {f"{name.upper()}_STAGING_DATABASE_URL": f"owned-{name}-private" for name in migrate.SERVICES}
         applied_apis = []
         attempt = self.results / "migration-profiled-frontend-replacement-test-release"
@@ -330,6 +345,8 @@ class RuntimeReleaseTests(unittest.TestCase):
             self.assertNotIn("ops/platform/frontend-image.mjs", args)
             self.assertNotIn(jobs["frontend"]["image"], args)
             self.assertNotIn(replacement.CREDENTIAL, env)
+            if args[1] == "run":
+                self.assertEqual(args[args.index("--label") + 1], replacement_write_label(broker.initial["reviewedPlanSha256"]))
             if "--execute-profiled-current" in args:
                 name = next(name for name in migrate.SERVICES if f"lash-migrate-{name}-test-release" in args)
                 applied_apis.append(name)
@@ -357,10 +374,11 @@ class RuntimeReleaseTests(unittest.TestCase):
         def scope_for_replacement():
             return P2ProfiledReplacementScope(broker, postflight_raw=readback_raw, database_raw=database_raw,
                 started_raw=started_raw, owner=owner, runtime=runtime_role, producer_sha256="a" * 64,
-                api_job_sha256=api_pins, configuration_sha256=configuration_hashes(self.configuration))
+                api_job_sha256=api_pins, configuration_sha256=config_pins)
 
         with (patch.object(replacement, "LOCK", lock),
               patch.object(replacement.ReplacementWriteBroker, "verify_replacement_runtime", create=True),
+              patch.object(replacement.ReplacementWriteBroker, "verify_replacement_mutation") as fresh,
               patch.object(replacement.ReplacementWriteBroker, "replacement_runtime_ready", create=True) as ready):
             candidate_path = self.bundle / "release.candidate.json"
             candidate_path.write_bytes(candidate_raw + b" ")
@@ -371,11 +389,24 @@ class RuntimeReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "GUARD_READBACK_CHANGED"):
                 scope_for_replacement()
             guard_readback.write_bytes(readback_raw)
+            (broker.directory / INTENT).write_bytes(raw({**intent, "runtimeReviewSha256": "b" * 64}))
+            with self.assertRaisesRegex(ValueError, "RUNTIME_CONTAINMENT_REFUSED"):
+                scope_for_replacement()
+            (broker.directory / INTENT).write_bytes(raw(intent))
             scope = broker.scope = scope_for_replacement()
             self.addCleanup(scope.revoke)
             scope.prior_gateway = Mock(stopped=False, api_suspension_started=False, api_suspension_finished=False)
             scope.prior_gateway.before_api_suspension.side_effect = lambda: setattr(scope.prior_gateway, "api_suspension_started", True)
             scope.prior_gateway.after_api_suspension.side_effect = lambda: setattr(scope.prior_gateway, "api_suspension_finished", True)
+            from p2_release_scope import P2ReleaseScope
+            with patch.object(P2ReleaseScope, "run") as run:
+                fresh.side_effect = ValueError("OWNED_FRESH_LOCK_LOST")
+                with self.assertRaisesRegex(ValueError, "OWNED_FRESH_LOCK_LOST"):
+                    scope.run(["docker", "run", "owned-image"], timeout=1)
+                run.assert_not_called()
+                scope.run(["docker", "inspect", "owned-image"], timeout=1)
+                run.assert_called_once()
+                fresh.side_effect = None
             with patch.object(release, "make_plan", side_effect=AssertionError("wrong mode reached I/O")):
                 with self.assertRaisesRegex(ValueError, "CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED"):
                     release.execute(self.bundle, self.configuration, self.results, self.compose, True,

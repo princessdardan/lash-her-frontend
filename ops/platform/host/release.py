@@ -275,9 +275,11 @@ def runtime_environment(release, snapshot, *, expected_profile=None):
 def configuration_container(arguments, *, expected_profile=None):
     scope = _command_scope.get()
     profiled = expected_profile is not None and scope is not None
+    replacement = False
     prefix = "lash-config-"
     if profiled:
         from p2_profiled_current_scope import P2ProfiledCurrentScope, P2ProfiledReplacementScope
+        replacement = type(scope) is P2ProfiledReplacementScope
         if type(scope) in (P2ProfiledCurrentScope, P2ProfiledReplacementScope):
             prefix = "lash-p2-profiled-current-image-check-"
         else:
@@ -290,12 +292,17 @@ def configuration_container(arguments, *, expected_profile=None):
     name = prefix + uuid4().hex
     try:
         image_options = ["--pull", "never", "--platform", "linux/amd64"] if profiled else []
+        if replacement:
+            image_options += ["--label", scope.runtime_cleanup_label]
         return command([*arguments[:2], "--name", name, *image_options, *arguments[2:]], SAFE_ENV)
     finally:
-        runner = scope.run if profiled else subprocess.run
-        runner(["docker", "rm", "--force", name], env=SAFE_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-        remaining = command(["docker", "container", "ls", "--all", "--filter", f"name=^/{name}$", "--format", "{{.ID}}"], SAFE_ENV)
-        demand(not remaining, "CONFIGURATION_CONTAINER_CLEANUP_UNVERIFIED")
+        if replacement:
+            scope.cleanup_runtime_helper(name, SAFE_ENV)
+        else:
+            runner = scope.run if profiled else subprocess.run
+            runner(["docker", "rm", "--force", name], env=SAFE_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+            remaining = command(["docker", "container", "ls", "--all", "--filter", f"name=^/{name}$", "--format", "{{.ID}}"], SAFE_ENV)
+            demand(not remaining, "CONFIGURATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
 def preflight(release, snapshot, jobs, pull=True, *, expected_profile=None):

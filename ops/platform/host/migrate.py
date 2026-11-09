@@ -600,10 +600,14 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", preflight_name, True, info.get("frontend", False), expected_profile=expected)
                 if profiled_scope is not None:
                     args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
+                if replacement:
+                    args[2:2] = ["--label", active_scope.runtime_cleanup_label]
                 try:
                     runner(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
                 finally:
-                    if profiled_scope is not None:
+                    if replacement:
+                        active_scope.cleanup_runtime_helper(preflight_name, base_env)
+                    elif profiled_scope is not None:
                         cleanup_migration_container(runner, preflight_name, base_env)
             # Validate every job in its exact migration image before database credentials are read.
             outcome["phase"] = "credential-validation"
@@ -686,6 +690,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", container_name, frontend=info.get("frontend", False), expected_profile=expected)
                 if profiled_scope is not None:
                     args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
+                if replacement:
+                    args[2:2] = ["--label", active_scope.runtime_cleanup_label]
                 log_fd = os.open(receipts / "container.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
                     runner = active_scope.run if active_scope is not None else subprocess.run
@@ -693,8 +699,11 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 finally:
                     os.close(log_fd)
                     # Also cleans up a container left running by a timed-out/interrupted Docker CLI.
-                    cleanup = active_scope.run if profiled_scope is not None else subprocess.run
-                    cleanup_migration_container(cleanup, container_name, base_env)
+                    if replacement:
+                        active_scope.cleanup_runtime_helper(container_name, base_env)
+                    else:
+                        cleanup = active_scope.run if profiled_scope is not None else subprocess.run
+                        cleanup_migration_container(cleanup, container_name, base_env)
                 receipt = read_json(receipts, "database-receipt.json", expected_profile=expected)
                 terminal = read_json(receipts, "job-outcome.json", expected_profile=expected)
                 require_receipt_profile(expected, info["service"], receipt, terminal)

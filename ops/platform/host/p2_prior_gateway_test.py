@@ -228,7 +228,7 @@ class PriorGatewayTests(unittest.TestCase):
                    'status': 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED', 'beforeSha256': 'd' * 64,
                    'stoppedProcess': {}}
         prefixes = ('p2-profiled-current-certification-', 'p2-profiled-known-ack-',
-                    'p2-profiled-known-ack-restoration-')
+                    'p2-profiled-known-ack-restoration-', 'p2-profiled-replacement-write-')
         for prefix in prefixes:
             with self.subTest(prefix=prefix):
                 root = self.root / (prefix + action)
@@ -354,6 +354,18 @@ class PriorGatewayTests(unittest.TestCase):
         # deletion/loss stays unknown even with the stopped object present.
         with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
             gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+
+    def test_replacement_ready_gateway_rechecks_actual_closed_zero(self):
+        boundary = gate.prepare_prior_gateway(self.initial, self.selected, self.output, self.verify, self.command,
+                                             assert_host=lambda _: None)
+        with self.assertRaisesRegex(ValueError, 'REPLACEMENT_NOT_READY'):
+            boundary.verify_replacement_closed_zero()
+        boundary.replacement_finished = True
+        boundary.current = boundary.observation
+        boundary.verify_replacement_closed_zero()
+        self.save_open()
+        with self.assertRaisesRegex(ValueError, 'REPLACEMENT_NOT_CLOSED_ZERO'):
+            boundary.verify_replacement_closed_zero()
 
     def test_noop_gateway_stage_cannot_mark_old_process_as_completed_replacement(self):
         boundary=self.prepare()

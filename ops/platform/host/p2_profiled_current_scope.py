@@ -261,6 +261,7 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
     def __init__(self, parent, *, postflight_raw, database_raw, started_raw, owner, runtime, producer_sha256,
                  api_job_sha256, configuration_sha256):
         import p2_frontend_replacement_parent as replacement
+        from p2_replacement_runtime_containment import replacement_write_label, verify_runtime_intent
         from staging_state import CONFIGURATION_FILES
         require = migrate.demand
         require(type(parent) is replacement.ReplacementWriteBroker and parent.initial['mode'] == replacement.WRITE_MODE and
@@ -286,10 +287,13 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
                 'P2_REPLACEMENT_RECEIPT_BYTES_REFUSED')
         require(replacement.private_record(self.directory, self._guard_written_observation, 8192) == postflight_raw,
                 'P2_REPLACEMENT_GUARD_READBACK_CHANGED')
+        verify_runtime_intent(parent.initial, parent.plan, self.directory, configuration_sha256=configuration_sha256,
+                              api_job_sha256=api_job_sha256, postflight_sha256=migrate.file_hash(postflight_raw))
         receipt = _replacement_producer_bytes(probe, parent.write_observation, database_raw, started_raw,
                                                postflight_raw, owner, runtime, producer_sha256,
                                                parent.plan['replacement']['administrativeLogins'])
         self.api_job_sha256 = copy.deepcopy(api_job_sha256)
+        self.runtime_cleanup_label = replacement_write_label(parent.initial['reviewedPlanSha256'])
         self.original_frontend_bytes = (database_raw, started_raw, postflight_raw)
         super().__init__(parent.lock_fd, replacement.LOCK, lambda: replacement.ReplacementWriteBroker.verify_replacement_runtime(parent),
                          receipt, parent.initial['candidateSha256'], release=release, jobs=jobs,
@@ -310,6 +314,15 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
         migrate.demand(type(parent) is ReplacementWriteBroker and parent.scope is self and parent.lock_fd == self.descriptor,
                        'P2_REPLACEMENT_SOURCE_PARENT_REQUIRED')
         return parent
+
+    def run(self, args, **options):
+        from p2_frontend_replacement_parent import ReplacementWriteBroker
+        if len(args) > 1 and args[0] == 'docker' and (
+            args[1] in ('run', 'stop', 'start', 'restart', 'kill') or
+            args[1] == 'compose' and any(verb in args[2:] for verb in ('up', 'start', 'stop', 'down', 'restart', 'kill'))
+        ):
+            ReplacementWriteBroker.verify_replacement_mutation(self._require_parent())
+        return super().run(args, **options)
 
     def api_job_bytes(self, name):
         from qualification_target_profile import decode_qualification_target_json
@@ -336,3 +349,11 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
         from p2_frontend_replacement_parent import ReplacementWriteBroker
         return ReplacementWriteBroker.replacement_runtime_ready(
             self._require_parent(), attempt, migration_attempt, snapshot, selected, outcome)
+
+    def cleanup_runtime_helper(self, name, env):
+        from p2_replacement_runtime_containment import cleanup_named_replacement_helper
+
+        def run(args, timeout):
+            return self.run(args, timeout=timeout, check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+        cleanup_named_replacement_helper(run, name, self.release['releaseId'], self.runtime_cleanup_label)
