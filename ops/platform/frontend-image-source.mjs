@@ -11,6 +11,7 @@ const fixed = ["package.json", "package-lock.json", "src/lib/private-db/migratio
   "scripts/api-contract-tools.mjs", "scripts/api-contract-compatibility-review.mjs",
   "ops/platform/qualification-target-profile.mjs", "ops/platform/qualification-target-profiles.json",
   "ops/platform/p2-profiled-current-probe.mjs", "ops/platform/p2-recovery-current-probe.mjs",
+  "ops/platform/p2-frontend-replacement-probe.mjs", "ops/platform/frontend-admission-bootstrap.mjs",
   ...["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"].map((name) => `ops/platform/${name}.mjs`),
   "drizzle/meta/_journal.json",
   ...["manifest.json", "course-api.json", "community-api.json", "enrollment-event.schema.json", "boundary-contracts.json", "README.md"]

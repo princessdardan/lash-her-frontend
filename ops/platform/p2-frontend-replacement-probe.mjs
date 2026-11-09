@@ -49,6 +49,11 @@ function validate(input, physical) {
   const { artifact } = prepareFrontendMigration(candidate, job, baseline, undefined, profile);
   demand(job.target.allowEmptyBootstrap === true &&
     isDeepStrictEqual(job.target.approvedPendingTags, artifact.migrations.map(({ tag }) => tag)));
+  return artifact;
+}
+
+export function validateP2FrontendReplacementProbe(input) {
+  return validate(input, true);
 }
 
 const backendStart = `pg_catalog.to_char(backend_start AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
@@ -112,7 +117,7 @@ export async function createP2FrontendReplacementProbe(input, client, verifySess
 }
 
 export async function observeP2FrontendReplacement(input, { getUrl }) {
-  validate(input, true);
+  validateP2FrontendReplacementProbe(input);
   demand(typeof getUrl === "function");
   const probe = structuredClone(input), options = frontendConnectionOptions(await getUrl(), probe.job.target);
   const client = new Client({ ...options, application_name: "lash-her-frontend-replacement-observer",
@@ -135,20 +140,29 @@ export async function observeP2FrontendReplacement(input, { getUrl }) {
     readOnlyVerified: true, authorityIssued: false, trafficAuthorized: false };
 }
 
+export async function runP2FrontendReplacementProbeCli(verifySource) {
+  const raw = Buffer.alloc(2_000_001);
+  let length = 0;
+  while (length < raw.length) {
+    const count = readSync(0, raw, length, raw.length - length, null);
+    if (!count) break;
+    length += count;
+  }
+  demand(length > 0 && length <= 2_000_000);
+  const input = decodeQualificationTargetJson(raw.subarray(0, length), "carrier");
+  const result = await observeP2FrontendReplacement(input, {
+    getUrl() {
+      verifySource?.(input.job.sourceCommit);
+      return process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL;
+    },
+  });
+  console.log(JSON.stringify(result));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     demand(process.argv.length === 2);
-    const raw = Buffer.alloc(2_000_001);
-    let length = 0;
-    while (length < raw.length) {
-      const count = readSync(0, raw, length, raw.length - length, null);
-      if (!count) break;
-      length += count;
-    }
-    demand(length > 0 && length <= 2_000_000);
-    const input = decodeQualificationTargetJson(raw.subarray(0, length), "carrier");
-    console.log(JSON.stringify(await observeP2FrontendReplacement(input,
-      { getUrl: () => process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL })));
+    await runP2FrontendReplacementProbeCli();
   } catch {
     console.error(refusal);
     process.exitCode = 1;

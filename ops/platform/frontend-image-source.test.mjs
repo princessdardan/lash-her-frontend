@@ -14,7 +14,8 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "frontend-image-source-"));
   for (const directory of ["ops/platform", "scripts", "src/lib/private-db", "contracts/api-integration/v1"]) mkdirSync(join(root, directory), { recursive: true });
   for (const file of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"]) copyFileSync(join(source, "scripts", file), join(root, "scripts", file));
-  for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release", "p2-profiled-current-probe", "p2-recovery-current-probe"])
+  for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs",
+    "source-policy", "release", "p2-profiled-current-probe", "p2-recovery-current-probe", "p2-frontend-replacement-probe", "frontend-admission-bootstrap"])
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
   for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
     copyFileSync(join(source, "ops/platform", name), join(root, "ops/platform", name));
@@ -40,16 +41,16 @@ test("packaged source binds the migration executable, SQL, lineage and minimal d
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("packaged profiled physical probe binds its actual role and grants verifier", () => {
+test("packaged physical probes bind their executable source and dependencies", () => {
   const root = fixture();
   try {
     const manifest = writePackagedFrontendSource("a".repeat(40), root);
-    for (const name of ["p2-profiled-current-probe", "p2-recovery-current-probe"]) {
+    for (const name of ["p2-profiled-current-probe", "p2-recovery-current-probe", "p2-frontend-replacement-probe", "frontend-admission-bootstrap"]) {
       const path = `ops/platform/${name}.mjs`;
       assert.equal(manifest.files[path], sha256(readFileSync(join(source, path))));
     }
     assert.doesNotThrow(() => verifyPackagedFrontendSource(root));
-    writeFileSync(join(root, "ops/platform/p2-recovery-current-probe.mjs"), "modified role/grants policy\n");
+    writeFileSync(join(root, "ops/platform/p2-frontend-replacement-probe.mjs"), "modified replacement observer\n");
     assert.throws(() => verifyPackagedFrontendSource(root));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -138,8 +139,10 @@ test("minimal image dependencies stay aligned with the application lock", () => 
 
 test("image entrypoint never offers checkout or environment source-verification bypasses", () => {
   // The real entrypoint refuses outside an image before inspecting job inputs.
-  const result = spawnSync(process.execPath, ["ops/platform/frontend-image.mjs", "--manifest-only"], {
-    cwd: source, encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH },
-  });
-  assert.equal(result.status, 1); assert.match(result.stderr, /FRONTEND_PACKAGED_SOURCE_REFUSED/u);
+  for (const mode of ["--manifest-only", "--observe-replacement-lock"]) {
+    const result = spawnSync(process.execPath, ["ops/platform/frontend-image.mjs", mode], {
+      cwd: source, input: "{}", encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.status, 1); assert.match(result.stderr, /FRONTEND_PACKAGED_SOURCE_REFUSED/u);
+  }
 });
