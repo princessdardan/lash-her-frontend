@@ -14,7 +14,7 @@ Use the Production target of the dedicated staging Vercel project `prj_rkTbzWmgd
 
 - Set `CUSTOMER_AUTH_URL` to `https://staging.lashher.com`. Bind `CUSTOMER_AUTH_GOOGLE_ID` and `CUSTOMER_AUTH_GOOGLE_SECRET` from the owner’s private handoff for **Lash Her Staging Customer Identity**. Verify the registered callback is `https://staging.lashher.com/api/customer-auth/callback/google`.
 - Set a dedicated `CUSTOMER_AUTH_SECRET` of at least 32 bytes and set `CUSTOMER_AUTH_RESEND_KEY` and `CUSTOMER_AUTH_EMAIL_FROM` for the reviewed staging sender.
-- Set `AUTH_URL` or `NEXTAUTH_URL` to `https://staging.lashher.com`. If both exist, use the same origin for both.
+- Set `AUTH_URL` to `https://staging.lashher.com`. If `NEXTAUTH_URL` exists, use the same origin. Bind `AUTH_SECRET`, the reviewed `ADMIN_OWNER_EMAILS`, and the separate administrator `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. Verify the administrator callback is `https://staging.lashher.com/api/auth/callback/google`.
 - Bind `COURSE_LEARNER_JWT_CURRENT_SECRET`, `COURSE_ADMIN_JWT_CURRENT_SECRET`, `COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET` and `COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET` to the matching reviewed staging API verifier material.
 
 Keep the source record limited to variable names and the public origin. The release preflight checks that the names exist. The staging browser journey verifies the actual provider callback and session.

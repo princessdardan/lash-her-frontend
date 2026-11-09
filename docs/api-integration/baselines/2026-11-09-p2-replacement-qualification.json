@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "scope": "Owned local Linux and PostgreSQL qualification plus offline replacement release preparation",
+  "linuxApiPinRehearsal": {
+    "sourceArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-linux-restoration-20261109.zAhysTeH",
+    "reproductionSha256": "06b9ba5ee1ada63a5873710cecfa0cf2c60610488708d4fc384604c594a814ce",
+    "postgresMajor": 18,
+    "architecture": "linux/arm64",
+    "fixtureImageId": "sha256:73de49efa4f06f6e24fb4a9964f6d072d51c14db52c23c49f274f0ec03aede0d",
+    "sources": {
+      "frontend": {
+        "repository": "lash-her-frontend",
+        "revision": "56356f00a471a762d8874917a93cec7cb6142181",
+        "gitTree": "a889e17bb4035e34873b30d05139b4c442d67588",
+        "packageSha256": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+        "packageLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+        "artifactSha256": {}
+      },
+      "course": {
+        "repository": "lash-her-course-api",
+        "revision": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "gitTree": "475875bc2c6f6cd5d5b9c585f9c1774c1a1f330b",
+        "packageSha256": "b1f214890facb53ba9b8b9210a84e9ec0732df253b57a83459461f6a8989998c",
+        "packageLockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa",
+        "artifactSha256": {
+          "course": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d"
+        }
+      },
+      "community": {
+        "repository": "lash-her-community-api",
+        "revision": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+        "gitTree": "43968c3caffdc0f2caa65daa1f3322169e471cf5",
+        "packageSha256": "3966eb15f5a325f608e0dd7f97891e2591dbb9b74772aa4fe8ccebf0a00b778d",
+        "packageLockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe",
+        "artifactSha256": {
+          "community": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+          "enrollmentEvent": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+        }
+      }
+    },
+    "results": {
+      "current": {
+        "status": "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS",
+        "receiptSha256": "c447dbbdbbc96a9b412c72f53feb0d4962fa5a7d4410bd1f04c83a278847c8c0",
+        "summarySha256": "c69e8fd667f3c6abb0a51f6644311d43d7e0b6868a4c75ec5b32569ae07e82bf",
+        "checks": 55
+      },
+      "forward": {
+        "status": "OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS",
+        "receiptSha256": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+        "summarySha256": "8e33806099bffbbc7462d8aef1a30c4c3076fabfba1923576f82a4f842068014",
+        "checks": 19
+      },
+      "persistence": {
+        "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS",
+        "receiptSha256": "dde7cb7739ffe0c39c6052cd6f3830fa4323eaca601ef5686c7bc210b0a7b467",
+        "summarySha256": "7e9b93573a1a2a25f0b0ea0db32e016df801b08af1176d2445ccb9ad8a6192fe",
+        "checks": 60,
+        "sourceMode": "parent-issued-manifest-and-mounted-readback",
+        "sourceManifestSha256": "eed90c2275d636b78a2b5e52f10c0850a64e5c7c33e41cd976f7c3ba3f4ecd6f"
+      },
+      "receivers": {
+        "status": "P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES18_PASS",
+        "receiptSha256": "0134ddcd1e90608d1295ebe6b03757fbffeab739de7f227a6b73efd1474bc9cd",
+        "summarySha256": "dc0a08810ed4b427eef860353cf7d59b1901190859255c357845ec73efeaa2e3",
+        "checks": 12,
+        "sourceMode": "parent-issued-manifest-and-mounted-readback",
+        "sourceManifestSha256": "eed90c2275d636b78a2b5e52f10c0850a64e5c7c33e41cd976f7c3ba3f4ecd6f"
+      },
+      "interrupt-positive": {
+        "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+        "receiptSha256": "2f1d25b7f06d14599c79f87c909d39f34e638849f3559f75fffb105a7b4748a9",
+        "summarySha256": "00d1928184c516b9b4d6723e546c9065b3762761a9993d632fdef8823257da9f",
+        "terminalStatus": "P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED",
+        "runtimeTransportProjected": true
+      },
+      "interrupt-negatives": {
+        "status": "P2_INTERRUPTED_NEGATIVES_OWNED_PASS",
+        "receiptSha256": "3808cac705ebb795211ca73e13653c001fc12dca244a336162165a20963afd38",
+        "summarySha256": "8c2bb5a051d2d31a70dd7cc3fce44bc5ea62ab56f3f30726092a0f7e1b221c27",
+        "cases": [
+          "original-bytes",
+          "original-config-drift",
+          "missing-lineage",
+          "pending-lineage",
+          "backend-effect",
+          "active-backend-loss",
+          "active-guard-loss"
+        ],
+        "runtimeTransportProjected": true
+      }
+    },
+    "actualDeployedRuntime": false,
+    "providerTouched": false,
+    "trafficAuthorized": false
+  },
+  "replacementObserverImage": {
+    "imageSourceCommit": "55e1c49ae1d8b94eb83223c760a483d66cb7c8a1",
+    "testSourceCommit": "20b22b730c8303f9dd8e243fbd2275ca7a79873e",
+    "imageId": "sha256:1547141c4886fe2071846202b85ca0391201f6b66e9a121723c6f6f94b66d82d",
+    "fixtureImageId": "sha256:d1e6971a8b432f4ddcac86d6673b2051ca8de1094acfc928bd76566196bec846",
+    "architecture": "linux/arm64",
+    "postgresMajor": 18,
+    "ownedTestsPassed": 2,
+    "sourceMismatchRefused": true,
+    "actualVerifiedTls": true,
+    "checkedSqlOrDeploymentAuthority": false,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-image-55e1c49a",
+    "privateArtifactSha256": {
+      "image-build.log": "96557fa705795f90b748ff77a8913a1947df7edf72abf1c1c7589d64004f1298",
+      "fixture-build.log": "d071bdc988eebe312d306374500409b1d34db97c4cea975db01ae7e41aa1c85e",
+      "image-ids": "9b4965fe7cc16afa52e92ef3fc7c8c02ffcc3b1d620451543fda1ba5b56b4f47",
+      "packaged-pg18.log": "bf58338bcf0f827b4f5304ca49156786feb9346cf9c5efb4223ccc6a520d7b3c",
+      "current-release-recovery.log": "69e8b626306a942e4b538d97393cbd5f59ef82d1e9519d7b6b789f8acd09c8e3",
+      "planner-and-image.log": "f1a72a904c4399374d4da2603c5933f81b1abca95b2c70dfd8b30bab68362e89",
+      "contracts.log": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351"
+    }
+  },
+  "currentReleaseRecoveryTests": {
+    "commit": "20b22b730c8303f9dd8e243fbd2275ca7a79873e",
+    "passed": 17,
+    "skipped": 0,
+    "failed": 0
+  },
+  "offlineReplacementPlanner": {
+    "commit": "191e9a931b1c23ddcb8d4b3270adebd990bbb519",
+    "focusedTestsPassed": 21,
+    "combinedImageAndPlannerPassed": 35,
+    "liveTargetSelected": false,
+    "applyAuthority": false
+  },
+  "stagingCertified": false,
+  "candidatePublished": false,
+  "replacementAbort": {
+    "commit": "4c1c826ca4a902183b1b550fafa5019212b5daee",
+    "pg16Passed": 2,
+    "pg18Passed": 2,
+    "actualLockContentionVerified": true,
+    "unrelatedBackendPreserved": true,
+    "partialCommitObserved": true,
+    "observerHoldsMigrationLockThroughReadback": true,
+    "replayAuthorized": false,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/owned-frontend-replacement-abort",
+    "privateArtifactSha256": {
+      "pg16-observation-lock.tap": "283154dbc0023ada006b1921c7024c520b34cf38f29926d0540c3d027e145848",
+      "pg18-observation-lock.tap": "f91802242a3041eb18dd0e4ab80b0aeaf6e581d0142baa89581bb120548d68aa"
+    }
+  },
+  "integratedDatabaseChecks": {
+    "commit": "4c1c826ca4a902183b1b550fafa5019212b5daee",
+    "pg16Passed": 18,
+    "pg18Passed": 18,
+    "skipped": 0,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-integrated-4c1c826c",
+    "privateArtifactSha256": {
+      "pg16.log": "4bbb03a1cf273e3cb3254ef290982377059894ff079b7a7659f4e9cdd700b80f",
+      "pg18.log": "df6eaea853a888c38b92d5b999afc3dfcc816c022e5b9b57662e8abf3833c012",
+      "host-admin-binding.log": "5c36a7b601a8de1f0915ec8f80c379173dc0ff195650cc1ddafbb75608a3e03e",
+      "host-admin-binding-loopback.log": "eedff22132d76021f8322eaef59f6db8150a2323bdf6789b26fbe82406797b5b"
+    }
+  },
+  "adminBindingPreflight": {
+    "commit": "b838c6bda69ccec36b614bb4ba58eae540f3291b",
+    "testsPassed": 48,
+    "actualLoopbackTlsFixtures": true,
+    "sandboxOnlyRunRefusedLoopback": true,
+    "requiresAuthUrl": true,
+    "retainsSecretValues": false,
+    "verifiedStagingBindingValues": false,
+    "firstOwnerStageIntegrated": false
+  },
+  "installedReplacementHostActionReady": false,
+  "apiReviewState": {
+    "coursePolicy": "open",
+    "courseRuntime": "draft",
+    "communityPolicy": "open"
+  }
+}

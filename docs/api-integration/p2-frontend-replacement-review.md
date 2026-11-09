@@ -11,9 +11,31 @@ The proposed path uses a distinct, empty PostgreSQL 16 or 18 frontend target und
 3. Confirm the selected target's catalog behavior on its actual PostgreSQL service before binding any frontend. Check that the migration login owns the database, that `PUBLIC` lacks `CONNECT`, `TEMP` and `CREATE`, and that only reviewed roles can connect. The stock boundary also inspects schemas, extensions, subscriptions, prepared transactions and the absence of other client sessions. The disposable tests cover stock PostgreSQL 16 and 18. A managed provider's roles and catalog permissions require actual evidence before selection. The verifier is `ops/platform/frontend-replacement-boundary.mjs` in the frontend integration source.
 4. Review the exact candidate's frontend producers and selected provider bindings. Keep predecessor deployments, preview callbacks, historical callers and recovery on their original database and credentials. Keep new callback bindings and schedules closed until separately qualified. Record the scoped split of effects and the destination for the new frontend runtime credential. The approved certification exclusions for retained financial-history smoke and integrations lacking a qualified setup still apply. Paid-grant certification remains required.
 
+## Offline review command
+
+Run the fixed planner from the reviewed frontend checkout with Node 24. The bundle contains `release.candidate.json`, `jobs/frontend.json` and `schema/frontend.json`. Keep the bundle, review and original predecessor observation in private directories outside Git. If using the archived lineage receipt, copy its original bytes and verify them against the retained digest first.
+
+```sh
+node ops/platform/p2-frontend-replacement-plan.mjs --plan \
+  /absolute/private/bundle /absolute/private/replacement-review.json \
+  REVIEWED_REPLACEMENT_REVIEW_SHA256 /absolute/private/frontend-lineage-observation.json
+```
+
+Record the review SHA-256 through independent operator custody. The review binds the exact candidate, frontend job and baseline file digests. Its predecessor entry binds the retained raw journal digest, direct target, Neon project/branch/endpoint, prior deployment and recovery reference. Its replacement entry binds the distinct Neon resource, reviewed database and migration login OIDs, effective administrator login OIDs and replacement recovery reference. The planner checks these bindings and the exact ordered migration chain against source. Its output records the reviewed selection for later host observation and grants no execution authority.
+
 ## Reviewed release sequence
 
 1. Freeze both reviewed API `main` commits after required CI and refresh the frontend contract and scoped runtime pins. Qualify the exact frontend source on Linux. Prepare the immutable candidate and the exact full migration job and schema baseline for the selected replacement target. Review the complete 83-tag chain against the candidate. [Operator sequence](p2-staging-certification.md#prerequisites-and-operator-sequence).
 2. Prepare one explicit host action under the single-operator policy. The action needs the reviewed selection and predecessor receipts, exact replacement target and credentials, producer inventory, provider and schedule closure, and the compatible frontend deployment configuration. Dardan starts the concrete action after reviewing its target, migrations and release ID. Target setup and candidate publication have separate approval steps. [Release policy](release-policy.md).
 3. Hold the staging host flock and physical PostgreSQL advisory lock continuously through target and empty-state verification, role preparation, admission bootstrap, SQL, runtime readiness, frontend deployment, workload verification and promotion. Independently verify the original PostgreSQL backend and action nonce before permitting SQL. Prove the frontend runtime credential connects to the selected replacement role and database before binding it. Promote with both admission classes and unrelated schedules closed.
 4. Retain the original attempt, committed SQL and failure receipts. After an interruption, reconcile actual lineage and any deployment or promotion effects under the reviewed recovery action. A fresh apply requires the original empty boundary. The owned bootstrap is qualified locally. Installed host execution, compatible promotion, interruption recovery and deployed certification remain open. [Owned bootstrap evidence](baselines/2026-11-07-p2q-f78-ci/owned-frontend-replacement.json).
+
+## Fresh admin initialization
+
+Use the normal verified Google administrator sign-in. The first protected `/admin` request creates the active owner for an allowlisted email. The existing certification identity stage requires an owner UUID before opening, so the replacement needs a separate reviewed first-owner window. It must admit the sign-in action, callback and the protected page that materializes the owner, then verify the new owner binding and close admission. Use that observed UUID for authoring and the audited grant cases. Create the separate non-editor through the owner staff workflow and bind it through its own verified sign-in. [Approved first-owner setup](decisions/2026-11-06-isolated-p2-qualification-lane.md).
+
+Use the [staging binding checklist](baselines/2026-11-07-p2q-f78-ci/README.md) for the exact admin origin and both Google clients. The metadata preflight proves names on the selected staging project. The reviewed first-owner window still needs actual callback and persisted owner evidence.
+
+## Failure observation boundary
+
+The owned abort observer matches the previously verified backend identity and rechecks the database and role OIDs before termination. PostgreSQL signals by PID and retains a short interval between backend validation and signaling. The host must authenticate the durable observation and retain uncertainty on a failed termination or readback. After the original backend is absent, the observer holds the migration lock while it reads the committed prefix. This receipt supplies no replay authority. [PostgreSQL signaling implementation](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/storage/ipc/signalfuncs.c#L94-L109).
