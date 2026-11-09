@@ -113,6 +113,9 @@ export async function bootstrapFrontendAdmission(input, client, dependencies, ex
         await client.query(`GRANT USAGE ON SCHEMA frontend_admission TO "${role.name}"`);
         await client.query(`GRANT EXECUTE ON ALL ROUTINES IN SCHEMA frontend_admission TO "${role.name}"`);
       }
+      // Check the original migration identity and its guard before committing.
+      await client.query("RESET ROLE");
+      await verify();
       await client.query("COMMIT");
     } catch { try { await client.query("ROLLBACK"); } catch { /* observe actual state in a new action */ } throw new Error("BOOTSTRAP_OUTCOME_UNVERIFIED"); }
     phase = "closed-ledger-postflight"; await verify();

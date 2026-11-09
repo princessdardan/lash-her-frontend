@@ -1,4 +1,4 @@
-// The harness owns all three loopback clusters and their short-lived credentials.
+// The harness owns every loopback cluster and its short-lived credentials.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -75,7 +75,7 @@ function plan(sourceCommit, artifact, baseline, target, predecessorTarget, relea
     administrativeLogins: [], producerSha256, inventorySha256 };
 }
 
-async function invoke(directory, name, input, cluster, predecessorCluster, success, { ordinary = false, confirmation } = {}) {
+async function invoke(directory, name, input, cluster, predecessorCluster, success, { ordinary = false, confirmation, continueRelease } = {}) {
   phase = name;
   const results = privateDir(join(directory, name));
   const outputs = { directory: privateDir(join(results, "release")), rolesDirectory: privateDir(join(results, "roles")),
@@ -91,6 +91,7 @@ async function invoke(directory, name, input, cluster, predecessorCluster, succe
     } else await runOwnedFrontendReplacementBootstrap(input, {
       ...outputs, cluster, predecessorCluster, getUrl,
       confirmation: confirmation ?? `owned-frontend-bootstrap/${input.job.releaseId}`,
+      ...(continueRelease ? { continueRelease: value => continueRelease(value, outputs) } : {}),
     });
   } catch (failure) { error = failure; }
   assert.equal(String(error?.message ?? "").includes(password), false);
@@ -221,7 +222,32 @@ async function fixture() {
     await attempt("shared-predecessor-role", false);
     await assertPristine(replacement, target.database);
     await withDatabase(replacement, "postgres", client => client.query(`drop role ${oldRuntime}`));
-    const applied = await attempt("apply", true);
+    const applied = await attempt("apply", true, { async continueRelease(continuation, outputs) {
+      const { database, owner, runtime, roleProofSha256, admission, verifyLockedSession } = continuation;
+      assert.equal(database.applied.length, artifact.migrations.length);
+      assert.deepEqual(admission, { migrationCount: artifact.migrations.length, admissionEpoch: "1", newWork: false, recovery: false, operations: 0 });
+      const rolesReceipt = readJson(outputs.rolesDirectory, "roles-preparation-outcome.json");
+      assert.deepEqual({ owner, runtime }, { owner: rolesReceipt.owner, runtime: rolesReceipt.runtime });
+      assert.equal(roleProofSha256, rolesReceipt.proofSha256);
+      const credential = readJson(outputs.privateDirectory, "frontend-role-credentials.json");
+      assert.equal(continuation.private.runtimeDatabaseUrl, credential.runtimeDatabaseUrl);
+      assert.equal(JSON.stringify(continuation).includes(credential.password), false);
+      const physical = readJson(outputs.directory, "replacement-physical-observation.json");
+      const raw = readFileSync(join(outputs.directory, "replacement-physical-observation.json"));
+      assert.equal(readJson(outputs.directory, "replacement-bootstrap-started.json").physicalObservationSha256,
+        createHash("sha256").update(raw).digest("hex"));
+      await verifyLockedSession();
+      await assert.rejects(withFrontendEnvironmentLock(async () => assert.fail("environment lock released")));
+      await withDatabase(replacement, target.database, async client => {
+        const { rows: [held] } = await client.query(`select count(*)::int as locks from pg_catalog.pg_locks
+          where locktype='advisory' and pid=$1 and mode='ExclusiveLock' and granted`, [physical.backendPid]);
+        assert.equal(held.locks, 2);
+        const { rows: [competing] } = await client.query("select pg_try_advisory_lock(hashtext($1)) as acquired", [FRONTEND_MIGRATION_LOCK]);
+        assert.equal(competing.acquired, false);
+      });
+      await verifyApplied(replacement, selected, artifact, outputs);
+      await verifyLockedSession();
+    } });
     assert.equal(applied.replacementOutcome?.status, "OWNED_FRONTEND_REPLACEMENT_DATABASE_VERIFIED");
     assert.equal(applied.replacementOutcome?.deploymentAuthorized, false);
     assert.equal(applied.replacementOutcome?.automaticReplayAllowed, false);
@@ -231,6 +257,8 @@ async function fixture() {
     assert.equal(closedReceipt.newWork, false);
     assert.equal(closedReceipt.recovery, false);
     assert.equal(readJson(applied.directory, "replacement-bootstrap-started.json").status, "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_STARTED");
+    assert.equal(readJson(applied.directory, "replacement-closed-after-continuation.json").status, "OWNED_FRONTEND_REPLACEMENT_CLOSED_AFTER_CONTINUATION");
+    assert.equal(readJson(applied.directory, "frontend-continuation-completed.json").databaseVerified, true);
     const appliedRows = await verifyApplied(replacement, selected, artifact, applied);
     const databaseReceipt = readJson(applied.directory, "database-receipt.json");
     assert.equal(databaseReceipt.status, "DATABASE_VERIFIED");
@@ -261,6 +289,20 @@ async function fixture() {
     await invoke(directory, "late-schema-mismatch-replay", latePlan, late, predecessor, false);
     assert.deepEqual(readFileSync(join(failure.directory, "job-outcome.json")), failureReceipt);
     assert.deepEqual(await withDatabase(late, lateTarget.database, async client => (await client.query(journalSql)).rows), appliedRows);
+    const interrupted = await start("interrupted", migrationUser);
+    const interruptedTarget = { ...target, port: interrupted.port, database: "owned_frontend_interrupted" };
+    await createDatabase(interrupted, interruptedTarget.database);
+    const interruptedPlan = plan(sourceCommit, artifact, baseline, interruptedTarget, predecessorTarget, "owned-frontend-interrupted");
+    const incomplete = await invoke(directory, "interrupted-continuation", interruptedPlan, interrupted, predecessor, false,
+      { async continueRelease({ verifyLockedSession }) { await verifyLockedSession(); throw new Error("OWNED_CONTINUATION_INTERRUPTED"); } });
+    assert.equal(incomplete.outcome.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(incomplete.outcome.phase, "compatible-frontend-continuation");
+    assert.equal(incomplete.replacementOutcome.automaticReplayAllowed, false);
+    assert.equal(existsSync(join(incomplete.directory, "frontend-continuation-completed.json")), false);
+    const interruptedReceipt = readFileSync(join(incomplete.directory, "database-receipt.json"));
+    await invoke(directory, "interrupted-continuation-replay", interruptedPlan, interrupted, predecessor, false);
+    assert.deepEqual(readFileSync(join(incomplete.directory, "database-receipt.json")), interruptedReceipt);
+    assert.deepEqual(await verifyApplied(interrupted, interruptedPlan, artifact, incomplete), appliedRows);
     await withDatabase(predecessor, predecessorDatabase, async client => {
       assert.deepEqual((await client.query("select value from public.preserved_history")).rows, [{ value: "retained" }]);
       assert.equal(await journalExists(client), false);
@@ -274,7 +316,9 @@ async function fixture() {
         "stopped-cluster-refused", "ordinary-profiled-write-refused", "environment-lock-contention",
         "database-lock-contention", "nonempty-target-refused", "predecessor-role-refused", "full-migration-lineage",
         "exact-schema", "closed-runtime-admission", "predecessor-preserved",
-        "fresh-directory-replay-refused", "late-schema-drift-retains-commits-and-refuses-replay"] };
+        "fresh-directory-replay-refused", "late-schema-drift-retains-commits-and-refuses-replay",
+        "independent-physical-proof-before-write", "both-locks-held-through-compatible-continuation",
+        "closed-admission-rechecked-after-continuation", "failed-continuation-preserves-commits-and-refuses-replay"] };
   } finally {
     let allStopped = true;
     for (const cluster of clusters.reverse()) {

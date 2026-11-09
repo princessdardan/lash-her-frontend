@@ -347,6 +347,7 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
         await verifyRuntime(client, target, true);
         demand(frontendMigrationArtifact().sqlArtifactSha256 === artifact.sqlArtifactSha256, "FRONTEND_SOURCE_CHANGED");
       } finally { await client.query("rollback"); }
+      if (ownedReplacement) await ownedReplacement.verifyClosed(client, verifySession, databaseResult);
       await dependencies.record("frontend-continuation-completed.json", { ...receiptBase,
         status: "FRONTEND_CONTINUATION_COMPLETED", databaseVerified: true });
       if (dependencies.afterContinuationVerified) {
@@ -392,7 +393,9 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
   demand(exact(input, ["version", "qualificationTargetProfile", "candidate", "job", "baseline", "predecessorTarget",
     "administrativeLogins", "producerSha256", "inventorySha256"]) && input.version === 1 &&
     digest(input.producerSha256) && digest(input.inventorySha256) &&
-    exact(dependencies, ["confirmation", "getUrl", "directory", "rolesDirectory", "privateDirectory", "cluster", "predecessorCluster"]) &&
+    exact(dependencies, ["confirmation", "getUrl", "directory", "rolesDirectory", "privateDirectory", "cluster", "predecessorCluster",
+      ...(Object.hasOwn(dependencies, "continueRelease") ? ["continueRelease"] : [])]) &&
+    (!Object.hasOwn(dependencies, "continueRelease") || typeof dependencies.continueRelease === "function") &&
     typeof dependencies.getUrl === "function", refuse);
   input = structuredClone(input);
   const profile = requireQualificationTargetProfile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, input);
@@ -404,12 +407,13 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
     dependencies.confirmation === `owned-frontend-bootstrap/${job.releaseId}`, refuse);
   const [{ verifyEmptyFrontendReplacement }, { withFrontendEnvironmentLock }, { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore },
     { applyPreparedFrontendRoles, prepareFrontendRolesPlan, FRONTEND_PREPARATION_ROLES },
-    { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact }, { assertOwnedFrontendReplacementCluster }] = await Promise.all([
+    { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact }, { assertOwnedFrontendReplacementCluster },
+    { createP2FrontendReplacementProbe, observeP2FrontendReplacement, verifyP2FrontendReplacementSession }] = await Promise.all([
     import("./frontend-replacement-boundary.mjs"), import("./frontend-environment-lock.mjs"), import("./frontend-release-receipts.mjs"),
     import("./frontend-role-preparation.mjs"), import("./frontend-admission-bootstrap.mjs"),
-    import("./harness/owned-frontend-replacement-cluster.mjs"),
+    import("./harness/owned-frontend-replacement-cluster.mjs"), import("./p2-frontend-replacement-probe.mjs"),
   ]);
-  const { directory, rolesDirectory, privateDirectory, getUrl, cluster, predecessorCluster } = dependencies;
+  const { directory, rolesDirectory, privateDirectory, getUrl, cluster, predecessorCluster, continueRelease } = dependencies;
   const ownedCluster = assertOwnedFrontendReplacementCluster(cluster, job.target);
   const ownedPredecessor = assertOwnedFrontendReplacementCluster(predecessorCluster, input.predecessorTarget);
   demand(cluster !== predecessorCluster && ownedCluster.systemIdentifier !== ownedPredecessor.systemIdentifier, refuse);
@@ -427,11 +431,17 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
   let intentRetained = false, phase = "environment-lock", closed;
   try {
     await withFrontendEnvironmentLock(async (verifyEnvironment, signal) => {
-      let databaseClient, roles;
+      let databaseClient, roles, probe, url;
       const abort = () => { if (databaseClient) void databaseClient.end().catch(() => {}); };
       signal.addEventListener("abort", abort, { once: true });
+      const verifyHeld = async () => {
+        demand(!signal.aborted, refuse);
+        await verifyEnvironment();
+        if (probe) await verifyP2FrontendReplacementSession(databaseClient, probe);
+        demand(!signal.aborted, refuse);
+      };
       const verifyClosed = async (client, verifySession, database) => {
-        phase = "closed-admission-after-sql";
+        phase = closed ? "closed-admission-after-continuation" : "closed-admission-after-sql";
         await verifySession();
         await client.query("begin read only");
         try {
@@ -446,12 +456,16 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
             count === 0 && database.before.length === 0 && database.applied.length === artifact.migrations.length, refuse);
         } finally { await client.query("rollback"); }
         await verifySession();
-        closed = { migrationCount: database.applied.length, admissionEpoch: "1", newWork: false, recovery: false, operations: 0 };
-        store.record("replacement-closed-after-sql.json", { ...binding, ...closed, status: "OWNED_FRONTEND_REPLACEMENT_CLOSED_AFTER_SQL" });
+        if (closed) {
+          store.record("replacement-closed-after-continuation.json", { ...binding, ...closed, status: "OWNED_FRONTEND_REPLACEMENT_CLOSED_AFTER_CONTINUATION" });
+        } else {
+          closed = Object.freeze({ migrationCount: database.applied.length, admissionEpoch: "1", newWork: false, recovery: false, operations: 0 });
+          store.record("replacement-closed-after-sql.json", { ...binding, ...closed, status: "OWNED_FRONTEND_REPLACEMENT_CLOSED_AFTER_SQL" });
+        }
       };
       try {
         await runFrontendMigrationCore(migration, {
-          confirmation, getUrl,
+          confirmation, async getUrl() { url = await getUrl(); return url; },
           createClient(options) {
             demand(!signal.aborted, refuse);
             databaseClient = new Client(options);
@@ -461,15 +475,25 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
           async beforeDatabasePreflight({ client, verifySession }) {
             phase = "locked-empty-replacement";
             const local = (await client.query(`select inet_server_addr()='127.0.0.1'::inet and inet_server_port()=$1 as owned_loopback,
-              current_setting('data_directory') as data_directory,(pg_catalog.pg_control_system()).system_identifier::text as system_identifier`, [target.port])).rows[0];
+              current_setting('data_directory') as data_directory,(pg_catalog.pg_control_system()).system_identifier::text as system_identifier,
+              (select oid::text from pg_catalog.pg_database where datname=current_database()) as database_oid,
+              (select oid::text from pg_catalog.pg_roles where rolname=session_user) as migration_role_oid`, [target.port])).rows[0];
             demand(local?.owned_loopback === true && local.data_directory === ownedCluster.dataDirectory &&
               local.system_identifier === ownedCluster.systemIdentifier &&
               isDeepStrictEqual(assertOwnedFrontendReplacementCluster(cluster, target), ownedCluster), refuse);
+            probe = await createP2FrontendReplacementProbe({ version: 1, qualificationTargetProfile: profile,
+              operation: "verify-pre-bootstrap-lock", candidate: migration.candidate, job, baseline: migration.baseline,
+              predecessorTarget: input.predecessorTarget, targetSha256: rolePlan.targetSha256,
+              databaseOid: local.database_oid, migrationRoleOid: local.migration_role_oid }, client, verifySession);
+            const physical = await observeP2FrontendReplacement(probe, { getUrl: () => url });
             const observation = await verifyEmptyFrontendReplacement(client, {
               target, predecessorTarget: input.predecessorTarget, administrativeLogins: input.administrativeLogins,
               verifyEnvironment, verifySession,
             });
-            store.record("replacement-bootstrap-started.json", { ...binding, status: "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_STARTED", observation });
+            demand(observation.databaseOid === physical.databaseOid && observation.migrationRoleOid === physical.migrationRoleOid, refuse);
+            store.record("replacement-physical-observation.json", physical);
+            store.record("replacement-bootstrap-started.json", { ...binding, status: "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_STARTED",
+              physicalObservationSha256: hash(JSON.stringify(physical) + "\n"), observation });
             intentRetained = true;
             await verifySession();
             phase = "replacement-role-preparation";
@@ -484,7 +508,14 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
             }, client, { confirmation, verifySession, record: store.record }, profile);
             phase = "replacement-forward-sql";
           },
-        }, profile, { verifyEnvironment, verifyClosed });
+          ...(continueRelease ? { async afterDatabaseVerified(database, verifyLockedSession) {
+            phase = "owned-compatible-continuation";
+            const continuation = { database, owner: Object.freeze({ ...roles.owner }),
+              runtime: Object.freeze({ ...roles.runtime }), roleProofSha256: roles.proofSha256, admission: closed, verifyLockedSession };
+            Object.defineProperty(continuation, "private", { value: roles.private });
+            await continueRelease(Object.freeze(continuation));
+          } } : {}),
+        }, profile, { verifyEnvironment: verifyHeld, verifyClosed });
       } finally { signal.removeEventListener("abort", abort); }
     });
     demand(closed, refuse);

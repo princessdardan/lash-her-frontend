@@ -195,6 +195,17 @@ test("lost bootstrap commit acknowledgement preserves the installed schema witho
   assert.equal(f.calls.filter(c => c.sql.startsWith("-- Bootstrap artifact")).length, 1);
 });
 
+test("bootstrap rolls back when the guard is lost after role restoration and before commit", async () => {
+  const f = bootstrapRunner();
+  f.dependencies.verifySession = async () => {
+    if (f.calls.some(c => c.sql === "RESET ROLE")) throw new Error("fixture-guard-lost");
+  };
+  await assert.rejects(f.run(), /FRONTEND_ADMISSION_BOOTSTRAP_FAILED_REVIEW_REQUIRED/u);
+  assert.equal(f.state.commits, 0);
+  assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+  assert.equal(f.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+});
+
 function observation(plan, nonce) {
   return { version: 1, nonce, actionId: plan.actionId, sourceCommit: plan.sourceCommit, targetSha256: plan.targetSha256, inventorySha256: hash(plan),
     surfaces: plan.externalSurfaces.map(surface => {
