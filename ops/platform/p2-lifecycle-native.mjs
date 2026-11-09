@@ -313,6 +313,23 @@ const reviewedLessonStaleRevisionDependencies = {
   "src/lib/api-integration/course-client.ts": "ae02305d91efaa2a6530d85f0c52b54e7a0ff7b82fc2ed6cad57a1b9bd928ce3",
   "ops/gateway/lesson-resume-position.mjs": "5ce29468095799896411c8048ceb1d727ad7a03f5a070a2aa68f325203259341"
 };
+const reviewedFirstOwnerSource = {
+  ...reviewedLessonStaleRevisionSource,
+  "src/lib/writer-admission/runtime.ts": "edd085b872aa340e6f086e14c39684d9e497129a05ddd0e9f3c8111e049726ad",
+  "src/lib/writer-admission/context.ts": "3740ab53dc3413a80c6c4fd3880ab7d7ed10d6ae17e45537e441ce7e5bc5f170"
+};
+const reviewedFirstOwnerDependencies = {
+  ...reviewedLessonStaleRevisionDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "b200152d5155f2e700e4066457896766552afdce2142422dd1129f23ad6207f9",
+  "src/app/admin/auth-actions.ts": "5e815e38fc3d07b3484b41f821abe60dd93fba61102b17c4f641b39d006ba246",
+  "src/app/admin/certification/first-owner/route.ts": "6b152a1aaf612eb20f636804069b52c41c1fc86137dd26cefcdd002f0000544c",
+  "src/auth.ts": "bec3c969bef9ce6eb79b56ff4d496c0a87dc7e1d46546bc271b8bb0d4df6fe91",
+  "src/lib/admin/admin-user-store.ts": "fb0b6195a218795df5be6a990bac56a27bb7936743a10ec85e0db314e68d4c33",
+  "src/lib/admin/auth-service.ts": "abe739dec0ad77204793e9e615b8bad8e49fbe843434f28db778107be1471410",
+  "src/lib/admin/authentication-freshness.ts": "e678bc7925d33f023a4cc977153c12af13987a0088bcbb4284feb3178eba20df",
+  "src/lib/admin/user-writer-admission.ts": "83a02768d06656b26a385492d1b0e82082674b6161db08f90259121e0e2606c9",
+  "ops/platform/p2-first-owner-identity.mjs": "13fc45c49f9e184948e4145471eafd61f8ef3c09aec8bdb697581316796bcc5d"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -351,7 +368,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonAckLossSource, [reviewedLessonAckLossDependencies]],
     [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]],
     [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies, reviewedVisibilityCoalescingDependencies]],
-    [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]]]
+    [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]],
+    [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
