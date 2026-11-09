@@ -5,7 +5,8 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { isAdminDeveloperModeEnabled } from "@/lib/admin/developer-mode-config";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import type { WriterAuthoringOperation, WriterIdentityEnrollment } from "./context";
+import type { WriterAuthoringOperation, WriterFirstOwner, WriterIdentityEnrollment } from "./context";
+import { P2_FIRST_OWNER_PATH, P2_FIRST_OWNER_SELECTOR_PREFIX } from "../../../ops/platform/p2-first-owner-identity.mjs";
 import { parseAssessmentAttempt } from "../../../ops/gateway/assessment-attempt.mjs";
 import { EXIT_SAVE_LESSON_STARTED, parseLessonExitSavePosition, parseLessonRestorePosition, parseLessonResumePosition,
   permitsLessonAckLossBody, permitsLessonStaleRevisionBody, RESTORE_LESSON_STARTED } from "../../../ops/gateway/lesson-resume-position.mjs";
@@ -30,6 +31,7 @@ const authoringArchivePaidActorPrefix = "7032712d617574682d6172632d763100";
 const authoringRepublishPaidActorPrefix = "7032712d617574682d7265702d763100";
 const authoringReviewPaidRestorationActorPrefix = "7032712d617574682d72626c2d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
+  firstOwner?: WriterFirstOwner;
   authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection;
   lessonEntry?: LessonSelection; lessonDenial?: LessonSelection; lessonAssessment?: LessonSelection;
   lessonResume?: LessonSelection; lessonRestore?: LessonSelection; lessonAckLoss?: LessonSelection; lessonExitSave?: LessonSelection;
@@ -63,6 +65,10 @@ const customerIdentityReads = at("/sign-in|/api/customer-auth/(?:csrf|providers|
 const staffAuth = {
   GET: at("/admin/(?:sign-in|not-authorized)|/api/auth/(?:csrf|providers|session|callback/google)"),
   POST: at("/admin/sign-in|/api/auth/(?:signin/google|signout)"),
+};
+const firstOwnerAuth = {
+  GET: at(`/admin/sign-in|/api/auth/callback/google|${P2_FIRST_OWNER_PATH}`),
+  POST: at("/admin/sign-in"),
 };
 const authoringReads = at(`/admin/courses(?:/${uuid})?|/api/admin/courses(?:/${uuid}(?:/publication-readiness)?)?|/api/admin/lessons/${uuid}/quiz`);
 const authoringEdit = {
@@ -120,10 +126,11 @@ function permitsCustomerAuth(method: string, path: string, provider?: WriterIden
   return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
 }
 
-function permits({ stage, identityActorKind, identityEnrollment, authoringOperation, learnerAccess, lessonEntry, lessonDenial, lessonAssessment,
+function permits({ stage, identityActorKind, identityEnrollment, firstOwner, authoringOperation, learnerAccess, lessonEntry, lessonDenial, lessonAssessment,
   lessonResume, lessonRestore, lessonAckLoss, lessonExitSave, lessonVisibilitySave, lessonStaleRevision }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
     case "identity":
+      if (firstOwner) return matches(firstOwnerAuth, method, path);
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
     case "authoring":
@@ -275,6 +282,9 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   }
   if (stage === "identity") {
     if (selection === adminIdentitySelector) return { ...permit, identityActorKind: "admin" };
+    if (selection.startsWith(P2_FIRST_OWNER_SELECTOR_PREFIX) && !/^0+$/u.test(nonce)) {
+      return { ...permit, identityActorKind: "admin", firstOwner: { nonce, identityDigest: selection.slice(2), epoch, startedAt: Number(started) } };
+    }
     const identityCustomerId = decodeSelectedUuid(selection, customerIdentityPrefix);
     if (identityCustomerId) return { ...permit, identityActorKind: "customer", identityCustomerId };
     const identityEnrollment = decodeIdentityEnrollment(selection, nonce);
@@ -355,7 +365,7 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
-    lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment;
+    lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment; firstOwner?: WriterFirstOwner;
     authoringActorId?: string; authoringOperation?: WriterAuthoringOperation; learningEnrollment?: LearningEnrollmentSelection;
     paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection; learnerAccess?: LearnerAccessSelection;
     lessonEntry?: LessonSelection; lessonDenial?: LessonSelection;
@@ -373,6 +383,7 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
     ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}),
     ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}),
     ...(browser.identityEnrollment ? { identityEnrollment: browser.identityEnrollment } : {}),
+    ...(browser.firstOwner ? { firstOwner: browser.firstOwner } : {}),
     ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}),
     ...(browser.learningEnrollment ? { learningEnrollment: browser.learningEnrollment } : {}),
     ...(browser.paidGrant ? { paidGrant: browser.paidGrant } : {}),

@@ -80,6 +80,7 @@ initial=json.loads(sys.stdin.readline())
 plan=initial['certificationPlan'];binding=initial['interactiveController'];profile=initial['qualificationTargetProfile']
 action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpoch'])+1);behavior=sys.argv[1]
 enrollment=action.get('identityEnrollment')
+first_owner=action.get('firstOwner')
 authoring=stage=='authoring';learning=stage=='learning';paid_grant=stage=='paid-grant';gateway_observation=None
 learner_access=stage=='learner-access';access_action=action.get('learnerAccessAction',{})
 paid_revoke=stage=='paid-revoke';revoke_action=action.get('paidRevokeAction',{})
@@ -172,6 +173,11 @@ for raw in sys.stdin:
       if republish:prefix='7032712d617574682d7265702d763100' if publish_selector else '7032712d617574682d72626c2d763100'
       else:prefix='7032712d617574682d7075622d763100' if publish_selector else '7032712d617574682d7264792d763100'
     selector=prefix+owner_id.replace('-','')
+   elif first_owner:
+    nonce=first_owner['nonce']
+    if behavior=='wrong-nonce':nonce='8'+nonce[1:]
+    selector='a3'+first_owner['identitySha256'][:62]
+    if behavior=='wrong-selector':selector='a1'+selector[2:]
    elif enrollment:
     provider=enrollment['provider'];nonce=enrollment['nonce'];email_digest=enrollment['emailSha256']
     if behavior=='wrong-nonce':nonce='8'+nonce[1:]
@@ -577,7 +583,7 @@ for raw in sys.stdin:
      'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
     if behavior=='wrong-join':joined['authoritativeGatewayRequestId']=next(row['requestId'] for row in acks[:5] if row['requestIndex']==2)
    elif stage=='identity':
-    actor={'actorKind':'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment else action['identityActor']
+    actor={'actorKind':'admin' if first_owner else 'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment or first_owner else action['identityActor']
     assert set(evidence)=={'browserIdentity','identityWitness'}
     if actor.get('sessionCount')==2:
      assert evidence['browserIdentity']=={'actorKind':actor['actorKind'],'actorId':actor['actorId'],
@@ -588,6 +594,7 @@ for raw in sys.stdin:
      provider=enrollment['provider']
      assert evidence['identityWitness']=={**actor,'actorActive':True,'liveSessionCount':1,
       'provider':provider,'providerLinkCount':1 if provider=='google' else 0}
+    if first_owner:assert evidence['identityWitness']=={**actor,'actorActive':True,'ownerMappingVerified':True,'firstOwnerVerified':True}
     joined={**actor,'context':'owner' if actor['actorKind']=='admin' else 'learner',
      'browserIdentitySha256':digest(evidence['browserIdentity']),'identityWitnessSha256':digest(evidence['identityWitness'])}
     if behavior=='wrong-join':
@@ -607,7 +614,7 @@ for raw in sys.stdin:
      (5 if behavior=='unexpected-frontend-operation' else 4) if resume else
      (4 if behavior=='unexpected-frontend-operation' else 3) if assessment else
      2 if lesson_entry and behavior=='unexpected-frontend-operation' else
-     0 if (learner_access or lesson_denial) and behavior!='unexpected-frontend-operation' else 1}
+     0 if (learner_access or lesson_denial) and behavior!='unexpected-frontend-operation' else 5 if first_owner else 1}
   else:raise AssertionError('unexpected interactive operation')
  elif op=='certification-prepare-close':
   assert phase=='retained' and p['caseOutcome']['status']==status('JOINED')
@@ -651,6 +658,7 @@ const visibility=certificationStage==='lesson-visibility-save';
 const staleRevision=certificationStage==='lesson-stale-revision';
 const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
 const identityPair=identity&&variant==='two-sessions';
+const firstOwner=identity&&variant==='first-owner'?{nonce:'9'.repeat(32),identitySha256:'6'.repeat(64)}:null;
 const provider=identity&&!identityPair?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
 const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const createCurriculum=authoring&&['create-module','create-lesson'].includes(variant);
@@ -675,7 +683,7 @@ const skipObserve=behavior==='fence-without-observe';
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor,...(identityPair?{sessionCount:2}:{})};
 const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'.repeat(32)}:null;
-const observedActor=identityEnrollment?{actorKind:'customer',actorId:'12345678-1234-4123-8123-000000000005'}:{actorKind,actorId:actor};
+const observedActor=identityEnrollment||firstOwner?{actorKind,actorId:'12345678-1234-4123-8123-000000000005'}:{actorKind,actorId:actor};
 const slug='p2q-course-draft',coursePath='/api/admin/courses/'+commandId,courseTarget='/course/v1/admin/courses/'+commandId;
 const idempotencyKey='12345678-1234-4123-8123-000000000019';
 const grantCommandId='12345678-1234-4123-8123-000000000020',grantRevision=variant==='max-revision'?2_147_483_647:7;
@@ -840,7 +848,7 @@ const requests=staleRevision?[
   {method:'POST',target:'/course/v1/admin/courses',bodySha256:'8'.repeat(64),uses:1},
 ]:[];
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests,windowSeconds:120,
-  ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:learning?{learningAction}:
+  ...(firstOwner?{firstOwner}:identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:learning?{learningAction}:
     paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:paidRevoke?{paidRevokeAction}:
     lessonEntry?{lessonEntryAction}:lessonDenial?{lessonDenialAction}:assessment?{assessmentAction}:resume?{resumeAction}:
     restore?{restoreAction}:ackLoss?{ackLossAction}:exitSave?{exitSaveAction}:visibility?{visibilityAction}:
@@ -1268,7 +1276,7 @@ const evidence=staleRevision?{browserResponse:{page:{pathname:academyPath+'/less
  identityWitness:{...observedActor,sessionCount:2,actorActive:true,liveSessionCount:2,verifiedFreshSessionCount:2}}
  :identity?{browserIdentity:{...observedActor,sessionVerified:true},
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
-  ...(identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
+  ...(firstOwner?{firstOwnerVerified:true}:identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
 const invalidEvidence=staleRevision?{...evidence,browserResponse:{...evidence.browserResponse,
  authoritative:{...staleAuthoritative,requestId:staleId(staleOrder.indexOf(2))}}}
@@ -1601,6 +1609,9 @@ const result=start()(async(_verify,_signal,host)=>{
    {liveSessionCount:2},
   ]) await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,...changed}}));
  }
+ if(firstOwner){
+  await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,firstOwnerVerified:false}}));
+ }
  if(identityPair){
   for(const sessionProofs of [['1'.repeat(64)],['1'.repeat(64),'1'.repeat(64)],['1'.repeat(64),'0'.repeat(64)]]){
    await assert.rejects(stage.retain({...evidence,browserIdentity:{...evidence.browserIdentity,sessionProofs}}));
@@ -1769,6 +1780,10 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['lifecycle','admin','joined'],
  ['lifecycle','customer','install-failure'],
  ['identity','admin','joined'],
+ ['identity','admin','joined','first-owner'],
+ ['identity','admin','wrong-nonce','first-owner'],
+ ['identity','admin','wrong-selector','first-owner'],
+ ['identity','admin','wrong-join','first-owner'],
  ['identity','customer','joined'],
  ['identity','customer','wrong-kind'],
  ['identity','customer','wrong-selector'],

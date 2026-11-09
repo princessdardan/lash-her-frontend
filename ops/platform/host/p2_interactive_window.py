@@ -182,6 +182,7 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
     demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
     identity, witness = evidence["browserIdentity"], evidence["identityWitness"]
     enrollment = action.get("identityEnrollment")
+    first_owner = action.get("firstOwner")
     paired = action.get("identityActor", {}).get("sessionCount") == 2
     fields = "actorKind actorId sessionVerified" + (" sessionProofs" if paired else "")
     demand(_closed_fields(identity, fields) and identity["sessionVerified"] is True and _matches(_UUID, identity["actorId"]),
@@ -190,18 +191,27 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
         proofs = identity["sessionProofs"]
         demand(type(proofs) is list and len(proofs) == 2 and all(_digest(proof) for proof in proofs) and proofs[0] != proofs[1],
                "P2_INTERACTIVE_IDENTITY_DISTINCT_SESSIONS_REQUIRED")
-    actor = {key: action["identityActor"][key] for key in ("actorKind", "actorId")} if enrollment is None else {
-        "actorKind": "customer", "actorId": identity["actorId"]}
+    if first_owner is not None:
+        actor = {"actorKind": "admin", "actorId": identity["actorId"]}
+    elif enrollment is not None:
+        actor = {"actorKind": "customer", "actorId": identity["actorId"]}
+    else:
+        actor = {key: action["identityActor"][key] for key in ("actorKind", "actorId")}
     owner = actor["actorKind"] == "admin"
     demand(all(identity[key] == value for key, value in actor.items()), "P2_INTERACTIVE_IDENTITY_SESSION_REQUIRED")
     fields = "actorKind actorId actorActive " + ("ownerMappingVerified" if owner else "liveSessionCount")
     if enrollment is not None:
         fields += " provider providerLinkCount"
+    if first_owner is not None:
+        fields += " firstOwnerVerified"
     if paired:
         fields += " sessionCount verifiedFreshSessionCount"
     demand(_closed_fields(witness, fields) and witness["actorActive"] is True and
            all(witness[key] == value for key, value in actor.items()), "P2_INTERACTIVE_IDENTITY_WITNESS_REQUIRED")
-    if enrollment is not None:
+    if first_owner is not None:
+        demand(witness["ownerMappingVerified"] is True and witness["firstOwnerVerified"] is True,
+               "P2_INTERACTIVE_FIRST_OWNER_WITNESS_REQUIRED")
+    elif enrollment is not None:
         provider = enrollment["provider"]
         demand(type(witness["liveSessionCount"]) is int and witness["liveSessionCount"] == 1 and
                witness["provider"] == provider and type(witness["providerLinkCount"]) is int and
@@ -1202,6 +1212,12 @@ def require_browser_ledger(plan, witness):
            len({row["id"] for row in operations}) == len(operations) and
            any(row["kind"] == "new-work" for row in operations),
            browser_status(plan, "COMPLETED_NEW_WORK_REQUIRED"))
+    if "firstOwner" in plan["scopedAction"]:
+        # The sign-in action and bootstrap insert each need new work. Google
+        # callback and protected identity resolution each require recovery.
+        demand(sum(row["kind"] == "new-work" for row in operations) >= 2 and
+               sum(row["kind"] == "recovery" for row in operations) >= 2,
+               browser_status(plan, "FIRST_OWNER_OPERATIONS_REQUIRED"))
     if plan["scopedAction"]["stage"] in (_ASSESSMENT, _EXIT_SAVE, _VISIBILITY_SAVE):
         demand(len(operations) == 3 and all(row["kind"] == "new-work" for row in operations),
                browser_status(plan, "THREE_NEW_WORK_REQUIRED"))
@@ -1276,8 +1292,9 @@ def validate_interactive_action(action):
     if stale_revision:
         fields.add("staleRevisionAction")
     enrollment = identity and "identityEnrollment" in action
+    first_owner = identity and "firstOwner" in action
     if identity:
-        fields.add("identityEnrollment" if enrollment else "identityActor")
+        fields.add("firstOwner" if first_owner else "identityEnrollment" if enrollment else "identityActor")
     demand(type(action) is dict and set(action) == fields and
            type(action["stage"]) is str and action["stage"] in _STAGES and
            type(action["windowSeconds"]) is int and 30 <= action["windowSeconds"] <= 300 and
@@ -1295,7 +1312,12 @@ def validate_interactive_action(action):
                 frontend["actorKind"] == "customer" and frontend["userId"] == action["actorId"] and
                 frontend["operation"] in ("export", "delete", "preferences-on", "preferences-off")),
                "P2_INTERACTIVE_FRONTEND_ACTION_REQUIRED")
-    if enrollment:
+    if first_owner:
+        selected_owner = action["firstOwner"]
+        demand(_closed_fields(selected_owner, "nonce identitySha256") and _digest(selected_owner["identitySha256"]) and
+               _matches(_NONCE, selected_owner["nonce"]) and selected_owner["nonce"] != "0" * 32,
+               "P2_INTERACTIVE_FIRST_OWNER_REQUIRED")
+    elif enrollment:
         selected_enrollment = action["identityEnrollment"]
         demand(_closed_fields(selected_enrollment, "provider emailSha256 nonce") and
                selected_enrollment["provider"] in ("google", "resend") and _digest(selected_enrollment["emailSha256"]) and
@@ -1642,6 +1664,8 @@ def _selection_sha(action):
         }[authoring["operation"]]
         return prefix + action["actorId"].replace("-", "")
     if action["stage"] == "identity":
+        if "firstOwner" in action:
+            return "a3" + action["firstOwner"]["identitySha256"][:62]
         if "identityEnrollment" in action:
             enrollment = action["identityEnrollment"]
             return ("a1" if enrollment["provider"] == "google" else "a2") + enrollment["emailSha256"][:62]
@@ -1844,8 +1868,8 @@ class P2InteractiveWindow:
                {"epoch": self.plan["initialEpoch"], "newWork": False, "recovery": False, "active": 0, "uncertain": 0},
                "P2_INTERACTIVE_GATEWAY_FRONTEND_START_REQUIRED")
         now = int(time.time())
-        enrollment = self.action.get("identityEnrollment")
-        nonce = enrollment["nonce"] if enrollment is not None else secrets.token_hex(16)
+        reviewed_identity = self.action.get("firstOwner") or self.action.get("identityEnrollment")
+        nonce = reviewed_identity["nonce"] if reviewed_identity is not None else secrets.token_hex(16)
         epoch = str(int(self.plan["initialEpoch"]) + 1)
         remaining = math.floor(self.broker.certification_started + self.plan["maximumSeconds"] - time.monotonic()) - 10
         duration = min(self.action["windowSeconds"], remaining)

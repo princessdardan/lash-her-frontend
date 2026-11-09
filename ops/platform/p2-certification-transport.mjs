@@ -5,6 +5,7 @@ import {writeFrontendReceipt} from './frontend-migration.mjs';
 import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {sshCommand} from './recreation_ssh.mjs';
 import {isDeepStrictEqual} from 'node:util';
+import {validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.mjs';
@@ -431,11 +432,12 @@ function reviewedInteractivePlan(plan,initial){
   const staleRevision=action?.stage==='lesson-stale-revision';
   const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
+  const firstOwner=identity&&Object.hasOwn(action,'firstOwner');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
-      enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
+      firstOwner?'firstOwner':enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
         paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':
           lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':resume?'resumeAction':restore?'restoreAction':
             ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':staleRevision?'staleRevisionAction':'frontendAction'])&&
@@ -457,6 +459,10 @@ function reviewedInteractivePlan(plan,initial){
   if(visibility)return reviewedVisibilityAction(action);
   if(staleRevision)return reviewedStaleRevisionAction(action);
   if(paidRevoke)return reviewedPaidRevokeAction(action);
+  if(firstOwner){
+    demand(action.actorId===null&&validP2FirstOwnerSelection(action.firstOwner));
+    return {selection:{actorKind:'admin'},firstOwner:{...action.firstOwner}};
+  }
   if(enrollment){
     const selected=action.identityEnrollment;
     demand(action.actorId===null&&exact(selected,['provider','emailSha256','nonce'])&&
@@ -505,19 +511,22 @@ function lifecycleJoinedEvidence(evidence,selected){
   return {...selected,browserResponseSha256:p2NativeHash(response),lifecycleWitnessSha256:p2NativeHash(witness)};
 }
 
-function identityJoinedEvidence(evidence,selected,context,enrollment){
+function identityJoinedEvidence(evidence,selected,context,enrollment,firstOwner){
   demand(exact(evidence,['browserIdentity','identityWitness']));
   const {browserIdentity:identity,identityWitness:witness}=evidence;
   const owner=context==='owner';
   const {sessionCount,...actorSelection}=selected;
   const paired=sessionCount===2;
-  const actor={...actorSelection,actorId:enrollment?identity?.actorId:actorSelection.actorId};
+  const actor={...actorSelection,actorId:enrollment||firstOwner?identity?.actorId:actorSelection.actorId};
   const witnessFields=enrollment?['liveSessionCount','provider','providerLinkCount']:
+    firstOwner?['ownerMappingVerified','firstOwnerVerified']:
     paired?['sessionCount','liveSessionCount','verifiedFreshSessionCount']:[owner?'ownerMappingVerified':'liveSessionCount'];
   demand(exact(identity,['actorKind','actorId','sessionVerified',...(paired?['sessionProofs']:[])])&&identity.sessionVerified===true&&
     exact(witness,['actorKind','actorId','actorActive',...witnessFields])&&witness.actorActive===true&&
     canonicalUuid(actor.actorId)&&Object.entries(actor).every(([key,value])=>identity[key]===value&&witness[key]===value));
-  if(enrollment){
+  if(firstOwner){
+    demand(owner&&witness.ownerMappingVerified===true&&witness.firstOwnerVerified===true);
+  }else if(enrollment){
     demand(witness.liveSessionCount===1&&witness.provider===enrollment.provider&&witness.providerLinkCount===(enrollment.provider==='google'?1:0));
   }else if(paired){
     const {sessionProofs}=identity;
@@ -1094,7 +1103,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const visibility=stage==='lesson-visibility-save';
           const staleRevision=stage==='lesson-stale-revision';
           const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
-          const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
+          const {selection,enrollment,firstOwner,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
             learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit,lessonEntry:lessonEntryPermit,
             lessonDenial:lessonDenialPermit,assessment:assessmentPermit,resume:resumePermit,restore:restorePermit,ackLoss:ackLossPermit,
             exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit}=selectedInteractive;
@@ -1106,7 +1115,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               lessonEntry?{lessonEntry:lessonEntryPermit}:lessonDenial?{lessonDenial:lessonDenialPermit}:assessment?{assessment:assessmentPermit}:resume?{resume:resumePermit}:restore?{restore:restorePermit}:
               ackLoss?{ackLoss:ackLossPermit}:exitSave?{exitSave:exitSavePermit}:visibility?{visibility:visibilityPermit}:
               staleRevision?{staleRevision:staleRevisionPermit}:
-              enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
+              firstOwner?{firstOwner}:enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
             demand(alive());
@@ -1186,7 +1195,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
                 authoringPublicationCase(selection.operation)?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):
                 authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
-                identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);
+                identity?identityJoinedEvidence(evidence,selection,context,enrollment,firstOwner):lifecycleJoinedEvidence(evidence,selection);
               phase='retaining';
               const receipt=await call('interactive-retain','JOINED',
                 ['browserProgramSha256',...Object.keys(expected),

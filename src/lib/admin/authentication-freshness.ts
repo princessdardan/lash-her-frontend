@@ -1,4 +1,5 @@
 import { AdminAuthenticationFreshnessError } from "./types";
+import { writerFirstOwnerWindowSha256, type WriterFirstOwner } from "@/lib/writer-admission/context";
 
 export function assertFreshAdminAuthenticationTimestamp(authenticatedAt: unknown, now: number, maxAgeMs: number): Date {
   if (typeof authenticatedAt !== "number" || !Number.isSafeInteger(authenticatedAt) || authenticatedAt <= 0 ||
@@ -8,4 +9,12 @@ export function assertFreshAdminAuthenticationTimestamp(authenticatedAt: unknown
   if (!Number.isFinite(instant) || !Number.isFinite(new Date(instant).getTime()) || age < 0) throw new AdminAuthenticationFreshnessError("required");
   if (age > maxAgeMs) throw new AdminAuthenticationFreshnessError("expired");
   return new Date(instant);
+}
+
+export function assertFirstOwnerGoogleAuthentication(selection: WriterFirstOwner, authenticatedAt: unknown,
+  windowSha256: unknown, now: number): void {
+  const authenticated = assertFreshAdminAuthenticationTimestamp(authenticatedAt, now, 240_000);
+  if (windowSha256 !== writerFirstOwnerWindowSha256(selection) || authenticated.getTime() < selection.startedAt * 1000) {
+    throw new AdminAuthenticationFreshnessError("required");
+  }
 }

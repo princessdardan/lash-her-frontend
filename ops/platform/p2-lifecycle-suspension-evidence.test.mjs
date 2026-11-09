@@ -27,6 +27,7 @@ import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
+import { P2_FIRST_OWNER_PATH, p2FirstOwnerIdentitySha256 } from "./p2-first-owner-identity.mjs";
 
 const at = "2026-11-06T12:00:00.000Z", userId = randomUUID(), commandId = randomUUID(), adminId = randomUUID();
 const headers = { "cache-control": "private, no-store", "x-request-id": randomUUID(), date: at };
@@ -202,7 +203,7 @@ function interactiveInput(overrides = {}) {
   if (value.stage === "lifecycle" && !Object.hasOwn(value, "lifecycle")) {
     value.lifecycle = p2LifecycleMutationTarget({ actorKind: "admin", userId, operation: "suspend" });
   }
-  if (value.stage === "identity" && !Object.hasOwn(value, "identity") && !Object.hasOwn(value, "identityEnrollment")) {
+  if (value.stage === "identity" && !Object.hasOwn(value, "identity") && !Object.hasOwn(value, "identityEnrollment") && !Object.hasOwn(value, "firstOwner")) {
     value.identity = { actorKind: "admin", actorId: adminId };
   }
   return value;
@@ -235,8 +236,10 @@ function ownedEnrollment(provider) {
 function interactivePermit(input) {
   const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
   const enrollment = input.identityEnrollment;
+  const firstOwner = input.firstOwner;
   let selector = input.stage === "lifecycle" ? "4".repeat(64) : undefined;
-  if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
+  if (firstOwner) selector = "a3" + firstOwner.identitySha256.slice(0, 62);
+  else if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
   else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
@@ -252,7 +255,7 @@ function interactivePermit(input) {
       ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
         ? authoringCurriculumSelector(input.authoring.actorId) : input.authoring.operation === "qualify-publication"
           ? authoringPublicationSelector(input.authoring.actorId, input.authoring.outcome) : authoringSelector(input.authoring.actorId);
-  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
+  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, firstOwner?.nonce ?? enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
 }
@@ -827,6 +830,37 @@ function ownerSession(subject = ownedGoogleSubject, authenticatedAt = Math.floor
 const customerSession = (id = userId, email = "owned-customer@example.invalid") => ({ expires: new Date(Date.now() + 3_600_000).toISOString(),
   user: { id, email, name: null, image: null } });
 const ownerSubject = input => identityHash(["p2q-interactive-owner-v1", input.challenge, input.identity.actorId, ownedGoogleSubject]);
+
+test("first-owner browser accepts only the scoped materialization receipt and its exact permit", async () => {
+  const nonce = "9".repeat(32);
+  const firstOwner = { nonce, identitySha256: p2FirstOwnerIdentitySha256(nonce, "owned-owner@example.invalid", ownedGoogleSubject) };
+  const selected = interactiveInput({ firstOwner });
+  validateP2InteractiveBrowserInput(selected);
+  assert.throws(() => validateP2InteractiveBrowserInput({ ...selected, identity: { actorKind: "admin", actorId: adminId } }));
+  assert.throws(() => validateP2InteractiveBrowserInput({ ...selected, firstOwner: { ...firstOwner, nonce: "0".repeat(32) } }));
+  const permit = interactivePermit(selected);
+  validateP2InteractiveBrowserPermit(permit, selected);
+  assert.throws(() => validateP2InteractiveBrowserPermit(permit, { ...selected, firstOwner: { ...firstOwner, nonce: "8".repeat(32) } }));
+  const body = { actorKind: "admin", actorId: adminId, sessionVerified: true };
+  const observation = { context: "owner", openedAt: Date.now(), expires: permit.expires };
+  const canonical = selected.browserOrigin + P2_FIRST_OWNER_PATH;
+  let requests = 0;
+  const page = (url, result) => ({
+    url: () => url,
+    request: { get: async requested => {
+      requests++;
+      assert.equal(requested, canonical);
+      return { url: () => requested, status: () => 200, headersArray: () => [
+        { name: "content-type", value: "application/json" }, { name: "cache-control", value: "private, no-store" },
+      ], body: async () => Buffer.from(JSON.stringify(result)), dispose: async () => {} };
+    } },
+  });
+  assert.equal(await observeP2InteractiveIdentitySession(page(selected.browserOrigin + "/admin", body), selected, observation), null);
+  assert.equal(requests, 0);
+  assert.deepEqual(await observeP2InteractiveIdentitySession(page(canonical, body), selected, observation), body);
+  await assert.rejects(observeP2InteractiveIdentitySession(page(canonical, { ...body, actorKind: "customer" }), selected, observation),
+    /IDENTITY_SESSION_REFUSED/u);
+});
 
 test("identity session refuses wrong or expired identity and waits for a newly authenticated verified owner", async () => {
   const owner = interactiveInput(), learner = interactiveInput({ identity: { actorKind: "customer", actorId: userId } });

@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { Client } from "pg";
+import { p2FirstOwnerIdentitySha256, validP2FirstOwnerSelection } from "./p2-first-owner-identity.mjs";
 
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_PENDING_REFUSED"); };
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
@@ -284,7 +285,49 @@ const INTERACTIVE_IDENTITY_SQL = Object.freeze({
     WHERE u.id=$1::uuid`,
 });
 const identityBaselines = new WeakMap();
+const firstOwnerBaselines = new WeakMap();
 const identityDigest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+
+const FIRST_OWNER_SQL = Object.freeze({
+  empty: `SELECT pg_catalog.clock_timestamp()::text AS cutoff,
+    NOT EXISTS (SELECT 1 FROM public.admin_users) AS absent`,
+  owner: `WITH observed AS MATERIALIZED (SELECT pg_catalog.clock_timestamp() AS at)
+    SELECT id::text, status, role, email_normalized, provider_user_id,
+      (created_at > $1::timestamptz AND created_at <= observed.at
+       AND last_signed_in_at > $1::timestamptz AND last_signed_in_at <= observed.at) AS fresh
+    FROM public.admin_users CROSS JOIN observed ORDER BY id LIMIT 2`,
+});
+
+export async function captureP2InteractiveFirstOwnerBaseline(client, target, selection, dependencies) {
+  demand(validP2FirstOwnerSelection(selection));
+  const selected = Object.freeze({ ...selection }), binding = interactiveTarget(target);
+  const { backend, empty } = await readHeldInteractiveSnapshot(client, binding, dependencies, undefined,
+    async read => ({ empty: await read(FIRST_OWNER_SQL.empty) }));
+  demand(empty.length === 1 && empty[0].absent === true && Number.isFinite(Date.parse(empty[0].cutoff)));
+  const baseline = Object.freeze({});
+  firstOwnerBaselines.set(baseline, { client, binding, selected, backend, cutoff: empty[0].cutoff });
+  return baseline;
+}
+
+export async function observeP2InteractiveFirstOwnerCase(client, target, selection, baseline, browserIdentity, dependencies) {
+  const saved = firstOwnerBaselines.get(baseline);
+  demand(saved?.client === client && isDeepStrictEqual(saved.binding, interactiveTarget(target))
+    && isDeepStrictEqual(saved.selected, selection) && closed(browserIdentity, ["actorKind", "actorId", "sessionVerified"])
+    && browserIdentity.actorKind === "admin" && uuid(browserIdentity.actorId) && browserIdentity.sessionVerified === true);
+  firstOwnerBaselines.delete(baseline);
+  try {
+    const { witness } = await readHeldInteractiveSnapshot(client, saved.binding, dependencies, saved.backend, async read => {
+      const rows = await read(FIRST_OWNER_SQL.owner, [saved.cutoff]), row = rows[0];
+      demand(rows.length === 1 && row.id === browserIdentity.actorId && row.status === "active" && row.role === "owner" &&
+        row.fresh === true && p2FirstOwnerIdentitySha256(selection.nonce, row.email_normalized, row.provider_user_id) === selection.identitySha256);
+      return { witness: { actorKind: "admin", actorId: row.id, actorActive: true, ownerMappingVerified: true, firstOwnerVerified: true } };
+    });
+    return witness;
+  } catch {
+    // No provider subject or email belongs in an operator failure.
+    throw new Error("P2_LIFECYCLE_PENDING_REFUSED");
+  }
+}
 
 function identitySelection(value) {
   const paired = value && Object.hasOwn(value, "sessionCount");

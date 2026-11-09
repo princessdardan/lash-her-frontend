@@ -346,8 +346,8 @@ async function reviewedInteractiveInput(plan, challenge) {
     challenge, bindingSha256: plan.planSha256, stage: action.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
     browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: action.windowSeconds,
-    ...(action.stage === "identity" ? Object.hasOwn(action, "identityEnrollment")
-      ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
+    ...(action.stage === "identity" ? Object.hasOwn(action, "firstOwner") ? { firstOwner: action.firstOwner }
+      : Object.hasOwn(action, "identityEnrollment") ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
     ...(action.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(action.frontendAction) } : {}),
     ...(authoring ? { authoring } : {}), ...(learning ? { learning } : {}), ...(paidGrant ? { paidGrant } : {}),
     ...(learnerAccess ? { learnerAccess } : {}), ...(lessonEntry ? { lessonEntry } : {}), ...(lessonDenial ? { lessonDenial } : {}),
@@ -563,10 +563,10 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const remaining = selection.expires * 1000 - Date.now();
       demand(phase === "opened" && !closing && binding.stage === "identity"
         && context === p2InteractiveIdentityContext(input)
-        && (context === "owner" ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined)
+        && (context === "owner" && !input.firstOwner ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined)
         && remaining > 0 && remaining <= input.windowSeconds * 1000);
       phase = "capturing";
-      const packet = { ...binding, ...selection, ...(context === "owner" ? { ownerSubjectSha256 } : {}) };
+      const packet = { ...binding, ...selection, ...(context === "owner" && !input.firstOwner ? { ownerSubjectSha256 } : {}) };
       const receipt = await command("interactive-capture-identity", packet, "interactive-identity-captured", selection, remaining + 5000);
       verifiedIdentity = receipt.identity;
       phase = "cleared";
@@ -584,7 +584,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     },
     async selectPlan(nextPlan) {
       demand(phase === "cleared" && !failed && !ended && !closing && actions.size < 24
-        && !input.identityEnrollment && !nextPlan?.scopedAction?.identityEnrollment);
+        && !input.identityEnrollment && !input.firstOwner && !nextPlan?.scopedAction?.identityEnrollment && !nextPlan?.scopedAction?.firstOwner);
       phase = "selecting";
       try {
         const next = await reviewedInteractiveInput(nextPlan, binding.challenge), nextBinding = interactiveBinding(next);

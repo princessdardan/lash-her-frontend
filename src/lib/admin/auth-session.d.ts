@@ -6,6 +6,7 @@ declare module "next-auth" {
       isEmailVerified: boolean;
       providerUserId: string;
       authenticatedAt: number;
+      firstOwnerWindowSha256?: string;
     };
   }
 }
@@ -15,6 +16,7 @@ declare module "next-auth/jwt" {
     googleEmailVerified?: boolean;
     providerUserId?: string;
     adminAuthenticatedAt?: number;
+    firstOwnerWindowSha256?: string;
   }
 }
 

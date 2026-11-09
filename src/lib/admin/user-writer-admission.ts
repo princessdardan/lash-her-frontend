@@ -22,10 +22,10 @@ export function withAdminUserWriterAdmission(
         () => repository.bindIdentity(input),
         run,
       ),
-    createBootstrapOwner: (input) =>
+    createBootstrapOwner: (input, options) =>
       runAdminIdentityWriter(
         "new-work",
-        () => repository.createBootstrapOwner(input),
+        () => repository.createBootstrapOwner(input, options),
         run,
       ),
     recordSignIn: (input) =>

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { withWriterOperationContext } from "@/lib/writer-admission/context";
+import { withWriterOperationContext, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
+import { p2FirstOwnerIdentitySha256 } from "../../../ops/platform/p2-first-owner-identity.mjs";
 
 import type { AdminUserStore } from "./admin-user-store";
 import { createAdminAuth } from "./auth-service";
+import { assertFirstOwnerGoogleAuthentication } from "./authentication-freshness";
 import {
   AdminAuthError,
   type AdminAuthErrorCode,
@@ -115,6 +117,57 @@ test("owner bootstrap is limited to verified allowlisted identities", async () =
     () => unverifiedAuth.requireActor(),
     "unverified_email",
   );
+});
+
+test("scoped first owner requires the reviewed verified Google subject and leaves replay read-only", async () => {
+  const nonce = "9".repeat(32);
+  const firstOwner = { nonce, identityDigest: p2FirstOwnerIdentitySha256(nonce, identity.email, identity.providerUserId)!.slice(0, 62),
+    epoch: "12", startedAt: 1_794_009_600 };
+  const scoped = <T>(task: () => Promise<T>) =>
+    withWriterOperationContext(task, undefined, undefined, undefined, undefined, undefined, undefined, undefined, firstOwner);
+  const store = createStore();
+  let inserts = 0;
+  const repository: AdminUserStore = {
+    ...store,
+    async createBootstrapOwner(value, options) {
+      assert.deepEqual(options, { requireEmpty: true });
+      inserts++;
+      return store.createBootstrapOwner(value);
+    },
+    async bindIdentity() { assert.fail("first owner cannot rebind a row"); },
+    async recordSignIn() { assert.fail("first-owner replay cannot refresh a row"); },
+  };
+  const resolve = (value: AdminIdentity, allowlist = new Set([value.email]), userStore = repository) =>
+    scoped(() => createAdminAuth({ getIdentity: async () => value, getOwnerEmails: () => allowlist, userStore }).requireActor());
+  for (const value of [{ ...identity, email: "other@example.com" }, { ...identity, providerUserId: "other-google-subject" }]) {
+    await rejectsWithCode(() => resolve(value), "forbidden");
+  }
+  await rejectsWithCode(() => resolve(identity, new Set()), "forbidden");
+  await rejectsWithCode(() => resolve({ ...identity, emailVerified: false }), "unverified_email");
+  for (const row of [employee, { ...employee, role: "owner" as const, status: "disabled" as const },
+    { ...employee, role: "owner" as const, providerUserId: "pending:other" }]) {
+    const existing = createStore([row]);
+    await rejectsWithCode(() => resolve(identity, new Set([identity.email]), { ...repository,
+      findByProviderUserId: existing.findByProviderUserId, findByEmailNormalized: existing.findByEmailNormalized,
+    }), "forbidden");
+  }
+  assert.equal(inserts, 0);
+  const created = await resolve(identity);
+  assert.equal(created.user.role, "owner");
+  assert.deepEqual(await resolve(identity), created);
+  assert.equal(inserts, 1);
+});
+
+test("first-owner materialization refuses a same-second ordinary JWT and a different scoped callback", () => {
+  const selection = { nonce: "9".repeat(32), identityDigest: "6".repeat(62), epoch: "12", startedAt: 1_794_009_600 };
+  const observedAt = selection.startedAt * 1000 + 10;
+  assert.throws(() => assertFirstOwnerGoogleAuthentication(selection, selection.startedAt, undefined, observedAt));
+  assert.throws(() => assertFirstOwnerGoogleAuthentication(selection, selection.startedAt,
+    writerFirstOwnerWindowSha256({ ...selection, epoch: "11" }), observedAt));
+  assert.throws(() => assertFirstOwnerGoogleAuthentication(selection, selection.startedAt - 1,
+    writerFirstOwnerWindowSha256(selection), observedAt));
+  assert.doesNotThrow(() => assertFirstOwnerGoogleAuthentication(selection, selection.startedAt,
+    writerFirstOwnerWindowSha256(selection), observedAt));
 });
 
 test("scoped authoring and paid grants refresh only the exact active owner with an established provider binding", async () => {

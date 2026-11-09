@@ -1,4 +1,5 @@
-import { currentWriterAuthoringActorId, currentWriterPaidAccessActorId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterAuthoringActorId, currentWriterFirstOwner, currentWriterPaidAccessActorId,
+  markWriterOperationUncertain, matchesWriterFirstOwner } from "@/lib/writer-admission/context";
 import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import type { AdminUserStore } from "./admin-user-store";
 import { canAdmin, type AdminPermissionAction } from "./permissions";
@@ -46,6 +47,9 @@ export function createAdminAuth(
     if (!emailNormalized || !identity.providerUserId) {
       throw new AdminAuthError("unauthenticated");
     }
+    const firstOwner = currentWriterFirstOwner();
+    if (firstOwner && (!dependencies.getOwnerEmails().has(emailNormalized) ||
+      !matchesWriterFirstOwner(firstOwner, emailNormalized, identity.providerUserId))) throw new AdminAuthError("forbidden");
 
     const [providerUser, emailUser] = await settleWriterEffects([
       dependencies.userStore.findByProviderUserId(identity.providerUserId),
@@ -63,7 +67,17 @@ export function createAdminAuth(
 
     let user: AdminUserRecord;
 
-    if (providerUser) {
+    if (firstOwner) {
+      if (providerUser || emailUser) {
+        if (!providerUser || emailUser?.id !== providerUser.id || providerUser.status !== "active" || providerUser.role !== "owner") {
+          throw new AdminAuthError("forbidden");
+        }
+        // A second read of the same scoped response never refreshes or rebinds the owner.
+        user = providerUser;
+      } else {
+        user = await dependencies.userStore.createBootstrapOwner(identity, { requireEmpty: true });
+      }
+    } else if (providerUser) {
       assertActiveUser(providerUser);
       user = await dependencies.userStore.recordSignIn({
         ...identity,

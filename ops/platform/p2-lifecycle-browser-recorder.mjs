@@ -19,6 +19,7 @@ const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
 const customerSessionName = "__Host-lash-customer.session-token";
 const authoringPath = "/api/admin/courses";
+const firstOwnerPath = "/admin/certification/first-owner";
 const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save",
   "lesson-visibility-save", "lesson-stale-revision"];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
@@ -66,7 +67,13 @@ function validateLifecycleTarget(target) {
 }
 
 export function p2InteractiveIdentityContext(input) {
-  return input.identity?.actorKind === "admin" ? "owner" : "learner";
+  return input.firstOwner || input.identity?.actorKind === "admin" ? "owner" : "learner";
+}
+
+function firstOwnerSelector(value) {
+  demand(closed(value, ["nonce", "identitySha256"]) && matches(value.nonce, /^(?!0+$)[a-f0-9]{32}$/u) &&
+    matches(value.identitySha256, /^(?!0+$)[a-f0-9]{64}$/u));
+  return "a3" + value.identitySha256.slice(0, 62);
 }
 
 function identitySelector(identity) {
@@ -214,10 +221,11 @@ function actorAttemptSelector({ actorId, idempotencyKey }) {
 
 export function validateP2InteractiveBrowserInput(input) {
   const enrollment = input?.stage === "identity" && Object.hasOwn(input, "identityEnrollment");
+  const firstOwner = input?.stage === "identity" && Object.hasOwn(input, "firstOwner");
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",
     "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds",
     ...(["lifecycle", "authoring", "learning"].includes(input?.stage) ? [input.stage]
-      : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
+      : input?.stage === "identity" ? [firstOwner ? "firstOwner" : enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
           : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"] : input?.stage === "lesson-ack-loss" ? ["ackLoss"]
@@ -314,7 +322,8 @@ export function validateP2InteractiveBrowserInput(input) {
       .update(JSON.stringify({ expectedRevision: target.revision, status: "archived" })).digest("hex"));
     if (republish) demand(uuid(target.userId) && uuid(target.grantId) && target.revision <= 2_147_483_645 && typeof target.expectedAccess === "boolean");
   }
-  if (enrollment) enrollmentSelector(input.identityEnrollment);
+  if (firstOwner) firstOwnerSelector(input.firstOwner);
+  else if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
   return input;
 }
@@ -333,7 +342,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
       : version === "v1" && parts.length === 7 && sha(parts[6])));
   if (stage === "identity") {
     const enrollment = input.identityEnrollment;
-    demand(enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
+    demand(input.firstOwner ? nonce === input.firstOwner.nonce && parts[6] === firstOwnerSelector(input.firstOwner)
+      : enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
   }
   if (stage === "authoring") demand(parts[6] === authoringSelector(input));
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
@@ -419,7 +429,8 @@ export function validateP2InteractiveIdentityReceipt(receipt, input) {
     && receipt.sessionVerified === true && uuid(receipt.actorId));
   if (paired) demand(Array.isArray(receipt.sessionProofs) && receipt.sessionProofs.length === 2
     && receipt.sessionProofs.every(sha) && receipt.sessionProofs[0] !== receipt.sessionProofs[1]);
-  if (input.identityEnrollment) demand(receipt.actorKind === "customer");
+  if (input.firstOwner) demand(receipt.actorKind === "admin");
+  else if (input.identityEnrollment) demand(receipt.actorKind === "customer");
   else demand(receipt.actorKind === input.identity.actorKind && receipt.actorId === input.identity.actorId);
   return receipt;
 }
@@ -460,11 +471,12 @@ export async function observeP2InteractiveIdentitySession(page, input, { context
     demand(input.stage === "identity" && context === p2InteractiveIdentityContext(input) && Number.isSafeInteger(openedAt)
       && Number.isSafeInteger(expires) && openedAt <= Date.now() && openedAt < expires * 1000);
     const owner = context === "owner";
-    demand(owner ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined);
+    demand(owner && !input.firstOwner ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined);
     const remaining = expires * 1000 - Date.now();
     demand(remaining > 0 && remaining <= input.windowSeconds * 1000);
     if (URL.parse(page.url())?.origin !== input.browserOrigin) return null;
-    const url = input.browserOrigin + (owner ? "/api/auth/session" : "/api/customer-auth/session");
+    const url = input.browserOrigin + (input.firstOwner ? firstOwnerPath : owner ? "/api/auth/session" : "/api/customer-auth/session");
+    if (input.firstOwner && page.url() !== url) return null;
     response = await page.request.get(url, { maxRedirects: 0, timeout: Math.min(8000, remaining),
       headers: { accept: "application/json", "cache-control": "no-cache" } });
     demand(response.url() === url && Date.now() < expires * 1000);
@@ -480,7 +492,8 @@ export async function observeP2InteractiveIdentitySession(page, input, { context
     demand(lengths.length === 0 || bytes.length === Number(lengths[0]));
     const now = Date.now();
     demand(now < expires * 1000);
-    return readIdentitySession(exactBrowserJson(bytes), input, ownerSubjectSha256, openedAt, now);
+    const observed = exactBrowserJson(bytes);
+    return input.firstOwner ? validateP2InteractiveIdentityReceipt(observed, input) : readIdentitySession(observed, input, ownerSubjectSha256, openedAt, now);
   } catch {
     throw identityRefused();
   } finally {
@@ -3838,10 +3851,10 @@ async function runInteractiveBrowser(first) {
         break;
       }
       if (command.type === "interactive-select") {
-        demand(cleared && !input.identityEnrollment && !heldLessonStages.includes(input.stage)
+        demand(cleared && !input.identityEnrollment && !input.firstOwner && !heldLessonStages.includes(input.stage)
           && closed(received, [...Object.keys(binding), "next"]));
         const selectedInput = validateP2InteractiveBrowserInput(received.next);
-        demand(!selectedInput.identityEnrollment && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
+        demand(!selectedInput.identityEnrollment && !selectedInput.firstOwner && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
           && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
           && BigInt(selectedInput.epoch) > BigInt(input.epoch));
         if (["authoring", "paid-grant", "paid-revoke"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
@@ -3868,7 +3881,7 @@ async function runInteractiveBrowser(first) {
         continue;
       }
       const captureIdentity = command.type === "interactive-capture-identity";
-      const ownerIdentity = captureIdentity && binding.stage === "identity" && p2InteractiveIdentityContext(input) === "owner";
+      const ownerIdentity = captureIdentity && binding.stage === "identity" && p2InteractiveIdentityContext(input) === "owner" && !input.firstOwner;
       demand(closed(received, [...Object.keys(binding), "context", "expires", ...(ownerIdentity ? ["ownerSubjectSha256"] : [])])
         && Number.isSafeInteger(received.expires));
       const path = p2InteractiveBrowserEntryPath(input, received.context);
@@ -4072,7 +4085,7 @@ async function runInteractiveBrowser(first) {
           await Promise.all(selectedContexts.flatMap(device => device.pages()).map(page => page.close()));
         }
         cleared = true;
-        if (input.identityEnrollment) await context.close();
+        if (input.identityEnrollment || input.firstOwner) await context.close();
         if (captureMutation || captureIdentity) demand(Date.now() < selection.expires * 1000);
         const response = captureMutation ? mutationWatch.finish() : undefined;
         if (!(binding.stage === "lesson-visibility-save" || staleRevision) || !captureMutation) {

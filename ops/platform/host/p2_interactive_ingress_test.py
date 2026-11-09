@@ -24,6 +24,46 @@ import p2_lifecycle_native_test as native_fixture
 import vercel
 
 
+class FirstOwnerWindowTests(unittest.TestCase):
+    def test_first_owner_selection_never_opens_the_gateway(self):
+        owner = {"nonce": "9" * 32, "identitySha256": "6" * 64}
+        action = {"stage": "identity", "actorId": None, "requests": [], "windowSeconds": 120, "firstOwner": owner}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        cookie, gateway_key, _, _ = window._material("s" * 40, "https://owned.vercel.app", "a" * 40,
+            "b" * 64, "8", "identity", 1794009600, 120, owner["nonce"], selector)
+        self.assertIsNone(gateway_key)
+        self.assertEqual(cookie.split(".")[5:7], [owner["nonce"], "a3" + "6" * 62])
+        for rejected in ({**action, "actorId": "12345678-1234-4123-8123-000000000001"},
+                         {**action, "identityActor": {"actorKind": "admin"}},
+                         {**action, "firstOwner": {**owner, "nonce": "0" * 32}},
+                         {**action, "requests": [{}]}):
+            with self.assertRaises(ValueError):
+                window.validate_interactive_action(rejected)
+
+    def test_first_owner_join_requires_exact_actor_and_completed_sign_in_and_materialization(self):
+        actor = {"actorKind": "admin", "actorId": "12345678-1234-4123-8123-000000000001"}
+        plan = {"mode": "interactive-browser", "sourceCommit": "a" * 40, "targetSha256": "b" * 64,
+                "initialEpoch": "7", "nativePlan": {"producer": {"role": {"oid": "42"}}},
+                "scopedAction": {"stage": "identity", "actorId": None, "requests": [], "windowSeconds": 120,
+                                 "firstOwner": {"nonce": "9" * 32, "identitySha256": "6" * 64}}}
+        evidence = {"browserIdentity": {**actor, "sessionVerified": True},
+                    "identityWitness": {**actor, "actorActive": True, "ownerMappingVerified": True, "firstOwnerVerified": True}}
+        self.assertEqual(window.browser_case_evidence(plan, evidence)["actorId"], actor["actorId"])
+        for fields in ({"firstOwnerVerified": False}, {"actorKind": "customer"}, {"actorId": "foreign"}):
+            with self.assertRaises(ValueError):
+                window.browser_case_evidence(plan, {**evidence, "identityWitness": {**evidence["identityWitness"], **fields}})
+        producer = hashlib.sha256(("lash-her:p2q:interactive-producer:v1\n" + "a" * 40 + "\n" + "b" * 64).encode()).hexdigest()
+        ledger = {"commands": [], "deliveries": [], "orderViolations": [], "operations": [
+            {"id": f"12345678-1234-4123-8123-{index:012d}", "epoch": "8", "kind": kind, "state": "completed",
+             "producer_sha256": producer, "source_sha": "a" * 40, "role_oid": "42", "completed_at": "owned",
+             "reconciliation_sha256": None}
+            for index, kind in enumerate(("new-work", "recovery", "recovery", "new-work"), start=1)]}
+        self.assertEqual(window.require_browser_ledger(plan, ledger), 4)
+        with self.assertRaisesRegex(ValueError, "FIRST_OWNER_OPERATIONS_REQUIRED"):
+            window.require_browser_ledger(plan, {**ledger, "operations": ledger["operations"][:-1]})
+
+
 class InteractiveIngressTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

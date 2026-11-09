@@ -1,7 +1,7 @@
 import { withAdminUserWriterAdmission } from "./user-writer-admission";
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
@@ -20,7 +20,7 @@ export interface AdminUserRepository {
   bindIdentity(
     input: AdminIdentity & { adminUserId: string },
   ): Promise<AdminUserRecord>;
-  createBootstrapOwner(identity: AdminIdentity): Promise<AdminUserRecord>;
+  createBootstrapOwner(identity: AdminIdentity, options?: { requireEmpty: true }): Promise<AdminUserRecord>;
   findByEmailNormalized(
     emailNormalized: string,
   ): Promise<AdminUserRecord | null>;
@@ -75,8 +75,20 @@ export function createDrizzleAdminUserRepository(): AdminUserRepository {
         return rows[0];
       });
     },
-    async createBootstrapOwner(identity) {
+    async createBootstrapOwner(identity, options) {
       return db.transaction(async (tx) => {
+        if (options?.requireEmpty) {
+          // Serialize scoped first-owner materialization with all admin row writers.
+          await tx.execute(sql`SET LOCAL lock_timeout = '1500ms'`);
+          await tx.execute(sql`LOCK TABLE public.admin_users IN SHARE ROW EXCLUSIVE MODE`);
+          const existing = await tx.select(adminUserSelection).from(adminUsers).limit(2);
+          if (existing.length !== 0) {
+            const [owner] = existing;
+            if (existing.length === 1 && owner.role === "owner" && owner.status === "active" &&
+              owner.emailNormalized === identity.email.trim().toLowerCase() && owner.providerUserId === identity.providerUserId) return owner;
+            throw new Error("First-owner bootstrap requires an empty admin store");
+          }
+        }
         const rows = await tx
           .insert(adminUsers)
           .values({

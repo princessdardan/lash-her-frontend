@@ -1,5 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { getAdminOwnerEmails } from "@/lib/env/admin";
+import { currentWriterFirstOwner, matchesWriterFirstOwner, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
 
 interface GoogleIdentityProfile {
   email?: unknown;
@@ -19,6 +21,12 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
         token.googleEmailVerified = googleProfile?.email_verified === true;
         token.adminAuthenticatedAt = Math.floor(Date.now() / 1000);
+        const firstOwner = currentWriterFirstOwner();
+        delete token.firstOwnerWindowSha256;
+        if (firstOwner && googleProfile?.email_verified === true && typeof googleProfile.email === "string" &&
+          typeof googleProfile.sub === "string" && matchesWriterFirstOwner(firstOwner, googleProfile.email.trim().toLowerCase(), googleProfile.sub)) {
+          token.firstOwnerWindowSha256 = writerFirstOwnerWindowSha256(firstOwner);
+        }
       }
 
       if (!token.providerUserId && typeof token.sub === "string") {
@@ -36,6 +44,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           typeof token.adminAuthenticatedAt === "number"
             ? token.adminAuthenticatedAt
             : 0;
+        if (typeof token.firstOwnerWindowSha256 === "string") {
+          session.user.firstOwnerWindowSha256 = token.firstOwnerWindowSha256;
+        }
       }
 
       return session;
@@ -47,13 +58,12 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
       const googleProfile = profile as GoogleIdentityProfile | undefined;
 
-      return (
-        googleProfile?.email_verified === true &&
-        typeof googleProfile.email === "string" &&
-        googleProfile.email.trim().length > 0 &&
-        typeof googleProfile.sub === "string" &&
-        googleProfile.sub.length > 0
-      );
+      if (googleProfile?.email_verified !== true || typeof googleProfile.email !== "string" ||
+        !googleProfile.email.trim() || typeof googleProfile.sub !== "string" || !googleProfile.sub) return false;
+      const firstOwner = currentWriterFirstOwner();
+      if (!firstOwner) return true;
+      const email = googleProfile.email.trim().toLowerCase();
+      return getAdminOwnerEmails().has(email) && matchesWriterFirstOwner(firstOwner, email, googleProfile.sub);
     },
   },
   pages: {
