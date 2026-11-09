@@ -299,8 +299,15 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
     def test_replacement_deploy_preserves_apply_forward_proof_and_observes_without_mutations(self):
         self.exercise_profiled_deploy(replacement=True)
 
-    def exercise_profiled_deploy(self, replacement=False):
+    def test_replacement_deploy_refuses_initial_alias_drift_before_any_provider_write(self):
+        self.exercise_profiled_deploy(replacement=True, alias_drift="initial")
+
+    def test_replacement_deploy_refuses_alias_drift_after_workload_check(self):
+        self.exercise_profiled_deploy(replacement=True, alias_drift="workload")
+
+    def exercise_profiled_deploy(self, replacement=False, alias_drift=None):
         root = self.private(); checks = []
+        previous = "dpl_Previous123"
         controls = {name: name != "INTEGRATION_CHECKOUT_ENABLED" for name in subject.FEATURES}
         if replacement:
             controls = CERTIFICATION_PROFILE["featureControls"]
@@ -338,13 +345,13 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
             plan.update(owner={"name": subject.REPLACEMENT_ROLES[0], "oid": "17001"},
                         producers=[{"producerSha256": writer["producerSha256"], "role": {"name": runtime_role, "oid": "17002"}}],
                         runtimeProducerSha256=writer["producerSha256"], certification=CERTIFICATION_PROFILE,
-                        configurationSha256=configuration)
+                        configurationSha256=configuration, predecessorDeploymentId=previous)
             job.update(contractPhase=candidate["contractPhase"], phase2ContractManifestSha256=candidate["phase2ContractManifestSha256"])
             context.update(inventorySha256=subject.json_sha(plan), replacementProvenance={
                 key: str(index + 1) * 64 for index, key in enumerate(sorted(subject.REPLACEMENT_PINS))})
         environment_rows, workload = [], []
-        previous = "dpl_Previous123"
-        state = {"cronDisabled": False, "built": False, "promoted": False}
+        state = {"cronDisabled": False, "built": False, "promoted": False,
+                 "alias": "dpl_OtherAlias" if alias_drift == "initial" else previous}
 
         class Provider:
             calls = []
@@ -353,7 +360,7 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                 self.calls.append((method, path, body))
                 if method == "GET" and path in (f"/v9/projects/{PROJECT}", f"/v9/projects/{PROJECT}?rollbackInfo=true"):
                     return {"id": PROJECT, "accountId": subject.vercel.TEAM, "link": {"type": "github", "repoId": subject.vercel.REPOSITORY_ID},
-                            "targets": {"production": {"id": DEPLOYMENT if state["promoted"] else previous}},
+                            "targets": {"production": {"id": DEPLOYMENT if state["promoted"] else state["alias"]}},
                             "crons": {"disabledAt": 1 if state["cronDisabled"] else None, "deploymentId": DEPLOYMENT,
                                       "definitions": [{"path": "/api/cron/account-lifecycle", "schedule": "* * * * *", "host": "owned.vercel.app"}]},
                             "lastAliasRequest": {"jobStatus": "succeeded", "type": "promote", "toDeploymentId": DEPLOYMENT,
@@ -387,6 +394,8 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                 if not any(row["key"] == "LASH_RELEASE_PROBE_SECRET" and row["value"] == secret for row in environment_rows):
                     raise AssertionError("workload probe used a different credential")
                 workload.append(challenge)
+                if alias_drift == "workload":
+                    state["alias"] = "dpl_OtherAlias"
                 return {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": challenge,
                         "checks": ["gateway-course-catalog-p2"], "contractPhase": "p2",
                         "featureControls": controls, "writerAdmissionBinding": writer, "gatewayOrigin": "https://api-staging.lashher.com",
@@ -403,12 +412,28 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         subject.deploy(supplied, lambda: self.fail("unexpected checkpoint"), replacement=True)
                 self.assertEqual(Provider.calls, [])
+            if alias_drift:
+                error = ("PROFILED_REPLACEMENT_PREDECESSOR_CHANGED" if alias_drift == "initial" else
+                         "VERCEL_PROJECT_CHANGED_BEFORE_PROMOTION")
+                with self.assertRaisesRegex(ValueError, error):
+                    subject.deploy(context, lambda: checks.append("checked"), replacement=True)
+                writes = [(method, path) for method, path, _ in Provider.calls if method != "GET"]
+                if alias_drift == "initial":
+                    self.assertEqual(writes, [])
+                else:
+                    self.assertIn(("POST", "/v13/deployments"), writes)
+                    self.assertFalse(any("/promote/" in path for _, path in writes))
+                return
             result = subject.deploy(context, lambda: checks.append("checked"), replacement=replacement)
             if replacement:
                 calls = list(Provider.calls)
                 read_context = {key: value for key, value in context.items() if key != "frontendRuntimeDatabaseUrl"}
                 self.assertEqual(subject.observe(read_context, lambda: checks.append("checked"), replacement=True), result)
                 self.assertTrue(all(call[0] == "GET" for call in Provider.calls[len(calls):]))
+                wrong_plan = {**plan, "predecessorDeploymentId": "dpl_OtherAlias"}
+                with self.assertRaisesRegex(ValueError, "PROFILED_REPLACEMENT_PREDECESSOR_CHANGED"):
+                    subject.observe({**read_context, "plan": wrong_plan, "inventorySha256": subject.json_sha(wrong_plan)},
+                                    lambda: self.fail("unbound readback checkpoint"), replacement=True)
                 saved = (root / "vercel" / "frontend-promotion-outcome.json").read_bytes()
                 self.assertEqual(result["frontendPromotionReceiptSha256"], subject.sha(saved))
                 self.assertTrue(result["frontendSqlApplied"])

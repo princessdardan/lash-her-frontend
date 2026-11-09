@@ -151,6 +151,7 @@ function validateRelease(context, replacement = false) {
     replacementProvenance = plain(own(context, "replacementProvenance"));
     demand(isDeepStrictEqual(replacementProbe.job, job) && isDeepStrictEqual(replacementProbe.candidate, candidate) &&
       replacementProbe.targetSha256 === target.targetSha256 && plan.owner?.name === FRONTEND_PREPARATION_ROLES.owner &&
+      typeof plan.predecessorDeploymentId === "string" && /^dpl_[A-Za-z0-9]+$/u.test(plan.predecessorDeploymentId) &&
       oid(plan.owner.oid) && isDeepStrictEqual(Object.keys(plan.owner).sort(), ["name", "oid"]) &&
       isDeepStrictEqual(Object.keys(producers[0].role).sort(), ["name", "oid"]) &&
       plan.producers.length === 1 && target.user === FRONTEND_PREPARATION_ROLES.runtime &&
@@ -362,6 +363,7 @@ function releaseProof(result, selected) {
     isDeepStrictEqual(result.configurationSha256, selected.configurationSha256) && result.contractPhase === "p2" &&
     result.phase2ContractManifestSha256 === selected.candidate.phase2ContractManifestSha256 &&
     result.projectId === selected.candidate.workload.projectId && /^dpl_[A-Za-z0-9]+$/u.test(result.deploymentId ?? "") &&
+    (!replacement || result.deploymentId !== selected.plan.predecessorDeploymentId) &&
     result.readyState === "READY" && result.aliasJobState === "succeeded" && result.aliasDeploymentId === result.deploymentId &&
     result.aliasJobDeploymentId === result.deploymentId && result.aliasJobMatchesIntent === true && result.aliasJobType === "promote" &&
     result.nativeSchedulesEnabled === false && result.admissionNewWork === false && result.admissionRecovery === false &&

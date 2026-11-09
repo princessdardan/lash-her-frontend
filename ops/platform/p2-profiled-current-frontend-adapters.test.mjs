@@ -198,6 +198,7 @@ function replacementFixture(t) {
   const targetSha256 = frontendAdmissionTargetSha256("staging", job.target);
   const gatewayObservation = { owned: true };
   Object.assign(plan, { targetSha256, expectedEpoch: "1", configurationSha256: context.configurationSha256,
+    predecessorDeploymentId: "dpl_reviewedPredecessor",
     owner: { name: roles.owner, oid: plan.owner.oid }, restoration: { gatewayBindingSha256: sha(JSON.stringify(gatewayObservation)) } });
   plan.producers[0].role.name = roles.runtime;
   delete plan.historicalLogins;
@@ -252,6 +253,7 @@ const replacementWorker = verifiedWorker.replace("print(json.dumps({'type':'resu
 import hashlib,pathlib
 assert p['operation'] in ('replacement-deploy','replacement-observe')
 assert p['job']['target']['allowEmptyBootstrap'] is True and p['job']['target']['approvedPendingTags']
+assert p['plan']['predecessorDeploymentId']=='dpl_reviewedPredecessor'
 assert ('frontendRuntimeDatabaseUrl' in p)==(p['operation']=='replacement-deploy')
 if p['operation']=='replacement-deploy':
  assert p['frontendRuntimeDatabaseUrl'].startswith('postgresql://lash_her_frontend_staging_runtime_p2:')
@@ -299,6 +301,10 @@ test("replacement worker refuses current-only inputs, wrong provenance, physical
     await withWorker(context.directory, `#!/usr/bin/python3\nopen(${JSON.stringify(marker)}, 'w').close()\nraise SystemExit(1)\n`, async () => {
       await assert.rejects(deployProfiledCurrentFrontend(context), /REVIEW_REQUIRED/u);
       await assert.rejects(deployProfiledReplacementFrontend({ ...context, replacementProvenance: {} }), /REVIEW_REQUIRED/u);
+      const { predecessorDeploymentId, ...unboundPlan } = context.plan;
+      assert.equal(predecessorDeploymentId, "dpl_reviewedPredecessor");
+      await assert.rejects(deployProfiledReplacementFrontend({ ...context, plan: unboundPlan,
+        inventorySha256: sha(JSON.stringify(unboundPlan)) }), /REVIEW_REQUIRED/u);
       for (const drift of [{ observedOid: "99" }, { observedLocks: 1 }, { activeRows: [{ "?column?": 1 }] }, { actualRuntime: "99" }]) {
         f.drift(drift);
         await assert.rejects(deployProfiledReplacementFrontend(context), /REVIEW_REQUIRED/u);

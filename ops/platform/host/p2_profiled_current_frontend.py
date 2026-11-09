@@ -118,11 +118,13 @@ def profile_context(context):
 class GuardedClient:
     """Checkpoint all I/O and durably name each mutation before it occurs."""
 
-    def __init__(self, client, attempt, verify=checkpoint, read_only=False):
+    def __init__(self, client, attempt, verify=checkpoint, read_only=False, reviewed_predecessor=None):
         self.client, self.attempt, self.verify, self.read_only, self.sequence = client, attempt, verify, read_only, 0
+        self.reviewed_predecessor = reviewed_predecessor
 
     def request(self, method, path, body=None):
-        if method in ("POST", "PATCH", "DELETE"):
+        mutation = method in ("POST", "PATCH", "DELETE")
+        if mutation:
             demand(not self.read_only, "RECOVERY_PROVIDER_MUTATION_REFUSED")
             self.sequence += 1
             migrate.write_json(self.attempt, f"provider-mutation-intent-{self.sequence:03d}.json", {
@@ -135,6 +137,14 @@ class GuardedClient:
                 "providerMutationCompleted": False, "trafficAuthorized": False,
             })
         self.verify()
+        if mutation and self.reviewed_predecessor is not None:
+            project_id, deployment_id = self.reviewed_predecessor
+            state = vercel.promotion_state(self.client, project_id)
+            alias = state["aliasJob"]
+            demand(state["productionDeploymentId"] == deployment_id and
+                   (alias is None or alias["jobStatus"] in ("succeeded", "failed", "skipped")),
+                   "PROFILED_REPLACEMENT_PREDECESSOR_CHANGED")
+            self.verify()
         return self.client.request(method, path, body)
 
 
@@ -157,8 +167,10 @@ def require_replacement_release(context, expected, plan, candidate, job, control
     target_binding = {"environment": "staging", **{key: target[key] for key in ("host", "port", "database", "user", "serverMajor")}}
     certification = require_certification_profile(plan.get("certification"))
     producers, owner = plan.get("producers"), plan.get("owner")
+    predecessor = plan.get("predecessorDeploymentId")
     demand(runtime_target == expected_target and target["runtimeRole"] == REPLACEMENT_ROLES[1] != target["user"] and
            plan["targetSha256"] == json_sha(target_binding) and
+           type(predecessor) is str and re.fullmatch(r"dpl_[A-Za-z0-9]+", predecessor) and
            plan.get("configurationSha256") == context["configurationSha256"] and
            context["candidateSha256"] != "0" * 64 and
            type(owner) is dict and set(owner) == {"name", "oid"} and owner["name"] == REPLACEMENT_ROLES[0] and
@@ -240,6 +252,9 @@ def configure_runtime(client, context, attempt, project_id, controls, writer, *,
 def observe_release(context, client, attempt, *, replacement=False):
     expected, plan, candidate, _job, project_id, controls, writer = release_identity(context, replacement=replacement)
     staged = vercel._staged_identity(candidate, attempt, expected_profile=expected)
+    if replacement:
+        demand(staged["previousDeploymentId"] == plan["predecessorDeploymentId"],
+               "PROFILED_REPLACEMENT_PREDECESSOR_CHANGED")
     deployment = vercel.deployment_state(client, staged["deploymentId"], project_id,
                                          staged["sourceCommit"], staged["releaseId"])
     state = vercel.promotion_state(client, project_id)
@@ -318,21 +333,24 @@ def deploy(context, verify=checkpoint, *, replacement=False):
                "PROFILED_REPLACEMENT_RUNTIME_DATABASE_REFUSED")
     parent = private_directory(context["directory"])
     attempt, private = child_directory(parent, "vercel"), child_directory(parent, "vercel-private")
-    client = GuardedClient(vercel.Client(context["vercelToken"]), attempt, verify)
+    predecessor = (project_id, plan["predecessorDeploymentId"]) if replacement else None
+    client = GuardedClient(vercel.Client(context["vercelToken"]), attempt, verify, reviewed_predecessor=predecessor)
     deployment_record = "p2-profiled-replacement-deploy-started.json" if replacement else "p2-profiled-current-deploy-started.json"
     migrate.write_json(attempt, deployment_record, {
         "version": 2, "qualificationTargetProfile": dict(PROFILE), "environment": "staging",
         "releaseId": candidate["releaseId"], "sourceCommit": plan["sourceCommit"],
         "candidateSha256": context["candidateSha256"], "configurationSha256": context["configurationSha256"],
         "trafficAuthorized": False,
-        **(context["replacementProvenance"] if replacement else {}),
+        **({"predecessorDeploymentId": predecessor[1], **context["replacementProvenance"]} if replacement else {}),
     })
     vercel.disable_schedules(client, candidate, expected_profile=expected)
     configure_runtime(client, context, attempt, project_id, controls, writer, replacement=replacement)
     gateway_host = resolve_qualification_target_profile(expected)["gateway"]["publicOrigin"].removeprefix("https://")
     frontend_probe.prepare(client, candidate, private, attempt, gateway_host,
                            scheduler_qualification=False, expected_profile=expected)
-    vercel.stage_frontend(client, candidate, attempt, expected_profile=expected)
+    staged = vercel.stage_frontend(client, candidate, attempt, expected_profile=expected)
+    if replacement:
+        demand(staged["previousDeploymentId"] == predecessor[1], "PROFILED_REPLACEMENT_PREDECESSOR_CHANGED")
     vercel.promote_frontend(client, candidate, attempt,
         lambda release, _deployment: frontend_probe.verify(client, release, attempt, private,
             expected_feature_controls=controls, expected_writer_admission_binding=writer,
