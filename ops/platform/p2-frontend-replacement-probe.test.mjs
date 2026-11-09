@@ -18,8 +18,8 @@ import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./quali
 const refusal = "P2_FRONTEND_REPLACEMENT_PHYSICAL_OBSERVATION_REFUSED";
 const artifact = frontendMigrationArtifact();
 const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-function input(port = 5432, major = 16) {
-  const sourceCommit = "a".repeat(40), releaseId = "owned-replacement";
+function input(port = 5432, major = 16, sourceCommit = "a".repeat(40)) {
+  const releaseId = "owned-replacement";
   const migrationImageDigest = "sha256:" + "b".repeat(64);
   const target = { host: "127.0.0.1", port, database: "owned_replacement", user: "owned_migrator",
     runtimeRole: FRONTEND_PREPARATION_ROLES.runtime, serverMajor: major };
@@ -45,9 +45,8 @@ function input(port = 5432, major = 16) {
     databaseOid: "42", migrationRoleOid: "43" };
 }
 
-function observerCli(raw, env = {}, args = []) {
-  return spawnSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
-    fileURLToPath(new URL("./p2-frontend-replacement-probe.mjs", import.meta.url)), ...args], {
+function observerCli(raw, env = {}, args = [], entry = fileURLToPath(new URL("./p2-frontend-replacement-probe.mjs", import.meta.url))) {
+  return spawnSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", entry, ...args], {
     env: { PATH: process.env.PATH, ...env }, input: typeof raw === "string" ? raw : JSON.stringify(raw),
     encoding: "utf8", timeout: 20000,
   });
@@ -119,7 +118,9 @@ test("owned TLS PostgreSQL observes exact physical locks from a read-only connec
   const clients = [];
   let running = false;
   try {
-    const port = await freePort(), value = input(port, major), { target } = value.job;
+    const packaged = process.env.P2_FRONTEND_REPLACEMENT_PACKAGED_TEST === "true";
+    const sourceCommit = packaged ? JSON.parse(readFileSync("/candidate/migration-source.json", "utf8")).commit : undefined;
+    const port = await freePort(), value = input(port, major, sourceCommit), { target } = value.job;
     writeFileSync(passwordFile, password + "\n", { mode: 0o600 });
     command("openssl", ["req", "-new", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "1", "-keyout", key,
       "-out", cert, "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"]);
@@ -166,6 +167,23 @@ test("owned TLS PostgreSQL observes exact physical locks from a read-only connec
       sourceCommit: value.job.sourceCommit, targetSha256: value.targetSha256, databaseOid: identity.databaseOid,
       migrationRoleOid: identity.migrationRoleOid, marker: probe.marker, backendPid: probe.backendPid, backendStart: probe.backendStart,
       readOnlyVerified: true, authorityIssued: false, trafficAuthorized: false });
+    if (packaged) {
+      const entry = "/candidate/ops/platform/frontend-image.mjs";
+      const args = ["--observe-replacement-lock"];
+      const packagedResult = observerCli(probe, env, args, entry);
+      assert.equal(packagedResult.status, 0, packagedResult.stderr);
+      assert.deepEqual(JSON.parse(packagedResult.stdout), JSON.parse(result.stdout));
+
+      const wrongSource = structuredClone(probe);
+      const wrongCommit = sourceCommit === "a".repeat(40) ? "b".repeat(40) : "a".repeat(40);
+      wrongSource.job.sourceCommit = wrongCommit;
+      wrongSource.candidate.sources.frontend.commit = wrongCommit;
+      wrongSource.candidate.frontendMigration.sourceCommit = wrongCommit;
+      const refusedImage = observerCli(wrongSource, env, args, entry);
+      assert.equal(refusedImage.status, 1);
+      assert.equal(refusedImage.stdout, "");
+      assert.equal(refusedImage.stderr.trim(), "FRONTEND_PACKAGED_SOURCE_REFUSED");
+    }
     assert.equal(await advisoryCount(), 2);
     const directTarget = Object.fromEntries(Object.keys(value.predecessorTarget).map(field => [field, target[field]]));
     const boundary = await verifyEmptyFrontendReplacement(migration, {
