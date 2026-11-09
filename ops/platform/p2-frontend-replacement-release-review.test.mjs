@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, linkSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
-import { frontendMigrationArtifact } from "./frontend-migration.mjs";
+import { frontendMigrationArtifact, runP2FrontendReplacementRelease } from "./frontend-migration.mjs";
 import { frontendCandidateSurfaces } from "./frontend-release-inventory.mjs";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-role-preparation.mjs";
 import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
@@ -196,6 +197,24 @@ test("replacement review refuses changed original bytes and unsafe file custody"
   rmSync(alias);
   chmodSync(f.settings.writerReviewFile, 0o644);
   assert.throws(() => prepareP2FrontendReplacementReleaseReview(f.settings), refuse);
+});
+
+test("fixed replacement operator plans with exact confirmation before provider credential access", async t => {
+  const f = fixture(t);
+  const path = join(f.directory, "replacement-operator-settings.json");
+  writeFileSync(path, JSON.stringify(f.settings) + "\n", { mode: 0o600, flag: "wx" });
+  const program = fileURLToPath(new URL("./p2-frontend-replacement-release.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [program, "--plan", path], { encoding: "utf8",
+    env: { PATH: process.env.PATH }, timeout: 15_000 });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.confirmation, `staging/${f.plan.releaseId}/replacement-write/${f.settings.arm.reviewedPlanSha256}/${f.settings.runtimeReviewSha256}`);
+  assert.equal(plan.migrationCount, f.plan.replacement.approvedPendingTags.length);
+  assert.equal(plan.providerCredentialsResolved, false);
+  assert.equal(plan.migrationAuthorized, false);
+  assert.equal(existsSync(f.settings.providerContext), false);
+  await assert.rejects(runP2FrontendReplacementRelease(f.settings, "staging/unreviewed"),
+    /P2_FRONTEND_REPLACEMENT_RELEASE_REVIEW_REQUIRED/u);
 });
 
 test("raw approval cannot substitute a different host, profile, gateway, API job or coverage", async t => {

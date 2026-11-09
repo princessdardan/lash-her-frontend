@@ -134,6 +134,7 @@ async function continueReplacementFrontend(review, directory, provider, continua
   };
   const inventory = { version: 2, qualificationTargetProfile: profile, environment: "staging",
     actionId: plan.releaseId, sourceCommit: plan.sourceCommit, targetSha256: plan.targetSha256, owner,
+    predecessorDeploymentId: plan.predecessor.deploymentId,
     runtimeProducerSha256: runtimeReview.producerSha256, producers: [{ producerSha256: runtimeReview.producerSha256, role: runtime }],
     configurationSha256: runtimeReview.configurationSha256, certification: runtimeReview.certification,
     restoration: { gatewayBindingSha256: writerReview.gatewayBindingSha256 } };

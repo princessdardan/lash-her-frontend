@@ -26,10 +26,13 @@ class ReplacementOperatorEvidenceTest(unittest.TestCase):
             terminal = 'p2-frontend-replacement-write-outcome.json'
             raw = b'{ "owned" : true }\n'
             migrate.write_exact_bytes(action, terminal, raw)
+            close_prepared = 'p2-frontend-replacement-close-prepared.json'
+            migrate.write_exact_bytes(action, close_prepared, raw)
             migrate.write_exact_bytes(runtime, 'runtime-outcome.json', raw)
             migrate.write_exact_bytes(action, 'frontend-role-credentials.json', b'{}\n')
             with patch.object(evidence, 'ROOT', root):
                 self.assertEqual(evidence.read_replacement_evidence({**request, 'name': terminal}), raw)
+                self.assertEqual(evidence.read_replacement_evidence({**request, 'name': close_prepared}), raw)
                 self.assertEqual(evidence.read_replacement_evidence({**request, 'name': 'runtime-outcome.json'}), raw)
                 for changed in ({'reviewedPlanSha256': 'f' * 64}, {'candidateSha256': 'f' * 64},
                                 {'name': 'frontend-role-credentials.json'}, {'name': '../' + terminal}):

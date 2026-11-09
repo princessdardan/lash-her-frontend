@@ -19,6 +19,7 @@ ACTION_NAMES = {
     'p2-frontend-replacement-write-intent.json', 'p2-frontend-replacement-written-observation.json',
     'p2-frontend-replacement-runtime-intent.json', 'frontend-deployment-proof.json',
     'frontend-workload-outcome.json', 'frontend-promotion-outcome.json', 'frontend-session-closed.json',
+    'p2-frontend-replacement-close-prepared.json',
     'frontend-job-outcome.json', 'frontend-continuation-completed.json', 'frontend-release-outcome.json',
     'p2-frontend-replacement-write-commit-intent.json', 'p2-frontend-replacement-write-outcome.json',
 }

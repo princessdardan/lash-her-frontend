@@ -497,12 +497,15 @@ def sticky_cleanup_signals():
 
 
 def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False, async_arm=False,
-                 authorize_replacement_write=None, verify_replacement_written=None, start_replacement_runtime=None):
+                 authorize_replacement_write=None, verify_replacement_written=None, start_replacement_runtime=None,
+                 verify_replacement_closed=None):
     require(authorize_replacement_write is None or profiled_certification and async_arm,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     require(verify_replacement_written is None or authorize_replacement_write is not None,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     require(start_replacement_runtime is None or verify_replacement_written is not None,
+            'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    require(verify_replacement_closed is None or start_replacement_runtime is not None,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     buffer, last_alive, committed, status = b'', time.monotonic(), None, None
     armed = False
@@ -513,6 +516,8 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
     written_requested = False
     pending_runtime = None
     runtime_requested = False
+    pending_closed = None
+    closed_requested = False
     while True:
         readable, _, _ = select.select([safety_read], [], [], 0.25)
         if readable:
@@ -535,6 +540,8 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                         keys['replacement-written'] = {'operation', *WRITTEN_REQUEST_FIELDS}
                     if start_replacement_runtime is not None:
                         keys['replacement-runtime'] = {'operation', 'postflightSha256'}
+                    if verify_replacement_closed is not None:
+                        keys['replacement-closed'] = {'operation', 'providerProofSha256'}
                     require(type(value) is dict and type(value.get('operation')) is str and
                             set(value) == keys.get(value['operation']), 'P2_PROFILED_CERTIFICATION_SAFETY_FRAME_REFUSED')
                 else:
@@ -563,8 +570,17 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                             'P2_SAFETY_REPLACEMENT_RUNTIME_REFUSED')
                     runtime_requested = True
                     pending_runtime = start_replacement_runtime(value)
+                elif value.get('operation') == 'replacement-closed':
+                    require(verify_replacement_closed is not None and runtime_requested and not closed_requested,
+                            'P2_SAFETY_REPLACEMENT_CLOSE_REFUSED')
+                    closed_requested = True
+                    pending_closed = verify_replacement_closed(value)
                 elif value.get('operation') == 'committed':
-                    require(authorize_replacement_write is None, 'P2_SAFETY_REPLACEMENT_WRITE_TERMINAL_REFUSED')
+                    if authorize_replacement_write is not None:
+                        require(verify_replacement_closed is not None and closed_requested and
+                                (pending_closed is None or pending_closed.done()), 'P2_SAFETY_REPLACEMENT_WRITE_TERMINAL_REFUSED')
+                        if pending_closed is not None:
+                            pending_closed.result()
                     if profiled_certification:
                         require(armed and committed is None and type(value['sha256']) is str and
                                 re.fullmatch(r'[a-f0-9]{64}', value['sha256']), 'P2_PROFILED_CERTIFICATION_SAFETY_COMMIT_REFUSED')
@@ -583,6 +599,9 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
         if pending_runtime is not None and pending_runtime.done():
             pending_runtime.result()
             pending_runtime = None
+        if pending_closed is not None and pending_closed.done():
+            pending_closed.result()
+            pending_closed = None
         if status is None:
             pid, observed_status = os.waitpid(child, os.WNOHANG)
             if pid:

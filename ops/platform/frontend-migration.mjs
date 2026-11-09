@@ -608,6 +608,13 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
               phase = "replacement-api-runtime";
               ready = await host.startReplacementRuntime();
               await verifyLockedSession();
+              if (!owned) {
+                for (const kind of ["migration", "runtime"]) {
+                  const bytes = ready[`${kind}OutcomeBytes`], sha256 = ready[`${kind}OutcomeSha256`];
+                  demand(Buffer.isBuffer(bytes) && digest(sha256) && hash(bytes) === sha256, refuse);
+                  store.retain(`${sha256}-${postflightSha256}.json`, bytes);
+                }
+              }
             }
             phase = "replacement-compatible-continuation";
             const continuation = { database, owner: Object.freeze({ ...roles.owner }),

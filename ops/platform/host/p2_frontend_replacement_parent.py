@@ -54,6 +54,10 @@ WRITTEN_OBSERVER_RETURNED = 'p2-frontend-replacement-written-observer-returned.j
 WRITTEN_OBSERVATION = 'p2-frontend-replacement-written-observation.json'
 RUNTIME_REVIEW = 'p2-frontend-replacement-runtime-review.json'
 RUNTIME_INTENT = 'p2-frontend-replacement-runtime-intent.json'
+CLOSE_PREPARED = 'p2-frontend-replacement-close-prepared.json'
+CLOSED_OBSERVER_STARTED = 'p2-frontend-replacement-closed-observer-started.json'
+CLOSED_OBSERVER_RETURNED = 'p2-frontend-replacement-closed-observer-returned.json'
+CLOSE_SECONDS = 120
 RUNTIME_REVIEW_FIELDS = frozenset(('runtimeReviewBytes', 'runtimeReviewSha256'))
 API_CREDENTIALS = ('COURSE_STAGING_DATABASE_URL', 'COMMUNITY_STAGING_DATABASE_URL')
 WRITE_CONTAINMENT = 'p2-frontend-replacement-write-containment.json'
@@ -124,13 +128,16 @@ def reviewed_plan(initial, *, mode=MODE):
     require(mode in (MODE, WRITE_MODE), REFUSED)
     require(type(initial) is dict, REFUSED)
     has_runtime = mode == WRITE_MODE and bool(RUNTIME_REVIEW_FIELDS & set(initial))
-    require(set(initial) == INITIAL_FIELDS | (RUNTIME_REVIEW_FIELDS if has_runtime else set()) and
+    provider_fields = {'vercelToken'} if has_runtime and 'vercelToken' in initial else set()
+    require(set(initial) == INITIAL_FIELDS | (RUNTIME_REVIEW_FIELDS if has_runtime else set()) | provider_fields and
             type(initial['version']) is int and initial['version'] == 1 and initial['mode'] == mode and
             initial['environment'] == 'staging' and migrate.source_commit(initial['sourceCommit']) and
             match(initial['hostMachineId'], r'[a-f0-9]{32}') and
             all(digest(initial[key]) for key in ('sourceClosureSha256', 'candidateSha256', 'reviewedPlanSha256')), REFUSED)
     if has_runtime:
         require(digest(initial['runtimeReviewSha256']), REFUSED)
+    if provider_fields:
+        require(match(initial['vercelToken'], r'[!-~]{1,8192}'), REFUSED)
     raw = unbase64(initial['reviewedPlanBytes'], 2_000_000)
     require(migrate.file_hash(raw) == initial['reviewedPlanSha256'], REFUSED)
     plan = decode_qualification_target_json(raw, 'carrier')
@@ -244,15 +251,17 @@ def remove_container(name, plan_sha):
     return bool(found)
 
 
-def run_replacement_image(initial, image, probe, *, abort_observation=None, written_packet=None):
+def run_replacement_image(initial, image, probe, *, abort_observation=None, written_packet=None, closed_packet=None):
     aborting = abort_observation is not None
-    require(not aborting or written_packet is None, REFUSED)
+    require(sum(value is not None for value in (abort_observation, written_packet, closed_packet)) <= 1, REFUSED)
     name = container_name(initial, probe, aborting=aborting)
     plan_sha = initial['reviewedPlanSha256']
     entry = '--abort-replacement' if aborting else '--observe-replacement-lock'
     payload = {'probe': probe, 'physicalObservation': base64.b64encode(abort_observation).decode()} if aborting else probe
     if written_packet is not None:
         entry, payload = '--observe-replacement-written', written_packet
+    if closed_packet is not None:
+        entry, payload = '--observe-replacement-closed', closed_packet
     args = ['docker', 'run', '--rm', '--pull=never', '--name', name,
             '--label', 'io.lash-her.replacement-arm=' + plan_sha, '--interactive', '--network', 'host',
             '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
@@ -262,7 +271,7 @@ def run_replacement_image(initial, image, probe, *, abort_observation=None, writ
     if aborting:
         return run_bounded_image(args, encoded(payload), env)
     try:
-        if written_packet is not None:
+        if written_packet is not None or closed_packet is not None:
             return run_bounded_image(args, encoded(payload), env)
         result = subprocess.run(args, input=encoded(payload), capture_output=True, env=env, timeout=25, check=True)
     finally:
@@ -401,6 +410,10 @@ def write_observer_receipt(initial, probe, physical, status):
 def require_write_observer_returned(initial, probe, physical, directory, *, written=False):
     names = ((WRITTEN_OBSERVER_STARTED, 'WRITTEN_STARTED'), (WRITTEN_OBSERVER_RETURNED, 'WRITTEN_RETURNED')) if written else (
         (WRITE_OBSERVER_STARTED, 'STARTED'), (WRITE_OBSERVER_RETURNED, 'RETURNED'))
+    require_observer_pair(initial, probe, physical, directory, names)
+
+
+def require_observer_pair(initial, probe, physical, directory, names):
     for filename, status in names:
         actual = decode_qualification_target_json(private_record(directory, filename), 'carrier')
         require(canonical(actual) == canonical(write_observer_receipt(initial, probe, physical, status)), REFUSED)
@@ -510,6 +523,93 @@ def retain_runtime_intent(initial, plan, review, source, directory, probe, physi
     migrate.write_json(directory, RUNTIME_INTENT, runtime_intent_record(initial, plan, review, readback))
 
 
+def close_prepared_record(initial, plan, proof_sha):
+    return {**receipt_base(initial, plan, 'P2_FRONTEND_REPLACEMENT_CLOSE_PREPARED'), 'providerProofSha256': proof_sha}
+
+
+def closed_result(packet, written, raw):
+    require(type(raw) is bytes and 0 < len(raw) <= 8192 and raw.endswith(b'\n'), REFUSED)
+    value = decode_qualification_target_json(raw, 'carrier')
+    expected = {**written_result(packet, written), 'status': 'P2_FRONTEND_REPLACEMENT_SESSION_CLOSED',
+                'operation': 'verify-replacement-closed', 'writtenObservationSha256': migrate.file_hash(written),
+                'originalBackendAbsent': True, 'originalLocksAbsent': True, 'observationLockReleased': True}
+    require(canonical(value) == canonical(expected), REFUSED)
+    return value
+
+
+def retain_closed_observation(initial, plan, review, source, directory, image, probe, physical,
+                              custody, written_request, request, cancelled):
+    import p2_replacement_terminal as terminal
+    import vercel
+
+    def verify():
+        supervisor.verify_guard_boundary(initial, source)
+        require(not cancelled.is_set(), REFUSED)
+
+    verify()
+    verify_bundle(Path(initial['bundle']), plan, probe)
+    require(require_write_custody(initial, plan, probe, directory, custody['armReceiptSha256'],
+                                  custody['emptyCatalogReceipt'])[1:] == (written_request['writeIntentSha256'], physical), REFUSED)
+    written = written_packet(plan, probe, physical, written_request)
+    postflight = private_record(directory, WRITTEN_OBSERVATION, 8192)
+    require_write_observer_returned(initial, probe, physical, directory, written=True)
+    prepared = decode_qualification_target_json(private_record(directory, CLOSE_PREPARED), 'carrier')
+    proof = tuple(private_record(directory, name) for name in terminal.PROVIDER_FILES)
+    proof_sha = migrate.file_hash(proof[0])
+    require(proof_sha == request['providerProofSha256'] and
+            canonical(prepared) == canonical(close_prepared_record(initial, plan, proof_sha)), REFUSED)
+    api = terminal.read_api(initial, plan, review, probe['candidate'], directory, written, postflight)
+    base = terminal.release_base(initial, plan, review, probe['candidate'], postflight, api)
+    terminal.verify_provider(proof, base, probe['candidate'], plan, review, written, vercel.Client(initial['vercelToken']), verify)
+    terminal.verify_runtime(initial, probe['candidate'], api, verify)
+    migrate.write_json(directory, CLOSED_OBSERVER_STARTED, write_observer_receipt(initial, probe, physical, 'CLOSED_STARTED'))
+    raw = run_replacement_image(initial, image, probe, closed_packet={**written, 'writtenObservation': base64.b64encode(postflight).decode()})
+    migrate.write_json(directory, CLOSED_OBSERVER_RETURNED, write_observer_receipt(initial, probe, physical, 'CLOSED_RETURNED'))
+    closed_result(written, postflight, raw)
+    verify()
+    migrate.write_exact_bytes(directory, terminal.SESSION_CLOSED, raw)
+
+
+def finalize_replacement_terminal(initial, plan, review, source, directory, image, probe, physical, written_request, committed):
+    import p2_replacement_terminal as terminal
+    import vercel
+
+    def verify():
+        supervisor.verify_guard_boundary(initial, source)
+
+    verify()
+    verify_bundle(Path(initial['bundle']), plan, probe)
+    written = written_packet(plan, probe, physical, written_request)
+    postflight = private_record(directory, WRITTEN_OBSERVATION, 8192)
+    api = terminal.read_api(initial, plan, review, probe['candidate'], directory, written, postflight)
+    base = terminal.release_base(initial, plan, review, probe['candidate'], postflight, api)
+    proof = tuple(private_record(directory, name) for name in terminal.PROVIDER_FILES)
+    node = tuple(private_record(directory, name) for name in terminal.NODE_FILES)
+    closed = private_record(directory, terminal.SESSION_CLOSED, 8192)
+    intent = private_record(directory, terminal.INTENT)
+    require(migrate.file_hash(intent) == committed and canonical(terminal.exact_receipt(intent)) ==
+            canonical(terminal.join_terminal(base, written, proof, node, closed, status=terminal.INTENT_STATUS)), REFUSED)
+    require_observer_pair(initial, probe, physical, directory, ((CLOSED_OBSERVER_STARTED, 'CLOSED_STARTED'),
+                                                               (CLOSED_OBSERVER_RETURNED, 'CLOSED_RETURNED')))
+    closed_result(written, postflight, closed)
+    fresh_closed = run_replacement_image(initial, image, probe,
+        closed_packet={**written, 'writtenObservation': base64.b64encode(postflight).decode()})
+    closed_result(written, postflight, fresh_closed)
+    require(fresh_closed == closed, REFUSED)
+    terminal.verify_provider(proof, base, probe['candidate'], plan, review, written, vercel.Client(initial['vercelToken']), verify)
+    terminal.verify_runtime(initial, probe['candidate'], api, verify)
+    # Re-read every byte after the independent provider and runtime checks.
+    require(tuple(private_record(directory, name) for name in terminal.PROVIDER_FILES) == proof and
+            tuple(private_record(directory, name) for name in terminal.NODE_FILES) == node and
+            private_record(directory, terminal.SESSION_CLOSED, 8192) == closed and
+            private_record(directory, WRITTEN_OBSERVATION, 8192) == postflight and
+            private_record(directory, terminal.INTENT) == intent and
+            terminal.read_api(initial, plan, review, probe['candidate'], directory, written, postflight) == api, REFUSED)
+    verify()
+    migrate.write_json(directory, terminal.TERMINAL, terminal.join_terminal(
+        base, written, proof, node, closed, status=terminal.TERMINAL_STATUS))
+
+
 def contain_runtime_if_started(initial, plan, selected, directory, review, reaped):
     if review is not None and os.path.lexists(directory / RUNTIME_INTENT):
         from p2_replacement_runtime_containment import contain_replacement_runtime_after_reap
@@ -566,11 +666,13 @@ def contain_replacement_write(initial, plan, image, directory, probe, physical, 
         supervisor.verify_guard_lock(initial)
         require(process_reconciled, REFUSED)
         observer_reconciled = not has_record(RUNTIME_INTENT) or runtime_observer_reconciled
-        for written, started, returned in ((False, WRITE_OBSERVER_STARTED, WRITE_OBSERVER_RETURNED),
-                                           (True, WRITTEN_OBSERVER_STARTED, WRITTEN_OBSERVER_RETURNED)):
+        for started, returned, stage in ((WRITE_OBSERVER_STARTED, WRITE_OBSERVER_RETURNED, ''),
+                                         (WRITTEN_OBSERVER_STARTED, WRITTEN_OBSERVER_RETURNED, 'WRITTEN_'),
+                                         (CLOSED_OBSERVER_STARTED, CLOSED_OBSERVER_RETURNED, 'CLOSED_')):
             if has_record(started) or has_record(returned):
                 try:
-                    require_write_observer_returned(initial, probe, physical, directory, written=written)
+                    require_observer_pair(initial, probe, physical, directory,
+                                          ((started, stage + 'STARTED'), (returned, stage + 'RETURNED')))
                 except (OSError, ValueError):
                     observer_reconciled = False
         receipt['observerLauncherReconciled'] = observer_reconciled
@@ -725,7 +827,7 @@ class ReplacementRuntimeObserver(PhysicalObserver):
 
 
 class ReplacementWriteBroker(ReplacementArmBroker):
-    """Write frontier only, pending a separately verified release continuation."""
+    """Source-only replacement through closed staged runtime and provider join."""
 
     def __init__(self, *args, image, runtime_review=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -739,6 +841,15 @@ class ReplacementWriteBroker(ReplacementArmBroker):
         self.runtime_review = runtime_review
         self.runtime_intent = None
         self.runtime_observer_cleanup_uncertain = False
+        self.provider_raw = None
+        self.close_started = None
+        self.session_closed = None
+        self.joined_intent_sha = None
+
+    def check(self):
+        super().check()
+        if self.close_started is not None:
+            require(time.monotonic() - self.close_started < CLOSE_SECONDS, REFUSED)
 
     def command(self, value):
         operation = value.get('operation') if type(value) is dict else None
@@ -748,6 +859,19 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             return self.verify_written(value)
         if operation == 'start-replacement-runtime':
             return self.start_replacement_runtime(value)
+        stages = {'verify-replacement-frontend': (self.verify_replacement_frontend, {'proof', 'workload', 'promotion'}),
+                  'prepare-replacement-close': (self.prepare_replacement_close, set()),
+                  'observe-replacement-closed': (self.observe_replacement_closed, set()),
+                  'finish-replacement': (self.finish_replacement, {'terminal', 'continuationCompleted', 'releaseOutcome'}),
+                  'commit': (self.commit_replacement, set())}
+        if operation in stages:
+            stage, fields = stages[operation]
+            require(self.runtime_review is not None and 'vercelToken' in self.initial and not self.committed.is_set() and
+                    set(value) == {'id', 'operation', *fields} and
+                    type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1, REFUSED)
+            self.last_command = time.monotonic()
+            self.check()
+            return stage(value)
         require(operation == 'authorize-replacement-write' and set(value) == {
             'id', 'operation', 'armReceiptSha256', 'emptyCatalogReceipt'} and
             type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1 and
@@ -882,9 +1006,10 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             for key in API_CREDENTIALS:
                 old_credentials[key] = os.environ.get(key)
                 os.environ[key] = self.initial['credentials'][key]
-            runtime.execute_profiled_replacement_runtime(
+            result = runtime.execute_profiled_replacement_runtime(
                 Path(self.initial['bundle']), Path(review['configuration']), Path(self.initial['results']),
                 self.source / 'ops/platform/compose.yaml', expected_profile=PROFILE, _profiled_replacement_scope=self.scope)
+            require(self.released.is_set() and self.promoted is not None and result == self.ready and not self.failed.is_set(), REFUSED)
         except BaseException:
             self.abort()
         finally:
@@ -914,23 +1039,113 @@ class ReplacementWriteBroker(ReplacementArmBroker):
                 outcome.get('trafficAuthorized') is False and outcome.get('releaseAccepted') is False, REFUSED)
         self.verify_replacement_gateway_closed(selected, snapshot, outcome)
         self.runtime_snapshot, self.ready = snapshot, outcome
-        self.send(self.runtime_identity, 'REPLACEMENT_API_RUNTIME_READY', runtimeOutcomeSha256=migrate.file_hash(raw),
-                  migrationOutcomeSha256=migrate.file_hash(migration_raw))
-        # The provider continuation will consume this same still-held scope.
-        # This source-only entry cannot complete the release on its own.
+        self.api_pins = (migrate.file_hash(raw), migrate.file_hash(migration_raw))
+        self.send(self.runtime_identity, 'REPLACEMENT_API_RUNTIME_READY', runtimeOutcomeSha256=self.api_pins[0],
+                  migrationOutcomeSha256=self.api_pins[1])
         next_gateway_check = time.monotonic() + 1
         while not self.released.wait(0.1):
             self.verify_replacement_runtime()
             if time.monotonic() >= next_gateway_check:
                 self.verify_replacement_gateway_closed(selected, snapshot, outcome)
                 next_gateway_check = time.monotonic() + 1
-        raise ValueError(REFUSED)
+        self.verify_replacement_runtime()
+        require(self.promoted is not None, REFUSED)
 
     def verify_replacement_gateway_closed(self, selected, snapshot, outcome):
         self.verify_replacement_runtime()
         require(runtime.check_containers(selected, snapshot, expected_profile=PROFILE) == outcome['containers'], REFUSED)
         self.scope.prior_gateway.verify_replacement_closed_zero()
         self.verify_replacement_runtime()
+
+    def replacement_api(self):
+        import p2_replacement_terminal as terminal
+        selected = self.probe['candidate']
+        api = terminal.read_api(self.initial, self.plan, self.runtime_review, selected, self.directory,
+                                self.written_request, self.verified_written)
+        require((migrate.file_hash(api['runtimeRaw']), migrate.file_hash(api['migrationRaw'])) == self.api_pins and
+                api['outcome'] == self.ready and api['snapshot'] == self.runtime_snapshot, REFUSED)
+        return api, terminal.release_base(self.initial, self.plan, self.runtime_review, selected, self.verified_written, api)
+
+    def readback_replacement_provider(self, raw):
+        import p2_replacement_terminal as terminal
+        import vercel
+        api, base = self.replacement_api()
+        selected = self.probe['candidate']
+        proof = terminal.verify_provider(raw, base, selected, self.plan, self.runtime_review, self.written_request,
+                                         vercel.Client(self.initial['vercelToken']), self.verify_replacement_runtime)
+        terminal.verify_runtime(self.initial, selected, api, self.verify_replacement_runtime)
+        return proof
+
+    def verify_replacement_frontend(self, value):
+        import p2_replacement_terminal as terminal
+        require(self.ready is not None and self.provider_raw is None and self.close_started is None, REFUSED)
+        self.verify_replacement_mutation()
+        raw = tuple(unbase64(value[key], 65_536) for key in ('proof', 'workload', 'promotion'))
+        proof = self.readback_replacement_provider(raw)
+        self.verify_replacement_mutation()
+        for name, original in zip(terminal.PROVIDER_FILES, raw):
+            migrate.write_exact_bytes(self.directory, name, original)
+        self.provider_raw, self.promoted = raw, proof
+        self.send(value['id'], 'REPLACEMENT_FRONTEND_VERIFIED', proofSha256=migrate.file_hash(raw[0]))
+
+    def prepare_replacement_close(self, value):
+        require(self.provider_raw is not None and self.close_started is None and self.session_closed is None, REFUSED)
+        self.verify_replacement_mutation()
+        require(self.readback_replacement_provider(self.provider_raw) == self.promoted, REFUSED)
+        self.released.set()
+        require(self.worker_done.wait(40) and not self.failed.is_set() and not self.runtime_observer_cleanup_uncertain, REFUSED)
+        self.verify_replacement_mutation()
+        require(self.observer.stop_event.is_set(), REFUSED)
+        self.scope.begin_close()
+        # The guarded worker has finished. No ordinary scoped subprocess can
+        # start again. Node still holds PostgreSQL through its final checks.
+        self.observer = None
+        self.close_started = time.monotonic()
+        self.check()
+        migrate.write_json(self.directory, CLOSE_PREPARED, close_prepared_record(
+            self.initial, self.plan, migrate.file_hash(self.provider_raw[0])))
+        self.send(value['id'], 'REPLACEMENT_CLOSE_PREPARED')
+
+    def observe_replacement_closed(self, value):
+        import p2_replacement_terminal as terminal
+        require(self.close_started is not None and self.session_closed is None, REFUSED)
+        self.safety({'operation': 'replacement-closed', 'providerProofSha256': migrate.file_hash(self.provider_raw[0])})
+        deadline = time.monotonic() + 90
+        while True:
+            self.check()
+            require(time.monotonic() < deadline, REFUSED)
+            try:
+                raw = private_record(self.directory, terminal.SESSION_CLOSED, 8192)
+                break
+            except FileNotFoundError:
+                time.sleep(0.05)
+        closed_result(self.written_request, self.verified_written, raw)
+        self.session_closed = raw
+        self.send(value['id'], 'REPLACEMENT_SESSION_CLOSED', sessionClosedSha256=migrate.file_hash(raw))
+
+    def finish_replacement(self, value):
+        import p2_replacement_terminal as terminal
+        require(self.session_closed is not None and self.joined_intent_sha is None and self.worker_done.is_set(), REFUSED)
+        require(tuple(private_record(self.directory, name) for name in terminal.PROVIDER_FILES) == self.provider_raw and
+                private_record(self.directory, terminal.SESSION_CLOSED, 8192) == self.session_closed, REFUSED)
+        api, base = self.replacement_api()
+        raw = tuple(unbase64(value[key], 65_536) for key in ('terminal', 'continuationCompleted', 'releaseOutcome'))
+        intent = terminal.join_terminal(base, self.written_request, self.provider_raw, raw,
+                                        self.session_closed, status=terminal.INTENT_STATUS)
+        terminal.verify_runtime(self.initial, self.probe['candidate'], api, self.check)
+        for name, original in zip(terminal.NODE_FILES, raw):
+            migrate.write_exact_bytes(self.directory, name, original)
+        migrate.write_json(self.directory, terminal.INTENT, intent)
+        self.joined_intent_sha = migrate.file_hash(private_record(self.directory, terminal.INTENT))
+        self.send(value['id'], 'REPLACEMENT_JOINED', commitIntentSha256=self.joined_intent_sha)
+
+    def commit_replacement(self, value):
+        import p2_replacement_terminal as terminal
+        require(self.joined_intent_sha is not None and self.session_closed is not None and self.worker_done.is_set() and
+                migrate.file_hash(private_record(self.directory, terminal.INTENT)) == self.joined_intent_sha, REFUSED)
+        self.send(value['id'], 'COMMITTED', commitIntentSha256=self.joined_intent_sha)
+        self.safety({'operation': 'committed', 'sha256': self.joined_intent_sha})
+        self.committed.set()
 
     def abort(self):
         with self.write_mutex:
@@ -1036,7 +1251,10 @@ def broker_child(initial, source, plan, base_probe, directory, fd, safety_write,
                 finally:
                     broker.operation_active.release()
             threading.Thread(target=operation, daemon=True).start()
-        require(broker.committed.is_set(), REFUSED)
+        if writing:
+            require(broker.operation_active.acquire(timeout=2), REFUSED)
+            broker.operation_active.release()
+        require(broker.committed.is_set() and not broker.failed.is_set(), REFUSED)
         return 0
     except BaseException:
         if writing:
@@ -1051,8 +1269,8 @@ def supervise_replacement_arm(initial, source):
 
 
 def qualify_replacement_write_frontier(initial, source):
-    # Source-only. The installed entry below will remain read-only until the
-    # same guarded action supports the full compatible release continuation.
+    # Source-only. The installed entry below remains read-only until the
+    # complete operator, provider and guarded replacement join is qualified.
     return _supervise_replacement(initial, source, writing=True)
 
 
@@ -1122,16 +1340,31 @@ def _supervise_replacement(initial, source, *, writing):
                     require(written_request is not None and write_physical is not None, REFUSED)
                     return worker.submit(retain_runtime_intent, initial, plan, runtime_review, source, directory,
                                          armed_probe, write_physical, custody_request, written_request, request, cancelled)
+                def verify_closed(request):
+                    require(written_request is not None and write_physical is not None and runtime_review is not None and
+                            digest(request['providerProofSha256']), REFUSED)
+                    return worker.submit(retain_closed_observation, initial, plan, runtime_review, source, directory,
+                                         image, armed_probe, write_physical, custody_request, written_request, request, cancelled)
+                provider_selected = runtime_review is not None and 'vercelToken' in initial
                 try:
                     committed = supervisor.watch_broker(child, safety_read, health_write, arm,
                                                         profiled_certification=True, async_arm=True,
                                                         authorize_replacement_write=authorize_write if writing else None,
                                                         verify_replacement_written=verify_written if writing else None,
-                                                        start_replacement_runtime=start_runtime if runtime_review is not None else None)
+                                                        start_replacement_runtime=start_runtime if runtime_review is not None else None,
+                                                        verify_replacement_closed=verify_closed if provider_selected else None)
                 except BaseException:
                     cancelled.set()
                     raise
-            require(not writing, REFUSED)
+            if writing:
+                require(provider_selected and write_physical is not None and written_request is not None and
+                        not supervisor.members(child), REFUSED)
+                require(require_write_custody(initial, plan, armed_probe, directory, custody_request['armReceiptSha256'],
+                                              custody_request['emptyCatalogReceipt'])[1:] ==
+                        (written_request['writeIntentSha256'], write_physical), REFUSED)
+                finalize_replacement_terminal(initial, plan, runtime_review, source, directory, image, armed_probe, write_physical,
+                                              written_request, committed)
+                return
             supervisor.verify_guard_boundary(initial, source)
             verify_bundle(Path(initial['bundle']), plan, base_probe)
             armed, arm_sha = require_arm(initial, plan, armed_probe, directory)
