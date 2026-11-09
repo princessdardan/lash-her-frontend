@@ -4,7 +4,7 @@ import { closeSync, constants, fsyncSync, mkdirSync, openSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { frontendConnectionOptions } from "./frontend-migration.mjs";
+import { frontendConnectionOptions, runP2FrontendReplacementRelease } from "./frontend-migration.mjs";
 import { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { prepareP2FrontendReplacementReleaseReview } from "./p2-frontend-replacement-release-review.mjs";
 import { exchangeFrontendReplacementWrite } from "./p2-frontend-replacement-write-transport.mjs";
@@ -162,13 +162,19 @@ async function continueReplacementFrontend(review, directory, provider, continua
     nativeSchedulesEnabled: false, trafficAuthorized: false, releaseAccepted: false };
 }
 
+async function main() {
+  const [command, path, confirm, confirmation] = process.argv.slice(2);
+  const plan = command === "--plan" && process.argv.length === 4;
+  const apply = command === "--apply" && process.argv.length === 6 && confirm === "--confirm";
+  demand(process.versions.node.split(".")[0] === "24" && (plan || apply));
+  const settings = settingsFile(path);
+  console.log(JSON.stringify(plan ? planP2FrontendReplacementRelease(settings) :
+    await runP2FrontendReplacementRelease(settings, confirmation)));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try {
-    const [command, path] = process.argv.slice(2);
-    demand(process.versions.node.split(".")[0] === "24" && process.argv.length === 4 && command === "--plan");
-    console.log(JSON.stringify(planP2FrontendReplacementRelease(settingsFile(path))));
-  } catch {
+  main().catch(() => {
     console.error(refusal);
     process.exitCode = 1;
-  }
+  });
 }

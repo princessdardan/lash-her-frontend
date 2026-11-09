@@ -139,6 +139,29 @@ class ReplacementArmTests(unittest.TestCase):
                 parent.main()
             opened.assert_not_called()
 
+    def test_installed_write_dispatch_requires_full_review_and_exact_confirmation(self):
+        runtime_raw = b'{}\n'
+        runtime_sha = migrate.file_hash(runtime_raw)
+        reviewed = {**self.write_initial, 'runtimeReviewBytes': base64.b64encode(runtime_raw).decode(),
+                    'runtimeReviewSha256': runtime_sha, 'vercelToken': 'owned-provider-token',
+                    'confirmation': self.write_initial['confirmation'] + '/' + runtime_sha,
+                    'credentials': {**self.write_initial['credentials'], **dict.fromkeys(parent.API_CREDENTIALS, 'owned-migration-credential')}}
+        def dispatch(initial):
+            data = io.TextIOWrapper(io.BytesIO(parent.encoded(initial) + b'\n'))
+            with (patch.object(parent.sys, 'argv', ['parent.py', '--supervise-replacement-write']),
+                  patch.object(parent.sys, 'platform', 'linux'), patch.object(parent.os, 'geteuid', return_value=0),
+                  patch.object(parent.sys, 'stdin', data)):
+                parent.main()
+        with patch.object(parent, 'qualify_replacement_write_frontier') as supervise:
+            for initial in (self.initial, self.write_initial, {**reviewed, 'confirmation': self.write_initial['confirmation']},
+                            {key: value for key, value in reviewed.items() if key != 'vercelToken'}):
+                with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                    dispatch(initial)
+                supervise.assert_not_called()
+            dispatch(reviewed)
+            supervise.assert_called_once()
+            self.assertEqual(supervise.call_args.args[0], reviewed)
+
     def test_bundle_raw_bytes_match_probe_and_review(self):
         source = Path('/opt/lash-her/operators') / self.commit
         jobs = {'frontend': {'job': self.job, 'schema': self.raw_baseline, 'image': self.image}}

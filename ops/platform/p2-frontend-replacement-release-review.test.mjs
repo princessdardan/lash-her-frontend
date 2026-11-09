@@ -215,6 +215,11 @@ test("fixed replacement operator plans with exact confirmation before provider c
   assert.equal(existsSync(f.settings.providerContext), false);
   await assert.rejects(runP2FrontendReplacementRelease(f.settings, "staging/unreviewed"),
     /P2_FRONTEND_REPLACEMENT_RELEASE_REVIEW_REQUIRED/u);
+  const refused = spawnSync(process.execPath, [program, "--apply", path, "--confirm", "staging/unreviewed"],
+    { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000 });
+  assert.equal(refused.status, 1);
+  assert.equal(refused.stdout, "");
+  assert.match(refused.stderr, /P2_FRONTEND_REPLACEMENT_RELEASE_REVIEW_REQUIRED/u);
 });
 
 test("raw approval cannot substitute a different host, profile, gateway, API job or coverage", async t => {

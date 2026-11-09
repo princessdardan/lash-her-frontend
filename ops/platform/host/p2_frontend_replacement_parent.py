@@ -1269,8 +1269,7 @@ def supervise_replacement_arm(initial, source):
 
 
 def qualify_replacement_write_frontier(initial, source):
-    # Source-only. The installed entry below remains read-only until the
-    # complete operator, provider and guarded replacement join is qualified.
+    # Owned qualification also exercises intermediate no-provider cases.
     return _supervise_replacement(initial, source, writing=True)
 
 
@@ -1397,10 +1396,18 @@ def _supervise_replacement(initial, source, *, writing):
 
 
 def main():
-    require(sys.argv[1:] == ['--supervise-pre-bootstrap'] and sys.platform == 'linux' and os.geteuid() == 0, REFUSED)
+    require(sys.argv[1:] in (['--supervise-pre-bootstrap'], ['--supervise-replacement-write']) and
+            sys.platform == 'linux' and os.geteuid() == 0, REFUSED)
     raw = sys.stdin.buffer.readline(MAXIMUM + 1)
     require(0 < len(raw) <= MAXIMUM and raw.endswith(b'\n'), REFUSED)
-    supervise_replacement_arm(decode_qualification_target_json(raw, 'private-packet'), Path(__file__).resolve().parents[3])
+    initial = decode_qualification_target_json(raw, 'private-packet')
+    source = Path(__file__).resolve().parents[3]
+    if sys.argv[1] == '--supervise-replacement-write':
+        require(type(initial) is dict and {*RUNTIME_REVIEW_FIELDS, 'vercelToken'} <= set(initial), REFUSED)
+        reviewed_plan(initial, mode=WRITE_MODE)
+        qualify_replacement_write_frontier(initial, source)
+    else:
+        supervise_replacement_arm(initial, source)
 
 
 if __name__ == '__main__':
