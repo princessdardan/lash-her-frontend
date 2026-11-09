@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "scope": "Owned normal and interrupted known-acknowledgement recovery for a replacement frontend database",
+  "sourceCommit": "8c47e0d371dc20928b71179afb7735f25a0d6842",
+  "sourceTree": "ffe94944eae77853a4bb2e1fa2e0c99d18113d1a",
+  "operatorSourceFiles": 393,
+  "operatorSourceClosureSha256": "ea9b506e303e53a0678a83a2124d79b79989f9c57595bd747b9f89fe99aae6f1",
+  "fixtureOnlyFollowup": {
+    "sourceCommit": "1c5e7891a3d156e96b21a4750e2bc52126737613",
+    "path": "ops/platform/p2-known-ack-interrupted-restoration.test.mjs",
+    "operatorSourceChanged": false,
+    "nodeTestsPassed": 17
+  },
+  "sourceChecks": {
+    "linuxHostTestsPassed": 204,
+    "hostProviderAndContainerEffectsSimulated": true,
+    "nodeTestsPassed": 43,
+    "nodeTestsOptInSkipped": 1,
+    "postgres16ReplacementChecksPassed": 8,
+    "postgres18Owned": {
+      "roles": 29,
+      "release": 18,
+      "native": 9,
+      "currentCertification": 19,
+      "replacementCertification": 8
+    },
+    "contractTestsPassed": 13
+  },
+  "threeDatabaseOwnedRun": {
+    "postgresMajor": 18,
+    "apiSourceCommits": {
+      "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+      "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+    },
+    "migrations": {"frontend": 83, "course": 22, "community": 11},
+    "actualApplicationCronAndTlsReceivers": true,
+    "replacementFrontendObserverVerified": true,
+    "firstHttpStatus": 503,
+    "replayHttpStatus": 200,
+    "settledFrontendUncertain": 0,
+    "originalGatewayUncertain": 1,
+    "allThreeJournalsUnchanged": true,
+    "actualProvider": false
+  },
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-known-ack-replacement-8c47e0d3",
+  "privateArtifactSha256": {
+    "linux-host-qualified.log": "353eb7ca068d69609940b2d811de0953f549a1b569e329d363188bf56b12e277",
+    "node.log": "346f002428c1fa88d8613303a92a51950bc9e35e40627d5e69acdce7b527b26e",
+    "pg16-replacement.json": "b63057c2f902fcca969d4cea6325de58651cc02b4d6fab6919ae061362498c0c",
+    "pg18-platform.json": "e829bcb31b22265429f39cf617e12a9e13dcbd7c691c254035a63c92f64a1f72",
+    "three-database-pg18.json": "a38e4361fe13fe563a904c3b1a26677da3c3408bc172ad676634a243fefe7d29",
+    "contracts.log": "b8f0f076968d378565331d9c967c8ecd7fe1de0ae62adb0eb1bd0caec977dee0",
+    "fixture-tip-node.log": "58e522a12bc663cc8ca8a4e377b83f10ac543e617411061722f143abc33222a1"
+  },
+  "deployedEvidence": {
+    "successorRuntimeCertificationHandoffImplemented": false,
+    "exactCandidateCiQualified": false,
+    "stagingActionStarted": false,
+    "p212Accepted": false,
+    "g2Accepted": false
+  }
+}

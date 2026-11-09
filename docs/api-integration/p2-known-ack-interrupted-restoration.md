@@ -21,6 +21,14 @@ node ops/platform/p2-known-ack-interrupted-restoration.mjs apply /absolute/priva
 
 The source entry verifies committed operator source/CI and uses the existing reviewed SSH installation and physical FE session. It does not apply SQL, prepare roles, change LOGIN, build/promote a frontend or open admission. Those actions cannot be requested through C.
 
+## Replacement frontend database
+
+Use `plan-profiled-current` and `host-plan-profiled-current` with version 2 settings and the exact `staging-current` qualification profile. Supply the original replacement release settings and the same `replacementRelease` selection used for the original bounded certification. The selection binds the absolute original guardian terminal path and raw SHA-256. The interrupted planner also requires the original certification plan, the exact retained causal receipts, and a distinct restoration action ID. Dardan starts the reviewed `apply-profiled-current` action with `--confirm staging/RESTORATION_ACTION_ID` after its preflight.
+
+The interrupted observer verifies the full original apply-forward job and fresh read-only database state. It binds the named settled frontend operation and its original reconciliation digest, the exact login OIDs, both advisory locks and independent session closure. The guard preserves unresolved ledger rows if it has to close the ordinary recovery window.
+
+Before later certification stages can run after either recovery outcome, the current runtime needs a separate lineage check. The original release receipt continues to refer to its immutable configuration. The successor proof must derive the active configuration path from the fixed prior action ID and join the raw host terminal, closure, gateway lineage and live ten-service runtime to the same original candidate and configuration hashes. This handoff remains open.
+
 ## Outcome and containment
 
 Only a distinct new gateway with both admissions closed, active/uncertain zero, all ten current services and fresh three-database proofs can produce `P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED`. Frontend readiness and workload-probe freshness remain explicitly unverified, and traffic remains unauthorized. Existing deliberate forward recovery can qualify a later frontend after a proved new-zero runtime.
