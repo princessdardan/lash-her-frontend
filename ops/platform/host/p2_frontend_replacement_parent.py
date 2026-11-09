@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import re
+import select
+import selectors
 import signal
 import stat
 import subprocess
@@ -21,12 +23,14 @@ import p2_release_supervisor as supervisor
 import release as runtime
 import staging_state
 from p2_release_broker import Broker, LOCK, MAXIMUM
-from p2_source_closure import PROFILED_REPLACEMENT_ARM_MODE, verify_profiled_current_source_closure
+from p2_source_closure import (PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE,
+                               verify_profiled_current_source_closure)
 from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, decode_qualification_target_json
 
 require = migrate.demand
 PROFILE = migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
 MODE = PROFILED_REPLACEMENT_ARM_MODE
+WRITE_MODE = PROFILED_REPLACEMENT_WRITE_MODE
 LAYOUT = supervisor.PROFILED_REPLACEMENT_ARM_LAYOUT
 CREDENTIAL = 'FRONTEND_STAGING_MIGRATION_DATABASE_URL'
 REFUSED = 'P2_FRONTEND_REPLACEMENT_HOST_ARM_REFUSED'
@@ -35,6 +39,15 @@ READY = 'p2-frontend-replacement-guard-ready.json'
 COMMIT_INTENT = 'p2-frontend-replacement-broker-commit-intent.json'
 INTENT_STATUS = 'P2_FRONTEND_REPLACEMENT_BROKER_COMMIT_INTENT'
 TERMINAL = LAYOUT['terminalName']
+WRITE_BOUNDARY = 'p2-frontend-replacement-empty-catalog.json'
+WRITE_INTENT = 'p2-frontend-replacement-write-intent.json'
+WRITE_READY = 'p2-frontend-replacement-write-ready.json'
+WRITE_OBSERVER_STARTED = 'p2-frontend-replacement-write-observer-started.json'
+WRITE_OBSERVER_RETURNED = 'p2-frontend-replacement-write-observer-returned.json'
+WRITE_CONTAINMENT = 'p2-frontend-replacement-write-containment.json'
+ABORT_ATTEMPT = 'p2-frontend-replacement-abort-attempt.json'
+ABORT_OBSERVATION = 'p2-frontend-replacement-abort-observation.json'
+ABORT_MAXIMUM = 65_536
 NO_AUTHORITY = {'bootstrapAuthorized': False, 'migrationAuthorized': False,
                 'deploymentAuthorized': False, 'trafficAuthorized': False}
 TARGET_FIELDS = ('host', 'port', 'database', 'user', 'runtimeRole', 'serverMajor')
@@ -47,6 +60,14 @@ PLAN_FIELDS = {'version', 'qualificationTargetProfile', 'environment', 'operatio
                'schemaBaselineFileSha256', 'migrationImageDigest', 'sqlArtifactSha256', 'schemaBaselineSha256',
                'contractManifestSha256', 'phase2ContractManifestSha256', 'predecessor', 'replacement',
                'replacementObserved', 'releaseAccepted', *NO_AUTHORITY}
+EMPTY_CATALOG_COUNTERS = set("""
+pg_am pg_cast pg_class pg_collation pg_constraint pg_conversion pg_language pg_namespace pg_opclass pg_operator
+pg_opfamily pg_proc pg_rewrite pg_statistic_ext pg_trigger pg_ts_config pg_ts_dict pg_ts_parser pg_ts_template
+pg_default_acl pg_event_trigger pg_foreign_data_wrapper pg_foreign_server pg_foreign_table pg_largeobject_metadata
+pg_policy pg_publication pg_publication_namespace pg_publication_rel pg_transform pg_user_mappings unexpected_schemas
+additional_extensions local_subscriptions normal_object_dependencies local_shared_dependencies relevant_role_settings
+local_prepared_transactions
+""".split())
 
 
 def encoded(value):
@@ -85,9 +106,10 @@ def exact_host_directory(value):
     return path
 
 
-def reviewed_plan(initial):
+def reviewed_plan(initial, *, mode=MODE):
+    require(mode in (MODE, WRITE_MODE), REFUSED)
     require(type(initial) is dict and set(initial) == INITIAL_FIELDS and
-            type(initial['version']) is int and initial['version'] == 1 and initial['mode'] == MODE and
+            type(initial['version']) is int and initial['version'] == 1 and initial['mode'] == mode and
             initial['environment'] == 'staging' and migrate.source_commit(initial['sourceCommit']) and
             match(initial['hostMachineId'], r'[a-f0-9]{32}') and
             all(digest(initial[key]) for key in ('sourceClosureSha256', 'candidateSha256', 'reviewedPlanSha256')), REFUSED)
@@ -103,7 +125,8 @@ def reviewed_plan(initial):
             and all(digest(plan[key]) for key in ('reviewSha256', 'targetSha256', 'frontendJobSha256',
                                                  'schemaBaselineFileSha256'))
             and all(plan[key] is False for key in (*NO_AUTHORITY, 'replacementObserved', 'releaseAccepted'))
-            and initial['confirmation'] == 'staging/' + plan['releaseId'] + '/replacement-arm/' + initial['reviewedPlanSha256'],
+            and initial['confirmation'] == 'staging/' + plan['releaseId'] +
+                ('/replacement-write/' if mode == WRITE_MODE else '/replacement-arm/') + initial['reviewedPlanSha256'],
             REFUSED)
     credentials = initial['credentials']
     require(type(credentials) is dict and set(credentials) == {CREDENTIAL} and
@@ -112,8 +135,8 @@ def reviewed_plan(initial):
     return raw, plan
 
 
-def prepare(initial, source):
-    raw, plan = reviewed_plan(initial)
+def prepare(initial, source, *, mode=MODE):
+    raw, plan = reviewed_plan(initial, mode=mode)
     require(source == Path('/opt/lash-her/operators') / initial['sourceCommit'] and source == source.resolve(), REFUSED)
     runtime.assert_host({'environment': 'staging', 'hostMachineId': initial['hostMachineId']})
     verify_profiled_current_source_closure(initial, source)
@@ -152,7 +175,8 @@ def prepare(initial, source):
                   'predecessorTarget': previous, 'targetSha256': plan['targetSha256'],
                   'databaseOid': replacement['databaseOid'], 'migrationRoleOid': replacement['migrationRoleOid']}
     verify_bundle(bundle, plan, base_probe)
-    directory = results / (LAYOUT['receiptPrefix'] + plan['releaseId'])
+    layout = supervisor.PROFILED_REPLACEMENT_WRITE_LAYOUT if mode == WRITE_MODE else LAYOUT
+    directory = results / (layout['receiptPrefix'] + plan['releaseId'])
     return raw, plan, base_probe, job_info['image'], directory
 
 
@@ -184,9 +208,9 @@ def observation(probe, raw):
     return value
 
 
-def container_name(initial, probe):
+def container_name(initial, probe, *, aborting=False):
     suffix = migrate.file_hash((initial['reviewedPlanSha256'] + probe['marker']).encode())[:32]
-    return 'lash-p2-frontend-replacement-arm-' + suffix
+    return ('lash-p2-frontend-replacement-abort-' if aborting else 'lash-p2-frontend-replacement-arm-') + suffix
 
 
 def remove_container(name, plan_sha):
@@ -198,23 +222,65 @@ def remove_container(name, plan_sha):
     for identity in found:
         runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 10)
     require(not runtime.command([*query, *format_ids], runtime.SAFE_ENV, 10), REFUSED)
+    return bool(found)
 
 
-def observe(initial, image, probe):
-    name = container_name(initial, probe)
+def run_replacement_image(initial, image, probe, *, abort_observation=None):
+    aborting = abort_observation is not None
+    name = container_name(initial, probe, aborting=aborting)
     plan_sha = initial['reviewedPlanSha256']
+    entry = '--abort-replacement' if aborting else '--observe-replacement-lock'
+    payload = {'probe': probe, 'physicalObservation': base64.b64encode(abort_observation).decode()} if aborting else probe
     args = ['docker', 'run', '--rm', '--pull=never', '--name', name,
             '--label', 'io.lash-her.replacement-arm=' + plan_sha, '--interactive', '--network', 'host',
             '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
             '--memory', '256m', '--pids-limit', '64', '--env', CREDENTIAL, '--entrypoint', 'node',
-            image, 'ops/platform/frontend-image.mjs', '--observe-replacement-lock']
+            image, 'ops/platform/frontend-image.mjs', entry]
+    env = {**runtime.SAFE_ENV, CREDENTIAL: initial['credentials'][CREDENTIAL]}
+    if aborting:
+        return run_bounded_abort(args, encoded(payload), env)
     try:
-        result = subprocess.run(args, input=encoded(probe), capture_output=True,
-                                env={**runtime.SAFE_ENV, CREDENTIAL: initial['credentials'][CREDENTIAL]},
-                                timeout=25, check=True)
+        result = subprocess.run(args, input=encoded(payload), capture_output=True, env=env, timeout=25, check=True)
     finally:
         remove_container(name, plan_sha)
-    raw = result.stdout
+    return result.stdout
+
+
+def run_bounded_abort(args, packet, env):
+    require(0 < len(packet) <= MAXIMUM, REFUSED)
+    deadline = time.monotonic() + 25
+    output = bytearray()
+    pending = memoryview(packet)
+    with subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env) as child:
+        try:
+            with selectors.DefaultSelector() as channels:
+                os.set_blocking(child.stdin.fileno(), False)
+                channels.register(child.stdin, selectors.EVENT_WRITE)
+                channels.register(child.stdout, selectors.EVENT_READ)
+                while channels.get_map():
+                    remaining = deadline - time.monotonic()
+                    require(remaining > 0, REFUSED)
+                    for key, _ in channels.select(remaining):
+                        if key.fileobj is child.stdin:
+                            pending = pending[os.write(key.fd, pending):]
+                            if not pending:
+                                channels.unregister(child.stdin)
+                                child.stdin.close()
+                        else:
+                            chunk = os.read(key.fd, ABORT_MAXIMUM + 1 - len(output))
+                            output.extend(chunk)
+                            require(len(output) <= ABORT_MAXIMUM, REFUSED)
+                            if not chunk:
+                                channels.unregister(child.stdout)
+            require(child.wait(timeout=max(0, deadline - time.monotonic())) == 0, REFUSED)
+        finally:
+            if child.poll() is None:
+                child.kill()
+    return bytes(output)
+
+
+def observe(initial, image, probe):
+    raw = run_replacement_image(initial, image, probe)
     require(0 < len(raw) <= 8192 and raw.endswith(b'\n'), REFUSED)
     observation(probe, raw)
     return raw
@@ -273,6 +339,192 @@ def verify_and_retain(initial, plan, base_probe, image, directory, source, probe
     require(not cancelled.is_set(), REFUSED)
     migrate.write_json(directory, ARM, arm_receipt(initial, plan, raw))
     migrate.write_json(directory, READY, ready_receipt(private_record(directory, ARM)))
+
+
+def empty_catalog_receipt(plan, probe, boundary):
+    selected = plan['replacement']
+    admins = sorted(selected['administrativeLogins'], key=lambda item: item['name'])
+    expected = {'version': 1, 'status': 'FRONTEND_REPLACEMENT_BOUNDARY_VERIFIED',
+                'target': selected['target'], 'predecessorTarget': probe['predecessorTarget'],
+                'databaseOid': probe['databaseOid'], 'migrationRoleOid': probe['migrationRoleOid'],
+                'administrativeLogins': admins, 'catalogScope': 'postgresql-16-18-stock-replacement-v1',
+                'zeroCatalogCounts': dict.fromkeys(EMPTY_CATALOG_COUNTERS, 0), 'readOnlyVerified': True,
+                'completeDatabaseEmptyProven': False, 'authorityIssued': False}
+    require(type(boundary) is dict and set(boundary) == set(expected) | {'observedAt'} and
+            match(boundary['observedAt'], r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z') and
+            all(canonical(boundary[key]) == canonical(value) for key, value in expected.items()), REFUSED)
+    return encoded(boundary) + b'\n'
+
+
+def write_custody(initial, plan, armed, arm_sha, boundary_raw):
+    # The submitted catalog receipt binds the request, but cannot authorize SQL.
+    # A source-owned continuation must independently verify the original session.
+    return receipt_base(initial, plan, 'P2_FRONTEND_REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED') | {
+        'armReceiptSha256': arm_sha, 'emptyCatalogReceiptSha256': migrate.file_hash(boundary_raw),
+        'physicalObservationSha256': armed['physicalObservationSha256'], 'automaticReplayAuthorized': False}
+
+
+def write_ready_receipt(raw):
+    return {'version': 1, 'status': 'P2_FRONTEND_REPLACEMENT_WRITE_READY', 'writeIntentSha256': migrate.file_hash(raw)}
+
+
+def write_observer_receipt(initial, probe, physical, status):
+    return {'version': 1, 'status': 'P2_FRONTEND_REPLACEMENT_WRITE_OBSERVER_' + status,
+            'reviewedPlanSha256': initial['reviewedPlanSha256'], 'targetSha256': probe['targetSha256'],
+            'physicalObservationSha256': migrate.file_hash(physical)}
+
+
+def require_write_observer_returned(initial, probe, physical, directory):
+    for filename, status in ((WRITE_OBSERVER_STARTED, 'STARTED'), (WRITE_OBSERVER_RETURNED, 'RETURNED')):
+        actual = decode_qualification_target_json(private_record(directory, filename), 'carrier')
+        require(canonical(actual) == canonical(write_observer_receipt(initial, probe, physical, status)), REFUSED)
+
+
+def require_write_custody(initial, plan, probe, directory, arm_sha, boundary):
+    ready = decode_qualification_target_json(private_record(directory, WRITE_READY), 'carrier')
+    intent = private_record(directory, WRITE_INTENT)
+    receipt = decode_qualification_target_json(intent, 'carrier')
+    armed, actual_arm = require_arm(initial, plan, probe, directory)
+    physical = unbase64(armed['physicalObservation'], 8192)
+    require_write_observer_returned(initial, probe, physical, directory)
+    boundary_raw = empty_catalog_receipt(plan, probe, boundary)
+    require(arm_sha == actual_arm and private_record(directory, WRITE_BOUNDARY) == boundary_raw and
+            canonical(ready) == canonical(write_ready_receipt(intent)) and
+            canonical(receipt) == canonical(write_custody(initial, plan, armed, arm_sha, boundary_raw)), REFUSED)
+    return receipt, migrate.file_hash(intent), physical
+
+
+def verify_and_retain_write_custody(initial, plan, base_probe, image, directory, source, probe, request, cancelled):
+    require(initial['mode'] == WRITE_MODE, REFUSED)
+    supervisor.verify_guard_boundary(initial, source)
+    probe_identity(probe, base_probe)
+    verify_bundle(Path(initial['bundle']), plan, base_probe)
+    armed, arm_sha = require_arm(initial, plan, probe, directory)
+    require(request['armReceiptSha256'] == arm_sha, REFUSED)
+    boundary_raw = empty_catalog_receipt(plan, probe, request['emptyCatalogReceipt'])
+    physical = unbase64(armed['physicalObservation'], 8192)
+    require(not cancelled.is_set(), REFUSED)
+    migrate.write_json(directory, WRITE_OBSERVER_STARTED, write_observer_receipt(initial, probe, physical, 'STARTED'))
+    raw = observe(initial, image, probe)
+    # The fixed observer only returns after Docker's launcher and its named
+    # container reconcile. A guard SIGKILL may leave only the STARTED record.
+    migrate.write_json(directory, WRITE_OBSERVER_RETURNED, write_observer_receipt(initial, probe, physical, 'RETURNED'))
+    require(raw == physical, REFUSED)
+    supervisor.verify_guard_boundary(initial, source)
+    verify_bundle(Path(initial['bundle']), plan, base_probe)
+    require(not cancelled.is_set() and require_arm(initial, plan, probe, directory) == (armed, arm_sha), REFUSED)
+    migrate.write_exact_bytes(directory, WRITE_BOUNDARY, boundary_raw)
+    migrate.write_json(directory, WRITE_INTENT, write_custody(initial, plan, armed, arm_sha, boundary_raw))
+    migrate.write_json(directory, WRITE_READY, write_ready_receipt(private_record(directory, WRITE_INTENT)))
+    return raw
+
+
+def abort_result(plan, probe, physical, raw):
+    require(0 < len(raw) <= ABORT_MAXIMUM and raw.endswith(b'\n'), REFUSED)
+    value = decode_qualification_target_json(raw, 'carrier')
+    expected = {**observation(probe, physical), 'operation': 'observe-after-replacement-abort',
+                'status': 'P2_FRONTEND_REPLACEMENT_ABORT_OBSERVED',
+                'physicalObservationSha256': migrate.file_hash(physical), 'originalBackendAbsent': True,
+                'originalLocksAbsent': True, 'observationLockReleased': True, 'replayAuthorized': False}
+    require(type(value) is dict and set(value) == set(expected) |
+            {'observedAt', 'backendTerminated', 'journalPresent', 'appliedPrefix', 'appliedPrefixSha256'} and
+            all(canonical(value[key]) == canonical(item) for key, item in expected.items()) and
+            match(value['observedAt'], r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z') and
+            type(value['backendTerminated']) is bool and type(value['journalPresent']) is bool and
+            type(value['appliedPrefix']) is list, REFUSED)
+    prefix = value['appliedPrefix']
+    tags = plan['replacement']['approvedPendingTags']
+    require(len(prefix) <= len(tags) and (value['journalPresent'] or not prefix), REFUSED)
+    previous = 0
+    for row, tag in zip(prefix, tags):
+        require(type(row) is dict and set(row) == {'tag', 'hash', 'folderMillis'} and row['tag'] == tag and
+                digest(row['hash']) and type(row['folderMillis']) is int and
+                previous < row['folderMillis'] <= (1 << 53) - 1, REFUSED)
+        previous = row['folderMillis']
+    require(value['appliedPrefixSha256'] == migrate.file_hash(encoded(prefix)), REFUSED)
+    return value
+
+
+def contain_replacement_write(initial, plan, image, directory, probe, physical, *, process_reconciled=True):
+    receipt = {**receipt_base(initial, plan, 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN'),
+               'physicalObservationSha256': migrate.file_hash(physical), 'automaticReplayAuthorized': False,
+               'abortObservationSha256': None, 'appliedPrefixCount': None, 'backendClosureVerified': False,
+               'processScopeReconciled': process_reconciled, 'observerContainerAbsent': False,
+               'abortContainerAbsent': False, 'observerLauncherReconciled': False}
+    def has_record(name):
+        return os.path.lexists(directory / name)
+
+    def cleanup(aborting):
+        name = container_name(initial, probe, aborting=aborting)
+        found = remove_container(name, initial['reviewedPlanSha256'])
+        receipt['abortContainerAbsent' if aborting else 'observerContainerAbsent'] = True
+        return found
+
+    try:
+        # Trust the armed tuple and immutable image already captured under this
+        # flock. Later checkout or bundle drift cannot suppress containment.
+        supervisor.verify_guard_lock(initial)
+        require(process_reconciled, REFUSED)
+        observer_reconciled = not (has_record(WRITE_OBSERVER_STARTED) or has_record(WRITE_OBSERVER_RETURNED))
+        if not observer_reconciled:
+            try:
+                require_write_observer_returned(initial, probe, physical, directory)
+                observer_reconciled = True
+            except (OSError, ValueError):
+                pass
+        receipt['observerLauncherReconciled'] = observer_reconciled
+        receipt['processScopeReconciled'] = observer_reconciled
+        if has_record(WRITE_CONTAINMENT):
+            # A surviving broker may already have completed the single pass.
+            retained = decode_qualification_target_json(private_record(directory, WRITE_CONTAINMENT), 'carrier')
+            require(retained.get('status') == 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINED_REQUIRES_REVIEW', REFUSED)
+            raw = private_record(directory, ABORT_OBSERVATION)
+            observed = abort_result(plan, probe, physical, raw)
+            require(canonical(retained) == canonical({
+                **receipt, 'status': 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINED_REQUIRES_REVIEW',
+                'abortObservationSha256': migrate.file_hash(raw), 'appliedPrefixCount': len(observed['appliedPrefix']),
+                'backendClosureVerified': True, 'observerContainerAbsent': True, 'abortContainerAbsent': True}), REFUSED)
+            supervisor.verify_guard_lock(initial)
+            return
+
+        # An observer cleanup failure does not suppress scoped backend
+        # containment. It still prevents a fully reconciled containment receipt.
+        try:
+            cleanup(False)
+            receipt['observerContainerAbsent'] = observer_reconciled
+        except Exception:
+            pass
+        attempt = {**receipt_base(initial, plan, 'P2_FRONTEND_REPLACEMENT_ABORT_ATTEMPT'),
+                   'physicalObservationSha256': receipt['physicalObservationSha256'], 'automaticReplayAuthorized': False}
+        prior_attempt = has_record(ABORT_ATTEMPT)
+        if not prior_attempt:
+            migrate.write_json(directory, ABORT_ATTEMPT, attempt)
+        try:
+            require(canonical(decode_qualification_target_json(private_record(directory, ABORT_ATTEMPT), 'carrier'))
+                    == canonical(attempt), REFUSED)
+            if prior_attempt:
+                # A previous guardian may have died during the packaged abort.
+                # Reconcile its exact container, never invoke the abort again.
+                cleanup(True)
+                raw = private_record(directory, ABORT_OBSERVATION)
+            else:
+                require(not cleanup(True), REFUSED)
+                receipt['abortContainerAbsent'] = False
+                raw = run_replacement_image(initial, image, probe, abort_observation=physical)
+                abort_result(plan, probe, physical, raw)
+                migrate.write_exact_bytes(directory, ABORT_OBSERVATION, raw)
+            observed = abort_result(plan, probe, physical, raw)
+            receipt.update(abortObservationSha256=migrate.file_hash(raw), appliedPrefixCount=len(observed['appliedPrefix']),
+                           backendClosureVerified=True)
+        finally:
+            if not receipt['abortContainerAbsent']:
+                cleanup(True)
+        supervisor.verify_guard_lock(initial)
+        require(receipt['observerContainerAbsent'] and receipt['abortContainerAbsent'], REFUSED)
+        receipt['status'] = 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINED_REQUIRES_REVIEW'
+    finally:
+        if not has_record(WRITE_CONTAINMENT):
+            migrate.write_json(directory, WRITE_CONTAINMENT, receipt)
 
 
 class ReplacementArmBroker(Broker):
@@ -341,13 +593,122 @@ class ReplacementArmBroker(Broker):
         self.send(value['id'], 'COMMITTED', receipt=receipt)
 
 
-def broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read):
-    broker = ReplacementArmBroker(initial, lambda value: print(encoded(value).decode(), flush=True),
-                                  shared_lock_fd=fd, safety_write=safety_write, guard_read=health_read)
+class ReplacementWriteBroker(ReplacementArmBroker):
+    """Write frontier only, pending a separately verified release continuation."""
+
+    def __init__(self, *args, image, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.image = image
+        self.write_mutex = threading.Lock()
+        self.write_observation = None
+        self.fallback_started = False
+
+    def command(self, value):
+        operation = value.get('operation') if type(value) is dict else None
+        if operation in ('check', 'arm-replacement'):
+            return super().command(value)
+        require(operation == 'authorize-replacement-write' and set(value) == {
+            'id', 'operation', 'armReceiptSha256', 'emptyCatalogReceipt'} and
+            type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1 and
+            self.probe is not None and self.write_observation is None, REFUSED)
+        self.last_command = time.monotonic()
+        self.check()
+        armed, arm_sha = require_arm(self.initial, self.plan, self.probe, self.directory)
+        require(value['armReceiptSha256'] == arm_sha, REFUSED)
+        empty_catalog_receipt(self.plan, self.probe, value['emptyCatalogReceipt'])
+        with self.write_mutex:
+            self.check()
+            self.write_observation = unbase64(armed['physicalObservation'], 8192)
+        self.safety({'operation': 'replacement-write', 'armReceiptSha256': arm_sha,
+                     'emptyCatalogReceipt': value['emptyCatalogReceipt']})
+        deadline = time.monotonic() + 60
+        while True:
+            require(not self.failed.is_set() and self.guard_alive and time.monotonic() < deadline, REFUSED)
+            try:
+                receipt, intent_sha, physical = require_write_custody(
+                    self.initial, self.plan, self.probe, self.directory, arm_sha, value['emptyCatalogReceipt'])
+                break
+            except FileNotFoundError:
+                time.sleep(0.05)
+        with self.write_mutex:
+            self.check()
+            require(physical == self.write_observation, REFUSED)
+            self.send(value['id'], 'REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED', receipt=receipt, writeIntentSha256=intent_sha)
+
+    def abort(self):
+        # Keep the inherited flock held until a surviving broker's cleanup
+        # finishes. The main reader also calls abort before exiting.
+        with self.write_mutex:
+            super().abort()
+            if (not self.guard_alive and os.getppid() != self.initial['_guardPid']
+                    and self.write_observation is not None and not self.fallback_started):
+                self.fallback_started = True
+                try:
+                    contain_replacement_write(self.initial, self.plan, self.image, self.directory, self.probe,
+                                              self.write_observation)
+                except Exception:
+                    # The containment helper retains uncertainty on failure.
+                    # The surviving process still exits without an authority receipt.
+                    pass
+
+    def finish_failed_reader(self):
+        self.abort()
+        if self.write_observation is not None:
+            # A successful pipe write delegates cleanup but does not prove the
+            # guard survived to perform it. Hold the inherited flock until the
+            # guard reaps us or its health channel closes and we take custody.
+            while self.guard_alive:
+                time.sleep(0.05)
+            # Linux closes the dying guard's descriptors before it reparents
+            # this process. Keep the flock through that bounded transition.
+            deadline = time.monotonic() + 3
+            while os.getppid() == self.initial['_guardPid'] and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.abort()
+
+    def read_frames(self):
+        fd = sys.stdin.buffer.fileno()
+        buffer = bytearray()
+        while not self.failed.is_set():
+            readable, _, _ = select.select([fd], [], [], 0.1)
+            if not readable:
+                continue
+            chunk = os.read(fd, 65_536)
+            if not chunk:
+                require(not buffer, REFUSED)
+                return
+            buffer.extend(chunk)
+            while (index := buffer.find(b'\n')) >= 0 and not self.failed.is_set():
+                require(index < MAXIMUM, REFUSED)
+                yield bytes(buffer[:index + 1])
+                del buffer[:index + 1]
+            require(len(buffer) < MAXIMUM, REFUSED)
+
+
+def broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image=None):
+    writing = initial['mode'] == WRITE_MODE
+    broker_type = ReplacementWriteBroker if writing else ReplacementArmBroker
+    output_fd = sys.stdout.fileno() if writing else None
+    if writing:
+        os.set_blocking(output_fd, False)
+
+    def emit(value):
+        if not writing:
+            print(encoded(value).decode(), flush=True)
+            return
+        raw = encoded(value) + b'\n'
+        require(len(raw) <= min(4096, os.fpathconf(output_fd, 'PC_PIPE_BUF')), REFUSED)
+        require(select.select([], [output_fd], [], 2)[1], REFUSED)
+        require(os.write(output_fd, raw) == len(raw), REFUSED)
+
+    broker = broker_type(initial, emit,
+                         shared_lock_fd=fd, safety_write=safety_write, guard_read=health_read,
+                         **({'image': image} if writing else {}))
     try:
         broker.initialize_arm(source, plan, base_probe, directory)
         broker.send(0, 'LOCKED')
-        while raw := sys.stdin.buffer.readline(MAXIMUM + 1):
+        frames = broker.read_frames() if writing else iter(lambda: sys.stdin.buffer.readline(MAXIMUM + 1), b'')
+        for raw in frames:
             require(len(raw) <= MAXIMUM and raw.endswith(b'\n'), REFUSED)
             value = decode_qualification_target_json(raw, 'private-packet')
             if type(value) is dict and value.get('operation') == 'check':
@@ -366,19 +727,34 @@ def broker_child(initial, source, plan, base_probe, directory, fd, safety_write,
         require(broker.committed.is_set(), REFUSED)
         return 0
     except BaseException:
-        broker.abort()
+        if writing:
+            broker.finish_failed_reader()
+        else:
+            broker.abort()
         return 1
 
 
 def supervise_replacement_arm(initial, source):
+    return _supervise_replacement(initial, source, writing=False)
+
+
+def qualify_replacement_write_frontier(initial, source):
+    # Source-only. The installed entry below will remain read-only until the
+    # same guarded action supports the full compatible release continuation.
+    return _supervise_replacement(initial, source, writing=True)
+
+
+def _supervise_replacement(initial, source, *, writing):
     require(sys.platform == 'linux' and os.geteuid() == 0, REFUSED)
+    require(initial.get('mode') == (WRITE_MODE if writing else MODE), REFUSED)
     fd = os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         info = os.fstat(fd)
         require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077, REFUSED)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        raw, plan, base_probe, image, directory = prepare(initial, source)
-        initial = {**initial, '_guardLayout': LAYOUT, '_guardLockDescriptor': fd}
+        raw, plan, base_probe, image, directory = prepare(initial, source, mode=WRITE_MODE if writing else MODE)
+        layout = supervisor.PROFILED_REPLACEMENT_WRITE_LAYOUT if writing else LAYOUT
+        initial = {**initial, '_guardLayout': layout, '_guardLockDescriptor': fd, '_guardPid': os.getpid()}
         supervisor.verify_guard_boundary(initial, source)
         directory.mkdir(mode=0o700)
         results_fd = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -394,11 +770,12 @@ def supervise_replacement_arm(initial, source):
             os.close(safety_read)
             os.close(health_write)
             os.setsid()
-            os._exit(broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read))
+            os._exit(broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image))
         os.close(safety_write)
         os.close(health_read)
         cancelled = threading.Event()
         armed_probe = None
+        write_physical = None
         try:
             with ThreadPoolExecutor(max_workers=1) as worker:
                 def arm(probe):
@@ -406,12 +783,21 @@ def supervise_replacement_arm(initial, source):
                     probe_identity(probe, base_probe)
                     armed_probe = probe
                     return worker.submit(verify_and_retain, initial, plan, base_probe, image, directory, source, probe, cancelled)
+                def authorize_write(request):
+                    nonlocal write_physical
+                    require(armed_probe is not None and write_physical is None, REFUSED)
+                    armed, _ = require_arm(initial, plan, armed_probe, directory)
+                    write_physical = unbase64(armed['physicalObservation'], 8192)
+                    return worker.submit(verify_and_retain_write_custody, initial, plan, base_probe, image,
+                                         directory, source, armed_probe, request, cancelled)
                 try:
                     committed = supervisor.watch_broker(child, safety_read, health_write, arm,
-                                                        profiled_certification=True, async_arm=True)
+                                                        profiled_certification=True, async_arm=True,
+                                                        authorize_replacement_write=authorize_write if writing else None)
                 except BaseException:
                     cancelled.set()
                     raise
+            require(not writing, REFUSED)
             supervisor.verify_guard_boundary(initial, source)
             verify_bundle(Path(initial['bundle']), plan, base_probe)
             armed, arm_sha = require_arm(initial, plan, armed_probe, directory)
@@ -422,9 +808,16 @@ def supervise_replacement_arm(initial, source):
             migrate.write_json(directory, TERMINAL, expected)
         except BaseException:
             with supervisor.sticky_cleanup_signals():
-                require(supervisor._stop_profiled_certification_group(child), REFUSED)
-                if armed_probe is not None:
-                    remove_container(container_name(initial, armed_probe), initial['reviewedPlanSha256'])
+                reaped = False
+                try:
+                    reaped = supervisor._stop_profiled_certification_group(child)
+                    require(reaped, REFUSED)
+                finally:
+                    if write_physical is not None:
+                        contain_replacement_write(initial, plan, image, directory, armed_probe, write_physical,
+                                                  process_reconciled=reaped)
+                    elif reaped and armed_probe is not None:
+                        remove_container(container_name(initial, armed_probe), initial['reviewedPlanSha256'])
             raise
         finally:
             os.close(safety_read)

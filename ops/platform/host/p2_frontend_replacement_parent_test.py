@@ -2,6 +2,7 @@ import base64
 import contextlib
 import fcntl
 import json
+import io
 import os
 from pathlib import Path
 import select
@@ -93,6 +94,25 @@ class ReplacementArmTests(unittest.TestCase):
                         'confirmation': 'staging/' + self.release_id + '/replacement-arm/' + review,
                         'credentials': {parent.CREDENTIAL: 'private-fixture-url'}}
         self.directory = self.results / (parent.LAYOUT['receiptPrefix'] + self.release_id)
+        self.write_initial = {**self.initial, 'mode': parent.WRITE_MODE,
+                              'confirmation': 'staging/' + self.release_id + '/replacement-write/' + review}
+        self.write_directory = self.results / (supervisor.PROFILED_REPLACEMENT_WRITE_LAYOUT['receiptPrefix'] + self.release_id)
+        self.empty_boundary = {'version': 1, 'status': 'FRONTEND_REPLACEMENT_BOUNDARY_VERIFIED',
+                               'target': target, 'predecessorTarget': predecessor, 'databaseOid': '42',
+                               'migrationRoleOid': '43', 'administrativeLogins': [],
+                               'catalogScope': 'postgresql-16-18-stock-replacement-v1',
+                               'zeroCatalogCounts': dict.fromkeys(sorted(parent.EMPTY_CATALOG_COUNTERS), 0),
+                               'observedAt': '2026-11-09T21:51:00.000Z', 'readOnlyVerified': True,
+                               'completeDatabaseEmptyProven': False, 'authorityIssued': False}
+        prefix = [{'tag': '0001_fixture', 'hash': 'a' * 64, 'folderMillis': 1762725060000}]
+        self.raw_abort = parent.encoded({
+            **json.loads(self.raw_observation), 'operation': 'observe-after-replacement-abort',
+            'status': 'P2_FRONTEND_REPLACEMENT_ABORT_OBSERVED',
+            'physicalObservationSha256': migrate.file_hash(self.raw_observation), 'observedAt': self.empty_boundary['observedAt'],
+            'backendTerminated': True, 'originalBackendAbsent': True, 'originalLocksAbsent': True,
+            'observationLockReleased': True, 'journalPresent': True, 'appliedPrefix': prefix,
+            'appliedPrefixSha256': migrate.file_hash(parent.encoded(prefix)), 'replayAuthorized': False,
+        }) + b'\n'
 
     def test_exact_review_and_confirmation(self):
         self.assertEqual(parent.reviewed_plan(self.initial), (self.plan_raw, self.plan))
@@ -102,6 +122,22 @@ class ReplacementArmTests(unittest.TestCase):
                 parent.reviewed_plan({**self.initial, **update})
         with self.assertRaisesRegex(ValueError, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED'):
             supervisor.supervise(self.initial)
+
+    def test_write_review_cannot_enter_installed_read_only_or_generic_cli(self):
+        self.assertEqual(parent.reviewed_plan(self.write_initial, mode=parent.WRITE_MODE), (self.plan_raw, self.plan))
+        for initial, mode in ((self.write_initial, parent.MODE), (self.initial, parent.WRITE_MODE),
+                              ({**self.write_initial, 'confirmation': self.initial['confirmation']}, parent.WRITE_MODE)):
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.reviewed_plan(initial, mode=mode)
+        with self.assertRaisesRegex(ValueError, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED'):
+            supervisor.supervise(self.write_initial)
+        data = io.TextIOWrapper(io.BytesIO(parent.encoded(self.write_initial) + b'\n'))
+        with (patch.object(parent.sys, 'argv', ['parent.py', '--supervise-pre-bootstrap']),
+              patch.object(parent.sys, 'platform', 'linux'), patch.object(parent.os, 'geteuid', return_value=0),
+              patch.object(parent.sys, 'stdin', data), patch.object(parent.os, 'open') as opened):
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.main()
+            opened.assert_not_called()
 
     def test_bundle_raw_bytes_match_probe_and_review(self):
         source = Path('/opt/lash-her/operators') / self.commit
@@ -136,6 +172,114 @@ class ReplacementArmTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, parent.REFUSED):
                 parent.observation(self.probe, parent.encoded(changed))
 
+    def test_abort_uses_exact_packaged_entry_and_retains_prefix_without_replay(self):
+        self.write_directory.mkdir(mode=0o700)
+        with (patch.object(supervisor, 'verify_guard_lock') as verify,
+              patch.object(parent, 'run_bounded_abort', return_value=self.raw_abort) as execute,
+              patch.object(parent, 'remove_container', return_value=False) as cleanup):
+            for _ in range(2):
+                parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
+                                                 self.probe, self.raw_observation)
+            args = execute.call_args.args[0]
+            self.assertEqual(execute.call_count, 1)
+            self.assertEqual(verify.call_count, 4)
+            self.assertEqual(args[-3:], [self.image, 'ops/platform/frontend-image.mjs', '--abort-replacement'])
+            self.assertIn('--pull=never', args)
+            self.assertIn('--read-only', args)
+            self.assertNotIn('--mount', args)
+            self.assertNotIn(self.initial['credentials'][parent.CREDENTIAL], args)
+            packet = json.loads(execute.call_args.args[1])
+            self.assertEqual(packet, {'probe': self.probe, 'physicalObservation': base64.b64encode(self.raw_observation).decode()})
+            observe_name = parent.container_name(self.write_initial, self.probe)
+            abort_name = parent.container_name(self.write_initial, self.probe, aborting=True)
+            self.assertEqual([call.args for call in cleanup.call_args_list],
+                             [(name, self.initial['reviewedPlanSha256']) for name in (observe_name, abort_name, abort_name)])
+        self.assertEqual((self.write_directory / parent.ABORT_OBSERVATION).read_bytes(), self.raw_abort)
+        retained = json.loads((self.write_directory / parent.WRITE_CONTAINMENT).read_bytes())
+        self.assertEqual(retained['status'], 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINED_REQUIRES_REVIEW')
+        self.assertTrue(retained['backendClosureVerified'])
+        self.assertTrue(retained['observerContainerAbsent'])
+        self.assertTrue(retained['abortContainerAbsent'])
+        self.assertEqual(retained['appliedPrefixCount'], 1)
+        self.assertFalse(retained['automaticReplayAuthorized'])
+        for name, value in (('backendPid', 32), ('appliedPrefixSha256', 'f' * 64),
+                            ('originalLocksAbsent', 1), ('replayAuthorized', True)):
+            changed = {**json.loads(self.raw_abort), name: value}
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.abort_result(self.plan, self.probe, self.raw_observation, parent.encoded(changed) + b'\n')
+
+    def test_uncertain_abort_refuses_without_automatic_repeat(self):
+        self.write_directory.mkdir(mode=0o700)
+        with (patch.object(supervisor, 'verify_guard_lock'),
+              patch.object(parent, 'remove_container', return_value=False),
+              patch.object(parent, 'run_replacement_image', side_effect=ValueError('owned-uncertain')) as run):
+            with self.assertRaisesRegex(ValueError, 'owned-uncertain'):
+                parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
+                                                 self.probe, self.raw_observation)
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
+                                                 self.probe, self.raw_observation)
+            self.assertEqual(run.call_count, 1)
+        retained = json.loads((self.write_directory / parent.WRITE_CONTAINMENT).read_bytes())
+        self.assertEqual(retained['status'], 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN')
+        self.assertFalse(retained['backendClosureVerified'])
+        self.assertFalse(retained['automaticReplayAuthorized'])
+
+    def test_prior_abort_attempt_reconciles_container_without_relaunch(self):
+        self.write_directory.mkdir(mode=0o700)
+        attempt = {**parent.receipt_base(self.write_initial, self.plan, 'P2_FRONTEND_REPLACEMENT_ABORT_ATTEMPT'),
+                   'physicalObservationSha256': migrate.file_hash(self.raw_observation), 'automaticReplayAuthorized': False}
+        migrate.write_json(self.write_directory, parent.ABORT_ATTEMPT, attempt)
+        with (patch.object(supervisor, 'verify_guard_lock'),
+              patch.object(parent, 'remove_container', side_effect=[False, True]) as cleanup,
+              patch.object(parent, 'run_replacement_image') as run):
+            with self.assertRaises(FileNotFoundError):
+                parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
+                                                 self.probe, self.raw_observation)
+            run.assert_not_called()
+            self.assertEqual(cleanup.call_args.args[0], parent.container_name(self.write_initial, self.probe, aborting=True))
+        retained = json.loads((self.write_directory / parent.WRITE_CONTAINMENT).read_bytes())
+        self.assertTrue(retained['abortContainerAbsent'])
+        self.assertFalse(retained['backendClosureVerified'])
+
+    def test_abort_receipt_survives_unknown_helper_cleanup(self):
+        self.write_directory.mkdir(mode=0o700)
+        with (patch.object(supervisor, 'verify_guard_lock'),
+              patch.object(parent, 'remove_container', side_effect=[False, False, ValueError('owned-uncertain')]),
+              patch.object(parent, 'run_replacement_image', return_value=self.raw_abort)):
+            with self.assertRaisesRegex(ValueError, 'owned-uncertain'):
+                parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
+                                                 self.probe, self.raw_observation)
+        self.assertEqual((self.write_directory / parent.ABORT_OBSERVATION).read_bytes(), self.raw_abort)
+        retained = json.loads((self.write_directory / parent.WRITE_CONTAINMENT).read_bytes())
+        self.assertTrue(retained['backendClosureVerified'])
+        self.assertFalse(retained['abortContainerAbsent'])
+        self.assertEqual(retained['status'], 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN')
+
+    def test_unreaped_broker_retains_uncertainty_without_abort(self):
+        self.write_directory.mkdir(mode=0o700)
+        with (patch.object(supervisor, 'verify_guard_lock'),
+              patch.object(parent, 'remove_container') as cleanup,
+              patch.object(parent, 'run_replacement_image') as run):
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.contain_replacement_write(self.write_initial, self.plan, self.image, self.write_directory,
+                                                 self.probe, self.raw_observation, process_reconciled=False)
+            cleanup.assert_not_called()
+            run.assert_not_called()
+        retained = json.loads((self.write_directory / parent.WRITE_CONTAINMENT).read_bytes())
+        self.assertFalse(retained['processScopeReconciled'])
+        self.assertFalse(retained['backendClosureVerified'])
+
+    def test_packaged_abort_stdout_is_bounded(self):
+        packet = b'input' * 8_000
+        exact = parent.run_bounded_abort([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'],
+                                         packet, {})
+        self.assertEqual(exact, packet)
+        with self.assertRaisesRegex(ValueError, parent.REFUSED):
+            parent.run_bounded_abort([sys.executable, '-c',
+                                      'import sys; sys.stdin.buffer.read(); sys.stdout.buffer.write(b"x" * 70_000)'],
+                                     b'input', {})
+
     def test_arm_ready_and_review_bytes_are_bound(self):
         self.directory.mkdir(mode=0o700)
         migrate.write_exact_bytes(self.directory, 'reviewed-plan.json', self.plan_raw)
@@ -156,6 +300,48 @@ class ReplacementArmTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, parent.REFUSED):
             parent.require_arm(self.initial, self.plan, self.probe, self.directory)
 
+    def test_write_custody_requires_same_backend_and_exact_zero_catalog(self):
+        self.write_directory.mkdir(mode=0o700)
+        migrate.write_exact_bytes(self.write_directory, 'reviewed-plan.json', self.plan_raw)
+        with (patch.object(supervisor, 'verify_guard_boundary'),
+              patch.object(parent, 'observe', return_value=self.raw_observation) as observe):
+            parent.verify_and_retain(self.write_initial, self.plan, self.probe_base, self.image,
+                                     self.write_directory, self.root, self.probe, threading.Event())
+            arm_sha = migrate.file_hash((self.write_directory / parent.ARM).read_bytes())
+            request = {'armReceiptSha256': arm_sha, 'emptyCatalogReceipt': self.empty_boundary}
+            for changed in ({**request, 'armReceiptSha256': '2' * 64},
+                            {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'authorityIssued': True}},
+                            {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'zeroCatalogCounts': {}}},
+                            {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'zeroCatalogCounts': {
+                                **self.empty_boundary['zeroCatalogCounts'], 'pg_class': False}}}):
+                with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                    parent.verify_and_retain_write_custody(self.write_initial, self.plan, self.probe_base, self.image,
+                        self.write_directory, self.root, self.probe, changed, threading.Event())
+            mismatched = self.root / 'mismatched-observer'
+            mismatched.mkdir(mode=0o700)
+            for record in ('reviewed-plan.json', parent.ARM, parent.READY):
+                migrate.write_exact_bytes(mismatched, record, (self.write_directory / record).read_bytes())
+            observe.return_value = self.raw_observation + b' '
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.verify_and_retain_write_custody(self.write_initial, self.plan, self.probe_base, self.image,
+                    mismatched, self.root, self.probe, request, threading.Event())
+            self.assertFalse((mismatched / parent.WRITE_INTENT).exists())
+            self.assertTrue((mismatched / parent.WRITE_OBSERVER_RETURNED).is_file())
+            observe.return_value = self.raw_observation
+            parent.verify_and_retain_write_custody(self.write_initial, self.plan, self.probe_base, self.image,
+                self.write_directory, self.root, self.probe, request, threading.Event())
+        receipt, intent, physical = parent.require_write_custody(self.write_initial, self.plan, self.probe,
+            self.write_directory, arm_sha, self.empty_boundary)
+        self.assertEqual(physical, self.raw_observation)
+        self.assertEqual(intent, migrate.file_hash((self.write_directory / parent.WRITE_INTENT).read_bytes()))
+        self.assertTrue(all(receipt[key] is False for key in parent.NO_AUTHORITY))
+        self.assertFalse(receipt['automaticReplayAuthorized'])
+        for retained in (parent.WRITE_BOUNDARY, parent.WRITE_INTENT, parent.WRITE_READY):
+            self.assertEqual((self.write_directory / retained).stat().st_mode & 0o777, 0o600)
+        (self.write_directory / parent.WRITE_BOUNDARY).write_bytes(parent.encoded(self.empty_boundary))
+        with self.assertRaisesRegex(ValueError, parent.REFUSED):
+            parent.require_write_custody(self.write_initial, self.plan, self.probe, self.write_directory, arm_sha, self.empty_boundary)
+
     @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
     def test_live_flock_and_heartbeats_outlast_slow_independent_observer(self):
         self.exercise_live_guard()
@@ -164,13 +350,37 @@ class ReplacementArmTests(unittest.TestCase):
     def test_late_bundle_drift_preserves_intent_and_refuses_terminal(self):
         self.exercise_live_guard(change_bundle=True)
 
-    def exercise_live_guard(self, change_bundle=False):
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
+    def test_write_grant_drift_contains_after_broker_reap_with_flock_held(self):
+        self.exercise_live_guard(change_bundle=True, writing=True)
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
+    def test_surviving_write_broker_contains_after_guard_death(self):
+        self.exercise_live_guard(writing=True, kill_guard='after-reply')
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
+    def test_surviving_write_broker_contains_guard_death_before_ready(self):
+        self.exercise_live_guard(writing=True, kill_guard='before-ready')
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
+    def test_surviving_write_broker_contains_guard_death_after_ready_before_reply(self):
+        self.exercise_live_guard(writing=True, kill_guard='before-reply')
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
+    def test_surviving_write_broker_holds_flock_until_guard_reparenting(self):
+        self.exercise_live_guard(writing=True, kill_guard='after-reply', delay_reparent=True)
+
+    def exercise_live_guard(self, change_bundle=False, writing=False, kill_guard=None, delay_reparent=False):
         lock = self.root / 'owned-host.lock'
         flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
         fd = os.open(lock, flags, 0o600)
         self.addCleanup(os.close, fd)
         operator_input, send = os.pipe()
         receive, operator_output = os.pipe()
+        initial = self.write_initial if writing else self.initial
+        directory = self.write_directory if writing else self.directory
+        stage_marker = self.root / 'fixture-ready-to-kill-guard'
+        observation_count = 0
         child = os.fork()
         if child == 0:
             os.close(send)
@@ -178,19 +388,65 @@ class ReplacementArmTests(unittest.TestCase):
             os.close(fd)
             sys.stdin = os.fdopen(operator_input)
             sys.stdout = os.fdopen(operator_output, 'w')
+            guard_pid = os.getpid()
+            actual_parent = os.getppid
+            reparent_observed_at = None
+
+            def staged_parent():
+                nonlocal reparent_observed_at
+                observed = actual_parent()
+                if not delay_reparent or os.getpid() == guard_pid or observed == guard_pid:
+                    return observed
+                if reparent_observed_at is None:
+                    reparent_observed_at = time.monotonic()
+                if time.monotonic() - reparent_observed_at < 0.35:
+                    return guard_pid
+                return observed
+
             def slow_observer(*_args):
-                if not change_bundle:
+                nonlocal observation_count
+                observation_count += 1
+                if kill_guard == 'before-ready' and observation_count == 2:
+                    stage_marker.touch()
+                    time.sleep(5)
+                if writing and observation_count == 2 or not writing and not change_bundle:
                     time.sleep(3.4)  # Longer than the broker's 3-second guard heartbeat limit.
                 return self.raw_observation
+            def abort_image(action, image, probe, *, abort_observation):
+                self.assertEqual(action['mode'], parent.WRITE_MODE)
+                self.assertEqual(image, self.image)
+                self.assertEqual(probe, self.probe)
+                self.assertEqual(abort_observation, self.raw_observation)
+                nested = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(nested, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(nested)
+                return self.raw_abort
+
+            real_require_custody = parent.require_write_custody
+            def staged_custody(*args):
+                result = real_require_custody(*args)
+                if kill_guard == 'before-reply':
+                    stage_marker.touch()
+                    time.sleep(5)
+                return result
             try:
                 with (patch.object(parent, 'LOCK', lock), patch.object(supervisor, 'LOCK', lock),
                       patch.object(broker_module, 'LOCK', lock),
-                      patch.object(parent, 'prepare', return_value=(self.plan_raw, self.plan, self.probe_base, self.image, self.directory)),
+                      patch.object(parent, 'prepare', return_value=(self.plan_raw, self.plan, self.probe_base, self.image, directory)),
                       patch.object(supervisor, '_verify_guard_source'),
                       patch.object(parent.ReplacementArmBroker, 'require_source_closure'),
                       patch.object(parent, 'observe', side_effect=slow_observer),
-                      patch.object(parent, 'remove_container')):
-                    parent.supervise_replacement_arm(self.initial, self.root)
+                      patch.object(parent.os, 'getppid', side_effect=staged_parent),
+                      patch.object(parent, 'require_write_custody', side_effect=staged_custody),
+                      patch.object(parent, 'run_replacement_image', side_effect=abort_image),
+                      patch.object(parent, 'remove_container', return_value=False)):
+                    if writing:
+                        parent.qualify_replacement_write_frontier(initial, self.root)
+                    else:
+                        parent.supervise_replacement_arm(initial, self.root)
             except BaseException:
                 os._exit(1)
             os._exit(0)
@@ -205,30 +461,83 @@ class ReplacementArmTests(unittest.TestCase):
                 def send_frame(value):
                     output.write(parent.encoded(value) + b'\n')
                     output.flush()
+                def wait_for_flock():
+                    deadline = time.monotonic() + 8
+                    while True:
+                        try:
+                            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            return
+                        except BlockingIOError:
+                            self.assertLess(time.monotonic(), deadline, 'owned survivor did not release the host flock')
+                            time.sleep(0.05)
                 self.assertEqual(response(), {'id': 0, 'status': 'LOCKED'})
                 with self.assertRaises(BlockingIOError):
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 send_frame({'id': 1, 'operation': 'arm-replacement', 'probe': self.probe})
                 ready = response()
                 self.assertEqual(ready['status'], 'REPLACEMENT_ARMED')
-                self.assertEqual(ready['armReceiptSha256'], migrate.file_hash((self.directory / parent.ARM).read_bytes()))
+                self.assertEqual(ready['armReceiptSha256'], migrate.file_hash((directory / parent.ARM).read_bytes()))
                 send_frame({'id': 2, 'operation': 'check'})
                 self.assertEqual(response(), {'id': 2, 'status': 'LOCKED'})
-                send_frame({'id': 3, 'operation': 'commit'})
-                terminal = response()
-                self.assertEqual(terminal['status'], 'COMMITTED')
-                self.assertEqual(terminal['receipt']['armReceiptSha256'], ready['armReceiptSha256'])
-                self.assertFalse((self.directory / parent.TERMINAL).exists())
-                self.assertEqual(json.loads((self.directory / parent.COMMIT_INTENT).read_bytes())['status'], parent.INTENT_STATUS)
+                if writing:
+                    self.assertFalse((directory / parent.WRITE_INTENT).exists())
+                    send_frame({'id': 3, 'operation': 'authorize-replacement-write',
+                                'armReceiptSha256': ready['armReceiptSha256'], 'emptyCatalogReceipt': self.empty_boundary})
+                    if kill_guard in ('before-ready', 'before-reply'):
+                        deadline = time.monotonic() + 8
+                        while not stage_marker.exists():
+                            self.assertLess(time.monotonic(), deadline, 'owned fixture did not reach exact write boundary')
+                            time.sleep(0.02)
+                        self.assertEqual((directory / parent.WRITE_READY).exists(), kill_guard == 'before-reply')
+                        self.assertTrue((directory / parent.WRITE_OBSERVER_STARTED).is_file())
+                        self.assertEqual((directory / parent.WRITE_OBSERVER_RETURNED).exists(), kill_guard == 'before-reply')
+                    else:
+                        acknowledged = response()
+                        self.assertEqual(acknowledged['status'], 'REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED')
+                        self.assertEqual(acknowledged['writeIntentSha256'],
+                                         migrate.file_hash((directory / parent.WRITE_INTENT).read_bytes()))
+                        self.assertTrue(all(acknowledged['receipt'][key] is False for key in parent.NO_AUTHORITY))
+                        self.assertTrue((directory / parent.WRITE_READY).is_file())
+                        self.assertFalse((directory / parent.WRITE_CONTAINMENT).exists())
+                else:
+                    send_frame({'id': 3, 'operation': 'commit'})
+                    terminal = response()
+                    self.assertEqual(terminal['status'], 'COMMITTED')
+                    self.assertEqual(terminal['receipt']['armReceiptSha256'], ready['armReceiptSha256'])
+                    self.assertFalse((directory / parent.TERMINAL).exists())
+                    self.assertEqual(json.loads((directory / parent.COMMIT_INTENT).read_bytes())['status'], parent.INTENT_STATUS)
                 with self.assertRaises(BlockingIOError):
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 if change_bundle:
                     (self.bundle / 'schema/frontend.json').write_bytes(self.raw_baseline + b' ')
+                if kill_guard:
+                    os.kill(child, signal.SIGKILL)
+                    wait_for_flock()  # Keep operator stdin open during failure containment.
+                    self.assertTrue(select.select([input_file], [], [], 2)[0])
+                    failed_response = input_file.readline()
+                    if failed_response:
+                        self.assertEqual(json.loads(failed_response), {'id': 3, 'status': 'P2_HOST_STAGE_FAILED'})
+                        self.assertEqual(input_file.read(1), b'')
             _, status = os.waitpid(child, 0)
             reaped = True
-            self.assertEqual(os.waitstatus_to_exitcode(status), 1 if change_bundle else 0)
-            self.assertEqual((self.directory / parent.TERMINAL).exists(), not change_bundle)
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertEqual(os.waitstatus_to_exitcode(status), -signal.SIGKILL if kill_guard else 1 if change_bundle or writing else 0)
+            self.assertEqual((directory / parent.TERMINAL).exists(), not change_bundle and not writing)
+            wait_for_flock()
+            if writing:
+                self.assertEqual((directory / parent.ABORT_OBSERVATION).read_bytes(), self.raw_abort)
+                contained = json.loads((directory / parent.WRITE_CONTAINMENT).read_bytes())
+                if kill_guard == 'before-ready':
+                    self.assertEqual(contained['status'], 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN')
+                    self.assertFalse(contained['processScopeReconciled'])
+                    self.assertFalse(contained['observerLauncherReconciled'])
+                    self.assertFalse(contained['observerContainerAbsent'])
+                    self.assertTrue(contained['backendClosureVerified'])
+                else:
+                    self.assertEqual(contained['status'], 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINED_REQUIRES_REVIEW')
+                    self.assertTrue(contained['processScopeReconciled'])
+                self.assertEqual(contained['appliedPrefixCount'], 1)
+                self.assertFalse(contained['automaticReplayAuthorized'])
+                self.assertFalse((directory / parent.COMMIT_INTENT).exists())
         finally:
             if not reaped:
                 with contextlib.suppress(ProcessLookupError):

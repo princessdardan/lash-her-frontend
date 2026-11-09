@@ -28,6 +28,7 @@ PROFILED_CURRENT_REQUIRED = {
 PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
 PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 PROFILED_REPLACEMENT_ARM_MODE = 'p2-profiled-frontend-replacement-arm'
+PROFILED_REPLACEMENT_WRITE_MODE = 'p2-profiled-frontend-replacement-write'
 PROFILED_REPLACEMENT_ARM_REQUIRED = {
     'ops/platform/host/p2_frontend_replacement_parent.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
@@ -59,12 +60,14 @@ def verify_profiled_current_source_closure(initial, root):
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
                                   PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE,
-                                  PROFILED_REPLACEMENT_ARM_MODE):
+                                  PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE):
         raise ValueError('PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
     migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     required = REQUIRED | PROFILED_CURRENT_REQUIRED
-    if initial['mode'] == PROFILED_REPLACEMENT_ARM_MODE:
+    if initial['mode'] in (PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE):
         required |= PROFILED_REPLACEMENT_ARM_REQUIRED
+    if initial['mode'] == PROFILED_REPLACEMENT_WRITE_MODE:
+        required |= {'ops/platform/p2-frontend-replacement-abort.mjs', 'ops/platform/frontend-image.mjs'}
     if initial['mode'] in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
         required |= PROFILED_CERTIFICATION_REQUIRED
     if initial['mode'] == PROFILED_INTERRUPTED_MODE:

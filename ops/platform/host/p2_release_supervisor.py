@@ -29,7 +29,7 @@ import p2_prior_gateway
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
 from p2_source_closure import verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 from p2_source_closure import (CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE,
-                               PROFILED_REPLACEMENT_ARM_MODE)
+                               PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE)
 
 require = migrate.demand
 
@@ -65,6 +65,7 @@ PROFILED_INTERRUPTED_LAYOUT = {'actionIdKey': 'restorationActionId',
 PROFILED_REPLACEMENT_ARM_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-profiled-replacement-arm-',
                                    'terminalName': 'p2-frontend-replacement-arm-outcome.json',
                                    'terminalStatus': 'P2_FRONTEND_REPLACEMENT_ARM_COMMITTED'}
+PROFILED_REPLACEMENT_WRITE_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-profiled-replacement-write-'}
 PROFILED_CERTIFICATION_ARM = 'p2-profiled-current-certification-guard-armed.json'
 PROFILED_CERTIFICATION_ARM_READY = 'p2-profiled-current-certification-guard-ready.json'
 PROFILED_INTERRUPTED_ARM = 'p2-profiled-known-ack-restoration-guard-armed.json'
@@ -82,7 +83,7 @@ def _guard_profile(initial):
     # The supervisor replaces this layout from its fixed source argument.
     if fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT,
                                      PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT,
-                                     PROFILED_REPLACEMENT_ARM_LAYOUT):
+                                     PROFILED_REPLACEMENT_ARM_LAYOUT, PROFILED_REPLACEMENT_WRITE_LAYOUT):
         return None
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
@@ -495,10 +496,15 @@ def sticky_cleanup_signals():
             signal.signal(item, handler)
 
 
-def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False, async_arm=False):
+def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False, async_arm=False,
+                 authorize_replacement_write=None):
+    require(authorize_replacement_write is None or profiled_certification and async_arm,
+            'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     buffer, last_alive, committed, status = b'', time.monotonic(), None, None
     armed = False
     pending_arm = None
+    pending_write = None
+    write_requested = False
     while True:
         readable, _, _ = select.select([safety_read], [], [], 0.25)
         if readable:
@@ -514,6 +520,8 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                     value = decode_qualification_target_json(raw, 'private-packet')
                     keys = {'alive': {'operation'}, 'abort': {'operation'}, 'armed': {'operation', 'probe'},
                             'committed': {'operation', 'sha256'}}
+                    if authorize_replacement_write is not None:
+                        keys['replacement-write'] = {'operation', 'armReceiptSha256', 'emptyCatalogReceipt'}
                     require(type(value) is dict and type(value.get('operation')) is str and
                             set(value) == keys.get(value['operation']), 'P2_PROFILED_CERTIFICATION_SAFETY_FRAME_REFUSED')
                 else:
@@ -527,7 +535,13 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                     else:
                         arm(value['probe'])
                     armed = True
+                elif value.get('operation') == 'replacement-write':
+                    require(authorize_replacement_write is not None and armed and not write_requested,
+                            'P2_SAFETY_REPLACEMENT_WRITE_REFUSED')
+                    write_requested = True
+                    pending_write = authorize_replacement_write(value)
                 elif value.get('operation') == 'committed':
+                    require(authorize_replacement_write is None, 'P2_SAFETY_REPLACEMENT_WRITE_TERMINAL_REFUSED')
                     if profiled_certification:
                         require(armed and committed is None and type(value['sha256']) is str and
                                 re.fullmatch(r'[a-f0-9]{64}', value['sha256']), 'P2_PROFILED_CERTIFICATION_SAFETY_COMMIT_REFUSED')
@@ -537,6 +551,9 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
         if pending_arm is not None and pending_arm.done():
             pending_arm.result()
             pending_arm = None
+        if pending_write is not None and pending_write.done():
+            pending_write.result()
+            pending_write = None
         if status is None:
             pid, observed_status = os.waitpid(child, os.WNOHANG)
             if pid:
@@ -584,7 +601,7 @@ def close_gateway(initial, selected, configuration):
             'closedGatewayAdmissionSha256': digest}
 
 
-def verify_guard_boundary(initial, source):
+def verify_guard_lock(initial):
     # Source-selected inherited open file description, never an operator DTO.
     descriptor = initial.get('_guardLockDescriptor')
     require(type(descriptor) is int, 'P2_GUARD_BOUNDARY_LOCK_REQUIRED')
@@ -592,6 +609,10 @@ def verify_guard_boundary(initial, source):
     require(stat.S_ISREG(current.st_mode) and current.st_uid == 0 and not current.st_mode & 0o077 and
         (current.st_dev,current.st_ino) == (opened.st_dev,opened.st_ino), 'P2_GUARD_BOUNDARY_LOCK_CHANGED')
     fcntl.flock(descriptor,fcntl.LOCK_EX|fcntl.LOCK_NB)
+
+
+def verify_guard_boundary(initial, source):
+    verify_guard_lock(initial)
     _verify_guard_source(initial,source)
 
 
@@ -1311,7 +1332,8 @@ def _require_profiled_interrupted_gateway_after_reap(initial, source, terminal):
 def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
               observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None,
               frontend_containment=None):
-    require(initial.get('mode') != PROFILED_REPLACEMENT_ARM_MODE, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    require(initial.get('mode') not in (PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE),
+            'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     layout = dict(DEFAULT_LAYOUT if layout is None else layout)
     require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
     rotation_types = None
