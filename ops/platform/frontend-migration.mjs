@@ -525,6 +525,7 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
               databaseReceipt: original("database-receipt.json"),
               continuationStarted: original("frontend-continuation-started.json"),
               owner: roles.owner, runtime: roles.runtime, producerSha256: input.producerSha256,
+              administrativeLogins: input.administrativeLogins,
             }, { getUrl: () => url });
             await verifyLockedSession();
             store.record("replacement-written-observation.json", written);

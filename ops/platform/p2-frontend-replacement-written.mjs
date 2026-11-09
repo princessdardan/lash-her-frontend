@@ -18,6 +18,7 @@ const exact = (value, expected) => value && Object.getPrototypeOf(value) === Obj
   });
 const oid = value => typeof value === "string" && /^[1-9][0-9]{0,9}$/u.test(value) && Number(value) <= 4294967295;
 const digest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
+const compareLogins = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 
 function originalBytes(value, maximum) {
   demand(typeof value === "string" && value.length > 0 && value.length <= 4 * Math.ceil(maximum / 3));
@@ -27,13 +28,18 @@ function originalBytes(value, maximum) {
 }
 
 function prepare(packet) {
-  demand(exact(packet, ["probe", "physicalObservation", "databaseReceipt", "continuationStarted", "owner", "runtime", "producerSha256"]));
+  demand(exact(packet, ["probe", "physicalObservation", "databaseReceipt", "continuationStarted", "owner", "runtime", "producerSha256", "administrativeLogins"]));
   const artifact = validateP2FrontendReplacementProbe(packet.probe);
-  const { probe, owner, runtime, producerSha256 } = structuredClone(packet), { job } = probe;
+  const { probe, owner, runtime, producerSha256, administrativeLogins } = structuredClone(packet), { job } = probe;
   for (const [kind, role] of [["owner", owner], ["runtime", runtime]]) {
     demand(exact(role, ["name", "oid"]) && role.name === FRONTEND_PREPARATION_ROLES[kind] && oid(role.oid));
   }
   demand(runtime.name === job.target.runtimeRole && new Set([owner.oid, runtime.oid, probe.migrationRoleOid]).size === 3 && digest(producerSha256));
+  demand(Array.isArray(administrativeLogins) && administrativeLogins.length <= 32 && administrativeLogins.every(login =>
+    exact(login, ["name", "oid"]) && /^[a-z][a-z0-9_]{0,62}$/u.test(login.name) && oid(login.oid) &&
+    ![job.target.user, owner.name, runtime.name, probe.predecessorTarget.runtimeRole].includes(login.name)) &&
+    new Set(administrativeLogins.map(login => login.name)).size === administrativeLogins.length &&
+    new Set([owner.oid, runtime.oid, probe.migrationRoleOid, ...administrativeLogins.map(login => login.oid)]).size === administrativeLogins.length + 3);
 
   const physical = originalBytes(packet.physicalObservation, 8192);
   const database = originalBytes(packet.databaseReceipt, 65_536);
@@ -55,7 +61,25 @@ function prepare(packet) {
   demand(isDeepStrictEqual(decodeQualificationTargetJson(started, "carrier"), {
     ...base, status: "FRONTEND_CONTINUATION_STARTED", databaseVerified: true,
   }));
-  return { probe, owner, runtime, producerSha256, observation, journal, physical, database, started };
+  return { probe, owner, runtime, producerSha256, administrativeLogins: administrativeLogins.sort(compareLogins),
+    observation, journal, physical, database, started };
+}
+
+async function verifyLoginBoundary(client, { probe, runtime, administrativeLogins }) {
+  const access = (await client.query(`SELECT
+    pg_catalog.has_database_privilege('public',$1::oid,'CONNECT,TEMP,CREATE') AS public_database_access,
+    pg_catalog.has_schema_privilege('public','public','CREATE') AS public_schema_create,
+    pg_catalog.has_schema_privilege('public','frontend_admission','USAGE,CREATE') AS public_admission_access,
+    EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=$2) AS predecessor_role_present,
+    pg_catalog.has_schema_privilege($3::oid,'public','USAGE') AS runtime_public_usage,
+    pg_catalog.has_database_privilege($3::oid,$1::oid,'TEMP') AS runtime_temporary
+    `, [probe.databaseOid, probe.predecessorTarget.runtimeRole, runtime.oid])).rows;
+  demand(isDeepStrictEqual(access, [{ public_database_access: false, public_schema_create: false,
+    public_admission_access: false, predecessor_role_present: false, runtime_public_usage: true, runtime_temporary: false }]));
+  const logins = (await client.query(`SELECT rolname AS name,oid::text AS oid FROM pg_catalog.pg_roles
+    WHERE rolcanlogin AND pg_catalog.has_database_privilege(oid,$1::oid,'CONNECT') LIMIT 35`, [probe.databaseOid])).rows;
+  const expected = [...administrativeLogins, runtime, { name: probe.job.target.user, oid: probe.migrationRoleOid }];
+  demand(isDeepStrictEqual(logins.sort(compareLogins), expected.sort(compareLogins)));
 }
 
 async function verifyWrittenState(client, selected) {
@@ -72,6 +96,7 @@ async function verifyWrittenState(client, selected) {
       ORDER BY created_at::bigint ASC NULLS FIRST,id ASC LIMIT $1`, [journal.length + 1])).rows;
     demand(isDeepStrictEqual(actual, journal) && isDeepStrictEqual(await readMigrationCatalog(client), probe.baseline.catalog));
     demand(isDeepStrictEqual(await verifyReplacementRuntimeGrants(client, probe.job.target, owner), runtime));
+    await verifyLoginBoundary(client, selected);
     const ownership = (await client.query(`SELECT r.oid::text AS owner FROM pg_catalog.pg_roles r
       JOIN pg_catalog.pg_namespace n ON n.nspowner=r.oid
       WHERE n.nspname='frontend_admission' AND r.rolname=$1 AND NOT (
@@ -99,13 +124,13 @@ async function verifyWrittenState(client, selected) {
 export async function observeP2FrontendReplacementWritten(packet, { getUrl }) {
   try {
     const selected = prepare(packet);
-    const { observation, probe, physical, database, started, owner, runtime, producerSha256, journal } = selected;
+    const { observation, probe, physical, database, started, owner, runtime, producerSha256, administrativeLogins, journal } = selected;
     return await withP2FrontendReplacementReadOnlyProbe(probe, getUrl, async client => {
       await verifyWrittenState(client, selected);
       return { ...observation, operation: "verify-replacement-written", status: "P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED",
         physicalObservationSha256: hash(physical), databaseReceiptSha256: hash(database), continuationStartedSha256: hash(started),
-        owner, runtime, producerSha256, appliedMigrationCount: journal.length, epoch: "1", newWork: false, recovery: false,
-        active: 0, uncertain: 0, schemaVerified: true, runtimeRoleVerified: true };
+        owner, runtime, producerSha256, administrativeLogins, appliedMigrationCount: journal.length, epoch: "1", newWork: false, recovery: false,
+        active: 0, uncertain: 0, schemaVerified: true, runtimeRoleVerified: true, effectiveLoginBoundaryVerified: true };
     });
   } catch {
     throw new Error(refusal);

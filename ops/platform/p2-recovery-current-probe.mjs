@@ -217,12 +217,18 @@ async function verifyRuntimeGrants(client, target, owner, replacement) {
       WHERE c.relnamespace='frontend_admission'::regnamespace AND c.relkind='r' AND has_table_privilege($1,c.oid,p)) AS direct_tables`, [target.runtimeRole])).rows[0];
   require(admission?.usage === true && admission.ddl === false && admission.direct_tables === false);
   checkpoint='runtime-admission-functions';const functions = (await client.query(`SELECT p.proname,p.prokind,p.prosrc,p.proowner::text AS owner,p.prosecdef,p.proconfig,
+    EXISTS(SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
+      WHERE a.grantee=0 AND a.privilege_type='EXECUTE') AS public_execute,
     has_function_privilege($1,p.oid,'EXECUTE') AS executable FROM pg_proc p WHERE p.pronamespace='frontend_admission'::regnamespace ORDER BY p.proname`, [target.runtimeRole])).rows;
   require(owner && functions.length === 5 && functions.map(row => row.proname).join(',') === 'admit,begin_operation,current_policy,finish_operation,settle','admission-function-identities');
   require(functions.every(row => row.owner === owner.oid),'admission-function-owners');
   require(functions.every(row => row.executable === true),'admission-function-execution-grants');
   require(functions.every(row => row.prokind === 'p' ? row.prosecdef === false && row.proconfig === null :
     row.prosecdef === true && row.proconfig?.includes('search_path=pg_catalog, frontend_admission')),'admission-function-security');
+  if (replacement) require(functions.every(row => row.public_execute === false &&
+    (['begin_operation', 'finish_operation'].includes(row.proname) ? row.prokind === 'p' :
+      row.prokind === 'f' && isDeepStrictEqual(row.proconfig, ['search_path=pg_catalog, frontend_admission']))),
+    'replacement-admission-function-security');
   require(functions.every(row => createHash('sha256').update(row.prosrc).digest('hex') === expectedRoutineBodies[row.proname]),'admission-function-source');
   return { name: roles[0].rolname, oid: roles[0].oid };
   } catch(error) { error.checkpoint ??= checkpoint; throw error; }
