@@ -23,6 +23,17 @@ node ops/platform/p2-frontend-replacement-plan.mjs --plan \
 
 Record the review SHA-256 through independent operator custody. The review binds the exact candidate, frontend job and baseline file digests. Its predecessor entry binds the retained raw journal digest, direct target, Neon project/branch/endpoint, prior deployment and recovery reference. Its replacement entry binds the distinct Neon resource, reviewed database and migration login OIDs, effective administrator login OIDs and replacement recovery reference. The planner checks these bindings and the exact ordered migration chain against source. Its output records the reviewed selection for later host observation and grants no execution authority.
 
+## Supervised empty-target check
+
+Prepare a private settings document with version 1, the exact `staging-current` qualification profile, environment `staging`, the local planner inputs, `reviewedPlanFile` and `reviewedPlanSha256`, a private `results` directory, `knownHosts`, `sshKey` and `host` with `machineId`, `bundle` and `results`. The reviewed plan file contains the original output bytes of the offline planner. The host bundle contains the matching private candidate files. The migration image for that candidate must already be present by immutable digest. Resolve the reviewed replacement database credential through the private runtime handoff.
+
+```sh
+node ops/platform/p2-frontend-replacement-arm.mjs --verify-locked /absolute/private/arm-settings.json \
+  --confirm staging/RELEASE_ID/replacement-arm/REVIEWED_PLAN_SHA256
+```
+
+The arm checks passing CI for the exact source before installing it on the selected host. The host holds the staging flock and observes the original PostgreSQL backend through the packaged image. The operator checks the empty catalog after that independent session disconnects and releases its own advisory locks before the final host receipt. Retain the matching local and host receipts. The eventual release must reacquire both locks and repeat the target checks before role preparation or SQL.
+
 ## Reviewed release sequence
 
 1. Freeze both reviewed API `main` commits after required CI and refresh the frontend contract and scoped runtime pins. Qualify the exact frontend source on Linux. Prepare the immutable candidate and the exact full migration job and schema baseline for the selected replacement target. Review the complete 83-tag chain against the candidate. [Operator sequence](p2-staging-certification.md#prerequisites-and-operator-sequence).
