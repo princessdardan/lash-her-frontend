@@ -485,7 +485,8 @@ test('replacement interrupted planner joins retained certification and exact ori
  const replacementSelection={terminalFile:join(results,'owned-terminal.json'),terminalSha256:provenance.originalReleaseReceiptSha256};
  const receiverTargets=Object.fromEntries(['course','community'].map(service=>[service,{host:service+'.invalid',port:5432,database:service,
   user:service+'_runtime',serverMajor:18,roleOid:service==='course'?'421':'422'}]));
- const apiJobs=Object.fromEntries(Object.entries(receiverTargets).map(([service,{user,roleOid,...target}])=>[service,{target,runtimeRole:user}]));
+ const apiJobs=Object.fromEntries(Object.entries(receiverTargets).map(([service,{host,port,database,user,serverMajor}])=>
+  [service,{target:{host,port,database,serverMajor},runtimeRole:user}]));
  const frontendTarget={qualificationTargetProfile:profile,host:'frontend.invalid',port:5432,database:'frontend',user:'owned_migration',serverMajor:18};
  const job={...base,sourceCommit,releaseId,target:{...frontendTarget,allowEmptyBootstrap:true,approvedPendingTags:['0001_fixture']}};
  const producer={producerSha256:'2'.repeat(64),role:{name:'owned_runtime',oid:'418'}};
