@@ -24,6 +24,9 @@ ROOT = Path('/var/lib/lash-her/releases/staging')
 BEFORE_STOP = 'prior-gateway-before-stop.json'
 STOPPED = 'prior-gateway-stopped.json'
 PROTOCOL = 'p2-prior-gateway-v1'
+# Reviewed 4922903d writer for existing stop receipts. Replacement actions
+# require the new source identity and continue to emit its exact digest.
+PRE_REPLACEMENT_STOP_MODULE_SHA256 = 'f6f7d6ba1e5c53ff786ee194050b92acadafd160b2a8eca32c6f0f67858d30a7'
 
 
 def _profile_kwargs(expected):
@@ -348,8 +351,11 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None, *, ex
     before_raw = migrate.read_input(directory, BEFORE_STOP)
     before = json.loads(before_raw)
     retained_action = _require_profiled_stop_identity(directory, initial, selected, before, stopped, expected_profile)
+    module_sha = before.get('sourceModuleSha256')
+    replacement_directory = any(path.name.startswith('p2-profiled-replacement-write-') for path in (directory, directory.parent))
+    compatible_predecessor = not replacement_directory and module_sha == PRE_REPLACEMENT_STOP_MODULE_SHA256
     require(stopped.get('protocol') == before.get('protocol') == PROTOCOL and
-        stopped.get('sourceModuleSha256') == before.get('sourceModuleSha256') == _source_sha256() and
+        stopped.get('sourceModuleSha256') == module_sha and (module_sha == _source_sha256() or compatible_predecessor) and
         stopped.get('beforeSha256') == migrate.file_hash(before_raw) and
         stopped.get('candidateSha256') == before.get('candidateSha256') and
         isinstance(before.get('candidateSha256'),str) and re.fullmatch(r'[a-f0-9]{64}',before['candidateSha256']) and

@@ -329,6 +329,16 @@ class PriorGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
             gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
 
+    def test_exact_pre_replacement_module_stop_receipt_remains_usable(self):
+        with patch.object(gate, '_source_sha256', return_value=gate.PRE_REPLACEMENT_STOP_MODULE_SHA256):
+            before = self.stop_proof()
+        self.present = False
+        self.assertEqual(gate.preflight_prior_gateway(self.initial, self.selected, self.verify, self.command,
+                                                     lambda _: None), before['observation'])
+        with patch.object(gate, 'PRE_REPLACEMENT_STOP_MODULE_SHA256', 'd' * 64):
+            with self.assertRaisesRegex(ValueError, 'STOP_PROOF_REQUIRED'):
+                gate.preflight_prior_gateway(self.initial, self.selected, self.verify, self.command, lambda _: None)
+
     def test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage(self):
         before=self.stop_proof()
         stopped_pointer=json.loads((self.root/'.p2-gateway-lineage.json').read_bytes())
