@@ -330,6 +330,19 @@ const reviewedFirstOwnerDependencies = {
   "src/lib/admin/user-writer-admission.ts": "83a02768d06656b26a385492d1b0e82082674b6161db08f90259121e0e2606c9",
   "ops/platform/p2-first-owner-identity.mjs": "13fc45c49f9e184948e4145471eafd61f8ef3c09aec8bdb697581316796bcc5d"
 };
+const reviewedMediaReservationDependencies = {
+  ...reviewedFirstOwnerDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "2abc0c9ab36b1bb4ed0831a6ee43981a2bee7206f1d17d15cdca74ad5d0c9b86",
+  "src/lib/api-integration/course-admin-handler.ts": "58250c8fa99a97dac265c601911cf4fb05f23ec39b919887e6d35a4b1e90de53",
+  "src/app/admin/(protected)/courses/[courseId]/page.tsx": "0857b31b2dffdf6bb7ac8460d1736dcd2a3738ba5273194ae799bbe7e48360fd",
+  "src/app/api/admin/lessons/[lessonId]/video/route.ts": "62f65cd13bebd60c4af343369ec69cb1a0f8f18924ef29b2fb230dea3a25f352",
+  "src/app/api/admin/lessons/[lessonId]/video-upload/route.ts": "b624d1e0c0d05e76bfe7fd196bdc8e9a27e0382bae2d756102aca5c51a3a380e",
+  "src/components/admin/course-authoring/course-workspace.tsx": "5db30fa7715f0ffb9010b521b51e30bf61d802945f23e5836459bd3fc58328ad",
+  "src/components/admin/course-authoring/media-editor.tsx": "d69373988aafee76c228abbf082707d10baaf1d3ca8c1a7873857c2abfcf6ae0",
+  "src/lib/course-authoring/browser.ts": "dd4cb6436d61ef025f0cc32a6845af74d436c7ba8dc5dc744b2c1dbce28960a2",
+  "ops/gateway/admission.mjs": "5f4299ad5fb84a03df2f0bb7118333f21ababebf2b482be0ed346287377e1f07",
+  "ops/gateway/server.mjs": "9a4203dcf5f99e6216cebcb6bf4f17ec0fc053611c7f979993c568379689fa1b"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -369,7 +382,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]],
     [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies, reviewedVisibilityCoalescingDependencies]],
     [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]],
-    [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies]]]
+    [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies, reviewedMediaReservationDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
