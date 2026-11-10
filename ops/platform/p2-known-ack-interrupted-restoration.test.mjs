@@ -360,6 +360,7 @@ with tempfile.TemporaryDirectory() as directory:
     manifest = engine['archive_operator_sources'](str(root), commit, source)
     assert engine['REQUIRED'] <= manifest.keys()
     assert engine['PROFILED_CURRENT_SOURCE_ONLY'].isdisjoint(manifest)
+    assert engine['LEGACY_FIXTURE_EVIDENCE_ONLY'].isdisjoint(manifest)
     assert not (source / 'ops/platform/host/p2_certification_parent_test.py').exists()
     assert not (source / 'ops/platform/prepare-p2-identity-probe-fixtures.test.mjs').exists()
     assert len(manifest) <= 512 and sum((source / name).stat().st_size for name in manifest) <= 41_000_000
