@@ -32,6 +32,7 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/host/p2_replacement_terminal.py',
     'ops/platform/host/p2_identity_replacement_provenance.py',
     'ops/platform/host/p2_scoped_mux_readiness.py',
+    'ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
     'ops/platform/p2-frontend-replacement-arm-transport.mjs',
     'ops/platform/p2-frontend-replacement-plan.mjs',
@@ -896,7 +897,7 @@ class ProfiledCertificationInputTests(unittest.TestCase):
         self.assertIs(self.prepare()['executionEligible'], False)
         negative = {'profile': 'suspended-head-negatives-v2',
                     'sourceSha256': self.files['ops/platform/p2-lifecycle-receiver-post.mjs'],
-                    'hostSourceSha256': self.files['ops/platform/host/p2_lifecycle_receiver_negative.py']}
+                    'hostSourceSha256': self.files['ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py']}
         worker['receiverNegatives'] = negative
         self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
         self.rehash()

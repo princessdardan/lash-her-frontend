@@ -494,7 +494,7 @@ def _profiled_suspension_plan(initial, plan, expected):
     if negative_fields:
         negative = worker['receiverNegatives']
         pins = {'sourceSha256': 'ops/platform/p2-lifecycle-receiver-post.mjs',
-                'hostSourceSha256': 'ops/platform/host/p2_lifecycle_receiver_negative.py'}
+                'hostSourceSha256': 'ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py'}
         require(type(negative) is dict and set(negative) == set(pins) | {'profile'} and
                 negative['profile'] == 'suspended-head-negatives-v2' and
                 all(_profiled_digest(negative[key]) and negative[key] == initial['sourceSha256'].get(path)

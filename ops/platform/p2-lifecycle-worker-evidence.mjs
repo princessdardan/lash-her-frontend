@@ -87,7 +87,7 @@ export function prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan,
     denialSourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/p2-lifecycle-receiver-denial.mjs"),
     ...(receiverNegatives ? { receiverNegatives: { profile: receiverNegativeProfile,
       sourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/p2-lifecycle-receiver-post.mjs"),
-      hostSourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/host/p2_lifecycle_receiver_negative.py") } } : {}),
+      hostSourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py") } } : {}),
     workerInvocations: 1, requiredPrivateInputs: ["FRONTEND_STAGING_CRON_SECRET", "providerContext.frontendRuntimeDatabaseUrl"],
     invocationClass: "direct-source-authenticated-cron", nativeInvocationQualified: false, automaticRetryAllowed: false,
     finalDisposition: "native-off-and-admission-closed", releaseAccepted: false });

@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 
 import p2_identity_probe_scope as identity_scope
 import p2_lifecycle_receiver_negative as action
+import p2_scoped_lifecycle_receiver_negatives as scoped
 from p2_lifecycle_receiver_scope import CurrentLifecycleReceiverScope
 import release as runtime
 
@@ -194,7 +195,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         self.source = Path(action.__file__).resolve().parents[3]
         self.profile = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
         self.positive_sha = "d" * 64
-        files = (action.PROGRAM, action.HOST_PROGRAM, action.WITNESS_PROGRAM, action.TARGET_PROFILE_PROGRAM)
+        files = (action.PROGRAM, scoped.HOST_PROGRAM, scoped.LAUNCHER_PROGRAM, action.WITNESS_PROGRAM, action.TARGET_PROFILE_PROGRAM)
         manifest = {path: action._hash((self.source / path).read_bytes()) for path in files}
         worker = self.worker = P2LifecycleWorkerEvidenceStage.__new__(P2LifecycleWorkerEvidenceStage)
         scope = self.scope = P2CertificationScope.__new__(P2CertificationScope)
@@ -238,8 +239,8 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         command = {"version": 1, "commandId": command_id, "userId": user_id, "accountVersion": 2, "action": "suspend", "issuedAt": issued}
         command_sha = action._hash(action._canonical(command))
         worker.prior = {"pendingRecord": {"pending": {"command": command}}}
-        worker.plan = {"actionId": "owned-worker", "receiverNegatives": {"profile": action.SCOPED_PROFILE,
-            "sourceSha256": manifest[action.PROGRAM], "hostSourceSha256": manifest[action.HOST_PROGRAM]},
+        worker.plan = {"actionId": "owned-worker", "receiverNegatives": {"profile": scoped.SCOPED_PROFILE,
+            "sourceSha256": manifest[action.PROGRAM], "hostSourceSha256": manifest[scoped.HOST_PROGRAM]},
             "canonicalCommandSha256": command_sha,
             "gatewayConfigurationSha256": action._hash((worker.configuration / "gateway.json").read_bytes())}
         scope.certification_plan = {"mode": "direct-worker", "certificationActionId": "owned-worker",
@@ -264,7 +265,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         scope.run = Mock(side_effect=self.child)
         self.config = {"COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET": "owned-course-private-fixture",
                        "COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET": "owned-community-private-fixture"}
-        for patcher in (patch.object(action, "private_program", return_value=b"owned exact profiled child"),
+        for patcher in (patch.object(scoped, "private_program", return_value=b"owned exact profiled child"),
                 patch.object(action.persistence, "load_retained_capture", side_effect=lambda *args, **kwargs: copy.deepcopy(self.retained)),
                 patch.object(action.persistence, "HeldCertificationPersistenceScope", return_value=object()),
                 patch.object(action.persistence, "observe_with_scope", side_effect=self.observe),
@@ -318,15 +319,15 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         return subprocess.CompletedProcess(args, 0, action._canonical(result) + b"\n", b"")
 
     def start(self):
-        self.stage = action.P2ScopedLifecycleReceiverNegatives(self.worker)
+        self.stage = scoped.P2ScopedLifecycleReceiverNegatives(self.worker)
         return self.stage
 
     def test_six_ordered_cases_with_fresh_brackets_and_durable_idempotent_join(self):
         stage = self.start()
         with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
             stage.require_joined()
-        rows = [stage.observe_next("owned-private-runtime-url") for _ in action.CASE_ORDER]
-        self.assertEqual(self.posts, list(action.CASE_ORDER))
+        rows = [stage.observe_next("owned-private-runtime-url") for _ in scoped.CASE_ORDER]
+        self.assertEqual(self.posts, list(scoped.CASE_ORDER))
         self.assertEqual(self.read_count, 12)
         self.assertEqual([row["httpStatus"] for row in rows], [200, 409, 409] * 2)
         self.assertEqual([row["beforeWitnessSha256"] for row in rows], [self.witness_sha] * 6)
@@ -348,7 +349,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         terminal.write_bytes(b"tampered")
         with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
             stage.require_joined()
-        self.assertEqual(self.posts, list(action.CASE_ORDER))
+        self.assertEqual(self.posts, list(scoped.CASE_ORDER))
 
     def test_retained_positive_refuses_before_any_child(self):
         stage = self.start()
@@ -400,7 +401,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
             if worker is self.worker:
                 self.worker.plan.pop("receiverNegatives")
             with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
-                action.P2ScopedLifecycleReceiverNegatives(worker)
+                scoped.P2ScopedLifecycleReceiverNegatives(worker)
 
 
 if __name__ == "__main__":

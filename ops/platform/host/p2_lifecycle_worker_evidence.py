@@ -395,7 +395,7 @@ class P2LifecycleWorkerEvidenceStage:
             hasattr(self, "witness_record_sha256") and hasattr(self, "denials"),
             "P2_WORKER_RECEIVER_NEGATIVE_STAGE_REQUIRED")
         if not hasattr(self, "_receiver_negative_stage"):
-            from p2_lifecycle_receiver_negative import P2ScopedLifecycleReceiverNegatives
+            from p2_scoped_lifecycle_receiver_negatives import P2ScopedLifecycleReceiverNegatives
             self._receiver_negative_stage = P2ScopedLifecycleReceiverNegatives(self)
         return self._receiver_negative_stage
 
