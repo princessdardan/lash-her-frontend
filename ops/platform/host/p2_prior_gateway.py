@@ -27,6 +27,22 @@ PROTOCOL = 'p2-prior-gateway-v1'
 # Reviewed 4922903d writer for existing stop receipts. Replacement actions
 # require the new source identity and continue to emit its exact digest.
 PRE_REPLACEMENT_STOP_MODULE_SHA256 = 'f6f7d6ba1e5c53ff786ee194050b92acadafd160b2a8eca32c6f0f67858d30a7'
+# C07 retained its own original, accepted receipt format. Reuse only those
+# exact bytes on the reviewed staging host; never rewrite them as API_RUNTIME_READY.
+ACCEPTED_C07_RUNTIME_SHA256 = 'c9b073a4101cf511db53a502bc0335d38d428d8372e031f1a132eef54b9410b9'
+ACCEPTED_C07_CANDIDATE_SHA256 = '09f2935fcac8130b6abfdfb0814e8da104106efe6ca9243de3a3e5553d16cce5'
+ACCEPTED_C07_HOST = 'ec2146be041cf26fda0a7986db4be3b6'
+
+
+def _retained_runtime_ready(receipt, raw, initial, ref, prior_profile, expected_profile):
+    if receipt.get('status') in ('API_RUNTIME_READY', 'API_RUNTIME_RESTORED_FOR_QUALIFICATION'):
+        return receipt.get('environment') == 'staging'
+    return (expected_profile is not None and prior_profile is None and
+            initial.get('hostMachineId') == ACCEPTED_C07_HOST and
+            ref.get('candidateSha256') == ACCEPTED_C07_CANDIDATE_SHA256 and
+            ref.get('runtimeReceiptSha256') == ACCEPTED_C07_RUNTIME_SHA256 and
+            migrate.file_hash(raw) == ACCEPTED_C07_RUNTIME_SHA256 and
+            receipt.get('status') == 'C07_RUNTIME_READY_WITHOUT_MIGRATIONS')
 
 
 def _profile_kwargs(expected):
@@ -257,8 +273,9 @@ def _reference(initial, selected, configuration, identity, *, expected_profile=N
             require(type(receipt.get('version')) is int and receipt['version'] == 2,
                     'PRIOR_GATEWAY_RETAINED_RUNTIME_PROFILE_REQUIRED')
         migrate.require_contract_identity(prior,receipt)
-        require(migrate.file_hash(raw) == ref['runtimeReceiptSha256'] and receipt.get('status') in ('API_RUNTIME_READY','API_RUNTIME_RESTORED_FOR_QUALIFICATION') and
-            receipt.get('phase') == 'completed' and receipt.get('environment') == 'staging' and
+        require(migrate.file_hash(raw) == ref['runtimeReceiptSha256'] and
+            _retained_runtime_ready(receipt, raw, initial, ref, prior_profile, expected_profile) and
+            receipt.get('phase') == 'completed' and
             receipt.get('candidateSha256') == ref['candidateSha256'] and receipt.get('releaseId') == prior['releaseId'] and
             any(row.get('service') == 'gateway' and row.get('containerId') == identity and row.get('image') == prior['artifacts']['gateway']['image']
                 for row in receipt.get('containers', [])), 'PRIOR_GATEWAY_RETAINED_RUNTIME_REQUIRED')
