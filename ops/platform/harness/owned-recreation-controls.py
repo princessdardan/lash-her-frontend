@@ -3,6 +3,8 @@
 Requires a read-only root filesystem, writable /tmp and /opt/lash-her tmpfs,
 network disabled, no credentials, and the public platform source at /source.
 """
+import base64
+import gzip
 import hashlib
 import json
 import os
@@ -23,13 +25,18 @@ def main():
         programs[mode] = parts[4]
         compile(parts[4], "reviewed-source-receiver", "exec")
     code = b"export const owned = true;\n"
-    import base64
     first_file = {"path": "ops/owned.mjs", "sha256": hashlib.sha256(code).hexdigest(), "data": base64.b64encode(code).decode()}
     payload = {"commit": "1" * 40, "files": [first_file]}
     environment = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME": "/root"}
     records = []
     def receiver(success=True, marker=None, mode="legacy"):
-        result = subprocess.run(["python3", "-B", "-c", programs[mode]], input=json.dumps(payload).encode(),
+        wire = json.dumps(payload).encode()
+        if mode == "profiled":
+            wire = json.dumps({
+                "encoding": "gzip-base64-v1",
+                "data": base64.b64encode(gzip.compress(wire)).decode(),
+            }).encode()
+        result = subprocess.run(["python3", "-B", "-c", programs[mode]], input=wire,
                                 capture_output=True, env=environment, timeout=15)
         if success:
             assert result.returncode == 0, "OWNED_PUBLIC_RECEIVER_FAILED"
