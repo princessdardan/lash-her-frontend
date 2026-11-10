@@ -1,15 +1,20 @@
 // Private owned process only. IPC is never installed as an application route.
 import assert from "node:assert/strict";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createServer, request } from "node:https";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildP2LifecycleStateWitness, observePersistenceDomain } from "../p2-lifecycle-persistence-probe.mjs";
 import { createReceiverPrivateTlsPost, postReceiverNegative, deriveReceiverNegativeCommand } from "../p2-lifecycle-receiver-post.mjs";
 import { verifyReceiverNegativeReadback } from "../p2-lifecycle-receiver-negatives.mjs";
+import { p2LifecycleStateWitnessSha256 } from "../p2-lifecycle-state-witness.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "../qualification-target-profile.mjs";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
+const receiverPath = "/v1/internal/accounts/commands";
+const services = ["course", "community"];
 function sign(service, secret) {
   const now = Math.floor(Date.now() / 1000), encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
   const body = encode({ alg: "HS256", typ: "JWT" }) + "." + encode({ iss: "lash-her-frontend", aud: `lash-her-${service}-api:account-lifecycle`,
@@ -17,11 +22,133 @@ function sign(service, secret) {
   return body + "." + createHmac("sha256", secret).update(body).digest("base64url");
 }
 
+function profiledChildProgram() {
+  const source = fileURLToPath(new URL("../../../", import.meta.url));
+  const compose = "import sys;from pathlib import Path;root=Path(sys.argv[1]);sys.path.insert(0,str(root/'ops/platform/host'));"
+    + "import p2_lifecycle_receiver_negative as receiver;from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile;"
+    + "sys.stdout.buffer.write(receiver.private_program(root,profile))";
+  return execFileSync("python3", ["-I", "-B", "-c", compose, source], { encoding: "utf8", env: { PATH: process.env.PATH },
+    stdio: ["ignore", "pipe", "pipe"], maxBuffer: 131071, timeout: 10_000 });
+}
+
+function runProfiledChild(program, payload, gateway, ca, ports) {
+  // Only this owned process supplies the preload. The actual composed child
+  // still checks fixed paths, TLS names, SNI and trust before sending.
+  const preload = `
+    import assert from "node:assert/strict";
+    import fs from "node:fs";
+    import https from "node:https";
+    import { syncBuiltinESMExports } from "node:module";
+    const gateway = Buffer.from(${JSON.stringify(gateway.toString("base64"))}, "base64");
+    const ca = Buffer.from(${JSON.stringify(Buffer.from(ca).toString("base64"))}, "base64");
+    const ports = ${JSON.stringify(ports)};
+    const readFile = fs.readFileSync, request = https.request;
+    fs.readFileSync = (path, ...args) => {
+      if (path === "/config/gateway.json") return gateway;
+      if (path === "/tls/ca.pem") return ca;
+      return readFile(path, ...args);
+    };
+    https.request = (options, response) => {
+      assert.equal(options.protocol, "https:");
+      assert.ok(Object.hasOwn(ports, options.hostname));
+      assert.equal(options.servername, options.hostname);
+      assert.equal(options.port, 8443);
+      assert.equal(options.method, "POST");
+      assert.equal(options.path, ${JSON.stringify(receiverPath)});
+      assert.equal(options.rejectUnauthorized, true);
+      assert.equal(options.minVersion, "TLSv1.2");
+      assert.deepEqual(options.ca, ca);
+      return request({ ...options, hostname: "127.0.0.1", port: ports[options.hostname] }, response);
+    };
+    syncBuiltinESMExports();
+  `;
+  const module = "data:text/javascript;base64," + Buffer.from(preload).toString("base64");
+  return new Promise((resolve, reject) => {
+    const child = execFile(process.execPath, ["--import", module, "--input-type=module", "--eval", program],
+      { env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000, maxBuffer: 8192 }, (error, stdout, stderr) => {
+        const exitCode = error?.code ?? 0;
+        if (stderr || ![0, 1].includes(exitCode)) return reject(new Error("OWNED_PROFILED_RECEIVER_CHILD_FAILED"));
+        try { resolve({ exitCode, receipt: JSON.parse(stdout) }); }
+        catch { reject(new Error("OWNED_PROFILED_RECEIVER_CHILD_OUTPUT_INVALID")); }
+      });
+    child.stdin.once("error", () => reject(new Error("OWNED_PROFILED_RECEIVER_STDIN_FAILED")));
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
+async function rehearseProfiledReceivers(input, gateway, observe, apis, servers, posts) {
+  const program = profiledChildProgram();
+  const ports = Object.fromEntries(services.map(service => [service + "-tls", apis[service].port]));
+  const ca = Buffer.from(input.ca);
+  const runCase = async (service, caseName, casePorts, responseLost = false) => {
+    const before = await observe(), freshCommandId = caseName === "stale-restore" ? randomUUID() : null;
+    const requireAbsent = state => {
+      if (freshCommandId) assert.ok(Object.values(state.observations).every(row => row.commands.every(command => command.command_id !== freshCommandId)));
+    };
+    requireAbsent(before);
+    const prior = { ...posts };
+    const payload = { version: 2, qualificationTargetProfile: profile, environment: "staging", mode: "post", service, case: caseName,
+      bindingSha256: hash("owned-profiled-receiver-wire"), witness: before.witness, freshCommandId, secret: input.keys[service],
+      gatewayConfigurationSha256: hash(gateway), gatewayCaSha256: hash(ca) };
+    const result = await runProfiledChild(program, payload, gateway, ca, casePorts);
+    assert.deepEqual(posts, { ...prior, [service]: prior[service] + 1 });
+    const after = await observe();
+    verifyReceiverNegativeReadback(before.witness, after.witness, service, caseName, freshCommandId);
+    requireAbsent(after);
+    const witnessSha256 = p2LifecycleStateWitnessSha256(before.witness);
+    const duplicate = caseName === "exact-replay";
+    const httpStatus = duplicate ? 200 : 409;
+    const outcome = duplicate ? "duplicate" : caseName === "changed-replay" ? "idempotency_conflict" : "account_version_conflict";
+    const identity = { version: 2, qualificationTargetProfile: profile };
+    const disposition = { globallyReadOnly: false, oidcVerified: false, releaseAccepted: false };
+    const expected = responseLost ? { ...identity, status: "P2_LIFECYCLE_RECEIVER_CASE_FAILED", check: "private-https-failed", ...disposition }
+      : { ...identity, status: "P2_LIFECYCLE_RECEIVER_CASE_PASS", service, case: caseName, bindingSha256: payload.bindingSha256,
+        witnessSha256, httpStatus, result: outcome, domainStatePreservationRequiresReadback: true, ...disposition };
+    assert.deepEqual(result, { exitCode: responseLost ? 1 : 0, receipt: expected });
+    return { service, case: caseName, actualPostCount: 1, accountAndDomainStateUnchanged: true,
+      ...(responseLost ? { childStatus: expected.status, check: expected.check, refusedCommandAbsent: true } : { httpStatus, result: outcome }) };
+  };
+  const cases = [];
+  for (const service of services) {
+    for (const name of ["exact-replay", "changed-replay", "stale-restore"]) cases.push(await runCase(service, name, ports));
+  }
+  const forwarded = { calls: 0, completed: 0, responseSent: false, response: null, failed: false };
+  const proxy = createServer({ key: input.httpsKey, cert: input.httpsCertificate }, (incoming, outgoing) => {
+    forwarded.calls++;
+    const upstream = request({ protocol: "https:", hostname: "127.0.0.1", port: ports["course-tls"], servername: "course-tls",
+      method: incoming.method, path: incoming.url, headers: incoming.headers, ca, rejectUnauthorized: true, minVersion: "TLSv1.2" }, received => {
+      const chunks = [];
+      received.on("data", chunk => chunks.push(chunk));
+      received.once("error", () => { forwarded.failed = true; incoming.socket.destroy(); });
+      received.once("end", () => {
+        forwarded.completed++;
+        forwarded.response = { status: received.statusCode, body: Buffer.concat(chunks).toString(), cache: received.headers["cache-control"] };
+        forwarded.responseSent ||= outgoing.headersSent;
+        incoming.socket.destroy();
+      });
+    });
+    upstream.once("error", () => { forwarded.failed = true; incoming.socket.destroy(); });
+    incoming.pipe(upstream);
+  });
+  await new Promise((resolve, reject) => { proxy.once("error", reject); proxy.listen(0, "127.0.0.1", resolve); });
+  servers.push(proxy);
+  const responseLoss = await runCase("course", "stale-restore", { ...ports, "course-tls": proxy.address().port }, true);
+  assert.equal(forwarded.calls, 1);
+  assert.equal(forwarded.completed, 1);
+  assert.equal(forwarded.failed, false);
+  assert.equal(forwarded.responseSent, false);
+  assert.equal(forwarded.response.status, 409);
+  assert.match(forwarded.response.cache, /private, no-store/iu);
+  assert.equal(JSON.parse(forwarded.response.body).error.code, "ACCOUNT_VERSION_CONFLICT");
+  return { qualificationTargetProfile: profile, programSha256: hash(program), cases,
+    responseLoss: { ...responseLoss, receiverHttpStatus: forwarded.response.status, responseForwarded: false } };
+}
+
 async function run(input) {
   const clients = [], pools = [], apps = [], servers = [];
   const userId = randomUUID(), commandId = randomUUID(), issuedAt = new Date().toISOString();
   const command = { version: 1, commandId, userId, accountVersion: 1, action: "suspend", issuedAt };
-  const admin = {}, readers = {}, apis = {}, checks = [], httpReceipts = [];
+  const admin = {}, readers = {}, apis = {}, checks = [], httpReceipts = [], posts = { course: 0, community: 0 };
   try {
     for (const service of ["frontend", "course", "community"]) {
       assert.equal(input.databases[service].host, "localhost"); assert.match(input.databases[service].database, /^owned_receiver_(frontend|course|community)$/u);
@@ -41,7 +168,11 @@ async function run(input) {
         store: new (await load("src/rate-limit/drizzle-rate-limit-store.ts")).DrizzleRateLimitStore(db) };
       else options.accountLifecycle.rateLimitStore = (await load("src/http/shared-rate-limit.ts")).createSharedRateLimitStore(db);
       const app = await (await load("src/app.ts")).buildApp(options); apps.push(app); await app.ready();
-      const server = createServer({ key: input.httpsKey, cert: input.httpsCertificate }, app.routing); servers.push(server);
+      const server = createServer({ key: input.httpsKey, cert: input.httpsCertificate }, (incoming, outgoing) => {
+        if (incoming.method === "POST" && incoming.url === receiverPath) posts[service]++;
+        app.routing(incoming, outgoing);
+      });
+      servers.push(server);
       await new Promise((done, fail) => { server.once("error", fail); server.listen(0, "127.0.0.1", done); });
       apis[service] = { port: server.address().port, app, pool };
     }
@@ -95,6 +226,8 @@ async function run(input) {
       { readGateway: () => gateway, readCa: () => input.ca, post }));
     }
     checks.push("actual-unauthorized-responses-cannot-qualify-negative-case");
+    const profiledWire = process.env.P2_LIFECYCLE_RECEIVER_PROFILED_OWNED_TEST === "true"
+      ? await rehearseProfiledReceivers(input, gateway, observe, apis, servers, posts) : undefined;
     const beforeDelete = await observe();
     const deletion = { ...command, commandId: randomUUID(), accountVersion: 2, action: "delete" };
     for (const service of ["course", "community"]) {
@@ -109,7 +242,7 @@ async function run(input) {
     assert.equal(beforeDelete.witness.command.action, "suspend");
     const raw = JSON.stringify(httpReceipts);
     for (const secret of [userId, commandId, issuedAt, ...Object.values(input.keys)]) assert.equal(raw.includes(secret), false);
-    return { checks, httpCaseCount: httpReceipts.length, quotaWritesObserved: true, fixtureOnly: true,
+    return { checks, httpCaseCount: httpReceipts.length, quotaWritesObserved: true, fixtureOnly: true, ...(profiledWire && { profiledWire }),
       deployedFutureGapQualified: false, hostDockerPathQualified: false, providerTouched: false };
   } finally {
     for (const server of servers.reverse()) { server.closeAllConnections(); await new Promise(done => server.close(done)); }
