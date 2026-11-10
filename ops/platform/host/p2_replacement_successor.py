@@ -291,14 +291,12 @@ def retain_successor_runtime(initial, source, terminal, committed, *, kind):
     migrate.write_json(directory, RECEIPT, {**identity, **binding, **proof, 'gatewayProcessSha256': gateway_sha})
 
 
-def require_successor_runtime(initial, plan, selected, results, source, expected):
-    """Rejoin the prior guardian's raw files without inspecting or changing the live runtime."""
+def require_successor_runtime_provenance(initial, plan, selected, results, source, expected):
+    """Rejoin the prior guardian's raw files and return its mount and retained epoch."""
     expected = _profile(expected)
     binding = plan['successorRuntime']
     require(type(binding) is dict and set(binding) == BINDING_FIELDS and _digest(binding.get('receiptSha256')) and
-            _epoch(plan.get('initialEpoch')) and _action(plan.get('certificationActionId')) and
-            all(binding[key] not in (selected['releaseId'], plan['certificationActionId'])
-                for key in ('actionId', 'runtimeActionId')), REFUSED)
+            selected['releaseId'] not in (binding['actionId'], binding['runtimeActionId']), REFUSED)
     identity = _identity(initial, plan, selected, expected)
     directory, runtime_directory, names = _paths(results, binding['kind'], binding['actionId'], binding['runtimeActionId'])
     raw = private_record(directory, RECEIPT)
@@ -310,6 +308,16 @@ def require_successor_runtime(initial, plan, selected, results, source, expected
     expected_receipt = {**identity, **{key: binding[key] for key in ('kind', 'actionId', 'runtimeActionId')}, **proof,
                         'gatewayProcessSha256': plan.get('gatewayProcessSha256')}
     require(_digest(plan.get('gatewayProcessSha256')) and _canonical(receipt) == _canonical(expected_receipt) and
-            proof['runtimeInventorySha256'] == plan.get('runtimeInventorySha256') and
-            int(plan['initialEpoch']) >= int(proof['frontendEpoch']), REFUSED)
+            proof['runtimeInventorySha256'] == plan.get('runtimeInventorySha256'), REFUSED)
+    return configuration, proof['frontendEpoch']
+
+
+def require_successor_runtime(initial, plan, selected, results, source, expected):
+    """Bind the retained runtime to a new certification action and epoch floor."""
+    binding = plan['successorRuntime']
+    require(type(binding) is dict and set(binding) == BINDING_FIELDS and
+            _epoch(plan.get('initialEpoch')) and _action(plan.get('certificationActionId')) and
+            plan['certificationActionId'] not in (binding['actionId'], binding['runtimeActionId']), REFUSED)
+    configuration, frontend_epoch = require_successor_runtime_provenance(initial, plan, selected, results, source, expected)
+    require(int(plan['initialEpoch']) >= int(frontend_epoch), REFUSED)
     return configuration

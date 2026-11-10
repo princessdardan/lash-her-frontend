@@ -4,11 +4,11 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 import p2_identity_negative_probe as probe
-from p2_certification_parent_test import legacy_source_fixture
+from p2_certification_parent_test import legacy_source_fixture, tracked_source_fixture
 import release_test
 
 
@@ -242,6 +242,137 @@ class IdentityNegativeProbeTests(unittest.TestCase):
         self.assertFalse(value["networkCalled"])
         self.assertFalse(value["frontendSqlVerified"])
         self.assertEqual(value["priorEvidence"], self.reviewed["priorEvidence"])
+
+    def replacement_review(self):
+        from p2_certification_parent import REPLACEMENT_RELEASE_HASHES, frontend_target_sha256
+        from qualification_target_profile import resolve_qualification_target_profile
+
+        fixture = self.fixture
+        for name in ("course", "community"):
+            fixture.jobs[name]["target"]["serverMajor"] = 18
+        expected = fixture.profiled()
+        definition = resolve_qualification_target_profile(expected)
+        self.parent.target.update(version=2, qualificationTargetProfile=expected)
+        self.parent.save("runtime.json", self.parent.target)
+        self.parent.gateway.update(ownerId=definition["frontend"]["teamId"], projectId=definition["frontend"]["projectId"])
+        self.parent.save("gateway.json", self.parent.gateway)
+        source = tempfile.TemporaryDirectory()
+        self.addCleanup(source.cleanup)
+        source = Path(source.name)
+        tracked_source_fixture(Path(probe.__file__).resolve().parents[3], source, include_tests=False)
+        files = probe.source_closure(source, expected_profile=expected)
+        descriptor = {"version": 1, "kind": "frontend-replacement", "qualificationTargetProfile": expected,
+            **{key: "d" * 64 for key in REPLACEMENT_RELEASE_HASHES}, "databaseOid": "100", "migrationRoleOid": "101",
+            "predecessorRuntimeRole": "old_runtime", "administrativeLogins": [{"name": "owned_admin", "oid": "102"}]}
+        reviewed = {**deepcopy(self.reviewed), "version": 2, "qualificationTargetProfile": expected,
+            "candidateSha256": probe._hash((self.bundle / "release.candidate.json").read_bytes()),
+            "operatorSourceFiles": files, "operatorSourceSha256": probe._hash(probe._canonical(files)),
+            "targetSha256": frontend_target_sha256(fixture.jobs["frontend"]["target"]),
+            "apiJobSha256": probe.migrate.profiled_current_job_hashes(self.bundle),
+            "runtimeInventorySha256": "e" * 64, "gatewayProcessSha256": "f" * 64,
+            "replacementRelease": descriptor, "successorRuntime": None}
+        reviewed["priorEvidence"]["originalReleasePlanSha256"] = descriptor["reviewedPlanSha256"]
+        return reviewed, expected, source
+
+    def test_replacement_plan_accepts_only_the_exact_profile_and_bound_jobs_without_runtime(self):
+        reviewed, expected, source = self.replacement_review()
+        with patch.object(probe.runtime, "command", side_effect=AssertionError("plan invoked Docker")), \
+                patch.object(probe.runtime, "environment_values", side_effect=AssertionError("plan read signing configuration")):
+            value = probe.make_plan(self.bundle, self.configuration, reviewed, source, expected_profile=expected)[0]
+        self.assertEqual(value["version"], 2)
+        self.assertEqual(value["qualificationTargetProfile"], expected)
+        self.assertEqual(value["replacementRelease"], reviewed["replacementRelease"])
+        self.assertEqual(value["apiJobSha256"], reviewed["apiJobSha256"])
+        self.assertFalse(value["frontendSqlVerified"])
+        self.assertFalse(value["credentialsRead"])
+        with self.assertRaises(ValueError):
+            probe.make_plan(self.bundle, self.configuration, reviewed, source)
+        with self.assertRaisesRegex(ValueError, "REPLACEMENT_PROFILE_REQUIRED"):
+            probe.validate_reviewed({**reviewed, "qualificationTargetProfile": {**expected, "id": "wrong"}}, expected_profile=expected)
+        for name in ("apiJobSha256", "targetSha256", "priorEvidence", "successorRuntime"):
+            bad = {**reviewed, name: {"unreviewed": "0" * 64}}
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                probe.make_plan(self.bundle, self.configuration, bad, source, expected_profile=expected)
+        job = self.bundle / "jobs/course.json"
+        job.write_bytes(job.read_bytes() + b"\n")
+        with self.assertRaisesRegex(ValueError, "API_JOB_BYTES_CHANGED"):
+            probe.make_plan(self.bundle, self.configuration, reviewed, source, expected_profile=expected)
+
+    def test_fixed_replacement_packet_rejects_mixed_or_duplicate_operations_without_private_output(self):
+        reviewed, expected, source = self.replacement_review()
+        packet = {"version": 2, "qualificationTargetProfile": expected, "operation": "plan-replacement",
+            "bundleDirectory": str(self.bundle), "configurationDirectory": str(self.configuration),
+            "resultsDirectory": str(self.parent.results), "reviewed": reviewed, "priorEvidence": None}
+        entry = source / "ops/platform/host/p2_identity_probe_current.py"
+
+        def run(raw):
+            return subprocess.run(["python3", "-I", "-B", str(entry)], input=raw.encode(), capture_output=True, timeout=15)
+
+        result = run(json.dumps(packet))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(json.loads(result.stdout)["qualificationTargetProfile"], expected)
+        for raw in (json.dumps({**packet, "operation": "execute-current-readonly"}),
+                    json.dumps({**packet, "priorEvidence": {"private": "owned-private-value"}}),
+                    json.dumps(packet)[:-1] + ', "operation": "plan-replacement"}'):
+            with self.subTest(raw=raw[-120:]):
+                failure = run(raw)
+                self.assertEqual(failure.returncode, 1)
+                self.assertFalse(failure.stderr)
+                self.assertNotIn(b"owned-private-value", failure.stdout)
+                self.assertEqual(json.loads(failure.stdout)["status"], "P2_STAGING_IDENTITY_NEGATIVE_PROBES_FAILED")
+
+    def test_replacement_requires_provenance_under_the_flock_before_and_after_private_probe(self):
+        import p2_identity_probe_scope as scope_module
+        import p2_identity_replacement_provenance as provenance_module
+
+        reviewed, expected, source = self.replacement_review()
+        original = {"originalReleaseReceipt": b'{"owned":1}', "frontendDeploymentRecord": b'{"owned":2}'}
+        for name, raw in original.items():
+            reviewed["priorEvidence"][name + "Sha256"] = probe._hash(raw)
+        bundle, configuration = self.bundle.resolve(), self.configuration.resolve()
+        results = self.parent.results.resolve()
+        root = results.parent
+        pinned = Path("/opt/lash-her/operators") / reviewed["sources"]["frontend"]
+        plan, selected, jobs, runtime_plan = probe.make_plan(self.bundle, self.configuration, reviewed,
+            source, expected_profile=expected)
+        for refuse in (False, True):
+            order = []
+            scope = Mock(closed=False)
+            scope.verify.side_effect = lambda: order.append("verify-lock")
+            scope.bind_runtime.side_effect = lambda: order.append("bind-runtime")
+            scope.verify_runtime.side_effect = lambda: order.append("verify-runtime")
+
+            def close():
+                order.append("close")
+                scope.closed = True
+
+            scope.close.side_effect = close
+            def provenance(*args):
+                order.append("provenance")
+                if refuse:
+                    raise ValueError("owned-private-receipt-mismatch")
+                return configuration
+
+            with patch.object(probe, "STAGING_ROOT", root), \
+                    patch.object(probe, "make_plan", return_value=(plan, selected, jobs, runtime_plan)), \
+                    patch.object(probe, "program_bytes", return_value=b"owned probe"), \
+                    patch.object(probe.runtime, "assert_host"), \
+                    patch.object(scope_module, "ReplacementIdentityProbeScope", return_value=scope), \
+                    patch.object(provenance_module, "require_replacement_identity_provenance", side_effect=provenance), \
+                    patch.object(probe, "execute", side_effect=lambda *args: order.append("private-probe") or {"readOnly": True}):
+                arguments = (bundle, configuration, results, reviewed, pinned, original)
+                if refuse:
+                    with self.assertRaises(probe.NegativeProbeFailure) as failure:
+                        probe.execute_replacement_stage(*arguments)
+                    self.assertEqual(failure.exception.public_receipt["check"], "replacement-stage-readonly-refused")
+                else:
+                    value = probe.execute_replacement_stage(*arguments)
+                    self.assertTrue(value["priorEvidenceBytesBound"])
+                    self.assertEqual(value["leaseProfile"], "fresh-host-flock-readonly-identity-no-sql")
+            expected_order = ["provenance", "close"] if refuse else [
+                "provenance", "bind-runtime", "private-probe", "provenance", "verify-runtime", "close"]
+            self.assertEqual([event for event in order if event != "verify-lock"], expected_order)
+            self.assertEqual(order[0], "verify-lock")
 
     def test_operator_closure_and_original_evidence_are_closed_exact_bindings(self):
         original = deepcopy(self.reviewed)

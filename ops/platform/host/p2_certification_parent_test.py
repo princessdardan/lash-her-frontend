@@ -25,6 +25,7 @@ from p2_source_closure import TYPES, REQUIRED, verify_source_closure
 
 
 PROFILED_CURRENT_SOURCE_ONLY = frozenset({
+    'ops/platform/host/p2_identity_replacement_provenance.py',
     'ops/platform/host/p2_profiled_current_frontend.py',
     'ops/platform/host/p2_profiled_current_frontend_test.py',
     'ops/platform/host/p2_profiled_current_parent.py',
