@@ -556,7 +556,7 @@ def profiled_original_replacement_paths(initial, selected):
     })
 
 
-def _profiled_original_replacement(initial, selected, reviewed, inputs, profile):
+def _profiled_original_replacement(initial, selected, reviewed, inputs, profile, *, source, manifest):
     import p2_certification_parent as cert
     from p2_frontend_replacement_parent import RUNTIME_REVIEW, private_record
     from p2_profiled_known_ack_restoration_parent import _raw_original
@@ -580,15 +580,16 @@ def _profiled_original_replacement(initial, selected, reviewed, inputs, profile)
             'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_REVIEW_CHANGED')
     results = Path(initial['results'])
     configuration = results / ('runtime-profiled-frontend-replacement-' + selected['releaseId']) / 'configuration'
-    carrier = {**initial, 'sourceCommit': original['sourceCommit'], 'configuration': str(configuration),
-               'certification': reviewed_controls}
-    receipt, verified = cert._profiled_replacement_original_terminal(carrier, original, selected, results, profile)
+    carrier = {**initial, 'sourceCommit': original['sourceCommit'], 'sourceSha256': manifest,
+               'configuration': str(configuration), 'certification': reviewed_controls}
+    receipt, verified = cert._profiled_replacement_original_terminal(carrier, original, selected, results, profile,
+                                                                    source=source)
     require(verified is True and receipt == pins['originalReleaseReceiptSha256'],
             'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_TERMINAL_REQUIRED')
     return records
 
 
-def _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile):
+def _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile, *, source):
     bundle = root_path(initial['bundle'])
     replacement = bool(known.replacement_release_pins(reviewed, profile))
     release_directory = ('migration-profiled-frontend-replacement-' if replacement else '') + selected['releaseId']
@@ -607,7 +608,8 @@ def _profiled_original_release(initial, selected, jobs, certification, selection
             inputs['originalReleasePlanHashHostVerified'] is True, 'P2_INTERRUPTED_PROFILED_ORIGINAL_INPUT_REQUIRED')
     require(('replacementRelease' in inputs) == ('originalReleaseReceipt' in initial) == replacement,
             'P2_INTERRUPTED_PROFILED_ORIGINAL_REPLACEMENT_INPUT_REQUIRED')
-    original_pins = _profiled_original_replacement(initial, selected, reviewed, inputs, profile) if replacement else None
+    original_pins = (_profiled_original_replacement(initial, selected, reviewed, inputs, profile, source=source,
+                                                    manifest=manifest) if replacement else None)
     ready_raw = migrate.read_input(certification, 'p2-certification-current-ready.json')
     # This outer ready receipt is unchanged by the profiled certification
     # parent. The source API proof nested in it carries the v2 profile.
@@ -842,7 +844,8 @@ def load_profiled_retained(initial, selected, jobs, verify, command=None, *, exp
     require({known.HOST_MODULE, known.MODULE, 'ops/platform/host/p2_prior_gateway.py', 'ops/platform/host/p2_certification_fault.py',
              'ops/gateway/p2-certification-fault.mjs'}.issubset(manifest) and
             manifest[known.MODULE] == values['baseline.json']['sourceModuleSha256'], 'P2_INTERRUPTED_PROFILED_ORIGINAL_READER_REQUIRED')
-    ready, auxiliary = _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile)
+    ready, auxiliary = _profiled_original_release(initial, selected, jobs, certification, selection, reviewed, manifest, profile,
+                                                 source=source)
     active, completed, old_processes, processes = _profiled_replacement(initial, selected, selection, values, stages, old, ready, replacement)
     input_directory = root_path(initial['configuration']); old_mount = root_path(old['binding']['configurationDirectory'])
     snapshot = replacement / 'runtime-known-ack/configuration'

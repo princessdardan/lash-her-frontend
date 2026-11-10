@@ -60,7 +60,8 @@ def require_replacement_identity_provenance(bundle, configuration, results, sour
     initial = {"qualificationTargetProfile": expected, "environment": "staging", "bundle": str(bundle), "results": str(results),
         "configuration": str(original_mount), "hostMachineId": reviewed["hostMachineId"], "apiJobSha256": reviewed["apiJobSha256"],
         "configurationSha256": configuration_hashes, "candidateSha256": reviewed["candidateSha256"], "targetSha256": reviewed["targetSha256"],
-        "sourceCommit": reviewed["sources"]["frontend"], "certification": runtime_review["certification"],
+        "sourceCommit": reviewed["sources"]["frontend"], "sourceSha256": reviewed["operatorSourceFiles"],
+        "certification": runtime_review["certification"],
         "owner": terminal["owner"], "frontendJob": frontend["job"],
         "frontendBaseline": decode_qualification_target_json(frontend["schema"], "carrier"),
         "originalReleaseReceipt": base64.b64encode(raw_terminal).decode()}
@@ -71,7 +72,7 @@ def require_replacement_identity_provenance(bundle, configuration, results, sour
                        "producer": {"producerSha256": terminal["producerSha256"], "role": terminal["runtime"]}},
         "readyReceiptSha256": {"frontend-workload-outcome.json": terminal["frontendWorkloadReceiptSha256"],
                               "frontend-promotion-outcome.json": pins["frontendDeploymentRecordSha256"]}}
-    demand(_profiled_replacement_original_terminal(initial, plan, selected, results, expected) ==
+    demand(_profiled_replacement_original_terminal(initial, plan, selected, results, expected, source=source) ==
         (pins["originalReleaseReceiptSha256"], True), refused)
     binding = reviewed["successorRuntime"]
     if binding is None:

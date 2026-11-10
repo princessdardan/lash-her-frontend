@@ -380,6 +380,8 @@ class ReplacementIdentityProvenanceTests(unittest.TestCase):
     def test_rejoins_actual_original_guardian_bytes_and_refuses_stale_mount_or_promotion(self):
         import p2_prior_gateway as prior
         from p2_identity_replacement_provenance import require_replacement_identity_provenance
+        import p2_frontend_replacement_parent as replacement
+        from p2_source_closure import MANAGED_REPLACEMENT_CATALOG
         from p2_replacement_certification_test import ReplacementCertificationTests
         from p2_replacement_terminal import TERMINAL
         from shutil import copytree
@@ -399,17 +401,35 @@ class ReplacementIdentityProvenanceTests(unittest.TestCase):
             "apiJobSha256": fixture.review["apiJobSha256"], "candidateSha256": fixture.plan["candidateSha256"],
             "configurationSha256": migrate.file_hash(probe._canonical(fixture.review["configurationSha256"])),
             "targetSha256": fixture.target_sha, "sources": {"frontend": fixture.commit}, "replacementRelease": fixture.descriptor,
-            "priorEvidence": pins, "successorRuntime": None}
+            "priorEvidence": pins, "successorRuntime": None,
+            "operatorSourceFiles": probe.source_closure(source, expected_profile=expected)}
         jobs = {"frontend": {"job": fixture.job, "schema": fixture.raw_baseline}}
 
-        def join(configuration, supplied=evidence):
+        def join(configuration, supplied=evidence, selection=reviewed):
             return require_replacement_identity_provenance(fixture.bundle, configuration, fixture.results, source,
-                fixture.candidate, jobs, reviewed, supplied)
+                fixture.candidate, jobs, selection, supplied)
+
+        actual_custody = replacement.require_write_custody
+        catalog = json.loads((source / MANAGED_REPLACEMENT_CATALOG).read_bytes())
+
+        def verify_custody(carrier, plan, *args, source):
+            # Exercise the managed baseline reader at the same carrier boundary
+            # as the real custody check, then replay the original stock fixture.
+            bindings = {key: catalog[key] for key in
+                        ("provider", "target", "databaseOid", "migrationRoleOid", "administrativeLogins")}
+            reference = {"id": catalog["id"], "sha256": reviewed["operatorSourceFiles"][MANAGED_REPLACEMENT_CATALOG]}
+            managed = {**plan, "replacement": {**plan["replacement"], **bindings, "managedCatalog": reference}}
+            self.assertEqual(replacement.managed_catalog(carrier, managed, source), catalog)
+            return actual_custody(carrier, plan, *args, source=source)
 
         # The preexisting terminal fixture uses a minimal candidate DTO.
         with patch.object(prior, "ROOT", fixture.root), patch.object(migrate, "candidate_profile", return_value=expected), \
-             patch.object(current.subprocess, "run", side_effect=AssertionError("external I/O")):
+             patch.object(current.subprocess, "run", side_effect=AssertionError("external I/O")), \
+             patch.object(replacement, "require_write_custody", side_effect=verify_custody):
             self.assertEqual(join(fixture.snapshot), fixture.snapshot)
+            altered_source = {**reviewed["operatorSourceFiles"], MANAGED_REPLACEMENT_CATALOG: "1" * 64}
+            with self.assertRaisesRegex(ValueError, "MANAGED_REPLACEMENT_CATALOG_SOURCE_REQUIRED"):
+                join(fixture.snapshot, selection={**reviewed, "operatorSourceFiles": altered_source})
             alternate = copytree(fixture.snapshot, fixture.root / "stale-configuration")
             with self.assertRaisesRegex(ValueError, "PROVENANCE_REFUSED"):
                 join(alternate)

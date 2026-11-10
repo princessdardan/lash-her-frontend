@@ -516,9 +516,9 @@ def _profiled_ready_receipts(initial, plan, selected, expected):
             'P2_PROFILED_CERTIFICATION_PROMOTION_REQUIRED')
 
 
-def _profiled_original_terminal(initial, plan, selected, results, expected):
+def _profiled_original_terminal(initial, plan, selected, results, expected, *, source):
     if 'replacementRelease' in plan:
-        return _profiled_replacement_original_terminal(initial, plan, selected, results, expected)
+        return _profiled_replacement_original_terminal(initial, plan, selected, results, expected, source=source)
     local = _profiled_wire_receipt(initial['originalReleaseReceipt'], plan['originalReleaseReceiptSha256'], expected)
     original = results / ('p2-profiled-current-' + selected['releaseId'])
     terminal, terminal_sha = _profiled_host_receipt(original, 'p2-profiled-current-outcome.json', expected)
@@ -542,7 +542,7 @@ def _profiled_original_terminal(initial, plan, selected, results, expected):
     return terminal_sha, plan_hash_verified
 
 
-def _profiled_replacement_original_terminal(initial, plan, selected, results, expected):
+def _profiled_replacement_original_terminal(initial, plan, selected, results, expected, *, source):
     """Rejoin the installed guardian's original apply-forward bytes."""
     import p2_frontend_replacement_parent as replacement
     import p2_replacement_terminal as terminal
@@ -603,7 +603,8 @@ def _profiled_replacement_original_terminal(initial, plan, selected, results, ex
     replacement.verify_bundle(Path(initial['bundle']), original_plan, probe)
     _, arm_sha = replacement.require_arm(replacement_initial, original_plan, probe, directory)
     boundary = decode_qualification_target_json(replacement.private_record(directory, replacement.WRITE_BOUNDARY), 'carrier')
-    _, write_sha, held = replacement.require_write_custody(replacement_initial, original_plan, probe, directory, arm_sha, boundary)
+    _, write_sha, held = replacement.require_write_custody(replacement_initial, original_plan, probe, directory,
+                                                          arm_sha, boundary, source=source)
     database = replacement.private_record(directory, 'frontend-original-database-receipt.json')
     started = replacement.private_record(directory, 'frontend-continuation-started.json', 8192)
     postflight = replacement.private_record(directory, replacement.WRITTEN_OBSERVATION, 8192)
@@ -785,7 +786,8 @@ def prepare_profiled_current_certification_input(initial, source):
                 staging_state.configuration_hashes(original_mount) == initial['configurationSha256'],
                 'P2_PROFILED_CERTIFICATION_ORIGINAL_MOUNT_CHANGED')
         original_initial = {**initial, 'configuration': str(original_mount)}
-    terminal_sha, plan_hash_verified = _profiled_original_terminal(original_initial, plan, selected, results, expected)
+    terminal_sha, plan_hash_verified = _profiled_original_terminal(original_initial, plan, selected, results, expected,
+                                                                  source=source)
     if plan['mode'] == 'interactive-browser' and plan['scopedAction']['stage'] == 'lesson-restore':
         _require_profiled_restore_prior(plan, results, expected)
     return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
