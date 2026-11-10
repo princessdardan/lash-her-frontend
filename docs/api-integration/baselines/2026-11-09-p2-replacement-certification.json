@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "scope": "Source-owned bounded certification after a guarded frontend replacement",
+  "sourceCommit": "baca88a0c2d59312f0e706f90bae64c134b8c124",
+  "sourceTree": "b44ae07986d11229d46ec866382c23619c3561a8",
+  "operatorSourceFiles": 393,
+  "operatorSourceClosureSha256": "67a8fcf367e26a1dee875fc85ec22790a6433efde97c8ea49c3f62ad05f3c566",
+  "replacementCertification": {
+    "originalGuardianTerminalBytesJoined": true,
+    "originalApplyForwardJobPreserved": true,
+    "freshLockedJournalSchemaAndEffectiveLoginBoundary": true,
+    "unapprovedConnectedClientRefused": true,
+    "independentClosureAndEmergencyFence": true,
+    "lifecycleBrowserAndWorkerScopeBound": true,
+    "frontendSqlReplayed": false,
+    "knownAckReplacementQualified": false
+  },
+  "exactSourceChecks": {
+    "nodeTestsPassed": 57,
+    "nodeTestsOptInSkipped": 2,
+    "linuxHostTestsPassed": 148,
+    "linuxHostDockerAndProviderEffectsSimulated": true,
+    "postgres18Owned": {
+      "roles": 29,
+      "release": 18,
+      "native": 9,
+      "certification": 19,
+      "replacementCertification": 6
+    },
+    "linuxArm64ReplacementObserverChecksPassed": 6,
+    "migrationsVerified": 83
+  },
+  "localMigrationImage": {
+    "architecture": "linux/arm64",
+    "imageId": "sha256:9a8581624219e3e0f7dbbde2ddf7bad82cb00c03487f9360e0cd79ef870de543",
+    "user": "nonroot:nonroot",
+    "manifestEntries": 83,
+    "published": false
+  },
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-certification-baca88a0",
+  "privateArtifactSha256": {
+    "node.log": "ed0777087a95532d93c87200c5d756aa625c1f6491495ae60d187bd60e84bdff",
+    "linux-host.log": "227676b51449e0ce423bbc6c618ab85548619a0608a69bbbcf66d0fcfcac3f88",
+    "linux-pg18.json": "cfa92b0ab2a5aa5079ee79584264f17098ef569c129b01ffb387a9c32fcbe724",
+    "pg18-platform.json": "191fcdf327b76eb0b9d535bd5291a078f17c3a8b3dfdb8bef1125c492927c532",
+    "image-build.log": "b29fdfdd308fc6a78de487a63474b5a73e9fafdfffdac18dd0cff265785ecda2",
+    "distroless-manifest.json": "104091fd9949efbdc6449e8dab166509f70ba0141121fde9b9b5309c4d83a39a"
+  },
+  "earlierSourceChecks": {
+    "sourceCommit": "f076a77948592fb9f080a3b631f60df9efd469b4",
+    "postgres16ReplacementChecksPassed": 6,
+    "contractTestsPassed": 13,
+    "lintErrors": 0,
+    "preexistingLintWarnings": 6,
+    "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-certification-f076a779",
+    "privateArtifactSha256": {
+      "pg16-replacement.json": "df3d74a255466be05b8f9f8c1ad0fed7e2a739b51d4cfcdee36477ebaba81110",
+      "contracts.log": "b53fbc255c2121c6d0e91eae897ea9f07833a871545cd4b730876cd1d29a16dc",
+      "lint.log": "d4301494b5edcf71342cc439a7095cc015192313d15a19ab7bcaec11467b4b22",
+      "pg18-platform.json": "31f66eaeb6ef1c78063b48212fb5349b0442e74bef8e29be547f7247fbe7fce7"
+    }
+  },
+  "deployedEvidence": {
+    "actualReplacementTargetSelected": false,
+    "exactCandidateCiQualified": false,
+    "stagingApplyStarted": false,
+    "p212Accepted": false,
+    "g2Accepted": false
+  }
+}

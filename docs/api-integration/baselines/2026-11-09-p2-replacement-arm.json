@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "scope": "Owned read-only supervised replacement target qualification",
+  "sourceCommit": "cf7d67bf334438b387ea5644d6c5898dd67f5bbe",
+  "nodeTlsPostgres": {
+    "16": {
+      "passed": 6,
+      "skipped": 0
+    },
+    "18": {
+      "passed": 6,
+      "skipped": 0
+    },
+    "matchingObservationAccepted": true,
+    "foreignObservationRefused": true,
+    "guardLossRefused": true,
+    "databaseEffectsObserved": false
+  },
+  "linuxHost": {
+    "testsPassed": 25,
+    "actualForkAndFlock": true,
+    "delayedGuardObservationSeconds": 3.4,
+    "observerTransportSimulatedInForkTests": true,
+    "lateBundleDriftRefused": true,
+    "terminalAfterCleanReap": true,
+    "log": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-arm-host/guard-linux.log",
+    "logSha256": "b51c010efdc22034320e3696fd2fda7ef311cc20797fd6d268f4c77671ac16b6"
+  },
+  "packagedObserver": {
+    "imageId": "sha256:ec01af45e110b26078f78497afdb9d7e735246e45ad7679f5f2723d148a94886",
+    "fixtureImageId": "sha256:22502cac6d0d297a6643cae8558fccdde8c68db092c80493bf712dcf18c30cb8",
+    "architecture": "linux/arm64",
+    "postgresMajor": 18,
+    "testsPassed": 2,
+    "skipped": 0,
+    "sourceMismatchRefused": true
+  },
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-arm-20261109",
+  "privateArtifactSha256": {
+    "node-final-pg16.log": "62312b0f08ee299a5b8a7b2d2daec5529276b6933a02405f31e7b1f513ed93ab",
+    "node-final-pg18.log": "1b4cff60d8735090ca445fa947da03ecd52d480792be45d7ea8faa5efead093e",
+    "arm-image-build.log": "3bb66d0fd2d634cafe9afcd1ba14e64e9176f1e05684448e26c0adbfa741da2a",
+    "arm-fixture-build.log": "9bfd09b6d976e9f6c4211b490b35319b69ba492987e58dd7748e696174eb85df",
+    "arm-image-ids": "0386e4eb17e25a91672266c2c9530f41cce6bcc3b174f331a21bfbfe55449f70",
+    "arm-image-pg18.log": "eca8144c32c0a5ac24008df69f803895e4ac36e5f78bbfb378ae5b5ee15415e6"
+  },
+  "actualReplacementTargetSelected": false,
+  "installedHostRunVerified": false,
+  "migrationAuthorized": false,
+  "deploymentAuthorized": false,
+  "trafficAuthorized": false
+}

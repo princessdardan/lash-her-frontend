@@ -1,0 +1,31 @@
+{
+  "observedOn": "2026-11-09",
+  "timezone": "America/Toronto",
+  "scope": {
+    "vercelTeamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "integration": "neon",
+    "operation": "read-only Marketplace metadata"
+  },
+  "configurationList": {
+    "connectorHttpStatus": 403,
+    "cliVersion": "65.1.0",
+    "cliRequest": "GET /v1/integrations/configurations?teamId=team_2Hrn5eMZyZxfAWdmYvyKi9t3&view=account&integrationIdOrSlug=neon",
+    "installationTypes": ["external", "marketplace"]
+  },
+  "marketplaceResources": {
+    "cliCommand": "vercel integration list --scope team_2Hrn5eMZyZxfAWdmYvyKi9t3 --all --integration neon --json --non-interactive",
+    "resourceCount": 5,
+    "phase2StagingResources": [
+      {"id": "store_hAxQm8pULTSX1CEH", "name": "lash-her-course-staging-db", "status": "available"},
+      {"id": "store_7ijIotasCFVQEKfl", "name": "lash-her-community-staging-db", "status": "available"},
+      {"id": "store_eo2hKOR243vTF0fw", "name": "lash-her-frontend-staging-db", "status": "available"}
+    ],
+    "frontendResourceInspection": "CLI did not resolve the resource by its listed store ID",
+    "replacementTarget": "unverified"
+  },
+  "missingEvidence": [
+    "Neon project, branch and direct endpoint identity for a distinct empty target",
+    "Reviewed PostgreSQL database identity, catalog and login boundary",
+    "Supervised read-only empty-target receipt"
+  ]
+}

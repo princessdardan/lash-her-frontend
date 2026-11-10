@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "scope": "Owned guarded S08 standalone lesson visibility save",
+  "frontendSource": "3e95bbf94bdba78c872f200c1c3253823bb9504e",
+  "guardedStage": {
+    "name": "lesson-visibility-save",
+    "operation": "hide-active-document",
+    "lessonReads": 6,
+    "completedFrontendWrites": 3,
+    "gatewayAcknowledgements": 9,
+    "acknowledgementGroups": [
+      [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        7,
+        8
+      ]
+    ],
+    "expectedProgressRevisions": [
+      6,
+      7,
+      8
+    ],
+    "heldCourseRevision": 9,
+    "sameProgressRow": true,
+    "maximumUnchanged": true,
+    "requiresSameDocument": true,
+    "requiresTrustedHiddenEvent": true,
+    "requiresNoPagehide": true,
+    "requiresPrivateProgressResponse": true,
+    "requiresHiddenAndFrozenAfterFence": true
+  },
+  "operatorSourceClosure": {
+    "files": 372,
+    "bytes": 40713111,
+    "sortedPathDigestListSha256": "bcde796f1f6e8246173e1d9028c6af99cceda7047ff526c1cf3f25054491db72"
+  },
+  "ownedBrowserMechanism": {
+    "playwright": "1.59.1",
+    "browser": "full Chromium",
+    "scope": "Pinned in-process primary session on the selected page clears focus emulation. Native tab activation hides the lesson and preserves its document. The recorder confirms that it remains hidden and frozen after the parent fences access."
+  },
+  "retainedFailedProductionRun": {
+    "frontendSource": "5c19771638cd2482a4bbb168dc30689c421de762",
+    "passed": 4,
+    "failed": 2,
+    "logSha256": "31ca2e8c72f2a2d9b9bfa87ea7ec265b8cfe9df928cfe8f77e27223125918404",
+    "outcomeSha256": "c3e670b7ebb7d8bd399e02c67f865e879c18239c229d42431b6b1811dcfd7fd9",
+    "frontendBuildSha256": "fffd02c670f3eeb9b612705aff8366d5f46c2a7d1ba63219d52a0e229b37f0f6",
+    "observations": [
+      "Mobile recorded an extra identical-position progress write after native hide.",
+      "Desktop did not persist the preceding full-document exit save. The Chromium request log did not establish whether it reached the local proxy or Next."
+    ]
+  },
+  "liveProvidersCertified": false,
+  "stagingCertified": false,
+  "currentSourcePostgres18CiQualified": false,
+  "ownedEvidenceDirectory": "test-results/p2-lesson-visibility-save/3e95bbf9",
+  "ownedPostgres16": {
+    "original": {
+      "receiptSha256": "0369bbe30c9cb76d49781022ecda7f473a4cde994c6fad57336b345e586f1725",
+      "checksPassed": 58,
+      "visibilityChecks": [
+        "course-lesson-visibility-save-pinned-hidden-document-to-revision-nine-with-unchanged-maximum",
+        "course-lesson-visibility-save-refuses-ineligible-receipts-and-persistence-drift"
+      ],
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS",
+      "sourceCommits": {
+        "frontend": "3e95bbf94bdba78c872f200c1c3253823bb9504e",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "08755bb215383b56894f915acfcffe0713197f1de6a46f3938e58835d1c59044",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "e77daeaff8d0f330d9298d3baaaec019d7950944e0410728b22b13e712d91aab"
+      },
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "skipped": 0
+    },
+    "corrected": {
+      "receiptSha256": "d136a6b56a8ba678de2245153ef5ff09eb94d1f4468fce42b5e654adc000ba44",
+      "checksPassed": 58,
+      "visibilityChecks": [
+        "course-lesson-visibility-save-pinned-hidden-document-to-revision-nine-with-unchanged-maximum",
+        "course-lesson-visibility-save-refuses-ineligible-receipts-and-persistence-drift"
+      ],
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS",
+      "sourceCommits": {
+        "frontend": "3e95bbf94bdba78c872f200c1c3253823bb9504e",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "08755bb215383b56894f915acfcffe0713197f1de6a46f3938e58835d1c59044",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "e77daeaff8d0f330d9298d3baaaec019d7950944e0410728b22b13e712d91aab"
+      },
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "skipped": 0,
+      "courseRevokeSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b"
+    }
+  },
+  "ownedProductionBrowser": {
+    "passed": 6,
+    "syntheticHls": true,
+    "courseSource": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "gatewayWorkloadVerification": "fixture",
+    "postgresMajor": 16,
+    "migrationsApplied": {
+      "frontend": 83,
+      "course": 22
+    },
+    "profiles": {
+      "chromium": {
+        "receiptSha256": "49be800a822f4dc5a676889285c02e4d7be90d47a730d5d1bbaa15c3f942bcde",
+        "sameDocument": true,
+        "progressRowPreserved": true,
+        "pagehideObserved": false,
+        "visibilityChange": {
+          "trusted": true,
+          "state": "hidden"
+        },
+        "gatewayIndexes": [
+          0,
+          1,
+          4,
+          2,
+          3,
+          6,
+          5,
+          7,
+          8
+        ],
+        "progress": {
+          "revision": 19,
+          "resumePositionSeconds": 10,
+          "maxPositionSeconds": 14
+        }
+      },
+      "mobile": {
+        "receiptSha256": "6891b73cba3f1b9ca8542f2ccc04db02fd8efa3bc6c904bf043b3a551e6e0a56",
+        "sameDocument": true,
+        "progressRowPreserved": true,
+        "pagehideObserved": false,
+        "visibilityChange": {
+          "trusted": true,
+          "state": "hidden"
+        },
+        "gatewayIndexes": [
+          1,
+          0,
+          4,
+          3,
+          2,
+          5,
+          6,
+          7,
+          8
+        ],
+        "progress": {
+          "revision": 19,
+          "resumePositionSeconds": 10,
+          "maxPositionSeconds": 14
+        }
+      }
+    },
+    "logSha256": "f1121ca4aff077a092cda283aa7a8f3323332c89d41962b2c9be8aa0675ad15b",
+    "artifactSha256": {
+      "evidence.json": "14e9beb03ed7f5a44b00dca491c20dc06f046c351d29d4f6dec9714c96b500c2",
+      "outcome.json": "9c339b427532f59c0a0845c919187cca13486343476fb496bf02b619018bf18f",
+      "persistence.json": "b899a0728f3fb3c763afde90e74e8c466420b7e85df65f1068f37771637fac19",
+      "frontend-build.log": "05eadf50314408748d43c5e59ab098a32955d04bdbc3af751ea40675d664807d"
+    }
+  },
+  "verification": {
+    "frontendUnit": {
+      "passed": 2628,
+      "skipped": 0,
+      "logSha256": "b772d479305429f88f413c43d98919b548240dd5d080defd340c4f3fb6cb657a"
+    },
+    "gateway": {
+      "passed": 119,
+      "skipped": 0,
+      "logSha256": "c70afb714c9dbeaeeb6c9dabf526f436eff6cb12f6eabb80089b103b0ea978eb"
+    },
+    "host": {
+      "passed": 127,
+      "skipped": 0,
+      "logSha256": "22b61c7e1b9d49276734e0942deba4cbad76638aa82ee37d85c658b993a614e8"
+    },
+    "static": {
+      "lintErrors": 0,
+      "lintWarnings": 23,
+      "typescript": "passed",
+      "contracts": "passed",
+      "logSha256": "84e1490c7fc4e63b2fcdc0c476e369a1f3ed532082ef840cbf1b73138ae3b7b9"
+    },
+    "firstRecorderRun": {
+      "passed": 63,
+      "failed": 1,
+      "skipped": 0,
+      "logSha256": "379ec31728907b009724759e858eebd0358460f0904b4c9c30e0215f7013307d",
+      "failure": "The unchanged two-tab authoring conflict fixture reported P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED. Standalone visibility passed."
+    },
+    "platform": {
+      "passed": 301,
+      "skipped": 0,
+      "logSha256": "0882c68de506808d7f5414a1db0de4c96580563b95dd955c3d823f2a509ec03d"
+    },
+    "recorderRerun": {
+      "passed": 64,
+      "skipped": 0,
+      "logSha256": "db264159cf09f4806fee3212e28c43867be5bfc3363cde6d9a72796adce1e14b"
+    }
+  }
+}

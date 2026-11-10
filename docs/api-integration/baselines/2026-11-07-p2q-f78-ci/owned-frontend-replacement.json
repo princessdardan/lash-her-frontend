@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "scope": "Read-only staging lineage preparation, owned replacement database bootstrap, and passive owned browser ingress evidence",
+  "ownedEvidenceDirectory": "test-results/p2-frontend-replacement/2026-11-07",
+  "lineageInspector": {
+    "source": "e5b312be",
+    "fixtureSource": "3d2fb58d010b3668ccff7ef7c1ce04b4de6cd9ed",
+    "postgresTests": {
+      "16": {
+        "passed": 2,
+        "skipped": 0,
+        "logSha256": "411c7e5b4775a0d6ac7c37b93286b37a838d55c88f52878aaa3f923c26226134"
+      },
+      "18": {
+        "passed": 2,
+        "skipped": 0,
+        "logSha256": "462570b6947df07ea923fa07788a93e65b55ae8686c19b336dbbc01baa7d4bba"
+      }
+    },
+    "stagingObservation": {
+      "status": "UNOBSERVED",
+      "directTargetMatchedTwoRetainedRecords": true,
+      "awsResolver": "No credential returned; existing named session expired at read-only STS check",
+      "privateHandoff": "Bounded attempt timed out without a lineage receipt",
+      "currentCountInferred": false
+    }
+  },
+  "replacementBoundary": {
+    "postgresTests": {
+      "16": {
+        "passed": 2,
+        "skipped": 0,
+        "logSha256": "5b27211d58805401a924bfdfedce160616d8a23d10e47e1f74bcd223b1bd757b"
+      },
+      "18": {
+        "passed": 2,
+        "skipped": 0,
+        "logSha256": "31b1d2a42174221c99787e68a66b460d1e5eec2c4a59060bcd1df2824aa59f2b"
+      }
+    },
+    "catalogScope": "postgresql-16-18-stock-replacement-v1",
+    "providerDisjointnessProven": false,
+    "completeDatabaseEmptyProven": false,
+    "authorityIssued": false
+  },
+  "passiveBrowserIngress": {
+    "frontendSource": "3d2fb58d010b3668ccff7ef7c1ce04b4de6cd9ed",
+    "courseSource": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "passed": 6,
+    "skipped": 0,
+    "profiles": {
+      "chromium": {
+        "matchedOrdinal": 17,
+        "requestBytes": 81,
+        "events": [
+          "accepted",
+          "client-request-end",
+          "upstream-finish",
+          "client-request-close",
+          "upstream-response",
+          "upstream-close",
+          "client-response-close"
+        ],
+        "upstreamStatus": 200
+      },
+      "mobile": {
+        "matchedOrdinal": 17,
+        "requestBytes": 81,
+        "events": [
+          "accepted",
+          "client-request-end",
+          "upstream-finish",
+          "client-request-close",
+          "upstream-response",
+          "upstream-close",
+          "client-response-close"
+        ],
+        "upstreamStatus": 200
+      }
+    },
+    "intermittentExitCauseKnown": false,
+    "syntheticHls": true,
+    "digests": {
+      "production-browser.log": "ff0ecae2cbbf105e64fff0e6ad05c29dfc394234f9d346bc3454e8f4062f348a",
+      "browser-progress-ingress.json": "79daad9254f966ba412881582757c6bacb094957b178869aaa7501cd0a0133b2",
+      "browser-evidence.json": "f150d7c258c2c214d3f0aeff225f8ab23781114c9361a99d0c471152ce5f7a88",
+      "browser-outcome.json": "9dc2fbc0550afe87e43ca5ae6424eb74f63246227994ef74a69e2326514fd71e"
+    }
+  },
+  "priorNativeMigrationFixtureFailures": {
+    "postgresMajors": [
+      16,
+      18
+    ],
+    "first": "Native loader could not resolve the extensionless interactive-proof import.",
+    "afterLoaderCorrection": "Reused synthetic address already had marketing consent rows before the first-enrollment check.",
+    "digests": {
+      "native-before-pg16.log": "921aa1015306cce3d6b6e09265fc55a8239a819402dd6857b65bb02577bcc83e",
+      "native-before-pg18.log": "2af084e917df9bf8b9a2a5c940048c801dd0fb845378f93b96e585ee292b7f7d",
+      "native-import-correction-pg16.log": "ebc97a78e57e013f75276efb7cbce930d5023c57ec7d29ab2b1fb2e92b3df6ec",
+      "native-import-correction-pg18.log": "afc0da1726c0ae99d944b060892b67e07a5ae54ecbf520c2b81a4e34a3734c28",
+      "native-missing-identity-evidence-pg16.log": "823b96b0fb25565418e0277d4810205c55d3c472083844276d265f3276060621",
+      "native-missing-identity-evidence-pg18.log": "b7de02d0af3211c12c53eb7922965a483affda57f75dcf33e314ee90f4357c41"
+    },
+    "afterDedicatedEmail": "The identity child executed 47 checks but retained 45 corresponding state digests."
+  },
+  "adjacentChecks": {
+    "source": "d1de3dcf4e5e5b14605b3595c9971820bef18764",
+    "platformPassed": 117,
+    "lintErrors": 0,
+    "lintWarnings": 23,
+    "typescript": "passed",
+    "contracts": "passed",
+    "platformLogSha256": "58278e0b386d5bcbddf33024353018d8dbeb463bd486cb0e0454ff79538a2745",
+    "staticLogSha256": "53b50c7cc5192e93faa0658252e7c70d219259897851182366ae9d40ecfa77da"
+  },
+  "liveMigrationAuthorized": false,
+  "candidatePublished": false,
+  "stagingCertified": false,
+  "replacementBootstrap": {
+    "source": "f47efa9bf87ba46a4c032c2df203588a6221be3c",
+    "realStagingHostContinuationPrepared": false,
+    "sameProcessClusterAuthority": true,
+    "reviewBlockerResolved": true,
+    "oldCliRefusalSha256": "96d3fde4843acd1092d4016314b7040338c2f9157275dfc16af664b974790861",
+    "postgres": {
+      "16": {
+        "status": "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_PASSED",
+        "sourceCommit": "f47efa9bf87ba46a4c032c2df203588a6221be3c",
+        "serverMajor": 16,
+        "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+        "appliedMigrationCount": 83,
+        "trafficAuthorized": false,
+        "checks": [
+          "explicit-confirmation",
+          "distinct-predecessor",
+          "forged-and-serialized-clusters-refused-before-effects",
+          "mismatched-cluster-refused",
+          "stopped-cluster-refused",
+          "ordinary-profiled-write-refused",
+          "environment-lock-contention",
+          "database-lock-contention",
+          "nonempty-target-refused",
+          "predecessor-role-refused",
+          "full-migration-lineage",
+          "exact-schema",
+          "closed-runtime-admission",
+          "predecessor-preserved",
+          "fresh-directory-replay-refused",
+          "late-schema-drift-retains-commits-and-refuses-replay"
+        ],
+        "receiptSha256": "1199444b43c3afd90f42a1ef64474ec7587d2805094a64543ef60063e1cd0950"
+      },
+      "18": {
+        "status": "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_PASSED",
+        "sourceCommit": "f47efa9bf87ba46a4c032c2df203588a6221be3c",
+        "serverMajor": 18,
+        "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+        "appliedMigrationCount": 83,
+        "trafficAuthorized": false,
+        "checks": [
+          "explicit-confirmation",
+          "distinct-predecessor",
+          "forged-and-serialized-clusters-refused-before-effects",
+          "mismatched-cluster-refused",
+          "stopped-cluster-refused",
+          "ordinary-profiled-write-refused",
+          "environment-lock-contention",
+          "database-lock-contention",
+          "nonempty-target-refused",
+          "predecessor-role-refused",
+          "full-migration-lineage",
+          "exact-schema",
+          "closed-runtime-admission",
+          "predecessor-preserved",
+          "fresh-directory-replay-refused",
+          "late-schema-drift-retains-commits-and-refuses-replay"
+        ],
+        "receiptSha256": "cb1080b010abd94ffac1fa3de5bb97e3a6eb2864f877c9d75a82301b12644a2a"
+      }
+    }
+  },
+  "operatorSourceClosure": {
+    "sourceCommit": "f47efa9bf87ba46a4c032c2df203588a6221be3c",
+    "files": 376,
+    "decodedBytes": 40830485,
+    "sortedPathDigestListSha256": "fb55aedf5b5037a94e648480c0341935a0902f126539ac91a8f7261b0e157336"
+  },
+  "adjacentChecksFinal": {
+    "source": "f47efa9bf87ba46a4c032c2df203588a6221be3c",
+    "platformPassed": 117,
+    "lintErrors": 0,
+    "lintWarnings": 23,
+    "typescript": "passed",
+    "contracts": "passed",
+    "platformLogSha256": "208c7f704afbcd8fb9adef5e75722d50d25eb78415b40fa2c5030a2932e7eca4",
+    "staticLogSha256": "53b50c7cc5192e93faa0658252e7c70d219259897851182366ae9d40ecfa77da"
+  },
+  "identityReceiptRegression": {
+    "source": "e80ff53c45f8c0887ca593b03fe76a9e4c7f4e45",
+    "testsPassed": 7,
+    "skipped": 0,
+    "logSha256": "bf296fc78722ad92157b06cc95711fdc1f634e992deda3d7386aa21dec87846b"
+  },
+  "nativeMigrationFixturesFinal": {
+    "16": {
+      "checkoutSource": "e80ff53c45f8c0887ca593b03fe76a9e4c7f4e45",
+      "ownedMigrationSnapshotCommit": "1400a5792f296e652033a242fcfc559656273a3e",
+      "postgresMajor": 16,
+      "migrations": 83,
+      "migrationChecks": 18,
+      "identityRouteChecks": 47,
+      "identityEvidenceDigests": 47,
+      "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+      "schemaBaselineSha256": "8c22dcc4c2cd108cea0fea4fe747b3fdb6c6bfe165f3bfee3b7b11ac18ea7f58",
+      "packagedCliVerified": false,
+      "receiptSha256": "1e13c2f41cb5ffee04b59d0245313cdfba5804ec1839cd1b62fa42fce316c8ed"
+    },
+    "18": {
+      "checkoutSource": "e80ff53c45f8c0887ca593b03fe76a9e4c7f4e45",
+      "ownedMigrationSnapshotCommit": "1400a5792f296e652033a242fcfc559656273a3e",
+      "postgresMajor": 18,
+      "migrations": 83,
+      "migrationChecks": 18,
+      "identityRouteChecks": 47,
+      "identityEvidenceDigests": 47,
+      "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+      "schemaBaselineSha256": "0157a7991480f737b231e870d5f88b12e675eb7ba4da2f55cdeaaf91759c64da",
+      "packagedCliVerified": false,
+      "receiptSha256": "a1edcd557ad52075b48410b3020bc6ce0b6cd11f4d489d6224cb65a66864a533"
+    }
+  }
+}

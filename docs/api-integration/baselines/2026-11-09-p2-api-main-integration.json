@@ -1,0 +1,34 @@
+{
+  "observedOn": "2026-11-09",
+  "timezone": "America/Toronto",
+  "scope": "owner-authorized source merges",
+  "course": {
+    "policyPullRequest": 10,
+    "policyReviewedHead": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+    "policyMerge": "05fc2d34fe27a85db69d78cdc256b97f962da87f",
+    "runtimePullRequest": 11,
+    "runtimeReviewedHead": "4880cfedd10dab3e7bcac9b17fcd737ee882e077",
+    "main": "09e3aaf234d9d9c1296c438d7c872e6bd67db074",
+    "mainCiRun": 42731143735
+  },
+  "community": {
+    "policyPullRequest": 9,
+    "policyReviewedHead": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+    "main": "5993d248a7c687e04792266b356aa9efb4928be3",
+    "mainCiRun": 42731072224,
+    "mainCompatibilityRun": 42731072560
+  },
+  "byteComparison": {
+    "courseOpenApi": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "communityOpenApi": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+    "enrollmentSchemaInBothRepositories": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+    "matchesRetainedFrontendBundle": true
+  },
+  "productionFrontend": {
+    "alias": "lashher.com",
+    "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+    "deploymentBefore": "dpl_7xEi2kAMjKEsfuRKpkW8QPrvpi7f",
+    "deploymentAfter": "dpl_7xEi2kAMjKEsfuRKpkW8QPrvpi7f",
+    "sameAliasBinding": true
+  }
+}

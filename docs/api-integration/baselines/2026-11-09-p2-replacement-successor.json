@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "scope": "Owned verification of the replacement successor runtime handoff",
+  "sourceCommit": "68512850a109b3a8d02865140d3c416747a70dd9",
+  "sourceTree": "05a64b6c961772c30df28367fdc3322aaddd4e63",
+  "operatorSourceFiles": 395,
+  "operatorSourceClosureSha256": "8c7a09301dc07d2ec4e55aa6725ec68083da665a077bce18b1a19b6b7f5ce7cd",
+  "handoff": {
+    "sameSessionAndInterruptedRecovery": true,
+    "retainsOriginalApplyForwardRelease": true,
+    "postReapGuardJoinsRawTerminalRuntimeAndPhysicalClosure": true,
+    "exactLiveGatewayLineageAndTenServiceReadback": true,
+    "rawReceiptRetrievedThroughFixedReadOnlyEntry": true,
+    "activeMountDerivedFromReviewedActionIds": true,
+    "originalAndSuccessorConfigurationsVerifiedSeparately": true,
+    "pairedActionsEnforceRecoveredEpochFloor": true,
+    "staleLiveMountRefusesBeforeArming": true,
+    "lateVerifierCannotArmAfterBrokerAbort": true
+  },
+  "exactSourceChecks": {
+    "linuxHostTestsPassed": 217,
+    "actualLinuxForkFlockAndPipeTests": true,
+    "hostRuntimeAndProviderReadbacksProjected": true,
+    "nodeTestsPassed": 49,
+    "nodeTestsOptInSkipped": 1,
+    "postgres16ReplacementChecksPassed": 8,
+    "postgres18Owned": {
+      "roles": 29,
+      "release": 18,
+      "native": 9,
+      "currentCertification": 19,
+      "replacementCertification": 8
+    },
+    "contractTestsPassed": 13,
+    "lintErrors": 0,
+    "preexistingLintWarnings": 6
+  },
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-successor-68512850",
+  "privateArtifactSha256": {
+    "linux-host.log": "44bf224c2d6d855177afd48692a29c4ead655bf0d8111ecbc817daaccab2b6b2",
+    "node.log": "cbfc99b2faf90265997d236f39d722caa7e693bb62c1e4eaed3d5f7df46ca81e",
+    "pg16-replacement.json": "b63057c2f902fcca969d4cea6325de58651cc02b4d6fab6919ae061362498c0c",
+    "pg18-platform.json": "daf4c069272cf2b0881099bf175fe81208e32037bbc98b73c7b0560f3e6c50f3",
+    "contracts.log": "53210e79f034cfde0ce758bfa6ee331b80386d602b6e49858d922423789949b5",
+    "lint.log": "2bc06ee184b8c47c8ae755e450dd779cfa9ece3eb464163b047142602c5fa423"
+  },
+  "deployedEvidence": {
+    "exactCandidateCiQualified": false,
+    "stagingActionStarted": false,
+    "successorHandoffObservedOnStaging": false,
+    "p212Accepted": false,
+    "g2Accepted": false
+  }
+}

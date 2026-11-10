@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "scope": "Owned replacement supervisor through API runtime readiness and independent containment",
+  "sourceCommit": "e15a50c3d3d0475d8d7764394132ecfdac57db53",
+  "sourceTree": "3eb235a3063b09c444a07b767bd9ec3111e861a4",
+  "linuxHost": {
+    "architecture": "linux/arm64",
+    "fixtureImageId": "sha256:22502cac6d0d297a6643cae8558fccdde8c68db092c80493bf712dcf18c30cb8",
+    "testsPassed": 127,
+    "testsSkipped": 0,
+    "actualForkFlockAndReaping": true,
+    "containerAndApiEffectsSimulated": true,
+    "daemonOperationCompletionVerified": false
+  },
+  "ownedGateway": {
+    "testsPassed": 34,
+    "actualHttpsLoopback": true,
+    "closedZeroReadbackVerified": true,
+    "predecessorModuleSha256": "f6f7d6ba1e5c53ff786ee194050b92acadafd160b2a8eca32c6f0f67858d30a7",
+    "precedingStopReceiptAccepted": true
+  },
+  "guardedReadbackBoundToOriginalReceipts": true,
+  "freshPhysicalLockAtMutationFrontier": true,
+  "frontendSqlReplayed": false,
+  "lateHelperInventoryReconciled": true,
+  "originalReceiptsPreserved": true,
+  "sourceOnlyRuntimeHandoff": true,
+  "installedOperatorTransportVerified": false,
+  "frontendPromotionVerified": false,
+  "stagingCertificationVerified": false,
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-replacement-supervisor",
+  "privateArtifactSha256": {
+    "linux-exact-e15a50c3.log": "0392ef233fbd243761967c342c8243b21ce3d6c7ec68bac6cc981ef262d72202",
+    "owned-gateway-final.log": "af1310caa52f32e9b1ed8ea31ff6339bf94a96469822201a115cc1be75a6732d",
+    "native-host.log": "d774b27c6e8efde71e05fccc13c48d76a5da8c875c60283ae23524978015ca91"
+  }
+}

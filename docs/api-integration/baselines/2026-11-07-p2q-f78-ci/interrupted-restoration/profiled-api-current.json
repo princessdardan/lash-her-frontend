@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "status": "P2_PROFILED_C_API_CURRENT_OWNED_PASS",
+  "postgresMajor": 18,
+  "frontendMigrations": 83,
+  "results": {
+    "course": {
+      "sourceCommit": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+      "archiveSha256": "1144c15b5c3ac7fd968289285ad32e5c580f7deb2687f5521f4e721fddde1b78",
+      "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa",
+      "migrations": 22,
+      "jobSha256": "f2c5ce2a66701d9447e554ee03f979fcd2d35ba36563d7cf52cd3469ea333d30",
+      "journalSha256": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+      "actualProfiledRolePolicy": true,
+      "actualRoleGucRefused": true,
+      "positiveAfterRepair": true
+    },
+    "community": {
+      "sourceCommit": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+      "archiveSha256": "723a384555c3266dd08a7294d926e23e1bd99617a98d4430de53171f6aa8ebab",
+      "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe",
+      "migrations": 11,
+      "jobSha256": "d4ab8574119d7c5a10ee8dae84f65a1c9879f5cd103636c1fd55a8687ac0f719",
+      "journalSha256": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a",
+      "actualProfiledRolePolicy": true,
+      "actualRoleGucRefused": true,
+      "positiveAfterRepair": true
+    }
+  },
+  "allThreeJournalsUnchanged": true,
+  "actualPostgresTls": true,
+  "actualDocker": false,
+  "providerTouched": false,
+  "fixtureOnly": true
+}

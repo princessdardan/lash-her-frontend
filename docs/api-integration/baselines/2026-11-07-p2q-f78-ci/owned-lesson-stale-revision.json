@@ -1,0 +1,325 @@
+{
+  "version": 1,
+  "scope": "Owned guarded S08 two-device lesson progress conflict and explicit reload",
+  "runtimeFrontendSource": "d2e8b1b0bd5b7d0569e4e232a01b0c11eb913fb9",
+  "testOnlyFollowupSource": "a8ffd4943f339f6048ecf1dbd60e7fa23673053a",
+  "testOnlyFollowupFiles": [
+    "ops/platform/prepare-p2-identity-probe-fixtures.test.mjs"
+  ],
+  "guardedStage": {
+    "name": "lesson-stale-revision",
+    "operation": "conflict-reload",
+    "selectedCustomerSessions": 2,
+    "initialRevision": 6,
+    "gatewayAcknowledgements": 27,
+    "gatewayConflictIndex": 11,
+    "gatewayConflictStatus": 409,
+    "gatewayAcknowledgementGroups": [
+      [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        7
+      ],
+      [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        9
+      ],
+      [
+        10,
+        11,
+        2
+      ],
+      [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        12
+      ],
+      [
+        13
+      ]
+    ],
+    "completedFrontendOperations": 8,
+    "submittedExpectedRevisions": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      8,
+      11,
+      12
+    ],
+    "authoritativeWinningRevision": 11,
+    "heldCourseRevision": 13,
+    "sameProgressRow": true,
+    "maximumUnchanged": true,
+    "explicitReload": true,
+    "preReloadReplay": false,
+    "requiresBothDocumentsHeldThroughFencing": true
+  },
+  "operatorSourceClosure": {
+    "files": 372,
+    "bytes": 40770107,
+    "sortedPathDigestListSha256": "bb79f37097714872df02f9cc17ad116da825a23c6897e5d4518aa3bc2434a675",
+    "browserProgramBytes": 271010,
+    "browserProgramSha256": "3f2be70cf797c04b4e2454b4ea5c6ee62ebd8bb231300ced9d3a1c5671ac198e",
+    "programTransport": "Committed bytes over process stdin, separate private permit pipe and challenge-bound IPC"
+  },
+  "ownedEvidenceDirectory": "test-results/p2-lesson-stale-revision/d2e8b1b0",
+  "ownedPostgres16Persistence": {
+    "original": {
+      "receiptSha256": "cfad32f1d7d0aae31c3833ae75f47136e456602eee0411e4964c58a537efce34",
+      "checksPassed": 60,
+      "staleRevisionChecks": [
+        "course-lesson-stale-revision-pinned-two-device-conflict-and-reload-to-revision-thirteen",
+        "course-lesson-stale-revision-refuses-ineligible-receipts-and-persistence-drift"
+      ],
+      "sourceCommits": {
+        "frontend": "d2e8b1b0bd5b7d0569e4e232a01b0c11eb913fb9",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "402e174fe6c96bf050aecfd23a337ffc1adaca6aaa154848e23915b0402ec167",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "99c497a75642c8c11f5f27e4fdc23f83879372dc5773b6753d0ea853ce43f42f"
+      },
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "skipped": 0
+    },
+    "corrected": {
+      "receiptSha256": "d1cfe2d031bfc57e68023d8ad269530ee5f0e7005c23f34613a85ee889a84ac5",
+      "checksPassed": 60,
+      "staleRevisionChecks": [
+        "course-lesson-stale-revision-pinned-two-device-conflict-and-reload-to-revision-thirteen",
+        "course-lesson-stale-revision-refuses-ineligible-receipts-and-persistence-drift"
+      ],
+      "sourceCommits": {
+        "frontend": "d2e8b1b0bd5b7d0569e4e232a01b0c11eb913fb9",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "402e174fe6c96bf050aecfd23a337ffc1adaca6aaa154848e23915b0402ec167",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "99c497a75642c8c11f5f27e4fdc23f83879372dc5773b6753d0ea853ce43f42f"
+      },
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "skipped": 0,
+      "courseRevokeSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b"
+    }
+  },
+  "ownedIdentity": {
+    "postgres16": {
+      "receiptSha256": "69fd66352f6ea1507e09da41bc3e844e204654fc19f564a61f057cae0684b542",
+      "checksPassed": 17,
+      "pairCheck": "interactive-identity-two-distinct-fresh-browser-sessions-selected-customer",
+      "frontendMigrations": 83,
+      "sourceSha256": "f81ca4d495af2c2a4ed351e0ea682d6549edd49e7f14c1d1d78cd71c4581363d",
+      "skipped": 0
+    },
+    "postgres18": {
+      "receiptSha256": "7184004ca9b2bdd6630f9c9cf05eccacfdbfa69e3db668a8c71aadf68c7df8c2",
+      "checksPassed": 17,
+      "pairCheck": "interactive-identity-two-distinct-fresh-browser-sessions-selected-customer",
+      "frontendMigrations": 83,
+      "sourceSha256": "f81ca4d495af2c2a4ed351e0ea682d6549edd49e7f14c1d1d78cd71c4581363d",
+      "skipped": 0
+    }
+  },
+  "ownedProductionBrowserFirstRun": {
+    "courseSource": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "syntheticHls": true,
+    "passed": 5,
+    "failed": 1,
+    "failure": "Mobile completed stale recovery and later missed the separate full-document exit save. The row remained at revision 15. Chromium reported an aborted request with no send, wait or receive timing. TLS ingress is unproven.",
+    "logSha256": "db251a229515806deefd5f1ece9389510b9bbfcb845ee91de801465e3b7b43ca",
+    "artifactSha256": {
+      "outcome.json": "79ca2cc912e2330b807244375c30e35f21388cf50a717a2bb6566f758736a24a",
+      "frontend-build.log": "3e5d515e599c765aec1ca6e859b1676719da7b4a1f548c2fc0f5f1d43348f718"
+    },
+    "staleProfiles": {
+      "chromium": {
+        "receiptSha256": "acfecc6eea55fb8036644f109b1fe1caa62f1ff39ecb107aab7ffe62ff4309d1",
+        "sameRowPreserved": true,
+        "distinctDatabaseSessions": true,
+        "conflictStatus": 409,
+        "staleBody": {
+          "resumePositionSeconds": 0,
+          "maxPositionSeconds": 14,
+          "expectedProgressRevision": 4
+        },
+        "winner": {
+          "revision": 7,
+          "resumePositionSeconds": 14,
+          "maxPositionSeconds": 14
+        },
+        "replayed": false,
+        "reloadPaused": true,
+        "reloadProgress": [
+          {
+            "revision": 8,
+            "resumePositionSeconds": 14,
+            "maxPositionSeconds": 14
+          },
+          {
+            "revision": 9,
+            "resumePositionSeconds": 14,
+            "maxPositionSeconds": 14
+          }
+        ]
+      },
+      "mobile": {
+        "receiptSha256": "9126320452dda908268fd1b7f6746f510b99b1e24bec21c32fcc34fc7f726807",
+        "sameRowPreserved": true,
+        "distinctDatabaseSessions": true,
+        "conflictStatus": 409,
+        "staleBody": {
+          "resumePositionSeconds": 0,
+          "maxPositionSeconds": 14,
+          "expectedProgressRevision": 4
+        },
+        "winner": {
+          "revision": 7,
+          "resumePositionSeconds": 14,
+          "maxPositionSeconds": 14
+        },
+        "replayed": false,
+        "reloadPaused": true,
+        "reloadProgress": [
+          {
+            "revision": 8,
+            "resumePositionSeconds": 14,
+            "maxPositionSeconds": 14
+          },
+          {
+            "revision": 9,
+            "resumePositionSeconds": 14,
+            "maxPositionSeconds": 14
+          }
+        ]
+      }
+    }
+  },
+  "verification": {
+    "gateway": {
+      "passed": 125,
+      "skipped": 0,
+      "logSha256": "c1971b013733347b7c87f5995bf322657ddfeaf61d0091a0825f7edfbccda774"
+    },
+    "host": {
+      "passed": 129,
+      "skipped": 0,
+      "logSha256": "ee0a2200edaf28189099294ba796d4cf244a08e89c00d6b2e7073d5742ef3f63"
+    },
+    "unit": {
+      "passed": 2630,
+      "skipped": 0,
+      "logSha256": "000054f38d458b3ef6d00ae23ff87bdb69faea9a2d7bf18f9a2b7c8287bfa626"
+    },
+    "ownedRecorder": {
+      "passed": 7,
+      "skipped": 0,
+      "logSha256": "803a9a590e30f075d75c3e10d79558cbfc4e3808cfec6290ed301121cd8321f2"
+    },
+    "ownedSuspension": {
+      "passed": 54,
+      "skipped": 0,
+      "logSha256": "27185db5d4a8905758e6f3f456dd7b07d0bd580e43d213018304bed09214f81e"
+    },
+    "receiptFixtureRerun": {
+      "passed": 40,
+      "skipped": 0,
+      "logSha256": "46a3ad50f1d0684505e83ccd13b70e2d7c9dfbf9f6a6dbce4b9a8401370f0ada"
+    },
+    "platformFinal": {
+      "passed": 312,
+      "skipped": 0,
+      "logSha256": "664e2bbbda2ad8a9ae2e70fbb85302d139eb4656e07f5b1ab5a13edb76c9dec8",
+      "frontendSource": "a8ffd4943f339f6048ecf1dbd60e7fa23673053a"
+    },
+    "static": {
+      "lintErrors": 0,
+      "lintWarnings": 23,
+      "typescript": "passed",
+      "contracts": "passed",
+      "logSha256": "53b50c7cc5192e93faa0658252e7c70d219259897851182366ae9d40ecfa77da"
+    },
+    "firstPlatformRun": {
+      "passed": 311,
+      "failed": 1,
+      "logSha256": "0eb180f7df17438a7788b2e1e8088a265d3f7e0339f98a7bab6a3d8fc8a8145e",
+      "failure": "Source-manifest fixture expected 58 checks after the source added two. The test-only followup expects 60."
+    }
+  },
+  "liveProvidersCertified": false,
+  "stagingCertified": false,
+  "currentSourcePostgres18CiQualified": false,
+  "ownedProductionBrowserRerun": {
+    "frontendSource": "a8ffd4943f339f6048ecf1dbd60e7fa23673053a",
+    "courseSource": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "postgresMajor": 16,
+    "migrationsApplied": {
+      "frontend": 83,
+      "course": 22
+    },
+    "gatewayWorkloadVerification": "fixture",
+    "passed": 6,
+    "syntheticHls": true,
+    "logSha256": "212d9ec4a56d5f032d14c2353a7622e1bafb221d4f14762cfb6dd8331ebe7eae",
+    "artifactSha256": {
+      "evidence.json": "9bb94a32543d00aeccce49d9a5920bc3bd9191887e47c430e26200b57d1e8646",
+      "outcome.json": "645db7ff590b0d0154941ea2da34787600898d5977ed96b81af31c15d18db465",
+      "persistence.json": "b899a0728f3fb3c763afde90e74e8c466420b7e85df65f1068f37771637fac19",
+      "frontend-build.log": "95656955476e81627a3c237c02d984cb94ee0679b6bef0d760a52913e0d3370b"
+    },
+    "profiles": {
+      "chromium": {
+        "conflictStatus": 409,
+        "replayed": false,
+        "progressRecoveryReceiptSha256": "65326691d5e356fd7bd61cb769e74e33d111f1d4dc78d98652e2ee0e34a5d998",
+        "exitSaveReceiptSha256": "fa8996fce67498f6327219a9e6dccccab9539e9002dfb27e76bed10ae554a0eb"
+      },
+      "mobile": {
+        "conflictStatus": 409,
+        "replayed": false,
+        "progressRecoveryReceiptSha256": "d0648c89d98a3f84b920cf27f5a220316689bcd4b42f573c34273882587b86ba",
+        "exitSaveReceiptSha256": "ce01b301d4a0f2fb2a78b1b9d12c38fcd053add8ddc1ee332d5fee7e9febfbef"
+      }
+    }
+  }
+}
