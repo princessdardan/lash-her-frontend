@@ -4029,6 +4029,290 @@ function exactResponse(response, page, origin, path, method) {
   return request.frame() === page.mainFrame() && url.origin === origin && url.pathname === path && url.search === ""
     && request.method() === method && request.redirectedFrom() === null && request.redirectedTo() === null;
 }
+
+const stalledRenewalStatus = "P2_STALLED_PLAYBACK_RENEWAL_BROWSER_OBSERVED";
+const stalledRenewalRefusal = () => new Error("P2_STALLED_PLAYBACK_RENEWAL_BROWSER_REFUSED");
+const stalledRenewalTiming = (lifetimeMs, owned) => ({
+  lifetime: Math.min(600_000, lifetimeMs - 1_000),
+  tolerance: owned ? 600 : 2_000,
+});
+
+function stalledRenewalSelection(target) {
+  demand(closed(target, ["actorId", "courseId", "lessonId", "playbackIdSha256"])
+    && [target.actorId, target.courseId, target.lessonId].every(uuid)
+    && sha(target.playbackIdSha256) && !/^0+$/u.test(target.playbackIdSha256));
+  return { lessonPath: `/academy/courses/${target.courseId}/lessons/${target.lessonId}`,
+    playbackPath: `/api/academy/lessons/${target.lessonId}/playback` };
+}
+
+function stalledRenewalPlayback(playback, target, owned) {
+  demand(closed(playback, ["requestId", "playbackIdSha256", "serverDate", "expiresAt", "thumbnailExpiresAt", "lifetimeMs"])
+    && uuid(playback.requestId) && playback.playbackIdSha256 === target.playbackIdSha256
+    && assessmentInstant(playback.expiresAt) && assessmentInstant(playback.thumbnailExpiresAt)
+    && Number.isFinite(Date.parse(playback.serverDate)) && new Date(Date.parse(playback.serverDate)).toUTCString() === playback.serverDate);
+  const date = Date.parse(playback.serverDate), expiry = Date.parse(playback.expiresAt), thumbnail = Date.parse(playback.thumbnailExpiresAt);
+  demand(playback.lifetimeMs === Math.min(expiry, thumbnail) - date
+    && integerBetween(playback.lifetimeMs, owned ? 5_000 : 590_000, owned ? 5_000 : 601_000)
+    && Math.max(expiry, thumbnail) - date <= (owned ? 5_000 : 601_000));
+}
+
+function validateStalledRenewalReceipt(receipt, target, owned) {
+  const { lessonPath, playbackPath } = stalledRenewalSelection(target);
+  const { page, actorId, playback, media, observation } = receipt ?? {};
+  demand(closed(receipt, ["version", "status", "evidenceClass", "actorId", "page", "playback", "media", "observation"])
+    && receipt.version === 1 && receipt.status === stalledRenewalStatus
+    && receipt.evidenceClass === (owned ? "owned-https-fixture" : "source-browser-observation") && actorId === target.actorId
+    && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
+    && closed(media, ["manifestObserved", "segmentObserved", "nativeVideoObserved"])
+    && media.manifestObserved === true && media.segmentObserved === true && media.nativeVideoObserved === true);
+  stalledRenewalPlayback(playback, target, owned);
+  const steps = ["initialRequest", "baseline", "fenceConfirmed", "renewalStarted", "playerLastPresent", "playerRemoved", "retryVisible"];
+  demand(closed(observation, [...steps, "expectedExpiryElapsedMs", "renewal", "permitCookieAbsent"])
+    && observation.permitCookieAbsent === true
+    && closed(observation.renewal, ["pathname", "method", "count", "forwarded", "responseObserved"])
+    && observation.renewal.pathname === playbackPath && observation.renewal.method === "GET" && observation.renewal.count === 1
+    && observation.renewal.forwarded === false && observation.renewal.responseObserved === false);
+  const { initialRequest, baseline, fenceConfirmed, renewalStarted, playerLastPresent, playerRemoved, retryVisible } = observation;
+  for (const [index, name] of steps.entries()) {
+    const mark = observation[name], previous = index && observation[steps[index - 1]];
+    demand(closed(mark, ["observedAt", "elapsedMs"]) && assessmentInstant(mark.observedAt)
+      && integerBetween(mark.elapsedMs, 0, 670_000)
+      && (!previous || mark.elapsedMs >= previous.elapsedMs && Date.parse(mark.observedAt) >= Date.parse(previous.observedAt))
+      && Math.abs(Date.parse(mark.observedAt) - Date.parse(initialRequest.observedAt) - (mark.elapsedMs - initialRequest.elapsedMs)) <= 1_000);
+  }
+  const { lifetime, tolerance } = stalledRenewalTiming(playback.lifetimeMs, owned);
+  const expected = initialRequest.elapsedMs + lifetime;
+  const earliestRenewal = initialRequest.elapsedMs + Math.max(1_000, lifetime - 30_000);
+  demand(observation.expectedExpiryElapsedMs === expected && fenceConfirmed.elapsedMs < renewalStarted.elapsedMs
+    && Date.parse(playback.serverDate) >= Date.parse(initialRequest.observedAt) - (owned ? 1_000 : 2_000)
+    && Date.parse(playback.serverDate) <= Date.parse(baseline.observedAt) + 1_000
+    && integerBetween(renewalStarted.elapsedMs, earliestRenewal - tolerance, earliestRenewal + tolerance)
+    && integerBetween(playerLastPresent.elapsedMs, expected - tolerance, expected + tolerance)
+    && integerBetween(playerRemoved.elapsedMs, expected - tolerance, expected + tolerance)
+    && Date.parse(playerRemoved.observedAt) <= Math.min(Date.parse(playback.expiresAt), Date.parse(playback.thumbnailExpiresAt)) + 250
+    && retryVisible.elapsedMs <= expected + tolerance);
+  return receipt;
+}
+
+export function validateP2StalledPlaybackRenewalReceipt(receipt, target) {
+  return validateStalledRenewalReceipt(receipt, target, false);
+}
+
+// This observer owns the selected page through cleanup. It records a caller's
+// fence notification and checks the cookie. Only the host can verify the fence.
+export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } = {}) {
+  const context = page.context(), owned = matches(origin, /^https:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u);
+  demand(origin === interactiveOrigin || owned);
+  const { lessonPath, playbackPath } = stalledRenewalSelection(target);
+  target = Object.freeze({ ...target });
+  const source = origin + lessonPath, started = performance.now(), mark = () => ({
+    observedAt: new Date().toISOString(), elapsedMs: Math.round(performance.now() - started),
+  });
+  const selectedUrl = url => url.origin === origin && url.pathname === playbackPath;
+  const player = page.getByRole("main").locator("mux-player");
+  const retry = page.getByRole("region", { name: "Lesson video", exact: true }).getByRole("button", { name: "Retry video", exact: true });
+  let phase = "new", initialRequest, baseline, fenceConfirmed, held, playback, session, executionContextId;
+  let initial, documentRequest, renewalStarted, rejectFailure, failed = false, installed = false, cleanup;
+  const failure = new Promise((_, reject) => { rejectFailure = reject; });
+  failure.catch(() => {});
+  const fail = () => { if (!failed) { failed = true; rejectFailure(stalledRenewalRefusal()); } };
+  const media = watchResumeMedia(context, page, fail);
+  const ready = () => demand(!failed && !signal?.aborted && !context.serviceWorkers().length && !page.isClosed());
+  const sample = async function ({ source, playbackIdSha256 }) {
+    if (location.href !== source || document.visibilityState !== "visible") return { invalid: true };
+    const nodes = document.querySelectorAll("main mux-player");
+    if (nodes.length === 0) return { mounted: false };
+    if (nodes.length !== 1) return { invalid: true };
+    const node = nodes[0];
+    if (globalThis.__p2StalledPlaybackNode && globalThis.__p2StalledPlaybackNode !== node) return { invalid: true };
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(node.getAttribute("playback-id") ?? ""));
+    if (Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("") !== playbackIdSha256) return { invalid: true };
+    globalThis.__p2StalledPlaybackNode = node;
+    return { mounted: node.isConnected };
+  };
+  const state = async function (fn) {
+    ready();
+    const { result, exceptionDetails } = await session.send("Runtime.callFunctionOn", { executionContextId,
+      functionDeclaration: fn.toString(), arguments: [{ value: { source, playbackIdSha256: target.playbackIdSha256 } }],
+      awaitPromise: true, returnByValue: true, silent: true });
+    demand(!exceptionDetails);
+    return result.value;
+  };
+  const onNavigation = frame => { if (frame === page.mainFrame() && (phase !== "baseline" || frame.url() !== source)) fail(); };
+  const onRequest = request => {
+    try {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        demand(phase === "baseline" && !documentRequest && request.url() === source && request.redirectedFrom() === null);
+        documentRequest = request;
+      }
+      if (phase === "fenced" && URL.parse(request.url())?.origin === origin) {
+        demand(["GET", "HEAD", "OPTIONS"].includes(request.method()));
+      }
+    } catch { fail(); }
+  };
+  const onResponse = response => { if (response.request() === held?.request()) fail(); };
+  const onRequestFailed = request => {
+    if (request === initial || request === documentRequest) fail();
+    if (request === held?.request() && phase === "fenced") {
+      const { lifetime, tolerance } = stalledRenewalTiming(playback.lifetimeMs, owned);
+      if (mark().elapsedMs < initialRequest.elapsedMs + lifetime - tolerance || request.failure()?.errorText !== "net::ERR_ABORTED") fail();
+    }
+  };
+  const routePlayback = async route => {
+    try {
+      ready();
+      const request = route.request();
+      demand(request.url() === origin + playbackPath && request.method() === "GET" && request.postDataBuffer() === null
+        && request.frame() === page.mainFrame() && request.frame().url() === source && request.resourceType() === "fetch"
+        && request.redirectedFrom() === null && request.redirectedTo() === null);
+      if (phase === "baseline" && !initial) {
+        initial = request;
+        initialRequest = mark();
+        await route.continue();
+        return;
+      }
+      demand(phase === "fenced" && !held);
+      held = route;
+      renewalStarted = mark();
+      // Leave the exact browser request pending. Cleanup never supplies bytes.
+    } catch {
+      fail();
+      await route.abort("aborted").catch(() => {});
+    }
+  };
+  const bounded = async (run, timeout) => {
+    demand(timeout > 0);
+    let timer;
+    try {
+      return await Promise.race([Promise.resolve().then(run), failure,
+        new Promise((_, reject) => { timer = setTimeout(() => reject(stalledRenewalRefusal()), timeout); })]);
+    } finally { clearTimeout(timer); }
+  };
+  const close = () => cleanup ??= (async () => {
+    phase = "closed";
+    fail();
+    signal?.removeEventListener("abort", fail);
+    page.off("close", fail);
+    page.off("request", onRequest);
+    page.off("requestfailed", onRequestFailed);
+    page.off("response", onResponse);
+    page.off("framenavigated", onNavigation);
+    media.close();
+    await held?.abort("aborted").catch(() => {});
+    // A playback request can be between the browser's request event and the
+    // route callback. Close its page before removing the route so it cannot
+    // escape the hold on abort or timeout.
+    await page.close({ runBeforeUnload: false }).catch(() => {});
+    if (installed) await page.unroute(selectedUrl, routePlayback).catch(() => {});
+    await session?.detach().catch(() => {});
+  })();
+  signal?.addEventListener("abort", fail, { once: true });
+  return {
+    async baseline(expires) {
+      try {
+        ready();
+        const remaining = () => expires * 1_000 - Date.now();
+        demand(phase === "new" && Number.isSafeInteger(expires) && remaining() > 0 && remaining() <= 300_000);
+        phase = "baseline";
+        if (!owned) {
+          const cookies = await context.cookies(origin);
+          for (const name of [customerSessionName, permitName]) {
+            const matching = cookies.filter(cookie => cookie.name === name);
+            demand(matching.length === 1 && matching[0].domain === new URL(origin).hostname && matching[0].path === "/"
+              && matching[0].secure && matching[0].httpOnly);
+          }
+        }
+        ready();
+        page.on("close", fail);
+        page.on("request", onRequest);
+        page.on("requestfailed", onRequestFailed);
+        page.on("response", onResponse);
+        page.on("framenavigated", onNavigation);
+        await page.route(selectedUrl, routePlayback);
+        installed = true;
+        return await bounded(async () => {
+          const [response, document] = await Promise.all([
+            page.waitForResponse(candidate => candidate.request() === initial, { timeout: remaining() }),
+            page.goto(source, { waitUntil: "domcontentloaded", timeout: remaining() }),
+          ]);
+          demand(document?.request() === documentRequest && exactResponse(document, page, origin, lessonPath, "GET")
+            && document.status() === 200 && !document.fromServiceWorker() && page.url() === source
+            && /^text\/html(?:;.*)?$/iu.test(await document.headerValue("content-type")) && privateNoStore(document.headers()));
+          const [head, body, dates] = await Promise.all([
+            readBrowserResponseHead(response, initial, origin, playbackPath, "GET", 200),
+            readBrowserResponseJson(response, initial, maxLifecycleBody, true), response.headerValues("date"),
+          ]);
+          let mediaPermit;
+          try {
+            demand(dates.length === 1 && closed(body, ["expiresAt", "playbackId", "playbackToken", "thumbnailExpiresAt", "thumbnailToken"])
+              && matches(body.playbackId, /^[A-Za-z0-9_-]{1,255}$/u) && resumeDigest(body.playbackId) === target.playbackIdSha256
+              && [body.playbackToken, body.thumbnailToken].every(token => matches(token, /^[\w-]+\.[\w-]+\.[\w-]+$/u)));
+            const { expiresAt, thumbnailExpiresAt } = body, serverDate = dates[0];
+            playback = { requestId: head.requestId, playbackIdSha256: target.playbackIdSha256, serverDate, expiresAt, thumbnailExpiresAt,
+              lifetimeMs: Math.min(Date.parse(expiresAt), Date.parse(thumbnailExpiresAt)) - Date.parse(serverDate) };
+            stalledRenewalPlayback(playback, target, owned);
+            mediaPermit = { playbackIdSha256: target.playbackIdSha256, tokenSha256: resumeDigest(body.playbackToken) };
+          } finally { body.playbackId = body.playbackToken = body.thumbnailToken = ""; }
+          await player.waitFor({ state: "visible", timeout: remaining() });
+          session = await context.newCDPSession(page);
+          executionContextId = await isolatedMainFrame(session, source);
+          await until(async () => {
+            const native = await state(sampleNativeResumeMedia);
+            return native?.paused && native.ready >= 2 && native.width > 0 && native.duration > 0 && media.verified(mediaPermit);
+          }, performance.now() + remaining());
+          demand((await state(sample))?.mounted === true);
+          media.close();
+          baseline = mark();
+          phase = "awaiting-fence";
+          return Object.freeze({ page: Object.freeze({ pathname: lessonPath, status: 200 }), playback: Object.freeze(playback) });
+        }, remaining());
+      } catch { await close(); throw stalledRenewalRefusal(); }
+    },
+    async confirmFenced() {
+      try {
+        ready();
+        demand(phase === "awaiting-fence" && (await state(sample))?.mounted === true
+          && !(await context.cookies(origin)).some(cookie => cookie.name === permitName));
+        fenceConfirmed = mark();
+        phase = "fenced";
+        const { lifetime, tolerance } = stalledRenewalTiming(playback.lifetimeMs, owned);
+        const expectedExpiryElapsedMs = initialRequest.elapsedMs + lifetime;
+        return await bounded(async () => {
+          let playerLastPresent, playerRemoved;
+          while (!playerRemoved) {
+            const value = await state(sample), observed = mark();
+            demand(value && !value.invalid);
+            if (value.mounted) {
+              if (renewalStarted) playerLastPresent = observed;
+            } else {
+              demand(held && playerLastPresent && observed.elapsedMs >= expectedExpiryElapsedMs - tolerance);
+              playerRemoved = observed;
+              break;
+            }
+            await pause(100);
+          }
+          await retry.waitFor({ state: "visible", timeout: Math.max(1, expectedExpiryElapsedMs + tolerance - mark().elapsedMs) });
+          const retryVisible = mark();
+          await pause(250);
+          demand((await state(sample))?.mounted === false && await retry.isVisible()
+            && !(await context.cookies(origin)).some(cookie => cookie.name === permitName));
+          const receipt = validateStalledRenewalReceipt({ version: 1, status: stalledRenewalStatus,
+            evidenceClass: owned ? "owned-https-fixture" : "source-browser-observation", actorId: target.actorId,
+            page: { pathname: lessonPath, status: 200 }, playback,
+            media: { manifestObserved: true, segmentObserved: true, nativeVideoObserved: true },
+            observation: { initialRequest, baseline, fenceConfirmed, renewalStarted, playerLastPresent, playerRemoved, retryVisible,
+              expectedExpiryElapsedMs, permitCookieAbsent: true,
+              renewal: { pathname: playbackPath, method: "GET", count: 1, forwarded: false, responseObserved: false } },
+          }, target, owned);
+          phase = "complete";
+          return receipt;
+        }, expectedExpiryElapsedMs + tolerance + 250 - mark().elapsedMs);
+      } catch { await close(); throw stalledRenewalRefusal(); }
+    },
+    close,
+  };
+}
+
 async function until(check, deadline) {
   while (performance.now() < deadline) { const value = await check(); if (value) return value; await pause(250); }
   throw new Error("P2_LIFECYCLE_BROWSER_TIMEOUT");
