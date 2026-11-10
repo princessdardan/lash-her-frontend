@@ -1,4 +1,4 @@
-import { createPhase2DayTwoWorkloadHandler, createReleaseProbeHandler, PHASE2_DAY_TWO_WORKLOAD_MODE,
+import { createPhase2DayTwoWorkloadHandler, createReleaseProbeHandler, PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE, PHASE2_DAY_TWO_WORKLOAD_MODE,
   readPhase2DayTwoWorkloadConfiguration, readReleaseProbeConfiguration } from "./handler";
 import { runGatewaySmoke } from "@/lib/api-integration/gateway-smoke";
 import { runPhase2GatewaySmoke } from "@/lib/api-integration/phase2-gateway-smoke";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
 const phase2 = (origin: string) => runPhase2GatewaySmoke(createGatewayTransport({ origin }));
-const dayTwoWorkload = createPhase2DayTwoWorkloadHandler({ configuration: () => readPhase2DayTwoWorkloadConfiguration(process.env), phase2 });
+const dayTwoWorkload = createPhase2DayTwoWorkloadHandler({ configuration: mode => readPhase2DayTwoWorkloadConfiguration(process.env, mode), phase2 });
 const releaseProbe = createReleaseProbeHandler({
   configuration: () => readReleaseProbeConfiguration(process.env),
   run: (origin) => runGatewaySmoke(createGatewayTransport({ origin })),
@@ -25,7 +25,8 @@ const releaseProbe = createReleaseProbeHandler({
 });
 
 export function GET(request: Request) {
-  return request.headers.get("x-lash-release-mode") === PHASE2_DAY_TWO_WORKLOAD_MODE ? dayTwoWorkload(request) : releaseProbe(request);
+  const mode = request.headers.get("x-lash-release-mode");
+  return mode === PHASE2_DAY_TWO_WORKLOAD_MODE || mode === PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE ? dayTwoWorkload(request) : releaseProbe(request);
 }
 
 // Framework-generated HEAD would otherwise execute the upstream GET probe.

@@ -9,6 +9,7 @@ import copy
 from contextlib import nullcontext
 import datetime
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -90,6 +91,7 @@ BROWSER_MODES = frozenset(('auth-preparation', 'browser-pending'))
 SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
 PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
 SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'interactive-browser'}
+DAY_TWO_WORKLOAD_MODES = SCOPED_MODES | SUSPENSION_MODES
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
 PAID_REVOKE_COURSE_SOURCE = '54fd289a5a8579bfbe343afb07482f406b56ad5b'
@@ -1430,10 +1432,11 @@ class P2CertificationBroker(Broker):
         # There is still no native/admission/fault mutation authority.
         self._accept_guard_arm(probe)
         if cert['mode']=='contain-native':native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
-        elif cert['mode'] in SCOPED_MODES:
+        elif self._uses_day_two_workload():
             workload = self._native_observe()
             require(workload['nativeEnabled'] is False, 'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
-            migrate.write_json(self.directory, 'p2-scoped-current-workload.json', workload)
+            name = 'p2-scoped-current-workload.json' if cert['mode'] in SCOPED_MODES else 'p2-day-two-current-workload.json'
+            migrate.write_json(self.directory, name, workload)
         else:
             self._store_private_probe()
             require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
@@ -1492,10 +1495,12 @@ class P2CertificationBroker(Broker):
             # A provider enable or feature/writer drift outside our declared
             # action must revoke the stage, including browser/authentication.
             with self.native_mutex:
-                expected=False if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending','direct-worker') else self.native_expected
-                require(self._native_observe()['nativeEnabled'] is expected,'P2_CERTIFICATION_NATIVE_STATE_DRIFT')
-                if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending'):
-                    self.browser_origin=self._observe_browser_origin()
+                mode = self.initial['certificationPlan']['mode']
+                if mode not in BROWSER_MODES or not self._uses_day_two_workload():
+                    expected = False if mode in SUSPENSION_MODES else self.native_expected
+                    require(self._native_observe()['nativeEnabled'] is expected, 'P2_CERTIFICATION_NATIVE_STATE_DRIFT')
+                if mode in BROWSER_MODES:
+                    self.browser_origin = self._observe_browser_origin()
         if time.monotonic()-self.last_api_verified>=10:self._refresh_api()
         self.last_boundary=time.monotonic()
 
@@ -1540,6 +1545,9 @@ class P2CertificationBroker(Broker):
             attempt=self.directory/('provider-'+('enable' if request['enabled'] else 'disable')+'-'+str(request['id']));attempt.mkdir(mode=0o700)
             observed=native.set_enabled(context,client,request['enabled'],attempt,self.check,**self.profile_arguments())
             self.native_expected=request['enabled'];return observed
+
+    def _uses_day_two_workload(self):
+        return False
 
     def _native_observe(self):
         result=native.observe(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
@@ -1730,6 +1738,11 @@ class P2CertificationBroker(Broker):
         self.check();stage=self.worker_stage
         require(self.external_armed and self.initial['certificationPlan']['mode']=='direct-worker' and stage is not None,'P2_CERTIFICATION_SOURCE_WORKER_STAGE_REQUIRED')
         if operation=='worker-ready':stage.verify();return {'bindingSha256':self.initial['certificationPlan']['workerPlanSha256']}
+        if operation in ('worker-credential', 'worker-invoke') and self._uses_day_two_workload():
+            secret = value.get('secret')
+            require(type(secret) is str and 0 < len(secret) <= 8192 and re.fullmatch(r'[!-~]+', secret) is not None and
+                    hmac.compare_digest(secret, self.initial['scopedCronSecret']),
+                    'P2_CERTIFICATION_WORKER_DAY_TWO_CREDENTIAL_MISMATCH')
         if operation=='worker-credential':return stage.preflight_credential(value.get('secret'))
         if operation=='worker-invoke':return stage.invoke_direct(value.get('secret'))
         if operation=='worker-witness':return stage.observe_lifecycle_witness(value.get('runtimeUrl'))
@@ -2025,7 +2038,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             require(type(stage) is str and stage in EXECUTABLE_BROWSER_STAGES, 'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
         review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
-        if mode in SCOPED_MODES:
+        if mode in DAY_TWO_WORKLOAD_MODES:
             private_fields.add('scopedCronSecret')
         elif mode != 'contain-native':
             private_fields.add('privateProbe')
@@ -2052,7 +2065,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         review = {key: initial[key] for key in review_fields}
         verified = prepare_profiled_current_certification_input(review, self.source)
         require(verified['originalReleasePlanHashHostVerified'] is True, 'P2_PROFILED_CERTIFICATION_ORIGINAL_PLAN_PROOF_REQUIRED')
-        if mode in SCOPED_MODES:
+        if mode in DAY_TWO_WORKLOAD_MODES:
             secret = initial['scopedCronSecret']
             require(type(secret) is str and (32 if mode == 'interactive-browser' else 1) <= len(secret) <= 8192 and
                     re.fullmatch(r'[!-~]+', secret) is not None,
@@ -2143,12 +2156,24 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         require(observed.get('nativeEnabled') is False, 'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
         return observed
 
+    def _uses_day_two_workload(self):
+        return self.initial['certificationPlan']['mode'] in DAY_TWO_WORKLOAD_MODES
+
     def _native_observe(self):
-        if self.initial['certificationPlan']['mode'] not in SCOPED_MODES:
+        if not self._uses_day_two_workload():
             return super()._native_observe()
         from p2_day_two_workload import observe
         return observe(self._native_context(), LockedClient(self.vercel, self.check), self.initial['scopedCronSecret'],
                        **self.profile_arguments())
+
+    def _observe_browser_origin(self):
+        from p2_day_two_workload import observe_browser_origin
+        require(self.initial['certificationPlan']['mode'] in BROWSER_MODES, 'P2_CERTIFICATION_CANONICAL_BROWSER_PLAN_REQUIRED')
+        result = observe_browser_origin(self._native_context(), LockedClient(self.vercel, self.check),
+            self.initial['scopedCronSecret'], **self.profile_arguments())
+        require(result['browserOrigin'] == self.initial['browserPlan']['browserOrigin'],
+                'P2_CERTIFICATION_CANONICAL_BROWSER_PLAN_REQUIRED')
+        return result
 
     def _verify_gateway_boundary(self):
         mode = self.initial['certificationPlan']['mode']
@@ -2262,7 +2287,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             self.worker_stage = P2LifecycleWorkerEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
                 self.initial['workerPlan'],self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],
                 native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
-                observe_frontend=lambda:self.observer.probe('witness'),bundle=self.bundle,database_proof=self.api_proof,
+                observe_frontend=lambda:self.observer.probe('witness'),observe_native=self._native_observe,
+                bundle=self.bundle,database_proof=self.api_proof,
                 release_evidence=self._release_evidence(),**self.profile_arguments())
 
     def interactive_operation(self, operation, value):

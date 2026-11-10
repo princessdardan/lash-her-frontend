@@ -29,7 +29,8 @@ import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
-  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validateP2InteractiveStalledRenewalAction,validP2MediaReservationRequests} from './p2-certification-transport.mjs';
+  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validateP2InteractiveStalledRenewalAction,validP2MediaReservationRequests,
+  usesP2ProfiledDayTwoAuthority} from './p2-certification-transport.mjs';
 import {p2MediaUploadCallbackOperation,p2StalledRenewalStage,readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
@@ -1421,11 +1422,12 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   demand(provider.version===2&&typeof provider.vercelToken==='string'&&provider.vercelToken.length>0&&provider.vercelToken.length<=8192&&
     (!needsRuntimeUrl||typeof provider.frontendRuntimeDatabaseUrl==='string'&&provider.frontendRuntimeDatabaseUrl.length>0&&provider.frontendRuntimeDatabaseUrl.length<=8192));
-  const scopedCronSecret=scoped?readP2LifecycleWorkerCronSecret(createP2LifecycleWorkerPrivateResolvers(()=>provider)):undefined;
+  const usesRuntimeBearer=action=>scoped||usesP2ProfiledDayTwoAuthority(action.mode);
+  const scopedCronSecret=usesRuntimeBearer(plan)?readP2LifecycleWorkerCronSecret(createP2LifecycleWorkerPrivateResolvers(()=>provider)):undefined;
   const credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
     const value=process.env[key];demand(typeof value==='string'&&value.length>0&&value.length<=16384);return[key,value];}));
   let privateProbe;
-  if(plan.mode!=='contain-native'&&!scoped){
+  if(plan.mode!=='contain-native'&&!usesRuntimeBearer(plan)){
     const path=join(checked.directory,'frontend','vercel-private','frontend-probe-private.json');
     privateProbe=decodeQualificationTargetJson(privateBytes(path,8192),'carrier');
     requireQualificationTargetProfile(currentProfile,privateProbe);
@@ -1443,9 +1445,9 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     const results=join(directory,action.certificationActionId);mkdirSync(results,{mode:0o700});
     const actionConfirmation='staging/'+action.certificationActionId;
     const initial={...reviewedPacket,confirmation:actionConfirmation,credentials,vercelToken:provider.vercelToken,
-      ...(privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
+      ...(!usesRuntimeBearer(action)&&privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
       ...(interactiveController?{interactiveController:readP2InteractiveBrowserControllerBinding(action,interactiveController)}:{}),
-      ...(scoped?{scopedCronSecret}:{}),
+      ...(usesRuntimeBearer(action)?{scopedCronSecret}:{}),
       ...(action.mode==='browser-pending'?{persistenceReviewed,browserResources:selection.browser.input.resources}:{}),
       ...(action.mode==='direct-worker'||persistenceModes.has(action.mode)?{persistenceReviewed}:{}),
       ...(action.mode==='lifecycle-persistence'?{persistencePrivate:{

@@ -141,6 +141,10 @@ def verify_profiled_current_source_closure(initial, root):
         }.get(certification.get('mode'))
         if scoped is not None:
             required |= scoped | {'ops/platform/host/p2_day_two_workload.py'}
+        if certification.get('mode') in ('auth-preparation', 'browser-pending', 'direct-worker'):
+            required |= {'ops/platform/host/p2_day_two_workload.py', 'ops/platform/host/p2_canonical_browser_origin.py'}
+        if certification.get('mode') == 'direct-worker':
+            required.add('ops/platform/host/p2_lifecycle_worker_evidence.py')
         if certification.get('mode') == 'interactive-browser' and \
                 (certification.get('scopedAction') or {}).get('stage') == 'stalled-playback-renewal':
             required.add('ops/platform/p2-certification-transport.mjs')

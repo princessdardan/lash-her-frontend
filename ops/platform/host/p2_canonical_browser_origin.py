@@ -1,8 +1,8 @@
 """Source-parent-only fixed staging alias and protected workload observation.
 
 No alias assignment, arbitrary origin, Host override, probe renewal, or standalone
-apply. The existing immutable source/deployment and one-hour credential remain
-required. Raw provider/credential data never enters this module's public result.
+apply. The legacy probe keeps its one-hour credential. The profiled day-two
+observer shares only the fixed alias readback and public receipt projection.
 """
 import datetime
 import hashlib
@@ -104,6 +104,10 @@ def observe(context, client, probe=None, *, expected_profile=None):
     final_private = frontend_probe._private_input(Path(context["privateProbeDirectory"]), private_identity,
                                                   expected_profile=expected)
     demand(final_private == private, "P2_CANONICAL_PRIVATE_INPUT_CHANGED")
+    return _receipt(candidate, plan, result, alias, expected)
+
+
+def _receipt(candidate, plan, result, alias, expected):
     profile_fields = ({} if expected is None else
                       {**vercel.profile_fields(candidate, expected), "candidateSha256": plan["candidateSha256"],
                        "phase2ContractManifestSha256": candidate["phase2ContractManifestSha256"]})

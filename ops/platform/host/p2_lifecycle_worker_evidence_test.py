@@ -168,15 +168,43 @@ class WorkerEvidenceTests(unittest.TestCase):
         admission = {"newWork": False, "recovery": False, "active": 0, "uncertain": 0}
         stage.observe_frontend = lambda: {**fields, "status": "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED", "admission": admission}
         stage._gateway = lambda recovery: None
-        readback = {**fields, "candidateSha256": candidate, "nativeEnabled": False, "projectId": "owned"}
-        with patch.object(worker.native, "observe", return_value=readback) as observed, \
-                patch.object(worker.native, "observe_metadata", return_value=readback) as metadata:
+        readback = {**fields, "candidateSha256": candidate, "nativeEnabled": False, "projectId": "owned",
+            "releaseId": "owned-release"}
+        workload = {**readback, "status": "P2_DAY_TWO_WORKLOAD_OBSERVED", "readOnly": True,
+            "workloadChallengeVerified": True, "aliasReadbacks": 2}
+        with patch.object(worker.native, "observe", side_effect=AssertionError("legacy probe read")) as legacy, \
+                patch.object(worker.native, "observe_metadata", return_value=readback) as metadata, \
+                patch.object(stage, "observe_native", create=True, return_value=workload) as observed:
             self.assertEqual(worker.P2LifecycleWorkerEvidenceStage._boundary(stage, False), admission)
-            observed.assert_called_once_with(stage.native_context, stage.provider, expected_profile=ref)
+            observed.assert_called_once_with()
             metadata.assert_called_once_with(stage.native_context, stage.provider, expected_profile=ref)
+            legacy.assert_not_called()
+            for invalid in ({"status": "P2_NATIVE_OFF"}, {"readOnly": False}, {"aliasReadbacks": 1},
+                            {"workloadChallengeVerified": False}):
+                observed.return_value = {**workload, **invalid}
+                with self.assertRaisesRegex(ValueError, "DAY_TWO_WORKLOAD_REQUIRED"):
+                    worker.P2LifecycleWorkerEvidenceStage._boundary(stage, False)
+            observed.return_value = workload
+            metadata.return_value = {**readback, "releaseId": "different-release"}
+            with self.assertRaisesRegex(ValueError, "NATIVE_MUST_BE_DISABLED"):
+                worker.P2LifecycleWorkerEvidenceStage._boundary(stage, False)
             metadata.return_value = {key: value for key, value in readback.items() if key != "qualificationTargetProfile"}
             with self.assertRaises(ValueError):
                 worker.P2LifecycleWorkerEvidenceStage._boundary(stage, False)
+
+    def test_legacy_native_boundary_keeps_its_original_probe(self):
+        stage = self.stage
+        stage.expected_profile = None
+        stage.verify = lambda: None
+        stage.native_context, stage.provider = {}, object()
+        admission = {"newWork": False, "recovery": True, "active": 0, "uncertain": 0}
+        stage.observe_frontend = lambda: {"status": "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED", "admission": admission}
+        stage._gateway = lambda recovery: None
+        readback = {"nativeEnabled": False}
+        with patch.object(worker.native, "observe", return_value=readback) as legacy, \
+                patch.object(worker.native, "observe_metadata", return_value=readback):
+            self.assertEqual(worker.P2LifecycleWorkerEvidenceStage._boundary(stage, True), admission)
+            legacy.assert_called_once_with(stage.native_context, stage.provider)
 
 
 if __name__ == "__main__":

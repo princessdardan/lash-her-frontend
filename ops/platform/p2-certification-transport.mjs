@@ -74,6 +74,8 @@ const scopedOperations={
   'mux-callback-recovery':['scoped-mux-open','scoped-mux-observe','scoped-mux-close'],
   'lifecycle-persistence':['scoped-persistence-observe'],
 };
+const dayTwoAuthorityModes=new Set(['auth-preparation','browser-pending','direct-worker']);
+export const usesP2ProfiledDayTwoAuthority=mode=>dayTwoAuthorityModes.has(mode);
 
 export function readP2CertificationKnownAckStage(handle,plan){
   const selected=knownAckStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
@@ -1121,12 +1123,23 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
     demand(initial.version===2&&initial.certificationPlan.version===2&&initial.certificationPlan.nativePlan.version===2&&
       initial.certificationPlan.certificationActionId===initial.certificationActionId);
   }else demand(!Object.hasOwn(initial,'qualificationTargetProfile'));
+  const certificationMode=initial.certificationPlan?.mode;
+  const authorityMode=usesP2ProfiledDayTwoAuthority(certificationMode);
+  const authorityBearer=profiled&&authorityMode?initial.scopedCronSecret:undefined;
+  if(profiled&&authorityMode){
+    demand(typeof authorityBearer==='string'&&authorityBearer.length>0&&authorityBearer.length<=8192&&
+      authorityBearer.trim()===authorityBearer&&/^[!-~]+$/u.test(authorityBearer)&&!Object.hasOwn(initial,'privateProbe'));
+  }else if(Object.hasOwn(initial,'scopedCronSecret')){
+    demand(profiled&&(certificationMode==='interactive-browser'||Object.hasOwn(scopedOperations,certificationMode)));
+  }
   const interactivePlan=profiled&&initial.certificationPlan.mode==='interactive-browser'?initial.certificationPlan:null;
   const selectedInteractive=interactivePlan?reviewedInteractivePlan(interactivePlan,initial):null;
   if(!interactivePlan)demand(!Object.hasOwn(initial,'interactiveController')&&initial.certificationPlan?.mode!=='interactive-browser');
   const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,
     profiled?'--supervisor-profiled-current':'--supervisor'];
   return async task=>{
+    if(authorityBearer!==undefined)demand(initial.certificationPlan.mode===certificationMode&&initial.scopedCronSecret===authorityBearer&&
+      !Object.hasOwn(initial,'privateProbe'));
     const child=launch('/usr/bin/ssh',sshCommand({knownHosts:settings.knownHosts,keyFile:settings.sshKey},command),
       {stdio:['pipe','pipe','pipe'],env:Object.fromEntries(['PATH','HOME','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]))});
     const reaped=new Promise(resolve=>child.once('close',resolve));
@@ -1419,7 +1432,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           let credential;
           const call=async(operation,data={},timeout=120_000)=>{demand(alive());return(await request(operation,'CERTIFICATION_WORKER_OBSERVED',data,timeout)).receipt;};
           const methods=Object.freeze({
-            async preflightCredential(handle){const secret=readers.readP2LifecycleWorkerCronSecret(handle);demand(credential===undefined);credential=secret;return call('worker-credential',{secret},240_000);},
+            async preflightCredential(handle){const secret=readers.readP2LifecycleWorkerCronSecret(handle);
+              demand(credential===undefined&&(!profiled||secret===authorityBearer));credential=secret;return call('worker-credential',{secret},240_000);},
             async invokeDirect(handle){const secret=readers.readP2LifecycleWorkerCronSecret(handle);demand(credential!==undefined&&secret===credential);return call('worker-invoke',{secret},120_000);},
             async observeLifecycleWitness(handle){const runtimeUrl=await readers.readP2LifecycleWorkerRuntimeUrl(handle);return call('worker-witness',{runtimeUrl},240_000);},
             observeReceiverDenials:()=>call('worker-denials',{},120_000),
