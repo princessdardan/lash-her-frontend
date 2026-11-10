@@ -63,7 +63,12 @@ function checkout(overrides: Partial<Parameters<typeof createTrainingCheckoutPos
   });
 }
 
-function invoice(failAt?: string, failure = new Error("owned-private-marker"), onEffect: (stage: string) => void = () => {}) {
+function invoice(
+  failAt?: string,
+  failure = new Error("owned-private-marker"),
+  onEffect: (stage: string) => void = () => {},
+  publishedInvoiceId = "owned-invoice",
+) {
   const effects: string[] = [];
   const effect = (stage: string) => { effects.push(stage); onEffect(stage); if (stage === failAt) throw failure; };
   const handler = createTrainingSquareInvoicePostHandler({
@@ -74,7 +79,7 @@ function invoice(failAt?: string, failure = new Error("owned-private-marker"), o
       createCustomer: async () => { effect("customer"); return "owned-customer"; },
       createOrder: async () => { effect("order"); return "owned-square-order"; },
       createInvoice: async () => { effect("invoice"); return { id: "owned-invoice", version: 1 }; },
-      publishInvoice: async () => { effect("publish"); return { id: "owned-invoice", version: 2, publicUrl: "https://owned.invalid/invoice" }; },
+      publishInvoice: async () => { effect("publish"); return { id: publishedInvoiceId, version: 2, publicUrl: "https://owned.invalid/invoice" }; },
       getOrder: async () => ({ id: "owned-square-order" }), getInvoice: async () => ({ id: "owned-invoice" }),
     },
   });
@@ -169,6 +174,16 @@ test("invoice success retains its response and records every effect after admiss
   assert.deepEqual(await response.json(), { publicUrl: "https://owned.invalid/invoice", orderId: "owned-order" });
   assert.deepEqual(s.effects, ["customer", "order", "invoice", "persist", "publish", "record"]);
   assert.equal(f.state.uncertain, false);
+});
+
+test("a crossed invoice publication acknowledgement stays uncertain without a local write", async () => {
+  const f = admission();
+  const s = invoice(undefined, undefined, undefined, "owned-other-invoice");
+  const response = await withWriterAdmission("new-work", s.handler, f.run)(request());
+  assert.equal(response.status, 503);
+  assert.deepEqual(s.effects, ["customer", "order", "invoice", "persist", "publish"]);
+  assert.equal(f.state.uncertain, true);
+  assert.equal((await response.text()).includes("owned-other-invoice"), false);
 });
 
 test("invoice BNPL and publication error branches preserve off-mode responses and retain enforced uncertainty", async () => {

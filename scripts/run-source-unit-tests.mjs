@@ -113,6 +113,7 @@ const DB_TEST_FILES = new Set([
   "src/lib/commerce/square-product-finalizer.db.test.ts",
   "src/lib/commerce/square-training-card-finalizer.db.test.ts",
   "src/lib/commerce/square-training-split.db.test.ts",
+  "src/lib/commerce/training-square-invoice-publication.db.test.ts",
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
   "src/lib/marketing-contact/marketing-contact-store.db.test.ts",
   "src/lib/admin/implicit-staff-provider.db.test.ts",

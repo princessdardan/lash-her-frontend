@@ -247,6 +247,13 @@ export function createTrainingSquareInvoicePostHandler({
         draftInvoice.version,
         `${correlationId}-publish`,
       );
+      if (publishedInvoice.id !== draftInvoice.id) {
+        markWriterOperationUncertain();
+        return NextResponse.json<TrainingSquareInvoiceErrorBody>(
+          { error: "Unable to publish Square invoice" },
+          { status: 502 },
+        );
+      }
       const publicOrderId = pendingOrder.orderId ?? pendingOrder._id;
 
       await recordSquareInvoicePublication(
