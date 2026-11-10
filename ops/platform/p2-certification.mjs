@@ -80,6 +80,8 @@ const muxReplacementStatus={
   'cleanup-after-expiry':'P2_SCOPED_MUX_CLEANED_AFTER_EXPIRY',
 };
 const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
+const rotationSuccessorModes=new Set([...scopedPlanningModes,'auth-preparation','browser-pending','direct-worker']);
+const rotationSuccessorLiveEligible=false;
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
@@ -469,7 +471,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   if(rotationSuccessor!==undefined){
     demand(replacement&&successorRuntime===undefined&&rotationSuccessor.kind===rotationSuccessorKind&&
       ![rotationSuccessor.actionId,rotationSuccessor.predecessorRuntime?.actionId,rotationSuccessor.predecessorRuntime?.runtimeActionId].includes(input.certificationActionId)&&
-      (scopedPlanningModes.has(input.mode)||['auth-preparation','browser-pending','direct-worker'].includes(input.mode)));
+      rotationSuccessorModes.has(input.mode));
     const floor=profiledRelease.rotationSuccessorFrontendEpoch;
     if(![input.initialEpoch,floor].every(value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value))||
       BigInt(input.initialEpoch)<BigInt(floor))throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_EPOCH_REFUSED');
@@ -934,8 +936,17 @@ export function p2CertificationReviewView(plan){
   }}};
 }
 
+function requireRotationSuccessorExecution(plan){
+  if(plan.rotationSuccessor!==undefined&&(!rotationSuccessorLiveEligible||plan.version!==2||
+    !isDeepStrictEqual(plan.qualificationTargetProfile,currentProfile)||plan.environment!=='staging'||
+    plan.startState!=='already-closed'||!rotationSuccessorModes.has(plan.mode)||
+    plan.rotationSuccessor?.kind!==rotationSuccessorKind||!validP2CertificationReplacementDescriptor(plan.replacementRelease))){
+    throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
+  }
+}
+
 async function runBoundedCertification(plan,dependencies,profile){
-  if(plan.rotationSuccessor!==undefined)throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
+  requireRotationSuccessorExecution(plan);
   const mode=profile?'p2-bounded-certification-profiled-current':'p2-bounded-certification';
   const terminalStatus=profile?'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED':'P2_BOUNDED_CERTIFICATION_CONTAINED';
   const versionFields={version:profile?2:1,...(profile?{qualificationTargetProfile:profile}:{})};
@@ -1401,11 +1412,14 @@ export function prepareP2CertificationOperator(settings){
 }
 
 export async function p2ProfiledCertificationOperator(settings,{confirmation}={}){
-  if(Object.hasOwn(settings??{},'rotationSuccessor'))throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
+  if(Object.hasOwn(settings??{},'rotationSuccessor')&&(!rotationSuccessorLiveEligible||!rotationSuccessorModes.has(settings.certification?.mode))){
+    throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
+  }
   demand(process.versions.node.split('.')[0]==='24');
   const {execution,...selection}=settings;
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
+  for(const action of [plan,authPlan,identityPlan].filter(Boolean))requireRotationSuccessorExecution(action);
   const interactive=plan.mode==='interactive-browser'&&pairedBrowserStages.has(plan.scopedAction.stage)&&identityPlan!==undefined;
   const authoring=interactive&&plan.scopedAction.stage==='authoring';
   const media=interactive&&plan.scopedAction.stage==='media';

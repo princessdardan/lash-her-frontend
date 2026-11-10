@@ -30,6 +30,19 @@ class FixedDispatchTests(unittest.TestCase):
                           native_containment=certification.contain_profiled_certification_native,
                           frontend_containment=certification.contain_profiled_certification_frontend)
 
+    def test_rotation_successor_eligibility_still_requires_the_exact_closed_staging_path(self):
+        plan = {'version': 2, 'qualificationTargetProfile': certification._profiled_context(),
+                'environment': 'staging', 'mode': 'mux-readiness', 'startState': 'already-closed',
+                'rotationSuccessor': {'kind': 'identity-key-rotation-mixed-mount-v1'},
+                'replacementRelease': {'kind': 'frontend-replacement'}}
+        with patch.object(certification, 'ROTATION_SUCCESSOR_LIVE_ELIGIBLE', True):
+            certification.require_profiled_certification_execution(plan)
+            for change in ({'mode': 'contain-native'}, {'mode': 'native-window'}, {'environment': 'production'},
+                           {'version': 2.0}, {'startState': 'qualified-ready'}, {'replacementRelease': None},
+                           {'rotationSuccessor': {}}, {'qualificationTargetProfile': {}}):
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'ROTATION_SUCCESSOR_LIVE_UNQUALIFIED'):
+                    certification.require_profiled_certification_execution({**plan, **change})
+
     def test_rotation_frontend_terminal_requires_two_current_canonical_challenges(self):
         import p2_canonical_browser_origin as canonical
 
@@ -121,6 +134,7 @@ class FixedDispatchTests(unittest.TestCase):
                         frontend['successorRuntime'] = {'kind': 'known-ack'}
                     if kind == 'rotation':
                         frontend['rotationSuccessor'] = {'kind': 'identity-key-rotation-mixed-mount-v1'}
+                        frontend.update(environment='staging', startState='already-closed')
                 if kind == 'interrupted-known-ack':
                     layout = supervisor.PROFILED_INTERRUPTED_LAYOUT
                     broker = interrupted.P2ProfiledInterruptedKnownAckBroker

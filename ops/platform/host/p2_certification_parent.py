@@ -260,8 +260,18 @@ def profiled_certification_review_fields(plan):
 
 
 def require_profiled_certification_execution(plan):
-    require('rotationSuccessor' not in plan or ROTATION_SUCCESSOR_LIVE_ELIGIBLE,
-            'P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED')
+    if 'rotationSuccessor' not in plan:
+        return
+    refused = 'P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED'
+    require(ROTATION_SUCCESSOR_LIVE_ELIGIBLE, refused)
+    from p2_certification_rotation_successor import KIND
+
+    successor, replacement = plan['rotationSuccessor'], plan.get('replacementRelease')
+    require(type(plan.get('version')) is int and plan['version'] == 2 and
+            plan.get('qualificationTargetProfile') == _profiled_context() and plan.get('environment') == 'staging' and
+            plan.get('startState') == 'already-closed' and plan.get('mode') in DAY_TWO_WORKLOAD_MODES and
+            type(successor) is dict and successor.get('kind') == KIND and
+            type(replacement) is dict and replacement.get('kind') == 'frontend-replacement', refused)
 
 
 def _profiled_initial(initial, expected):
