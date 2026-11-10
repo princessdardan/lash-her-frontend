@@ -6,7 +6,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {p2CertificationEnvironmentLock,readP2CertificationAuthenticationStage,readP2CertificationSuspensionStage,readP2CertificationWorkerStage,readP2CertificationKnownAckStage,readP2CertificationInteractiveStage,usesP2ProfiledDayTwoAuthority} from './p2-certification-transport.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
-import {requireP2CertificationRotationTerminal,rotationSuccessorKind} from './p2-certification-rotation-successor.mjs';
+import {requireP2CertificationRotationCurrent,requireP2CertificationRotationMuxReadiness,
+  requireP2CertificationRotationTerminal,rotationSuccessorKind} from './p2-certification-rotation-successor.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 const program=String.raw`
 import base64,fcntl,json,os,sys
@@ -75,19 +76,42 @@ function fixture(mode='ready',profiled=false,certificationMode='contain-native')
 
 test('rotation successor terminal binds the exact closed epoch, scoped case and distinct frontend observations',()=>{
   const digest=digit=>digit.repeat(64);
+  const containers=Array.from({length:10},(_,index)=>({service:'owned-'+index,health:'healthy'}));
+  const scopedAction={attemptId:'10000000-0000-4000-8000-000000000001',generation:1,environmentId:'owned-environment',
+    assetId:'owned-asset',uploadId:'owned-upload',courseId:'10000000-0000-4000-8000-000000000002',
+    lessonId:'10000000-0000-4000-8000-000000000003',playbackIdSha256:digest('b')};
   const plan={version:2,qualificationTargetProfile:profile,environment:'staging',mode:'mux-readiness',initialEpoch:'7',
     certificationActionId:'owned-mux',originalReleaseId:'owned-replacement',sourceCommit:'a'.repeat(40),operatorSourceCommit:'a'.repeat(40),
     candidateSha256:digest('1'),candidateObjectSha256:digest('2'),targetSha256:digest('3'),inventorySha256:digest('4'),
     planSha256:digest('5'),contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+digest('6'),
     originalReleaseReceiptSha256:digest('7'),originalReleasePlanSha256:digest('8'),
-    replacementRelease:{reviewedPlanSha256:digest('8')},rotationSuccessor:{kind:rotationSuccessorKind,receiptSha256:digest('9')}};
-  const initial={certificationPlan:plan,configurationSha256:{'gateway.json':digest('a')}};
-  const caseOutcome={status:'P2_SCOPED_MUX_READY_OBSERVED',frontendEpoch:'7'};
+    replacementRelease:{reviewedPlanSha256:digest('8')},rotationSuccessor:{kind:rotationSuccessorKind,receiptSha256:digest('9')},
+    runtimeInventorySha256:p2NativeHash(containers),apiJobSha256:{course:digest('1'),community:digest('2')},
+    gatewayProcessSha256:digest('3'),scopedAction};
+  const artifacts={courseMigration:{image:'owned/course@sha256:'+digest('4')},communityMigration:{image:'owned/community@sha256:'+digest('5')}};
+  const initial={certificationPlan:plan,configurationSha256:{'gateway.json':digest('a')},candidate:{artifacts},
+    sourceSha256:{'ops/platform/host/database_current.mjs':digest('6')}};
+  const current={status:'P2_CERTIFICATION_CURRENT_READY',runtimeReplaced:false,sqlReplayed:false,containers,
+    apiDatabases:{...plan,status:'P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED',phase:'completed',releaseId:plan.originalReleaseId,
+      checkerSha256:digest('6'),migrationsExecuted:false,frontendSqlApplied:false,trafficAuthorized:false,
+      databases:Object.fromEntries(['course','community'].map(service=>[service,{image:artifacts[service+'Migration'].image,
+        jobSha256:plan.apiJobSha256[service],receiptSha256:digest('7')}]))}};
+  requireP2CertificationRotationCurrent(initial,current);
+  assert.throws(()=>requireP2CertificationRotationCurrent(initial,{...current,containers:containers.toReversed()}),
+    /P2_CERTIFICATION_ROTATION_SUCCESSOR_REFUSED/u);
+  const readyRow={...scopedAction,status:'ready',isCurrent:true,managedByCourse:true};
+  const caseOutcome={...plan,status:'P2_SCOPED_MUX_READY_OBSERVED',frontendEpoch:'7',readOnly:true,nativeEnabled:false,
+    muxProviderTouched:false,trafficAuthorized:false,releaseAccepted:false,courseMigrationImage:artifacts.courseMigration.image,
+    gatewayStateSha256:digest('8'),courseDatabaseReceiptSha256:digest('9'),databaseIdentitySha256:digest('a'),
+    readyRowSha256:p2NativeHash(JSON.stringify(readyRow,Object.keys(readyRow).sort())+'\n')};
+  requireP2CertificationRotationMuxReadiness(initial,caseOutcome);
+  assert.throws(()=>requireP2CertificationRotationMuxReadiness(initial,{...caseOutcome,readyRowSha256:digest('d')}),
+    /P2_CERTIFICATION_ROTATION_SUCCESSOR_REFUSED/u);
   const zero={newWork:0,recovery:0};
   const terminal={...plan,status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',nativeDisabled:true,releaseId:plan.originalReleaseId,
     configurationSha256:initial.configurationSha256,caseStatus:caseOutcome.status,caseOutcomeSha256:p2NativeHash(caseOutcome),
     frontendAdmission:{epoch:'7',newWork:false,recovery:false,active:0,uncertain:0},
-    gatewayAdmission:{valid:true,newWork:false,recovery:false,active:zero,uncertain:zero},
+    gatewayAdmission:{version:1,valid:true,newWork:false,recovery:false,active:zero,uncertain:zero,sha256:caseOutcome.gatewayStateSha256},
     rotationFrontendObservationSha256:{arm:digest('b'),terminal:digest('c')},
     ...Object.fromEntries(['sqlReplayed','frontendSqlApplied','runtimeReplaced','rolesPrepared','historicalLoginsRestored','frontendBuilt',
       'frontendPromoted','trafficAuthorized','wholeReleaseAccepted','releaseAccepted','deployedCertificationComplete'].map(key=>[key,false]))};

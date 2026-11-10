@@ -466,10 +466,14 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     input.mode!=='known-ack-recovery'&&
     [input.initialEpoch,profiledRelease.successorFrontendEpoch].every(value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value))&&
     BigInt(input.initialEpoch)>=BigInt(profiledRelease.successorFrontendEpoch));
-  if(rotationSuccessor!==undefined)demand(replacement&&successorRuntime===undefined&&
-    rotationSuccessor.kind===rotationSuccessorKind&&
-    ![rotationSuccessor.actionId,rotationSuccessor.predecessorRuntime?.actionId,rotationSuccessor.predecessorRuntime?.runtimeActionId].includes(input.certificationActionId)&&
-    (scopedPlanningModes.has(input.mode)||['auth-preparation','browser-pending','direct-worker'].includes(input.mode)));
+  if(rotationSuccessor!==undefined){
+    demand(replacement&&successorRuntime===undefined&&rotationSuccessor.kind===rotationSuccessorKind&&
+      ![rotationSuccessor.actionId,rotationSuccessor.predecessorRuntime?.actionId,rotationSuccessor.predecessorRuntime?.runtimeActionId].includes(input.certificationActionId)&&
+      (scopedPlanningModes.has(input.mode)||['auth-preparation','browser-pending','direct-worker'].includes(input.mode)));
+    const floor=profiledRelease.rotationSuccessorFrontendEpoch;
+    if(![input.initialEpoch,floor].every(value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value))||
+      BigInt(input.initialEpoch)<BigInt(floor))throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_EPOCH_REFUSED');
+  }
   const scoped=scopedPlanningModes.has(input?.mode);
   if(scoped)demand(profile&&scopedActionValid(input.mode,input.scopedAction));
   else demand(input?.scopedAction===undefined);
@@ -1213,7 +1217,8 @@ function prepareProfiledCertification(settings){
   const rotated=rotation?prepareP2CertificationRotationSuccessor(settings.rotationSuccessor,checked,input,results,P2_CERTIFICATION_READY_FILES):null;
   const activeHost=recovered||rotated?{...host,configuration:(recovered??rotated).configuration}:host;
   const activeRelease=recovered?{...profiledRelease,successorRuntime:recovered.binding,successorFrontendEpoch:recovered.frontendEpoch}
-    :rotated?{...profiledRelease,rotationSuccessor:rotated.binding,originalFrontendReady:rotated.originalFrontendReady}:profiledRelease;
+    :rotated?{...profiledRelease,rotationSuccessor:rotated.binding,rotationSuccessorFrontendEpoch:rotated.frontendEpoch,
+      originalFrontendReady:rotated.originalFrontendReady}:profiledRelease;
   const releaseSettings={results,knownHosts,sshKey,host:activeHost,providerContext:settings.releaseSettings.providerContext};
   const activeReady=rotated?.currentReady??frontendReceipts;
   const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,{...settings,releaseSettings},

@@ -13,7 +13,8 @@ import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { prepareP2CertificationReplacementRelease, validP2CertificationReplacementDescriptor } from "./p2-certification-replacement-release.mjs";
-import { P2_CERTIFICATION_READY_FILES, p2ProfiledCertificationOperator, prepareP2ProfiledCertificationOperator } from "./p2-certification.mjs";
+import { P2_CERTIFICATION_READY_FILES, p2ProfiledCertificationOperator, prepareP2BoundedCertification,
+  prepareP2ProfiledCertificationOperator } from "./p2-certification.mjs";
 import { prepareP2CertificationRotationSuccessor, rotationSuccessorKind } from "./p2-certification-rotation-successor.mjs";
 import { prepareP2FrontendReplacementPlan } from "./p2-frontend-replacement-plan.mjs";
 import { bindP2ManagedIdentityRotationPlan } from "./p2-identity-key-rotation-operator.mjs";
@@ -536,6 +537,17 @@ test("profiled mixed successor plans with current READY evidence and retains the
     const review = prepareP2CertificationRotationSuccessor(settings.rotationSuccessor, fixture.checked,
       settings.certification, settings.releaseSettings.arm.results, P2_CERTIFICATION_READY_FILES);
     assert.equal(review.configuration, fixture.hostReview.configuration);
+    assert.equal(review.frontendEpoch, fixture.plan.finalEpoch);
+    const next = { ...settings.certification, operatorSourceCommit: settings.operatorSourceCommit };
+    const { original, candidateBytes, profiledRelease } = fixture.checked;
+    const planAction = input => prepareP2BoundedCertification({ migration: original.migration, plan: original.inventory }, input,
+      candidateBytes, { frontendReceipts: review.currentReady, configurationSha256: original.plan.configurationSha256,
+        profiledRelease: { ...profiledRelease, rotationSuccessor: review.binding,
+          rotationSuccessorFrontendEpoch: review.frontendEpoch, originalFrontendReady: review.originalFrontendReady } });
+    assert.equal(planAction(next).initialEpoch, review.frontendEpoch);
+    assert.throws(() => planAction({ ...next, certificationActionId: "owned-earlier-authentication",
+      initialEpoch: (BigInt(review.frontendEpoch) - 2n).toString() }),
+    { message: "P2_CERTIFICATION_ROTATION_SUCCESSOR_EPOCH_REFUSED" });
     assert.equal(digest(Buffer.from(review.rawReceiptBase64, "base64")), settings.rotationSuccessor.receiptSha256);
     assert.equal(digest(review.originalReady.get("frontend-workload-outcome.json")), fixture.f.terminal.frontendWorkloadReceiptSha256);
     assert.equal(digest(review.currentReady.get("frontend-workload-outcome.json")), selected.nativePlan.configurationRecordSha256);

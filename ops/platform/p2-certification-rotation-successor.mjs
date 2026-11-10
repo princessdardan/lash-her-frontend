@@ -18,6 +18,40 @@ const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.
 const pick = (value, keys) => Object.fromEntries(keys.map(key => [key, value[key]]));
 const phaseNames = ["baseline", "overlap", "current-only"];
 
+export function requireP2CertificationRotationCurrent(initial, current) {
+  const { certificationPlan: plan, candidate, sourceSha256 } = initial;
+  const api = current?.apiDatabases;
+  requireQualificationTargetProfile(profile, plan, api);
+  const services = ["course", "community"];
+  demand(current?.status === "P2_CERTIFICATION_CURRENT_READY" && current.runtimeReplaced === false && current.sqlReplayed === false &&
+    Array.isArray(current.containers) && current.containers.length === 10 && hash(current.containers) === plan.runtimeInventorySha256 &&
+    api.version === 2 && api.status === "P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED" && api.phase === "completed" &&
+    api.releaseId === plan.originalReleaseId &&
+    ["environment", "certificationActionId", "candidateSha256", "contractPhase", "phase2ContractManifestSha256"]
+      .every(key => api[key] === plan[key]) &&
+    digest(api.checkerSha256) && api.checkerSha256 === sourceSha256["ops/platform/host/database_current.mjs"] &&
+    ["migrationsExecuted", "frontendSqlApplied", "trafficAuthorized"].every(key => api[key] === false) &&
+    exact(api.databases, services) && services.every(service => {
+      const database = api.databases[service];
+      return exact(database, ["image", "jobSha256", "receiptSha256"]) && digest(database.receiptSha256) &&
+        database.image === candidate.artifacts[`${service}Migration`].image && database.jobSha256 === plan.apiJobSha256[service];
+    }));
+}
+
+export function requireP2CertificationRotationMuxReadiness(initial, receipt) {
+  const { certificationPlan: plan, candidate } = initial;
+  requireQualificationTargetProfile(profile, plan, receipt);
+  const row = { ...plan.scopedAction, status: "ready", isCurrent: true, managedByCourse: true };
+  const rowSha256 = hash(JSON.stringify(pick(row, Object.keys(row).sort())) + "\n");
+  demand(receipt.version === 2 && receipt.status === "P2_SCOPED_MUX_READY_OBSERVED" && receipt.readOnly === true &&
+    ["nativeEnabled", "muxProviderTouched", "trafficAuthorized", "releaseAccepted"].every(key => receipt[key] === false) &&
+    ["environment", "planSha256", "certificationActionId", "candidateSha256", "gatewayProcessSha256"]
+      .every(key => receipt[key] === plan[key]) &&
+    receipt.frontendEpoch === plan.initialEpoch && equal(receipt.scopedAction, plan.scopedAction) &&
+    receipt.courseMigrationImage === candidate.artifacts.courseMigration.image && receipt.readyRowSha256 === rowSha256 &&
+    [receipt.gatewayStateSha256, receipt.courseDatabaseReceiptSha256, receipt.databaseIdentitySha256].every(digest));
+}
+
 export function requireP2CertificationRotationTerminal(initial, terminal, caseOutcome) {
   const { certificationPlan: plan } = initial;
   requireQualificationTargetProfile(profile, plan, terminal);
@@ -39,6 +73,7 @@ export function requireP2CertificationRotationTerminal(initial, terminal, caseOu
     equal(terminal.frontendAdmission, { epoch: closedEpoch, newWork: false, recovery: false, active: 0, uncertain: 0 }) &&
     gateway?.valid === true && gateway.newWork === false && gateway.recovery === false &&
     equal(gateway.active, zero) && equal(gateway.uncertain, zero) && terminal.caseStatus === caseOutcome.status &&
+    (plan.mode !== "mux-readiness" || gateway.version === 1 && digest(gateway.sha256) && gateway.sha256 === caseOutcome.gatewayStateSha256) &&
     terminal.caseOutcomeSha256 === hash(caseOutcome) &&
     ["sqlReplayed", "frontendSqlApplied", "runtimeReplaced", "rolesPrepared", "historicalLoginsRestored", "frontendBuilt",
       "frontendPromoted", "trafficAuthorized", "wholeReleaseAccepted", "releaseAccepted", "deployedCertificationComplete"]
@@ -258,6 +293,7 @@ export function prepareP2CertificationRotationSuccessor(selection, checked, inpu
       binding: { kind: rotationSuccessorKind, actionId: selection.actionId, bindingSha256: rotation.bindingSha256,
         receiptSha256: selection.receiptSha256, ...(predecessor ? { predecessorRuntime: predecessor.binding } : {}) },
       configuration: custody.configuration,
+      frontendEpoch: receipt.frontendEpoch,
       originalFrontendReady: { ...pick(native, ["deploymentId", "deploymentUrl"]), readyReceiptSha256: prior.readyReceiptSha256 },
       originalReady, currentReady: readyBytes(ready.originalBytesBase64, frontend.readyReceiptSha256, readyNames),
       rawReceiptBase64: wrapper.originalBytesBase64,

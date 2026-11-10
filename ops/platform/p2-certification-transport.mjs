@@ -8,7 +8,8 @@ import {isDeepStrictEqual} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
-import {requireP2CertificationRotationTerminal} from './p2-certification-rotation-successor.mjs';
+import {requireP2CertificationRotationCurrent,requireP2CertificationRotationMuxReadiness,
+  requireP2CertificationRotationTerminal} from './p2-certification-rotation-successor.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.mjs';
 import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt,
@@ -1170,12 +1171,17 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
       let interactiveCreated=false,interactiveRetained;
       const host={mode,certificationActionId:initial.certificationActionId,
         async arm({receipt,probe}){demand(!armed);const bytes=readFrontendReleaseEvidence(directory,'p2-certification-current-database.json');demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(receipt));
-          const value=await request('arm-certification','CERTIFICATION_ARMED',{receipt:bytes.toString('base64'),probe},240_000);armed=true;return value.receipt;},
+          const value=await request('arm-certification','CERTIFICATION_ARMED',{receipt:bytes.toString('base64'),probe},240_000);
+          if(initial.certificationPlan.rotationSuccessor)requireP2CertificationRotationCurrent(initial,value.receipt);
+          armed=true;return value.receipt;},
         async scopedStage(operation){
           demand(profiled&&armed&&!prepared&&scopedOperations[initial.certificationPlan.mode]?.includes(operation));
           const {receipt}=await request(operation,'CERTIFICATION_SCOPED_OBSERVED');
           requireQualificationTargetProfile(currentProfile,receipt);
           demand(receipt.version===2&&typeof receipt.status==='string');
+          if(initial.certificationPlan.rotationSuccessor&&operation==='scoped-mux-readiness-observe'){
+            requireP2CertificationRotationMuxReadiness(initial,receipt);
+          }
           return receipt;
         },
         async interactiveStage(browserController){
