@@ -30,11 +30,16 @@ export function requireP2IdentityRotationCaptureMetadata(value) {
   return value;
 }
 
-export function isHeldManagedIdentityRotationHost(host, frontendPlan, { armed = false } = {}) {
+export function isHeldManagedIdentityRotationHost(host, frontendPlan, { armed = false, fixture = false } = {}) {
   const held = heldManagedHosts.get(host);
-  return Boolean(held && held.active(armed) && held.plan.frontendCustodyPlanSha256 === frontendPlan?.planSha256 &&
+  return Boolean(held && held.fixture === fixture && held.active(armed) && held.plan.frontendCustodyPlanSha256 === frontendPlan?.planSha256 &&
     held.plan.actionId === frontendPlan.certificationActionId && held.plan.sourceCommit === frontendPlan.sourceCommit &&
     held.plan.candidateSha256 === frontendPlan.candidateSha256 && held.plan.targetSha256 === frontendPlan.targetSha256);
+}
+
+export function claimManagedIdentityRotationWriterTransition(host, frontendPlan, operation, epoch, { fixture = false } = {}) {
+  return isHeldManagedIdentityRotationHost(host, frontendPlan, { armed: true, fixture }) &&
+    heldManagedHosts.get(host).claimWriterTransition(operation, epoch);
 }
 
 const managedSharedFields = ["qualificationTargetProfile", "environment", "sourceCommit", "sourceSha256", "sourceClosureSha256",
@@ -111,7 +116,22 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
       await ready; const check = async () => { await request("check", "HELD", {}, 15_000); };
       heartbeat = setInterval(() => { if (!failed) void check().catch(fail); }, 1_000);
       let armed = false, closePrepared = false, finished = false;
+      let writerTransition;
       const call = async (operation, status, data = {}, timeout) => (await request(operation, status, data, timeout)).receipt;
+      const retainWriterTransition = (operation, window, acknowledgement) => {
+        if (!managed || window.kind !== "authentication") return;
+        const reviewed = plan.authenticationWindows.find(row => row.phase === window.phase);
+        demand(reviewed && !writerTransition && window.bindingSha256 === plan.bindingSha256 &&
+          acknowledgement.bindingSha256 === plan.bindingSha256 && acknowledgement.phase === window.phase &&
+          acknowledgement.kind === window.kind);
+        const epoch = operation === "open" ? reviewed.beforeEpoch : reviewed.openEpoch;
+        demand(operation === "open"
+          ? acknowledgement.status === "P2_IDENTITY_ROTATION_BROWSER_WINDOW_INTENT" &&
+            acknowledgement.beforeEpoch === epoch && acknowledgement.expectedOpenEpoch === reviewed.openEpoch
+          : acknowledgement.status === "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSING" &&
+            window.epoch === epoch && acknowledgement.epoch === epoch);
+        writerTransition = { operation, epoch };
+      };
       const host = Object.freeze({
         active: () => active && !failed && armed && !finished,
         check,
@@ -138,10 +158,18 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
         observeFrontendSigner: phase => call("rotation-observe-signer", "ROTATION_SIGNER_OBSERVED", { phase }),
         frontendDeployment: phase => call("rotation-frontend-deployment", "ROTATION_FRONTEND_DEPLOYMENT", { phase }),
         observeCanonicalOrigin: phase => call("rotation-observe-canonical-origin", "ROTATION_CANONICAL_ORIGIN", { phase }, 120_000),
-        beginBrowserWindow: window => call("rotation-browser-window-begin", "ROTATION_BROWSER_WINDOW_INTENT", { window }),
+        async beginBrowserWindow(window) {
+          const acknowledgement = await call("rotation-browser-window-begin", "ROTATION_BROWSER_WINDOW_INTENT", { window });
+          retainWriterTransition("open", window, acknowledgement);
+          return acknowledgement;
+        },
         browserWindowOpened: window => call("rotation-browser-window-opened", "ROTATION_BROWSER_WINDOW_OPENED", { window }),
         takeBrowserPermit: window => call("rotation-browser-window-permit", "ROTATION_BROWSER_WINDOW_PRIVATE_PERMIT", { window }),
-        closingBrowserWindow: window => call("rotation-browser-window-closing", "ROTATION_BROWSER_WINDOW_CLOSING", { window }),
+        async closingBrowserWindow(window) {
+          const acknowledgement = await call("rotation-browser-window-closing", "ROTATION_BROWSER_WINDOW_CLOSING", { window });
+          retainWriterTransition("close", window, acknowledgement);
+          return acknowledgement;
+        },
         endBrowserWindow: window => call("rotation-browser-window-end", "ROTATION_BROWSER_WINDOW_CLOSED", { window }, 300_000),
         retainFrontendSigner: (phase, record) => call("rotation-retain-signer", "ROTATION_SIGNER_RETAINED", { phase, record }),
         failClosed: state => call("rotation-fail-closed", "ROTATION_CONTAINED", { state }, 120_000),
@@ -162,8 +190,15 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
         },
       });
       await check();
-      if (managed && !fixture) {
-        heldManagedHosts.set(host, { plan, active: needsArm => active && !failed && !closePrepared && !finished && (!needsArm || armed) });
+      if (managed) {
+        heldManagedHosts.set(host, {
+          plan, fixture, active: needsArm => active && !failed && !closePrepared && !finished && (!needsArm || armed),
+          claimWriterTransition(operation, epoch) {
+            if (!writerTransition || writerTransition.operation !== operation || writerTransition.epoch !== epoch) return false;
+            writerTransition = undefined;
+            return true;
+          },
+        });
       }
       try { result = await task(host); }
       finally { heldManagedHosts.delete(host); }

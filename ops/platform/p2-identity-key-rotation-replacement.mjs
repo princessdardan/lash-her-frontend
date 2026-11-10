@@ -9,7 +9,8 @@ import { prepareP2CertificationReplacementRelease, validP2CertificationReplaceme
 import { P2_LIFECYCLE_NATIVE_SCHEDULE, p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { prepareP2ReplacementSuccessor } from "./p2-replacement-successor.mjs";
 import { validateP2HostSettings } from "./p2-release.mjs";
-import { isHeldManagedIdentityRotationHost } from "./p2-identity-key-rotation-transport.mjs";
+import { claimManagedIdentityRotationWriterTransition,
+  isHeldManagedIdentityRotationHost } from "./p2-identity-key-rotation-transport.mjs";
 import { closeFrontendInteractiveAdmission, observeFrontendDrain, openFrontendInteractiveAdmission,
   prepareFrontendInteractiveProducer } from "./frontend-admission.mjs";
 import { decodeQualificationTargetJson, requireQualificationTargetProfile,
@@ -277,13 +278,17 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
   const context = contexts.get(lease);
   demand(context);
   const fixture = options.fixture === true;
+  const hasHeldHost = Object.hasOwn(options, "heldHost");
   const { plan: { frontendPlan, finalEpoch, authenticationWindows } } = lease;
   const requireHost = (armed = false) => {
-    if (!fixture && !isHeldManagedIdentityRotationHost(options.heldHost, frontendPlan, { armed })) throw new Error(liveRefusal);
+    if ((!fixture || hasHeldHost) && !isHeldManagedIdentityRotationHost(options.heldHost, frontendPlan, { armed, fixture })) {
+      throw new Error(liveRefusal);
+    }
   };
   requireHost();
   const mocked = Object.hasOwn(options, "withSession") || Object.hasOwn(options, "observePhysical");
-  demand(exact(options, fixture ? (mocked ? ["fixture", "withSession", "observePhysical"] : ["fixture"]) : ["heldHost"]) &&
+  const fixtureFields = ["fixture", ...(mocked ? ["withSession", "observePhysical"] : []), ...(hasHeldHost ? ["heldHost"] : [])];
+  demand(exact(options, fixture ? fixtureFields : ["heldHost"]) &&
     (!mocked || fixture && typeof options.withSession === "function" && typeof options.observePhysical === "function") &&
     exact(dependencies, ["getUrl", "verifyEnvironment"]) && typeof dependencies.getUrl === "function" &&
     typeof dependencies.verifyEnvironment === "function" && typeof task === "function");
@@ -331,13 +336,18 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
       }
       finally { ownerActive = false; }
     };
-    const writerOperation = (epoch, allowedEpochs, operation) => {
+    const writerOperation = (epoch, allowedEpochs, operation, transition) => {
       demand(allowedEpochs.has(epoch));
       const { sourceCommit, targetSha256, nativePlan } = frontendPlan;
       const binding = nativePlan.writerAdmissionBinding;
       const target = { environment: "staging", targetSha256, runtimeRole: binding.roleName };
       const selected = selectIdentityRotationWriter(sourceCommit, targetSha256, retainedProbe.producers, binding);
-      return withOwner(connection => operation(connection, target, epoch, selected));
+      return withOwner(connection => {
+        if (hasHeldHost && transition) {
+          demand(claimManagedIdentityRotationWriterTransition(options.heldHost, frontendPlan, transition, epoch, { fixture }));
+        }
+        return operation(connection, target, epoch, selected);
+      });
     };
     const observeClosed = (phase, boundary) => {
       const selected = authenticationWindows.find(window => window.phase === phase);
@@ -361,8 +371,8 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
     try {
       const value = await task(Object.freeze({ ...(fixture ? { client, withOwner } : {}), verify: verifyHeld,
         prepareWriter: epoch => writerOperation(epoch, beforeWriterEpochs, prepareFrontendInteractiveProducer),
-        openWriter: epoch => writerOperation(epoch, beforeWriterEpochs, openFrontendInteractiveAdmission),
-        closeWriter: epoch => writerOperation(epoch, openWriterEpochs, closeFrontendInteractiveAdmission),
+        openWriter: epoch => writerOperation(epoch, beforeWriterEpochs, openFrontendInteractiveAdmission, "open"),
+        closeWriter: epoch => writerOperation(epoch, openWriterEpochs, closeFrontendInteractiveAdmission, "close"),
         observeDrain: epoch => writerOperation(epoch, approvedClosedEpochs, observeFrontendDrain), observeClosed, observeCurrent, prepareClose,
         receipt: retainedProbe.receipt, probe: retainedProbe, initial }));
       if (!heldFinal) heldFinal = await finalObservation();

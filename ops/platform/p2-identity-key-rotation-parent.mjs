@@ -179,7 +179,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
     const { controllerPlan } = context;
     const withSession = managed
       ? task => withP2IdentityRotationReplacementLease(context.lease, context.dependencies, task,
-        fixture ? managedOptions : { heldHost: host })
+        { ...managedOptions, heldHost: host })
       : task => legacySession(context.prepared, context.recoveryAction, context.dependencies, task);
     const sessionResult = await withSession(async scope => {
       const { client, verify, receipt, probe } = scope;
