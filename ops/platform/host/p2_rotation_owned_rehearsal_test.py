@@ -557,7 +557,7 @@ def main():
         demand((observer_source / filename).read_bytes() == (source / filename).read_bytes())
     platform = OwnedPlatform(initial, source, runtime, prior, observer_source)
     with ExitStack() as patches:
-        patches.enter_context(patch.object(rotation, 'LIVE_ELIGIBLE', True))
+        patches.enter_context(patch.object(rotation, 'MANAGED_LIVE_ELIGIBLE', True))
         patches.enter_context(patch.object(rotation, 'P2IdentityRotationHostAdapter', platform.rotation_adapter))
         patches.enter_context(patch.object(rotation.vercel, 'Client', lambda _token: SimpleNamespace(request=platform.vercel_request)))
         patches.enter_context(patch.object(rotation.day_two_workload, '_WorkloadProbe',

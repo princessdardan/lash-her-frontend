@@ -732,12 +732,12 @@ async function rehearseManagedWire(t, checkpoint) {
       : service.startsWith("course-") ? "courseRuntime" : "communityRuntime"].image,
     health: service.endsWith("-tls") ? "none" : "healthy",
   }));
-  const predecessor = fullRotation ? await (await import("./harness/p2-rotation-owned-predecessor.test.mjs"))
-    .prepareOwnedRotationPredecessor(sourceRoot) : null;
+  const { prepareOwnedRotationPredecessor } = await import("./harness/p2-rotation-owned-predecessor.test.mjs");
+  const predecessor = prepareOwnedRotationPredecessor(sourceRoot);
   const { withOwnedP2RotationPostgres } = await import("./p2-certification-replacement-probe.test.mjs");
   await withOwnedP2RotationPostgres({ pgBin: process.env.PG_BIN, serverMajor: 18, runAsPostgres: true,
     sourceCommit, releaseId, producerSha256: pin("b"),
-    ...(predecessor ? { reviewedPlanSha256: predecessor.reviewedPlanSha256 } : {}) }, async postgres => {
+    reviewedPlanSha256: predecessor.reviewedPlanSha256 }, async postgres => {
     const { f, lease, path, rotation } = managedFixture(t, { postgres, hostRoot, hostMachineId, artifacts,
       composeSha256: "sha256:" + p2NativeHash(compose), configurationSha256,
       runtimeInventorySha256: p2NativeHash(inventory), sourceClosureSha256: closureSha });
@@ -745,8 +745,8 @@ async function rehearseManagedWire(t, checkpoint) {
     writeFileSync(join(configuration, "admission/state.json"), raw({ version: 1, environment: "staging", releaseId,
       candidateSha256: f.loaded.original.plan.candidateSha256, actionId: "owned-fixture", newWork: false, recovery: false }),
     { mode: 0o644, flag: "wx" });
-    if (predecessor) {
-      predecessor.retain(f.loaded.host.results, releaseId, f.loaded.originalReleaseReceipt);
+    predecessor.retain(f.loaded.host.results, releaseId, f.loaded.originalReleaseReceipt);
+    if (fullRotation) {
       rotation.privateConfigurationSha256 = retainOwnedPhaseConfigurations(configuration, path, configurationFiles);
     }
     const selected = bindP2ManagedIdentityRotationPlan(lease, files, path, rotation);
