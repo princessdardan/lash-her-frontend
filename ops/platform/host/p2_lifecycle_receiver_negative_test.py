@@ -4,11 +4,12 @@ import copy
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import p2_identity_probe_scope as identity_scope
 import p2_lifecycle_receiver_negative as action
@@ -179,6 +180,227 @@ class ReceiverOrchestrationTests(unittest.TestCase):
 
     def test_changed_domain_stops_without_next_post_or_automatic_repair(self):
         self.run_action(mutate_after_post=2)
+
+
+class ProfiledReceiverCaseTests(unittest.TestCase):
+    def setUp(self):
+        from p2_certification_parent import P2CertificationScope
+        from p2_lifecycle_worker_evidence import P2LifecycleWorkerEvidenceStage, canonical
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+
+        temporary = tempfile.TemporaryDirectory(prefix="owned-scoped-receiver-")
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name).resolve()
+        self.source = Path(action.__file__).resolve().parents[3]
+        self.profile = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        self.positive_sha = "d" * 64
+        files = (action.PROGRAM, action.HOST_PROGRAM, action.WITNESS_PROGRAM, action.TARGET_PROFILE_PROGRAM)
+        manifest = {path: action._hash((self.source / path).read_bytes()) for path in files}
+        worker = self.worker = P2LifecycleWorkerEvidenceStage.__new__(P2LifecycleWorkerEvidenceStage)
+        scope = self.scope = P2CertificationScope.__new__(P2CertificationScope)
+        worker.scope, worker.expected_profile, scope._expected_profile = scope, self.profile, self.profile
+        worker.source = self.source
+        worker.directory = self.directory
+        worker.configuration = self.directory / "reviewed-original"
+        worker.configuration.mkdir()
+        (worker.configuration / "tls/gateway").mkdir(parents=True)
+        (worker.configuration / "gateway.json").write_bytes(b"owned gateway configuration")
+        (worker.configuration / "tls/gateway/ca.pem").write_bytes(b"owned gateway CA")
+        self.active_configuration = self.directory / "current-only"
+        self.active_configuration.mkdir()
+        for service in ("course", "community"):
+            file = self.active_configuration / (service + "-api.env")
+            file.write_bytes(b"owned env")
+            file.chmod(0o600)
+
+        lstat = Path.lstat
+
+        def owned_env_stat(path):
+            actual = lstat(path)
+            if path.parent == self.active_configuration and path.suffix == ".env":
+                return SimpleNamespace(st_mode=actual.st_mode, st_uid=0)
+            return actual
+
+        owner = patch.object(Path, "lstat", owned_env_stat)
+        owner.start()
+        self.addCleanup(owner.stop)
+        worker.reviewed = {"operatorSourceFiles": manifest, "plan": {"owned": "profiled"}}
+        worker.selected = worker.jobs = {}
+        worker.database_proof = object()
+        worker.witness_record_sha256 = self.positive_sha
+        worker.invocation_attempted = True
+        worker.invocation = {"status": "P2_DIRECT_WORKER_HTTP_OBSERVED", "httpStatus": 200}
+        worker._boundary = Mock(return_value={"epoch": "9", "newWork": False, "recovery": False, "active": 0, "uncertain": 0})
+        worker.inventory = [{"service": service, "containerId": str(index) * 64}
+            for index, service in enumerate(("gateway", "course-api", "community-api"), 1)]
+        command_id, user_id = "00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000022"
+        issued = "2026-11-09T00:00:00.000Z"
+        command = {"version": 1, "commandId": command_id, "userId": user_id, "accountVersion": 2, "action": "suspend", "issuedAt": issued}
+        command_sha = action._hash(action._canonical(command))
+        worker.prior = {"pendingRecord": {"pending": {"command": command}}}
+        worker.plan = {"actionId": "owned-worker", "receiverNegatives": {"profile": action.SCOPED_PROFILE,
+            "sourceSha256": manifest[action.PROGRAM], "hostSourceSha256": manifest[action.HOST_PROGRAM]},
+            "canonicalCommandSha256": command_sha,
+            "gatewayConfigurationSha256": action._hash((worker.configuration / "gateway.json").read_bytes())}
+        scope.certification_plan = {"mode": "direct-worker", "certificationActionId": "owned-worker",
+            "workerPlan": copy.deepcopy(worker.plan), "workerPlanSha256": action._hash(canonical(worker.plan)), "initialEpoch": "7"}
+        scope.verify = Mock()
+        scope.runtime_mount_configuration = Mock(return_value=self.active_configuration)
+        self.witness = {"profile": "lifecycle-account-v1", "userId": user_id,
+            "command": {"commandId": command_id, "accountVersion": 2, "action": "suspend", "issuedAt": issued, "canonicalSha256": command_sha},
+            "frontend": {"status": "suspended", "latestCommandId": command_id, "laterCommandCount": 0, "pendingOrDeliveringCount": 0,
+                "deliveries": [{"status": "acknowledged", "leaseId": None, "leaseUntil": None, "acknowledgedAt": issued}
+                               for _ in range(2)]},
+            "receivers": {service: {"status": "suspended", "latestCommandId": command_id} for service in ("course", "community")}}
+        self.witness_sha = action._hash(action._canonical(self.witness))
+        self.observations = {name: {"commands": [{"command_id": command_id}]} for name in ("frontend", "course", "community")}
+        self.observations["frontend"]["command"] = [{"command": command}]
+        self.posts = []
+        self.read_count = 0
+        self.drift = False
+        self.lose_reply = False
+        self.retained = {"recordSha256": self.positive_sha, "record": {"priorRecordSha256": None, "witness": self.witness,
+                         "receipt": {"witnessSha256": self.witness_sha}}}
+        scope.run = Mock(side_effect=self.child)
+        self.config = {"COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET": "owned-course-private-fixture",
+                       "COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET": "owned-community-private-fixture"}
+        for patcher in (patch.object(action, "private_program", return_value=b"owned exact profiled child"),
+                patch.object(action.persistence, "load_retained_capture", side_effect=lambda *args, **kwargs: copy.deepcopy(self.retained)),
+                patch.object(action.persistence, "HeldCertificationPersistenceScope", return_value=object()),
+                patch.object(action.persistence, "observe_with_scope", side_effect=self.observe),
+                patch.object(action.runtime, "environment_values", return_value=self.config)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def observe(self, reviewed, private, scope, url, *, expected_profile):
+        self.assertEqual(reviewed, self.worker.reviewed["plan"])
+        self.assertEqual(url, "owned-private-runtime-url")
+        self.assertEqual(expected_profile, self.profile)
+        self.assertEqual(private["selectedCommand"]["commandId"], self.witness["command"]["commandId"])
+        self.read_count += 1
+        observations = copy.deepcopy(self.observations)
+        observations["frontend"]["now"] = str(self.read_count)
+        if self.drift and self.posts:
+            observations["community"]["commands"].append({"command_id": "owned-unexpected"})
+        return {"witness": copy.deepcopy(self.witness), "receipt": {"witnessSha256": self.witness_sha},
+                "observations": observations}
+
+    def child(self, args, *, input, env, timeout, capture_output):
+        payload = json.loads(input)
+        service = payload["service"]
+        self.assertEqual(env, runtime.SAFE_ENV)
+        self.assertEqual(timeout, 20)
+        self.assertTrue(capture_output)
+        self.assertEqual(payload["qualificationTargetProfile"], self.profile)
+        fields = {key: payload[key] for key in ("version", "qualificationTargetProfile", "bindingSha256", "service")}
+        if payload["mode"] == "runtime-binding":
+            self.assertEqual(args[9], "2" * 64 if service == "course" else "3" * 64)
+            self.assertEqual(payload["runtimeEnvironment"], self.config)
+            result = {**fields, "status": "P2_LIFECYCLE_RECEIVER_RUNTIME_BOUND", "runtimeConfigurationVerified": True,
+                      "globallyReadOnly": True, "releaseAccepted": False}
+        else:
+            self.assertEqual(args[9], "1" * 64)
+            case = payload["case"]
+            intent = self.stage.directory / f"{service}-{case}-intent.json"
+            self.assertTrue(intent.is_file())
+            self.assertFalse(json.loads(intent.read_bytes())["automaticReplayAllowed"])
+            self.posts.append((service, case))
+            if self.lose_reply:
+                raise TimeoutError("owned response lost")
+            status, code = {"exact-replay": (200, "duplicate"), "changed-replay": (409, "idempotency_conflict"),
+                            "stale-restore": (409, "account_version_conflict")}[case]
+            self.assertEqual(payload["freshCommandId"] is not None, case == "stale-restore")
+            self.assertEqual(payload["witness"], self.witness)
+            self.assertEqual(payload["secret"], self.config[service.upper() + "_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET"])
+            result = {**fields, "status": "P2_LIFECYCLE_RECEIVER_CASE_PASS", "case": case, "httpStatus": status,
+                      "result": code, "witnessSha256": self.witness_sha, "domainStatePreservationRequiresReadback": True,
+                      "globallyReadOnly": False, "oidcVerified": False, "releaseAccepted": False}
+        return subprocess.CompletedProcess(args, 0, action._canonical(result) + b"\n", b"")
+
+    def start(self):
+        self.stage = action.P2ScopedLifecycleReceiverNegatives(self.worker)
+        return self.stage
+
+    def test_six_ordered_cases_with_fresh_brackets_and_durable_idempotent_join(self):
+        stage = self.start()
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.require_joined()
+        rows = [stage.observe_next("owned-private-runtime-url") for _ in action.CASE_ORDER]
+        self.assertEqual(self.posts, list(action.CASE_ORDER))
+        self.assertEqual(self.read_count, 12)
+        self.assertEqual([row["httpStatus"] for row in rows], [200, 409, 409] * 2)
+        self.assertEqual([row["beforeWitnessSha256"] for row in rows], [self.witness_sha] * 6)
+        self.assertEqual([row["afterWitnessSha256"] for row in rows], [self.witness_sha] * 6)
+        self.assertTrue(all(row["quotaWritesExcluded"] and not row["globallyReadOnly"] for row in rows))
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.observe_next("owned-private-runtime-url")
+        summary = stage.require_joined()
+        self.assertEqual(stage.require_joined(), summary)
+        self.assertEqual(summary["cases"], rows)
+        self.assertEqual(summary["positiveWitnessSha256"], self.positive_sha)
+        self.assertEqual(summary["openCases"], action.open_cases())
+        terminal = stage.directory / "receiver-negatives-joined.json"
+        self.assertEqual(action._hash(terminal.read_bytes()), summary["privateRecordSha256"])
+        self.assertEqual(len(list(stage.directory.iterdir())), 19)
+        retained = b"".join(path.read_bytes() for path in stage.directory.iterdir())
+        self.assertNotIn(b"owned-private-runtime-url", retained)
+        self.assertNotIn(b"owned-course-private-fixture", retained)
+        terminal.write_bytes(b"tampered")
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.require_joined()
+        self.assertEqual(self.posts, list(action.CASE_ORDER))
+
+    def test_retained_positive_refuses_before_any_child(self):
+        stage = self.start()
+        self.retained["recordSha256"] = "e" * 64
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.observe_next("owned-private-runtime-url")
+        self.scope.run.assert_not_called()
+        self.assertEqual(self.posts, [])
+        self.assertEqual(list(stage.directory.iterdir()), [])
+
+    def test_incorrect_closed_epoch_refuses_before_positive_read_or_child(self):
+        stage = self.start()
+        self.worker._boundary.return_value["epoch"] = "10"
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.observe_next("owned-private-runtime-url")
+        action.persistence.load_retained_capture.assert_not_called()
+        self.scope.run.assert_not_called()
+        self.assertEqual(list(stage.directory.iterdir()), [])
+
+    def test_lost_post_receipt_keeps_only_intent_and_cannot_replay_or_advance(self):
+        stage = self.start()
+        self.lose_reply = True
+        with self.assertRaises(TimeoutError):
+            stage.observe_next("owned-private-runtime-url")
+        for operation in (lambda: stage.observe_next("owned-private-runtime-url"), stage.require_joined):
+            with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+                operation()
+        self.assertEqual(self.posts, [("course", "exact-replay")])
+        self.assertEqual([p.name for p in stage.directory.iterdir()], ["course-exact-replay-intent.json"])
+
+    def test_unexpected_domain_change_retains_http_without_publishing_success(self):
+        stage = self.start()
+        self.drift = True
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.observe_next("owned-private-runtime-url")
+        self.assertEqual(self.read_count, 2)
+        self.assertEqual(sorted(p.name for p in stage.directory.iterdir()),
+                         ["course-exact-replay-http.json", "course-exact-replay-intent.json"])
+        with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+            stage.require_joined()
+
+    def test_missing_opt_in_legacy_or_future_gap_never_creates_authority(self):
+        stage = self.start()
+        for case in ("exact-replay", "future-gap"):
+            with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+                stage._child("course", {"mode": "post", "case": case}, "irrelevant")
+        self.scope.run.assert_not_called()
+        for worker in ({}, self.worker):
+            if worker is self.worker:
+                self.worker.plan.pop("receiverNegatives")
+            with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+                action.P2ScopedLifecycleReceiverNegatives(worker)
 
 
 if __name__ == "__main__":

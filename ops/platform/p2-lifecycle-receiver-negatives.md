@@ -10,7 +10,7 @@ release policy. Plan generation does not authorize a live action.
 
 ## Fixed cases and prerequisites
 
-The only implemented live profile is `suspended-head-negatives-v1`. The source-owned
+The standalone profile is `suspended-head-negatives-v1`. The source-owned
 persistence reader reconstructs an actual frontend suspend command at version N.
 Frontend and both receiver heads must be N/suspended, each immutable receiver
 command digest must match the original, both frontend deliveries must be
@@ -45,6 +45,23 @@ separate source change with actual current frontend and gateway new-work/recover
 admission closed, native scheduling off, global active/uncertain zero, no selected
 pending/in-flight deliveries, and stable N/both ACKs under the actual lease. No
 caller boolean or historical receipt substitutes for these facts.
+
+## Guarded staging-current action
+
+Select `receiverNegatives: {"profile":"suspended-head-negatives-v2"}` inside the
+reviewed profiled `direct-worker` input. The planner binds the exact host runner
+and Node child bytes. The option uses the same owner-started worker action and
+its normal suspension, canonical command and two-receiver prerequisites.
+
+After the worker reaches closed admission and verifies both acknowledgements,
+the fixed host runs the first three cases in the table for Course, then repeats
+them for Community. It checks the active runtime and native schedule, brackets
+each request with reads of all three databases and retains the intent before
+sending. Each readback must preserve the original account and domain state.
+An uncertain response stops the action and leaves the intent for reconciliation.
+The joined worker receipt binds all six private case records to the original
+suspension witness. The action keeps future-gap open until the actual current
+receiver writers and direct credential paths can be fenced.
 
 ## Source and transport
 
