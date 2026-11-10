@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import ssl
 import stat
+import subprocess
 import tempfile
 import threading
 import time
@@ -378,6 +379,23 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_media_probes_only_reviewed_course_status_and_reservation_paths(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        lesson = "10000000-0000-4000-8000-000000000002"
+        paths = (f"/admin/courses/{course}", f"/api/admin/lessons/{lesson}/video", f"/api/admin/lessons/{lesson}/video-upload")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "MEDIA_PROTECTION_SELECTION_REQUIRED"):
+                ingress.observe_media_protection(self.base.context, self.fixture.client, expected_profile=self.profile,
+                                                 course_id=course, lesson_id=lesson + "/refresh")
+            receipt = ingress.observe_media_protection(self.base.context, self.fixture.client, expected_profile=self.profile,
+                                                       course_id=course, lesson_id=lesson)
+        self.assertEqual([row["path"] for row in receipt["endpointDenials"]], list(paths))
+        self.assertEqual(receipt["requestMethod"], "GET")
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_learning_probes_exact_reviewed_public_and_academy_pages_on_both_origins(self):
         course = "10000000-0000-4000-8000-000000000001"
         paths = ("/courses/owned-course", f"/academy/courses/{course}")
@@ -568,6 +586,167 @@ class InteractiveIngressTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, "INGRESS_PATH_REFUSED"):
                 requester.request(canonical.ORIGIN, path)
         self.assertEqual(urls, [])
+
+
+class MediaReservationWindowTests(unittest.TestCase):
+    def fixture(self, *, replaces=False):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile
+
+        def uuid(index):
+            return f"10000000-0000-4000-8000-{index:012d}"
+
+        actor, course, lesson, attempt, current = [uuid(index) for index in range(1, 6)]
+        prior = current if replaces else None
+        selected = {"operation": "reserve-video-upload", "courseId": course, "lessonId": lesson, "revision": 6,
+                    "currentVideoAssetId": prior, "fileSha256": "f" * 64, "fileBytes": 1200, "contentType": "video/mp4"}
+        body = json.dumps({"expectedCourseRevision": 6, "expectedCurrentVideoAssetId": prior}, separators=(",", ":")).encode()
+        path = f"/course/v1/admin/lessons/{lesson}"
+        requests = [
+            {"method": "GET", "target": f"/course/v1/admin/courses/{course}", "uses": 1, "bodySha256": window._EMPTY},
+            {"method": "GET", "target": f"{path}/video", "uses": 1, "bodySha256": window._EMPTY},
+            {"method": "POST", "target": f"{path}/video-upload", "uses": 1, "bodySha256": window._hash(body)},
+        ]
+        plan = {"qualificationTargetProfile": dict(profile), "planSha256": "c" * 64, "certificationActionId": "owned-media",
+                "initialEpoch": "7", "sourceCommit": "a" * 40, "targetSha256": "b" * 64,
+                "nativePlan": {"producer": {"role": {"oid": "42"}}},
+                "scopedAction": {"stage": "media", "actorId": actor, "windowSeconds": 60, "requests": requests,
+                                 "mediaAction": selected}}
+        gateway = {**window.browser_receipt(plan, "GATEWAY_OBSERVED"), "epoch": "8", "gatewayStateSha256": "d" * 64,
+                   "gatewayActive": 0, "gatewayUncertain": 0,
+                   "gatewayAcknowledgements": [{"requestIndex": index, "upstreamStatus": status, "requestId": uuid(10 + index),
+                                                "proofRequestId": uuid(20 + index)} for index, status in enumerate((200, 200, 201))]}
+        evidence = {
+            "browserResponse": {
+                "page": {"pathname": f"/admin/courses/{course}", "status": 200},
+                "read": {"requestId": uuid(11), "courseRevision": 6, "currentVideoAssetId": prior},
+                "reservation": {"requestId": uuid(12), "status": 200, "assetId": attempt, "lessonId": lesson,
+                                "uploadId": "owned-upload", "uploadTimeoutSeconds": 3600, "assetStatus": "uploading"},
+                "outbound": {"intercepted": True, "sent": False, **{key: selected[key] for key in ("fileSha256", "fileBytes", "contentType")}},
+            },
+            "courseWitness": {"courseId": course, "lessonId": lesson, "courseRevision": 7, "attemptId": attempt,
+                              "uploadId": "owned-upload", "generation": 2 if replaces else 1, "environmentId": "owned-environment",
+                              "status": "uploading", "isCurrent": not replaces, "readOnly": True},
+        }
+        return plan, gateway, evidence
+
+    def test_exact_scope_signs_selected_actor_course_and_lesson(self):
+        for replaces in (False, True):
+            with self.subTest(replaces=replaces):
+                plan, _, _ = self.fixture(replaces=replaces)
+                action = plan["scopedAction"]
+                self.assertEqual(window.validate_interactive_plan_action(plan), action)
+                selected = action["mediaAction"]
+                selector = window._selection_sha(action)
+                self.assertEqual(selector, (action["actorId"] + selected["courseId"] + selected["lessonId"]).replace("-", ""))
+                cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40,
+                    "b" * 64, "8", "media", 1_794_009_600, 60, "c" * 32, selector)
+                self.assertEqual(cookie.split(".")[:3], ["v2", "8", "media"])
+                self.assertEqual(cookie.split(".")[6], selector)
+                self.assertEqual(len(gateway_key), 64)
+                for change in ({"revision": True}, {"fileBytes": 8 * 1024 * 1024 + 1}, {"contentType": "video/webm"},
+                               {"fileSha256": "0" * 64}, {"currentVideoAssetId": ""}):
+                    with self.assertRaisesRegex(ValueError, "MEDIA_SELECTION_REQUIRED"):
+                        window.validate_interactive_action({**action, "mediaAction": {**selected, **change}})
+                for index, change in ((0, {"uses": 2}), (1, {"target": action["requests"][1]["target"] + "/refresh"}),
+                                      (2, {"bodySha256": window._EMPTY})):
+                    requests = copy.deepcopy(action["requests"])
+                    requests[index].update(change)
+                    with self.assertRaisesRegex(ValueError, "MEDIA_REQUESTS_REQUIRED"):
+                        window.validate_interactive_action({**action, "requests": requests})
+
+    def test_media_evidence_joins_two_gateway_ids_and_managed_course_row(self):
+        for replaces in (False, True):
+            with self.subTest(replaces=replaces):
+                plan, gateway, evidence = self.fixture(replaces=replaces)
+                joined = window.browser_case_evidence(plan, evidence, gateway_artifact=gateway)
+                self.assertEqual(joined["courseRevision"], 7)
+                self.assertIs(joined["isCurrent"], not replaces)
+                self.assertIs(joined["uploadSent"], False)
+                self.assertEqual(joined["gatewayPostRequestId"], gateway["gatewayAcknowledgements"][2]["requestId"])
+                for key, changes, error in (
+                    ("read", {"requestId": gateway["gatewayAcknowledgements"][0]["requestId"]}, "MEDIA_REQUEST_JOIN_REQUIRED"),
+                    ("reservation", {"status": 201}, "MEDIA_RESERVATION_REQUIRED"),
+                    ("reservation", {"uploadUrl": "fixture-forbidden"}, "MEDIA_RESERVATION_REQUIRED"),
+                    ("outbound", {"sent": True}, "MEDIA_INTERCEPTION_REQUIRED"),
+                    ("outbound", {"fileBytes": True}, "MEDIA_INTERCEPTION_REQUIRED"),
+                ):
+                    changed = copy.deepcopy(evidence)
+                    changed["browserResponse"][key].update(changes)
+                    with self.assertRaisesRegex(ValueError, error):
+                        window.browser_case_evidence(plan, changed, gateway_artifact=gateway)
+                for change in ({"courseRevision": 6}, {"uploadId": "foreign"}, {"isCurrent": replaces},
+                               {"environmentId": "foreign.invalid"}, {"generation": True}, {"readOnly": 1}):
+                    changed = {**evidence, "courseWitness": {**evidence["courseWitness"], **change}}
+                    with self.assertRaisesRegex(ValueError, "MEDIA_COURSE_WITNESS_REQUIRED"):
+                        window.browser_case_evidence(plan, changed, gateway_artifact=gateway)
+                altered = copy.deepcopy(gateway)
+                altered["gatewayAcknowledgements"][2]["upstreamStatus"] = 200
+                with self.assertRaisesRegex(ValueError, "MEDIA_ACKNOWLEDGEMENTS_REQUIRED"):
+                    window.browser_case_evidence(plan, evidence, gateway_artifact=altered)
+
+    def test_media_ledger_requires_exact_three_completed_new_work_operations(self):
+        plan, _, _ = self.fixture()
+        producer = hashlib.sha256(("lash-her:p2q:interactive-producer:v1\n" + "a" * 40 + "\n" + "b" * 64).encode()).hexdigest()
+        ledger = {"commands": [], "deliveries": [], "orderViolations": [], "operations": [
+            {"id": f"10000000-0000-4000-8000-{index:012d}", "epoch": "8", "kind": kind, "state": "completed",
+             "producer_sha256": producer, "source_sha": "a" * 40, "role_oid": "42", "completed_at": "owned",
+             "reconciliation_sha256": None}
+            for index, kind in enumerate(("recovery", "new-work", "new-work", "new-work"), start=1)]}
+        self.assertEqual(window.require_browser_ledger(plan, ledger), 4)
+        with self.assertRaisesRegex(ValueError, "MEDIA_THREE_NEW_WORK_REQUIRED"):
+            window.require_browser_ledger(plan, {**ledger, "operations": ledger["operations"][:-1]})
+
+    def test_host_reads_selected_course_only_after_fencing_and_refuses_environment_drift(self):
+        plan, _, evidence = self.fixture(replaces=True)
+        stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
+        stage.action, stage._state, stage._permit_issued = plan["scopedAction"], "opened", True
+        browser, witness = evidence["browserResponse"], evidence["courseWitness"]
+        image = "owned-course-image"
+        target = {"host": "owned.invalid", "port": 5432, "database": "owned_course", "user": "owned_migration", "serverMajor": 18}
+        events = []
+        stage.verify_gateway_fenced = lambda: events.append("closed")
+
+        def run(args, **kwargs):
+            events.append(args[1])
+            self.assertNotIn("owned-credential", " ".join(args))
+            self.assertNotIn("owned-credential", kwargs["env"].values())
+            if args[1] == "run":
+                self.assertEqual(args[-4:], [image, "--input-type=module", "--eval", window._MEDIA_COURSE_READ])
+                self.assertIn("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY", args[-1])
+                self.assertEqual(json.loads(kwargs["input"]), {"connectionUrl": "owned-credential", "target": target,
+                    "courseId": witness["courseId"], "lessonId": witness["lessonId"], "attemptId": witness["attemptId"],
+                    "priorCurrentId": browser["read"]["currentVideoAssetId"]})
+                return subprocess.CompletedProcess(args, 0, json.dumps(witness).encode(), b"")
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            configuration = Path(temporary)
+            config = b"MUX_ENVIRONMENT_ID=owned-environment\n"
+            (configuration / "course-api.env").write_bytes(config)
+            stage.broker = SimpleNamespace(configuration=configuration, api_proof=object(),
+                selected={"artifacts": {"courseMigration": {"image": image}}}, scope=SimpleNamespace(run=run),
+                jobs={"course": {"job": {"target": target}, "image": image}},
+                certification_profile=lambda: plan["qualificationTargetProfile"],
+                initial={"configurationSha256": {"course-api.env": window._hash(config)},
+                         "credentials": {"COURSE_STAGING_DATABASE_URL": "owned-credential"}})
+            with (patch("current_databases.read_certification_api_proof") as proof,
+                  patch.object(window.runtime, "environment_values", return_value={"MUX_ENVIRONMENT_ID": "owned-environment"}) as environment):
+                with self.assertRaisesRegex(ValueError, "MEDIA_FENCED_OBSERVATION_REQUIRED"):
+                    stage.observe_media_reservation(browser)
+                self.assertEqual(events, [])
+                proof.assert_not_called()
+                stage._state = "fenced"
+                self.assertEqual(stage.observe_media_reservation(browser), witness)
+                self.assertEqual(events, ["closed", "run", "rm", "container", "closed"])
+                proof.assert_called_once()
+                witness["environmentId"] = "foreign-environment"
+                with self.assertRaisesRegex(ValueError, "MEDIA_COURSE_ENVIRONMENT_CHANGED"):
+                    stage.observe_media_reservation(browser)
+                environment.return_value = {}
+                before = len(events)
+                with self.assertRaisesRegex(ValueError, "MEDIA_COURSE_ENVIRONMENT_REQUIRED"):
+                    stage.observe_media_reservation(browser)
+                self.assertEqual(events[before:], ["closed"])
 
 
 class InteractiveWindowTests(unittest.TestCase):

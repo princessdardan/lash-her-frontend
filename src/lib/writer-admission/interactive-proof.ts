@@ -32,7 +32,7 @@ const authoringRepublishPaidActorPrefix = "7032712d617574682d7265702d763100";
 const authoringReviewPaidRestorationActorPrefix = "7032712d617574682d72626c2d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
   firstOwner?: WriterFirstOwner;
-  authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection;
+  authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection; mediaReservation?: LessonSelection;
   lessonEntry?: LessonSelection; lessonDenial?: LessonSelection; lessonAssessment?: LessonSelection;
   lessonResume?: LessonSelection; lessonRestore?: LessonSelection; lessonAckLoss?: LessonSelection; lessonExitSave?: LessonSelection;
   lessonVisibilitySave?: LessonSelection; lessonStaleRevision?: LessonSelection };
@@ -70,7 +70,6 @@ const firstOwnerAuth = {
   GET: at(`/admin/sign-in|/api/auth/callback/google|${P2_FIRST_OWNER_PATH}`),
   POST: at("/admin/sign-in"),
 };
-const authoringReads = at(`/admin/courses(?:/${uuid})?|/api/admin/courses(?:/${uuid}(?:/publication-readiness)?)?|/api/admin/lessons/${uuid}/quiz`);
 const authoringEdit = {
   GET: at(`/(?:api/)?admin/courses/${uuid}`),
   PATCH: at(`/api/admin/courses/${uuid}`),
@@ -90,11 +89,6 @@ const authoringPublish = { ...authoringReviewPublication, PATCH: authoringEdit.P
 const authoringSaveQuiz = {
   GET: at(`/(?:api/)?admin/courses/${uuid}|/api/admin/lessons/${uuid}/quiz`),
   PUT: at(`/api/admin/lessons/${uuid}/quiz`),
-};
-const media = {
-  GET: at(`/api/admin/lessons/${uuid}/video`),
-  POST: at(`/api/admin/lessons/${uuid}/(?:video-upload|video/${uuid}/(?:refresh|captions))`),
-  DELETE: at(`/api/admin/lessons/${uuid}/video/${uuid}/captions/[A-Za-z0-9_-]{1,255}`),
 };
 const learning = {
   GET: at(`/academy/courses/${uuid}|/courses/[a-z0-9]+(?:-[a-z0-9]+)*`),
@@ -126,7 +120,7 @@ function permitsCustomerAuth(method: string, path: string, provider?: WriterIden
   return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
 }
 
-function permits({ stage, identityActorKind, identityEnrollment, firstOwner, authoringOperation, learnerAccess, lessonEntry, lessonDenial, lessonAssessment,
+function permits({ stage, identityActorKind, identityEnrollment, firstOwner, authoringOperation, learnerAccess, mediaReservation, lessonEntry, lessonDenial, lessonAssessment,
   lessonResume, lessonRestore, lessonAckLoss, lessonExitSave, lessonVisibilitySave, lessonStaleRevision }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
     case "identity":
@@ -143,7 +137,12 @@ function permits({ stage, identityActorKind, identityEnrollment, firstOwner, aut
       if (authoringOperation === "reorder-curriculum") return matches(authoringReorder, method, path);
       if (authoringOperation === "edit-draft" || authoringOperation === "archive-paid-course") return matches(authoringEdit, method, path);
       return authoringOperation === "create-draft" && ((method === "GET" && path === "/admin/courses") || (method === "POST" && path === "/api/admin/courses"));
-    case "media": return matches(media, method, path) || (method === "GET" && authoringReads.test(path));
+    case "media": {
+      if (!mediaReservation) return false;
+      const lesson = `/api/admin/lessons/${mediaReservation.lessonId}`;
+      if (method === "GET") return path === `/admin/courses/${mediaReservation.courseId}` || path === `${lesson}/video`;
+      return method === "POST" && path === `${lesson}/video-upload`;
+    }
     case "learning": return matches(learning, method, path);
     case "learner-access": return method === "GET" && learnerAccess !== undefined &&
       (learnerAccessReads.test(path) || learnerAccessLessonRead.exec(path)?.[1] === learnerAccess.lessonId);
@@ -238,7 +237,7 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   const fields = cookie.split(".");
   const [version, epoch, stage, started, expires, nonce, selection] = fields;
   if (cookie.length > (stage === "lesson-visibility-save" ? 261 : stage === "lesson-stale-revision" ? 260 : 256)) return null;
-  const lessonStage = stage === "lesson-entry" || stage === "lesson-denial" || stage === "lesson-assessment" ||
+  const lessonStage = stage === "media" || stage === "lesson-entry" || stage === "lesson-denial" || stage === "lesson-assessment" ||
     stage === "lesson-resume" || stage === "lesson-restore" || stage === "lesson-ack-loss" || stage === "lesson-exit-save" ||
     stage === "lesson-visibility-save" || stage === "lesson-stale-revision";
   const hasSelection = lessonStage || stage === "lifecycle" || stage === "identity" || stage === "authoring" || stage === "learning" ||
@@ -257,6 +256,7 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const lessonId = decodeCompactUuid(selection.slice(64));
     if (!actorId || !courseId || !lessonId) return null;
     const selected = { actorId, courseId, lessonId };
+    if (stage === "media") return { ...permit, mediaReservation: selected, authoringActorId: actorId };
     if (stage === "lesson-entry") return { ...permit, lessonEntry: selected };
     if (stage === "lesson-denial") return { ...permit, lessonDenial: selected };
     if (stage === "lesson-assessment") return { ...permit, lessonAssessment: selected };
@@ -324,7 +324,7 @@ export function attestInteractiveRequest(request: { origin: string; method: stri
   const authority = binding(env);
   const browser = authority && browserProof(authority, request.cookie, now);
   if (!authority || !browser ||
-    (["lesson-entry", "lesson-resume", "lesson-restore", "lesson-exit-save", "lesson-visibility-save"].includes(browser.stage) && request.search)) return null;
+    (["media", "lesson-entry", "lesson-resume", "lesson-restore", "lesson-exit-save", "lesson-visibility-save"].includes(browser.stage) && request.search)) return null;
   // Next strips its internal Flight key before proxy runs. Retain the exact
   // remaining search string for the selected progress read.
   const target = ["lesson-denial", "lesson-assessment", "lesson-ack-loss", "lesson-stale-revision"].includes(browser.stage)
@@ -412,6 +412,29 @@ export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof
 }
 
 type ScopedCourseRequest = { method: string; target: string; body?: string; idempotencyKey?: string };
+
+export function validMediaReservationBody(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body) ||
+    !("expectedCourseRevision" in body) || !("expectedCurrentVideoAssetId" in body) || Object.keys(body).length !== 2) return false;
+  const { expectedCourseRevision: revision, expectedCurrentVideoAssetId: current } = body;
+  return typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 1 && revision < 2_147_483_647 &&
+    (current === null || typeof current === "string" && canonicalUuid.test(current));
+}
+
+function permitsMediaReservationCourseRequest(browser: NonNullable<ReturnType<typeof verifiedInteractiveRequest>>,
+  request: ScopedCourseRequest): boolean {
+  const selection = browser.mediaReservation;
+  if (!selection || browser.method !== request.method || request.idempotencyKey !== undefined) return false;
+  const { courseId, lessonId } = selection;
+  const lesson = `/course/v1/admin/lessons/${lessonId}`;
+  if (request.method === "GET" && request.body === undefined) {
+    if (browser.path === `/admin/courses/${courseId}`) return request.target === `/course/v1/admin/courses/${courseId}`;
+    return browser.path === `/api/admin/lessons/${lessonId}/video` && request.target === `${lesson}/video`;
+  }
+  return browser.path === `/api/admin/lessons/${lessonId}/video-upload` &&
+    request.method === "POST" && request.target === `${lesson}/video-upload` &&
+    typeof request.body === "string" && validMediaReservationBody(JSON.parse(request.body));
+}
 
 export function permitsLessonDenialCourseRequest({ courseId, lessonId }: LessonSelection, request: ScopedCourseRequest): boolean {
   const student = "/course/v1/student", lesson = `${student}/lessons/${lessonId}`;
@@ -517,6 +540,7 @@ export async function interactiveCourseGatewayProof(request: {
     const issued = Math.floor(Date.now() / 1000);
     const browser = permits.length === 1 && verifiedInteractiveRequest(authority, proof, permits[0].value, issued);
     if (!browser || !gatewayStages.has(browser.stage) ||
+      (browser.stage === "media" && !permitsMediaReservationCourseRequest(browser, { ...request, target })) ||
       (browser.lessonEntry && !permitsLessonEntryCourseRequest(browser.lessonEntry, { ...request, target })) ||
       (browser.lessonDenial && !permitsLessonDenialCourseRequest(browser.lessonDenial, { ...request, target })) ||
       (browser.lessonAssessment && (!permitsLessonAssessmentCourseRequest(browser.lessonAssessment, { ...request, target }) ||

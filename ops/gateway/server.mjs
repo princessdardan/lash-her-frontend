@@ -154,6 +154,9 @@ export function createGateway(input, options = {}) {
         }
         const used = interactiveEvidence.used.get(interactiveSelection.requestIndex) ?? 0;
         if (interactiveEvidence.ids.has(interactiveSelection.requestId) || used >= interactiveSelection.uses ||
+            (interactiveSelection.mediaReservation &&
+              (interactiveSelection.requestIndex !== interactiveEvidence.acknowledged.length ||
+                interactiveEvidence.acknowledged.some(row => row.upstreamStatus !== 200))) ||
             (assessment && !lessonAssessmentPhasePermits(interactiveSelection, interactiveEvidence)) ||
             (phasedPositionSave && !scopedLessonPositionPhasePermits(interactiveSelection, interactiveEvidence, stage)) ||
             ((restore || stage === "lesson-resume") && !lessonResumePhasePermits(interactiveSelection, interactiveEvidence, restore))) {
@@ -221,7 +224,8 @@ export function createGateway(input, options = {}) {
             if (interactiveSelection) {
               const stage = interactiveAdmission.interactive.stage;
               const scopedPosition = ["lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision"].includes(stage);
-              const strictInteractive = scopedPosition || stage === "lesson-denial" || stage === "lesson-assessment";
+              const strictInteractive = scopedPosition || stage === "lesson-denial" || stage === "lesson-assessment" ||
+                interactiveSelection.mediaReservation;
               const acknowledged = scopedPosition
                 ? scopedResumeAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,
                   interactiveSelection, interactiveEvidence, interactiveAdmission.interactive, admissionNow())

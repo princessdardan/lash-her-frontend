@@ -39,6 +39,7 @@ _COURSE_ID = r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-
 _AUTHORING_DETAIL_PATH = re.compile(rf"(?:/admin/courses|/api/admin/courses)/{_COURSE_ID}")
 _PUBLICATION_READINESS_PATH = re.compile(rf"/api/admin/courses/{_COURSE_ID}/publication-readiness")
 _QUIZ_PATH = re.compile(rf"/api/admin/lessons/{_COURSE_ID}/quiz")
+_MEDIA_PATH = re.compile(rf"/api/admin/lessons/{_COURSE_ID}/(?:video|video-upload)")
 _COURSE_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _PUBLIC_COURSE_PATH = re.compile(rf"/courses/{_COURSE_SLUG}")
 _LEARNER_COURSE_PATH = re.compile(rf"/academy/courses/{_COURSE_ID}")
@@ -85,7 +86,7 @@ class UnauthenticatedIngressClient:
         demand(type(origin) is str and (origin == canonical.ORIGIN or _DIRECT_DEPLOYMENT.fullmatch(origin)),
                "P2_INTERACTIVE_INGRESS_ORIGIN_REFUSED")
         demand(type(path) is str and (path in _BROWSER_PATHS + _AUTHORING_PATHS or _AUTHORING_DETAIL_PATH.fullmatch(path) or
-                                     _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path) or
+                                     _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path) or _MEDIA_PATH.fullmatch(path) or
                                      len(path) <= 129 and _PUBLIC_COURSE_PATH.fullmatch(path) or _LEARNER_COURSE_PATH.fullmatch(path) or
                                      _LEARNER_COURSE_FLIGHT_PATH.fullmatch(path) or
                                      _LEARNER_COURSE_API_PATH.fullmatch(path) or _LEARNER_LESSON_API_PATH.fullmatch(path) or
@@ -198,6 +199,14 @@ def observe_authoring_protection(context, client, *, expected_profile, course_id
     if quiz_lesson_id is not None:
         paths += (f"/api/admin/lessons/{quiz_lesson_id}/quiz",)
     return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
+
+
+def observe_media_protection(context, client, *, expected_profile, course_id, lesson_id):
+    demand(all(type(value) is str and re.fullmatch(_COURSE_ID, value) for value in (course_id, lesson_id)),
+           "P2_INTERACTIVE_MEDIA_PROTECTION_SELECTION_REQUIRED")
+    lesson = f"/api/admin/lessons/{lesson_id}"
+    return _observe_selected_protection(context, client, expected_profile, browser=True,
+        paths=(f"/admin/courses/{course_id}", f"{lesson}/video", f"{lesson}/video-upload"))
 
 
 def observe_learning_protection(context, client, *, expected_profile, course_id, slug):

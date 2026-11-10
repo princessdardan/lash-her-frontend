@@ -2226,8 +2226,15 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         if stage.action['stage'] in SCOPED_GATEWAY_BROWSER_STAGES:
             from qualification_target_profile import decode_qualification_target_json
             gateway_artifact = decode_qualification_target_json(migrate.read_input(self.directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
-        bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
-        fenced = stage.verify_fenced(retain=True)
+        if stage.action['stage'] == 'media':
+            require(type(evidence) is dict and set(evidence) == {'browserResponse'},
+                    'P2_INTERACTIVE_MEDIA_BROWSER_RESPONSE_REQUIRED')
+            fenced = stage.verify_fenced(retain=True)
+            evidence = {**evidence, 'courseWitness': stage.observe_media_reservation(evidence['browserResponse'])}
+            bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
+        else:
+            bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
+            fenced = stage.verify_fenced(retain=True)
         result = {**browser_receipt(plan, 'JOINED'), **bindings, **fenced,
                   'browserProgramSha256': self.initial['interactiveController']['browserProgramSha256']}
         migrate.write_json(self.directory, browser_artifact(plan, 'evidence'), evidence)

@@ -43,6 +43,33 @@ function fixture() {
   return { calls, state, client, run };
 }
 
+test("media permits select one owner, course and lesson and reject the old unselected scope", () => {
+  const actorId = "8e2280dc-0389-4248-b21c-f87427f9e85c";
+  const courseId = "8e2280dc-0389-4248-b21c-f87427f9e85d";
+  const lessonId = "8e2280dc-0389-4248-b21c-f87427f9e85e";
+  const env = { ...environment(), CRON_SECRET: "r".repeat(48), VERCEL_URL: "reviewed-deploy.vercel.app" };
+  const now = 1_800_000_000;
+  const issue = (value: string) => `${value}.${createHmac("sha256", env.CRON_SECRET)
+    .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${value}`).digest("hex")}`;
+  const window = `1.media.${now}.${now + 60}.${"a".repeat(32)}`;
+  const selection = (actorId + courseId + lessonId).replaceAll("-", "");
+  const cookie = issue(`v2.${window}.${selection}`);
+  const attest = (method: string, path: string, candidate = cookie, search = "") =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie: candidate }, env, now);
+  const lesson = `/api/admin/lessons/${lessonId}`;
+  for (const [method, path] of [["GET", `/admin/courses/${courseId}`], ["GET", `${lesson}/video`], ["POST", `${lesson}/video-upload`]]) {
+    const proof = attest(method, path);
+    assert.ok(proof);
+    assert.equal(readInteractiveRequest(proof, cookie, env, now)?.authoringActorId, actorId);
+  }
+  assert.equal(attest("POST", `${lesson}/video-upload`, issue(`v1.${window}`)), null);
+  assert.equal(attest("POST", `/api/admin/lessons/${courseId}/video-upload`), null);
+  assert.equal(attest("GET", `/admin/courses/${lessonId}`), null);
+  assert.equal(attest("GET", `${lesson}/video`, cookie, "?refresh=true"), null);
+  assert.equal(attest("POST", `${lesson}/video/${actorId}/refresh`), null);
+  assert.equal(attest("DELETE", `${lesson}/video/${actorId}/captions/track`), null);
+});
+
 test("off mode preserves responses and exceptions without configuration or database work", async () => {
   let created = 0;
   const run = createWriterAdmissionRunner({ getConfiguration: () => resolveWriterAdmissionConfiguration({}), createClient: () => { created++; throw new Error(); } });
@@ -304,7 +331,7 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
       assert.equal(attest(method, path, permit), null);
     }
   }
-  assert.ok(attest("GET", courseDetail, issue("media")));
+  assert.equal(attest("GET", courseDetail, issue("media")), null);
   const wrongRoute = `${now}.${Buffer.from(`GET ${courseDetail}`).toString("base64url")}`;
   const wrongMac = createHmac("sha256", env.CRON_SECRET)
     .update(`lash-her:p2q:interactive:request:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${cookie}\n${wrongRoute}`).digest("hex");

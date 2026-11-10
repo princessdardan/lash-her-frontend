@@ -10,7 +10,8 @@ import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-orig
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.mjs';
 import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt,
-  validateP2LessonStaleRevisionReceipt} from './p2-lifecycle-browser-recorder.mjs';
+  validateP2LessonStaleRevisionReceipt,validP2MediaReservationAction,p2MediaReservationBody,
+  validateP2MediaReservationReceipt} from './p2-lifecycle-browser-recorder.mjs';
 import {lessonAckLossBodies,lessonExitSaveBodies,lessonStaleRevisionBodies} from '../gateway/lesson-resume-position.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 
@@ -420,9 +421,32 @@ function reviewedStaleRevisionAction(action){
   return {selection:{...staleRevision,actorKind:'customer'},staleRevision};
 }
 
+export function validP2MediaReservationRequests(selected,requests){
+  if(!validP2MediaReservationAction(selected))return false;
+  const lesson='/course/v1/admin/lessons/'+selected.lessonId;
+  return isDeepStrictEqual(requests,[
+    {method:'GET',target:'/course/v1/admin/courses/'+selected.courseId,bodySha256:emptyBodySha256,uses:1},
+    {method:'GET',target:lesson+'/video',bodySha256:emptyBodySha256,uses:1},
+    {method:'POST',target:lesson+'/video-upload',bodySha256:p2NativeHash(p2MediaReservationBody(selected)),uses:1},
+  ]);
+}
+
+export function mediaReservationJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse']));
+  const browser=validateP2MediaReservationReceipt(evidence.browserResponse,selected);
+  demand(browser.read.requestId===observed.gatewayAcknowledgements[1].requestId&&
+    browser.reservation.requestId===observed.gatewayAcknowledgements[2].requestId);
+  return {actorId:selected.actorId,operation:selected.operation,courseId:selected.courseId,lessonId:selected.lessonId,
+    courseRevision:selected.revision+1,currentVideoAssetId:selected.currentVideoAssetId,attemptId:browser.reservation.assetId,
+    uploadId:browser.reservation.uploadId,assetStatus:'uploading',isCurrent:selected.currentVideoAssetId===null,
+    uploadTimeoutSeconds:browser.reservation.uploadTimeoutSeconds,fileSha256:selected.fileSha256,fileBytes:selected.fileBytes,
+    contentType:selected.contentType,uploadIntercepted:true,uploadSent:false,gatewayPostRequestId:browser.reservation.requestId,
+    browserResponseSha256:p2NativeHash(browser),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
+}
+
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
-  const identity=action?.stage==='identity',authoring=action?.stage==='authoring',learning=action?.stage==='learning';
+  const identity=action?.stage==='identity',authoring=action?.stage==='authoring',media=action?.stage==='media',learning=action?.stage==='learning';
   const paidGrant=action?.stage==='paid-grant',learnerAccess=action?.stage==='learner-access';
   const paidRevoke=action?.stage==='paid-revoke',lessonEntry=action?.stage==='lesson-entry';
   const lessonDenial=action?.stage==='lesson-denial',assessment=action?.stage==='lesson-assessment',resume=action?.stage==='lesson-resume',restore=action?.stage==='lesson-restore';
@@ -430,14 +454,14 @@ function reviewedInteractivePlan(plan,initial){
   const exitSave=action?.stage==='lesson-exit-save';
   const visibility=action?.stage==='lesson-visibility-save';
   const staleRevision=action?.stage==='lesson-stale-revision';
-  const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
+  const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   const firstOwner=identity&&Object.hasOwn(action,'firstOwner');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
-      firstOwner?'firstOwner':enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
+      firstOwner?'firstOwner':enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':media?'mediaAction':learning?'learningAction':
         paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':
           lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':resume?'resumeAction':restore?'restoreAction':
             ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':staleRevision?'staleRevisionAction':'frontendAction'])&&
@@ -446,6 +470,11 @@ function reviewedInteractivePlan(plan,initial){
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
     binding.bindingSha256===plan.planSha256&&sha256(binding.browserProgramSha256));
   if(authoring)return reviewedAuthoringAction(action);
+  if(media){
+    demand(canonicalUuid(action.actorId)&&validP2MediaReservationRequests(action.mediaAction,action.requests));
+    const selection={actorId:action.actorId,...action.mediaAction};
+    return {selection:{...selection,actorKind:'admin'},media:selection};
+  }
   if(learning)return reviewedLearningAction(action);
   if(paidGrant)return reviewedPaidGrantAction(action);
   if(learnerAccess)return reviewedLearnerAccessAction(action);
@@ -549,7 +578,7 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const statuses=quiz?[200,quizRevision===0?404:200,200]:publication?[200,200,200,200]:paired?[200,200,409]:archive?[200,200]:[200,201];
   const indices=republish?(outcome==='published'?[0,1,0,2,3,0]:[0,1,0,2]):
     quiz||publication&&outcome==='published'?[0,1,2,0]:paired?[0,0,1,0,2]:createCurriculum||archive?[0,1,0]:[0,1];
-  const sequences=learning?[
+  const sequences=operation==='reserve-video-upload'?[[[0,200],[1,200],[2,201]]]:learning?[
     [[0,200],[1,403],[2,201],[1,200],[3,200]],
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
   ]:operation===learningReplayOperation?[
@@ -1094,7 +1123,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const requireRecorder=()=>demand(alive()&&isDeepStrictEqual(readP2InteractiveBrowserControllerBinding(interactivePlan,browserController),binding));
           requireRecorder();
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
-          const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring',learning=stage==='learning';
+          const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring',media=stage==='media',learning=stage==='learning';
           const stageLabel=stage.toUpperCase().replaceAll('-','_');
           const paidGrant=stage==='paid-grant',learnerAccess=stage==='learner-access',paidRevoke=stage==='paid-revoke';
           const lessonEntry=stage==='lesson-entry',lessonDenial=stage==='lesson-denial',assessment=stage==='lesson-assessment',resume=stage==='lesson-resume',restore=stage==='lesson-restore';
@@ -1102,15 +1131,15 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const exitSave=stage==='lesson-exit-save';
           const visibility=stage==='lesson-visibility-save';
           const staleRevision=stage==='lesson-stale-revision';
-          const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
-          const {selection,enrollment,firstOwner,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
+          const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
+          const {selection,enrollment,firstOwner,authoring:authoringPermit,media:mediaPermit,learning:learningPermit,paidGrant:paidGrantPermit,
             learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit,lessonEntry:lessonEntryPermit,
             lessonDenial:lessonDenialPermit,assessment:assessmentPermit,resume:resumePermit,restore:restorePermit,ackLoss:ackLossPermit,
             exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
-            ...(authoring?{authoring:authoringPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
+            ...(authoring?{authoring:authoringPermit}:media?{media:mediaPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
               learnerAccess?{learnerAccess:learnerAccessPermit}:paidRevoke?{paidRevoke:paidRevokePermit}:
               lessonEntry?{lessonEntry:lessonEntryPermit}:lessonDenial?{lessonDenial:lessonDenialPermit}:assessment?{assessment:assessmentPermit}:resume?{resume:resumePermit}:restore?{restore:restorePermit}:
               ackLoss?{ackLoss:ackLossPermit}:exitSave?{exitSave:exitSavePermit}:visibility?{visibility:visibilityPermit}:
@@ -1177,7 +1206,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async retain(caseEvidence){
               demand(phase==='fenced'&&installed&&(!gatewayScoped||gatewayObservation));requireRecorder();
               const evidence=structuredClone(caseEvidence);
-              const expected=learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
+              const expected=media?mediaReservationJoinedEvidence(evidence,selection,gatewayObservation):
+                learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
                 paidGrant?paidGrantJoinedEvidence(evidence,selection,gatewayObservation):
                 learnerAccess?learnerAccessJoinedEvidence(evidence,selection,gatewayObservation):
                 paidRevoke?paidRevokeJoinedEvidence(evidence,selection,gatewayObservation):
@@ -1198,9 +1228,11 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 identity?identityJoinedEvidence(evidence,selection,context,enrollment,firstOwner):lifecycleJoinedEvidence(evidence,selection);
               phase='retaining';
               const receipt=await call('interactive-retain','JOINED',
-                ['browserProgramSha256',...Object.keys(expected),
+                ['browserProgramSha256',...Object.keys(expected),...(media?['generation','environmentId','courseWitnessSha256']:[]),
                   'frontendAdmission','frontendOperationCount',...gatewayFenceKeys],{caseEvidence:evidence});
               demand(receipt.browserProgramSha256===binding.browserProgramSha256&&Object.entries(expected).every(([key,value])=>isDeepStrictEqual(receipt[key],value))&&
+                (!media||Number.isSafeInteger(receipt.generation)&&receipt.generation>=1&&receipt.generation<=2_147_483_647&&
+                  typeof receipt.environmentId==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(receipt.environmentId)&&nonzeroSha256(receipt.courseWitnessSha256))&&
                 isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0})&&
                 (learnerAccess||lessonDenial?receipt.frontendOperationCount===0:lessonEntry?receipt.frontendOperationCount===1:
                   assessment?receipt.frontendOperationCount===3:
@@ -1208,7 +1240,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                   restore?receipt.frontendOperationCount===2:
                   ackLoss?receipt.frontendOperationCount===5:
                   exitSave||visibility?receipt.frontendOperationCount===3:
-                  staleRevision?receipt.frontendOperationCount===8:
+                  staleRevision?receipt.frontendOperationCount===8:media?Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>=3:
                   Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0)&&closedGateway(receipt));
               interactiveRetained=structuredClone(receipt);phase='retained';return receipt;
             },

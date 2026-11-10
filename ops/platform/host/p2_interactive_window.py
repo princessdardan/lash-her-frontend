@@ -17,6 +17,7 @@ import time
 import migrate
 import p2_interactive_ingress as ingress
 import p2_lifecycle_native as native
+import release as runtime
 from frontend_release_adapters import LockedClient
 
 
@@ -33,9 +34,10 @@ _EXIT_SAVE = "lesson-exit-save"
 _VISIBILITY_SAVE = "lesson-visibility-save"
 _STALE_REVISION = "lesson-stale-revision"
 _PAID_REVOKE = "paid-revoke"
+_MEDIA = "media"
 _LESSON_STAGES = (_LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT, _RESUME, _RESTORE, _ACK_LOSS, _EXIT_SAVE, _VISIBILITY_SAVE, _STALE_REVISION)
-_STAGES = {"identity", "authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES, "lifecycle"}
-_GATEWAY_STAGES = {"authoring", "media", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES}
+_STAGES = {"identity", "authoring", _MEDIA, "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES, "lifecycle"}
+_GATEWAY_STAGES = {"authoring", _MEDIA, "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES}
 _UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}")
 _ACTION_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _SHA = re.compile(r"[a-f0-9]{64}")
@@ -49,12 +51,14 @@ _DEPLOYMENT = re.compile(r"https://([a-z0-9][a-z0-9-]*\.vercel\.app)")
 _TARGET = re.compile(r"/course/v1/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?@\[\]_~A-Za-z0-9-]+)?")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _ISSUE_CODE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+_MUX_ID = re.compile(r"[A-Za-z0-9_-]{1,255}")
+_MUX_ENVIRONMENT = re.compile(r"[A-Za-z0-9_-]{1,100}")
 _EMPTY = hashlib.sha256(b"").hexdigest()
 _MAX_STATE = 16_384
 _GATEWAY_GID = 65532
 _ZERO = {"newWork": 0, "recovery": 0}
 CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
-SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES))
+SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", _MEDIA, "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES))
 EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | SCOPED_GATEWAY_BROWSER_STAGES
 _CREATE_DRAFT = "create-draft"
 _EDIT_DRAFT = "edit-and-stale-draft"
@@ -64,6 +68,7 @@ _QUALIFY_PUBLICATION = "qualify-publication"
 _SAVE_QUIZ_REVISION = "save-quiz-revision"
 _ARCHIVE_PAID_COURSE = "archive-paid-course"
 _REPUBLISH_PAID_COURSE = "republish-paid-course"
+_RESERVE_MEDIA = "reserve-video-upload"
 _LEARNER_ACCESS_OUTCOMES = {
     "allowed": (200, (None,)),
     "archived": (410, ("course_archived",)),
@@ -73,6 +78,67 @@ _LEARNER_ACCESS_OUTCOMES = {
 _CURRICULUM_OPERATIONS = (_CREATE_CURRICULUM, _REORDER_CURRICULUM)
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
+_MEDIA_COURSE_READ = r'''import { Client } from "/app/node_modules/pg/esm/index.mjs";
+import { directMigrationConnection, hasVerifiedMigrationTransport } from "/app/dist-migration/src/db/migration-lineage.js";
+
+try {
+    let length = 0;
+    const chunks = [];
+    for await (const chunk of process.stdin) {
+        length += chunk.length;
+        if (length > 16384) throw new Error();
+        chunks.push(chunk);
+    }
+    const { connectionUrl, target, courseId, lessonId, attemptId, priorCurrentId } = JSON.parse(Buffer.concat(chunks));
+    if (new URL(connectionUrl).search !== "?sslmode=verify-full") throw new Error();
+    const client = new Client({
+        ...directMigrationConnection(connectionUrl, target), enableChannelBinding: true,
+        options: "-c default_transaction_read_only=on -c search_path=pg_catalog -c statement_timeout=10000 -c lock_timeout=2000",
+    });
+    let disconnected = false;
+    let row;
+    client.on("error", () => { disconnected = true; });
+    try {
+        await client.connect();
+        if (!hasVerifiedMigrationTransport(client, target.host)) throw new Error();
+        await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        const { rows: [identity] } = await client.query(`SELECT current_database() AS database, current_user AS username,
+            current_setting('server_version_num')::int/10000 AS major, current_setting('transaction_read_only') AS read_only,
+            current_setting('search_path') AS search_path`);
+        if (identity?.database !== target.database || identity.username !== target.user || identity.major !== target.serverMajor ||
+            identity.read_only !== "on" || identity.search_path !== "pg_catalog") throw new Error();
+        const { rows } = await client.query(`
+            SELECT c.id::text AS "courseId", l.id::text AS "lessonId", c.revision AS "courseRevision",
+                   a.id::text AS "attemptId", a.mux_upload_id AS "uploadId", a.generation,
+                   a.provider_environment_id AS "environmentId", a.status, a.is_current AS "isCurrent"
+              FROM public.video_assets a
+              JOIN public.lessons l ON l.id=a.lesson_id
+              JOIN public.modules m ON m.id=l.module_id
+              JOIN public.courses c ON c.id=m.course_id
+             WHERE c.id=$1::uuid AND l.id=$2::uuid AND a.id=$3::uuid
+               AND c.status='draft' AND l.archived_at IS NULL AND m.archived_at IS NULL
+               AND a.managed_by_course IS TRUE AND a.status='uploading' AND a.upload_expires_at>clock_timestamp()
+               AND a.mux_asset_id IS NULL AND a.mux_playback_id IS NULL AND a.deleted_at IS NULL AND a.superseded_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM public.video_assets later
+                               WHERE later.lesson_id=l.id AND later.generation>a.generation)
+               AND (SELECT count(*) FROM public.video_assets existing
+                    WHERE existing.lesson_id=l.id AND existing.is_current) = 1
+               AND EXISTS (SELECT 1 FROM public.video_assets existing WHERE existing.lesson_id=l.id AND existing.is_current
+                           AND existing.id=coalesce($4::uuid,a.id))`, [courseId, lessonId, attemptId, priorCurrentId]);
+        if (rows.length !== 1) throw new Error();
+        row = rows[0];
+        await client.query("ROLLBACK");
+        if (!hasVerifiedMigrationTransport(client, target.host)) throw new Error();
+    } finally {
+        await client.end();
+    }
+    if (disconnected) throw new Error();
+    process.stdout.write(JSON.stringify({ ...row, readOnly: true }) + "\n");
+} catch {
+    process.stderr.write("P2_INTERACTIVE_MEDIA_COURSE_QUERY_REFUSED\n");
+    process.exitCode = 1;
+}
+'''
 demand = migrate.demand
 
 
@@ -153,6 +219,8 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
     stage = _browser_stage(plan)
     if stage == "authoring":
         return _authoring_case_evidence(plan, action, evidence, gateway_artifact)
+    if stage == _MEDIA:
+        return _media_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "learning":
         return _learning_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "paid-grant":
@@ -264,6 +332,8 @@ def _authoring_requests(action):
 
 def _gateway_sequences(plan):
     stage = plan["scopedAction"]["stage"]
+    if stage == _MEDIA:
+        return (((0, 200), (1, 200), (2, 201)),)
     if stage == "learning":
         if plan["scopedAction"]["learningAction"]["operation"] == "replay-free-enrollment":
             return (((0, 200), (1, 200), (2, 200)), ((1, 200), (0, 200), (2, 200)))
@@ -366,6 +436,59 @@ def _valid_community_activation(delivery, transition_id):
             type(delivery["streamVersion"]) is int and delivery["streamVersion"] == 1 and
             _digest(delivery["canonicalDigest"]) and delivery["state"] == "active" and
             (transition_id is None or delivery["eventId"] == transition_id))
+
+
+def _media_browser_response(selected, browser):
+    demand(_closed_fields(browser, "page read reservation outbound"), "P2_INTERACTIVE_MEDIA_BROWSER_RESPONSE_REQUIRED")
+    page, read, reservation, outbound = (browser[key] for key in ("page", "read", "reservation", "outbound"))
+    demand(_closed_fields(page, "pathname status") and page["pathname"] == f'/admin/courses/{selected["courseId"]}' and
+           type(page["status"]) is int and page["status"] == 200 and
+           _closed_fields(read, "requestId courseRevision currentVideoAssetId") and _matches(_UUID, read["requestId"]) and
+           type(read["courseRevision"]) is int and read["courseRevision"] == selected["revision"] and
+           read["currentVideoAssetId"] == selected["currentVideoAssetId"], "P2_INTERACTIVE_MEDIA_READ_REQUIRED")
+    demand(_closed_fields(reservation, "requestId status assetId lessonId uploadId uploadTimeoutSeconds assetStatus") and
+           _matches(_UUID, reservation["requestId"]) and reservation["requestId"] != read["requestId"] and
+           type(reservation["status"]) is int and reservation["status"] == 200 and
+           _matches(_UUID, reservation["assetId"]) and reservation["assetId"] != selected["currentVideoAssetId"] and
+           reservation["lessonId"] == selected["lessonId"] and _matches(_MUX_ID, reservation["uploadId"]) and
+           type(reservation["uploadTimeoutSeconds"]) is int and reservation["uploadTimeoutSeconds"] == 3600 and
+           reservation["assetStatus"] == "uploading", "P2_INTERACTIVE_MEDIA_RESERVATION_REQUIRED")
+    demand(_closed_fields(outbound, "intercepted sent fileSha256 fileBytes contentType") and
+           outbound["intercepted"] is True and outbound["sent"] is False and type(outbound["fileBytes"]) is int and
+           all(outbound[key] == selected[key] for key in ("fileSha256", "fileBytes", "contentType")),
+           "P2_INTERACTIVE_MEDIA_INTERCEPTION_REQUIRED")
+    return reservation
+
+
+def _require_media_course_witness(selected, reservation, witness):
+    demand(_closed_fields(witness, "courseId lessonId courseRevision attemptId uploadId generation environmentId status isCurrent readOnly") and
+           all(witness[key] == selected[key] for key in ("courseId", "lessonId")) and
+           type(witness["courseRevision"]) is int and witness["courseRevision"] == selected["revision"] + 1 and
+           witness["attemptId"] == reservation["assetId"] and witness["uploadId"] == reservation["uploadId"] and
+           _safe_integer(witness["generation"], 1) and witness["generation"] <= 2_147_483_647 and
+           _matches(_MUX_ENVIRONMENT, witness["environmentId"]) and witness["status"] == reservation["assetStatus"] and
+           witness["isCurrent"] is (selected["currentVideoAssetId"] is None) and witness["readOnly"] is True,
+           "P2_INTERACTIVE_MEDIA_COURSE_WITNESS_REQUIRED")
+
+
+def _media_case_evidence(plan, action, evidence, gateway_artifact):
+    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_MEDIA_EVIDENCE_REQUIRED")
+    selected = action["mediaAction"]
+    browser, witness = evidence["browserResponse"], evidence["courseWitness"]
+    reservation = _media_browser_response(selected, browser)
+    gateway = browser_gateway_receipt(plan, gateway_artifact)
+    _, read_ack, post_ack = gateway["gatewayAcknowledgements"]
+    demand(browser["read"]["requestId"] == read_ack["requestId"] and reservation["requestId"] == post_ack["requestId"],
+           "P2_INTERACTIVE_MEDIA_REQUEST_JOIN_REQUIRED")
+    _require_media_course_witness(selected, reservation, witness)
+    return {"actorId": action["actorId"], "operation": _RESERVE_MEDIA,
+            **{key: witness[key] for key in ("courseId", "lessonId", "courseRevision", "attemptId", "uploadId", "generation",
+                                             "environmentId", "isCurrent")},
+            **{key: selected[key] for key in ("currentVideoAssetId", "fileSha256", "fileBytes", "contentType")},
+            "assetStatus": reservation["assetStatus"], "uploadTimeoutSeconds": reservation["uploadTimeoutSeconds"],
+            "uploadIntercepted": True, "uploadSent": False, "gatewayPostRequestId": post_ack["requestId"],
+            "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
+            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _learning_case_evidence(plan, action, evidence, gateway_artifact):
@@ -1218,6 +1341,9 @@ def require_browser_ledger(plan, witness):
         demand(sum(row["kind"] == "new-work" for row in operations) >= 2 and
                sum(row["kind"] == "recovery" for row in operations) >= 2,
                browser_status(plan, "FIRST_OWNER_OPERATIONS_REQUIRED"))
+    if plan["scopedAction"]["stage"] == _MEDIA:
+        demand(sum(row["kind"] == "new-work" for row in operations) == 3,
+               browser_status(plan, "THREE_NEW_WORK_REQUIRED"))
     if plan["scopedAction"]["stage"] in (_ASSESSMENT, _EXIT_SAVE, _VISIBILITY_SAVE):
         demand(len(operations) == 3 and all(row["kind"] == "new-work" for row in operations),
                browser_status(plan, "THREE_NEW_WORK_REQUIRED"))
@@ -1247,6 +1373,7 @@ def validate_interactive_action(action):
     lifecycle = type(action) is dict and action.get("stage") == "lifecycle"
     identity = type(action) is dict and action.get("stage") == "identity"
     authoring = type(action) is dict and action.get("stage") == "authoring"
+    media = type(action) is dict and action.get("stage") == _MEDIA
     learning = type(action) is dict and action.get("stage") == "learning"
     paid_grant = type(action) is dict and action.get("stage") == "paid-grant"
     paid_revoke = type(action) is dict and action.get("stage") == _PAID_REVOKE
@@ -1265,6 +1392,8 @@ def validate_interactive_action(action):
         fields.add("frontendAction")
     if authoring:
         fields.add("authoringAction")
+    if media:
+        fields.add("mediaAction")
     if learning:
         fields.add("learningAction")
     if paid_grant:
@@ -1340,6 +1469,24 @@ def validate_interactive_action(action):
         identity = (row["method"], row["target"], row["bodySha256"])
         demand(identity not in selected, "P2_INTERACTIVE_DUPLICATE_REQUEST")
         selected.add(identity)
+    if media:
+        reservation = action["mediaAction"]
+        demand(_closed_fields(reservation, "operation courseId lessonId revision currentVideoAssetId fileSha256 fileBytes contentType") and
+               reservation["operation"] == _RESERVE_MEDIA and all(_matches(_UUID, reservation[key]) for key in ("courseId", "lessonId")) and
+               type(reservation["revision"]) is int and 1 <= reservation["revision"] <= 2_147_483_646 and
+               (reservation["currentVideoAssetId"] is None or _matches(_UUID, reservation["currentVideoAssetId"])) and
+               _digest(reservation["fileSha256"]) and type(reservation["fileBytes"]) is int and
+               1 <= reservation["fileBytes"] <= 8 * 1024 * 1024 and reservation["contentType"] == "video/mp4",
+               "P2_INTERACTIVE_MEDIA_SELECTION_REQUIRED")
+        lesson = f'/course/v1/admin/lessons/{reservation["lessonId"]}'
+        body = {"expectedCourseRevision": reservation["revision"], "expectedCurrentVideoAssetId": reservation["currentVideoAssetId"]}
+        expected = [
+            {"method": "GET", "target": f'/course/v1/admin/courses/{reservation["courseId"]}', "uses": 1, "bodySha256": _EMPTY},
+            {"method": "GET", "target": f"{lesson}/video", "uses": 1, "bodySha256": _EMPTY},
+            {"method": "POST", "target": f"{lesson}/video-upload", "uses": 1,
+             "bodySha256": _hash(json.dumps(body, separators=(",", ":")).encode())},
+        ]
+        demand(requests == expected, "P2_INTERACTIVE_MEDIA_REQUESTS_REQUIRED")
     if authoring:
         selected_authoring = action["authoringAction"]
         operation = selected_authoring.get("operation") if type(selected_authoring) is dict else None
@@ -1636,7 +1783,7 @@ def validate_interactive_plan_action(plan):
 
 
 def _selection_sha(action):
-    lesson_field = {_LESSON_ENTRY: "lessonEntryAction", _LESSON_DENIAL: "lessonDenialAction", _ASSESSMENT: "assessmentAction",
+    lesson_field = {_MEDIA: "mediaAction", _LESSON_ENTRY: "lessonEntryAction", _LESSON_DENIAL: "lessonDenialAction", _ASSESSMENT: "assessmentAction",
                     _RESUME: "resumeAction", _RESTORE: "restoreAction", _ACK_LOSS: "ackLossAction",
                     _EXIT_SAVE: "exitSaveAction", _VISIBILITY_SAVE: "visibilityAction",
                     _STALE_REVISION: "staleRevisionAction"}.get(action["stage"])
@@ -1688,7 +1835,7 @@ def _material(secret, deployment, source, target, epoch, stage, starts, duration
            type(starts) is int and 1_000_000_000 <= starts < 9_999_999_700 and
            type(duration) is int and 30 <= duration <= 300 and _matches(_NONCE, nonce),
            "P2_INTERACTIVE_PRIVATE_BINDING_REQUIRED")
-    selector = _LESSON_SELECTOR if stage in _LESSON_STAGES else _SHA
+    selector = _LESSON_SELECTOR if stage in (_MEDIA, *_LESSON_STAGES) else _SHA
     demand(_matches(selector, selection_sha) if stage in EXECUTABLE_BROWSER_STAGES else selection_sha is None,
            "P2_INTERACTIVE_FRONTEND_BINDING_REQUIRED")
     host = match.group(1)
@@ -1807,6 +1954,7 @@ class P2InteractiveWindow:
         demand(frontend == {"epoch": self.plan["initialEpoch"], "newWork": False, "recovery": False,
                             "active": 0, "uncertain": 0}, "P2_INTERACTIVE_FRONTEND_START_REQUIRED")
         authoring = self.action.get("authoringAction")
+        media = self.action.get("mediaAction")
         learning = self.action.get("learningAction")
         paid_course = self.action.get("paidGrantAction") or self.action.get("paidRevokeAction")
         learner_access = self.action.get("learnerAccessAction")
@@ -1818,6 +1966,9 @@ class P2InteractiveWindow:
         exit_save = self.action.get("exitSaveAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
         paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}
+        if media:
+            protect = ingress.observe_media_protection
+            paths = {"course_id": media["courseId"], "lesson_id": media["lessonId"]}
         if learning:
             protect = ingress.observe_learning_protection
             paths = {"course_id": learning["courseId"], "slug": learning["slug"]}
@@ -2016,6 +2167,55 @@ class P2InteractiveWindow:
         demand(_closed(gateway) and gateway["sha256"] == _hash(self._original[0]),
                "P2_INTERACTIVE_GATEWAY_DRAIN_REQUIRED")
         return {"gatewayAdmissionClosed": True, "gatewayActive": 0, "gatewayUncertain": 0}
+
+    def observe_media_reservation(self, browser):
+        from current_databases import read_certification_api_proof
+        from qualification_target_profile import decode_qualification_target_json
+
+        demand(self.action["stage"] == _MEDIA and self._permit_issued and self._state == "fenced",
+               "P2_INTERACTIVE_MEDIA_FENCED_OBSERVATION_REQUIRED")
+        selected = self.action["mediaAction"]
+        reservation = _media_browser_response(selected, browser)
+        self.verify_gateway_fenced()
+        broker = self.broker
+        profile = broker.certification_profile()
+        read_certification_api_proof(broker.api_proof, broker.scope, broker.selected, broker.jobs, expected_profile=profile)
+        course = broker.jobs["course"]
+        configuration = migrate.read_input(broker.configuration, "course-api.env", 65_536)
+        demand(_hash(configuration) == broker.initial["configurationSha256"]["course-api.env"],
+               "P2_INTERACTIVE_MEDIA_COURSE_CONFIGURATION_CHANGED")
+        environment_id = runtime.environment_values(configuration, "staging", "course-api", broker.jobs,
+                                                    expected_profile=profile).get("MUX_ENVIRONMENT_ID")
+        demand(_matches(_MUX_ENVIRONMENT, environment_id), "P2_INTERACTIVE_MEDIA_COURSE_ENVIRONMENT_REQUIRED")
+        credential = broker.initial["credentials"]["COURSE_STAGING_DATABASE_URL"]
+        demand(type(credential) is str and bool(credential) and course["image"] == broker.selected["artifacts"]["courseMigration"]["image"],
+               "P2_INTERACTIVE_MEDIA_COURSE_IMAGE_REQUIRED")
+        payload = json.dumps({"connectionUrl": credential, "target": course["job"]["target"],
+                              "courseId": selected["courseId"], "lessonId": selected["lessonId"],
+                              "attemptId": reservation["assetId"], "priorCurrentId": selected["currentVideoAssetId"]}).encode()
+        demand(len(payload) <= 16_384, "P2_INTERACTIVE_MEDIA_COURSE_INPUT_REQUIRED")
+        container = "lash-p2-certification-api-check-course-" + secrets.token_hex(16)
+        args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
+                "--network", "bridge", "--interactive", "--read-only", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
+                "--cpus", "0.5", "--pids-limit", "64", "--entrypoint", "node", course["image"],
+                "--input-type=module", "--eval", _MEDIA_COURSE_READ]
+        run = broker.scope.run
+        try:
+            result = run(args, env=runtime.SAFE_ENV, input=payload, capture_output=True, timeout=20)
+        finally:
+            run(["docker", "rm", "--force", container], env=runtime.SAFE_ENV, capture_output=True, timeout=10)
+            remaining = run(["docker", "container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}"],
+                            env=runtime.SAFE_ENV, capture_output=True, timeout=10)
+            demand(remaining.returncode == 0 and not remaining.stdout.strip(), "P2_INTERACTIVE_MEDIA_COURSE_CONTAINER_REMAINS")
+        demand(result.returncode == 0 and not result.stderr and 0 < len(result.stdout) <= 4096,
+               "P2_INTERACTIVE_MEDIA_COURSE_QUERY_REFUSED")
+        witness = decode_qualification_target_json(result.stdout, "carrier")
+        _require_media_course_witness(selected, reservation, witness)
+        demand(witness["environmentId"] == environment_id,
+               "P2_INTERACTIVE_MEDIA_COURSE_ENVIRONMENT_CHANGED")
+        self.verify_gateway_fenced()
+        return witness
 
     def verify_fenced(self, *, retain=False):
         gateway = self.verify_gateway_fenced()

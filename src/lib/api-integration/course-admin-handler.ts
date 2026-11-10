@@ -7,6 +7,7 @@ import { runCourseAdminOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
 import { validateCandidateRequest } from "./candidate-validation";
 import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
+import { validMediaReservationBody } from "@/lib/writer-admission/interactive-proof";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 type Client = ReturnType<typeof createCourseClient>;
@@ -118,7 +119,10 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
               result = await course.reorderLessons(params.moduleId, input);
               break;
             }
-            case "create-video-upload": result = await course.createVideoUpload(params.lessonId, body as Parameters<Client["createVideoUpload"]>[1]); break;
+            case "create-video-upload":
+              if (currentWriterAuthoringActorId() && !validMediaReservationBody(body)) throw new IntegrationServiceError("invalid_request", 400);
+              result = await course.createVideoUpload(params.lessonId, body as Parameters<Client["createVideoUpload"]>[1]);
+              break;
             case "get-quiz": result = await course.getAdminQuiz(params.lessonId); break;
             case "update-quiz": {
               const input = body as Parameters<Client["updateQuiz"]>[1];

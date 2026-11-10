@@ -1,10 +1,11 @@
 // Fixed browser child. The reviewed lost-ack case can drop delivery after one
-// exact progress request succeeds. All other stages passively observe requests.
+// exact progress request succeeds. The media reservation holds the outbound upload.
 import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
 import { Socket } from "node:net";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_BROWSER_REFUSED"); };
 const closed = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
@@ -140,6 +141,7 @@ function authoringSelector(input) {
 
 export function p2InteractiveBrowserEntryPath(input, context) {
   const path = p2InteractiveBrowserPath(input.stage, context);
+  if (input.stage === "media") return path + "/" + input.media.courseId;
   if (input.stage === "learning") {
     const { coursePath, academyPath } = p2LearningEnrollmentPaths(input.learning);
     return learningEnrollmentReplay(input.learning) ? academyPath : coursePath;
@@ -157,6 +159,62 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
+}
+
+export function validP2MediaReservationAction(value) {
+  return closed(value, ["operation", "courseId", "lessonId", "revision", "currentVideoAssetId", "fileSha256", "fileBytes", "contentType"])
+    && value.operation === "reserve-video-upload" && uuid(value.courseId) && uuid(value.lessonId)
+    && Number.isSafeInteger(value.revision) && value.revision >= 1 && value.revision < 2_147_483_647
+    && (value.currentVideoAssetId === null || uuid(value.currentVideoAssetId)) && sha(value.fileSha256)
+    && value.fileSha256 !== "0".repeat(64) && Number.isSafeInteger(value.fileBytes) && value.fileBytes > 0
+    && value.fileBytes <= 8 * 1024 * 1024 && value.contentType === "video/mp4";
+}
+
+export function p2MediaReservationBody({ revision, currentVideoAssetId }) {
+  return { expectedCourseRevision: revision, expectedCurrentVideoAssetId: currentVideoAssetId };
+}
+
+export function readP2MediaReservationFile(path, target) {
+  try {
+    demand(Number.isSafeInteger(target?.fileBytes) && target.fileBytes > 0 && target.fileBytes <= 8 * 1024 * 1024);
+    demand(typeof path === "string" && path.length <= 4096 && resolve(path) === path && realpathSync(path) === path);
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const before = fstatSync(fd, { bigint: true });
+      demand(before.isFile() && before.uid === BigInt(process.getuid()) && before.nlink === 1n
+        && (before.mode & 0o077n) === 0n && before.size === BigInt(target.fileBytes));
+      const bytes = Buffer.alloc(target.fileBytes + 1);
+      let length = 0;
+      while (length < bytes.length) {
+        const count = readSync(fd, bytes, length, bytes.length - length, null);
+        if (count === 0) break;
+        length += count;
+      }
+      const after = fstatSync(fd, { bigint: true });
+      demand(["dev", "ino", "uid", "mode", "nlink", "size", "mtimeNs", "ctimeNs"].every(key => before[key] === after[key])
+        && length === target.fileBytes);
+      const file = bytes.subarray(0, length);
+      demand(createHash("sha256").update(file).digest("hex") === target.fileSha256);
+      return file;
+    } finally { closeSync(fd); }
+  } catch { throw new Error("P2_MEDIA_FIXTURE_REFUSED"); }
+}
+
+export function validateP2MediaReservationReceipt(receipt, target) {
+  demand(closed(receipt, ["page", "read", "reservation", "outbound"]));
+  const { page, read, reservation, outbound } = receipt;
+  demand(closed(page, ["pathname", "status"]) && page.pathname === "/admin/courses/" + target.courseId && page.status === 200
+    && closed(read, ["requestId", "courseRevision", "currentVideoAssetId"]) && uuid(read.requestId)
+    && read.courseRevision === target.revision && read.currentVideoAssetId === target.currentVideoAssetId
+    && closed(reservation, ["requestId", "status", "assetId", "lessonId", "uploadId", "uploadTimeoutSeconds", "assetStatus"])
+    && uuid(reservation.requestId) && reservation.requestId !== read.requestId && reservation.status === 200
+    && uuid(reservation.assetId) && reservation.assetId !== target.currentVideoAssetId && reservation.lessonId === target.lessonId
+    && matches(reservation.uploadId, /^[A-Za-z0-9_-]{1,255}$/u) && reservation.uploadTimeoutSeconds === 3600
+    && reservation.assetStatus === "uploading"
+    && closed(outbound, ["intercepted", "sent", "fileSha256", "fileBytes", "contentType"])
+    && outbound.intercepted === true && outbound.sent === false && outbound.fileSha256 === target.fileSha256
+    && outbound.fileBytes === target.fileBytes && outbound.contentType === target.contentType);
+  return receipt;
 }
 
 export function p2LearningEnrollmentPaths({ courseId, slug }) {
@@ -224,7 +282,7 @@ export function validateP2InteractiveBrowserInput(input) {
   const firstOwner = input?.stage === "identity" && Object.hasOwn(input, "firstOwner");
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",
     "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds",
-    ...(["lifecycle", "authoring", "learning"].includes(input?.stage) ? [input.stage]
+    ...(["lifecycle", "authoring", "learning", "media"].includes(input?.stage) ? [input.stage]
       : input?.stage === "identity" ? [firstOwner ? "firstOwner" : enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
@@ -240,6 +298,11 @@ export function validateP2InteractiveBrowserInput(input) {
     && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
+  if (input.stage === "media") {
+    const { actorId, filePath, ...selection } = input.media ?? {};
+    demand(uuid(actorId) && validP2MediaReservationAction(selection)
+      && typeof filePath === "string" && filePath.length <= 4096 && resolve(filePath) === filePath);
+  }
   if (input.stage === "learning") {
     const selected = input.learning, replay = learningEnrollmentReplay(selected);
     demand(closed(selected, ["actorId", "operation", "courseId", "slug", "idempotencyKey", ...(replay ? ["prior"] : [])])
@@ -337,8 +400,8 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
     && Number(issued) <= now && Number(expires) === permit.expires && permit.expires - Number(issued) <= input.windowSeconds
     && /^[a-f0-9]{32}$/u.test(nonce ?? "")
-    && (["lifecycle", "identity", "authoring", "paid-grant", "paid-revoke", ...learnerScopedStages].includes(stage)
-      ? version === "v2" && parts.length === 8 && (heldLessonStages.includes(stage) ? matches(parts[6], /^[a-f0-9]{96}$/u) : sha(parts[6])) && sha(parts[7])
+    && (["lifecycle", "identity", "authoring", "media", "paid-grant", "paid-revoke", ...learnerScopedStages].includes(stage)
+      ? version === "v2" && parts.length === 8 && (stage === "media" || heldLessonStages.includes(stage) ? matches(parts[6], /^[a-f0-9]{96}$/u) : sha(parts[6])) && sha(parts[7])
       : version === "v1" && parts.length === 7 && sha(parts[6])));
   if (stage === "identity") {
     const enrollment = input.identityEnrollment;
@@ -346,6 +409,10 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
       : enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
   }
   if (stage === "authoring") demand(parts[6] === authoringSelector(input));
+  if (stage === "media") {
+    const { actorId, courseId, lessonId } = input.media;
+    demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
+  }
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
@@ -3409,6 +3476,139 @@ function readQuizResult(body, target, saved) {
     revision: quiz.courseRevision, quizRevision: quiz.revision, documentSha256 };
 }
 
+export function watchP2MediaReservation(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  const target = input.media, origin = input.browserOrigin;
+  const pathname = p2InteractiveBrowserEntryPath(input, "owner"), source = origin + pathname;
+  const lesson = "/api/admin/lessons/" + target.lessonId, statusPath = lesson + "/video", postPath = lesson + "/video-upload";
+  const expected = Buffer.from(JSON.stringify(p2MediaReservationBody(target)));
+  let statusRequest, reserveRequest, read, reservation, captured, attempted = false, failed = false, reject, accept;
+  const observed = new Promise((done, fail) => { accept = done; reject = fail; });
+  observed.catch(() => {});
+  const refusal = () => new Error("P2_MEDIA_RESERVATION_REFUSED");
+  const fail = () => { failed = true; reject(refusal()); };
+  const matchesPage = request => request.frame() === page.mainFrame() && request.frame().url() === source
+    && request.resourceType() === "fetch" && request.redirectedFrom() === null;
+  const pattern = "**/*";
+  const intercept = async route => {
+    try {
+      const request = route.request(), url = URL.parse(request.url()), method = request.method();
+      demand(!failed && url);
+      if (method === "PUT") {
+        demand(!attempted && reservation && matchesPage(request));
+        attempted = true;
+        const reviewed = await reservation;
+        const file = request.postDataBuffer(), headers = await request.allHeaders();
+        demand(url.href === reviewed.uploadUrl && url.origin !== origin && url.protocol === "https:" && !url.username && !url.password
+          && !headers.authorization && !headers.cookie && headers["content-type"] === target.contentType
+          && Buffer.isBuffer(file) && file.length === target.fileBytes
+          && createHash("sha256").update(file).digest("hex") === target.fileSha256);
+        delete reviewed.uploadUrl;
+        captured = validateP2MediaReservationReceipt({ page: { pathname, status: 200 }, read: await read,
+          reservation: reviewed.sanitized, outbound: { intercepted: true, sent: false,
+            fileSha256: target.fileSha256, fileBytes: target.fileBytes, contentType: target.contentType } }, target);
+        accept(captured);
+        // The browser request stays paused. Closing the page discards it.
+        return;
+      }
+      if (method === "POST") {
+        demand(!reserveRequest && statusRequest && read && url.href === origin + postPath && matchesPage(request)
+          && request.postDataBuffer()?.equals(expected));
+        reserveRequest = request;
+        await read;
+      } else {
+        demand(!reserveRequest && (["GET", "HEAD"].includes(method) &&
+          (url.origin === origin || !["fetch", "xhr"].includes(request.resourceType()))
+          || method === "OPTIONS" && url.origin === origin));
+        if (url.origin === origin && url.pathname === statusPath) {
+          demand(!statusRequest && method === "GET" && url.href === origin + statusPath && matchesPage(request)
+            && request.postDataBuffer() === null);
+          statusRequest = request;
+        }
+      }
+      await route.fallback();
+    } catch {
+      fail();
+      await route.abort().catch(() => {});
+    }
+  };
+  const onResponse = response => {
+    const request = response.request();
+    if (request === statusRequest) {
+      read = (async () => {
+        const head = await readBrowserResponseHead(response, request, origin, statusPath, "GET", 200);
+        const value = await readBrowserResponseJson(response, request, 65_536, true);
+        demand(closed(value, ["courseRevision", "current", "latest"]) && value.courseRevision === target.revision
+          && (target.currentVideoAssetId === null ? value.current === null :
+            value.current?.id === target.currentVideoAssetId && value.current.lessonId === target.lessonId
+              && value.current.status === "ready" && value.current.isCurrent === true)
+          && (value.latest === null || value.latest?.lessonId === target.lessonId && ["ready", "errored"].includes(value.latest.status)));
+        return { requestId: head.requestId, courseRevision: value.courseRevision, currentVideoAssetId: target.currentVideoAssetId };
+      })();
+      read.catch(fail);
+    }
+    if (request === reserveRequest) {
+      reservation = (async () => {
+        const head = await readBrowserResponseHead(response, request, origin, postPath, "POST", 200);
+        const body = await readBrowserResponseJson(response, request, 16_384, true);
+        demand(closed(body, ["upload", "videoAsset"]) && closed(body.upload, ["id", "timeoutSeconds", "url"])
+          && closed(body.videoAsset, ["id", "lessonId", "status"]) && typeof body.upload.url === "string"
+          && body.upload.url.length <= 8192);
+        const url = URL.parse(body.upload.url);
+        demand(url?.protocol === "https:" && url.origin !== origin && !url.username && !url.password && !url.hash);
+        return { uploadUrl: url.href, sanitized: { requestId: head.requestId, status: head.status, assetId: body.videoAsset.id,
+          lessonId: body.videoAsset.lessonId, assetStatus: body.videoAsset.status, uploadId: body.upload.id,
+          uploadTimeoutSeconds: body.upload.timeoutSeconds } };
+      })();
+      reservation.catch(fail);
+    }
+  };
+  const onFailure = request => { if (request === statusRequest || request === reserveRequest) fail(); };
+  context.on("response", onResponse);
+  context.on("requestfailed", onFailure);
+  return {
+    async open(expires) {
+      await context.route(pattern, intercept);
+      const response = await page.goto(source, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      demand(response?.status() === 200 && response.url() === source && page.url() === source);
+      const timeout = expires * 1000 - Date.now();
+      demand(timeout > 0);
+      await page.getByText("draft · Revision " + target.revision, { exact: true }).waitFor({ state: "visible", timeout });
+      await page.locator('[data-lesson-id="' + target.lessonId + '"]').getByRole("button",
+        { name: "Video and captions", exact: true }).click({ timeout });
+      const editor = page.getByRole("region", { name: "Open course editor", exact: true });
+      const file = readP2MediaReservationFile(target.filePath, target);
+      try {
+        await editor.getByLabel("Video file", { exact: true }).setInputFiles({
+          name: "certification-video.mp4", mimeType: target.contentType, buffer: file,
+        }, { timeout });
+        await editor.getByRole("button", { name: target.currentVideoAssetId === null ? "Upload video" : "Upload replacement",
+          exact: true }).click({ timeout });
+      } finally { file.fill(0); }
+    },
+    async wait(expires) {
+      const timeout = expires * 1000 - Date.now();
+      demand(!failed && timeout > 0);
+      let timer;
+      try {
+        await Promise.race([observed, new Promise((_, refuse) => { timer = setTimeout(() => refuse(refusal()), timeout); })]);
+      } finally { clearTimeout(timer); }
+    },
+    finish() {
+      demand(!failed && captured && attempted && page.isClosed() && context.serviceWorkers().length === 0);
+      return captured;
+    },
+    async close() {
+      context.off("response", onResponse);
+      context.off("requestfailed", onFailure);
+      // Do not remove the write fence while the selected browser page is open.
+      if (!page.isClosed()) await page.close().catch(() => {});
+      if (page.isClosed()) await context.unroute(pattern, intercept).catch(() => {});
+      fail();
+    },
+  };
+}
+
 function watchAuthoringReadWrite(context, page, input) {
   validateP2InteractiveBrowserInput(input);
   const target = input.authoring, published = publishedOutcome(target), origin = input.browserOrigin;
@@ -3857,8 +4057,8 @@ async function runInteractiveBrowser(first) {
         demand(!selectedInput.identityEnrollment && !selectedInput.firstOwner && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
           && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
           && BigInt(selectedInput.epoch) > BigInt(input.epoch));
-        if (["authoring", "paid-grant", "paid-revoke"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
-          && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
+        if (["authoring", "media", "paid-grant", "paid-revoke"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
+          && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.media ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
           && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial
@@ -3891,7 +4091,7 @@ async function runInteractiveBrowser(first) {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input))
           && (!learnerScopedStages.includes(binding.stage) || contexts.has("learner"))
-          && (!["paid-grant", "paid-revoke"].includes(binding.stage) || contexts.has("owner")));
+          && (!["media", "paid-grant", "paid-revoke"].includes(binding.stage) || contexts.has("owner")));
         selection = { context: received.context, expires: received.expires };
         const permit = await readP2InteractiveBrowserPermit(permitPipe, input, selection);
         try {
@@ -3902,7 +4102,7 @@ async function runInteractiveBrowser(first) {
           context = contexts.get(received.context);
           if (pairedIdentity) demand(!context && !contexts.has("learner-peer"));
           if (!context) {
-            context = await browser.newContext();
+            context = await browser.newContext(received.context === "owner" ? { serviceWorkers: "block" } : undefined);
             contexts.set(received.context, context);
           }
           if (pairedIdentity) {
@@ -3955,6 +4155,10 @@ async function runInteractiveBrowser(first) {
         } else if (isP2InteractiveAuthoringPair(input)) {
           const stale = await context.newPage();
           mutationWatch = watchP2AuthoringEdits(context, page, stale, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "media") {
+          mutationWatch = watchP2MediaReservation(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learner-access") {
@@ -4058,7 +4262,7 @@ async function runInteractiveBrowser(first) {
         await send("interactive-page-opened", { ...selection, path, httpStatus });
       } else {
         const edit = isP2InteractiveAuthoringPair(input), stage = edit ? "authoring-edit" : binding.stage;
-        const captureMutation = ["lifecycle", "authoring", "paid-grant", "paid-revoke", ...learnerScopedStages].includes(binding.stage)
+        const captureMutation = ["lifecycle", "authoring", "media", "paid-grant", "paid-revoke", ...learnerScopedStages].includes(binding.stage)
           && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);

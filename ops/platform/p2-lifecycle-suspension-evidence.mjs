@@ -18,7 +18,7 @@ import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2Authori
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt,
   validateP2LessonEntryReceipt, validateP2LessonDenialReceipt, validateP2LessonAssessmentReceipt, validateP2LessonResumeReceipt, validateP2LessonRestoreReceipt,
   validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonVisibilityReceipt, validateP2LessonStaleRevisionReceipt,
-  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LifecycleMutationReceipt, validateP2MediaReservationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
@@ -208,13 +208,14 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
 
 const interactiveBinding = input => ({ challenge: input.challenge, bindingSha256: input.bindingSha256, stage: input.stage, epoch: input.epoch });
 
-async function reviewedInteractiveInput(plan, challenge) {
+async function reviewedInteractiveInput(plan, challenge, mediaFile) {
   const { p2CertificationParentContext } = await import("./p2-certification.mjs");
   p2CertificationParentContext(plan);
   demand(plan.mode === "interactive-browser" && plan.version === 2 && plan.maximumSeconds === 300
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
     && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const action = plan.scopedAction;
+  demand((action.stage === "media") === (typeof mediaFile === "string"));
   let authoring, learning, lessonEntry, lessonDenial, assessment, resume, restore, ackLoss, exitSave, visibility, staleRevision, paidGrant, learnerAccess, paidRevoke;
   if (action.stage === "authoring") {
     const selected = action.authoringAction, [, first, second, third] = action.requests;
@@ -350,6 +351,7 @@ async function reviewedInteractiveInput(plan, challenge) {
       : Object.hasOwn(action, "identityEnrollment") ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
     ...(action.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(action.frontendAction) } : {}),
     ...(authoring ? { authoring } : {}), ...(learning ? { learning } : {}), ...(paidGrant ? { paidGrant } : {}),
+    ...(action.stage === "media" ? { media: { actorId: action.actorId, ...action.mediaAction, filePath: mediaFile } } : {}),
     ...(learnerAccess ? { learnerAccess } : {}), ...(lessonEntry ? { lessonEntry } : {}), ...(lessonDenial ? { lessonDenial } : {}),
     ...(assessment ? { assessment } : {}), ...(resume ? { resume } : {}), ...(restore ? { restore } : {}),
     ...(ackLoss ? { ackLoss } : {}), ...(exitSave ? { exitSave } : {}), ...(visibility ? { visibility } : {}),
@@ -398,6 +400,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     try {
       const lifecycle = pending?.type === "interactive-lifecycle-captured";
       const authoring = pending?.type === "interactive-authoring-captured";
+      const media = pending?.type === "interactive-media-captured";
       const learning = pending?.type === "interactive-learning-captured";
       const lessonEntry = pending?.type === "interactive-lesson-entry-captured";
       const lessonDenial = pending?.type === "interactive-lesson-denial-captured";
@@ -415,16 +418,17 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
         ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []),
-        ...(lifecycle || authoring || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
+        ...(lifecycle || authoring || media || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
-          && (!(isP2InteractiveAuthoringDetail(input) || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(input.stage)) || message.httpStatus === 200));
+          && (!(isP2InteractiveAuthoringDetail(input) || ["media", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(input.stage)) || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
+      if (media) validateP2MediaReservationReceipt(message.response, input.media);
       if (learning) validateP2LearningEnrollmentReceipt(message.response, input.learning);
       if (lessonEntry) validateP2LessonEntryReceipt(message.response, input.lessonEntry);
       if (lessonDenial) validateP2LessonDenialReceipt(message.response, input.lessonDenial);
@@ -527,6 +531,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     captureLifecycleResponse: context => captureMutation(context, "lifecycle", input.lifecycle?.context),
     captureAuthoringResponse: context => captureMutation(context, "authoring", "owner"),
     captureAuthoringResponses: context => captureMutation(context, "authoring", "owner", true),
+    captureMediaReservation: context => captureMutation(context, "media", "owner"),
     captureLearningResponse: context => captureMutation(context, "learning", "learner"),
     capturePaidGrantResponse: context => captureMutation(context, "paid-grant", "owner"),
     captureLearnerAccessResponse: context => captureMutation(context, "learner-access", "learner"),
@@ -582,20 +587,20 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       clearTimeout(phaseTimer);
       return receipt;
     },
-    async selectPlan(nextPlan) {
+    async selectPlan(nextPlan, mediaFile) {
       demand(phase === "cleared" && !failed && !ended && !closing && actions.size < 24
         && !input.identityEnrollment && !input.firstOwner && !nextPlan?.scopedAction?.identityEnrollment && !nextPlan?.scopedAction?.firstOwner);
       phase = "selecting";
       try {
-        const next = await reviewedInteractiveInput(nextPlan, binding.challenge), nextBinding = interactiveBinding(next);
+        const next = await reviewedInteractiveInput(nextPlan, binding.challenge, mediaFile), nextBinding = interactiveBinding(next);
         demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
           && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
           && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
-        if (input.stage === "identity" || ["authoring", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(next.stage)) {
+        if (input.stage === "identity" || ["authoring", "media", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(next.stage)) {
           demand(input.stage === "identity" && verifiedIdentity?.sessionVerified === true
             && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && BigInt(next.epoch) === BigInt(input.epoch) + 2n
             && (next.stage === "lifecycle" && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
-              || ["authoring", "paid-grant", "paid-revoke"].includes(next.stage) && verifiedIdentity.actorKind === "admin"
+              || ["authoring", "media", "paid-grant", "paid-revoke"].includes(next.stage) && verifiedIdentity.actorKind === "admin"
               || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "learner-access"].includes(next.stage) && verifiedIdentity.actorKind === "customer"));
         }
         demand((next.stage === "lesson-stale-revision") === (input.identity?.sessionCount === 2));

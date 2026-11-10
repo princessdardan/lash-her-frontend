@@ -32,6 +32,7 @@ const ASSET_TYPES = new Set(["video.asset.created", "video.asset.ready", "video.
 const TRACK_TYPES = new Set(["video.asset.track.ready", "video.asset.track.deleted"]);
 const ASSET_STATUSES = new Set(["pending", "uploading", "processing", "ready", "errored"]);
 const UNCERTAIN_MEDIA_ERRORS = new Set(["CAPTION_OUTCOME_UNKNOWN", "MEDIA_LEASE_LOST"]);
+const ADMIN_LESSON_UPLOAD = "/v1/admin/lessons/{lessonId}/video-upload";
 export const SCOPED_MUX_BODY_LIMIT = 65_536;
 export const SCOPED_MUX_HEADER = "x-lash-certification-mux-target";
 export const SCOPED_INTERACTIVE_HEADER = "x-lash-certification-interactive";
@@ -123,6 +124,15 @@ function interactiveScope(value, config, info, processBinding, storageAuthority,
   }
   if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision"].includes(value.stage)) {
     requireSelectedLessonRequests(value.stage, value.requests);
+  }
+  if (value.stage === "media" && value.requests.some(row => row.method === "POST" && row.target.split("?", 1)[0].endsWith("/video-upload"))) {
+    const [course, status, upload] = value.requests;
+    const coursePrefix = "/course/v1/admin/courses/", lessonPrefix = "/course/v1/admin/lessons/";
+    if (value.requests.length !== 3 || value.requests.some(row => row.uses !== 1) ||
+        course.method !== "GET" || !course.target.startsWith(coursePrefix) || !matches(UUID, course.target.slice(coursePrefix.length)) ||
+        status.method !== "GET" || !status.target.startsWith(lessonPrefix) || !status.target.endsWith("/video") ||
+        !matches(UUID, status.target.slice(lessonPrefix.length, -"/video".length)) ||
+        upload.method !== "POST" || upload.target !== status.target + "-upload" || upload.bodySha256 === EMPTY_SHA) throw new Error();
   }
 }
 
@@ -238,6 +248,8 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
     resumePosition?.expectedProgressRevision === 8 && boundedPositionSave ? EXIT_SAVE_POSITION_TEMPLATE : bodySha256;
   const requestIndex = scope.requests.findIndex(row => row.method === method && row.target === target && row.bodySha256 === selectedBodySha256);
   if (requestIndex < 0) return null;
+  const mediaReservation = scope.stage === "media" && scope.requests.at(2)?.target.endsWith("/video-upload");
+  if (mediaReservation && (idempotency !== "" || method === "POST" && contentType !== "application/json")) return null;
   if (scope.stage === "paid-revoke" && method === "POST" && !scopedPaidRevocation(body, idempotency)) return null;
   if (scope.stage === "lesson-entry" && (idempotency !== "" || (method === "POST" && !body.equals(INITIAL_LESSON_PROGRESS))) ||
       scope.stage === "lesson-denial" && idempotency !== "") return null;
@@ -246,6 +258,7 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   const expected = createHmac("sha256", Buffer.from(scope.key, "hex")).update(message).digest();
   if (!timingSafeEqual(expected, Buffer.from(mac, "hex"))) return null;
   return { requestId, requestIndex, uses: scope.requests[requestIndex].uses,
+    ...(mediaReservation ? { mediaReservation: true } : {}),
     ...(attempt ? { attemptRequestId: attempt.requestId, quizRevision: attempt.quizRevision } : {}),
     ...(resumePosition ? { resumePosition } : {}) };
 }
@@ -488,7 +501,8 @@ export function scopedInteractiveAcknowledged(route, target, status, contentType
       body.equals(LESSON_DENIAL_RESPONSE);
   }
   const refresh = route.method === "POST" && route.path === "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh";
-  if (status === 204) return !refresh && body.length === 0;
+  const reserve = stage === "media" && route.method === "POST" && route.path === ADMIN_LESSON_UPLOAD;
+  if (status === 204) return !refresh && !reserve && body.length === 0;
   if (!((status >= 200 && status < 300) || (status >= 400 && status < 500)) ||
       typeof contentType !== "string" || contentType.split(";", 1)[0] !== "application/json" || !isUtf8(body)) return false;
   try {
@@ -499,6 +513,14 @@ export function scopedInteractiveAcknowledged(route, target, status, contentType
         !UNCERTAIN_MEDIA_ERRORS.has(value.error.code);
     }
     if (refresh) return status === 200 && acknowledgedMediaRefresh(target, value);
+    if (reserve) {
+      if (status !== 201 || keys(value) !== "upload,videoAsset" || keys(value.upload) !== "id,timeoutSeconds,url" ||
+          keys(value.videoAsset) !== "id,lessonId,status" || !matches(UUID, value.videoAsset.id) ||
+          value.videoAsset.lessonId !== target.split("/").at(-2) || value.videoAsset.status !== "uploading" ||
+          !providerId(value.upload.id) || value.upload.timeoutSeconds !== 3600 || typeof value.upload.url !== "string") return false;
+      const url = new URL(value.upload.url);
+      return url.protocol === "https:" && url.username === "" && url.password === "" && url.hash === "";
+    }
     return value !== null && typeof value === "object" && !Array.isArray(value);
   } catch {
     return false;

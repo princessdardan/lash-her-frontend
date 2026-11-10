@@ -2436,6 +2436,50 @@ function mediaRefreshReceipt(lessonId, id) {
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };
 }
 
+test("scoped media reservation requires two acknowledged reads before one exact upload", async t => {
+  const course = "10000000-0000-4000-8000-000000000001";
+  const lesson = "20000000-0000-4000-8000-000000000002";
+  const asset = "30000000-0000-4000-8000-000000000003";
+  const courseTarget = `/course/v1/admin/courses/${course}`;
+  const video = `/course/v1/admin/lessons/${lesson}/video`;
+  const upload = video + "-upload";
+  const body = '{"expectedCourseRevision":3,"expectedCurrentVideoAssetId":null}';
+  const requests = [
+    { method: "GET", target: courseTarget, bodySha256: certificationHash(""), uses: 1 },
+    { method: "GET", target: video, bodySha256: certificationHash(""), uses: 1 },
+    { method: "POST", target: upload, bodySha256: certificationHash(body), uses: 1 },
+  ];
+  const reservation = {
+    upload: { id: "owned-upload", timeoutSeconds: 3600, url: "https://upload.example.test/?token=owned-fixture" },
+    videoAsset: { id: asset, lessonId: lesson, status: "uploading" },
+  };
+  for (const exact of [true, false]) {
+    const forwarded = [];
+    const f = await interactiveFixture(t, requests, (req, res) => {
+      forwarded.push(req.url);
+      res.writeHead(req.method === "POST" ? 201 : 200, { "content-type": "application/json" });
+      res.end(JSON.stringify(req.method === "POST"
+        ? { ...reservation, videoAsset: { ...reservation.videoAsset, lessonId: exact ? lesson : course } }
+        : {}));
+    }, "media");
+    const send = (path, method = "GET", body) => f.send(f.signed({ path, method, body }));
+    assert.equal((await send(video)).status, 503);
+    assert.equal((await send(upload, "POST", body)).status, 503);
+    assert.equal((await send(courseTarget)).status, 200);
+    assert.equal((await send(upload, "POST", body)).status, 503);
+    assert.equal((await send(video)).status, 200);
+    assert.equal((await send(upload, "POST", body.replace("3", "4"))).status, 503);
+    const output = await send(upload, "POST", body);
+    assert.equal(output.status, exact ? 201 : 502);
+    assert.equal(output.body.includes("owned-fixture"), exact);
+    assert.equal((await send(upload, "POST", body)).status, 503);
+    const state = f.admissionState();
+    assert.deepEqual(state.interactiveEvidence.acknowledged.map(row => row.upstreamStatus), exact ? [200, 200, 201] : [200, 200]);
+    assert.equal(state.uncertain.newWork, exact ? 0 : 1);
+    assert.deepEqual(forwarded, [courseTarget, video, upload].map(path => path.slice("/course".length)));
+  }
+});
+
 test("scoped media refresh accepts the normal bodyless POST without a content type", async t => {
   const lesson = "20000000-0000-4000-8000-000000000002";
   const asset = "30000000-0000-4000-8000-000000000003";

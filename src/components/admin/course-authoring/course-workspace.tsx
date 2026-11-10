@@ -500,6 +500,7 @@ export function CourseWorkspace({
                   {module.lessons.map((lesson, index) => (
                     <li
                       key={lesson.id}
+                      data-lesson-id={lesson.id}
                       className="space-y-2 border-l border-lh-line pl-3"
                     >
                       <h4 className="text-sm font-semibold">

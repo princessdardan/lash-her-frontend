@@ -38,6 +38,25 @@ test("scoped authoring refuses non-drafts before invoking the authenticated Cour
   assert.deepEqual(statuses, ["draft", "published"]);
 });
 
+test("scoped media reservations require exact optimistic concurrency fields", async () => {
+  const path = `/api/admin/lessons/${id}/video-upload`, forwarded: unknown[] = [];
+  const handler = createCourseAdminHandler("create-video-upload", {
+    enabled: () => true, origin: () => origin,
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, id),
+    client: () => ({ async createVideoUpload(lessonId: string, input: unknown) { assert.equal(lessonId, id); forwarded.push(input); return {}; } }) as never,
+  });
+  const selected = { expectedCourseRevision: 3, expectedCurrentVideoAssetId: null };
+  for (const body of [{ expectedCourseRevision: 3 }, { ...selected, expectedCurrentVideoAssetId: "unknown" },
+    { ...selected, expectedCourseRevision: 0 }, { ...selected, expectedCourseRevision: 2_147_483_647 }, { ...selected, description: "unexpected" }]) {
+    assert.equal((await handler(req(path, "POST", body), { lessonId: id })).status, 400);
+  }
+  assert.deepEqual(forwarded, []);
+  assert.equal((await handler(req(path, "POST", selected), { lessonId: id })).status, 200);
+  const replace = { ...selected, expectedCurrentVideoAssetId: id };
+  assert.equal((await handler(req(path, "POST", replace), { lessonId: id })).status, 200);
+  assert.deepEqual(forwarded, [selected, replace]);
+});
+
 test("scoped draft edits require a positive revision and reject any publication status", async () => {
   const path = `/api/admin/courses/${id}`, updates: unknown[] = [];
   const makeHandler = (authoringActorId?: string) => createCourseAdminHandler("update-course", {
