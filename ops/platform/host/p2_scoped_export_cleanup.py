@@ -179,7 +179,7 @@ class P2ScopedExportCleanupStage:
         from p2_certification_parent import P2ProfiledCertificationBroker
         context = P2ProfiledCertificationBroker._native_context(self.broker)
         client = LockedClient(self.broker.vercel, self.broker.check)
-        current = native.observe(context, client, expected_profile=self.expected)
+        current = P2ProfiledCertificationBroker._native_observe(self.broker)
         metadata = native.observe_metadata(context, client, expected_profile=self.expected)
         plan = context["plan"]
         demand(context["candidate"] == self.broker.selected and plan == self.plan["nativePlan"] and

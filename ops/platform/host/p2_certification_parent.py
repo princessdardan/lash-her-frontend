@@ -269,7 +269,7 @@ def require_profiled_certification_execution(plan):
     successor, replacement = plan['rotationSuccessor'], plan.get('replacementRelease')
     require(type(plan.get('version')) is int and plan['version'] == 2 and
             plan.get('qualificationTargetProfile') == _profiled_context() and plan.get('environment') == 'staging' and
-            plan.get('startState') == 'already-closed' and plan.get('mode') in DAY_TWO_WORKLOAD_MODES and
+            plan.get('startState') == 'already-closed' and plan.get('mode') == 'mux-readiness' and
             type(successor) is dict and successor.get('kind') == KIND and
             type(replacement) is dict and replacement.get('kind') == 'frontend-replacement', refused)
 
@@ -1217,11 +1217,12 @@ class P2CertificationPhysicalObserver(PhysicalObserver):
 class P2CertificationScope(P2ReleaseScope):
     def __init__(self, descriptor, path, verify_frontend, receipt, candidate_sha256=None, *, release=None, jobs=None,
                  configuration_sha256=None, certification_plan, expected_profile=None, physical_observer=None,
-                 original_replacement_receipt=None):
+                 original_replacement_receipt=None, profiled_broker=None):
         self.certification_plan = copy.deepcopy(certification_plan)
         self._expected_profile = migrate.profile_context(expected_profile)
         self._physical_observer = physical_observer
         self._original_replacement_receipt = original_replacement_receipt
+        self._profiled_broker = profiled_broker
         replacement = self.certification_plan.get('replacementRelease')
         require((replacement is None and original_replacement_receipt is None) or
                 (self._expected_profile is not None and type(original_replacement_receipt) is bytes and
@@ -1292,6 +1293,37 @@ class P2CertificationScope(P2ReleaseScope):
                 _sha(raw) == self.certification_plan.get('originalReleaseReceiptSha256'),
                 'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_BYTES_CHANGED')
         return _profiled_record(raw, self._expected_profile)
+
+    def _runtime_broker(self, configuration):
+        broker = self._profiled_broker
+        require(self._expected_profile is not None and type(broker) is P2ProfiledCertificationBroker and
+                broker.scope is self and broker.configuration == configuration and broker.guard_arm_verified and
+                broker.external_armed and broker.process_snapshot is not None and
+                self.certification_plan.get('mode') in ('browser-pending', 'direct-worker'),
+                'P2_PROFILED_CERTIFICATION_RUNTIME_SCOPE_REQUIRED')
+        self.require_configuration(configuration)
+        return broker
+
+    def read_runtime_inventory(self, configuration):
+        broker = self._runtime_broker(configuration)
+        inventory = broker._read_runtime_inventory()
+        require(inventory == broker.runtime_current and broker._runtime_processes() == broker.process_snapshot,
+                'P2_PROFILED_CERTIFICATION_RUNTIME_SCOPE_CHANGED')
+        self.verify()
+        return inventory
+
+    def runtime_mount_configuration(self, service, configuration):
+        require(service in ('course-api', 'community-api'), 'P2_PROFILED_CERTIFICATION_RUNTIME_SERVICE_REFUSED')
+        broker = self._runtime_broker(configuration)
+        selected = broker._runtime_mount_configuration(service)
+        successor = broker.rotation_successor
+        if successor is not None:
+            from p2_identity_key_rotation_adapter import _runtime_phase_hash
+            require(selected == successor.current_only_configuration and
+                    _runtime_phase_hash(selected) == successor.current_only_configuration_sha256,
+                    'P2_PROFILED_CERTIFICATION_RUNTIME_SCOPE_CHANGED')
+        self.verify()
+        return selected
 
     def _require_profiled_frontend(self, release, info):
         from qualification_target_profile import decode_qualification_target_json
@@ -2202,7 +2234,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.check()
 
     def _scope_arguments(self):
-        return {**self.profile_arguments(), 'physical_observer': self.observer,
+        return {**self.profile_arguments(), 'physical_observer': self.observer, 'profiled_broker': self,
                 **({'original_replacement_receipt': base64.b64decode(self.initial['originalReleaseReceipt'], validate=True)}
                    if 'replacementRelease' in self.initial['certificationPlan'] else {})}
 

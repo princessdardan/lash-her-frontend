@@ -939,7 +939,7 @@ export function p2CertificationReviewView(plan){
 function requireRotationSuccessorExecution(plan){
   if(plan.rotationSuccessor!==undefined&&(!rotationSuccessorLiveEligible||plan.version!==2||
     !isDeepStrictEqual(plan.qualificationTargetProfile,currentProfile)||plan.environment!=='staging'||
-    plan.startState!=='already-closed'||!rotationSuccessorModes.has(plan.mode)||
+    plan.startState!=='already-closed'||plan.mode!=='mux-readiness'||
     plan.rotationSuccessor?.kind!==rotationSuccessorKind||!validP2CertificationReplacementDescriptor(plan.replacementRelease))){
     throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
   }
@@ -1412,7 +1412,7 @@ export function prepareP2CertificationOperator(settings){
 }
 
 export async function p2ProfiledCertificationOperator(settings,{confirmation}={}){
-  if(Object.hasOwn(settings??{},'rotationSuccessor')&&(!rotationSuccessorLiveEligible||!rotationSuccessorModes.has(settings.certification?.mode))){
+  if(Object.hasOwn(settings??{},'rotationSuccessor')&&(!rotationSuccessorLiveEligible||settings.certification?.mode!=='mux-readiness')){
     throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
   }
   demand(process.versions.node.split('.')[0]==='24');

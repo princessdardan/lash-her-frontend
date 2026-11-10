@@ -37,7 +37,9 @@ class FixedDispatchTests(unittest.TestCase):
                 'replacementRelease': {'kind': 'frontend-replacement'}}
         with patch.object(certification, 'ROTATION_SUCCESSOR_LIVE_ELIGIBLE', True):
             certification.require_profiled_certification_execution(plan)
-            for change in ({'mode': 'contain-native'}, {'mode': 'native-window'}, {'environment': 'production'},
+            for change in ({'mode': 'contain-native'}, {'mode': 'native-window'}, {'mode': 'auth-preparation'},
+                           {'mode': 'browser-pending'}, {'mode': 'direct-worker'}, {'mode': 'lifecycle-persistence'},
+                           {'mode': 'export-cleanup'}, {'mode': 'interactive-browser'}, {'environment': 'production'},
                            {'version': 2.0}, {'startState': 'qualified-ready'}, {'replacementRelease': None},
                            {'rotationSuccessor': {}}, {'qualificationTargetProfile': {}}):
                 with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'ROTATION_SUCCESSOR_LIVE_UNQUALIFIED'):

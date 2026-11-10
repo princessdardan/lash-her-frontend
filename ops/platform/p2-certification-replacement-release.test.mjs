@@ -552,7 +552,15 @@ test("profiled mixed successor plans with current READY evidence and retains the
     assert.equal(digest(review.originalReady.get("frontend-workload-outcome.json")), fixture.f.terminal.frontendWorkloadReceiptSha256);
     assert.equal(digest(review.currentReady.get("frontend-workload-outcome.json")), selected.nativePlan.configurationRecordSha256);
     await assert.rejects(p2ProfiledCertificationOperator(settings, { confirmation: "staging/other-certification" }),
-      { message: "P2_CERTIFICATION_PARENT_REFUSED" });
+      { message: "P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED" });
+  }
+});
+
+test("live mixed successor accepts only Mux readiness before preparing any other action", async () => {
+  for (const mode of ["auth-preparation", "browser-pending", "direct-worker", "interactive-browser",
+    "lifecycle-persistence", "export-cleanup", "mux-replacement-evidence", "native-window"]) {
+    await assert.rejects(p2ProfiledCertificationOperator({ rotationSuccessor: {}, certification: { mode } }),
+      { message: "P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED" });
   }
 });
 

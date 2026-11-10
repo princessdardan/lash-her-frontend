@@ -430,16 +430,32 @@ class HeldCertificationPersistenceScope(CurrentLifecyclePersistenceScope):
                 "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
             evidence[name] = raw
         promotion_name = "frontend-promotion-outcome.json"
+        workload_name = "frontend-workload-outcome.json"
+        current_ready = certification.get("readyReceiptSha256", {})
         demand(plan["originalReleaseSha256"] == certification.get("originalReleaseReceiptSha256")
-            and plan["frontendDeploymentSha256"] == certification.get("readyReceiptSha256", {}).get(promotion_name)
+            and plan["frontendDeploymentSha256"] == current_ready.get(promotion_name)
             and plan["originalReleaseSha256"] != plan["frontendDeploymentSha256"],
             "P2_PERSISTENCE_SCOPED_RELEASE_PINS_CHANGED")
+        native = certification["nativePlan"]
+        original_deployment, original_ready = native["deploymentId"], current_ready
+        if "rotationSuccessor" in certification:
+            # The parent verifies both READY sets. The terminal still binds the
+            # original one, while the private observation uses the active one.
+            ready = certification.get("originalFrontendReady")
+            demand(_closed(ready, ("deploymentId", "deploymentUrl", "readyReceiptSha256"))
+                and isinstance(ready["readyReceiptSha256"], dict)
+                and ready["deploymentId"] != native["deploymentId"]
+                and all(isinstance(ready["readyReceiptSha256"].get(name), str)
+                    and SHA.fullmatch(ready["readyReceiptSha256"][name])
+                    and ready["readyReceiptSha256"][name] != current_ready.get(name)
+                    for name in (promotion_name, workload_name)),
+                "P2_PERSISTENCE_SCOPED_RELEASE_PINS_CHANGED")
+            original_deployment, original_ready = ready["deploymentId"], ready["readyReceiptSha256"]
         original = parent.require_replacement_original(evidence["originalReleaseReceipt"])
         promoted = decode_qualification_target_json(evidence["frontendDeploymentRecord"], "carrier")
         migrate.require_profile(expected, original, promoted)
         migrate.require_contract_identity(certification, original)
         replacement = certification["replacementRelease"]
-        native = certification["nativePlan"]
         demand(all(isinstance(value, dict) and type(value.get("version")) is int and value["version"] == 2
             and value.get("environment") == "staging" and value.get("releaseId") == plan["releaseId"]
             and value.get("sourceCommit") == plan["sources"]["frontend"] for value in (original, promoted))
@@ -454,9 +470,9 @@ class HeldCertificationPersistenceScope(CurrentLifecyclePersistenceScope):
             and _hash(_canonical(original.get("configurationSha256"))) == plan["configurationSha256"]
             and original.get("owner") == native["owner"] and original.get("runtime") == native["producer"]["role"]
             and original.get("producerSha256") == native["producer"]["producerSha256"]
-            and original.get("frontendWorkloadReceiptSha256") == certification["readyReceiptSha256"].get("frontend-workload-outcome.json")
-            and original.get("frontendPromotionReceiptSha256") == plan["frontendDeploymentSha256"]
-            and original.get("deploymentId") == native["deploymentId"] == promoted.get("deploymentId")
+            and original.get("frontendWorkloadReceiptSha256") == original_ready.get(workload_name)
+            and original.get("frontendPromotionReceiptSha256") == original_ready.get(promotion_name)
+            and original.get("deploymentId") == original_deployment and promoted.get("deploymentId") == native["deploymentId"]
             and promoted.get("projectId") == native["projectId"] and promoted.get("status") == "FRONTEND_DOMAINS_PROMOTED"
             and promoted.get("phase") == "completed" and promoted.get("frontendDomainsPromoted") is True
             and promoted.get("trafficAuthorized") is False and promoted.get("gatewayTrafficAuthorized") is False,
