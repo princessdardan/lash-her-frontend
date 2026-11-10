@@ -641,6 +641,32 @@ class ProfiledCertificationInputTests(unittest.TestCase):
              patch.object(parent.vercel.Client, 'request', side_effect=AssertionError('unexpected provider request')):
             return parent.prepare_profiled_current_certification_input(self.initial, self.source)
 
+    def test_stalled_renewal_extends_only_the_outer_observation_lease(self):
+        actor, course, lesson = [f'10000000-0000-4000-8000-{index:012d}' for index in (1, 2, 3)]
+        lesson_api = f'/course/v1/student/lessons/{lesson}'
+        targets = (f'/course/v1/student/courses/{course}', lesson_api, f'/course/v1/student/progress?lessonId={lesson}',
+                   f'{lesson_api}/quiz', f'{lesson_api}/quiz/attempts', f'{lesson_api}/playback')
+        action = {'stage': 'stalled-playback-renewal', 'actorId': actor, 'windowSeconds': 300,
+                  'stalledRenewalAction': {'courseId': course, 'lessonId': lesson, 'playbackIdSha256': '9' * 64},
+                  'requests': [{'method': 'GET', 'target': target, 'bodySha256': self.hash(b''), 'uses': 1} for target in targets]}
+        baseline = self.plan['nativePlan']
+        control = {key: baseline[key] for key in parent.BROWSER_CONTROL_FIELDS if key not in ('purpose', 'planSha256')}
+        control.update(purpose='scoped-certification-control-only', commandWitnesses=[])
+        control['planSha256'] = self.hash(control, canonical=True)
+        self.plan.update(mode='interactive-browser', maximumSeconds=900, scopedAction=action, nativePlan=control)
+        self.rehash()
+        self.assertEqual(parent._profiled_initial(self.initial, self.profile), self.plan)
+        for seconds, scoped, code in (
+            (300, action, 'PLAN_BINDING_REQUIRED'),
+            (900, {**action, 'windowSeconds': 900}, 'ACTION_REQUIRED'),
+            (900, {'stage': 'identity', 'actorId': None, 'windowSeconds': 60, 'requests': [],
+                   'identityActor': {'actorKind': 'customer', 'actorId': actor}}, 'PLAN_BINDING_REQUIRED'),
+        ):
+            self.plan.update(maximumSeconds=seconds, scopedAction=scoped)
+            self.rehash()
+            with self.subTest(seconds=seconds, stage=scoped['stage']), self.assertRaisesRegex(ValueError, code):
+                parent._profiled_initial(self.initial, self.profile)
+
     def test_current_packet_binds_actual_sources_jobs_and_receipts_without_effects(self):
         before = sorted(self.original.iterdir())
         result = self.prepare()

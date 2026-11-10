@@ -268,6 +268,116 @@ class IndependentGuardTests(unittest.TestCase):
                 stage.collect_gateway_effects()
             sleep.assert_not_called()
 
+    def test_stalled_renewal_joins_the_host_fence_and_original_playback_after_waiting(self):
+        import p2_interactive_window as window
+        from p2_certification_parent import P2ProfiledCertificationBroker
+
+        initial, directory = self.profiled_certification('owned-stalled-renewal')
+        plan = initial['certificationPlan']
+        actor, course, lesson = [f'10000000-0000-4000-8000-{index:012d}' for index in (1, 2, 3)]
+        selected = {'courseId': course, 'lessonId': lesson, 'playbackIdSha256': '9' * 64}
+        lesson_api = f'/course/v1/student/lessons/{lesson}'
+        targets = (f'/course/v1/student/courses/{course}', lesson_api, f'/course/v1/student/progress?lessonId={lesson}',
+                   f'{lesson_api}/quiz', f'{lesson_api}/quiz/attempts', f'{lesson_api}/playback')
+        action = {'stage': 'stalled-playback-renewal', 'actorId': actor, 'windowSeconds': 300, 'stalledRenewalAction': selected,
+                  'requests': [{'method': 'GET', 'target': target, 'bodySha256': window._EMPTY, 'uses': 1} for target in targets]}
+        plan.update(mode='interactive-browser', scopedAction=action, maximumSeconds=900)
+        self.assertEqual(window.validate_interactive_plan_action(plan), action)
+        for wrong in ({**action, 'windowSeconds': 900}, {**action, 'requests': action['requests'] + [action['requests'][-1]]}):
+            with self.assertRaises(ValueError):
+                window.validate_interactive_action(wrong)
+        self.assertEqual(window._selection_sha(action), (actor + course + lesson).replace('-', ''))
+
+        source = Path(__file__).resolve().parents[3]
+        recorder = migrate.read_input(source, window._BROWSER_SOURCE)
+        initial.update(sourceSha256={window._BROWSER_SOURCE: migrate.file_hash(recorder)}, interactiveController={
+            'challenge': '1' * 64, 'bindingSha256': plan['planSha256'],
+            'browserProgramSha256': migrate.file_hash(recorder + window._BROWSER_LAUNCHER)})
+        acknowledgements = [
+            {'requestId': f'70000000-0000-4000-8000-{position:012d}', 'proofRequestId': f'80000000-0000-4000-8000-{position:012d}',
+             'requestIndex': index, 'upstreamStatus': 200} for position, index in enumerate((4, 2, 1, 3, 0, 5), 1)]
+        gateway_artifact = {**window.browser_receipt(plan, 'GATEWAY_OBSERVED'), 'epoch': '2', 'gatewayActive': 0,
+                            'gatewayUncertain': 0, 'gatewayStateSha256': '7' * 64, 'gatewayAcknowledgements': acknowledgements}
+        migrate.write_json(directory, window.browser_artifact(plan, 'gateway'), gateway_artifact)
+        ledger = dict.fromkeys(('commands', 'deliveries', 'orderViolations', 'operations'), [])
+        frontend = {'epoch': '3', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+        original = (b'owned-closed-gateway', 0o640, window._GATEWAY_GID)
+        gateway = {'version': 1, 'valid': True, 'releaseId': 'original', 'candidateSha256': initial['candidateSha256'],
+                   'newWork': False, 'recovery': False, 'active': window._ZERO, 'uncertain': window._ZERO,
+                   'sha256': window._hash(original[0])}
+        broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
+        stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
+        stage.plan, stage.action, stage.broker, stage._permit_issued = plan, action, broker, True
+        stage._state, stage._original, stage._stalled_renewal_fence = 'opened', original, None
+        stage._check = lambda: None
+        stage._read, stage._gateway = lambda: original, lambda: gateway
+        broker.initial, broker.scoped_stage, broker.directory = initial, stage, directory
+        broker.scoped_case = broker.closing_at = None
+        broker.scoped_gate_lock = threading.RLock()
+        broker.external_armed = broker.guard_arm_verified = True
+        broker.check = lambda: None
+        broker.observer = SimpleNamespace(probe=lambda _: {'admission': frontend, 'witness': ledger})
+        calls = []
+        broker.send = lambda identity, status, **data: calls.append({'id': identity, 'status': status, **data})
+        envelope = {'id': 1, 'controllerChallenge': initial['interactiveController']['challenge']}
+        confirm = {**envelope, 'operation': 'interactive-confirm-fence'}
+        fence_path = directory / window.browser_artifact(plan, 'observation-fence')
+        with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
+            broker.command(confirm)
+        stage._state = 'fenced'
+        with patch.object(broker.observer, 'probe', return_value={'admission': {**frontend, 'uncertain': 1}, 'witness': ledger}):
+            with self.assertRaisesRegex(ValueError, 'FRONTEND_DRAIN_REQUIRED'):
+                broker.command(confirm)
+        self.assertFalse(fence_path.exists())
+        wall = window._lesson_expiry('2026-11-09T10:00:00.000Z').replace(tzinfo=window.timezone.utc).timestamp()
+        with patch.object(window.time, 'time', return_value=wall + 3), patch.object(window.time, 'monotonic', return_value=100):
+            broker.command(confirm)
+        fence = calls.pop()['receipt']
+        self.assertEqual(fence, json.loads(fence_path.read_bytes()))
+        self.assertEqual(fence['observedAt'], '2026-11-09T10:00:03.000Z')
+        with self.assertRaisesRegex(ValueError, 'FENCE_ORDER_REQUIRED'):
+            broker.command(confirm)
+
+        browser = {'version': 1, 'status': 'P2_STALLED_PLAYBACK_RENEWAL_BROWSER_OBSERVED',
+                   'evidenceClass': 'source-browser-observation', 'actorId': actor,
+                   'page': {'pathname': f'/academy/courses/{course}/lessons/{lesson}', 'status': 200},
+                   'media': {'manifestObserved': True, 'segmentObserved': True, 'nativeVideoObserved': True},
+                   'playback': {'requestId': acknowledgements[-1]['requestId'], 'playbackIdSha256': selected['playbackIdSha256'],
+                                'serverDate': 'Mon, 09 Nov 2026 10:00:00 GMT', 'expiresAt': '2026-11-09T10:10:00.000Z',
+                                'thumbnailExpiresAt': '2026-11-09T10:10:00.000Z', 'lifetimeMs': 600_000},
+                   'observation': {'expectedExpiryElapsedMs': 599_100, 'permitCookieAbsent': True,
+                                   'renewal': {'pathname': f'/api/academy/lessons/{lesson}/playback', 'method': 'GET', 'count': 1,
+                                               'forwarded': False, 'responseObserved': False}}}
+        for name, elapsed, seconds in (('initialRequest', 100, 0), ('baseline', 2100, 2), ('fenceConfirmed', 3150, 3.05),
+                                       ('renewalStarted', 569100, 569), ('playerLastPresent', 599000, 598.9),
+                                       ('playerRemoved', 599100, 599), ('retryVisible', 599200, 599.1)):
+            browser['observation'][name] = {'observedAt': window._instant(wall + seconds), 'elapsedMs': elapsed}
+        retain = {**envelope, 'operation': 'interactive-retain', 'caseEvidence': {'stalledRenewalBrowser': browser}}
+        with patch.object(window.time, 'time', return_value=wall + 599.1), patch.object(window.time, 'monotonic', return_value=104):
+            with self.assertRaisesRegex(ValueError, 'HOST_TIMING_REQUIRED'):
+                broker.command(retain)
+        wrong = {**browser, 'playback': {**browser['playback'], 'requestId': acknowledgements[0]['requestId']}}
+        with self.assertRaisesRegex(ValueError, 'PLAYBACK_REQUIRED'):
+            broker.command({**retain, 'caseEvidence': {'stalledRenewalBrowser': wrong}})
+        with patch.object(window.time, 'time', return_value=wall + 599.2), patch.object(window.time, 'monotonic', return_value=696.2):
+            broker.command(retain)
+        case = calls.pop()['receipt']
+        self.assertEqual(case['playbackGatewayRequestId'], acknowledgements[-1]['requestId'])
+        self.assertEqual(case['frontendOperationCount'], 0)
+        terminal = {**plan, 'status': supervisor.PROFILED_CERTIFICATION_LAYOUT['terminalStatus'], 'releaseId': 'original',
+                    'configurationSha256': initial['configurationSha256'], 'caseStatus': case['status'],
+                    'caseOutcomeSha256': supervisor._canonical_sha(case), 'frontendAdmission': frontend,
+                    'witnessSha256': migrate.file_hash(json.dumps(ledger, separators=(',', ':')).encode()),
+                    'gatewayAdmission': gateway, 'nativeDisabled': True,
+                    **dict.fromkeys(('frontendSqlApplied', 'trafficAuthorized', 'releaseAccepted', 'sqlReplayed', 'nativeInvocationQualified',
+                        'persistenceAuthorityJoined', 'deployedCertificationComplete', 'directWorkerSourceJoined', 'runtimeReplaced',
+                        'wholeReleaseAccepted'), False)}
+        raw = json.dumps(terminal).encode()
+        self.assertEqual(supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw), source=source), terminal)
+        fence_path.write_text(json.dumps({**fence, 'observedAt': '2026-11-09T10:09:30.000Z'}))
+        with self.assertRaisesRegex(ValueError, 'TIMING_REQUIRED'):
+            supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw), source=source)
+
     def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None,
                                             create_kind=None, publication_outcome=None, quiz_revision=None,
                                             progress_first=False, archiving=False, republish_outcome=None, expected_access=None,

@@ -9,7 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateP2StalledPlaybackRenewalReceipt, watchP2StalledPlaybackRenewal } from "./p2-lifecycle-browser-recorder.mjs";
+import { p2InteractiveBrowserEntryPath, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
+  validateP2StalledPlaybackRenewalReceipt, watchP2StalledPlaybackRenewal } from "./p2-lifecycle-browser-recorder.mjs";
+import { validateP2InteractiveStalledRenewalAction } from "./p2-certification-transport.mjs";
 
 const refused = /P2_STALLED_PLAYBACK_RENEWAL_BROWSER_REFUSED/u;
 const playbackId = "ownedStalledPlayback";
@@ -57,6 +59,34 @@ test("stalled renewal receipt binds the exact lesson, strict timing and no repla
     drift(changed);
     assert.throws(() => validateP2StalledPlaybackRenewalReceipt(changed, target));
   }
+});
+
+test("stalled renewal accepts only the fixed learner reads and exact three-subject permit", () => {
+  const { actorId, ...action } = target, student = "/course/v1/student", lesson = `${student}/lessons/${target.lessonId}`;
+  const requests = [`${student}/courses/${target.courseId}`, lesson, `${student}/progress?lessonId=${target.lessonId}`,
+    `${lesson}/quiz`, `${lesson}/quiz/attempts`, `${lesson}/playback`].map(target => ({
+    method: "GET", target, uses: 1, bodySha256: createHash("sha256").digest("hex"),
+  }));
+  assert.equal(validateP2InteractiveStalledRenewalAction(action, requests), true);
+  for (const invalid of [requests.toReversed(), [...requests, requests[5]],
+    [...requests.slice(0, 5), { ...requests[5], method: "POST" }], [...requests.slice(0, 5), { ...requests[5], uses: 2 }]]) {
+    assert.equal(validateP2InteractiveStalledRenewalAction(action, invalid), false);
+  }
+  const stage = "stalled-playback-renewal", epoch = "123456789012345678", now = 1_799_999_700, expires = now + 300;
+  const input = { version: 2, environment: "staging", actionId: "owned-stalled-renewal", challenge: "a".repeat(64), bindingSha256: "b".repeat(64),
+    sourceCommit: "c".repeat(40), deploymentId: "dpl_ownedStalled", deploymentUrl: "https://owned-stalled.vercel.app",
+    browserOrigin: "https://staging.lashher.com", stage, epoch, windowSeconds: 300, stalledRenewal: target };
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), lessonPath);
+  const selector = (actorId + target.courseId + target.lessonId).replaceAll("-", "");
+  const cookie = ["v2", epoch, stage, now, expires, "e".repeat(32), selector, "f".repeat(64)].join(".");
+  assert.equal(cookie.length, 263);
+  const permit = { stage, epoch, expires, cookie };
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input, now), permit);
+  for (const drift of [cookie.replace(selector, (actorId + target.lessonId + target.courseId).replaceAll("-", "")), cookie + "0"]) {
+    assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: drift }, input, now));
+  }
+  assert.throws(() => validateP2InteractiveBrowserInput({ ...input, windowSeconds: 900 }));
 });
 
 test("owned Chromium holds one renewal of the real player until authorization expires", {
@@ -107,8 +137,8 @@ test("owned Chromium holds one renewal of the real player until authorization ex
     });
     const proxyPort = await bind(proxy);
     browser = await chromium.launch();
-    for (const scenario of ["natural", "duplicate", "premature-removal", "permit-retained", "aborted"]) {
-      let playbackRequests = 0, manifestRequests = 0, segmentRequests = 0, authorization;
+    for (const scenario of ["natural", "duplicate", "premature-removal", "permit-retained", "aborted", "unexpected-post", "navigation"]) {
+      let playbackRequests = 0, manifestRequests = 0, segmentRequests = 0, documents = 0, writes = 0, authorization;
       const token = (aud, exp) => [Buffer.from('{"alg":"RS256"}').toString("base64url"),
         Buffer.from(JSON.stringify({ aud, sub: playbackId, exp })).toString("base64url"),
         Buffer.from("owned-https-fixture-signature").toString("base64url")].join(".");
@@ -127,10 +157,14 @@ test("owned Chromium holds one renewal of the real player until authorization ex
           }
         }
         if (url.origin === origin) {
+          if (request.method === "POST") writes++;
           if (url.pathname === "/bundle.js") return send(response, 200, "application/javascript", bundle);
           if (cookie?.includes("__Host-owned-stalled-learner=fixture")) {
-            if (url.pathname === lessonPath) return send(response, 200, "text/html; charset=utf-8",
-              '<!doctype html><main></main><script src="/bundle.js"></script>', privateCache);
+            if (url.pathname === lessonPath) {
+              documents++;
+              return send(response, 200, "text/html; charset=utf-8",
+                '<!doctype html><main></main><script src="/bundle.js"></script>', privateCache);
+            }
             if (url.pathname === playbackPath) {
               playbackRequests++;
               const now = Math.floor(Date.now() / 1000), expiresAt = new Date((now + 5) * 1_000).toISOString();
@@ -172,12 +206,18 @@ test("owned Chromium holds one renewal of the real player until authorization ex
             await page.evaluate(path => { void fetch(path).catch(() => {}); }, playbackPath);
           } else if (scenario === "premature-removal") {
             await page.locator("mux-player").evaluate(element => element.dispatchEvent(new Event("error")));
+          } else if (scenario === "unexpected-post") {
+            await page.evaluate(path => { void fetch(path, { method: "POST" }).catch(() => {}); }, `/api/academy/lessons/${target.lessonId}/progress`);
+          } else if (scenario === "navigation") {
+            await assert.rejects(page.reload());
           } else {
             controller.abort();
           }
           await refusedObservation;
         }
         assert.equal(playbackRequests, 1, scenario);
+        assert.equal(documents, 1, scenario);
+        assert.equal(writes, 0, scenario);
       } finally {
         await watcher.close();
         await context.close();

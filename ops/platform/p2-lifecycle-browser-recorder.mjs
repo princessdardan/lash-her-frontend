@@ -21,8 +21,9 @@ const permitName = "__Host-lash-p2q-window";
 const customerSessionName = "__Host-lash-customer.session-token";
 const authoringPath = "/api/admin/courses";
 const firstOwnerPath = "/admin/certification/first-owner";
+export const p2StalledRenewalStage = "stalled-playback-renewal";
 const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save",
-  "lesson-visibility-save", "lesson-stale-revision"];
+  "lesson-visibility-save", "lesson-stale-revision", p2StalledRenewalStage];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
@@ -39,6 +40,7 @@ const interactivePages = {
   "lesson-exit-save": { learner: "/academy/courses" },
   "lesson-visibility-save": { learner: "/academy/courses" },
   "lesson-stale-revision": { learner: "/academy/courses" },
+  [p2StalledRenewalStage]: { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -147,6 +149,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
     return learningEnrollmentReplay(input.learning) ? academyPath : coursePath;
   }
   if (input.stage === "learner-access") return p2PaidLearnerAccessPaths(input.learnerAccess).pagePath;
+  if (input.stage === p2StalledRenewalStage) return stalledRenewalSelection(input.stalledRenewal).lessonPath;
   if (input.stage === "lesson-entry") return p2LessonEntryPaths(input.lessonEntry).academyPath;
   if (input.stage === "lesson-denial") return p2LessonDenialPaths(input.lessonDenial).lessonPath;
   if (input.stage === "lesson-assessment") return p2LessonAssessmentPaths(input.assessment).lessonPath;
@@ -302,7 +305,7 @@ export function validateP2InteractiveBrowserInput(input) {
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
           : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"] : input?.stage === "lesson-ack-loss" ? ["ackLoss"]
-          : input?.stage === "lesson-exit-save" ? ["exitSave"]
+          : input?.stage === p2StalledRenewalStage ? ["stalledRenewal"] : input?.stage === "lesson-exit-save" ? ["exitSave"]
           : input?.stage === "lesson-visibility-save" ? ["visibility"]
           : input?.stage === "lesson-stale-revision" ? ["staleRevision"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
@@ -313,6 +316,7 @@ export function validateP2InteractiveBrowserInput(input) {
     && matches(input.epoch, /^[1-9][0-9]{0,17}$/u)
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
+  if (input.stage === p2StalledRenewalStage) stalledRenewalSelection(input.stalledRenewal);
   if (input.stage === "media") {
     const { actorId, filePath, ...selection } = input.media ?? {};
     demand(uuid(actorId) && validP2MediaReservationAction(selection)
@@ -409,7 +413,7 @@ export function validateP2InteractiveBrowserInput(input) {
 export function validateP2InteractiveBrowserPermit(permit, input, now = Math.floor(Date.now() / 1000)) {
   demand(closed(permit, ["stage", "epoch", "expires", "cookie"]) && permit.stage === input.stage && permit.epoch === input.epoch
     && Number.isSafeInteger(permit.expires) && permit.expires > now && typeof permit.cookie === "string"
-    && permit.cookie.length <= (input.stage === "lesson-visibility-save" ? 261 : input.stage === "lesson-stale-revision" ? 260 : 256));
+    && permit.cookie.length <= (input.stage === "lesson-visibility-save" ? 261 : input.stage === "lesson-stale-revision" ? 260 : input.stage === p2StalledRenewalStage ? 263 : 256));
   const parts = permit.cookie.split(".");
   const [version, epoch, stage, issued, expires, nonce] = parts;
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
@@ -432,7 +436,7 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
     const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore
-      ?? input.ackLoss ?? input.exitSave ?? input.visibility ?? input.staleRevision;
+      ?? input.ackLoss ?? input.exitSave ?? input.visibility ?? input.staleRevision ?? input.stalledRenewal;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -4056,6 +4060,14 @@ function stalledRenewalPlayback(playback, target, owned) {
     && Math.max(expiry, thumbnail) - date <= (owned ? 5_000 : 601_000));
 }
 
+export function validateP2StalledPlaybackRenewalBaseline(receipt, target) {
+  const { lessonPath } = stalledRenewalSelection(target);
+  demand(closed(receipt, ["page", "playback"]) && closed(receipt.page, ["pathname", "status"])
+    && receipt.page.pathname === lessonPath && receipt.page.status === 200);
+  stalledRenewalPlayback(receipt.playback, target, false);
+  return receipt;
+}
+
 function validateStalledRenewalReceipt(receipt, target, owned) {
   const { lessonPath, playbackPath } = stalledRenewalSelection(target);
   const { page, actorId, playback, media, observation } = receipt ?? {};
@@ -4108,11 +4120,10 @@ export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } =
   const source = origin + lessonPath, started = performance.now(), mark = () => ({
     observedAt: new Date().toISOString(), elapsedMs: Math.round(performance.now() - started),
   });
-  const selectedUrl = url => url.origin === origin && url.pathname === playbackPath;
   const player = page.getByRole("main").locator("mux-player");
   const retry = page.getByRole("region", { name: "Lesson video", exact: true }).getByRole("button", { name: "Retry video", exact: true });
-  let phase = "new", initialRequest, baseline, fenceConfirmed, held, playback, session, executionContextId;
-  let initial, documentRequest, renewalStarted, rejectFailure, failed = false, installed = false, cleanup;
+  let phase = "new", initialRequest, baseline, fenceConfirmed, held, playback, session, mainFrameId, executionContextId;
+  let initial, documentRequest, renewalStarted, rejectFailure, failed = false, cleanup;
   const failure = new Promise((_, reject) => { rejectFailure = reject; });
   failure.catch(() => {});
   const fail = () => { if (!failed) { failed = true; rejectFailure(stalledRenewalRefusal()); } };
@@ -4145,39 +4156,47 @@ export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } =
         demand(phase === "baseline" && !documentRequest && request.url() === source && request.redirectedFrom() === null);
         documentRequest = request;
       }
-      if (phase === "fenced" && URL.parse(request.url())?.origin === origin) {
-        demand(["GET", "HEAD", "OPTIONS"].includes(request.method()));
-      }
+      if (phase === "baseline" && !initial && request.url() === origin + playbackPath) initial = request;
     } catch { fail(); }
   };
-  const onResponse = response => { if (response.request() === held?.request()) fail(); };
-  const onRequestFailed = request => {
-    if (request === initial || request === documentRequest) fail();
-    if (request === held?.request() && phase === "fenced") {
-      const { lifetime, tolerance } = stalledRenewalTiming(playback.lifetimeMs, owned);
-      if (mark().elapsedMs < initialRequest.elapsedMs + lifetime - tolerance || request.failure()?.errorText !== "net::ERR_ABORTED") fail();
-    }
+  const onRequestFailed = request => { if (request === initial || request === documentRequest) fail(); };
+  const onResponse = event => { if (event.requestId === held?.networkId) fail(); };
+  const onLoadingFailed = event => {
+    if (event.requestId !== held?.networkId || phase !== "fenced") return;
+    const { lifetime, tolerance } = stalledRenewalTiming(playback.lifetimeMs, owned);
+    if (mark().elapsedMs < initialRequest.elapsedMs + lifetime - tolerance || event.errorText !== "net::ERR_ABORTED") fail();
   };
-  const routePlayback = async route => {
+  const refusePausedRequest = requestId => session.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => {});
+  const onPaused = async ({ request, requestId, networkId, frameId, resourceType, redirectedRequestId }) => {
     try {
       ready();
-      const request = route.request();
-      demand(request.url() === origin + playbackPath && request.method() === "GET" && request.postDataBuffer() === null
-        && request.frame() === page.mainFrame() && request.frame().url() === source && request.resourceType() === "fetch"
-        && request.redirectedFrom() === null && request.redirectedTo() === null);
-      if (phase === "baseline" && !initial) {
-        initial = request;
-        initialRequest = mark();
-        await route.continue();
-        return;
+      const url = URL.parse(request.url), sameOrigin = url?.origin === origin;
+      const selectedPlayback = sameOrigin && url.pathname === playbackPath;
+      if (resourceType === "Document") {
+        demand(phase === "baseline" && frameId === mainFrameId && request.url === source
+          && request.method === "GET" && redirectedRequestId === undefined);
       }
-      demand(phase === "fenced" && !held);
-      held = route;
-      renewalStarted = mark();
-      // Leave the exact browser request pending. Cleanup never supplies bytes.
+      if (sameOrigin) {
+        demand(["GET", "HEAD", "OPTIONS"].includes(request.method));
+        if (!selectedPlayback) demand(phase === "baseline" && !url.pathname.startsWith("/api/"));
+      }
+      if (selectedPlayback) {
+        demand(request.url === origin + playbackPath && request.method === "GET" && request.hasPostData !== true
+          && frameId === mainFrameId && page.url() === source && ["Fetch", "XHR"].includes(resourceType)
+          && redirectedRequestId === undefined && typeof networkId === "string");
+        if (phase === "fenced" && !held) {
+          held = { requestId, networkId };
+          renewalStarted = mark();
+          // Leave the exact browser request pending. Cleanup never supplies bytes.
+          return;
+        }
+        demand(phase === "baseline" && !initialRequest);
+        initialRequest = mark();
+      }
+      await session.send("Fetch.continueRequest", { requestId });
     } catch {
       fail();
-      await route.abort("aborted").catch(() => {});
+      await refusePausedRequest(requestId);
     }
   };
   const bounded = async (run, timeout) => {
@@ -4195,15 +4214,15 @@ export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } =
     page.off("close", fail);
     page.off("request", onRequest);
     page.off("requestfailed", onRequestFailed);
-    page.off("response", onResponse);
     page.off("framenavigated", onNavigation);
     media.close();
-    await held?.abort("aborted").catch(() => {});
-    // A playback request can be between the browser's request event and the
-    // route callback. Close its page before removing the route so it cannot
-    // escape the hold on abort or timeout.
+    if (held) await refusePausedRequest(held.requestId);
+    // Keep the interception session attached through page teardown. Disabling
+    // it while Chromium is still dispatching a request can send that request.
     await page.close({ runBeforeUnload: false }).catch(() => {});
-    if (installed) await page.unroute(selectedUrl, routePlayback).catch(() => {});
+    session?.off("Fetch.requestPaused", onPaused);
+    session?.off("Network.responseReceived", onResponse);
+    session?.off("Network.loadingFailed", onLoadingFailed);
     await session?.detach().catch(() => {});
   })();
   signal?.addEventListener("abort", fail, { once: true });
@@ -4226,10 +4245,16 @@ export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } =
         page.on("close", fail);
         page.on("request", onRequest);
         page.on("requestfailed", onRequestFailed);
-        page.on("response", onResponse);
         page.on("framenavigated", onNavigation);
-        await page.route(selectedUrl, routePlayback);
-        installed = true;
+        session = await context.newCDPSession(page);
+        mainFrameId = (await session.send("Page.getFrameTree")).frameTree.frame.id;
+        session.on("Fetch.requestPaused", onPaused);
+        session.on("Network.responseReceived", onResponse);
+        session.on("Network.loadingFailed", onLoadingFailed);
+        await session.send("Network.enable");
+        await session.send("Network.setCacheDisabled", { cacheDisabled: true });
+        await session.send("Network.setBypassServiceWorker", { bypass: true });
+        await session.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
         return await bounded(async () => {
           const [response, document] = await Promise.all([
             page.waitForResponse(candidate => candidate.request() === initial, { timeout: remaining() }),
@@ -4238,6 +4263,7 @@ export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } =
           demand(document?.request() === documentRequest && exactResponse(document, page, origin, lessonPath, "GET")
             && document.status() === 200 && !document.fromServiceWorker() && page.url() === source
             && /^text\/html(?:;.*)?$/iu.test(await document.headerValue("content-type")) && privateNoStore(document.headers()));
+          demand(initialRequest && exactResponse(response, page, origin, playbackPath, "GET"));
           const [head, body, dates] = await Promise.all([
             readBrowserResponseHead(response, initial, origin, playbackPath, "GET", 200),
             readBrowserResponseJson(response, initial, maxLifecycleBody, true), response.headerValues("date"),
@@ -4254,7 +4280,6 @@ export function watchP2StalledPlaybackRenewal(page, origin, target, { signal } =
             mediaPermit = { playbackIdSha256: target.playbackIdSha256, tokenSha256: resumeDigest(body.playbackToken) };
           } finally { body.playbackId = body.playbackToken = body.thumbnailToken = ""; }
           await player.waitFor({ state: "visible", timeout: remaining() });
-          session = await context.newCDPSession(page);
           executionContextId = await isolatedMainFrame(session, source);
           await until(async () => {
             const native = await state(sampleNativeResumeMedia);
@@ -4393,6 +4418,7 @@ async function runInteractiveBrowser(first) {
     return pending;
   };
   let browser, context, page, peer, peerPage, selection, mutationWatch, identityOpenedAt, verifiedIdentity, staleSessionProofs;
+  let stalledBaseline;
   let opened = false, cleared = false, browserFenced = false, mediaHeld = false;
   const permitPipe = new Socket({ fd: 4, readable: true, writable: false });
   permitPipe.pause();
@@ -4426,7 +4452,7 @@ async function runInteractiveBrowser(first) {
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
           && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial
             ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore ?? selectedInput.ackLoss ?? selectedInput.exitSave
-            ?? selectedInput.visibility ?? selectedInput.staleRevision).actorId
+            ?? selectedInput.visibility ?? selectedInput.staleRevision ?? selectedInput.stalledRenewal).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         const staleRevision = selectedInput.stage === "lesson-stale-revision";
         demand(staleRevision === (input.identity?.sessionCount === 2));
@@ -4451,6 +4477,7 @@ async function runInteractiveBrowser(first) {
       const path = p2InteractiveBrowserEntryPath(input, received.context);
       const pairedIdentity = input.identity?.sessionCount === 2;
       const staleRevision = binding.stage === "lesson-stale-revision";
+      const stalledRenewal = binding.stage === p2StalledRenewalStage;
       if (command.type === "interactive-install") {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input))
@@ -4486,6 +4513,15 @@ async function runInteractiveBrowser(first) {
         continue;
       }
       demand(selection && received.context === selection.context && received.expires === selection.expires && context);
+      if (command.type === "interactive-confirm-stalled-renewal-fenced") {
+        demand(stalledRenewal && selection.context === "learner" && opened && cleared && mutationWatch && !browserFenced);
+        await expireP2InteractiveBrowserCookie(context);
+        browserFenced = true;
+        const response = await mutationWatch.confirmFenced();
+        pending = next();
+        await send("interactive-stalled-renewal-observed", { ...selection, response });
+        continue;
+      }
       if (command.type === "interactive-confirm-visibility-fenced" || command.type === "interactive-confirm-stale-revision-fenced") {
         const stage = staleRevision ? "stale-revision" : "visibility";
         demand(binding.stage === "lesson-" + stage && command.type === "interactive-confirm-" + stage + "-fenced"
@@ -4539,6 +4575,10 @@ async function runInteractiveBrowser(first) {
           mutationWatch = watchP2MediaReservation(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
+        } else if (stalledRenewal) {
+          mutationWatch = watchP2StalledPlaybackRenewal(page, input.browserOrigin, input.stalledRenewal);
+          stalledBaseline = await mutationWatch.baseline(selection.expires);
+          httpStatus = stalledBaseline.page.status;
         } else if (binding.stage === "learner-access") {
           mutationWatch = watchP2PaidLearnerAccess(context, page, input);
           await mutationWatch.open(selection.expires);
@@ -4644,6 +4684,14 @@ async function runInteractiveBrowser(first) {
           && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
+        if (captureMutation && stalledRenewal) {
+          demand(selection.context === "learner" && !peer && Date.now() < selection.expires * 1000);
+          const response = validateP2StalledPlaybackRenewalBaseline(stalledBaseline, input.stalledRenewal);
+          cleared = true;
+          pending = next();
+          await send("interactive-" + stage + "-captured", { ...selection, response });
+          continue;
+        }
         if (captureMutation) await mutationWatch.wait(selection.expires);
         if (captureIdentity) {
           const observation = { ...selection, openedAt: identityOpenedAt, ownerSubjectSha256: received.ownerSubjectSha256 };
@@ -4694,7 +4742,7 @@ async function runInteractiveBrowser(first) {
     permitPipe.destroy();
     await mutationWatch?.close();
     try {
-      if (context && !cleared) await Promise.all((peer ? [context, peer] : [context]).map(expireP2InteractiveBrowserCookie));
+      if (context && (!cleared || binding.stage === p2StalledRenewalStage && !browserFenced)) await Promise.all((peer ? [context, peer] : [context]).map(expireP2InteractiveBrowserCookie));
     }
     finally { await browser?.close(); }
   }

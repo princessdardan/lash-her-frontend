@@ -29,8 +29,8 @@ import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
-  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validP2MediaReservationRequests} from './p2-certification-transport.mjs';
-import {p2MediaUploadCallbackOperation,readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
+  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validateP2InteractiveStalledRenewalAction,validP2MediaReservationRequests} from './p2-certification-transport.mjs';
+import {p2MediaUploadCallbackOperation,p2StalledRenewalStage,readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
   readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
@@ -84,7 +84,7 @@ const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asse
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
 const customerCourseBrowserStages=['learning','lesson-entry','lesson-denial','lesson-assessment','lesson-resume','lesson-restore','lesson-ack-loss',
-  'lesson-exit-save','lesson-visibility-save','lesson-stale-revision','learner-access'];
+  'lesson-exit-save','lesson-visibility-save','lesson-stale-revision','learner-access',p2StalledRenewalStage];
 const courseBackedBrowserStages=new Set(['authoring','paid-grant','paid-revoke','media',...customerCourseBrowserStages]);
 const communityBackedBrowserStages=new Set(['learning','paid-grant','paid-revoke']);
 const pairedBrowserStages=new Set(['lifecycle',...courseBackedBrowserStages]);
@@ -302,11 +302,11 @@ function interactiveActionValid(value){
   const ackLoss=value?.stage==='lesson-ack-loss';
   const exitSave=value?.stage==='lesson-exit-save';
   const visibility=value?.stage==='lesson-visibility-save';
-  const staleRevision=value?.stage==='lesson-stale-revision';
+  const staleRevision=value?.stage==='lesson-stale-revision',stalledRenewal=value?.stage===p2StalledRenewalStage;
   const selectionKey=media?'mediaAction':lifecycle?'frontendAction':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':
     learnerAccess?'learnerAccessAction':lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':
     resume?'resumeAction':restore?'restoreAction':ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':
-      staleRevision?'staleRevisionAction':paidRevoke?'paidRevokeAction':identity?(firstOwner?'firstOwner':enrollment?'identityEnrollment':'identityActor'):null;
+      staleRevision?'staleRevisionAction':stalledRenewal?'stalledRenewalAction':paidRevoke?'paidRevokeAction':identity?(firstOwner?'firstOwner':enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','lifecycle',...courseBackedBrowserStages].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
@@ -323,6 +323,7 @@ function interactiveActionValid(value){
   if(exitSave)return validateP2InteractiveExitSaveAction(value.exitSaveAction,value.requests);
   if(visibility)return validateP2InteractiveVisibilityAction(value.visibilityAction,value.requests);
   if(staleRevision)return validateP2InteractiveStaleRevisionAction(value.staleRevisionAction,value.requests);
+  if(stalledRenewal)return validateP2InteractiveStalledRenewalAction(value.stalledRenewalAction,value.requests);
   if(learnerAccess)return learnerAccessActionValid(value.learnerAccessAction,value.requests);
   if(paidGrant)return paidGrantActionValid(value.paidGrantAction,value.requests);
   if(paidRevoke)return paidRevokeActionValid(value.paidRevokeAction,value.requests);
@@ -499,7 +500,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     persistenceReaderEligible:input.operatorSourceCommit===job.sourceCommit,
     requestEvidenceDescriptorSha256:input.requestEvidence?p2NativeHash(input.requestEvidence):null,
     faultSelection:input.mode.startsWith('fault-')||input.mode==='known-ack-recovery'?{stageId:input.fault?.stageId,receiver:input.fault?.receiver,commandIndex:input.fault?.commandIndex,commandSha256:input.fault?.commandSha256}:null,
-    readyReceiptSha256:structuredClone(input.readyReceiptSha256),maximumSeconds:scoped||input.mode==='auth-preparation'?300:900,finalDisposition:'native-disabled-and-both-admissions-closed',
+    readyReceiptSha256:structuredClone(input.readyReceiptSha256),maximumSeconds:(scoped&&input.scopedAction?.stage!==p2StalledRenewalStage||input.mode==='auth-preparation')?300:900,finalDisposition:'native-disabled-and-both-admissions-closed',
     frontendSqlReplay:false,apiSqlReplay:false,rolePreparationAllowed:false,historicalLoginRestorationAllowed:false,buildAllowed:false,promotionAllowed:false,
     wholeReleaseAccepted:false};
   if(replacement)base.replacementRelease=structuredClone(replacement);
@@ -671,9 +672,9 @@ async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,cl
 
 export async function runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,verifySession,verifyEnvironment,
   target,ordinaryProducers,signal,controllerChallenge,identityEnrollmentEmail,courseDraft,record=()=>{}}){
-  const action=plan.scopedAction;
+  const action=plan.scopedAction,stalledRenewal=action?.stage===p2StalledRenewalStage;
   demand(plan.mode==='interactive-browser'&&(action?.stage==='identity'||pairedBrowserStages.has(action?.stage))&&interactiveActionValid(action)&&
-    plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
+    plan.startState==='already-closed'&&plan.maximumSeconds===(stalledRenewal?900:300)&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,
     firstOwner=identity&&action.firstOwner!==undefined,authoring=action.stage==='authoring';
@@ -688,9 +689,11 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const visibility=action.stage==='lesson-visibility-save';
   const staleRevision=action.stage==='lesson-stale-revision';
   const paidRevoke=action.stage==='paid-revoke';
+  if(stalledRenewal)demand(typeof stage.confirmObservationFence==='function'&&
+    typeof controller.captureStalledRenewalBaseline==='function'&&typeof controller.confirmStalledRenewalFenced==='function');
   const communityBacked=communityBackedBrowserStages.has(action.stage);
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
-  if(courseBacked&&!media)demand(courseDraft?.job&&(!authoringCase?.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
+  if(courseBacked&&!media&&!stalledRenewal)demand(courseDraft?.job&&(!authoringCase?.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
   if(paidGrant)demand(typeof courseDraft.paidGrantReason==='string');
   if(paidRevoke)demand(typeof courseDraft.paidRevokeReason==='string');
   if(communityBacked)demand(courseDraft.communityJob&&typeof courseDraft.readCommunityDatabaseUrl==='function');
@@ -703,6 +706,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     resume?resumeSelection(action):restore?restoreSelection(action):ackLoss?ackLossSelection(action):exitSave?{actorId:action.actorId,...action.exitSaveAction}:
     visibility?{actorId:action.actorId,...action.visibilityAction}:
     staleRevision?{actorId:action.actorId,...action.staleRevisionAction}:
+    stalledRenewal?{actorId:action.actorId,...action.stalledRenewalAction}:
     paidRevoke?paidRevokeSelection(action,courseDraft.paidRevokeReason):
     paidGrant?{...paidGrantSelection,actorId:action.actorId,reason:courseDraft.paidGrantReason}:
     firstOwner?action.firstOwner:enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
@@ -713,7 +717,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const reviewed={sourceCommit:plan.sourceCommit,ordinaryProducers,runtimeProducer,
     interactiveProducer:{producerSha256,role:runtimeProducer.role}};
   const observations={verifySession,verifyEnvironment};
-  const courseObservations=courseBacked&&!media?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl,
+  const courseObservations=courseBacked&&!media&&!stalledRenewal?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl,
     ...(communityBacked?{communityJob:courseDraft.communityJob,readCommunityDatabaseUrl:courseDraft.readCommunityDatabaseUrl,signal}:{})}:undefined;
   const cancelBrowser=()=>{void Promise.resolve().then(()=>controller.close()).catch(()=>{});};
   signal?.addEventListener('abort',cancelBrowser,{once:true});
@@ -721,7 +725,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     signal?.throwIfAborted();
     const prepared=await stage.prepare();
     demand(prepared.status===statusPrefix+'_PREPARED');
-    const baseline=media?undefined:authoringCase?await authoringCase.baseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
+    const baseline=media||stalledRenewal?undefined:authoringCase?await authoringCase.baseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
       learning?await captureP2InteractiveFreeEnrollmentBaseline(courseDraft.job,selection,courseObservations):
       lessonEntry?await captureP2InteractiveLessonEntryBaseline(courseDraft.job,selection,courseObservations):
       lessonDenial?await captureP2InteractiveLessonDenialBaseline(courseDraft.job,selection,courseObservations):
@@ -765,14 +769,15 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
         exitSave?await controller.captureExitSaveResponse(context):
         visibility?await controller.captureVisibilityResponse(context):
         staleRevision?await controller.captureStaleRevisionResponse(context):
+        stalledRenewal?await controller.captureStalledRenewalBaseline(context):
         learnerAccess?await controller.captureLearnerAccessResponse(context):
         paidRevoke?await controller.capturePaidRevokeResponse(context):
         paidGrant?await controller.capturePaidGrantResponse(context):
         identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
         await controller.captureLifecycleResponse(context);
-      record(`p2-interactive-${action.stage}-browser.json`,browserEvidence);
+      if(!stalledRenewal)record(`p2-interactive-${action.stage}-browser.json`,browserEvidence);
       if(courseBacked){
-        const gateway=await stage.observe();
+        const gateway=await stage.observe(stalledRenewal?browserEvidence:undefined);
         demand(gateway.status===statusPrefix+'_GATEWAY_OBSERVED');
         record(`p2-interactive-${action.stage}-gateway.json`,gateway);
       }
@@ -797,6 +802,20 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       if(closureFailed)throw new Error(statusPrefix+'_CLOSURE_REQUIRES_REVIEW');
     }
     signal?.throwIfAborted();
+    if(stalledRenewal){
+      const fenced=await stage.confirmObservationFence();
+      demand(fenced.status===statusPrefix+'_OBSERVATION_FENCED');
+      record('p2-interactive-stalled-playback-renewal-fenced.json',fenced);
+      signal?.throwIfAborted();
+      const observation=await controller.confirmStalledRenewalFenced(context,fenced);
+      signal?.throwIfAborted();
+      await verifySession();
+      await verifyEnvironment();
+      const joined=await stage.retain({stalledRenewalBrowser:observation});
+      demand(joined.status===statusPrefix+'_JOINED');
+      record('p2-interactive-stalled-playback-renewal-joined.json',joined);
+      return joined;
+    }
     if(visibility){
       const browserFence=await controller.confirmVisibilityFenced(context);
       record('p2-interactive-lesson-visibility-save-browser-fenced.json',browserFence);
@@ -1434,7 +1453,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       }}:{})};
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
       interactiveController,...(enrollment?{identityEnrollmentEmail}:{}),
-      ...(action.scopedAction?.stage!=='media'&&courseBackedBrowserStages.has(action.scopedAction?.stage)?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,paidGrantReason,paidRevokeReason,
+      ...(!['media',p2StalledRenewalStage].includes(action.scopedAction?.stage)&&courseBackedBrowserStages.has(action.scopedAction?.stage)?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,paidGrantReason,paidRevokeReason,
         readCourseDatabaseUrl:()=>credentials.COURSE_STAGING_DATABASE_URL,
         ...(communityBackedBrowserStages.has(action.scopedAction.stage)?{communityJob:original.apiJobs.community,
           readCommunityDatabaseUrl:()=>credentials.COMMUNITY_STAGING_DATABASE_URL}:{})}}:{}),

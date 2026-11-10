@@ -271,6 +271,18 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
   await inBrowser(staleProgressWrite.cookie, staleProgressWrite.proxyProof,
     () => send({ method: "POST", path: lessonProgress, body: staleProgressBody, applicationToken }), startRoute);
+  const stalledPage = evidence("stalled-playback-renewal", lessonEntryRoute, issued, lessonSelector);
+  const stalledPlaybackRoute = `GET /api/academy/lessons/${lessonId}/playback`;
+  const stalledPlayback = evidence("stalled-playback-renewal", stalledPlaybackRoute, issued, lessonSelector);
+  const stalledDocumentReads = [
+    `/v1/student/courses/${learnerCourse}`, selectedLesson, denialProgress, `${selectedLesson}/quiz`, attemptTarget,
+  ];
+  for (const path of stalledDocumentReads) {
+    await inBrowser(stalledPage.cookie, stalledPage.proxyProof, () => send({ method: "GET", path, applicationToken }), lessonEntryRoute);
+  }
+  const stalledPlaybackRead = `${selectedLesson}/playback`;
+  await inBrowser(stalledPlayback.cookie, stalledPlayback.proxyProof,
+    () => send({ method: "GET", path: stalledPlaybackRead, applicationToken }), stalledPlaybackRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "learning", method: "POST", target: "/course" + enrollmentPath, bytes: [enrollmentBody, applicationToken, enrollmentKey] },
@@ -300,6 +312,9 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     { stage: "lesson-visibility-save", method: "POST", target: "/course" + lessonProgress, bytes: [exitPosition, applicationToken, ""] },
     { stage: "lesson-stale-revision", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
     { stage: "lesson-stale-revision", method: "POST", target: "/course" + lessonProgress, bytes: [staleProgressBody, applicationToken, ""] },
+    ...[...stalledDocumentReads, stalledPlaybackRead].map(path => ({
+      stage: "stalled-playback-renewal", method: "GET", target: "/course" + path, bytes: ["", applicationToken, ""],
+    })),
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -378,6 +393,14 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     () => send({ method: "GET", path: selectedLesson, applicationToken }), denialRoute);
   await inBrowser(staleProgressWrite.cookie, staleProgressWrite.proxyProof,
     () => send({ method: "POST", path: lessonProgress, body: staleProgressBody.replace(":0", ":1"), applicationToken }), startRoute);
+  await inBrowser(stalledPage.cookie, stalledPage.proxyProof,
+    () => send({ method: "GET", path: stalledPlaybackRead, applicationToken }), lessonEntryRoute);
+  await inBrowser(stalledPage.cookie, stalledPage.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: startBody, applicationToken }), lessonEntryRoute);
+  await inBrowser(stalledPlayback.cookie, stalledPlayback.proxyProof,
+    () => send({ method: "GET", path: selectedLesson, applicationToken }), stalledPlaybackRoute);
+  await inBrowser(stalledPlayback.cookie, stalledPlayback.proxyProof,
+    () => send({ method: "GET", path: `${stalledPlaybackRead}?limit=1`, applicationToken }), stalledPlaybackRoute);
   await request();
   await inBrowser(learning.cookie, undefined, request);
   await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
@@ -397,6 +420,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, expected.length + 40);
+  assert.equal(captured.length, expected.length + 44);
   assert.ok(captured.slice(expected.length).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

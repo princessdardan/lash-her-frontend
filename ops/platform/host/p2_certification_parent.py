@@ -269,12 +269,17 @@ def _profiled_initial(initial, expected):
     require(type(plan) is dict and type(plan.get('mode')) is str and plan['mode'] in PROFILED_MODES,
             'P2_PROFILED_CERTIFICATION_PLAN_REQUIRED')
     mode = plan['mode']
+    maximum_seconds = 300 if mode == 'auth-preparation' or mode in SCOPED_MODES else 900
     extra = set()
     if mode == 'known-ack-recovery':
         extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
     if mode in SCOPED_MODES:
         extra = {'scopedAction'}
         _require_profiled_scoped_action(mode, plan)
+        if mode == 'interactive-browser':
+            from p2_interactive_window import stalled_renewal_selected
+            if stalled_renewal_selected(plan):
+                maximum_seconds = 900
     if mode in PERSISTENCE_MODES:
         extra.add('persistenceReviewedSha256')
         require(_profiled_digest(plan.get('persistenceReviewedSha256')), 'P2_PROFILED_PERSISTENCE_REVIEW_REQUIRED')
@@ -304,7 +309,7 @@ def _profiled_initial(initial, expected):
             all(_profiled_digest(plan[key]) for key in ('candidateObjectSha256', 'runtimeInventorySha256', 'gatewayProcessSha256',
                 'originalReleasePlanSha256', 'originalReleaseReceiptSha256')) and
             type(plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', plan['initialEpoch']) and
-            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' or mode in SCOPED_MODES else 900) and
+            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == maximum_seconds and
             (_profiled_digest(plan['browserPlanSha256']) if mode in BROWSER_MODES else plan['browserPlanSha256'] is None) and
             (type(plan['workerPlan']) is dict and _profiled_digest(plan['workerPlanSha256'])
              if mode == 'direct-worker' else plan['workerPlan'] is None and plan['workerPlanSha256'] is None) and
@@ -2263,7 +2268,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def interactive_operation(self, operation, value):
         from p2_interactive_window import (EXECUTABLE_BROWSER_STAGES, SCOPED_GATEWAY_BROWSER_STAGES, P2InteractiveWindow,
                                            browser_artifact, browser_case_evidence, browser_receipt, media_upload_selected,
-                                           require_media_upload_gateway)
+                                           require_media_upload_gateway, stalled_renewal_selected)
         self.check()
         plan, stage = self.initial['certificationPlan'], self.scoped_stage
         fields = {'id', 'operation', 'controllerChallenge'}
@@ -2301,12 +2306,16 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 stage.fence_gateway()
                 fenced = stage.verify_gateway_fenced()
             return {**browser_receipt(plan, 'FENCED'), **fenced}
-        require(operation in ('interactive-retain', 'interactive-media-arm', 'interactive-media-observe'),
+        require(operation in ('interactive-retain', 'interactive-media-arm', 'interactive-media-observe') or
+                operation == 'interactive-confirm-fence' and stalled_renewal_selected(plan),
                 'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
         gateway_artifact = None
         if stage.action['stage'] in SCOPED_GATEWAY_BROWSER_STAGES:
             from qualification_target_profile import decode_qualification_target_json
             gateway_artifact = decode_qualification_target_json(migrate.read_input(self.directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
+        if operation == 'interactive-confirm-fence':
+            with self.scoped_gate_lock:
+                return stage.confirm_stalled_renewal_fence(gateway_artifact)
         if operation != 'interactive-retain':
             return self._interactive_media_upload(operation, value, plan, stage, gateway_artifact)
         evidence = value['caseEvidence']
@@ -2324,7 +2333,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 evidence = {**evidence, 'courseWitness': stage.observe_media_reservation(evidence['browserResponse'])}
             bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
         else:
-            bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
+            bindings = (stage.stalled_renewal_bindings(evidence, gateway_artifact) if stalled_renewal_selected(plan) else
+                        browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact))
             fenced = stage.verify_fenced(retain=True)
         result = {**browser_receipt(plan, 'JOINED'), **bindings, **fenced,
                   'browserProgramSha256': self.initial['interactiveController']['browserProgramSha256']}

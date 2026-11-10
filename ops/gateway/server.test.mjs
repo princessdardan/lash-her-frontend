@@ -961,6 +961,111 @@ test("scoped lesson denial fences every noncanonical upstream response without e
   }
 });
 
+test("stalled playback renewal acknowledges six one-use reads and fences late playback", async t => {
+  const { courseId, lessonId, foreignId, lesson, progress, targets, requests } = lessonDenialFixtureRequests();
+  const selected = requests.map(row => ({ ...row, uses: 1 }));
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const forwarded = [];
+  const f = await interactiveFixture(t, selected, async (req, res) => {
+    const target = `/course${req.url}`;
+    forwarded.push({ method: req.method, target, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    if (target === targets[3]) {
+      entered.resolve();
+      await release.promise;
+    }
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "public", "x-private-upstream-value": "private fixture" });
+    res.end(JSON.stringify({ owned: true }));
+  }, "stalled-playback-renewal");
+  t.after(release.resolve);
+  for (const rows of [
+    selected.slice(0, -1), [selected[1], selected[0], ...selected.slice(2)],
+    selected.map((row, index) => index === 2 ? { ...row, target: `${progress}?courseId=${courseId}` } : row),
+    selected.map((row, index) => index === 3 ? { ...row, uses: 2 } : row),
+    selected.map((row, index) => index === 5 ? { ...row, target: row.target.replace(lessonId, foreignId) } : row),
+    [...selected, { method: "POST", target: `${lesson}/progress`, bodySha256: certificationHash("{}"), uses: 1 }],
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: rows } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const refused = async input => assert.equal((await f.send(input)).status, 503);
+  const signedRead = index => f.signed({ path: targets[index] });
+  for (const input of [
+    signedRead(5), f.signed({ path: targets[0], actor: foreignId }), f.signed({ path: `${targets[2]}&limit=1` }),
+    f.signed({ path: targets[4], idempotency: "owned-key" }), f.signed({ method: "POST", path: `${lesson}/progress`, body: "{}" }),
+    f.signed({ method: "POST", path: `${lesson}/quiz/attempts`, body: "{}" }),
+  ]) await refused(input);
+  const acknowledged = [];
+  const accept = async (input, requestIndex) => {
+    const response = await f.send(input);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers["cache-control"], "private, no-store");
+    assert.equal(response.headers["content-type"], "application/json; charset=utf-8");
+    assert.equal(response.headers["x-private-upstream-value"], undefined);
+    assert.deepEqual(JSON.parse(response.body), { owned: true });
+    acknowledged.push({ requestIndex, requestId: response.headers["x-request-id"],
+      proofRequestId: input.headers["x-request-id"], upstreamStatus: 200 });
+  };
+  const delayed = signedRead(3);
+  const inFlight = accept(delayed, 3);
+  await entered.promise;
+  try {
+    await Promise.all([4, 2, 0, 1].map(index => accept(signedRead(index), index)));
+    await refused(delayed);
+    await refused(signedRead(3));
+    await refused(signedRead(5));
+  } finally { release.resolve(); }
+  await inFlight;
+  const playback = signedRead(5);
+  await accept(playback, 5);
+  await refused(playback);
+  await refused(signedRead(5));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 6);
+  assert.deepEqual(observed.interactiveEvidence.acknowledged.toSorted((a, b) => a.requestIndex - b.requestIndex),
+    acknowledged.toSorted((a, b) => a.requestIndex - b.requestIndex));
+  assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(0, 5).map(row => row.requestIndex).sort(), [0, 1, 2, 3, 4]);
+  assert.equal(observed.interactiveEvidence.acknowledged[5].requestIndex, 5);
+  assert.equal(new Set(acknowledged.map(row => row.requestId)).size, 6);
+  assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, 6);
+  f.save(f.ordinary);
+  await refused(signedRead(5));
+  const closed = f.admissionState();
+  assert.deepEqual([closed.valid, closed.newWork, closed.recovery, closed.interactiveActive], [true, false, false, undefined]);
+  assert.deepEqual(closed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(closed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(forwarded.toSorted((a, b) => a.target.localeCompare(b.target)),
+    targets.toSorted((a, b) => a.localeCompare(b)).map(target => ({ method: "GET", target, proof: undefined })));
+});
+
+test("stalled playback renewal fences an invalid acknowledgement and retains uncertainty on close", async t => {
+  const { targets, requests } = lessonDenialFixtureRequests();
+  for (const [status, contentType, body] of [
+    [201, "application/json", '{"fixture":"private"}'],
+    [403, "application/json", '{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"private"}}'],
+    [200, "text/plain", '{"fixture":"private"}'],
+    [200, "application/json", '["private"]'],
+  ]) {
+    await t.test(`${status} ${contentType} ${body[0]}`, async testContext => {
+      const f = await interactiveFixture(testContext, requests.map(row => ({ ...row, uses: 1 })), (_req, res) => {
+        res.writeHead(status, { "content-type": contentType, "x-private-upstream-value": "private" });
+        res.end(body);
+      }, "stalled-playback-renewal");
+      const output = await f.send(f.signed({ path: targets[1] }));
+      assert.equal(output.status, 502);
+      assert.equal(output.headers["x-private-upstream-value"], undefined);
+      assert.doesNotMatch(output.body, /private/u);
+      assert.equal((await f.send(f.signed({ path: targets[0] }))).status, 503);
+      assert.deepEqual(f.admissionState().interactiveEvidence, { admitted: 1, acknowledged: [] });
+      f.save(f.ordinary);
+      assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+      assert.equal((await f.send(f.signed({ path: targets[5] }))).status, 503);
+    });
+  }
+});
+
 function lessonAssessmentFixtureRequests() {
   const selected = lessonDenialFixtureRequests();
   const { targets: reads, lesson } = selected;

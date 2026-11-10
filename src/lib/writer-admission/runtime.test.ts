@@ -542,6 +542,44 @@ test("lesson denial v2 signs only the selected document and exact read-only BFF 
   assert.equal(f.state.ended, true);
 });
 
+test("stalled playback renewal grants no writer authority and attests only the selected document and playback GET", async () => {
+  const now = 1_794_009_600, epoch = "9".repeat(18);
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const actorId = selectedCustomerId, courseId = "10000000-0000-4000-8000-000000000001";
+  const lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const selector = [actorId, courseId, lessonId].map(value => value.replaceAll("-", "")).join("");
+  const body = ["v2", epoch, "stalled-playback-renewal", now, now + 120, "ab".repeat(16), selector].join(".");
+  const mac = createHmac("sha256", env.CRON_SECRET)
+    .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+  const cookie = `${body}.${mac}`;
+  assert.equal(cookie.length, 263);
+  const page = `/academy/courses/${courseId}/lessons/${lessonId}`, api = `/api/academy/lessons/${lessonId}`;
+  const attest = (method: string, path: string, search = "") =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie }, env, now);
+  for (const path of [page, `${api}/playback`]) {
+    const proof = attest("GET", path);
+    assert.ok(proof);
+    assert.deepEqual(readInteractiveRequest(proof, cookie, env, now)?.stalledPlaybackRenewal, { actorId, courseId, lessonId });
+    assert.equal(attest("GET", path, "?extra=1"), null);
+    assert.equal(readInteractiveRequest(proof, cookie, { ...env, APP_ENV: "production" }, now), null);
+  }
+  for (const [method, path] of [
+    ["GET", page.replace(courseId, actorId)], ["GET", page.replace(lessonId, actorId)], ["GET", `/academy/courses/${courseId}`],
+    ["GET", api], ["GET", `${api}/quiz`], ["GET", "/api/academy/progress"], ["HEAD", page],
+    ["POST", `${api}/progress`], ["POST", `${api}/quiz/attempts`], ["POST", `${api}/playback`],
+  ]) assert.equal(attest(method, path), null);
+  const f = fixture();
+  f.state.epoch = epoch;
+  const proof = attest("GET", page)!;
+  const run = createWriterAdmissionRunner({ getConfiguration: () => resolveWriterAdmissionConfiguration(env), createClient: () => f.client,
+    getInteractiveWriter: async () => readInteractiveRequest(proof, cookie, env, now) });
+  for (const kind of ["new-work", "recovery"] as const) {
+    await assert.rejects(run(kind, async () => assert.fail("observation opened a writer")), { name: "WriterAdmissionError", code: "unavailable" });
+  }
+  assert.equal(f.calls.length, 2);
+  assert.ok(f.calls.every(call => call.sql.startsWith("SELECT current_user")));
+});
+
 test("lesson assessment v2 admits only scoped progress and quiz writes and exact progress reads", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };

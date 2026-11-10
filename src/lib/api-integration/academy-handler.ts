@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getCustomerActor } from "@/lib/customer-auth/session";
-import { readInteractiveBrowserRequest, type LearningEnrollmentSelection } from "@/lib/writer-admission/interactive-proof";
+import { hasStalledPlaybackRenewalPermit, readInteractiveBrowserRequest, type LearningEnrollmentSelection } from "@/lib/writer-admission/interactive-proof";
 import { createCourseClient } from "./course-client";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
 import { readSameOriginJson } from "./same-origin-json";
@@ -18,6 +18,7 @@ export function createAcademyHandler(operation: AcademyOperation, dependencies: 
     try {
       const url = new URL(request.url);
       if (request.method !== (["record-progress", "free-enrollment", "submit-quiz-attempt"].includes(operation) ? "POST" : "GET")) throw new IntegrationServiceError("invalid_request", 405);
+      if (request.method === "POST" && hasStalledPlaybackRenewalPermit(request)) throw new IntegrationServiceError("forbidden", 403);
       const query: Record<string, string | number> = Object.create(null);
       for (const [name, value] of url.searchParams) {
         if (Object.hasOwn(query, name)) throw new IntegrationServiceError("invalid_request", 400);

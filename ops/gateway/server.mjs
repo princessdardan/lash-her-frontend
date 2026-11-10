@@ -179,6 +179,7 @@ export function createGateway(input, options = {}) {
                 interactiveEvidence.acknowledged.some(row => row.upstreamStatus !== 200))) ||
             (assessment && !lessonAssessmentPhasePermits(interactiveSelection, interactiveEvidence)) ||
             (phasedPositionSave && !scopedLessonPositionPhasePermits(interactiveSelection, interactiveEvidence, stage)) ||
+            (stage === "stalled-playback-renewal" && interactiveSelection.requestIndex === 5 && interactiveEvidence.acknowledged.length !== 5) ||
             ((restore || stage === "lesson-resume") && !lessonResumePhasePermits(interactiveSelection, interactiveEvidence, restore))) {
           return refuse(503, "release_maintenance", 30);
         }
@@ -270,7 +271,7 @@ export function createGateway(input, options = {}) {
             if (interactiveSelection) {
               const stage = interactiveAdmission.interactive.stage;
               const scopedPosition = ["lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision"].includes(stage);
-              const strictInteractive = scopedPosition || stage === "lesson-denial" || stage === "lesson-assessment" ||
+              const strictInteractive = scopedPosition || stage === "lesson-denial" || stage === "lesson-assessment" || stage === "stalled-playback-renewal" ||
                 interactiveSelection.mediaReservation;
               const acknowledged = scopedPosition
                 ? scopedResumeAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,

@@ -94,7 +94,8 @@ ack_loss=stage=='lesson-ack-loss';ack_loss_action=action.get('ackLossAction',{})
 exit_save=stage=='lesson-exit-save';exit_save_action=action.get('exitSaveAction',{})
 visibility=stage=='lesson-visibility-save';visibility_action=action.get('visibilityAction',{})
 stale_revision=stage=='lesson-stale-revision';stale_revision_action=action.get('staleRevisionAction',{})
-gateway_scoped=authoring or media or learning or paid_grant or learner_access or paid_revoke or lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision
+stalled_renewal=stage=='stalled-playback-renewal';stalled_action=action.get('stalledRenewalAction',{})
+gateway_scoped=authoring or media or learning or paid_grant or learner_access or paid_revoke or lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision or stalled_renewal
 access_outcome=access_action.get('outcome')
 access_status={'allowed':200,'archived':410,'draft':404,'restricted':403}.get(access_outcome)
 learning_action=action.get('learningAction',{});paid_grant_action=action.get('paidGrantAction',{})
@@ -154,8 +155,8 @@ for raw in sys.stdin:
     selector=owner.replace('-','')+key.replace('-','')
    elif media:
     selector=(action['actorId']+media_action['courseId']+media_action['lessonId']).replace('-','')
-   elif lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision:
-    selected_lesson=entry_action if lesson_entry else denial_action if lesson_denial else assessment_action if assessment else resume_action if resume else restore_action if restore else ack_loss_action if ack_loss else exit_save_action if exit_save else visibility_action if visibility else stale_revision_action
+   elif lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision or stalled_renewal:
+    selected_lesson=entry_action if lesson_entry else denial_action if lesson_denial else assessment_action if assessment else resume_action if resume else restore_action if restore else ack_loss_action if ack_loss else exit_save_action if exit_save else visibility_action if visibility else stale_revision_action if stale_revision else stalled_action
     learner=fixture_id(2) if behavior=='wrong-learner' else action['actorId']
     course=fixture_id(2) if behavior=='wrong-lesson-course' else selected_lesson['courseId']
     lesson=fixture_id(5) if behavior=='wrong-lesson' else selected_lesson['lessonId']
@@ -265,6 +266,10 @@ for raw in sys.stdin:
      start=lambda route:(route,5) if behavior=='joined-progress-first' else (5,route)
      order=hydrate+start(6)+(7,)+hydrate+start(8)+(9,10,11,2)+hydrate+start(12)+(13,)
      selected=[(350+index,390+index,route,409 if route==11 else 200) for index,route in enumerate(order)]
+    if stalled_renewal:
+     order=(4,3,2,1,0,5) if behavior=='joined-progress-first' else (0,1,2,3,4,5)
+     if behavior=='wrong-observe-order':order=(0,1,2,3,5,4)
+     selected=[(460+route,470+route,route,200) for route in order]
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[3 if paid_grant else -1 if changes_existing else 1]['upstreamStatus']=201 if publication or archive else 200
@@ -319,8 +324,13 @@ for raw in sys.stdin:
   elif op=='interactive-fence':
    assert phase in ('opened','issued','observed');phase='fenced'
    value['receipt']={**base,**fence,'status':status('FENCED')}
+  elif op=='interactive-confirm-fence':
+   assert stalled_renewal and phase=='fenced';phase='observation-fenced'
+   value['receipt']={**base,**fence,'status':status('OBSERVATION_FENCED'),'observedAt':'2026-11-09T20:00:01.500Z',
+    'frontendAdmission':{'epoch':str(int(epoch)+1),'newWork':False,'recovery':False,'active':0,'uncertain':0},
+    'frontendOperationCount':1 if behavior=='wrong-fence' else 0}
   elif op=='interactive-retain':
-   assert phase==('media-observed' if joined_upload else 'fenced');phase='retained'
+   assert phase==('media-observed' if joined_upload else 'observation-fenced' if stalled_renewal else 'fenced');phase='retained'
    evidence=p['caseEvidence']
    if media:
     assert gateway_observation and set(evidence)=={'browserResponse'}
@@ -337,6 +347,12 @@ for raw in sys.stdin:
     if joined_upload:
      joined['upload']={'intentSha256':media_intent,**media_callback,'httpStatus':media_dispatch['status']}
      if behavior=='wrong-join':joined['upload']['assetId']='different-provider-asset'
+   elif stalled_renewal:
+    assert gateway_observation and set(evidence)=={'stalledRenewalBrowser'}
+    response=evidence['stalledRenewalBrowser'];playback=fixture_id(465)
+    assert response['playback']['requestId']==playback
+    joined={'actorId':action['actorId'],**stalled_action,'playbackGatewayRequestId':fixture_id(461) if behavior=='wrong-join' else playback,
+     'browserResponseSha256':digest(response),'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
    elif lesson_entry:
     assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
     response=evidence['browserResponse'];witness=evidence['courseWitness']
@@ -654,7 +670,7 @@ for raw in sys.stdin:
      (5 if behavior=='unexpected-frontend-operation' else 4) if resume else
      (4 if behavior=='unexpected-frontend-operation' else 3) if assessment else
      2 if lesson_entry and behavior=='unexpected-frontend-operation' else
-     0 if (learner_access or lesson_denial) and behavior!='unexpected-frontend-operation' else 5 if first_owner else 1}
+     0 if (learner_access or lesson_denial or stalled_renewal) and behavior!='unexpected-frontend-operation' else 5 if first_owner else 1}
   else:raise AssertionError('unexpected interactive operation')
  elif op=='certification-prepare-close':
   assert phase=='retained' and p['caseOutcome']['status']==status('JOINED')
@@ -696,8 +712,8 @@ const restore=certificationStage==='lesson-restore';
 const ackLoss=certificationStage==='lesson-ack-loss';
 const exitSave=certificationStage==='lesson-exit-save',spaExit=exitSave&&variant==='spa-navigation';
 const visibility=certificationStage==='lesson-visibility-save';
-const staleRevision=certificationStage==='lesson-stale-revision';
-const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
+const staleRevision=certificationStage==='lesson-stale-revision',stalledRenewal=certificationStage==='stalled-playback-renewal';
+const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision||stalledRenewal;
 const identityPair=identity&&variant==='two-sessions';
 const firstOwner=identity&&variant==='first-owner'?{nonce:'9'.repeat(32),identitySha256:'6'.repeat(64)}:null;
 const provider=identity&&!identityPair?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
@@ -719,7 +735,7 @@ const installFailure=behavior==='install-failure'||refusedPermit;
 const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack','wrong-observe-order','unexpected-patch-ack',
  'wrong-prior-status','wrong-learning-tail','wrong-access-status','duplicate-lesson-ack','duplicate-request-ack','swap-recovery-ack',
  'early-final-exit-ack','duplicate-final-exit-ack','early-final-visibility-ack','duplicate-final-visibility-ack','unexpected-outline-ack',
- 'swap-conflict-read-ack'].includes(behavior);
+ 'swap-conflict-read-ack','wrong-stalled-playback-ack'].includes(behavior);
 const skipObserve=behavior==='fence-without-observe';
 const mediaArmFailure=behavior==='wrong-arm-expiry';
 const mediaObservationFailure=['wrong-callback','media-wait-timeout','media-ambiguous'].includes(behavior);
@@ -795,7 +811,10 @@ const publicationRequest={method:'PATCH',target:courseTarget,
 const draftRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision,status:'draft'})),uses:1};
 const outlineProgressRequest={method:'GET',target:student+'/progress?courseId='+commandId,bodySha256:emptyBodySha256,uses:1};
-const requests=staleRevision?[
+const stalledRenewalAction={courseId:commandId,lessonId,playbackIdSha256:'a'.repeat(64)};
+const requests=stalledRenewal?[studentCourse,studentLesson,student+'/progress?lessonId='+lessonId,studentLesson+'/quiz',
+  studentLesson+'/quiz/attempts',studentLesson+'/playback'].map(target=>({method:'GET',target,bodySha256:emptyBodySha256,uses:1})):
+ staleRevision?[
  ...[studentCourse,studentLesson,student+'/progress?lessonId='+lessonId,studentLesson+'/quiz',
   studentLesson+'/quiz/attempts',studentLesson+'/playback']
   .map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:index===2?4:3})),
@@ -909,9 +928,9 @@ const scopedAction={stage:certificationStage,actorId:identity?null:actor,request
     paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:paidRevoke?{paidRevokeAction}:
     lessonEntry?{lessonEntryAction}:lessonDenial?{lessonDenialAction}:assessment?{assessmentAction}:resume?{resumeAction}:
     restore?{restoreAction}:ackLoss?{ackLossAction}:exitSave?{exitSaveAction}:visibility?{visibilityAction}:
-    staleRevision?{staleRevisionAction}:{frontendAction:selection})};
+    staleRevision?{staleRevisionAction}:stalledRenewal?{stalledRenewalAction}:{frontendAction:selection})};
 const plan={mode:'interactive-browser',version:2,environment:'staging',qualificationTargetProfile:profile,certificationActionId:actionId,
-  initialEpoch:'7',maximumSeconds:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
+  initialEpoch:'7',maximumSeconds:stalledRenewal?900:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
   nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},
   scopedAction};
 const binding={challenge:'5'.repeat(64),bindingSha256:planSha256,browserProgramSha256:'7'.repeat(64)};
@@ -922,7 +941,7 @@ const outcome={status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',sqlReplayed:
   version:2,qualificationTargetProfile:profile,planSha256};
 const fenced={status:status('FENCED'),version:2,qualificationTargetProfile:profile,certificationActionId:actionId,planSha256,
   stage:certificationStage,gatewayAdmissionClosed:true,gatewayActive:0,gatewayUncertain:0};
-let privatePacket,alive=true,installCount=0,dispatchTaken=false;
+let privatePacket,alive=true,installCount=0,dispatchTaken=false,stalledFenceTaken=false;
 const browser={
  async installPermit(permit,actualContext){
   assert.equal(actualContext,context);installCount++;
@@ -943,6 +962,8 @@ const spawn=(executable,args,options)=>{
 mock.module('node:child_process',{exports:{...childExports,spawn,default:{...defaultChild,spawn}}});
 mock.module(fixture.browserUrl,{exports:{readP2InteractiveBrowserControllerBinding(selected,controller){
   assert.ok(alive&&selected===plan&&controller===browser);return binding;
+},requireP2InteractiveBrowserStalledRenewalEvidence(selected,controller,observation){
+  assert.ok(stalledRenewal&&alive&&selected===plan&&controller===browser&&stalledFenceTaken&&observation===stalledBrowser);
 },requireP2InteractiveBrowserMediaEvidence(selected,controller,reservation,dispatch){
   assert.ok(joinedUpload&&alive&&selected===plan&&controller===browser&&reservation===mediaBrowserResponse);
   if(dispatch!==undefined){
@@ -951,7 +972,7 @@ mock.module(fixture.browserUrl,{exports:{readP2InteractiveBrowserControllerBindi
    assert.equal(dispatch.intentSha256,'6'.repeat(64));
   }
 }}});
-const {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,takeP2InteractiveMediaDispatch}=await import(fixture.transportUrl);
+const {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,takeP2InteractiveMediaDispatch,takeP2InteractiveStalledObservationFence}=await import(fixture.transportUrl);
 const start=(input=initial)=>p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},input,directory,{expectedProfile:profile});
 for(const changed of [
  {...initial,interactiveController:{...binding,cookie:'fixture-forbidden'}},
@@ -1281,7 +1302,17 @@ const staleWrites=[6,7,8,9,10,12,13].map((index,offset)=>({
 const staleConflict={requestId:staleId(17),expectedProgressRevision:8,resumePositionSeconds:0,maxPositionSeconds:14,status:409};
 const staleAuthoritative={...staleWrites[4],requestId:staleId(18)};
 const staleWitness={...restoreWitness,revision:13,resumePositionSeconds:14,maxPositionSeconds:14};
-const evidence=media?{browserResponse:mediaBrowserResponse}:staleRevision?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
+const stalledStart=Date.parse('2026-11-09T20:00:00.000Z');
+const stalledTime=elapsedMs=>({elapsedMs,observedAt:new Date(stalledStart+elapsedMs).toISOString()});
+const stalledPlayback={requestId:'12345678-1234-4123-8123-000000000465',playbackIdSha256:stalledRenewalAction.playbackIdSha256,serverDate:new Date(stalledStart).toUTCString(),
+ expiresAt:stalledTime(600000).observedAt,thumbnailExpiresAt:stalledTime(600000).observedAt,lifetimeMs:600000};
+const stalledBaseline={page:{pathname:academyPath+'/lessons/'+lessonId,status:200},playback:stalledPlayback};
+const stalledBrowser={version:1,status:'P2_STALLED_PLAYBACK_RENEWAL_BROWSER_OBSERVED',evidenceClass:'source-browser-observation',actorId:actor,...stalledBaseline,
+ media:{manifestObserved:true,segmentObserved:true,nativeVideoObserved:true},
+ observation:{initialRequest:stalledTime(100),baseline:stalledTime(1100),fenceConfirmed:stalledTime(2100),renewalStarted:stalledTime(569200),
+  playerLastPresent:stalledTime(599050),playerRemoved:stalledTime(599150),retryVisible:stalledTime(599151),expectedExpiryElapsedMs:599100,
+  permitCookieAbsent:true,renewal:{pathname:'/api/academy/lessons/'+lessonId+'/playback',method:'GET',count:1,forwarded:false,responseObserved:false}}};
+const evidence=stalledRenewal?{stalledRenewalBrowser:stalledBrowser}:media?{browserResponse:mediaBrowserResponse}:staleRevision?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
  playback:stalePlayback,writes:staleWrites,conflict:staleConflict,authoritative:staleAuthoritative,
  reload:{documentReplaced:true,noReplay:true},media:{beforeSeconds:4,afterSeconds:14,paused:true,manifestObserved:true,segmentObserved:true}},
  courseWitness:staleWitness}
@@ -1342,7 +1373,7 @@ const evidence=media?{browserResponse:mediaBrowserResponse}:staleRevision?{brows
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
   ...(firstOwner?{firstOwnerVerified:true}:identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
-const invalidEvidence=staleRevision?{...evidence,browserResponse:{...evidence.browserResponse,
+const invalidEvidence=stalledRenewal?{stalledRenewalBrowser:structuredClone(stalledBrowser)}:staleRevision?{...evidence,browserResponse:{...evidence.browserResponse,
  authoritative:{...staleAuthoritative,requestId:staleId(staleOrder.indexOf(2))}}}
  :visibility?{...evidence,browserResponse:{...evidence.browserResponse,
  visibility:{...visibilityReceipt,trustedPagehide:true}}}
@@ -1378,6 +1409,7 @@ const result=start()(async(_verify,_signal,host)=>{
   assert.equal(stage.armMedia,undefined);
   assert.equal(stage.observeMedia,undefined);
  }
+ if(stalledRenewal)await assert.rejects(stage.confirmObservationFence());
  if(gatewayScoped) await assert.rejects(stage.observe());
  else assert.equal(stage.observe,undefined);
  await assert.rejects(host.interactiveStage(browser));
@@ -1401,14 +1433,16 @@ const result=start()(async(_verify,_signal,host)=>{
  await assert.rejects(stage.installPermit());
  await assert.rejects(stage.retain(evidence));
  if(gatewayScoped&&!skipObserve){
-  if(observeFailure) await assert.rejects(stage.observe(),{message:'P2_CERTIFICATION_INTERACTIVE_'+stageLabel+'_OBSERVE_FAILED'});
+  const baseline=stalledRenewal?(behavior==='wrong-stalled-playback-ack'?{...stalledBaseline,playback:{...stalledPlayback,requestId:target}}:stalledBaseline):undefined;
+  if(observeFailure) await assert.rejects(stage.observe(baseline),{message:'P2_CERTIFICATION_INTERACTIVE_'+stageLabel+'_OBSERVE_FAILED'});
   else {
-   const observed=await stage.observe();
+   const observed=await stage.observe(baseline);
    assert.equal(observed.status,status('GATEWAY_OBSERVED'));
-   const mutation=lessonEntry?observed.gatewayAcknowledgements.find(row=>row.requestIndex===7):
+   const mutation=stalledRenewal?observed.gatewayAcknowledgements[5]:lessonEntry?observed.gatewayAcknowledgements.find(row=>row.requestIndex===7):
     learnerAccess?observed.gatewayAcknowledgements[2]:lessonDenial?observed.gatewayAcknowledgements[10]:
     observed.gatewayAcknowledgements.find(row=>row.requestIndex===(paidRevoke?3:media||learning||paidGrant?2:1));
-   if(learnerAccess) assert.deepEqual(observed.gatewayAcknowledgements.slice(2).map(row=>row.requestId),accessReads.map(row=>row.requestId));
+   if(stalledRenewal)assert.equal(mutation.requestId,stalledPlayback.requestId);
+   else if(learnerAccess) assert.deepEqual(observed.gatewayAcknowledgements.slice(2).map(row=>row.requestId),accessReads.map(row=>row.requestId));
    else if(lessonDenial) assert.deepEqual(observed.gatewayAcknowledgements.slice(10).map(row=>row.requestId),denialReads.map(row=>row.requestId));
    else if(assessment) assert.deepEqual(observed.gatewayAcknowledgements.slice(7).map(row=>row.requestId),
     assessmentAttempts.flatMap(row=>[row.requestId,row.progress.requestId]));
@@ -1430,6 +1464,21 @@ const result=start()(async(_verify,_signal,host)=>{
  if(joinedUpload)await assert.rejects(stage.armMedia(evidence));
  assert.deepEqual(await stage.fence(),fenced);
  await assert.rejects(stage.fence());
+ if(stalledRenewal&&!observeFailure&&!skipObserve){
+  await assert.rejects(stage.retain(evidence));
+  if(behavior==='wrong-fence'){
+   await assert.rejects(stage.confirmObservationFence());
+   await assert.rejects(stage.retain(evidence));
+   throw new Error('fixture-stop-after-mismatched-fence');
+  }
+  const closed=await stage.confirmObservationFence();
+  assert.equal(closed.status,status('OBSERVATION_FENCED'));
+  assert.throws(()=>takeP2InteractiveStalledObservationFence(plan,browser,{...closed}));
+  takeP2InteractiveStalledObservationFence(plan,browser,closed);
+  stalledFenceTaken=true;
+  assert.throws(()=>takeP2InteractiveStalledObservationFence(plan,browser,closed));
+  await assert.rejects(stage.confirmObservationFence());
+ }
  if(joinedUpload){
   await assert.rejects(stage.observeMedia(dispatchEvidence));
   await assert.rejects(stage.armMedia({browserResponse:{...mediaBrowserResponse}}));
@@ -1735,6 +1784,7 @@ const result=start()(async(_verify,_signal,host)=>{
  }
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
+ if(stalledRenewal)assert.equal(retained.playbackGatewayRequestId,stalledPlayback.requestId);
  if(media){
   assert.equal(retained.uploadSent,joinedUpload);
   assert.equal(retained.operation,mediaAction.operation);
@@ -1877,10 +1927,11 @@ assert.throws(()=>readP2CertificationInteractiveStage(handle,plan));
 assert.deepEqual(writes.filter(row=>row.operation?.startsWith('interactive-')).map(row=>row.operation),
  ['interactive-prepare','interactive-open','interactive-permit',...(gatewayScoped&&!installFailure&&!skipObserve?['interactive-observe']:[]),
   'interactive-fence',
+  ...(stalledRenewal&&!installFailure&&!observeFailure&&!skipObserve?['interactive-confirm-fence']:[]),
   ...(joinedUpload?['interactive-media-arm',...(mediaArmFailure?[]:behavior==='media-wait-timeout'?
    writes.filter(row=>row.operation==='interactive-media-observe').map(row=>row.operation):behavior==='media-ambiguous'?
    ['interactive-media-observe']:['interactive-media-observe','interactive-media-observe'])]:[]),
-  ...(installFailure||observeFailure||skipObserve||mediaArmFailure||mediaObservationFailure?[]:['interactive-retain'])]);
+  ...(installFailure||observeFailure||skipObserve||mediaArmFailure||mediaObservationFailure||behavior==='wrong-fence'?[]:['interactive-retain'])]);
 if(behavior==='media-wait-timeout')assert.ok(writes.filter(row=>row.operation==='interactive-media-observe').length>=2);
 assert.ok(!/v[12]\.8\.|fixture-forbidden/u.test(JSON.stringify(writes)));
 `;
@@ -2061,6 +2112,8 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ...['joined','joined-progress-first','wrong-learner','swap-conflict-read-ack','wrong-observe-ack','duplicate-request-ack',
   'duplicate-lesson-ack','wrong-join','unexpected-frontend-operation']
   .map(behavior=>['lesson-stale-revision','customer',behavior]),
+ ...['joined','joined-progress-first','wrong-learner','wrong-observe-order','wrong-stalled-playback-ack','wrong-fence','wrong-join','unexpected-frontend-operation']
+  .map(behavior=>['stalled-playback-renewal','customer',behavior]),
  ...['joined','wrong-join'].map(behavior=>['identity','customer',behavior,'two-sessions']),
 ]){
  test(`fixed interactive transport handles ${certificationStage} ${variant??actorKind} ${behavior} over the guarded pipe`,()=>{

@@ -20,7 +20,7 @@ const INTERACTIVE_TARGET = /^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,255}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "paid-revoke"]);
+const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "stalled-playback-renewal", "paid-grant", "paid-revoke"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
 const INITIAL_LESSON_PROGRESS = Buffer.from('{"event":"lesson_started","expectedProgressRevision":0}');
 const RESTORE_LESSON_PROGRESS = Buffer.from(RESTORE_LESSON_STARTED);
@@ -135,7 +135,8 @@ function interactiveScope(value, config, info, processBinding, storageAuthority,
     if (tuples.has(tuple)) throw new Error();
     tuples.add(tuple);
   }
-  if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision"].includes(value.stage)) {
+  if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save",
+    "lesson-stale-revision", "stalled-playback-renewal"].includes(value.stage)) {
     requireSelectedLessonRequests(value.stage, value.requests);
   }
   if (value.stage === "media" && value.requests.some(row => row.method === "POST" && row.target.split("?", 1)[0].endsWith("/video-upload"))) {
@@ -163,7 +164,7 @@ function requireSelectedLessonRequests(stage, requests) {
   const staleRevision = stage === "lesson-stale-revision";
   const uses = staleRevision ? [3, 3, 4, 3, 3, 3] : ackLoss ? [2, 2, 3, 2, 2, 2] :
     exitSave ? [2, 1, 1, 1, 1, 1] :
-    resume || restore || visibilitySave ? [1, 1, 1, 1, 1, 1] : assessment ? [1, 1, 3, 1, 1, 1] : [2, 3, 3, 3, 3, 1];
+    resume || restore || visibilitySave || stage === "stalled-playback-renewal" ? [1, 1, 1, 1, 1, 1] : assessment ? [1, 1, 3, 1, 1, 1] : [2, 3, 3, 3, 3, 1];
   const expected = reads.map((target, index) => ["GET", target, uses[index]]);
   if (assessment) expected.push(["POST", `${lesson.target}/progress`, 1],
     ["POST", reads[4], 1], ["POST", reads[4], 1]);
@@ -226,6 +227,7 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   const operation = interactiveCourseOperation(method, target.split("?", 1)[0]);
   if (operation === "catalog" ? authorization !== undefined : !hasInteractiveActor(applicationToken, scope.actorId)) return null;
   if (idempotency !== "" && !matches(/^[A-Za-z0-9._:-]{1,255}$/u, idempotency)) return null;
+  if (scope.stage === "stalled-playback-renewal" && headers["x-idempotency-key"] !== undefined) return null;
   const contentType = headers["content-type"];
   if (method !== "GET" && contentType !== "application/json" && (body.length > 0 || contentType !== undefined)) return null;
   let attempt, resumePosition;
@@ -513,6 +515,7 @@ export function scopedInteractiveAcknowledged(route, target, status, contentType
     return status === 403 && typeof contentType === "string" && contentType.split(";", 1)[0] === "application/json" &&
       body.equals(LESSON_DENIAL_RESPONSE);
   }
+  if (stage === "stalled-playback-renewal" && status !== 200) return false;
   const refresh = route.method === "POST" && route.path === "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh";
   const reserve = stage === "media" && route.method === "POST" && route.path === ADMIN_LESSON_UPLOAD;
   if (status === 204) return !refresh && !reserve && body.length === 0;

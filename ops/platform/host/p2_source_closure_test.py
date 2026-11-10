@@ -144,6 +144,33 @@ class SourceClosureTests(unittest.TestCase):
         plan = {**selected, **self.make(manifest)}
         self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
 
+    def test_stalled_renewal_source_closure_requires_ingress_workload_and_fence_transport(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        required = PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | {
+            'ops/platform/host/p2_interactive_window.py', 'ops/platform/host/p2_interactive_ingress.py',
+            'ops/platform/host/p2_day_two_workload.py', 'ops/gateway/admission.mjs',
+            'ops/gateway/assessment-attempt.mjs', 'ops/gateway/lesson-resume-position.mjs',
+            'ops/gateway/operations.mjs', 'ops/gateway/server.mjs', 'ops/platform/p2-lifecycle-browser-recorder.mjs',
+            'ops/platform/p2-lifecycle-suspension-evidence.mjs', 'ops/platform/p2-lifecycle-pending-probe.mjs',
+            'ops/platform/frontend-admission.mjs', 'ops/platform/p2-certification-transport.mjs',
+        }
+        for name in required - set(manifest):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned source for the stalled renewal scope')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {'mode': PROFILED_CERTIFICATION_MODE,
+                    'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+                    'certificationPlan': {'mode': 'interactive-browser', 'scopedAction': {'stage': 'stalled-playback-renewal'}}}
+        plan = {**selected, **self.make(manifest)}
+        self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
+        for name in ('ops/platform/host/p2_interactive_ingress.py', 'ops/platform/host/p2_day_two_workload.py',
+                     'ops/gateway/server.mjs', 'ops/platform/p2-certification-transport.mjs'):
+            missing = {path: digest for path, digest in manifest.items() if path != name}
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                verify_profiled_current_source_closure({**selected, **self.make(missing)}, self.root)
+
     def test_profiled_certification_manifest_and_private_observer_bind_fixed_current_source(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)

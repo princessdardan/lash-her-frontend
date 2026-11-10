@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime, parsedate_to_datetime
 import hashlib
 import hmac
 import json
@@ -33,9 +34,11 @@ _ACK_LOSS = "lesson-ack-loss"
 _EXIT_SAVE = "lesson-exit-save"
 _VISIBILITY_SAVE = "lesson-visibility-save"
 _STALE_REVISION = "lesson-stale-revision"
+_STALLED_RENEWAL = "stalled-playback-renewal"
 _PAID_REVOKE = "paid-revoke"
 _MEDIA = "media"
-_LESSON_STAGES = (_LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT, _RESUME, _RESTORE, _ACK_LOSS, _EXIT_SAVE, _VISIBILITY_SAVE, _STALE_REVISION)
+_LESSON_STAGES = (_LESSON_ENTRY, _LESSON_DENIAL, _ASSESSMENT, _RESUME, _RESTORE, _ACK_LOSS, _EXIT_SAVE,
+                  _VISIBILITY_SAVE, _STALE_REVISION, _STALLED_RENEWAL)
 _STAGES = {"identity", "authoring", _MEDIA, "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES, "lifecycle"}
 _GATEWAY_STAGES = {"authoring", _MEDIA, "learning", "paid-grant", _PAID_REVOKE, _LEARNER_ACCESS, *_LESSON_STAGES}
 _UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}")
@@ -215,9 +218,11 @@ def browser_receipt(plan, disposition):
             "planSha256": plan["planSha256"], "stage": _browser_stage(plan)}
 
 
-def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
+def browser_case_evidence(plan, evidence, *, gateway_artifact=None, observation_fence=None):
     action = validate_interactive_plan_action(plan)
     stage = _browser_stage(plan)
+    if stage == _STALLED_RENEWAL:
+        return _stalled_renewal_case_evidence(plan, action, evidence, gateway_artifact, observation_fence)
     if stage == "authoring":
         return _authoring_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == _MEDIA:
@@ -366,6 +371,10 @@ def _gateway_sequences(plan):
 def _valid_gateway_acknowledgements(plan, rows):
     acknowledgements = tuple((row["requestIndex"], row["upstreamStatus"]) for row in rows)
     stage = plan["scopedAction"]["stage"]
+    if stage == _STALLED_RENEWAL:
+        indices = [index for index, _ in acknowledgements]
+        return (len(indices) == 6 and sorted(indices[:5]) == [0, 1, 2, 3, 4] and indices[5] == 5 and
+                all(status == 200 for _, status in acknowledgements))
     if stage == _LESSON_ENTRY:
         indices = [index for index, _ in acknowledgements]
         return (len(acknowledgements) == 9 and all(status == 200 for _, status in acknowledgements) and
@@ -419,7 +428,7 @@ def browser_gateway_receipt(plan, artifact):
            all(type(artifact[key]) is int and artifact[key] == 0 for key in ("gatewayActive", "gatewayUncertain")),
            browser_status(plan, "GATEWAY_ARTIFACT_REQUIRED"))
     rows = artifact["gatewayAcknowledgements"]
-    maximum_rows = {_LESSON_DENIAL: 15, _ASSESSMENT: 11, _RESUME: 10, _RESTORE: 8, _ACK_LOSS: 18,
+    maximum_rows = {_STALLED_RENEWAL: 6, _LESSON_DENIAL: 15, _ASSESSMENT: 11, _RESUME: 10, _RESTORE: 8, _ACK_LOSS: 18,
                     _EXIT_SAVE: 11, _STALE_REVISION: 27}.get(common["stage"], 9)
     demand(type(rows) is list and len(rows) <= maximum_rows and all(
                _closed_fields(row, "requestId proofRequestId requestIndex upstreamStatus") and
@@ -704,6 +713,88 @@ def _lesson_expiry(value):
         return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")
     except ValueError:
         return None
+
+
+def stalled_renewal_selected(plan):
+    return plan.get("mode") == "interactive-browser" and (plan.get("scopedAction") or {}).get("stage") == _STALLED_RENEWAL
+
+
+def _stalled_renewal_case_evidence(plan, action, evidence, gateway_artifact, observation_fence):
+    error = "P2_INTERACTIVE_STALLED_PLAYBACK_RENEWAL"
+    demand(_closed_fields(evidence, "stalledRenewalBrowser"), f"{error}_EVIDENCE_REQUIRED")
+    gateway = browser_gateway_receipt(plan, gateway_artifact)
+    playback_id = gateway["gatewayAcknowledgements"][5]["requestId"]
+    selected = action["stalledRenewalAction"]
+    lesson = f'/academy/courses/{selected["courseId"]}/lessons/{selected["lessonId"]}'
+    playback_path = f'/api/academy/lessons/{selected["lessonId"]}/playback'
+    fence_header = browser_receipt(plan, "OBSERVATION_FENCED")
+    frontend = {"epoch": str(int(plan["initialEpoch"]) + 2), "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
+    demand(type(observation_fence) is dict and set(observation_fence) == set(fence_header) |
+           {"observedAt", "frontendAdmission", "frontendOperationCount", "gatewayAdmissionClosed", "gatewayActive", "gatewayUncertain"} and
+           _receipt_sha({key: observation_fence[key] for key in fence_header}) == _receipt_sha(fence_header) and
+           _receipt_sha(observation_fence["frontendAdmission"]) == _receipt_sha(frontend) and
+           observation_fence["gatewayAdmissionClosed"] is True and
+           all(type(observation_fence[key]) is int and observation_fence[key] == 0
+               for key in ("frontendOperationCount", "gatewayActive", "gatewayUncertain")),
+           f"{error}_OBSERVATION_FENCE_REQUIRED")
+    observed_fence = _lesson_expiry(observation_fence["observedAt"])
+    demand(observed_fence is not None, f"{error}_OBSERVATION_FENCE_REQUIRED")
+    receipt = evidence["stalledRenewalBrowser"]
+    demand(_closed_fields(receipt, "version status evidenceClass actorId page playback media observation") and
+           type(receipt["version"]) is int and receipt["version"] == 1 and
+           receipt["status"] == "P2_STALLED_PLAYBACK_RENEWAL_BROWSER_OBSERVED" and
+           receipt["evidenceClass"] == "source-browser-observation" and receipt["actorId"] == action["actorId"] and
+           _receipt_sha(receipt["page"]) == _receipt_sha({"pathname": lesson, "status": 200}) and
+           _closed_fields(receipt["media"], "manifestObserved segmentObserved nativeVideoObserved") and
+           all(value is True for value in receipt["media"].values()), f"{error}_BROWSER_RECEIPT_REQUIRED")
+    playback = receipt["playback"]
+    demand(_closed_fields(playback, "requestId playbackIdSha256 serverDate expiresAt thumbnailExpiresAt lifetimeMs") and
+           playback["requestId"] == playback_id and playback["playbackIdSha256"] == selected["playbackIdSha256"] and
+           _safe_integer(playback["lifetimeMs"], 590_000) and playback["lifetimeMs"] <= 601_000 and
+           type(playback["serverDate"]) is str and len(playback["serverDate"]) == 29, f"{error}_PLAYBACK_REQUIRED")
+    try:
+        server_date = parsedate_to_datetime(playback["serverDate"])
+        demand(format_datetime(server_date, usegmt=True) == playback["serverDate"], f"{error}_PLAYBACK_REQUIRED")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{error}_PLAYBACK_REQUIRED") from exc
+    server_date = server_date.replace(tzinfo=None)
+    expiry = [_lesson_expiry(playback[key]) for key in ("expiresAt", "thumbnailExpiresAt")]
+    demand(all(stamp is not None for stamp in expiry) and
+           min(expiry) - server_date == timedelta(milliseconds=playback["lifetimeMs"]) and
+           max(expiry) - server_date <= timedelta(milliseconds=601_000), f"{error}_PLAYBACK_REQUIRED")
+
+    steps = ("initialRequest", "baseline", "fenceConfirmed", "renewalStarted", "playerLastPresent", "playerRemoved", "retryVisible")
+    observation = receipt["observation"]
+    renewal = {"pathname": playback_path, "method": "GET", "count": 1, "forwarded": False, "responseObserved": False}
+    demand(_closed_fields(observation, " ".join((*steps, "expectedExpiryElapsedMs", "renewal", "permitCookieAbsent"))) and
+           observation["permitCookieAbsent"] is True and _receipt_sha(observation["renewal"]) == _receipt_sha(renewal),
+           f"{error}_HELD_RENEWAL_REQUIRED")
+    elapsed, wall = {}, {}
+    for name in steps:
+        mark = observation[name]
+        demand(_closed_fields(mark, "observedAt elapsedMs") and _safe_integer(mark["elapsedMs"]) and mark["elapsedMs"] <= 670_000,
+               f"{error}_TIMING_REQUIRED")
+        elapsed[name], wall[name] = mark["elapsedMs"], _lesson_expiry(mark["observedAt"])
+        demand(wall[name] is not None and
+               abs(wall[name] - wall["initialRequest"] - timedelta(milliseconds=elapsed[name] - elapsed["initialRequest"])) <=
+               timedelta(seconds=1), f"{error}_TIMING_REQUIRED")
+    demand(list(elapsed.values()) == sorted(elapsed.values()) and list(wall.values()) == sorted(wall.values()),
+           f"{error}_TIMING_REQUIRED")
+    lifetime = min(600_000, playback["lifetimeMs"] - 1_000)
+    expected = elapsed["initialRequest"] + lifetime
+    earliest_renewal = elapsed["initialRequest"] + max(1_000, lifetime - 30_000)
+    tolerance = timedelta(seconds=2)
+    demand(type(observation["expectedExpiryElapsedMs"]) is int and observation["expectedExpiryElapsedMs"] == expected and
+           elapsed["fenceConfirmed"] < elapsed["renewalStarted"] and
+           wall["baseline"] - tolerance <= observed_fence <= wall["fenceConfirmed"] + tolerance and
+           observed_fence < wall["renewalStarted"] and
+           wall["initialRequest"] - tolerance <= server_date <= wall["baseline"] + timedelta(seconds=1) and
+           abs(elapsed["renewalStarted"] - earliest_renewal) <= 2_000 and
+           all(abs(elapsed[name] - expected) <= 2_000 for name in ("playerLastPresent", "playerRemoved")) and
+           wall["playerRemoved"] <= min(expiry) + timedelta(milliseconds=250) and elapsed["retryVisible"] <= expected + 2_000,
+           f"{error}_TIMING_REQUIRED")
+    return {**selected, "actorId": action["actorId"], "playbackGatewayRequestId": playback_id,
+            "browserResponseSha256": _receipt_sha(receipt), "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _lesson_entry_case_evidence(plan, action, evidence, gateway_artifact):
@@ -1375,7 +1466,7 @@ def _lifecycle_case_evidence(action, evidence):
 
 
 def require_browser_ledger(plan, witness):
-    if plan["scopedAction"]["stage"] in (_LEARNER_ACCESS, _LESSON_DENIAL):
+    if plan["scopedAction"]["stage"] in (_LEARNER_ACCESS, _LESSON_DENIAL, _STALLED_RENEWAL):
         demand(_closed_fields(witness, "commands deliveries orderViolations operations") and
                all(value == [] for value in witness.values()), browser_status(plan, "READ_ONLY_LEDGER_REQUIRED"))
         return 0
@@ -1448,6 +1539,7 @@ def validate_interactive_action(action):
     exit_save = type(action) is dict and action.get("stage") == _EXIT_SAVE
     visibility = type(action) is dict and action.get("stage") == _VISIBILITY_SAVE
     stale_revision = type(action) is dict and action.get("stage") == _STALE_REVISION
+    stalled_renewal = type(action) is dict and action.get("stage") == _STALLED_RENEWAL
     fields = {"stage", "actorId", "requests", "windowSeconds"}
     if lifecycle:
         fields.add("frontendAction")
@@ -1481,6 +1573,8 @@ def validate_interactive_action(action):
         fields.add("visibilityAction")
     if stale_revision:
         fields.add("staleRevisionAction")
+    if stalled_renewal:
+        fields.add("stalledRenewalAction")
     enrollment = identity and "identityEnrollment" in action
     first_owner = identity and "firstOwner" in action
     if identity:
@@ -1832,6 +1926,15 @@ def validate_interactive_action(action):
             expected.append({"method": "GET", "target": f'/course/v1/student/progress?courseId={selection["courseId"]}',
                              "bodySha256": _EMPTY, "uses": 1})
         demand(requests == expected, f"{status}_REQUESTS_REQUIRED")
+    if stalled_renewal:
+        selected = action["stalledRenewalAction"]
+        demand(_closed_fields(selected, "courseId lessonId playbackIdSha256") and
+               all(_matches(_UUID, selected[key]) for key in ("courseId", "lessonId")) and
+               _digest(selected["playbackIdSha256"]), "P2_INTERACTIVE_STALLED_PLAYBACK_RENEWAL_SELECTION_REQUIRED")
+        course, lesson, playback, progress, quiz, attempts = _learner_access_paths(selected, "/course/v1/student")
+        expected = [{"method": "GET", "target": target, "bodySha256": _EMPTY, "uses": 1}
+                    for target in (course, lesson, progress, quiz, attempts, playback)]
+        demand(requests == expected, "P2_INTERACTIVE_STALLED_PLAYBACK_RENEWAL_REQUESTS_REQUIRED")
     return copy.deepcopy(action)
 
 
@@ -1848,7 +1951,7 @@ def _selection_sha(action):
     lesson_field = {_MEDIA: "mediaAction", _LESSON_ENTRY: "lessonEntryAction", _LESSON_DENIAL: "lessonDenialAction", _ASSESSMENT: "assessmentAction",
                     _RESUME: "resumeAction", _RESTORE: "restoreAction", _ACK_LOSS: "ackLossAction",
                     _EXIT_SAVE: "exitSaveAction", _VISIBILITY_SAVE: "visibilityAction",
-                    _STALE_REVISION: "staleRevisionAction"}.get(action["stage"])
+                    _STALE_REVISION: "staleRevisionAction", _STALLED_RENEWAL: "stalledRenewalAction"}.get(action["stage"])
     if lesson_field:
         selected = action[lesson_field]
         return (action["actorId"] + selected["courseId"] + selected["lessonId"]).replace("-", "")
@@ -1931,13 +2034,14 @@ class P2InteractiveWindow:
                "P2_INTERACTIVE_GUARDED_PARENT_REQUIRED")
         plan = broker.initial["certificationPlan"]
         demand(plan["mode"] == "interactive-browser" and plan["startState"] == "already-closed" and
-               plan["maximumSeconds"] == 300 and
+               plan["maximumSeconds"] == (900 if stalled_renewal_selected(plan) else 300) and
                broker.initial["sourceSha256"].get(_SOURCE_KEY) == _hash(_SOURCE.read_bytes()),
                "P2_INTERACTIVE_INSTALLED_PLAN_REQUIRED")
         self.broker, self.plan = broker, plan
         self.action = validate_interactive_plan_action(plan)
         self._private_cookie = None
         self._permit_issued = False
+        self._stalled_renewal_fence = None
         self._scoped_sha = None
         self._expires = 0
         self._state = "new"
@@ -2023,7 +2127,7 @@ class P2InteractiveWindow:
         lesson_entry = self.action.get("lessonEntryAction")
         lesson_denial = self.action.get("lessonDenialAction")
         assessment = self.action.get("assessmentAction")
-        resume = self.action.get("resumeAction")
+        resume = self.action.get("resumeAction") or self.action.get("stalledRenewalAction")
         recovery_lesson = self.action.get("restoreAction") or self.action.get("ackLossAction") or self.action.get("visibilityAction")
         exit_save = self.action.get("exitSaveAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
@@ -2296,8 +2400,32 @@ class P2InteractiveWindow:
                                               "reconciliation_sha256" in row and row["reconciliation_sha256"] is None
                                               for row in operations),
                "P2_INTERACTIVE_FRONTEND_DRAIN_REQUIRED")
-        if retain:
+        if retain or stalled_renewal_selected(self.plan):
             demand(self._permit_issued, browser_status(self.plan, "PERMIT_REQUIRED"))
             require_browser_ledger(self.plan, physical["witness"])
+        if retain:
             migrate.write_json(self.broker.directory, browser_artifact(self.plan, "ledger"), physical["witness"])
         return {**gateway, "frontendAdmission": copy.deepcopy(frontend), "frontendOperationCount": len(operations)}
+
+    def confirm_stalled_renewal_fence(self, gateway_artifact):
+        demand(stalled_renewal_selected(self.plan) and self._stalled_renewal_fence is None,
+               "P2_INTERACTIVE_STALLED_PLAYBACK_RENEWAL_FENCE_ORDER_REQUIRED")
+        browser_gateway_receipt(self.plan, gateway_artifact)
+        closed = self.verify_fenced()
+        observed, started = _instant(time.time()), time.monotonic()
+        receipt = {**browser_receipt(self.plan, "OBSERVATION_FENCED"), **closed, "observedAt": observed}
+        migrate.write_json(self.broker.directory, browser_artifact(self.plan, "observation-fence"), receipt)
+        self._stalled_renewal_fence = (receipt, started)
+        return copy.deepcopy(receipt)
+
+    def stalled_renewal_bindings(self, evidence, gateway_artifact):
+        demand(stalled_renewal_selected(self.plan) and self._stalled_renewal_fence is not None,
+               "P2_INTERACTIVE_STALLED_PLAYBACK_RENEWAL_FENCE_ORDER_REQUIRED")
+        fence, started = self._stalled_renewal_fence
+        bindings = browser_case_evidence(self.plan, evidence, gateway_artifact=gateway_artifact, observation_fence=fence)
+        observation = evidence["stalledRenewalBrowser"]["observation"]
+        retry, confirmed = observation["retryVisible"], observation["fenceConfirmed"]
+        demand(time.monotonic() - started >= (retry["elapsedMs"] - confirmed["elapsedMs"]) / 1000 - 2 and
+               _lesson_expiry(_instant(time.time())) >= _lesson_expiry(retry["observedAt"]) - timedelta(seconds=2),
+               "P2_INTERACTIVE_STALLED_PLAYBACK_RENEWAL_HOST_TIMING_REQUIRED")
+        return bindings
