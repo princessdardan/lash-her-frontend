@@ -26,6 +26,7 @@ const receiverNegativeCases = [
   ["exact-replay", 200, "duplicate"],
   ["changed-replay", 409, "idempotency_conflict"],
   ["stale-restore", 409, "account_version_conflict"],
+  ["future-gap", 409, "account_version_conflict"],
 ];
 export const P2_DIRECT_WORKER_ELIGIBILITY_SQL = Object.freeze({
   deliveries: `SELECT command_id::text,receiver,status,attempts,lease_id::text,lease_until,acknowledged_at,
@@ -242,11 +243,10 @@ async function joinReceiverNegatives(plan, stage, privateResolvers, positiveWitn
   }
   const joined = await stage.joinedReceiverNegatives();
   carrierProfile(plan, joined);
-  const openCases = receiverServices.map(service => ({ service, case: "future-gap", status: "OPEN", reason: "current-quiescence-not-positively-proved" }));
   demand(closed(joined, ["version", "qualificationTargetProfile", "status", "bindingSha256", "positiveWitnessSha256", "cases", "openCases",
     "domainStatePreserving", "quotaWritesExcluded", "globallyReadOnly", "oidcVerified", "releaseAccepted", "privateRecordSha256"])
     && joined.status === "P2_DIRECT_WORKER_RECEIVER_NEGATIVES_JOINED" && joined.bindingSha256 === bindingSha256
-    && joined.positiveWitnessSha256 === positiveWitnessSha256 && isDeepStrictEqual(joined.cases, cases) && isDeepStrictEqual(joined.openCases, openCases)
+    && joined.positiveWitnessSha256 === positiveWitnessSha256 && isDeepStrictEqual(joined.cases, cases) && isDeepStrictEqual(joined.openCases, [])
     && joined.domainStatePreserving === true && joined.quotaWritesExcluded === true && joined.globallyReadOnly === false
     && joined.oidcVerified === false && joined.releaseAccepted === false && sha(joined.privateRecordSha256));
   return joined;

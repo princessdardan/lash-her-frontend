@@ -9,6 +9,7 @@ const receiverCases = Object.freeze(["exact-replay", "changed-replay", "stale-re
 const receiverPostFields = ["version", "mode", "environment", "service", "case", "bindingSha256", "witness", "freshCommandId", "secret",
   "gatewayConfigurationSha256", "gatewayCaSha256"];
 const receiverRuntimeFields = ["version", "mode", "environment", "service", "bindingSha256", "runtimeEnvironment"];
+const canonicalCommandFields = ["version", "commandId", "userId", "accountVersion", "action", "issuedAt"];
 const receiverClosed = (value, names) => Boolean(value && typeof value === "object" && !Array.isArray(value)
   && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...names].sort()));
 const receiverHash = value => receiverCrypto.createHash("sha256").update(value).digest("hex");
@@ -66,7 +67,7 @@ export function deriveReceiverNegativeCommand(witness, caseName, freshCommandId 
   return Object.freeze(command);
 }
 
-function deriveReceiverPostEnvelope(input, protocol, deployed = true) {
+function deriveReceiverPostEnvelope(input, protocol, allowFutureGap = false) {
   receiverDemand(receiverEnvelope(input, receiverPostFields, protocol) && input.environment === "staging"
     && input.mode === "post"
     && ["course", "community"].includes(input.service) && receiverSha.test(input.bindingSha256)
@@ -74,9 +75,7 @@ function deriveReceiverPostEnvelope(input, protocol, deployed = true) {
     && (!protocol || ([input.bindingSha256, input.gatewayConfigurationSha256, input.gatewayCaSha256].every(profiledReceiverDigest)
       && (input.freshCommandId === null || typeof input.freshCommandId === "string")))
     && typeof input.secret === "string" && Buffer.byteLength(input.secret) >= 32 && Buffer.byteLength(input.secret) <= 8192, "private-input-shape");
-  // The fixed host has no live future-gap authority. Pure derivation remains
-  // available to owned tests that supply an exclusive fixture.
-  receiverDemand(!deployed || input.case !== "future-gap", "live-future-gap-quiescence-unproved");
+  receiverDemand(allowFutureGap || input.case !== "future-gap", "live-future-gap-quiescence-unproved");
   return deriveReceiverNegativeCommand(input.witness, input.case, input.freshCommandId);
 }
 
@@ -86,7 +85,7 @@ export function validateReceiverPostInput(input) {
 }
 
 export async function deriveProfiledReceiverPostCommand(input, expectedProfile) {
-  return deriveReceiverPostEnvelope(input, await loadProfiledReceiverProtocol(expectedProfile), false);
+  return deriveReceiverPostEnvelope(input, await loadProfiledReceiverProtocol(expectedProfile), true);
 }
 
 function verifyReceiverRuntime(input, environment, protocol) {
@@ -119,10 +118,13 @@ function receiverToken(service, secret) {
 }
 
 export function createReceiverPrivateTlsPost(ca, makeRequest = receiverHttpsRequest) {
-  return async (service, command, token) => {
-    receiverDemand(["course", "community"].includes(service) && receiverClosed(command,
-      ["version", "commandId", "userId", "accountVersion", "action", "issuedAt"]), "fixed-private-receiver-required");
-    const body = Buffer.from(receiverCanonical(command));
+  return async (service, wire, token) => {
+    const guarded = wire?.version === 2;
+    const command = guarded ? wire.command : wire;
+    receiverDemand(["course", "community"].includes(service) && receiverClosed(command, canonicalCommandFields)
+      && command.version === 1 && (!guarded || (receiverClosed(wire, ["version", "command", "expectedHead"])
+        && receiverClosed(wire.expectedHead, ["accountVersion", "commandId", "canonicalSha256"]))), "fixed-private-receiver-required");
+    const body = Buffer.from(receiverCanonical(wire));
     receiverDemand(body.length <= 4096, "command-body-bound");
     return new Promise((resolve, reject) => {
       const request = makeRequest({ protocol: "https:", hostname: service + "-tls", port: 8443, servername: service + "-tls",
@@ -150,7 +152,14 @@ async function sendReceiverNegative(input, command, options, protocol) {
   const config = JSON.parse(gateway.toString());
   receiverDemand(config.appEnv === "staging" && config.courseOrigin === "https://course-tls:8443"
     && config.communityOrigin === "https://community-tls:8443" && config.upstreamCaFile === "/tls/ca.pem", "fixed-private-origins-required");
-  const result = await (options.post ?? createReceiverPrivateTlsPost(ca))(input.service, command, receiverToken(input.service, input.secret));
+  let wire = command;
+  if (input.case === "future-gap") {
+    // This envelope is deliberately incompatible with a receiver that only
+    // accepts v1. Sending the inner command by itself could mutate a newer head.
+    const { accountVersion, commandId, canonicalSha256 } = input.witness.command;
+    wire = { version: 2, command, expectedHead: { accountVersion, commandId, canonicalSha256 } };
+  }
+  const result = await (options.post ?? createReceiverPrivateTlsPost(ca))(input.service, wire, receiverToken(input.service, input.secret));
   receiverDemand(typeof result.headers?.["cache-control"] === "string" && /(?:^|,)\s*private\b/iu.test(result.headers["cache-control"])
     && /(?:^|,)\s*no-store\b/iu.test(result.headers["cache-control"]), "private-no-store-required");
   const expectedStatus = input.case === "exact-replay" ? 200 : 409;
@@ -172,25 +181,27 @@ export async function postReceiverNegative(input, options = {}) {
   return sendReceiverNegative(input, deriveReceiverPostEnvelope(input), options);
 }
 
-function postProfiledReceiverCommand(input, protocol) {
-  return sendReceiverNegative(input, deriveReceiverPostEnvelope(input, protocol), {}, protocol);
+function postProfiledReceiverCommand(input, protocol, guardedFutureGap = false) {
+  receiverDemand(typeof guardedFutureGap === "boolean", "guarded-future-gap-profile-required");
+  return sendReceiverNegative(input, deriveReceiverPostEnvelope(input, protocol, guardedFutureGap), {}, protocol);
 }
 
-export async function postProfiledReceiverNegative(input, expectedProfile) {
-  return postProfiledReceiverCommand(input, await loadProfiledReceiverProtocol(expectedProfile));
+export async function postProfiledReceiverNegative(input, expectedProfile, guardedFutureGap = false) {
+  return postProfiledReceiverCommand(input, await loadProfiledReceiverProtocol(expectedProfile), guardedFutureGap);
 }
 
-export async function runPrivateReceiverPostFromStdin(expectedProfile) {
+export async function runPrivateReceiverPostFromStdin(expectedProfile, guardedFutureGap = false) {
   let protocol;
   try {
     if (expectedProfile !== undefined) protocol = await loadProfiledReceiverProtocol(expectedProfile);
+    receiverDemand(guardedFutureGap === false || guardedFutureGap === true && protocol !== undefined, "guarded-future-gap-profile-required");
     let bytes = 0; const chunks = [];
     for await (const chunk of process.stdin) { bytes += chunk.length; receiverDemand(bytes <= 262144, "private-input-bound"); chunks.push(chunk); }
     const raw = Buffer.concat(chunks);
     const input = protocol ? protocol.decode(raw) : JSON.parse(raw.toString("utf8"));
     try {
       const result = input.mode === "runtime-binding" ? verifyReceiverRuntime(input, process.env, protocol)
-        : await (protocol ? postProfiledReceiverCommand(input, protocol) : postReceiverNegative(input));
+        : await (protocol ? postProfiledReceiverCommand(input, protocol, guardedFutureGap) : postReceiverNegative(input));
       process.stdout.write(JSON.stringify(result) + "\n");
     } finally {
       if (input?.secret) input.secret = "";

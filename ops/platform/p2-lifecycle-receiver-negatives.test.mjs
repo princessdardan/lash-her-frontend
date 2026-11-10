@@ -122,7 +122,7 @@ test("reviewed receiver envelopes derive all four commands for both services and
 });
 
 test("profiled private POST uses only the pinned TLS destinations and exact reviewed replies", async t => {
-  let fixture, command, response;
+  let fixture, command, response, envelope;
   const readFile = fs.readFileSync;
   const files = t.mock.method(fs, "readFileSync", (path, ...args) => {
     if (path === "/config/gateway.json") return fixture.gateway;
@@ -146,7 +146,7 @@ test("profiled private POST uses only the pinned TLS destinations and exact revi
     assert.equal(options.headers["x-idempotency-key"], command.commandId);
     const request = new EventEmitter();
     request.end = body => {
-      assert.deepEqual(JSON.parse(body), command);
+      assert.deepEqual(JSON.parse(body), envelope ?? command);
       assert.equal(options.headers["content-length"], String(body.length));
       const stream = Object.assign(new EventEmitter(), { statusCode: response.status, headers: response.headers });
       handleResponse(stream);
@@ -185,6 +185,26 @@ test("profiled private POST uses only the pinned TLS destinations and exact revi
   }
   assert.equal(wire.mock.callCount(), 6);
   assert.equal(privateFileReads(), 12);
+  for (const service of ["course", "community"]) {
+    fixture = profiledPostFixture("future-gap", service);
+    const { input } = fixture;
+    command = deriveReceiverNegativeCommand(input.witness, "future-gap", input.freshCommandId);
+    const { accountVersion, commandId, canonicalSha256 } = input.witness.command;
+    envelope = { version: 2, command, expectedHead: { accountVersion, commandId, canonicalSha256 } };
+    const course = service === "course";
+    const errorBody = code => ({ error: { code: course ? code.toUpperCase() : code, message: "Owned conflict" },
+      ...(course ? {} : { requestId: "owned-request" }) });
+    response = { status: 409, headers: { "cache-control": "private, no-store" }, body: errorBody("account_version_conflict") };
+    const receipt = await postProfiledReceiverNegative(input, profile, true);
+    assert.equal(receipt.result, "account_version_conflict");
+    assert.equal(receipt.case, "future-gap");
+    response.body = errorBody("account_head_changed");
+    await assert.rejects(postProfiledReceiverNegative(input, profile, true), { check: "exact-conflict-receipt-required" });
+    response.status = 400;
+    response.body = errorBody("bad_request");
+    await assert.rejects(postProfiledReceiverNegative(input, profile, true), { check: "exact-http-status-required" });
+  }
+  assert.equal(wire.mock.callCount(), 12);
 });
 
 test("the actual private stdin entry selects v2 only from the fixed launcher and emits no private inputs", () => {
@@ -207,7 +227,8 @@ test("the actual private stdin entry selects v2 only from the fixed launcher and
       qualificationTargetProfile: profile, status: "P2_LIFECYCLE_RECEIVER_RUNTIME_BOUND", service, bindingSha256: input.bindingSha256,
       runtimeConfigurationVerified: true, globallyReadOnly: true, releaseAccepted: false } });
     assert.equal(run(JSON.stringify(input), undefined, environment).record.version, 1);
-    const { qualificationTargetProfile: _ignored, ...legacy } = input;
+    const legacy = { ...input };
+    delete legacy.qualificationTargetProfile;
     assert.equal(run(JSON.stringify({ ...legacy, version: 1 }), profile, environment).status, 1);
     const duplicate = JSON.stringify(input).replace('"version":2', '"version":2,"version":2');
     const oversized = "x".repeat(262145);

@@ -54,14 +54,21 @@ and Node child bytes. The option uses the same owner-started worker action and
 its normal suspension, canonical command and two-receiver prerequisites.
 
 After the worker reaches closed admission and verifies both acknowledgements,
-the fixed host runs the first three cases in the table for Course, then repeats
-them for Community. It checks the active runtime and native schedule, brackets
+the fixed host runs all four cases for Course, then repeats them for Community.
+The guarded future-gap POST wraps the canonical N+2 suspend and the exact
+observed head version, command ID and digest in a distinct request body. Both
+released receiver contracts must advertise the guarded body. Each receiver
+checks the head under its existing transaction locks and returns the normal
+version conflict without applying the command. A changed head or a receiver
+that refuses the new body stops the action.
+
+The host checks the active runtime and native schedule, brackets
 each request with reads of all three databases and retains the intent before
 sending. Each readback must preserve the original account and domain state.
 An uncertain response stops the action and leaves the intent for reconciliation.
-The joined worker receipt binds all six private case records to the original
-suspension witness. The action keeps future-gap open until the actual current
-receiver writers and direct credential paths can be fenced.
+The joined worker receipt binds all eight private case records to the original
+suspension witness. This guarded path needs both updated receiver artifacts and
+its own deployed evidence. The standalone v1 action still leaves future-gap open.
 
 ## Source and transport
 

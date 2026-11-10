@@ -37,8 +37,9 @@ def _closed(value, fields):
     return isinstance(value, dict) and set(value) == set(fields)
 
 
-def private_program(source, expected_profile=None):
+def private_program(source, expected_profile=None, *, guarded_future_gap=False):
     expected = migrate.profile_context(expected_profile)
+    demand(type(guarded_future_gap) is bool and (not guarded_future_gap or expected is not None), SCOPED_REFUSAL)
     witness = base64.b64encode(migrate.read_input(source, WITNESS_PROGRAM, 524288)).decode()
     source_bytes = migrate.read_input(source, PROGRAM, 524288)
     module = source_bytes.decode().replace("./p2-lifecycle-state-witness.mjs", "data:text/javascript;base64," + witness)
@@ -52,6 +53,8 @@ def private_program(source, expected_profile=None):
         profile_module = base64.b64encode(profile.encode()).decode()
         module = module.replace(specifier, '"data:text/javascript;base64,' + profile_module + '"')
         argument = _canonical(expected).decode()
+        if guarded_future_gap:
+            argument += ",true"
     encoded = base64.b64encode(module.encode()).decode()
     program = (f'import("data:text/javascript;base64,{encoded}").then(module=>module.runPrivateReceiverPostFromStdin({argument}))'
         '.catch(()=>{process.stdout.write(JSON.stringify({version:1,status:"P2_LIFECYCLE_RECEIVER_CASE_FAILED",'

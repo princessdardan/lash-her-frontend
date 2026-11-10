@@ -315,8 +315,8 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
             if self.lose_reply:
                 raise TimeoutError("owned response lost")
             status, code = {"exact-replay": (200, "duplicate"), "changed-replay": (409, "idempotency_conflict"),
-                            "stale-restore": (409, "account_version_conflict")}[case]
-            self.assertEqual(payload["freshCommandId"] is not None, case == "stale-restore")
+                            "stale-restore": (409, "account_version_conflict"), "future-gap": (409, "account_version_conflict")}[case]
+            self.assertEqual(payload["freshCommandId"] is not None, case in ("stale-restore", "future-gap"))
             self.assertEqual(payload["witness"], self.witness)
             self.assertEqual(payload["secret"], self.config[service.upper() + "_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET"])
             result = {**fields, "status": "P2_LIFECYCLE_RECEIVER_CASE_PASS", "case": case, "httpStatus": status,
@@ -376,7 +376,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         raw = action._canonical(record) + b"\n"
         return self.broker_command(broker, "worker-retain", record=record, sourceArtifact=base64.b64encode(raw).decode()), raw
 
-    def test_broker_dispatch_joins_six_receiver_cases_to_the_actual_retained_worker(self):
+    def test_broker_dispatch_joins_eight_receiver_cases_to_the_actual_retained_worker(self):
         from p2_certification_parent import P2CertificationBroker
 
         broker = self.composed_broker()
@@ -388,7 +388,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         rows = [self.broker_command(broker, "worker-receiver-negative-next", runtimeUrl="owned-private-runtime-url")
                 for _ in scoped.CASE_ORDER]
         self.assertEqual(self.posts, list(scoped.CASE_ORDER))
-        self.assertEqual(self.read_count, 12)
+        self.assertEqual(self.read_count, 16)
         self.assertIs(type(self.worker._receiver_negative_stage), scoped.P2ScopedLifecycleReceiverNegatives)
         joined = self.broker_command(broker, "worker-receiver-negatives-joined")
         self.assertEqual(joined["cases"], rows)
@@ -433,16 +433,16 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         self.assertFalse((self.worker.directory / "joined-worker.json").exists())
         self.assertFalse(hasattr(broker, "worker_retained"))
 
-    def test_six_ordered_cases_with_fresh_brackets_and_durable_idempotent_join(self):
+    def test_eight_ordered_cases_with_fresh_brackets_and_durable_idempotent_join(self):
         stage = self.start()
         with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
             stage.require_joined()
         rows = [stage.observe_next("owned-private-runtime-url") for _ in scoped.CASE_ORDER]
         self.assertEqual(self.posts, list(scoped.CASE_ORDER))
-        self.assertEqual(self.read_count, 12)
-        self.assertEqual([row["httpStatus"] for row in rows], [200, 409, 409] * 2)
-        self.assertEqual([row["beforeWitnessSha256"] for row in rows], [self.witness_sha] * 6)
-        self.assertEqual([row["afterWitnessSha256"] for row in rows], [self.witness_sha] * 6)
+        self.assertEqual(self.read_count, 16)
+        self.assertEqual([row["httpStatus"] for row in rows], [200, 409, 409, 409] * 2)
+        self.assertEqual([row["beforeWitnessSha256"] for row in rows], [self.witness_sha] * 8)
+        self.assertEqual([row["afterWitnessSha256"] for row in rows], [self.witness_sha] * 8)
         self.assertTrue(all(row["quotaWritesExcluded"] and not row["globallyReadOnly"] for row in rows))
         with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
             stage.observe_next("owned-private-runtime-url")
@@ -450,10 +450,10 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         self.assertEqual(stage.require_joined(), summary)
         self.assertEqual(summary["cases"], rows)
         self.assertEqual(summary["positiveWitnessSha256"], self.positive_sha)
-        self.assertEqual(summary["openCases"], action.open_cases())
+        self.assertEqual(summary["openCases"], [])
         terminal = stage.directory / "receiver-negatives-joined.json"
         self.assertEqual(action._hash(terminal.read_bytes()), summary["privateRecordSha256"])
-        self.assertEqual(len(list(stage.directory.iterdir())), 19)
+        self.assertEqual(len(list(stage.directory.iterdir())), 25)
         retained = b"".join(path.read_bytes() for path in stage.directory.iterdir())
         self.assertNotIn(b"owned-private-runtime-url", retained)
         self.assertNotIn(b"owned-course-private-fixture", retained)

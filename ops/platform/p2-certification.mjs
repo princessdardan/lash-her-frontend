@@ -27,6 +27,7 @@ import {assertSourceCheckout} from './source-checkout.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
+import {phase2ContractManifestBinding} from './release.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
@@ -1362,6 +1363,20 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
   };
   if(input.mode==='direct-worker'){
     demand(settings.worker&&input.worker&&(!profile||exactKeys(settings.worker,['suspensionInput'])));
+    if(input.worker.input?.receiverNegatives){
+      const manifest=phase2ContractManifestBinding(undefined,{requireReleased:true});
+      const supported=['course','community'].every(service=>{
+        if(candidate.sources[service]?.commit!==manifest.phase2ContractRevisions[service])return false;
+        const document=JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${service}-api.json`,import.meta.url)));
+        const schema=document.paths['/v1/internal/accounts/commands']?.post?.requestBody?.content?.['application/json']?.schema;
+        return schema?.anyOf?.some(variant=>variant.additionalProperties===false&&variant.properties?.version?.const===2&&
+          variant.properties.command?.properties?.version?.const===1&&
+          exactKeys(variant.properties.expectedHead?.properties,['accountVersion','commandId','canonicalSha256']));
+      });
+      if(!profile||candidate.phase2ContractManifestSha256!==manifest.phase2ContractManifestSha256||!supported){
+        throw new Error('P2_CERTIFICATION_GUARDED_RECEIVER_CONTRACT_REQUIRED');
+      }
+    }
     const selected=prepareSuspension(settings.worker.suspensionInput);
     demand((!profile||selected.actionId!==input.certificationActionId)&&
       (input.worker.suspensionPlan===undefined||isDeepStrictEqual(input.worker.suspensionPlan,selected)));

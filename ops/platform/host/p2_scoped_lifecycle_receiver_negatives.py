@@ -11,14 +11,14 @@ import p2_lifecycle_persistence_probe as persistence
 import release as runtime
 from p2_lifecycle_receiver_negative import (
     CASES, PROGRAM, SCOPED_REFUSAL, SHA, TARGET_PROFILE_PROGRAM, WITNESS_PROGRAM,
-    _baseline, _canonical, _closed, _fresh_id, _hash, open_cases, private_program,
+    _baseline, _canonical, _closed, _fresh_id, _hash, private_program,
 )
 
 demand = migrate.demand
 SCOPED_PROFILE = "suspended-head-negatives-v2"
 HOST_PROGRAM = "ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py"
 LAUNCHER_PROGRAM = "ops/platform/host/p2_lifecycle_receiver_negative.py"
-CASE_ORDER = tuple((service, case) for service in ("course", "community") for case in CASES)
+CASE_ORDER = tuple((service, case) for service in ("course", "community") for case in (*CASES, "future-gap"))
 SCOPED_CASE_STATUS = "P2_DIRECT_WORKER_RECEIVER_NEGATIVE_CASE_OBSERVED"
 SCOPED_JOINED_STATUS = "P2_DIRECT_WORKER_RECEIVER_NEGATIVES_JOINED"
 
@@ -57,7 +57,7 @@ class P2ScopedLifecycleReceiverNegatives:
         for path in (PROGRAM, HOST_PROGRAM, LAUNCHER_PROGRAM, WITNESS_PROGRAM, TARGET_PROFILE_PROGRAM):
             digest = _hash(migrate.read_input(worker.source, path))
             demand(digest == manifest.get(path), SCOPED_REFUSAL)
-        self.program = private_program(worker.source, self.profile).decode()
+        self.program = private_program(worker.source, self.profile, guarded_future_gap=True).decode()
         migrate.private_directory(worker.directory)
         self.directory.mkdir(mode=0o700)
 
@@ -178,7 +178,7 @@ class P2ScopedLifecycleReceiverNegatives:
             environment = self._environment(service)
             witness, before_sha, stable_sha, observations = self._observe(private, runtime_url, positive)
             demand(self._baseline_sha in (None, stable_sha), SCOPED_REFUSAL)
-            fresh = _fresh_id(observations) if case == "stale-restore" else None
+            fresh = _fresh_id(observations) if case in ("stale-restore", "future-gap") else None
             common = {**self._fields(), "service": service, "case": case, "positiveWitnessSha256": self.positive_sha}
             name = service + "-" + case
             intent_sha = self._retain(name + "-intent.json", {**common, "status": "P2_RECEIVER_CASE_INTENT_RETAINED",
@@ -188,6 +188,7 @@ class P2ScopedLifecycleReceiverNegatives:
             expected_status, code = {
                 "exact-replay": (200, "duplicate"), "changed-replay": (409, "idempotency_conflict"),
                 "stale-restore": (409, "account_version_conflict"),
+                "future-gap": (409, "account_version_conflict"),
             }[case]
             configuration = self.worker.configuration
             gateway_sha = _hash(migrate.read_input(configuration, "gateway.json", 65_536))
@@ -246,7 +247,7 @@ class P2ScopedLifecycleReceiverNegatives:
                     and _hash(private_record(self.directory, name + "-http.json")) == case["httpReceiptSha256"],
                     SCOPED_REFUSAL)
             summary = {**self._fields(), "status": SCOPED_JOINED_STATUS, "positiveWitnessSha256": self.positive_sha,
-                "cases": copy.deepcopy(self._rows), "openCases": open_cases(), "domainStatePreserving": True,
+                "cases": copy.deepcopy(self._rows), "openCases": [], "domainStatePreserving": True,
                 "quotaWritesExcluded": True, "globallyReadOnly": False, "oidcVerified": False, "releaseAccepted": False}
             filename = "receiver-negatives-joined.json"
             if self._summary is None:

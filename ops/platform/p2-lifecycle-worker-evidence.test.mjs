@@ -70,7 +70,7 @@ test("profiled direct-worker plan joins the original current native and suspensi
   }
   assert.throws(() => prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, selected));
 });
-test("profiled worker joins all six host cases before retaining source and stops on response loss", () => {
+test("profiled worker joins all eight host cases before retaining source and stops on response loss", () => {
   const program = String.raw`
 import assert from 'node:assert/strict';
 import {existsSync,mkdtempSync,realpathSync,rmSync} from 'node:fs';
@@ -98,7 +98,7 @@ const suspend={...profileFields,profile:'normal-ui-suspension-pending-v1',enviro
 const selection={...profileFields,actionId:'owned-worker',commandIndex:0,pendingRecordSha256:'1'.repeat(64),canonicalCommandSha256:'2'.repeat(64),
  gatewayProcessSha256:'3'.repeat(64),gatewayConfigurationSha256:'4'.repeat(64),denialProgramSha256:'5'.repeat(64),
  receiverNegatives:{profile:'suspended-head-negatives-v2'}};
-const services=['course','community'], caseNames=['exact-replay','changed-replay','stale-restore'];
+const services=['course','community'], caseNames=['exact-replay','changed-replay','stale-restore','future-gap'];
 const command=native.commandWitnesses[0], at=new Date().toISOString(), witnessSha='6'.repeat(64), retainedSha='7'.repeat(64);
 for(const failure of [null,'lost-response','mismatched-terminal']){
  const plan=worker.prepareP2LifecycleWorkerEvidencePlan(native,suspend,selection,profile), bindingSha256=p2NativeHash(plan);
@@ -124,11 +124,11 @@ for(const failure of [null,'lost-response','mismatched-terminal']){
   return {rows:[]};
  };
  const cases=services.flatMap(service=>caseNames.map((name,index)=>({...fields,status:'P2_DIRECT_WORKER_RECEIVER_NEGATIVE_CASE_OBSERVED',
-  service,case:name,httpStatus:index===0?200:409,result:['duplicate','idempotency_conflict','account_version_conflict'][index],
+  service,case:name,httpStatus:index===0?200:409,result:['duplicate','idempotency_conflict','account_version_conflict','account_version_conflict'][index],
   beforeWitnessSha256:witnessSha,afterWitnessSha256:witnessSha,privateRecordSha256:'8'.repeat(64),
   accountAndDomainStateUnchanged:true,quotaWritesExcluded:true,globallyReadOnly:false})));
  const summary={...fields,status:'P2_DIRECT_WORKER_RECEIVER_NEGATIVES_JOINED',positiveWitnessSha256:witnessSha,cases,
-  openCases:services.map(service=>({service,case:'future-gap',status:'OPEN',reason:'current-quiescence-not-positively-proved'})),
+  openCases:[],
   domainStatePreserving:true,quotaWritesExcluded:true,globallyReadOnly:false,oidcVerified:false,privateRecordSha256:retainedSha};
  const denial={version:1,status:'P2_LIFECYCLE_RECEIVER_DENIAL_OBSERVED',denialStatusCode:403,accountRestrictionVerified:true};
  const resolver=worker.createP2LifecycleWorkerPrivateResolvers(()=>({frontendRuntimeDatabaseUrl:'owned-private-only'}));
@@ -160,11 +160,11 @@ for(const failure of [null,'lost-response','mismatched-terminal']){
   if(failure){
    await assert.rejects(finish());await assert.rejects(finish());
    assert.equal(existsSync(join(directory,'p2-lifecycle-worker-source.json')),false);
-   assert.equal(count,failure==='lost-response'?1:6);assert.equal(phase.includes('closed'),false);
+   assert.equal(count,failure==='lost-response'?1:8);assert.equal(phase.includes('closed'),false);
   }else{
    const retained=worker.readP2DirectWorkerSourceArtifact(plan,await finish());
    assert.deepEqual(retained.record.receiverNegatives,summary);
-   assert.deepEqual(phase,['witness','denials',...Array(6).fill('next'),'join','closed']);
+   assert.deepEqual(phase,['witness','denials',...Array(8).fill('next'),'join','closed']);
    assert.equal(retained.bytes.includes('owned-private-only'),false);
   }
  }finally{rmSync(directory,{recursive:true,force:true});}
