@@ -1147,7 +1147,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
     const child=launch('/usr/bin/ssh',sshCommand({knownHosts:settings.knownHosts,keyFile:settings.sshKey},command),
       {stdio:['pipe','pipe','pipe'],env:Object.fromEntries(['PATH','HOME','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]))});
     const reaped=new Promise(resolve=>child.once('close',resolve));
-    const controller=new AbortController(),pending=new Map();let sequence=0,failed=false,active=true,exited,heartbeat,joined,armed=false,prepared=false,browserOpened=false,committedReceipt;
+    const controller=new AbortController(),pending=new Map();let sequence=0,failed=false,active=true,exited,heartbeat,joined,armed=false,prepared=false,browserOpened=false,committedReceipt,hostTerminalSha256;
     const fail=()=>{if(failed)return;failed=true;controller.abort();for(const waiter of pending.values()){clearTimeout(waiter.timer);waiter.reject(new Error('P2_CERTIFICATION_REMOTE_LOST'));}pending.clear();child.stdin.end();};
     const lines=createInterface({input:child.stdout});
     lines.on('line',raw=>{try{demand(Buffer.byteLength(raw)<=MAXIMUM);const value=profiled?decodeQualificationTargetJson(raw,'private-packet'):JSON.parse(raw),waiter=pending.get(value.id);demand(waiter&&value.status===waiter.status);pending.delete(value.id);clearTimeout(waiter.timer);waiter.resolve(value);}catch{fail();}});
@@ -1497,6 +1497,10 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
         requireQualificationTargetProfile(currentProfile,committed.receipt);
         demand(committed.receipt.version===2&&committed.receipt.status==='P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED'&&
           committed.receipt.planSha256===initial.certificationPlan.planSha256);
+        if(initial.certificationPlan.rotationSuccessor){
+          demand(nonzeroSha256(committed.hostTerminalSha256));
+          hostTerminalSha256=committed.hostTerminalSha256;
+        }
         committedReceipt=committed.receipt;
       }else writeFrontendReceipt(directory,'p2-host-certification-outcome.json',committed.receipt);
       active=false;
@@ -1512,6 +1516,9 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
       if(exited!==0)error??=new Error('P2_CERTIFICATION_HOST_CLEANUP_UNCERTAIN');
     }
     if(error)throw error;
+    if(hostTerminalSha256)writeFrontendReceipt(directory,'p2-host-certification-terminal-reference.json',{
+      version:2,qualificationTargetProfile:currentProfile,environment:'staging',
+      certificationActionId:initial.certificationActionId,planSha256:initial.certificationPlan.planSha256,hostTerminalSha256});
     if(profiled){demand(committedReceipt);writeFrontendReceipt(directory,'p2-host-certification-outcome.json',committedReceipt);}
     return result;
   };

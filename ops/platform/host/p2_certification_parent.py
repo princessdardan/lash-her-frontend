@@ -2051,7 +2051,10 @@ class P2CertificationBroker(Broker):
         if operation=='finish':self.send(identity,'P2_CERTIFICATION_JOINED',receipt=self.finish_certification(value));return
         if operation=='commit':
             self.check();require(self.finished,'P2_CERTIFICATION_JOIN_REQUIRED');migrate.write_json(self.directory,self.terminal_filename(),self.outcome)
-            raw=migrate.read_input(self.directory,self.terminal_filename());self.safety({'operation':'committed','sha256':_sha(raw)});self.committed.set();self.send(identity,'COMMITTED',receipt=self.outcome);return
+            raw=migrate.read_input(self.directory,self.terminal_filename());digest=_sha(raw)
+            self.safety({'operation':'committed','sha256':digest});self.committed.set()
+            reference={'hostTerminalSha256':digest} if 'rotationSuccessor' in self.initial['certificationPlan'] else {}
+            self.send(identity,'COMMITTED',receipt=self.outcome,**reference);return
         raise ValueError('P2_CERTIFICATION_SOURCE_OPERATION_NOT_INSTALLED')
 
     def close(self,committed=False):
