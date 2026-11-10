@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import https from "node:https";
+import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { assertReceiverNegativeBaseline, deriveReceiverNegativeCommand, postReceiverNegative, validateReceiverPostInput, verifyLifecycleReceiverRuntime } from "./p2-lifecycle-receiver-post.mjs";
+import { assertReceiverNegativeBaseline, deriveProfiledReceiverPostCommand, deriveReceiverNegativeCommand, postProfiledReceiverNegative,
+  postReceiverNegative, validateReceiverPostInput, verifyLifecycleReceiverRuntime } from "./p2-lifecycle-receiver-post.mjs";
 import { prepareP2LifecycleReceiverPlan, verifyReceiverNegativeReadback } from "./p2-lifecycle-receiver-negatives.mjs";
 import { receiverWitnessFixture, receiverPostFixture, receiverReviewedFixture, receiverFixtureUuid } from "./p2-lifecycle-receiver-negatives.fixture.mjs";
+import { p2LifecycleStateWitnessSha256 } from "./p2-lifecycle-state-witness.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
+
+const profiledPostFixture = (caseName, service) => {
+  const fixture = receiverPostFixture(caseName, service);
+  return { ...fixture, input: { ...fixture.input, version: 2, qualificationTargetProfile: profile } };
+};
 
 test("source-derived fixed cases do not accept a caller command, action, version or URL", () => {
   const witness = receiverWitnessFixture(), original = deriveReceiverNegativeCommand(witness, "exact-replay");
@@ -86,6 +98,126 @@ test("even the private POST entry refuses a future gap without making a network 
   const fixture = receiverPostFixture("future-gap"); let requests = 0;
   await assert.rejects(postReceiverNegative(fixture.input, { post: async () => { requests++; } }), /P2_LIFECYCLE_RECEIVER_REFUSED/u);
   assert.equal(requests, 0);
+});
+
+test("reviewed receiver envelopes derive all four commands for both services and refuse stale or caller-selected input", async () => {
+  for (const service of ["course", "community"]) {
+    for (const name of ["exact-replay", "changed-replay", "stale-restore", "future-gap"]) {
+      const { input } = profiledPostFixture(name, service);
+      const command = await deriveProfiledReceiverPostCommand(input, profile);
+      assert.deepEqual(command, deriveReceiverNegativeCommand(input.witness, name, input.freshCommandId));
+      assert.equal(command.accountVersion, input.witness.command.accountVersion + (name === "future-gap" ? 2 : 0));
+    }
+  }
+  const { input } = profiledPostFixture("future-gap", "community");
+  const mismatched = { ...profile, sha256: "a".repeat(64) };
+  for (const tampered of [{ ...input, quiescent: true }, { ...input, origin: "https://foreign.invalid" }, { ...input, command: {} },
+    { ...input, runtimeEnvironment: {} }, { ...input, qualificationTargetProfile: mismatched }, { ...input, freshCommandId: [input.freshCommandId] },
+    { ...input, freshCommandId: input.witness.command.commandId }, { ...input, bindingSha256: "0".repeat(64) },
+    { ...input, witness: { ...input.witness, frontend: { ...input.witness.frontend, pendingOrDeliveringCount: 1 } } }]) {
+    await assert.rejects(deriveProfiledReceiverPostCommand(tampered, profile));
+  }
+  await assert.rejects(deriveProfiledReceiverPostCommand(input, mismatched));
+  await assert.rejects(deriveProfiledReceiverPostCommand(input, undefined));
+});
+
+test("profiled private POST uses only the pinned TLS destinations and exact reviewed replies", async t => {
+  let fixture, command, response;
+  const readFile = fs.readFileSync;
+  const files = t.mock.method(fs, "readFileSync", (path, ...args) => {
+    if (path === "/config/gateway.json") return fixture.gateway;
+    if (path === "/tls/ca.pem") return fixture.ca;
+    return readFile(path, ...args);
+  });
+  const wire = t.mock.method(https, "request", (options, handleResponse) => {
+    const { input, ca } = fixture;
+    assert.deepEqual({ protocol: options.protocol, hostname: options.hostname, port: options.port, servername: options.servername,
+      method: options.method, path: options.path, ca: options.ca, rejectUnauthorized: options.rejectUnauthorized, minVersion: options.minVersion },
+    { protocol: "https:", hostname: input.service + "-tls", port: 8443, servername: input.service + "-tls", method: "POST",
+      path: "/v1/internal/accounts/commands", ca, rejectUnauthorized: true, minVersion: "TLSv1.2" });
+    const [header, payload, signature] = options.headers.authorization.slice("Bearer ".length).split(".");
+    assert.deepEqual(JSON.parse(Buffer.from(header, "base64url")), { alg: "HS256", typ: "JWT" });
+    const claims = JSON.parse(Buffer.from(payload, "base64url"));
+    assert.equal(claims.iss, "lash-her-frontend");
+    assert.equal(claims.aud, `lash-her-${input.service}-api:account-lifecycle`);
+    assert.equal(claims.sub, "frontend-account-lifecycle");
+    assert.equal(claims.exp - claims.iat, 120);
+    assert.equal(signature, createHmac("sha256", input.secret).update(header + "." + payload).digest("base64url"));
+    assert.equal(options.headers["x-idempotency-key"], command.commandId);
+    const request = new EventEmitter();
+    request.end = body => {
+      assert.deepEqual(JSON.parse(body), command);
+      assert.equal(options.headers["content-length"], String(body.length));
+      const stream = Object.assign(new EventEmitter(), { statusCode: response.status, headers: response.headers });
+      handleResponse(stream);
+      stream.emit("data", Buffer.from(JSON.stringify(response.body)));
+      stream.emit("end");
+    };
+    return request;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  for (const service of ["course", "community"]) for (const name of ["exact-replay", "changed-replay", "stale-restore"]) {
+    fixture = profiledPostFixture(name, service);
+    const { input } = fixture;
+    command = deriveReceiverNegativeCommand(input.witness, name, input.freshCommandId);
+    const duplicate = name === "exact-replay";
+    const code = duplicate ? "duplicate" : name === "changed-replay" ? "idempotency_conflict" : "account_version_conflict";
+    response = { status: duplicate ? 200 : 409, headers: { "cache-control": "private, no-store" }, body: duplicate
+      ? { commandId: command.commandId, accountVersion: command.accountVersion, status: "duplicate" }
+      : { error: { code: service === "course" ? code.toUpperCase() : code, message: "Owned conflict" },
+        ...(service === "community" ? { requestId: "owned-request" } : {}) } };
+    const receipt = await postProfiledReceiverNegative(input, profile);
+    assert.deepEqual(receipt, { version: 2, qualificationTargetProfile: profile, status: "P2_LIFECYCLE_RECEIVER_CASE_PASS", service, case: name,
+      bindingSha256: input.bindingSha256, witnessSha256: p2LifecycleStateWitnessSha256(input.witness), httpStatus: response.status, result: code,
+      domainStatePreservationRequiresReadback: true, globallyReadOnly: false, oidcVerified: false, releaseAccepted: false });
+    for (const privateValue of [input.secret, command.userId, command.commandId, command.issuedAt, "owned-request"]) {
+      assert.equal(JSON.stringify(receipt).includes(privateValue), false);
+    }
+  }
+  assert.equal(wire.mock.callCount(), 6);
+  const privateFileReads = () => files.mock.calls.filter(({ arguments: [path] }) => path === "/config/gateway.json" || path === "/tls/ca.pem").length;
+  assert.equal(privateFileReads(), 12);
+  for (const service of ["course", "community"]) {
+    fixture = profiledPostFixture("future-gap", service);
+    await assert.rejects(postProfiledReceiverNegative(fixture.input, profile), { check: "live-future-gap-quiescence-unproved" });
+    await assert.rejects(postProfiledReceiverNegative({ ...fixture.input, quiescent: true }, profile), { check: "private-input-shape" });
+  }
+  assert.equal(wire.mock.callCount(), 6);
+  assert.equal(privateFileReads(), 12);
+});
+
+test("the actual private stdin entry selects v2 only from the fixed launcher and emits no private inputs", () => {
+  const childUrl = new URL("./p2-lifecycle-receiver-post.mjs", import.meta.url).href;
+  const run = (raw, expectedProfile, environment = {}) => {
+    const entry = `import(${JSON.stringify(childUrl)}).then(module=>module.runPrivateReceiverPostFromStdin(${JSON.stringify(expectedProfile) ?? ""}))`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "--eval", entry],
+      { input: raw, encoding: "utf8", timeout: 10000, env: { PATH: process.env.PATH, ...environment } });
+    assert.equal(child.stderr, "");
+    assert.equal(child.stdout.includes("OWNED-PRIVATE"), false);
+    return { status: child.status, record: JSON.parse(child.stdout) };
+  };
+  for (const service of ["course", "community"]) {
+    const runtimeEnvironment = { DATABASE_TARGET: "staging", STAGING_DATABASE_URL: "OWNED-PRIVATE-DATABASE",
+      [service.toUpperCase() + "_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET"]: "OWNED-PRIVATE-KEY".repeat(4) };
+    const environment = { ...runtimeEnvironment, NODE_ENV: "production" };
+    const input = { version: 2, qualificationTargetProfile: profile, mode: "runtime-binding", environment: "staging", service,
+      bindingSha256: "a".repeat(64), runtimeEnvironment };
+    assert.deepEqual(run(JSON.stringify(input), profile, environment), { status: 0, record: { version: 2,
+      qualificationTargetProfile: profile, status: "P2_LIFECYCLE_RECEIVER_RUNTIME_BOUND", service, bindingSha256: input.bindingSha256,
+      runtimeConfigurationVerified: true, globallyReadOnly: true, releaseAccepted: false } });
+    assert.equal(run(JSON.stringify(input), undefined, environment).record.version, 1);
+    const { qualificationTargetProfile: _ignored, ...legacy } = input;
+    assert.equal(run(JSON.stringify({ ...legacy, version: 1 }), profile, environment).status, 1);
+    const duplicate = JSON.stringify(input).replace('"version":2', '"version":2,"version":2');
+    const oversized = "x".repeat(262145);
+    const { input: gap } = profiledPostFixture("future-gap", service);
+    for (const [raw, check] of [[duplicate, "private-receiver-case-failed"], [oversized, "private-input-bound"],
+      [JSON.stringify(gap), "live-future-gap-quiescence-unproved"]]) {
+      assert.deepEqual(run(raw, profile, environment), { status: 1, record: { version: 2, qualificationTargetProfile: profile,
+        status: "P2_LIFECYCLE_RECEIVER_CASE_FAILED", check, globallyReadOnly: false, oidcVerified: false, releaseAccepted: false } });
+    }
+  }
 });
 
 test("corrected reader context requires host identity, recomputed targets, immutable images and the same full source map", () => {
