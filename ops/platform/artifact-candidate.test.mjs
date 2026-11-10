@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertBuilderSource, assertSbom, qualifyHarness, assertCandidateSourceApproval, ARTIFACT_COMPONENTS, verifyFrontendSchemaSummary, verifyArtifactRuntime } from "./artifact-candidate.mjs";
+import { assertBuilderSource, assertSbom, qualifyHarness, assertCandidateSourceApproval, bindStagingCandidateProfile, ARTIFACT_COMPONENTS, verifyFrontendSchemaSummary, verifyArtifactRuntime } from "./artifact-candidate.mjs";
 import { verifyReleaseInputs } from "./release-inputs.mjs";
 import { sourceFixture } from "./release-inputs.fixture.mjs";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import { validateRuntimeEvidence, runtimeVex, verifyRecordedRuntime } from "../gateway/runtime/verify.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
 import { frontendRehearsalFixture } from "./frontend-rehearsal.fixture.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 test("frontend CI schema evidence must match source SQL, contracts and the full owned rehearsal", () => {
   const candidate = {}, summary = frontendRehearsalFixture(candidate), artifact = candidate.frontendMigration;
@@ -53,6 +54,40 @@ test("harness qualification requires the exact candidate bytes and never asserts
   assert.throws(() => qualify({ ...report, records: [...report.records, { name: "extra", passed: false }] }));
   assert.throws(() => qualify(report, { ...frontend, migrationImageDigest: `sha256:${"e".repeat(64)}` }));
   assert.throws(() => qualifyHarness(candidate, report));
+});
+
+test("only a qualified staging P2 publication receives the fixed profile and keeps release approval pending", () => {
+  const candidate = JSON.parse(readFileSync(new URL("./release.candidate.json", import.meta.url), "utf8"));
+  candidate.contractPhase = "p2";
+  candidate.sources.frontend.commit = "a".repeat(40);
+  candidate.buildWorkflow = { ref: "refs/heads/staging", commit: candidate.sources.frontend.commit };
+  candidate.sourceApproval = { runId: "9001" };
+  candidate.integration = { state: "passed" };
+  candidate.frontendMigration = { sqlArtifactSha256: "f".repeat(64) };
+  const original = structuredClone(candidate);
+  const published = bindStagingCandidateProfile(candidate, "refs/heads/staging");
+  assert.equal(published.version, 3);
+  for (const carrier of [published, published.sourceApproval, published.integration, published.workload, published.approval,
+    published.frontendMigration, ...Object.values(published.sources)]) assert.deepEqual(carrier.qualificationTargetProfile, profile);
+  assert.deepEqual(published.artifacts, original.artifacts);
+  assert.equal(published.approval.state, "pending");
+  assert.equal(published.approval.approvedAt, null);
+  assert.deepEqual(candidate, original);
+  assert.equal(bindStagingCandidateProfile(candidate, "refs/heads/main"), candidate);
+  const legacy = { ...candidate, contractPhase: undefined };
+  assert.equal(bindStagingCandidateProfile(legacy, "refs/heads/staging"), legacy);
+  for (const mutate of [
+    (value) => { value.environment = "production"; },
+    (value) => { value.workload.projectId = "prj_Foreign"; },
+    (value) => { value.workload.environment = "preview"; },
+    (value) => { value.buildWorkflow.commit = "b".repeat(40); },
+    (value) => { value.integration.state = "pending"; },
+    (value) => { value.approval.state = "approved"; },
+    (value) => { value.sources.course.qualificationTargetProfile = profile; },
+  ]) {
+    const changed = structuredClone(candidate); mutate(changed);
+    assert.throws(() => bindStagingCandidateProfile(changed, "refs/heads/staging"));
+  }
 });
 
 test("candidate collection and final qualification bind the operator dispatch, source and CI receipt", async () => {

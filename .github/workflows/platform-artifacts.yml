@@ -509,6 +509,14 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
             lash-her-community-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
           node sources/lash-her-frontend/ops/platform/local-harness.mjs --phase p2 > "$RUNNER_TEMP/platform-evidence/container-harness.json"
+      - name: Retain the isolated harness report on failure
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: candidate-harness-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/platform-evidence/container-harness.json
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Recheck source revisions and CI after the harness
         env:
           SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}

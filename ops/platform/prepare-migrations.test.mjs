@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { migrationOperatorCommand, prepareMigrationBundle, prepareProfiledCurrentMigrationBundle } from "./prepare-migrations.mjs";
 import { createHash } from "node:crypto";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
+import { bindStagingCandidateProfile } from "./artifact-candidate.mjs";
 import { decodeQualificationTargetJson, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 function fixture() {
@@ -189,9 +190,10 @@ test("real bundle CLI includes optional frontend bindings and refuses a substitu
       f.settings.frontend = { ...f.settings.services.course, host: "frontend.example.invalid", approvedPendingTags: artifact.migrations.map(({ tag }) => tag), password: "must-not-copy" };
       f.schemas.frontend = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false, schemaBaseline: baseline, contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
       if (profiledCurrent) {
-        profiled(f);
-        f.candidate.frontendMigration.qualificationTargetProfile = current;
-        f.settings.frontend.qualificationTargetProfile = current;
+        f.candidate.approval.releaseId = f.candidate.releaseId;
+        f.candidate.buildWorkflow = { ref: "refs/heads/staging", commit: f.candidate.sources.frontend.commit };
+        f.candidate = bindStagingCandidateProfile(f.candidate, "refs/heads/staging");
+        for (const carrier of [f.settings, f.settings.frontend, ...Object.values(f.settings.services)]) carrier.qualificationTargetProfile = current;
       }
       assert.doesNotThrow(() => (profiledCurrent ? prepareProfiledCurrentMigrationBundle : prepareMigrationBundle)(f.candidate, f.settings, f.schemas));
       assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(f.candidate), "carrier"));

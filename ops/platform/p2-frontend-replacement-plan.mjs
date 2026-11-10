@@ -11,7 +11,7 @@ import { frontendPrivateReceiptDirectory, readFrontendReleaseEvidence } from "./
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-role-preparation.mjs";
 import { decodeQualificationTargetJson, requireQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
-import { phase2ContractManifestBinding, validatePlatformRelease } from "./release.mjs";
+import { phase2ContractManifestBinding, validatePlatformRelease, validateStagingReplacementCandidate } from "./release.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const refusal = "P2_FRONTEND_REPLACEMENT_PLAN_REFUSED";
@@ -116,8 +116,10 @@ export function prepareP2FrontendReplacementPlan(options) {
   const candidate = reviewedJson(join(bundle, "release.candidate.json"), review.candidateSha256);
   const job = reviewedJson(join(bundle, "jobs/frontend.json"), review.frontendJobSha256);
   const baseline = reviewedJson(join(bundle, "schema/frontend.json"), review.schemaBaselineFileSha256);
+  const candidateFailures = candidate.approval?.state === "pending" ? validateStagingReplacementCandidate(candidate) :
+    validatePlatformRelease(candidate, new Date(), profile);
   demand(candidate.version === 3 && candidate.environment === environment && candidate.contractPhase === "p2" &&
-    candidate.sourceGraph === undefined && validatePlatformRelease(candidate, new Date(), profile).length === 0 &&
+    candidate.sourceGraph === undefined && candidateFailures.length === 0 &&
     exact(job, jobFields) && exact(job.target, [...fullTargetFields, "qualificationTargetProfile", "allowEmptyBootstrap", "approvedPendingTags"]) &&
     job.releaseId === review.releaseId && job.sourceCommit === review.sourceCommit && job.recoveryRef === replacement.recoveryRef);
   const { phase2ContractRevisions } = phase2ContractManifestBinding(root, { requireReleased: true });

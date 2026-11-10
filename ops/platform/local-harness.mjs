@@ -15,6 +15,7 @@ const { values: options } = parseArgs({ options: { phase: { type: "string", defa
 const phase = options.phase;
 if (!["p1", "p2"].includes(phase)) throw new Error("Explicit harness contract phase required");
 const additionalWorkers = phase === "p2" ? phase2Workers : [];
+const muxEnvironment = "owned-fixture";
 const root = resolve(import.meta.dirname, "../..");
 const runId = randomUUID();
 const project = `lash-p1-${runId}`;
@@ -95,14 +96,15 @@ try {
   const muxPair = await generateKeyPair("RS256", { extractable: true });
   envFile("course-api.env", { ...database("course"), ...courseHarnessAuth(phase, { frontendSecret, adminSecret: firstPartySecret, learnerSecret }),
     COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret,
-    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: "owned-fixture", MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
+    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: muxEnvironment, MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
     MUX_SIGNING_KEY_ID: "isolated-fixture", MUX_SIGNING_PRIVATE_KEY: Buffer.from(await exportPKCS8(muxPair.privateKey)).toString("base64") });
   envFile("course-publisher.env", { ...database("course"), COMMUNITY_ENROLLMENT_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret });
   envFile("course-snapshot.env", database("course"));
   for (const worker of phase2Workers) envFile(`${worker}.env`, disabledCourseWorkerEnvironment(database("course").TEST_DATABASE_URL, worker));
   envFile("community-api.env", { ...database("community"), COURSE_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret, COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("community-worker.env", { ...database("community"), COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
-  envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_CONTRACT_PHASE: phase, HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret });
+  envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_CONTRACT_PHASE: phase, HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret,
+    ...(phase === "p2" ? { HARNESS_MUX_ENVIRONMENT_ID: muxEnvironment } : {}) });
   envFile("postgres.env", { POSTGRES_PASSWORD: password });
   const mounts = `      - ${directory}:/test:ro\n      - ${output}:/test/out:rw\n`;
   const appOverride = (name) => `  ${name}:\n    environment: {NODE_ENV: development}\n    networks: {test_database: {}}\n    volumes:\n${mounts}`;
@@ -133,7 +135,12 @@ try {
   process.stdout.write(JSON.stringify({ runId, contractPhase: phase, images, ...result, ...(additionalWorkers.length ? { records: [...result.records, { name: "disabled-course-workers-ready", passed: true }] } : {}), directory }) + "\n");
   if (result.records.some((record) => !record.passed)) process.exitCode = 1;
 } catch (error) {
-  process.stdout.write(JSON.stringify({ runId, passed: false, reason: error.message, directory }) + "\n");
+  let records = [];
+  const driverResult = join(output, "results.json");
+  if (existsSync(driverResult)) {
+    try { records = JSON.parse(readFileSync(driverResult, "utf8")).records; } catch { /* retain the parent failure */ }
+  }
+  process.stdout.write(JSON.stringify({ runId, passed: false, reason: error.message, records, directory }) + "\n");
   process.exitCode = 1;
 } finally {
   if (started) spawnSync("docker", [...composeArgs, "logs", "--no-color"], { env: environment, stdio: ["ignore", log, log], timeout: 10_000 });

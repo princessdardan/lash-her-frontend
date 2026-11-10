@@ -4,11 +4,12 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeF
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES, sourceContextFromEnvironment } from "./release-inputs.mjs";
-import { SOURCE_APPROVAL_MODE, SOURCE_OPERATOR_ID, SOURCE_REPOSITORY_IDS, assertSourceContext, sourceBranchFor } from "./source-policy.mjs";
+import { SOURCE_APPROVAL_MODE, SOURCE_OPERATOR_ID, SOURCE_REPOSITORY_IDS, assertSourceContext, isRevision, sourceBranchFor } from "./source-policy.mjs";
 import { verifySourceCheckouts } from "./source-checkout.mjs";
 import { localImageId } from "./local-images.mjs";
 import { privateTlsPolicies } from "./configuration.mjs";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
+import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 import { verifyRecordedRuntime } from "../gateway/runtime/verify.mjs";
 
 export const ARTIFACT_COMPONENTS = Object.freeze([
@@ -201,6 +202,30 @@ export function qualifyHarness(candidate, report, reportBytes = JSON.stringify(r
     workloadProof: "signed-fixture", realVercelOidcVerified: false } };
 }
 
+export function bindStagingCandidateProfile(candidate, workflowRef) {
+  if (workflowRef !== "refs/heads/staging" || candidate.contractPhase !== "p2") return candidate;
+  const profile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
+  const selected = resolveQualificationTargetProfile(profile);
+  const fields = ["sourceApproval", "integration", "workload", "approval", "frontendMigration"];
+  const sourceNames = Object.keys(SOURCE_REPOSITORIES);
+  const carriers = [candidate, ...fields.map((field) => candidate[field]), ...sourceNames.map((name) => candidate.sources?.[name])];
+  if (candidate.version !== 2 || candidate.environment !== selected.environment ||
+      candidate.buildWorkflow?.ref !== workflowRef || !isRevision(candidate.buildWorkflow.commit) ||
+      candidate.buildWorkflow.commit !== candidate.sources?.frontend?.commit ||
+      candidate.workload?.projectId !== selected.frontend.projectId ||
+      candidate.workload?.environment !== selected.frontend.workloadEnvironment ||
+      candidate.integration?.state !== "passed" || candidate.approval?.state !== "pending" ||
+      candidate.approval?.approvedAt !== null || candidate.approval?.environment !== candidate.environment ||
+      candidate.approval?.releaseId !== candidate.releaseId ||
+      Object.keys(candidate.sources ?? {}).length !== sourceNames.length ||
+      carriers.some((record) => !record || Object.getPrototypeOf(record) !== Object.prototype ||
+        Object.hasOwn(record, "qualificationTargetProfile"))) throw new Error("Unapproved staging candidate and fixed profile required");
+  const bind = (record) => ({ ...record, qualificationTargetProfile: profile });
+  return { ...bind(candidate), version: 3,
+    ...Object.fromEntries(fields.map((field) => [field, bind(candidate[field])])),
+    sources: Object.fromEntries(sourceNames.map((name) => [name, bind(candidate.sources[name])])) };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     if (process.argv[2] === "--harness") {
@@ -223,7 +248,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const reportBytes = readFileSync(join(directory, "container-harness.json"));
       const report = JSON.parse(reportBytes.toString("utf8"));
       const frontendReport = JSON.parse(readFileSync(join(directory, "frontend-migration-rehearsal.json"), "utf8"));
-      writeFileSync(join(directory, "release.candidate.json"), JSON.stringify(qualifyHarness({ ...candidate, sourceApproval: approval }, report, reportBytes, frontendReport), null, 2) + "\n", { mode: 0o600 });
+      const qualified = qualifyHarness({ ...candidate, sourceApproval: approval }, report, reportBytes, frontendReport);
+      const publication = bindStagingCandidateProfile(qualified, finalProof.workflowRef);
+      writeFileSync(join(directory, "release.candidate.json"), JSON.stringify(publication, null, 2) + "\n", { mode: 0o600 });
     } else {
       if (process.argv.length !== 4) throw new Error("Usage");
       collectArtifactCandidate(resolve(process.argv[2]), resolve(process.argv[3]));
