@@ -83,25 +83,7 @@ test.describe("employee calendar self-service", () => {
     ).toBeVisible();
     await expect(page.getByText(/\bEmployees?\b/i)).toHaveCount(0);
 
-    const oauthRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return (
-        url.origin === "https://accounts.google.com" &&
-        url.pathname === "/o/oauth2/v2/auth"
-      );
-    });
-    await page
-      .getByRole("button", { name: "Connect Google account" })
-      .click({ noWaitAfter: true });
-
-    const oauthState = new URL((await oauthRequest).url()).searchParams.get(
-      "state",
-    );
-    expect(oauthState).toMatch(/^(calendar|employee)_[A-Za-z0-9_-]+$/);
-    await fixture.persistOAuthState(oauthState!);
-    await page.goto(
-      `/api/booking/oauth/callback?code=${encodeURIComponent(fixture.oauthCode)}&state=${encodeURIComponent(oauthState!)}`,
-    );
+    await completeGoogleCalendarOAuth(page, fixture);
     await expect(page).toHaveURL(/\/admin\/my-calendar\?notice=/);
     await expect(
       page.getByText("Google Calendar account connected."),
@@ -340,25 +322,7 @@ test.describe("employee calendar self-service", () => {
     );
     await page.goto("/admin/my-calendar");
 
-    const oauthRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return (
-        url.origin === "https://accounts.google.com" &&
-        url.pathname === "/o/oauth2/v2/auth"
-      );
-    });
-    await page
-      .getByRole("button", { name: "Connect Google account" })
-      .click({ noWaitAfter: true });
-
-    const oauthState = new URL((await oauthRequest).url()).searchParams.get(
-      "state",
-    );
-    expect(oauthState).toMatch(/^(calendar|employee)_[A-Za-z0-9_-]+$/);
-    await fixture.persistOAuthState(oauthState!);
-    await page.goto(
-      `/api/booking/oauth/callback?code=${encodeURIComponent(fixture.oauthCode)}&state=${encodeURIComponent(oauthState!)}`,
-    );
+    await completeGoogleCalendarOAuth(page, fixture);
     await expect(
       page.getByText("Google Calendar account connected."),
     ).toBeVisible();
@@ -388,6 +352,41 @@ async function newAuthenticatedPage(
     storageState,
   });
   return context.newPage();
+}
+
+async function completeGoogleCalendarOAuth(
+  page: Page,
+  fixture: AdminCalendarAuthFixture,
+) {
+  const isOAuthStart = (url: URL) =>
+    url.origin === new URL(BASE_URL).origin &&
+    /^\/api\/admin\/my-calendar\/connections\/[^/]+\/oauth\/start$/.test(url.pathname);
+  let consentUrl: Promise<URL> | undefined;
+  await page.route(isOAuthStart, async (route) => {
+    // Inspect the application's real redirect without contacting Google.
+    consentUrl ??= route.fetch({ maxRedirects: 0 }).then((response) => {
+      expect(response.status()).toBe(307);
+      return new URL(response.headers().location);
+    });
+    await consentUrl;
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Calendar consent fixture</title>",
+    });
+  });
+  await Promise.all([
+    page.waitForURL(isOAuthStart, { waitUntil: "load" }),
+    page.getByRole("button", { name: "Connect Google account" }).click(),
+  ]);
+  const authorization = await consentUrl!;
+  expect(authorization.origin).toBe("https://accounts.google.com");
+  expect(authorization.pathname).toBe("/o/oauth2/v2/auth");
+  const oauthState = authorization.searchParams.get("state");
+  expect(oauthState).toMatch(/^(calendar|employee)_[A-Za-z0-9_-]+$/);
+  await fixture.persistOAuthState(oauthState!);
+  await page.goto(
+    `/api/booking/oauth/callback?code=${encodeURIComponent(fixture.oauthCode)}&state=${encodeURIComponent(oauthState!)}`,
+  );
 }
 
 function requireAdminFixture(): AdminCalendarAuthFixture {
