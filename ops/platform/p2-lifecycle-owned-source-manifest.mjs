@@ -13,6 +13,10 @@ const REHEARSAL_API_REVISIONS = Object.freeze({
   course: "54fd289a5a8579bfbe343afb07482f406b56ad5b",
   community: "929fdeb13e0e5f5e25454a457961d6ed965dedff",
 });
+const FINAL_API_REVISIONS = Object.freeze({
+  course: "09e3aaf234d9d9c1296c438d7c872e6bd67db074",
+  community: "5993d248a7c687e04792266b356aa9efb4928be3",
+});
 const REPOSITORIES = Object.freeze({
   frontend: "lash-her-frontend",
   course: "lash-her-course-api",
@@ -60,6 +64,7 @@ const closed = (value, fields) => Boolean(value && typeof value === "object" && 
 const API_PAIRS = Object.freeze([
   Object.freeze({ ...API_REVISIONS, expiryFixed: false }),
   Object.freeze({ ...REHEARSAL_API_REVISIONS, expiryFixed: true }),
+  Object.freeze({ ...FINAL_API_REVISIONS, expiryFixed: true }),
 ]);
 
 export function selectP2LifecycleOwnedApiPair(revisions) {
@@ -170,6 +175,7 @@ export function verifyP2LifecycleOwnedSourceManifest(raw, roots) {
 
 export const P2_LIFECYCLE_OWNED_API_REVISIONS = API_REVISIONS;
 export const P2_LIFECYCLE_OWNED_REHEARSAL_API_REVISIONS = REHEARSAL_API_REVISIONS;
+export const P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS = FINAL_API_REVISIONS;
 export const P2_LIFECYCLE_OWNED_SOURCE_CLOSURE = Object.freeze({
   frontend: Object.freeze({ directories: FRONTEND_DIRECTORIES, files: FRONTEND_FILES }),
   api: Object.freeze({ directories: API_DIRECTORIES, files: API_FILES }),

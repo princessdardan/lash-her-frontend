@@ -12,12 +12,14 @@ import { P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS, p2IdentityFixtureFailureReceipt,
   parseP2LifecycleReceiversPostgres18Receipt, buildP2InterruptedRestorationExpected, parseP2InterruptedRestorationPostgres18Receipt, parseP2InterruptedNegativesPostgres18Receipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
   validateP2IdentityFixtureManifest, verifyP2FrontendSourceProof } from "./prepare-p2-identity-probe-fixtures.mjs";
-import { P2_LIFECYCLE_OWNED_API_REVISIONS, P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, P2_INTERRUPTED_OWNED_SOURCE_FILES, P2_KNOWN_ACK_OWNED_SOURCE_FILES,
+import { P2_LIFECYCLE_OWNED_API_REVISIONS, P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS, P2_LIFECYCLE_OWNED_SOURCE_CLOSURE,
+  P2_INTERRUPTED_OWNED_SOURCE_FILES, P2_KNOWN_ACK_OWNED_SOURCE_FILES,
   selectP2LifecycleOwnedApiPair, verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const revisions = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
 const rehearsalRevisions = { course: "54fd289a5a8579bfbe343afb07482f406b56ad5b", community: "929fdeb13e0e5f5e25454a457961d6ed965dedff" };
+const finalRevisions = { course: "09e3aaf234d9d9c1296c438d7c872e6bd67db074", community: "5993d248a7c687e04792266b356aa9efb4928be3" };
 const correctedExpiryCheck = "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry";
 const contents = { course: Buffer.from('{"openapi":"3.1.0","info":{"title":"course"}}\n'), community: Buffer.from('{"openapi":"3.1.0","info":{"title":"community"}}\n'),
   enrollmentEvent: Buffer.from('{"$schema":"https://json-schema.org/draft/2020-12/schema"}\n') };
@@ -27,7 +29,9 @@ test("current lifecycle producers match the actual selected candidate API revisi
   const manifest = JSON.parse(readFileSync(new URL("../../contracts/api-integration/p2-candidate/manifest.json", import.meta.url)));
   const selected = Object.fromEntries(["course", "community"].map(service => [service, manifest.artifacts[service].revision]));
   assert.deepEqual(P2_LIFECYCLE_OWNED_API_REVISIONS, revisions);
-  assert.deepEqual(selectP2LifecycleOwnedApiPair(selected), { ...selected, expiryFixed: selected.course === rehearsalRevisions.course });
+  assert.deepEqual(P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS, finalRevisions);
+  assert.deepEqual(selected, finalRevisions);
+  assert.deepEqual(selectP2LifecycleOwnedApiPair(selected), { ...selected, expiryFixed: true });
   for (const file of ["test-p2-lifecycle-persistence-local.mjs", "test-p2-lifecycle-receivers-local.mjs",
     "test-p2-known-ack-loss-local.mjs", "test-p2-lifecycle-worker-local.mjs"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
@@ -145,7 +149,8 @@ function forwardRecoveryReceipt(changes = {}) {
 function lifecyclePersistenceReceipt(manifestBytes, changes = {}) {
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   const sourceCommits = Object.fromEntries(Object.entries(manifest.sources).map(([service, source]) => [service, source.revision]));
-  const corrected = sourceCommits.course === rehearsalRevisions.course && sourceCommits.community === rehearsalRevisions.community;
+  const corrected = [rehearsalRevisions, finalRevisions]
+    .some(pair => sourceCommits.course === pair.course && sourceCommits.community === pair.community);
   const sourceSha256 = Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs",
     "p2-lifecycle-owned-source-manifest.mjs", "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs"]
     .map(name => [name, manifest.sources.frontend.files[`ops/platform/${name}`]]));
@@ -935,8 +940,9 @@ test("lifecycle receipt parser refuses missing, extra, drifted, skipped and part
   } finally { value.cleanup(); }
 });
 
-test("reviewed rehearsal requires mounted revision pins and the positive expiry check from the selected Course source", () => {
-  const value = harness(tap(), [], undefined, { sourceRevisions: rehearsalRevisions });
+for (const [name, selected] of [["rehearsal", rehearsalRevisions], ["final", finalRevisions]]) {
+test(`reviewed ${name} pair requires mounted revision pins and the positive expiry check from the selected Course source`, () => {
+  const value = harness(tap(), [], undefined, { sourceRevisions: selected });
   const originalRun = value.run;
   try {
     value.run = (file, args, options) => {
@@ -947,14 +953,14 @@ test("reviewed rehearsal requires mounted revision pins and the positive expiry 
     };
     const result = runLifecycle(value);
     const { sourceCommits, sourceSha256, sourceManifestSha256, courseRevokeSourceCommit, checks } = result.lifecyclePersistence;
-    assert.deepEqual(sourceCommits, { ...rehearsalRevisions, frontend: "d".repeat(40) });
-    assert.equal(courseRevokeSourceCommit, rehearsalRevisions.course);
+    assert.deepEqual(sourceCommits, { ...selected, frontend: "d".repeat(40) });
+    assert.equal(courseRevokeSourceCommit, selected.course);
     assert.equal(checks.at(-1), correctedExpiryCheck);
     assert.deepEqual(result.lifecycleReceivers.sourceCommits, sourceCommits);
     const expected = { sourceCommits, sourceSha256, sourceManifestSha256 };
     const input = value.calls.find(call => call.file === "docker" && call.args.includes("ops/platform/test-p2-lifecycle-persistence-local.mjs")).input;
     const receipt = JSON.parse(lifecyclePersistenceReceipt(input));
-    assert.equal(parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(receipt), expected).courseRevokeSourceCommit, rehearsalRevisions.course);
+    assert.equal(parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(receipt), expected).courseRevokeSourceCommit, selected.course);
     const changes = [value => { delete value.courseRevokeSourceCommit; },
       value => { value.courseRevokeSourceCommit = revisions.course; },
       value => { value.checks = P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS; }];
@@ -969,13 +975,18 @@ test("reviewed rehearsal requires mounted revision pins and the positive expiry 
       { ...expected, sourceCommits: mixed }), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
   } finally { value.cleanup(); }
 });
+}
 
-test("lifecycle preparation refuses a mixed historical and rehearsal pair before fetching sources", () => {
-  const value = harness(tap(), [], undefined, { sourceRevisions: { ...revisions, course: rehearsalRevisions.course } });
-  try {
-    assert.throws(() => runLifecycle(value), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
-    assert.equal(value.calls.length, 0);
-  } finally { value.cleanup(); }
+test("lifecycle preparation refuses mixed historical, rehearsal, and final pairs before fetching sources", () => {
+  for (const sourceRevisions of [{ course: rehearsalRevisions.course, community: revisions.community },
+    { course: finalRevisions.course, community: rehearsalRevisions.community },
+    { course: revisions.course, community: finalRevisions.community }]) {
+    const value = harness(tap(), [], undefined, { sourceRevisions });
+    try {
+      assert.throws(() => runLifecycle(value), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+      assert.equal(value.calls.length, 0);
+    } finally { value.cleanup(); }
+  }
 });
 
 test("receiver receipt parser requires PostgreSQL 18, all twelve checks, eight HTTP cases, and exact mounted source evidence", () => {

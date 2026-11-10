@@ -6,9 +6,11 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import {
   P2_LIFECYCLE_OWNED_API_REVISIONS,
+  P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS,
   P2_LIFECYCLE_OWNED_REHEARSAL_API_REVISIONS,
   P2_LIFECYCLE_OWNED_SOURCE_CLOSURE,
   p2LifecycleOwnedSourceFileMap,
+  selectP2LifecycleOwnedApiPair,
   verifyP2LifecycleOwnedSourceManifest,
 } from "./p2-lifecycle-owned-source-manifest.mjs";
 
@@ -72,6 +74,20 @@ test("fixed PG18 manifest verifies exact mounted frontend and API closures", () 
     rmSync(join(roots.community, "dist/unlisted.js")); symlinkSync("owned.txt", join(roots.community, "dist/link.js"));
     assert.throws(() => verifyP2LifecycleOwnedSourceManifest(raw, roots), /P2_LIFECYCLE_OWNED_SOURCE_MANIFEST_REFUSED/u);
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("owned source policy accepts only the exact historical, rehearsal, and final pairs", () => {
+  const pairs = [P2_LIFECYCLE_OWNED_API_REVISIONS, P2_LIFECYCLE_OWNED_REHEARSAL_API_REVISIONS, P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS];
+  for (const coursePair of pairs) {
+    for (const communityPair of pairs) {
+      const selection = { course: coursePair.course, community: communityPair.community };
+      if (coursePair === communityPair) {
+        assert.deepEqual(selectP2LifecycleOwnedApiPair(selection), { ...selection, expiryFixed: coursePair !== pairs[0] });
+      } else {
+        assert.throws(() => selectP2LifecycleOwnedApiPair(selection), /P2_LIFECYCLE_OWNED_SOURCE_MANIFEST_REFUSED/u);
+      }
+    }
+  }
 });
 
 test("corrected Course rehearsal requires matching mounted pins and artifact digests", () => {

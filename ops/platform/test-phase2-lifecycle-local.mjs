@@ -15,10 +15,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
+import { P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS as pins } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const frontendRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const driverRoot = join(frontendRoot, "ops/platform/harness");
-const pins = { course: "54fd289a5a8579bfbe343afb07482f406b56ad5b", community: "929fdeb13e0e5f5e25454a457961d6ed965dedff" };
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 const canonical = name => `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : `${name}-api`}.git`;
