@@ -83,11 +83,19 @@ try {
   await assert.rejects(fetch("http://172.29.20.10:4000/health", { signal: AbortSignal.timeout(1500) }));
   records.push({ name: "private-peer-spoofing-and-direct-backend-denial", passed: true });
 
-  const muxBody = JSON.stringify({ id: randomUUID(), type: "fixture.unsupported", created_at: new Date().toISOString(), data: {} });
+  const muxEvent = { id: randomUUID(), type: "fixture.unsupported", created_at: new Date().toISOString(), data: {} };
+  const muxEnvironment = process.env.HARNESS_MUX_ENVIRONMENT_ID;
+  const p2Mux = process.env.HARNESS_CONTRACT_PHASE === "p2";
+  if (p2Mux) assert.ok(muxEnvironment);
+  const muxBody = JSON.stringify(p2Mux ? { ...muxEvent, environment: { id: muxEnvironment } } : muxEvent);
   assert.equal((await raw("/course/v1/webhooks/mux", { method: "POST", headers: { "content-type": "application/json", "mux-signature": "invalid" }, body: muxBody })).status, 400);
-  const timestamp = Math.floor(Date.now() / 1000);
-  const signature = createHmac("sha256", process.env.HARNESS_MUX_SECRET).update(`${timestamp}.${muxBody}`).digest("hex");
-  const acceptedMux = await raw("/course/v1/webhooks/mux", { method: "POST", headers: { "content-type": "application/json", "mux-signature": `t=${timestamp},v1=${signature}` }, body: muxBody });
+  const postSignedMux = (body) => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHmac("sha256", process.env.HARNESS_MUX_SECRET).update(`${timestamp}.${body}`).digest("hex");
+    return raw("/course/v1/webhooks/mux", { method: "POST", headers: { "content-type": "application/json", "mux-signature": `t=${timestamp},v1=${signature}` }, body });
+  };
+  if (p2Mux) assert.equal((await postSignedMux(JSON.stringify({ ...muxEvent, environment: { id: "foreign-fixture" } }))).status, 400);
+  const acceptedMux = await postSignedMux(muxBody);
   assert.ok([200, 204].includes(acceptedMux.status), `Mux status ${acceptedMux.status}`);
   records.push({ name: "signed-mux-only-exception", passed: true });
 
