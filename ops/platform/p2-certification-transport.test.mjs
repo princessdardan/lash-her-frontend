@@ -28,10 +28,12 @@ for raw in sys.stdin:
   assert json.loads(base64.b64decode(p['receipt']))['status']=='P2_CERTIFICATION_DATABASE_CURRENT'
   if sys.argv[2]=='death':os._exit(31)
   value.update(status='CERTIFICATION_ARMED',receipt={'status':'P2_CERTIFICATION_CURRENT_READY'})
- elif op=='scoped-mux-readiness-observe':
-  assert initial['certificationPlan']['mode']=='mux-readiness' and set(p)=={'id','operation'}
+ elif op in ('scoped-mux-readiness-observe','scoped-mux-replacement-observe'):
+  mode,case_status={'scoped-mux-readiness-observe':('mux-readiness','P2_SCOPED_MUX_READY_OBSERVED'),
+    'scoped-mux-replacement-observe':('mux-replacement-evidence','P2_SCOPED_MUX_SUPERSEDED_BEFORE_EXPIRY')}[op]
+  assert initial['certificationPlan']['mode']==mode and set(p)=={'id','operation'}
   value.update(status='CERTIFICATION_SCOPED_OBSERVED',receipt={'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile'],
-    'status':'P2_SCOPED_MUX_READY_OBSERVED'})
+    'status':case_status})
  elif op=='certification-gateway-stage':value.update(status='CERTIFICATION_GATEWAY_OBSERVED',receipt={'gateway':{'newWork':p['stage']=='browser','recovery':False}})
  elif op=='worker-ready':
   assert certification_mode=='direct-worker';value.update(status='CERTIFICATION_WORKER_READY',receipt={'bindingSha256':initial['certificationPlan']['workerPlanSha256']})
@@ -190,6 +192,20 @@ test('profiled Mux readiness transport permits only its single scoped read comma
    assert.equal(receipt.status,'P2_SCOPED_MUX_READY_OBSERVED');
    await host.prepareClose(receipt);
    await assert.rejects(host.scopedStage('scoped-mux-readiness-observe'));
+   await host.finish(f.outcome);
+  });
+ }finally{f.cleanup();}
+});
+
+test('profiled Mux replacement transport uses its fixed observation pipe command',async()=>{
+ const f=fixture('mux-replacement-evidence',true,'mux-replacement-evidence');try{
+  await f.factory(async(_verify,_signal,host)=>{
+   await host.arm({receipt:f.receipt,probe:{}});
+   await assert.rejects(host.scopedStage('scoped-mux-readiness-observe'));
+   await assert.rejects(host.scopedStage('scoped-mux-open'));
+   const receipt=await host.scopedStage('scoped-mux-replacement-observe');
+   assert.equal(receipt.status,'P2_SCOPED_MUX_SUPERSEDED_BEFORE_EXPIRY');
+   await host.prepareClose(receipt);
    await host.finish(f.outcome);
   });
  }finally{f.cleanup();}

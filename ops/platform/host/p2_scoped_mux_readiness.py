@@ -18,7 +18,7 @@ _ZERO = {"newWork": 0, "recovery": 0}
 
 # Hash the playback identifier inside Postgres. It never enters the host query
 # output, request parameters, application, or certification receipt.
-_READY_QUERY = profiled_course_query('''SELECT a.id::text AS "attemptId", a.generation,
+READY_SELECT = '''SELECT a.id::text AS "attemptId", a.generation,
        a.provider_environment_id AS "environmentId", a.mux_upload_id AS "uploadId",
        a.mux_asset_id AS "assetId", c.id::text AS "courseId", l.id::text AS "lessonId",
        encode(sha256(convert_to(a.mux_playback_id,'UTF8')),'hex') AS "playbackIdSha256",
@@ -34,7 +34,8 @@ _READY_QUERY = profiled_course_query('''SELECT a.id::text AS "attemptId", a.gene
    AND a.mux_playback_id IS NOT NULL AND a.mux_playback_id <> ''
    AND c.status IN ('draft', 'published') AND l.archived_at IS NULL AND m.archived_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM public.video_assets later
-                    WHERE later.lesson_id = l.id AND later.generation > a.generation)''')
+                    WHERE later.lesson_id = l.id AND later.generation > a.generation)'''
+_READY_QUERY = profiled_course_query(READY_SELECT)
 
 
 def validate_selection(value):
@@ -78,41 +79,45 @@ def require_ready_row(action, row):
              "P2_SCOPED_MUX_READINESS_READY_ROW_REQUIRED")
 
 
-def require_receipt(plan, receipt, gateway_admission=None):
-    action = validate_selection(plan["scopedAction"])
+def require_held_receipt(plan, receipt, status, extra, gateway_admission=None):
     fields = {"version", "qualificationTargetProfile", "status", "environment", "planSha256", "scopedAction",
               "certificationActionId", "candidateSha256", "frontendEpoch", "gatewayProcessSha256", "gatewayStateSha256",
-              "courseMigrationImage", "courseDatabaseReceiptSha256", "databaseIdentitySha256", "readyRowSha256",
-              "readOnly", "nativeEnabled", "muxProviderTouched", "trafficAuthorized", "releaseAccepted"}
+              "courseMigrationImage", "courseDatabaseReceiptSha256", "databaseIdentitySha256",
+              "readOnly", "nativeEnabled", "muxProviderTouched", "trafficAuthorized", "releaseAccepted"} | extra
     _require(type(receipt) is dict and set(receipt) == fields and type(receipt["version"]) is int and
-             receipt["version"] == 2 and receipt["status"] == _STATUS and receipt["scopedAction"] == action and
-             type(receipt["scopedAction"]["generation"]) is int and
+             receipt["version"] == 2 and receipt["status"] == status and
+             _canonical(receipt["scopedAction"]) == _canonical(plan["scopedAction"]) and
              all(receipt[key] == plan[key] for key in ("environment", "planSha256", "certificationActionId",
                                                        "candidateSha256", "gatewayProcessSha256")) and
              receipt["frontendEpoch"] == plan["initialEpoch"] and receipt["readOnly"] is True and
              all(receipt[key] is False for key in ("nativeEnabled", "muxProviderTouched", "trafficAuthorized", "releaseAccepted")) and
              type(receipt["courseMigrationImage"]) is str and "@sha256:" in receipt["courseMigrationImage"] and
              all(_digest(receipt[key]) for key in ("gatewayStateSha256", "courseDatabaseReceiptSha256",
-                                                    "databaseIdentitySha256", "readyRowSha256")) and
-             receipt["readyRowSha256"] == _hash(_canonical(_ready_row(action))) and
+                                                    "databaseIdentitySha256")) and
              (gateway_admission is None or receipt["gatewayStateSha256"] == gateway_admission.get("sha256")),
              "P2_SCOPED_MUX_READINESS_RECEIPT_REQUIRED")
     migrate.require_profile(_PROFILE, receipt)
 
 
-class P2ScopedMuxReadinessStage:
-    def __init__(self, broker):
+def require_receipt(plan, receipt, gateway_admission=None):
+    action = validate_selection(plan["scopedAction"])
+    require_held_receipt(plan, receipt, _STATUS, {"readyRowSha256"}, gateway_admission)
+    _require(receipt["readyRowSha256"] == _hash(_canonical(_ready_row(action))),
+             "P2_SCOPED_MUX_READINESS_RECEIPT_REQUIRED")
+
+
+class P2HeldMuxReadStage:
+    def __init__(self, broker, *, mode, source_key, source):
         from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
 
         _require(type(broker) is P2ProfiledCertificationBroker and type(broker.scope) is P2CertificationScope and
                  broker.certification_profile() == broker.scope._expected_profile == _PROFILE and
-                 broker.initial["sourceSha256"].get(_SOURCE_KEY) == _hash(_SOURCE.read_bytes()),
+                 broker.initial["sourceSha256"].get(source_key) == _hash(source.read_bytes()),
                  "P2_SCOPED_MUX_READINESS_PARENT_REQUIRED")
         self.broker, self.scope = broker, broker.scope
         self.plan = self.scope.certification_plan
-        _require(self.plan["mode"] == "mux-readiness" and self.plan["startState"] == "already-closed",
+        _require(self.plan["mode"] == mode and self.plan["startState"] == "already-closed",
                  "P2_SCOPED_MUX_READINESS_PARENT_REQUIRED")
-        self.action = validate_selection(self.plan["scopedAction"])
         self.attempted = False
 
     def _fence(self):
@@ -137,40 +142,62 @@ class P2ScopedMuxReadinessStage:
         broker = self.broker
         return _require_closed(self.plan, broker.observer.probe("observe")["admission"], broker._gateway_current())
 
-    def observe(self):
-        from current_databases import read_certification_api_proof
-
+    def _begin(self):
         _require(not self.attempted, "P2_SCOPED_MUX_READINESS_ALREADY_ATTEMPTED")
         self.attempted = True
+        return self._fence()
+
+    def _environment(self, service):
         broker = self.broker
-        fence = self._fence()
+        name = service + ".env"
+        configuration = migrate.read_input(broker.configuration, name, 65_536)
+        _require(_hash(configuration) == broker.initial["configurationSha256"][name],
+                 "P2_SCOPED_MUX_READINESS_COURSE_CONFIGURATION_CHANGED")
+        return runtime.environment_values(configuration, "staging", service, broker.jobs, expected_profile=_PROFILE)
+
+    def _query(self, script, parameters, selected_environment):
+        from current_databases import read_certification_api_proof
+
+        broker = self.broker
         _, proof = read_certification_api_proof(broker.api_proof, self.scope, broker.selected, broker.jobs,
                                                 expected_profile=_PROFILE)
-        configuration = migrate.read_input(broker.configuration, "course-api.env", 65_536)
-        _require(_hash(configuration) == broker.initial["configurationSha256"]["course-api.env"],
-                 "P2_SCOPED_MUX_READINESS_COURSE_CONFIGURATION_CHANGED")
-        environment_id = runtime.environment_values(configuration, "staging", "course-api", broker.jobs,
-                                                    expected_profile=_PROFILE).get("MUX_ENVIRONMENT_ID")
-        _require(environment_id == self.action["environmentId"], "P2_SCOPED_MUX_READINESS_ENVIRONMENT_REQUIRED")
+        _require(self._environment("course-api").get("MUX_ENVIRONMENT_ID") == selected_environment,
+                 "P2_SCOPED_MUX_READINESS_ENVIRONMENT_REQUIRED")
         course = broker.jobs["course"]
         image, target = course["image"], course["job"]["target"]
         image_receipt = proof["databases"]["course"]
         _require(image == broker.selected["artifacts"]["courseMigration"]["image"] == image_receipt["image"],
                  "P2_SCOPED_MUX_READINESS_COURSE_IMAGE_REQUIRED")
-        parameters = [self.action[key] for key in ("attemptId", "generation", "environmentId", "uploadId", "assetId",
-                                                    "courseId", "lessonId")]
         result = run_profiled_course_query(self.scope, image, target,
-                    broker.initial["credentials"]["COURSE_STAGING_DATABASE_URL"], _READY_QUERY, parameters)
+                    broker.initial["credentials"]["COURSE_STAGING_DATABASE_URL"], script, parameters)
         identity, row = course_query_row(result, target, profiled=True)
-        require_ready_row(self.action, row)
+        return row, {"courseMigrationImage": image, "courseDatabaseReceiptSha256": image_receipt["receiptSha256"],
+                     "databaseIdentitySha256": _hash(_canonical(identity))}
+
+    def _finish(self, fence, status, binding):
         _require(self._fence() == fence, "P2_SCOPED_MUX_READINESS_FENCE_CHANGED")
-        receipt = {"version": 2, "qualificationTargetProfile": copy.deepcopy(_PROFILE), "status": _STATUS,
-                   "scopedAction": copy.deepcopy(self.action), **fence,
-                   **{key: self.plan[key] for key in ("environment", "planSha256", "certificationActionId",
-                                                    "candidateSha256", "gatewayProcessSha256")},
-                   "courseMigrationImage": image, "courseDatabaseReceiptSha256": image_receipt["receiptSha256"],
-                   "databaseIdentitySha256": _hash(_canonical(identity)), "readyRowSha256": _hash(_canonical(row)),
-                   "readOnly": True, "nativeEnabled": False, "muxProviderTouched": False, "trafficAuthorized": False,
-                   "releaseAccepted": False}
+        return {"version": 2, "qualificationTargetProfile": copy.deepcopy(_PROFILE), "status": status,
+                "scopedAction": copy.deepcopy(self.action), **fence,
+                **{key: self.plan[key] for key in ("environment", "planSha256", "certificationActionId",
+                                                 "candidateSha256", "gatewayProcessSha256")}, **binding,
+                "readOnly": True, "nativeEnabled": False, "muxProviderTouched": False, "trafficAuthorized": False,
+                "releaseAccepted": False}
+
+
+def readiness_parameters(action):
+    return [action[key] for key in ("attemptId", "generation", "environmentId", "uploadId", "assetId",
+                                   "courseId", "lessonId")]
+
+
+class P2ScopedMuxReadinessStage(P2HeldMuxReadStage):
+    def __init__(self, broker):
+        super().__init__(broker, mode="mux-readiness", source_key=_SOURCE_KEY, source=_SOURCE)
+        self.action = validate_selection(self.plan["scopedAction"])
+
+    def observe(self):
+        fence = self._begin()
+        row, identity = self._query(_READY_QUERY, readiness_parameters(self.action), self.action["environmentId"])
+        require_ready_row(self.action, row)
+        receipt = self._finish(fence, _STATUS, {**identity, "readyRowSha256": _hash(_canonical(row))})
         require_receipt(self.plan, receipt)
         return receipt

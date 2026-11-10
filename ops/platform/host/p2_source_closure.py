@@ -132,7 +132,9 @@ def verify_profiled_current_source_closure(initial, root):
                                       'ops/gateway/assessment-attempt.mjs', 'ops/gateway/lesson-resume-position.mjs',
                                       'ops/gateway/private-tls.mjs'},
             'mux-readiness': {'ops/platform/host/p2_scoped_mux_readiness.py', 'ops/platform/host/p2_scoped_mux.py',
-                              'ops/platform/p2-certification-transport.mjs'},
+                              'ops/platform/host/p2_scoped_mux_replacement.py', 'ops/platform/p2-certification-transport.mjs'},
+            'mux-replacement-evidence': {'ops/platform/host/p2_scoped_mux_readiness.py', 'ops/platform/host/p2_scoped_mux.py',
+                                         'ops/platform/host/p2_scoped_mux_replacement.py', 'ops/platform/p2-certification-transport.mjs'},
             'lifecycle-persistence': {'ops/platform/host/p2_lifecycle_persistence_probe.py'},
             'interactive-browser': {'ops/platform/host/p2_interactive_window.py', 'ops/platform/host/p2_interactive_ingress.py',
                                     'ops/gateway/admission.mjs', 'ops/gateway/assessment-attempt.mjs',
@@ -147,8 +149,12 @@ def verify_profiled_current_source_closure(initial, root):
             required |= {'ops/platform/host/p2_day_two_workload.py', 'ops/platform/host/p2_canonical_browser_origin.py'}
         if certification.get('mode') == 'direct-worker':
             required.add('ops/platform/host/p2_lifecycle_worker_evidence.py')
-        if certification.get('mode') == 'interactive-browser' and \
-                (certification.get('scopedAction') or {}).get('stage') == 'stalled-playback-renewal':
+        action = certification.get('scopedAction') or {}
+        if certification.get('mode') == 'interactive-browser' and action.get('stage') == 'media' and \
+                (action.get('mediaAction') or {}).get('operation') == 'upload-video-and-observe-callback':
+            required |= {'ops/platform/host/p2_scoped_mux_replacement.py', 'ops/platform/host/p2_scoped_mux_readiness.py',
+                         'ops/platform/host/p2_scoped_mux.py'}
+        if certification.get('mode') == 'interactive-browser' and action.get('stage') == 'stalled-playback-renewal':
             required.add('ops/platform/p2-certification-transport.mjs')
     manifest = initial.get('sourceSha256')
     if type(manifest) is dict and MANAGED_REPLACEMENT_SOURCE_REQUIRED.intersection(manifest):

@@ -1329,6 +1329,9 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
             'verify-delete': 'P2_LIFECYCLE_DELETE_PERSISTENCE_VERIFIED',
         }.get(plan.get('scopedAction', {}).get('stage')),
     }.get(plan['mode'])
+    if plan['mode'] == 'mux-replacement-evidence':
+        from p2_scoped_mux_replacement import STATUS
+        scoped_status = STATUS[plan['scopedAction']['stage']]
     if plan['mode'] == 'interactive-browser':
         from p2_interactive_window import (SCOPED_GATEWAY_BROWSER_STAGES, browser_artifact, browser_case_evidence,
                                             browser_evidence_limit, browser_receipt, browser_status, media_upload_selected,
@@ -1352,6 +1355,11 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
             require_receipt(plan, case, gateway)
             require(case['courseMigrationImage'] == initial['candidate']['artifacts']['courseMigration']['image'],
                     'P2_PROFILED_CERTIFICATION_GUARD_MUX_READINESS_IMAGE_REFUSED')
+        if plan['mode'] == 'mux-replacement-evidence':
+            from p2_scoped_mux_replacement import prior_evidence, require_receipt
+            require_receipt(plan, case, prior_evidence(plan, Path(initial['results'])), gateway)
+            require(case['courseMigrationImage'] == initial['candidate']['artifacts']['courseMigration']['image'],
+                    'P2_PROFILED_CERTIFICATION_GUARD_MUX_REPLACEMENT_IMAGE_REFUSED')
         if plan['mode'] == 'interactive-browser':
             program_sha = verify_browser_controller(initial, source or Path(__file__).resolve().parents[3])
             evidence = decode_qualification_target_json(
@@ -1736,9 +1744,14 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                 _profiled_certification_containers(remove=False)
             verify_guard_boundary(initial, source)
             from p2_interactive_window import media_upload_selected
-            if media_upload_selected(initial['certificationPlan']):
+            cert = initial['certificationPlan']
+            mux_upload = media_upload_selected(cert)
+            if mux_upload:
                 _verify_media_upload_after_reap(initial, source, terminal)
-            if initial['certificationPlan'].get('scopedAction', {}).get('stage') == 'lesson-resume':
+            if mux_upload or cert['mode'] in ('mux-readiness', 'mux-replacement-evidence'):
+                from p2_scoped_mux_replacement import retain_guard
+                retain_guard(initial, terminal, committed)
+            if cert.get('scopedAction', {}).get('stage') == 'lesson-resume':
                 from p2_certification_parent import retain_profiled_resume_guard
                 retain_profiled_resume_guard(initial, terminal, committed)
             if replacement_certification and initial['certificationPlan']['mode'] == 'known-ack-recovery':
