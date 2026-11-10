@@ -82,6 +82,7 @@ action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpo
 enrollment=action.get('identityEnrollment')
 first_owner=action.get('firstOwner')
 authoring=stage=='authoring';learning=stage=='learning';paid_grant=stage=='paid-grant';gateway_observation=None
+media=stage=='media';media_action=action.get('mediaAction',{});joined_upload=media_action.get('operation')=='upload-video-and-observe-callback'
 learner_access=stage=='learner-access';access_action=action.get('learnerAccessAction',{})
 paid_revoke=stage=='paid-revoke';revoke_action=action.get('paidRevokeAction',{})
 lesson_entry=stage=='lesson-entry';entry_action=action.get('lessonEntryAction',{})
@@ -93,7 +94,7 @@ ack_loss=stage=='lesson-ack-loss';ack_loss_action=action.get('ackLossAction',{})
 exit_save=stage=='lesson-exit-save';exit_save_action=action.get('exitSaveAction',{})
 visibility=stage=='lesson-visibility-save';visibility_action=action.get('visibilityAction',{})
 stale_revision=stage=='lesson-stale-revision';stale_revision_action=action.get('staleRevisionAction',{})
-gateway_scoped=authoring or learning or paid_grant or learner_access or paid_revoke or lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision
+gateway_scoped=authoring or media or learning or paid_grant or learner_access or paid_revoke or lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision
 access_outcome=access_action.get('outcome')
 access_status={'allowed':200,'archived':410,'draft':404,'restricted':403}.get(access_outcome)
 learning_action=action.get('learningAction',{});paid_grant_action=action.get('paidGrantAction',{})
@@ -113,6 +114,8 @@ def fixture_id(suffix):return f'12345678-1234-4123-8123-{suffix:012d}'
 def activation(event_id):
  return {'streamId':fixture_id(29),'streamVersion':1,'eventId':event_id,'canonicalDigest':'5'*64,'state':'active'}
 post_request=fixture_id(4);stale_request=fixture_id(6)
+media_callback={'callbackReceiptSha256':'9'*64,'requestId':'owned-callback','eventId':'owned-event','assetId':'owned-provider-asset'}
+media_intent='6'*64;media_waits=0;media_dispatch=None
 readiness_request=fixture_id(27) if republish else post_request
 initial_time=int(time.time());expires=initial_time+120
 def iso(seconds):return datetime.fromtimestamp(seconds,timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
@@ -129,7 +132,8 @@ for raw in sys.stdin:
  elif op=='arm-certification':value.update(status='CERTIFICATION_ARMED',receipt={'status':'P2_CERTIFICATION_CURRENT_READY'})
  elif op.startswith('interactive-'):
   assert p['controllerChallenge']==binding['challenge']
-  assert set(p)=={'id','operation','controllerChallenge'}|({'caseEvidence'} if op=='interactive-retain' else set())
+  assert set(p)=={'id','operation','controllerChallenge'}|({'caseEvidence'} if op in ('interactive-retain','interactive-media-arm') else
+   {'dispatchEvidence'} if op=='interactive-media-observe' else set())
   value['status']='CERTIFICATION_INTERACTIVE_OBSERVED'
   if op=='interactive-prepare':
    assert phase=='new';phase='prepared'
@@ -148,6 +152,8 @@ for raw in sys.stdin:
     owner=fixture_id(2) if behavior=='wrong-owner' else action['actorId']
     key=fixture_id(2) if behavior=='wrong-idempotency-key' else (revoke_action if paid_revoke else paid_grant_action)['idempotencyKey']
     selector=owner.replace('-','')+key.replace('-','')
+   elif media:
+    selector=(action['actorId']+media_action['courseId']+media_action['lessonId']).replace('-','')
    elif lesson_entry or lesson_denial or assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision:
     selected_lesson=entry_action if lesson_entry else denial_action if lesson_denial else assessment_action if assessment else resume_action if resume else restore_action if restore else ack_loss_action if ack_loss else exit_save_action if exit_save else visibility_action if visibility else stale_revision_action
     learner=fixture_id(2) if behavior=='wrong-learner' else action['actorId']
@@ -201,6 +207,7 @@ for raw in sys.stdin:
     value['receipt']={**base,'status':status('GATEWAY_OBSERVATION_REFUSED')}
    else:
     selected=[(11,13,0,200),(12,14,0,200),(4,15,1,200),(16,17,0,200),(6,18,2,409)] if changes_existing else [(11,13,0,200),(4,12,1,201)]
+    if media:selected=[(11,13,0,200),(12,14,1,200),(4,15,2,201)]
     if create_curriculum:selected.append((16,17,0,200))
     if archive:selected=[(11,13,0,200),(4,12,1,200),(16,17,0,200)]
     if publication:
@@ -291,13 +298,46 @@ for raw in sys.stdin:
      'gatewayAcknowledgements':acks,'gatewayActive':0,'gatewayUncertain':0}
     gateway_observation['gatewayEvidenceSha256']='0'*64 if behavior=='wrong-observe-hash' else digest(gateway_observation)
     value['receipt']=gateway_observation
+  elif op=='interactive-media-arm':
+   assert joined_upload and phase=='fenced';phase='media-armed'
+   assert set(p['caseEvidence'])=={'browserResponse'} and p['caseEvidence']['browserResponse']['reservation']['requestId']==post_request
+   media_expiry=int(time.time())+2 if behavior=='media-wait-timeout' else expires+1 if behavior=='wrong-arm-expiry' else expires
+   value['receipt']={**base,'status':status('UPLOAD_ARMED'),'intentSha256':media_intent,'expiresAt':media_expiry}
+  elif op=='interactive-media-observe':
+   assert joined_upload and phase=='media-armed' and p['dispatchEvidence']=={'attempted':True,'status':201}
+   if media_dispatch is None:media_dispatch=p['dispatchEvidence']
+   assert media_dispatch==p['dispatchEvidence']
+   if behavior=='media-ambiguous':
+    value['receipt']={**base,'status':status('UPLOAD_UNCERTAIN')}
+   elif media_waits==0 or behavior=='media-wait-timeout':
+    media_waits+=1
+    value['receipt']={**base,'status':status('UPLOAD_WAITING')}
+   else:
+    phase='media-observed'
+    value['receipt']={**base,'status':status('UPLOAD_OBSERVED'),**media_callback}
+    if behavior=='wrong-callback':value['receipt']['requestId']=post_request
   elif op=='interactive-fence':
    assert phase in ('opened','issued','observed');phase='fenced'
    value['receipt']={**base,**fence,'status':status('FENCED')}
   elif op=='interactive-retain':
-   assert phase=='fenced';phase='retained'
+   assert phase==('media-observed' if joined_upload else 'fenced');phase='retained'
    evidence=p['caseEvidence']
-   if lesson_entry:
+   if media:
+    assert gateway_observation and set(evidence)=={'browserResponse'}
+    response=evidence['browserResponse'];reservation=response['reservation']
+    assert response['read']['requestId']==fixture_id(12) and reservation['requestId']==post_request
+    joined={'actorId':action['actorId'],'operation':media_action['operation'],'courseId':media_action['courseId'],
+     'lessonId':media_action['lessonId'],'courseRevision':media_action['revision']+1,'currentVideoAssetId':media_action['currentVideoAssetId'],
+     'attemptId':reservation['assetId'],'uploadId':reservation['uploadId'],'assetStatus':'uploading',
+     'isCurrent':media_action['currentVideoAssetId'] is None,'uploadTimeoutSeconds':3600,'fileSha256':media_action['fileSha256'],
+     'fileBytes':media_action['fileBytes'],'contentType':media_action['contentType'],'uploadIntercepted':True,'uploadSent':joined_upload,
+     'gatewayPostRequestId':post_request,'browserResponseSha256':digest(response),
+     'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256'],'generation':2,'environmentId':'owned-mux',
+     'courseWitnessSha256':'8'*64}
+    if joined_upload:
+     joined['upload']={'intentSha256':media_intent,**media_callback,'httpStatus':media_dispatch['status']}
+     if behavior=='wrong-join':joined['upload']['assetId']='different-provider-asset'
+   elif lesson_entry:
     assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
     response=evidence['browserResponse'];witness=evidence['courseWitness']
     assert response['page']=={'pathname':'/academy/courses/'+entry_action['courseId']+'/lessons/'+entry_action['lessonId'],'flight':True}
@@ -607,7 +647,7 @@ for raw in sys.stdin:
    value['receipt']={**base,**fence,**joined,'status':status('JOINED'),
     'browserProgramSha256':binding['browserProgramSha256'],
     'frontendAdmission':{'epoch':str(int(epoch)+1),'newWork':False,'recovery':False,'active':0,'uncertain':0},
-    'frontendOperationCount':(7 if behavior=='unexpected-frontend-operation' else 8) if stale_revision else
+    'frontendOperationCount':3 if media else (7 if behavior=='unexpected-frontend-operation' else 8) if stale_revision else
      (4 if behavior=='unexpected-frontend-operation' else 3) if (exit_save or visibility) else
      (6 if behavior=='unexpected-frontend-operation' else 5) if ack_loss else
      (3 if behavior=='unexpected-frontend-operation' else 2) if restore else
@@ -645,6 +685,7 @@ const commandId='12345678-1234-4123-8123-000000000003',requestId='12345678-1234-
 const staleRequestId='12345678-1234-4123-8123-000000000006';
 const {certificationStage,actorKind,behavior,variant}=fixture;
 const identity=certificationStage==='identity',authoring=certificationStage==='authoring',learning=certificationStage==='learning';
+const media=certificationStage==='media',joinedUpload=media&&variant==='upload-video-and-observe-callback';
 const replay=learning&&variant==='exact-key-replay';
 const paidGrant=certificationStage==='paid-grant',learnerAccess=certificationStage==='learner-access';
 const secondPaid=paidGrant&&variant==='second-grant',priorGrantId='12345678-1234-4123-8123-000000000055';
@@ -656,7 +697,7 @@ const ackLoss=certificationStage==='lesson-ack-loss';
 const exitSave=certificationStage==='lesson-exit-save',spaExit=exitSave&&variant==='spa-navigation';
 const visibility=certificationStage==='lesson-visibility-save';
 const staleRevision=certificationStage==='lesson-stale-revision';
-const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
+const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
 const identityPair=identity&&variant==='two-sessions';
 const firstOwner=identity&&variant==='first-owner'?{nonce:'9'.repeat(32),identitySha256:'6'.repeat(64)}:null;
 const provider=identity&&!identityPair?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
@@ -680,6 +721,8 @@ const observeFailure=['observe-refused','wrong-observe-hash','wrong-observe-ack'
  'early-final-exit-ack','duplicate-final-exit-ack','early-final-visibility-ack','duplicate-final-visibility-ack','unexpected-outline-ack',
  'swap-conflict-read-ack'].includes(behavior);
 const skipObserve=behavior==='fence-without-observe';
+const mediaArmFailure=behavior==='wrong-arm-expiry';
+const mediaObservationFailure=['wrong-callback','media-wait-timeout','media-ambiguous'].includes(behavior);
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor,...(identityPair?{sessionCount:2}:{})};
 const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'.repeat(32)}:null;
@@ -704,6 +747,15 @@ const quizDocument={version:1,mode:'graded',passingPercent:80,questions:[{
  id:ids[0],prompt:'Which choice applies?',options:[{id:ids[1],text:'First'},{id:ids[2],text:'Second'}],correctOptionId:ids[1],feedback:'Review the lesson.',
 }]};
 const rawHash=body=>createHash('sha256').update(body).digest('hex'),emptyBodySha256=rawHash('');
+const mediaAction={operation:joinedUpload?'upload-video-and-observe-callback':'reserve-video-upload',courseId:commandId,lessonId,
+ revision:11,currentVideoAssetId:null,fileSha256:'6'.repeat(64),fileBytes:123,contentType:'video/mp4'};
+const mediaReadId='12345678-1234-4123-8123-000000000012';
+const mediaBrowserResponse={page:{pathname:'/admin/courses/'+commandId,status:200},
+ read:{requestId:mediaReadId,courseRevision:mediaAction.revision,currentVideoAssetId:null},
+ reservation:{requestId,status:200,assetId:itemId,lessonId,uploadId:'owned-upload',uploadTimeoutSeconds:3600,assetStatus:'uploading'},
+ outbound:{intercepted:true,sent:false,fileSha256:mediaAction.fileSha256,fileBytes:mediaAction.fileBytes,contentType:mediaAction.contentType}};
+const dispatchEvidence=Object.freeze({attempted:true,status:201});
+const callback={callbackReceiptSha256:'9'.repeat(64),requestId:'owned-callback',eventId:'owned-event',assetId:'owned-provider-asset'};
 const paidGrantAction={operation:'grant-paid-access',courseId:commandId,userId:target,revision:grantRevision,
  idempotencyKey,reasonSha256:rawHash(grantReason),...priorGrant};
 const remainingAccess=variant==='remaining-access',revokeKey='owner-paid-revoke:'+idempotencyKey;
@@ -827,6 +879,11 @@ const requests=staleRevision?[
   {method:'GET',target:studentCourse,bodySha256:emptyBodySha256,uses:2},
   {method:'POST',target:studentCourse+'/enrollments',bodySha256:rawHash(JSON.stringify({idempotencyKey})),uses:1},
   {method:'GET',target:student+'/progress?courseId='+commandId,bodySha256:emptyBodySha256,uses:1},
+]:media?[
+  {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:1},
+  {method:'GET',target:'/course/v1/admin/lessons/'+lessonId+'/video',bodySha256:emptyBodySha256,uses:1},
+  {method:'POST',target:'/course/v1/admin/lessons/'+lessonId+'/video-upload',
+   bodySha256:rawHash(JSON.stringify({expectedCourseRevision:mediaAction.revision,expectedCurrentVideoAssetId:null})),uses:1},
 ]:quiz?[
   {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:2},
   {method:'GET',target:'/course/v1'+quizPath,bodySha256:emptyBodySha256,uses:1},
@@ -848,7 +905,7 @@ const requests=staleRevision?[
   {method:'POST',target:'/course/v1/admin/courses',bodySha256:'8'.repeat(64),uses:1},
 ]:[];
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests,windowSeconds:120,
-  ...(firstOwner?{firstOwner}:identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:learning?{learningAction}:
+  ...(firstOwner?{firstOwner}:identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:media?{mediaAction}:learning?{learningAction}:
     paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:paidRevoke?{paidRevokeAction}:
     lessonEntry?{lessonEntryAction}:lessonDenial?{lessonDenialAction}:assessment?{assessmentAction}:resume?{resumeAction}:
     restore?{restoreAction}:ackLoss?{ackLossAction}:exitSave?{exitSaveAction}:visibility?{visibilityAction}:
@@ -865,7 +922,7 @@ const outcome={status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',sqlReplayed:
   version:2,qualificationTargetProfile:profile,planSha256};
 const fenced={status:status('FENCED'),version:2,qualificationTargetProfile:profile,certificationActionId:actionId,planSha256,
   stage:certificationStage,gatewayAdmissionClosed:true,gatewayActive:0,gatewayUncertain:0};
-let privatePacket,alive=true,installCount=0;
+let privatePacket,alive=true,installCount=0,dispatchTaken=false;
 const browser={
  async installPermit(permit,actualContext){
   assert.equal(actualContext,context);installCount++;
@@ -886,8 +943,15 @@ const spawn=(executable,args,options)=>{
 mock.module('node:child_process',{exports:{...childExports,spawn,default:{...defaultChild,spawn}}});
 mock.module(fixture.browserUrl,{exports:{readP2InteractiveBrowserControllerBinding(selected,controller){
   assert.ok(alive&&selected===plan&&controller===browser);return binding;
+},requireP2InteractiveBrowserMediaEvidence(selected,controller,reservation,dispatch){
+  assert.ok(joinedUpload&&alive&&selected===plan&&controller===browser&&reservation===mediaBrowserResponse);
+  if(dispatch!==undefined){
+   assert.equal(dispatchTaken,true);
+   assert.equal(dispatch.response,dispatchEvidence);
+   assert.equal(dispatch.intentSha256,'6'.repeat(64));
+  }
 }}});
-const {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage}=await import(fixture.transportUrl);
+const {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,takeP2InteractiveMediaDispatch}=await import(fixture.transportUrl);
 const start=(input=initial)=>p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},input,directory,{expectedProfile:profile});
 for(const changed of [
  {...initial,interactiveController:{...binding,cookie:'fixture-forbidden'}},
@@ -1217,7 +1281,7 @@ const staleWrites=[6,7,8,9,10,12,13].map((index,offset)=>({
 const staleConflict={requestId:staleId(17),expectedProgressRevision:8,resumePositionSeconds:0,maxPositionSeconds:14,status:409};
 const staleAuthoritative={...staleWrites[4],requestId:staleId(18)};
 const staleWitness={...restoreWitness,revision:13,resumePositionSeconds:14,maxPositionSeconds:14};
-const evidence=staleRevision?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
+const evidence=media?{browserResponse:mediaBrowserResponse}:staleRevision?{browserResponse:{page:{pathname:academyPath+'/lessons/'+lessonId,status:200},
  playback:stalePlayback,writes:staleWrites,conflict:staleConflict,authoritative:staleAuthoritative,
  reload:{documentReplaced:true,noReplay:true},media:{beforeSeconds:4,afterSeconds:14,paused:true,manifestObserved:true,segmentObserved:true}},
  courseWitness:staleWitness}
@@ -1307,6 +1371,13 @@ const result=start()(async(_verify,_signal,host)=>{
  assert.deepEqual(Object.keys(handle),[]);
  assert.throws(()=>readP2CertificationInteractiveStage(handle,{...plan}));
  const stage=readP2CertificationInteractiveStage(handle,plan);
+ if(joinedUpload){
+  await assert.rejects(stage.armMedia(evidence));
+  await assert.rejects(stage.observeMedia(dispatchEvidence));
+ }else{
+  assert.equal(stage.armMedia,undefined);
+  assert.equal(stage.observeMedia,undefined);
+ }
  if(gatewayScoped) await assert.rejects(stage.observe());
  else assert.equal(stage.observe,undefined);
  await assert.rejects(host.interactiveStage(browser));
@@ -1336,7 +1407,7 @@ const result=start()(async(_verify,_signal,host)=>{
    assert.equal(observed.status,status('GATEWAY_OBSERVED'));
    const mutation=lessonEntry?observed.gatewayAcknowledgements.find(row=>row.requestIndex===7):
     learnerAccess?observed.gatewayAcknowledgements[2]:lessonDenial?observed.gatewayAcknowledgements[10]:
-    observed.gatewayAcknowledgements.find(row=>row.requestIndex===(paidRevoke?3:learning||paidGrant?2:1));
+    observed.gatewayAcknowledgements.find(row=>row.requestIndex===(paidRevoke?3:media||learning||paidGrant?2:1));
    if(learnerAccess) assert.deepEqual(observed.gatewayAcknowledgements.slice(2).map(row=>row.requestId),accessReads.map(row=>row.requestId));
    else if(lessonDenial) assert.deepEqual(observed.gatewayAcknowledgements.slice(10).map(row=>row.requestId),denialReads.map(row=>row.requestId));
    else if(assessment) assert.deepEqual(observed.gatewayAcknowledgements.slice(7).map(row=>row.requestId),
@@ -1356,9 +1427,37 @@ const result=start()(async(_verify,_signal,host)=>{
   }
   await assert.rejects(stage.observe());
  }
+ if(joinedUpload)await assert.rejects(stage.armMedia(evidence));
  assert.deepEqual(await stage.fence(),fenced);
  await assert.rejects(stage.fence());
- if(observeFailure||skipObserve){
+ if(joinedUpload){
+  await assert.rejects(stage.observeMedia(dispatchEvidence));
+  await assert.rejects(stage.armMedia({browserResponse:{...mediaBrowserResponse}}));
+  if(mediaArmFailure){
+   await assert.rejects(stage.armMedia(evidence),{message:'P2_CERTIFICATION_INTERACTIVE_MEDIA_ARM_FAILED'});
+  }else{
+   const armed=await stage.armMedia(evidence);
+   assert.equal(armed.status,status('UPLOAD_ARMED'));
+   await assert.rejects(stage.armMedia(evidence));
+   assert.throws(()=>takeP2InteractiveMediaDispatch(plan,browser,{...armed}));
+   assert.throws(()=>takeP2InteractiveMediaDispatch({...plan},browser,armed));
+   assert.throws(()=>takeP2InteractiveMediaDispatch(plan,{},armed));
+   assert.deepEqual(takeP2InteractiveMediaDispatch(plan,browser,armed),{intentSha256:'6'.repeat(64),expiresAt:armed.expiresAt});
+   dispatchTaken=true;
+   assert.throws(()=>takeP2InteractiveMediaDispatch(plan,browser,armed));
+   await assert.rejects(stage.observeMedia({...dispatchEvidence}));
+   await assert.rejects(stage.observeMedia({attempted:true,status:302}));
+   if(mediaObservationFailure){
+    await assert.rejects(stage.observeMedia(dispatchEvidence),{message:'P2_CERTIFICATION_INTERACTIVE_MEDIA_OBSERVE_FAILED'});
+   }else{
+    const observed=await stage.observeMedia(dispatchEvidence);
+    assert.equal(observed.status,status('UPLOAD_OBSERVED'));
+    assert.deepEqual(Object.fromEntries(Object.keys(callback).map(key=>[key,observed[key]])),callback);
+   }
+   await assert.rejects(stage.observeMedia(dispatchEvidence));
+  }
+ }
+ if(observeFailure||skipObserve||mediaArmFailure||mediaObservationFailure){
   await assert.rejects(stage.retain(evidence));
   throw new Error('fixture-stop-after-fence');
  }
@@ -1636,6 +1735,11 @@ const result=start()(async(_verify,_signal,host)=>{
  }
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
+ if(media){
+  assert.equal(retained.uploadSent,joinedUpload);
+  assert.equal(retained.operation,mediaAction.operation);
+  assert.deepEqual(retained.upload,joinedUpload?{intentSha256:'6'.repeat(64),...callback,httpStatus:201}:undefined);
+ }
  if(assessment) assert.deepEqual(
   [retained.actorId,retained.operation,retained.quizRevision,retained.attemptIds,retained.progressRevision,retained.frontendOperationCount],
   [actor,'fail-then-pass',assessmentAction.quizRevision,assessmentWitness.attemptIds,3,3],
@@ -1772,13 +1876,21 @@ if(privatePacket) assert.ok(!Object.hasOwn(privatePacket,'cookie'));
 assert.throws(()=>readP2CertificationInteractiveStage(handle,plan));
 assert.deepEqual(writes.filter(row=>row.operation?.startsWith('interactive-')).map(row=>row.operation),
  ['interactive-prepare','interactive-open','interactive-permit',...(gatewayScoped&&!installFailure&&!skipObserve?['interactive-observe']:[]),
-  'interactive-fence',...(installFailure||observeFailure||skipObserve?[]:['interactive-retain'])]);
+  'interactive-fence',
+  ...(joinedUpload?['interactive-media-arm',...(mediaArmFailure?[]:behavior==='media-wait-timeout'?
+   writes.filter(row=>row.operation==='interactive-media-observe').map(row=>row.operation):behavior==='media-ambiguous'?
+   ['interactive-media-observe']:['interactive-media-observe','interactive-media-observe'])]:[]),
+  ...(installFailure||observeFailure||skipObserve||mediaArmFailure||mediaObservationFailure?[]:['interactive-retain'])]);
+if(behavior==='media-wait-timeout')assert.ok(writes.filter(row=>row.operation==='interactive-media-observe').length>=2);
 assert.ok(!/v[12]\.8\.|fixture-forbidden/u.test(JSON.stringify(writes)));
 `;
 
 for(const [certificationStage,actorKind,behavior,variant] of [
  ['lifecycle','admin','joined'],
  ['lifecycle','customer','install-failure'],
+ ['media','admin','joined','reserve-video-upload'],
+ ...['joined','wrong-arm-expiry','wrong-callback','wrong-join','media-wait-timeout','media-ambiguous']
+  .map(behavior=>['media','admin',behavior,'upload-video-and-observe-callback']),
  ['identity','admin','joined'],
  ['identity','admin','joined','first-owner'],
  ['identity','admin','wrong-nonce','first-owner'],

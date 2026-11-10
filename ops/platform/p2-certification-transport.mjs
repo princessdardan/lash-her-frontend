@@ -5,12 +5,14 @@ import {writeFrontendReceipt} from './frontend-migration.mjs';
 import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {sshCommand} from './recreation_ssh.mjs';
 import {isDeepStrictEqual} from 'node:util';
+import {setTimeout as delay} from 'node:timers/promises';
 import {validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.mjs';
 import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt,
   validateP2LessonStaleRevisionReceipt,validP2MediaReservationAction,p2MediaReservationBody,
+  p2MediaUploadCallbackOperation,validateP2MediaDispatchIntent,validateP2MediaDispatchReceipt,
   validateP2MediaReservationReceipt} from './p2-lifecycle-browser-recorder.mjs';
 import {lessonAckLossBodies,lessonExitSaveBodies,lessonStaleRevisionBodies} from '../gateway/lesson-resume-position.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
@@ -22,11 +24,13 @@ const authenticationStages=new WeakMap();
 const workerStages=new WeakMap();
 const knownAckStages=new WeakMap();
 const interactiveStages=new WeakMap();
+const mediaDispatchReceipts=new WeakMap();
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 const sha256=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value);
 const nonzeroSha256=value=>sha256(value)&&!/^0+$/u.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
 const canonicalUuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
+const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
 const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
 const utc=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
 const interactiveReceiptKeys=['version','qualificationTargetProfile','status','certificationActionId','planSha256','stage'];
@@ -39,6 +43,7 @@ const authoringPublicationOperation='qualify-publication';
 const authoringRepublishOperation='republish-paid-course';
 const authoringQuizOperation='save-quiz-revision';
 const authoringArchiveOperation='archive-paid-course';
+const mediaOperations=new Set(['reserve-video-upload',p2MediaUploadCallbackOperation]);
 const learningEnrollmentOperation='enroll-free-course';
 const learningReplayOperation='replay-free-enrollment';
 const paidGrantOperation='grant-paid-access';
@@ -76,7 +81,16 @@ export function readP2CertificationKnownAckStage(handle,plan){
 
 export function readP2CertificationInteractiveStage(handle,plan){
   const selected=interactiveStages.get(handle);demand(selected&&selected.plan===plan&&selected.active());
+  if(plan.scopedAction.mediaAction?.operation===p2MediaUploadCallbackOperation)
+    demand(typeof selected.methods.armMedia==='function'&&typeof selected.methods.observeMedia==='function');
   return selected.methods;
+}
+
+export function takeP2InteractiveMediaDispatch(plan,controller,receipt){
+  const source=mediaDispatchReceipts.get(receipt);
+  demand(source&&source.plan===plan&&source.controller===controller&&source.active()&&source.dispatch.expiresAt*1000>Date.now());
+  mediaDispatchReceipts.delete(receipt);
+  return source.dispatch;
 }
 
 function reviewedWriteRequest(row,method,target){
@@ -578,7 +592,7 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const statuses=quiz?[200,quizRevision===0?404:200,200]:publication?[200,200,200,200]:paired?[200,200,409]:archive?[200,200]:[200,201];
   const indices=republish?(outcome==='published'?[0,1,0,2,3,0]:[0,1,0,2]):
     quiz||publication&&outcome==='published'?[0,1,2,0]:paired?[0,0,1,0,2]:createCurriculum||archive?[0,1,0]:[0,1];
-  const sequences=operation==='reserve-video-upload'?[[[0,200],[1,200],[2,201]]]:learning?[
+  const sequences=mediaOperations.has(operation)?[[[0,200],[1,200],[2,201]]]:learning?[
     [[0,200],[1,403],[2,201],[1,200],[3,200]],
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
   ]:operation===learningReplayOperation?[
@@ -1115,7 +1129,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
         async interactiveStage(browserController){
           demand(launch===spawn&&interactivePlan&&armed&&!prepared&&!interactiveCreated&&active&&!failed);
           interactiveCreated=true;
-          const {readP2InteractiveBrowserControllerBinding}=await import('./p2-lifecycle-suspension-evidence.mjs');
+          const {readP2InteractiveBrowserControllerBinding,requireP2InteractiveBrowserMediaEvidence}=await import('./p2-lifecycle-suspension-evidence.mjs');
           const {validateP2InteractiveBrowserPermit}=await import('./p2-lifecycle-browser-recorder.mjs');
           const binding=structuredClone(initial.interactiveController),snapshot=structuredClone(interactivePlan);
           const alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&
@@ -1137,6 +1151,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             lessonDenial:lessonDenialPermit,assessment:assessmentPermit,resume:resumePermit,restore:restorePermit,ackLoss:ackLossPermit,
             exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
+          const joinedUpload=media&&selection.operation===p2MediaUploadCallbackOperation;
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
             ...(authoring?{authoring:authoringPermit}:media?{media:mediaPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
@@ -1145,14 +1160,16 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               ackLoss?{ackLoss:ackLossPermit}:exitSave?{exitSave:exitSavePermit}:visibility?{visibility:visibilityPermit}:
               staleRevision?{staleRevision:staleRevisionPermit}:
               firstOwner?{firstOwner}:enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
-          let phase='new',expiresAt,installed=false,gatewayObservation;
-          const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
+          let phase='new',expiresAt,installed=false,gatewayObservation,mediaArm,mediaUpload,heldMediaResponse;
+          const statusFor=disposition=>`P2_INTERACTIVE_${stageLabel}_${disposition}`;
+          const call=async(operation,disposition,extraKeys,data={},timeout=120_000,waitingDisposition)=>{
             demand(alive());
             const packet=await request(operation,'CERTIFICATION_INTERACTIVE_OBSERVED',{controllerChallenge,...data},timeout);
             const receipt=packet.receipt;
-            demand(exact(packet,['id','status','receipt'])&&exact(receipt,[...interactiveReceiptKeys,...extraKeys]));
+            const waiting=waitingDisposition!==undefined&&receipt?.status===statusFor(waitingDisposition);
+            demand(exact(packet,['id','status','receipt'])&&exact(receipt,[...interactiveReceiptKeys,...(waiting?[]:extraKeys)]));
             requireQualificationTargetProfile(currentProfile,receipt);
-            demand(receipt.version===2&&receipt.status===`P2_INTERACTIVE_${stageLabel}_${disposition}`&&
+            demand(receipt.version===2&&(receipt.status===statusFor(disposition)||waiting)&&
               receipt.certificationActionId===initial.certificationActionId&&receipt.planSha256===snapshot.planSha256&&receipt.stage===stage);
             return receipt;
           };
@@ -1196,6 +1213,57 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 }catch{phase='observe-failed';throw new Error(`P2_CERTIFICATION_INTERACTIVE_${stageLabel}_OBSERVE_FAILED`);}
               },
             }:{}),
+            ...(joinedUpload?{
+              async armMedia(caseEvidence){
+                demand(phase==='fenced'&&gatewayObservation);requireRecorder();
+                mediaReservationJoinedEvidence(caseEvidence,selection,gatewayObservation);
+                requireP2InteractiveBrowserMediaEvidence(interactivePlan,browserController,caseEvidence.browserResponse);
+                heldMediaResponse=caseEvidence.browserResponse;
+                phase='media-arming';
+                try{
+                  const receipt=await call('interactive-media-arm','UPLOAD_ARMED',['intentSha256','expiresAt'],
+                    {caseEvidence:structuredClone(caseEvidence)},30_000);
+                  requireRecorder();
+                  mediaArm=Object.freeze(validateP2MediaDispatchIntent({intentSha256:receipt.intentSha256,expiresAt:receipt.expiresAt},expiresAt/1000));
+                  mediaDispatchReceipts.set(receipt,{plan:interactivePlan,controller:browserController,dispatch:mediaArm,
+                    active:()=>alive()&&phase==='media-armed'});
+                  phase='media-armed';
+                  return Object.freeze(receipt);
+                }catch{phase='media-arm-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_MEDIA_ARM_FAILED');}
+              },
+              async observeMedia(dispatchEvidence){
+                demand(phase==='media-armed');
+                validateP2MediaDispatchReceipt(dispatchEvidence);
+                requireRecorder();
+                requireP2InteractiveBrowserMediaEvidence(interactivePlan,browserController,heldMediaResponse,
+                  {response:dispatchEvidence,intentSha256:mediaArm.intentSha256});
+                const evidence=structuredClone(dispatchEvidence);
+                phase='media-observing';
+                try{
+                  const remaining=()=>mediaArm.expiresAt*1000-Date.now();
+                  for(;;){
+                    requireRecorder();
+                    const timeout=remaining();
+                    demand(timeout>0);
+                    const receipt=await call('interactive-media-observe','UPLOAD_OBSERVED',
+                      ['callbackReceiptSha256','requestId','eventId','assetId'],{dispatchEvidence:evidence},
+                      Math.min(timeout,30_000),'UPLOAD_WAITING');
+                    requireRecorder();
+                    demand(remaining()>0);
+                    if(receipt.status===statusFor('UPLOAD_WAITING')){
+                      await delay(Math.min(750,remaining()),undefined,{signal:controller.signal});
+                      continue;
+                    }
+                    const {callbackReceiptSha256,requestId,eventId,assetId}=receipt;
+                    demand(nonzeroSha256(callbackReceiptSha256)&&[requestId,eventId,assetId].every(providerId)&&
+                      !gatewayObservation.gatewayAcknowledgements.some(row=>row.requestId===requestId));
+                    mediaUpload={intentSha256:mediaArm.intentSha256,callbackReceiptSha256,requestId,eventId,assetId,httpStatus:evidence.status};
+                    phase='media-observed';
+                    return receipt;
+                  }
+                }catch{phase='media-observe-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_MEDIA_OBSERVE_FAILED');}
+              },
+            }:{}),
             async fence(){
               // The gateway fence must remain available when the recorder dies
               // or an observation fails after the host has opened the stage.
@@ -1204,7 +1272,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               demand(closedGateway(receipt));phase='fenced';return receipt;
             },
             async retain(caseEvidence){
-              demand(phase==='fenced'&&installed&&(!gatewayScoped||gatewayObservation));requireRecorder();
+              demand(phase===(joinedUpload?'media-observed':'fenced')&&installed&&(!gatewayScoped||gatewayObservation)&&
+                (!joinedUpload||mediaUpload&&caseEvidence?.browserResponse===heldMediaResponse));requireRecorder();
               const evidence=structuredClone(caseEvidence);
               const expected=media?mediaReservationJoinedEvidence(evidence,selection,gatewayObservation):
                 learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
@@ -1226,6 +1295,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 authoringPublicationCase(selection.operation)?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):
                 authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
                 identity?identityJoinedEvidence(evidence,selection,context,enrollment,firstOwner):lifecycleJoinedEvidence(evidence,selection);
+              if(joinedUpload)Object.assign(expected,{uploadSent:true,upload:mediaUpload});
               phase='retaining';
               const receipt=await call('interactive-retain','JOINED',
                 ['browserProgramSha256',...Object.keys(expected),...(media?['generation','environmentId','courseWitnessSha256']:[]),

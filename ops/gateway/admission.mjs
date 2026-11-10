@@ -11,6 +11,8 @@ import { EXIT_SAVE_LESSON_STARTED, lessonAckLossBodies, lessonExitSaveBodies, le
 const STATE_KEYS = "actionId,candidateSha256,environment,newWork,recovery,releaseId,version";
 const SCOPED_KEYS = "actionId,candidateSha256,environment,muxCallback,newWork,recovery,releaseId,version";
 const CALLBACK_KEYS = "assetId,attemptId,environmentId,eventType,expiresAt,gatewayProcessSha256,generation,issuedAt,mountDevice,mountInode,uploadId";
+const ONE_SHOT_CALLBACK_KEYS = CALLBACK_KEYS.replace(",uploadId", ",oneShot,uploadId");
+const UPLOAD_ASSET_CREATED = "video.upload.asset_created";
 const INTERACTIVE_STATE_KEYS = "actionId,candidateSha256,environment,interactive,newWork,recovery,releaseId,version";
 const INTERACTIVE_KEYS = "actorId,deploymentHost,epoch,expiresAt,frontendSourceCommit,gatewayProcessSha256,issuedAt,key,mountDevice,mountInode,nonce,requests,stage";
 const INTERACTIVE_REQUEST_KEYS = "bodySha256,method,target,uses";
@@ -75,14 +77,22 @@ function rootAdmissionStorage(file, directory, info) {
   return file === "/admission/state.json" && directory.uid === 0n && info.uid === 0n;
 }
 
-function stagingScopeStorage(value, config, info, processBinding, storageAuthority) {
+function trustedAdmissionDirectory(config, info, storageAuthority) {
   const directory = lstatSync(dirname(config.admission.file), { bigint: true });
-  if (config.appEnv !== "staging" || config.publicHost !== "api-staging.lashher.com" ||
-      config.ownerId !== "team_2Hrn5eMZyZxfAWdmYvyKi9t3" || config.projectId !== "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" ||
-      !directory.isDirectory() || directory.uid !== info.uid ||
+  if (!directory.isDirectory() || directory.uid !== info.uid ||
       !storageAuthority(config.admission.file, directory, info) ||
-      (directory.mode & 0o022n) !== 0n || (info.mode & 0o022n) !== 0n ||
-      value.mountDevice !== String(directory.dev) || value.mountInode !== String(directory.ino) ||
+      (directory.mode & 0o022n) !== 0n || (info.mode & 0o022n) !== 0n) throw new Error();
+  return directory;
+}
+
+function reviewedStagingScope(config) {
+  return config.appEnv === "staging" && config.publicHost === "api-staging.lashher.com" &&
+    config.ownerId === "team_2Hrn5eMZyZxfAWdmYvyKi9t3" && config.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM";
+}
+
+function stagingScopeStorage(value, config, info, processBinding, storageAuthority) {
+  const directory = trustedAdmissionDirectory(config, info, storageAuthority);
+  if (!reviewedStagingScope(config) || value.mountDevice !== String(directory.dev) || value.mountInode !== String(directory.ino) ||
       !matches(SHA, value.gatewayProcessSha256) || value.gatewayProcessSha256 !== processBinding()) throw new Error();
 }
 
@@ -92,11 +102,14 @@ function scopeTime(value, now, maximum) {
 }
 
 function muxCallbackScope(value, config, info, processBinding, storageAuthority, now) {
-  if (keys(value) !== CALLBACK_KEYS || !matches(UUID, value.attemptId) || !providerId(value.environmentId) ||
+  const oneShot = value?.oneShot === true;
+  if (keys(value) !== (oneShot ? ONE_SHOT_CALLBACK_KEYS : CALLBACK_KEYS) ||
+      !matches(UUID, value.attemptId) || !providerId(value.environmentId) ||
       !Number.isSafeInteger(value.generation) || value.generation < 1 || value.generation > 2_147_483_647 ||
       (value.assetId !== null && !providerId(value.assetId)) || (value.uploadId !== null && !providerId(value.uploadId))) throw new Error();
   stagingScopeStorage(value, config, info, processBinding, storageAuthority);
-  const uploadEvent = value.eventType === "video.upload.asset_created";
+  const uploadEvent = value.eventType === UPLOAD_ASSET_CREATED;
+  if (oneShot && (!uploadEvent || info.nlink !== 1n)) throw new Error();
   const trackEvent = TRACK_TYPES.has(value.eventType);
   if (!(uploadEvent || trackEvent || ASSET_TYPES.has(value.eventType)) ||
       (uploadEvent && value.uploadId === null) || (trackEvent && value.assetId === null)) throw new Error();
@@ -544,12 +557,13 @@ export function selectScopedMuxCallback(scope, body, signature) {
     const marker = `lash-her-course:${scope.environmentId}:${scope.attemptId}`;
     const supplied = [data.passthrough, data.new_asset_settings?.passthrough].filter(value => value !== undefined);
     if (supplied.some(value => value !== marker)) return null;
-    if (event.type === "video.upload.asset_created") {
+    if (event.type === UPLOAD_ASSET_CREATED) {
       if (data.id !== scope.uploadId || !providerId(data.asset_id) || (scope.assetId !== null && data.asset_id !== scope.assetId)) return null;
     } else if (TRACK_TYPES.has(event.type)) {
       if (data.asset_id !== scope.assetId) return null;
     } else if (scope.assetId === null ? !supplied.length : data.id !== scope.assetId) return null;
-    return { target: `${scope.attemptId}:${scope.generation}`, eventId: event.id };
+    return { target: `${scope.attemptId}:${scope.generation}`, eventId: event.id,
+      ...(scope.oneShot === true && event.type === UPLOAD_ASSET_CREATED ? { assetId: data.asset_id } : {}) };
   } catch {
     return null;
   }
@@ -558,6 +572,7 @@ export function selectScopedMuxCallback(scope, body, signature) {
 // The private TLS hop can finish an HTTP 502 after losing its backend. A
 // completed transport only settles the scoped operation with a known receipt.
 export function scopedMuxAcknowledged(scope, status, body) {
+  if (scope.oneShot === true && status !== 200) return false;
   if (status === 204) return body.length === 0;
   if (body.length > 4096 || !isUtf8(body)) return false;
   try {
@@ -580,10 +595,20 @@ export function scopedMuxAcknowledged(scope, status, body) {
 // the six feature flags, or the later frontend database writer fence (P2-00).
 const closedAdmission = () => ({ valid: false, newWork: false, recovery: false });
 const inactiveInteractiveAdmission = () => ({ ...closedAdmission(), version: 3, interactiveActive: false });
+const inactiveOneShotAdmission = () => ({ ...closedAdmission(), version: 2, muxCallbackActive: false });
 
-function readAdmission(config, processBinding, storageAuthority, interactiveGroup, wall) {
+function verifyOneShotClosure(value, raw, config, info, storageAuthority, fence) {
+  const directory = trustedAdmissionDirectory(config, info, storageAuthority);
+  const compact = JSON.stringify(ordered(value));
+  const spaced = "{" + Object.entries(ordered(value)).map(([key, item]) => JSON.stringify(key) + ": " + JSON.stringify(item)).join(", ") + "}";
+  if (value.newWork || value.recovery || info.nlink !== 1n ||
+      (fence.mountDevice !== undefined && (fence.mountDevice !== String(directory.dev) || fence.mountInode !== String(directory.ino))) ||
+      ![compact + "\n", spaced + "\n"].some(encoding => raw.equals(Buffer.from(encoding)))) throw new Error();
+}
+
+function readAdmission(config, processBinding, storageAuthority, interactiveGroup, wall, oneShotFence) {
   let descriptor;
-  let interactiveFile = false;
+  let interactiveFile = false, oneShotFile = false;
   try {
     descriptor = openSync(config.admission.file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const info = fstatSync(descriptor, { bigint: true });
@@ -592,15 +617,19 @@ function readAdmission(config, processBinding, storageAuthority, interactiveGrou
     const raw = readFileSync(descriptor);
     if (raw.length > MAX_INTERACTIVE_STATE) return inactiveInteractiveAdmission();
     interactiveFile = raw.includes('"interactive"');
+    oneShotFile = reviewedStagingScope(config) && raw.includes('"muxCallback"') && raw.includes('"oneShot"');
     if (!isUtf8(raw)) throw new Error();
     const value = JSON.parse(raw.toString("utf8"));
     interactiveFile ||= value?.version === 3;
+    oneShotFile ||= reviewedStagingScope(config) && value?.version === 2 &&
+      value.muxCallback != null && Object.hasOwn(value.muxCallback, "oneShot");
     if (value.environment !== config.appEnv ||
         value.releaseId !== config.admission.releaseId || value.candidateSha256 !== config.admission.candidateSha256 ||
         typeof value.actionId !== "string" || !/^[a-z0-9][a-z0-9-]{0,79}$/u.test(value.actionId) ||
         typeof value.newWork !== "boolean" || typeof value.recovery !== "boolean") throw new Error();
     if (value.version === 1) {
       if (raw.length > MAX_ORDINARY_STATE || keys(value) !== STATE_KEYS) throw new Error();
+      if (oneShotFence) verifyOneShotClosure(value, raw, config, info, storageAuthority, oneShotFence);
     } else if (value.version === 3) {
       if (keys(value) !== INTERACTIVE_STATE_KEYS || value.newWork || value.recovery) throw new Error();
       interactiveScope(value.interactive, config, info, processBinding, storageAuthority, interactiveGroup, wall);
@@ -614,7 +643,7 @@ function readAdmission(config, processBinding, storageAuthority, interactiveGrou
     }
     return { valid: true, sha256: digest(raw), ...value };
   } catch {
-    return interactiveFile ? inactiveInteractiveAdmission() : closedAdmission();
+    return oneShotFile ? inactiveOneShotAdmission() : interactiveFile ? inactiveInteractiveAdmission() : closedAdmission();
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
   }
@@ -627,19 +656,29 @@ export function createAdmissionReader(config, {
   const muxWindows = new Map();
   const interactiveWindows = new Map();
   let currentWindow;
-  let interactiveFenced = false;
+  let interactiveFenced = false, oneShotFence;
   return () => {
     const wall = now();
-    const admission = readAdmission(config, processBinding, storageAuthority, interactiveGroup, wall);
+    const admission = readAdmission(config, processBinding, storageAuthority, interactiveGroup, wall, oneShotFence);
+    const oneShot = admission.muxCallback?.oneShot === true;
+    // After seeing the marker, malformed or substituted state cannot restore
+    // the ordinary read routes. Only trusted closed v1 clears this latch.
+    if (admission.muxCallbackActive === false) oneShotFence ??= {};
+    if (oneShot) {
+      const { mountDevice, mountInode } = admission.muxCallback;
+      oneShotFence ??= { sha256: admission.sha256, mountDevice, mountInode };
+    }
+    if (admission.valid && admission.version === 1) oneShotFence = undefined;
     if (admission.version === 3) interactiveFenced = true;
     else if (admission.valid) interactiveFenced = false;
-    const scope = admission.interactive ?? admission.muxCallback;
+    const permittedOneShot = oneShot && oneShotFence.sha256 === admission.sha256;
+    const scope = oneShotFence && !permittedOneShot ? undefined : admission.interactive ?? admission.muxCallback;
     if (currentWindow && (!scope || currentWindow.id !== admission.actionId || currentWindow.version !== admission.version)) {
       currentWindow.retired = true;
       currentWindow = undefined;
     }
-    const refused = () => interactiveFenced ? inactiveInteractiveAdmission() : closedAdmission();
-    if (!scope) return interactiveFenced ? refused() : admission;
+    const refused = () => oneShotFence ? inactiveOneShotAdmission() : interactiveFenced ? inactiveInteractiveAdmission() : closedAdmission();
+    if (!scope) return oneShotFence || interactiveFenced ? refused() : admission;
     const windows = interactiveFenced ? interactiveWindows : muxWindows;
     const tick = monotonic();
     let window = windows.get(admission.actionId);

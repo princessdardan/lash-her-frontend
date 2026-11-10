@@ -69,6 +69,7 @@ _SAVE_QUIZ_REVISION = "save-quiz-revision"
 _ARCHIVE_PAID_COURSE = "archive-paid-course"
 _REPUBLISH_PAID_COURSE = "republish-paid-course"
 _RESERVE_MEDIA = "reserve-video-upload"
+MEDIA_UPLOAD_CALLBACK = "upload-video-and-observe-callback"
 _LEARNER_ACCESS_OUTCOMES = {
     "allowed": (200, (None,)),
     "archived": (410, ("course_archived",)),
@@ -471,17 +472,15 @@ def _require_media_course_witness(selected, reservation, witness):
            "P2_INTERACTIVE_MEDIA_COURSE_WITNESS_REQUIRED")
 
 
-def _media_case_evidence(plan, action, evidence, gateway_artifact):
-    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_MEDIA_EVIDENCE_REQUIRED")
+def media_reservation_bindings(plan, action, browser, witness, gateway_artifact):
     selected = action["mediaAction"]
-    browser, witness = evidence["browserResponse"], evidence["courseWitness"]
     reservation = _media_browser_response(selected, browser)
     gateway = browser_gateway_receipt(plan, gateway_artifact)
     _, read_ack, post_ack = gateway["gatewayAcknowledgements"]
     demand(browser["read"]["requestId"] == read_ack["requestId"] and reservation["requestId"] == post_ack["requestId"],
            "P2_INTERACTIVE_MEDIA_REQUEST_JOIN_REQUIRED")
     _require_media_course_witness(selected, reservation, witness)
-    return {"actorId": action["actorId"], "operation": _RESERVE_MEDIA,
+    return {"actorId": action["actorId"], "operation": selected["operation"],
             **{key: witness[key] for key in ("courseId", "lessonId", "courseRevision", "attemptId", "uploadId", "generation",
                                              "environmentId", "isCurrent")},
             **{key: selected[key] for key in ("currentVideoAssetId", "fileSha256", "fileBytes", "contentType")},
@@ -489,6 +488,68 @@ def _media_case_evidence(plan, action, evidence, gateway_artifact):
             "uploadIntercepted": True, "uploadSent": False, "gatewayPostRequestId": post_ack["requestId"],
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
+
+
+def media_upload_selected(plan):
+    action = plan.get("scopedAction") or {}
+    return action.get("stage") == _MEDIA and (action.get("mediaAction") or {}).get("operation") == MEDIA_UPLOAD_CALLBACK
+
+
+def _media_case_evidence(plan, action, evidence, gateway_artifact):
+    joined_upload = media_upload_selected(plan)
+    fields = "browserResponse courseWitness" + (" dispatchIntent dispatchOutcome callback" if joined_upload else "")
+    demand(_closed_fields(evidence, fields), "P2_INTERACTIVE_MEDIA_EVIDENCE_REQUIRED")
+    bindings = media_reservation_bindings(plan, action, evidence["browserResponse"], evidence["courseWitness"], gateway_artifact)
+    if not joined_upload:
+        return bindings
+    intent, dispatch, callback = (evidence[key] for key in ("dispatchIntent", "dispatchOutcome", "callback"))
+    witness_fields = ("attemptId", "uploadId", "generation", "environmentId", "browserResponseSha256", "courseWitnessSha256", "gatewayEvidenceSha256")
+    base_intent = browser_receipt(plan, "UPLOAD_DISPATCH_INTENT")
+    demand(type(intent) is dict and set(intent) == set(base_intent) | set(witness_fields) |
+           {"expiresAt", "gatewayProcessSha256", "scopedStateSha256", "originalStateSha256"} and
+           all(intent[key] == value for key, value in base_intent.items()) and
+           all(intent[key] == bindings[key] for key in witness_fields) and
+           type(intent["expiresAt"]) is int and 1_000_000_000 <= intent["expiresAt"] < 10_000_000_000 and
+           intent["gatewayProcessSha256"] == plan["gatewayProcessSha256"] and
+           _digest(intent["scopedStateSha256"]) and _digest(intent["originalStateSha256"]) and
+           intent["scopedStateSha256"] != intent["originalStateSha256"],
+           "P2_INTERACTIVE_MEDIA_DISPATCH_INTENT_REQUIRED")
+    expected_dispatch = {**browser_receipt(plan, "UPLOAD_HTTP_OBSERVED"), "intentSha256": _receipt_sha(intent), "attempted": True}
+    demand(type(dispatch) is dict and set(dispatch) == set(expected_dispatch) | {"httpStatus"} and
+           all(dispatch[key] == value for key, value in expected_dispatch.items()) and dispatch["attempted"] is True and
+           type(dispatch["httpStatus"]) is int and 200 <= dispatch["httpStatus"] < 300,
+           "P2_INTERACTIVE_MEDIA_DISPATCH_OUTCOME_REQUIRED")
+    demand(type(callback) is dict and callback.get("status") == "P2_SCOPED_MUX_CLOSED" and
+           callback.get("version") == 2 and callback.get("qualificationTargetProfile") == plan["qualificationTargetProfile"] and
+           callback.get("actionId") == plan["certificationActionId"] and callback.get("candidateSha256") == plan["candidateSha256"] and
+           callback.get("oneShot") is True and callback.get("wakeTransactionAcknowledged") is True and
+           callback.get("gatewayStateRestored") is True and callback.get("gatewayAdmissionClosed") is True and
+           callback.get("effectObserved") is True and callback.get("gatewayEffectDrained") is True and
+           type(callback.get("admitted")) is int and callback["admitted"] == 1 and
+           type(callback.get("managedAckCount")) is int and callback["managedAckCount"] == 1 and
+           _matches(_UUID, callback.get("requestId")) and all(_matches(_MUX_ID, callback.get(key)) for key in ("eventId", "assetId")) and
+           all(callback.get(key) == intent[key] for key in ("gatewayProcessSha256", "scopedStateSha256", "originalStateSha256")) and
+           callback.get("gatewayStateSha256") == intent["originalStateSha256"] and
+           callback.get("frontendAdmission") == {"epoch": str(int(plan["initialEpoch"]) + 2), "newWork": False,
+                                                 "recovery": False, "active": 0, "uncertain": 0} and
+           callback.get("scopedAction") == {**{key: bindings[key] for key in ("attemptId", "uploadId", "generation", "environmentId")},
+                                            "assetId": None, "eventType": "video.upload.asset_created"},
+           "P2_INTERACTIVE_MEDIA_CALLBACK_REQUIRED")
+    expected_acks = [{"requestId": callback["requestId"], "eventId": callback["eventId"], "assetId": callback["assetId"], "upstreamStatus": 200}]
+    demand(callback.get("managedAcksSha256") == _hash(_canonical(expected_acks)),
+           "P2_INTERACTIVE_MEDIA_CALLBACK_ACK_REQUIRED")
+    return {**bindings, "uploadSent": True, "upload": {"intentSha256": _receipt_sha(intent),
+            "callbackReceiptSha256": _receipt_sha(callback), "httpStatus": dispatch["httpStatus"],
+            **{key: callback[key] for key in ("requestId", "eventId", "assetId")}}}
+
+
+def require_media_upload_gateway(evidence, gateway):
+    callback = evidence["callback"]
+    expected = {"scopedStateSha256": callback["scopedStateSha256"], "admitted": 1,
+                "managedAcks": [{**{key: callback[key] for key in ("requestId", "eventId", "assetId")}, "upstreamStatus": 200}]}
+    demand(_closed(gateway) and gateway.get("sha256") == callback["originalStateSha256"] and
+           _receipt_sha(gateway.get("muxCallbackFinal")) == _receipt_sha(expected),
+           "P2_INTERACTIVE_MEDIA_FINAL_GATEWAY_REQUIRED")
 
 
 def _learning_case_evidence(plan, action, evidence, gateway_artifact):
@@ -1472,7 +1533,8 @@ def validate_interactive_action(action):
     if media:
         reservation = action["mediaAction"]
         demand(_closed_fields(reservation, "operation courseId lessonId revision currentVideoAssetId fileSha256 fileBytes contentType") and
-               reservation["operation"] == _RESERVE_MEDIA and all(_matches(_UUID, reservation[key]) for key in ("courseId", "lessonId")) and
+               reservation["operation"] in (_RESERVE_MEDIA, MEDIA_UPLOAD_CALLBACK) and
+               all(_matches(_UUID, reservation[key]) for key in ("courseId", "lessonId")) and
                type(reservation["revision"]) is int and 1 <= reservation["revision"] <= 2_147_483_646 and
                (reservation["currentVideoAssetId"] is None or _matches(_UUID, reservation["currentVideoAssetId"])) and
                _digest(reservation["fileSha256"]) and type(reservation["fileBytes"]) is int and
@@ -2216,6 +2278,12 @@ class P2InteractiveWindow:
                "P2_INTERACTIVE_MEDIA_COURSE_ENVIRONMENT_CHANGED")
         self.verify_gateway_fenced()
         return witness
+
+    def media_dispatch_expiry(self):
+        demand(media_upload_selected(self.plan) and self._state == "fenced" and self._permit_issued and
+               type(self._expires) is int and self._expires - time.time() >= 15,
+               "P2_INTERACTIVE_MEDIA_DISPATCH_WINDOW_REQUIRED")
+        return self._expires
 
     def verify_fenced(self, *, retain=False):
         gateway = self.verify_gateway_fenced()

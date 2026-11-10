@@ -12,6 +12,7 @@ import json
 import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 import select
 import signal
 import stat
@@ -1329,8 +1330,8 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
     }.get(plan['mode'])
     if plan['mode'] == 'interactive-browser':
         from p2_interactive_window import (SCOPED_GATEWAY_BROWSER_STAGES, browser_artifact, browser_case_evidence,
-                                            browser_evidence_limit, browser_receipt, browser_status,
-                                            require_browser_ledger, verify_browser_controller)
+                                            browser_evidence_limit, browser_receipt, browser_status, media_upload_selected,
+                                            require_browser_ledger, require_media_upload_gateway, verify_browser_controller)
         scoped_status = browser_status(plan, 'JOINED')
     if scoped_status is not None:
         directory = _profiled_certification_directory(initial)
@@ -1357,6 +1358,13 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
                              'browserProgramSha256': program_sha, 'frontendAdmission': frontend,
                              'frontendOperationCount': operation_count, 'gatewayAdmissionClosed': True,
                              'gatewayActive': 0, 'gatewayUncertain': 0}
+            if media_upload_selected(plan):
+                for part, name in (('dispatchIntent', 'upload-intent'), ('dispatchOutcome', 'upload-http'), ('callback', 'upload-callback')):
+                    retained_part = decode_qualification_target_json(
+                        migrate.read_input(directory, browser_artifact(plan, name), 8192), 'carrier')
+                    require(_canonical_sha(retained_part) == _canonical_sha(evidence[part]),
+                            'P2_PROFILED_CERTIFICATION_GUARD_MEDIA_EVIDENCE_CHANGED')
+                require_media_upload_gateway(evidence, gateway)
             require(_canonical_sha(case) == _canonical_sha(expected_case) and type(gateway.get('version')) is int and
                     gateway.get('releaseId') == initial['candidate']['releaseId'] and
                     gateway.get('candidateSha256') == initial['candidateSha256'] and
@@ -1387,6 +1395,39 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
                 all(gateway.get(key) == value for key,value in runtime_outcome['newGateway']['admission'].items()),
                 'P2_PROFILED_CERTIFICATION_GUARD_KNOWN_ACK_TERMINAL_REFUSED')
     return terminal
+
+
+def _verify_media_upload_after_reap(initial, source, terminal):
+    from p2_interactive_window import browser_artifact, require_media_upload_gateway
+    from p2_replacement_successor import _observe
+    from qualification_target_profile import decode_qualification_target_json
+
+    plan = initial['certificationPlan']
+    evidence = decode_qualification_target_json(migrate.read_input(_profiled_certification_directory(initial),
+        browser_artifact(plan, 'evidence'), 8192), 'carrier')
+    deadline = time.monotonic() + 25
+
+    def verify():
+        require(time.monotonic() < deadline, 'P2_PROFILED_CERTIFICATION_MEDIA_FINAL_RUNTIME_TIMEOUT')
+        verify_guard_lock(initial)
+
+    def bounded_run(args, **kwargs):
+        verify()
+        timeout = min(kwargs['timeout'], deadline - time.monotonic())
+        require(timeout > 0, 'P2_PROFILED_CERTIFICATION_MEDIA_FINAL_RUNTIME_TIMEOUT')
+        return subprocess.run(args, **{**kwargs, 'timeout': timeout})
+
+    token = runtime._command_scope.set(SimpleNamespace(run=bounded_run))
+    try:
+        containers, gateway, process = _observe(initial, source, initial['candidate'], _guard_profile(initial),
+            Path(initial['configuration']), verify, include_full_admission=True)
+    finally:
+        runtime._command_scope.reset(token)
+    require(_canonical_sha(containers) == plan['runtimeInventorySha256'] and process == plan['gatewayProcessSha256'] and
+            _canonical_sha(gateway['admission']) == _canonical_sha(terminal['gatewayAdmission']),
+            'P2_PROFILED_CERTIFICATION_MEDIA_FINAL_RUNTIME_CHANGED')
+    require_media_upload_gateway(evidence, gateway['admission'])
+    verify_guard_boundary(initial, source)
 
 
 def _require_profiled_interrupted_terminal(initial, raw, committed):
@@ -1682,6 +1723,9 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                         'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_PHYSICAL_CHANGED')
                 _profiled_certification_containers(remove=False)
             verify_guard_boundary(initial, source)
+            from p2_interactive_window import media_upload_selected
+            if media_upload_selected(initial['certificationPlan']):
+                _verify_media_upload_after_reap(initial, source, terminal)
             if initial['certificationPlan'].get('scopedAction', {}).get('stage') == 'lesson-resume':
                 from p2_certification_parent import retain_profiled_resume_guard
                 retain_profiled_resume_guard(initial, terminal, committed)

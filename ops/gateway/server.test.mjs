@@ -339,6 +339,152 @@ test("scoped Mux admission forwards only the selected managed callback and mints
   assert.deepEqual(f.admissionState().muxCallbackEvidence, { admitted: 1, managedAcks: [] });
 });
 
+async function oneShotMuxFixture(t, handler) {
+  const directory = mkdtempSync(join(folder, "one-shot-mux-"));
+  const file = join(directory, "state.json"), identity = statSync(directory, { bigint: true });
+  const admission = { file, releaseId: "owned-one-shot-mux", candidateSha256: "a".repeat(64) };
+  const start = Date.now(), processSha = "b".repeat(64);
+  const attemptId = "00000000-0000-4000-8000-000000000003";
+  const lessonId = "00000000-0000-4000-8000-000000000004";
+  const scope = { gatewayProcessSha256: processSha, mountDevice: String(identity.dev), mountInode: String(identity.ino),
+    issuedAt: new Date(start - 1000).toISOString(), expiresAt: new Date(start + 30_000).toISOString(),
+    environmentId: "owned-environment", attemptId, generation: 2, assetId: null, uploadId: "owned-upload",
+    eventType: "video.upload.asset_created", oneShot: true };
+  const ordinary = { version: 1, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
+    actionId: "owned-closed", newWork: false, recovery: false };
+  const state = { ...ordinary, version: 2, actionId: "owned-one-shot", muxCallback: scope };
+  const save = value => writeFileSync(file, certificationCanonical(value) + "\n", { mode: 0o644 });
+  save(state);
+  const event = { id: "owned-event", type: scope.eventType, environment: { id: scope.environmentId },
+    data: { id: scope.uploadId, asset_id: "owned-provider-asset", privateDetail: "fixture-raw-must-not-escape" } };
+  const signed = value => ({ method: "POST", path: "/course/v1/webhooks/mux",
+    headers: { "mux-signature": "owned-provider-signature", [SCOPED_MUX_HEADER]: "foreign:1" },
+    body: JSON.stringify(value ?? event) });
+  const forwarded = [];
+  const ack = { videoAsset: { id: attemptId, lessonId, status: "uploading" } };
+  const clock = { wall: start, tick: 0n };
+  const f = await fixture(t, async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    forwarded.push({ path: request.url, body: Buffer.concat(chunks).toString(),
+      signature: request.headers["mux-signature"], target: request.headers[SCOPED_MUX_HEADER] });
+    await handler(request, response, ack);
+  }, {
+    admission, appEnv: "staging", publicHost: "api-staging.lashher.com",
+    ownerId: "team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+  }, { scopedMuxAdmission: {
+    processBinding: () => processSha, storageAuthority: candidate => candidate === file,
+    now: () => clock.wall, monotonic: () => clock.tick,
+  } });
+  return { ...f, state, ordinary, scope, attemptId, ack, file, save, clock, event, signed, forwarded };
+}
+
+test("one-shot Mux admits one genuine selected callback across in-flight and closed readback", async t => {
+  const upstreamStarted = Promise.withResolvers(), releaseUpstream = Promise.withResolvers();
+  t.after(() => releaseUpstream.resolve());
+  const f = await oneShotMuxFixture(t, async (_request, response, ack) => {
+    upstreamStarted.resolve();
+    await releaseUpstream.promise;
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify(ack));
+  });
+  const scopedStateSha256 = f.admissionState().sha256;
+  assert.equal(f.admissionState().muxCallbackActive, true);
+  assert.equal((await f.send()).status, 503);
+  assert.equal((await f.send({ path: "/course/v1/admin/courses", headers: { authorization: "Bearer owned.admin.jwt" } })).status, 503);
+  assert.equal((await f.send({ method: "POST", path: "/course/v1/internal/accounts/commands",
+    headers: { authorization: "Bearer owned.lifecycle.jwt" }, body: "{}" })).status, 503);
+  assert.equal((await f.send(f.signed({ ...f.event, data: { ...f.event.data, id: "foreign-upload" } }))).status, 503);
+  assert.deepEqual(f.admissionState().muxCallbackEvidence, { admitted: 0, managedAcks: [] });
+
+  const selected = f.send(f.signed());
+  await upstreamStarted.promise;
+  assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 1 });
+  assert.equal((await f.send(f.signed())).status, 503);
+  assert.equal((await f.send(f.signed({ ...f.event, id: "owned-later-event" }))).status, 503);
+  assert.deepEqual(f.forwarded, [{ path: "/v1/webhooks/mux", body: f.signed().body,
+    signature: "owned-provider-signature", target: f.attemptId + ":2" }]);
+
+  f.save(f.ordinary);
+  assert.deepEqual(f.admissionState().muxCallbackFinal, { scopedStateSha256, admitted: 1, managedAcks: [] });
+  releaseUpstream.resolve();
+  const accepted = await selected;
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(JSON.parse(accepted.body), f.ack);
+  const closed = f.admissionState();
+  assert.equal(closed.valid, true);
+  assert.deepEqual(closed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(closed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(closed.muxCallbackFinal, { scopedStateSha256, admitted: 1, managedAcks: [
+    { requestId: accepted.headers["x-request-id"], eventId: f.event.id, upstreamStatus: 200, assetId: f.event.data.asset_id },
+  ] });
+  assert.doesNotMatch(JSON.stringify(closed), /owned-provider-signature|fixture-raw-must-not-escape/u);
+
+  f.save({ ...f.state, actionId: "owned-reissued-one-shot" });
+  assert.equal((await f.send(f.signed())).status, 503);
+  assert.equal(f.forwarded.length, 1);
+});
+
+test("one-shot Mux fails closed through expiry and corrupt state until trusted ordinary v1", async t => {
+  const f = await oneShotMuxFixture(t, (_request, response) => response.end("{}"));
+  f.clock.wall += 31_000;
+  assert.equal((await f.send()).status, 503, "expired one-shot on the first read fences reads");
+  assert.equal(f.admissionState().muxCallbackActive, false);
+  rmSync(f.file);
+  assert.equal((await f.send()).status, 503);
+  f.save({ ...f.ordinary, recovery: true });
+  assert.equal((await f.send()).status, 503);
+  f.save(f.ordinary);
+  chmodSync(f.file, 0o666);
+  assert.equal((await f.send()).status, 503);
+  chmodSync(f.file, 0o644);
+  writeFileSync(f.file, certificationCanonical(f.ordinary).replace('"recovery":false', '"recovery":true,"recovery":false') + "\n");
+  assert.equal((await f.send()).status, 503);
+  f.save({ ...f.state, actionId: "owned-swap-one-shot", muxCallback: { ...f.scope, oneShot: false } });
+  assert.equal((await f.send()).status, 503);
+  f.save(f.ordinary);
+  assert.equal((await f.send()).status, 200);
+  assert.equal(f.admissionState().version, 1);
+  assert.equal(f.forwarded.length, 1);
+});
+
+test("one-shot Mux retires its window when the monotonic clock expires", async t => {
+  const f = await oneShotMuxFixture(t, (_request, response) => response.end("{}"));
+  assert.equal(f.admissionState().muxCallbackActive, true);
+  f.clock.tick = 30_000_000_000n;
+  f.clock.wall -= 500;
+  assert.equal((await f.send(f.signed())).status, 503);
+  assert.equal((await f.send()).status, 503);
+  assert.equal(f.admissionState().muxCallbackActive, false);
+  assert.equal(f.forwarded.length, 0);
+  f.save(f.ordinary);
+  assert.equal(f.admissionState().valid, true);
+  f.save(f.state);
+  assert.equal((await f.send(f.signed())).status, 503);
+});
+
+test("one-shot Mux treats a non-managed or lost upstream ACK as uncertainty and never retries", async t => {
+  for (const outcome of ["204", "invalid200", "wrongType", "disconnect"]) {
+    const f = await oneShotMuxFixture(t, (_request, response, ack) => {
+      if (outcome === "disconnect") return response.destroy();
+      if (outcome === "204") return response.writeHead(204).end();
+      if (outcome === "wrongType") return response.writeHead(200, { "content-type": "text/plain" }).end(JSON.stringify(ack));
+      response.writeHead(200, { "content-type": "application/json" }).end('{"private":"synthetic-do-not-forward"}');
+    });
+    const scopedStateSha256 = f.admissionState().sha256;
+    const reply = await f.send(f.signed());
+    assert.equal(reply.status, 502, outcome);
+    assert.doesNotMatch(reply.body, /synthetic-do-not-forward/u);
+    assert.equal((await f.send(f.signed())).status, 503, outcome);
+    assert.equal(f.forwarded.length, 1, outcome);
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 1 }, outcome);
+    assert.deepEqual(f.admissionState().muxCallbackEvidence, { admitted: 1, managedAcks: [] }, outcome);
+    f.save(f.ordinary);
+    assert.deepEqual(f.admissionState().muxCallbackFinal, { scopedStateSha256, admitted: 1, managedAcks: [] }, outcome);
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 1 }, outcome);
+  }
+});
+
 async function interactiveFixture(t, requests, handler, stage = "learning") {
   const directory = mkdtempSync(join(folder, "interactive-admission-"));
   const file = join(directory, "state.json"), mount = statSync(directory, { bigint: true });

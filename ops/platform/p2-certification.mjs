@@ -30,7 +30,7 @@ import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
   validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validP2MediaReservationRequests} from './p2-certification-transport.mjs';
-import {readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
+import {p2MediaUploadCallbackOperation,readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
   readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
@@ -78,6 +78,8 @@ const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
 const paidRevokeCourseSource='54fd289a5a8579bfbe343afb07482f406b56ad5b';
+const mergedCourseRuntimeSource='09e3aaf234d9d9c1296c438d7c872e6bd67db074';
+const paidRevokeCourseSources=new Set([paidRevokeCourseSource,mergedCourseRuntimeSource]);
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
@@ -677,6 +679,9 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     firstOwner=identity&&action.firstOwner!==undefined,authoring=action.stage==='authoring';
   const learning=action.stage==='learning',paidGrant=action.stage==='paid-grant',courseBacked=courseBackedBrowserStages.has(action.stage);
   const media=action.stage==='media',learnerAccess=action.stage==='learner-access';
+  const mediaUpload=media&&action.mediaAction.operation===p2MediaUploadCallbackOperation;
+  if(mediaUpload)demand(typeof stage.armMedia==='function'&&typeof stage.observeMedia==='function'&&
+    typeof controller.dispatchMedia==='function');
   const lessonEntry=action.stage==='lesson-entry',lessonDenial=action.stage==='lesson-denial',assessment=action.stage==='lesson-assessment',resume=action.stage==='lesson-resume',restore=action.stage==='lesson-restore';
   const ackLoss=action.stage==='lesson-ack-loss';
   const exitSave=action.stage==='lesson-exit-save';
@@ -799,6 +804,18 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     if(staleRevision){
       const browserFence=await controller.confirmStaleRevisionFenced(context);
       record('p2-interactive-lesson-stale-revision-browser-fenced.json',browserFence);
+    }
+    if(mediaUpload){
+      const armed=await stage.armMedia({browserResponse:browserEvidence});
+      demand(armed.status==='P2_INTERACTIVE_MEDIA_UPLOAD_ARMED');
+      record('p2-interactive-media-upload-armed.json',armed);
+      signal?.throwIfAborted();
+      const dispatched=await controller.dispatchMedia(context,armed);
+      record('p2-interactive-media-upload-http.json',dispatched);
+      signal?.throwIfAborted();
+      const observed=await stage.observeMedia(dispatched);
+      demand(observed.status==='P2_INTERACTIVE_MEDIA_UPLOAD_OBSERVED');
+      record('p2-interactive-media-upload-callback.json',observed);
     }
     const witness=media?undefined:authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
       authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
@@ -1314,7 +1331,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const paidRevokeReason=paidRevoke?reviewedPaidCourseReason(plan.scopedAction,execution):undefined;
   if(paidRevoke){
     validateP2InteractivePaidRevoke(paidRevokeSelection(plan.scopedAction,paidRevokeReason),undefined);
-    if(original.migration.candidate.sources.course.commit!==paidRevokeCourseSource)throw new Error('P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED');
+    if(!paidRevokeCourseSources.has(original.migration.candidate.sources.course.commit))throw new Error('P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED');
   }
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const firstOwner=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.firstOwner;
@@ -1333,7 +1350,10 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     demand(field?exactKeys(execution,[field]):execution===undefined);
     authoringDraft=validate(authoringSelection(plan.scopedAction),field?execution[field]:undefined);
   }
-  demand(plan.mode!=='mux-callback-recovery'||[scopedMuxCourseSource,paidRevokeCourseSource].includes(original.migration.candidate.sources.course.commit));
+  const mediaUpload=media&&plan.scopedAction.mediaAction.operation===p2MediaUploadCallbackOperation;
+  const selectedCourseSource=original.migration.candidate.sources.course.commit;
+  demand((plan.mode!=='mux-callback-recovery'&&!mediaUpload)||
+    selectedCourseSource===scopedMuxCourseSource||paidRevokeCourseSources.has(selectedCourseSource));
   const {releaseSettings}=checked;
   const directory=releaseSettings.results;
   frontendPrivateReceiptDirectory(directory);

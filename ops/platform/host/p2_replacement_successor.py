@@ -163,7 +163,7 @@ def _retained(directory, runtime_directory, names, binding, identity, selected, 
     return terminal, outcome, proof
 
 
-def _observe(initial, source, selected, expected, configuration, verify):
+def _observe(initial, source, selected, expected, configuration, verify, *, include_full_admission=False):
     from p2_replacement_runtime_containment import _compose_inventory
 
     def run(args, environment, timeout):
@@ -199,6 +199,8 @@ def _observe(initial, source, selected, expected, configuration, verify):
             prior._process(identifier, run, verify) == gateway['process'],
             REFUSED)
     verify()
+    if include_full_admission:
+        gateway = {**gateway, 'admission': value['admission']}
     return containers, gateway, value['processSha256']
 
 

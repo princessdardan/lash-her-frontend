@@ -161,13 +161,28 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
 }
 
+export const p2MediaUploadCallbackOperation = "upload-video-and-observe-callback";
+
 export function validP2MediaReservationAction(value) {
   return closed(value, ["operation", "courseId", "lessonId", "revision", "currentVideoAssetId", "fileSha256", "fileBytes", "contentType"])
-    && value.operation === "reserve-video-upload" && uuid(value.courseId) && uuid(value.lessonId)
+    && ["reserve-video-upload", p2MediaUploadCallbackOperation].includes(value.operation) && uuid(value.courseId) && uuid(value.lessonId)
     && Number.isSafeInteger(value.revision) && value.revision >= 1 && value.revision < 2_147_483_647
     && (value.currentVideoAssetId === null || uuid(value.currentVideoAssetId)) && sha(value.fileSha256)
     && value.fileSha256 !== "0".repeat(64) && Number.isSafeInteger(value.fileBytes) && value.fileBytes > 0
     && value.fileBytes <= 8 * 1024 * 1024 && value.contentType === "video/mp4";
+}
+
+export function validateP2MediaDispatchIntent(value, browserExpires, now = Date.now() / 1000) {
+  demand(closed(value, ["intentSha256", "expiresAt"]) && sha(value.intentSha256) && value.intentSha256 !== "0".repeat(64)
+    && Number.isSafeInteger(browserExpires) && Number.isSafeInteger(value.expiresAt)
+    && value.expiresAt > now && value.expiresAt <= browserExpires);
+  return value;
+}
+
+export function validateP2MediaDispatchReceipt(value) {
+  demand(closed(value, ["attempted", "status"]) && value.attempted === true
+    && Number.isInteger(value.status) && value.status >= 200 && value.status <= 299);
+  return value;
 }
 
 export function p2MediaReservationBody({ revision, currentVideoAssetId }) {
@@ -3481,8 +3496,11 @@ export function watchP2MediaReservation(context, page, input) {
   const target = input.media, origin = input.browserOrigin;
   const pathname = p2InteractiveBrowserEntryPath(input, "owner"), source = origin + pathname;
   const lesson = "/api/admin/lessons/" + target.lessonId, statusPath = lesson + "/video", postPath = lesson + "/video-upload";
+  const detailPath = "/api/admin/courses/" + target.courseId;
+  const dispatchReviewed = target.operation === p2MediaUploadCallbackOperation;
   const expected = Buffer.from(JSON.stringify(p2MediaReservationBody(target)));
   let statusRequest, reserveRequest, read, reservation, captured, attempted = false, failed = false, reject, accept;
+  let heldRoute, heldExpires, heldDeadline, holdTimer, dispatched = false;
   const observed = new Promise((done, fail) => { accept = done; reject = fail; });
   observed.catch(() => {});
   const refusal = () => new Error("P2_MEDIA_RESERVATION_REFUSED");
@@ -3494,6 +3512,12 @@ export function watchP2MediaReservation(context, page, input) {
     try {
       const request = route.request(), url = URL.parse(request.url()), method = request.method();
       demand(!failed && url);
+      if (dispatched && method === "GET" && matchesPage(request)
+        && [origin + statusPath, origin + detailPath].includes(url.href)) {
+        // The regular editor refreshes after fetch settles. Those reads stay local to the fence.
+        await route.abort().catch(() => {});
+        return;
+      }
       if (method === "PUT") {
         demand(!attempted && reservation && matchesPage(request));
         attempted = true;
@@ -3507,8 +3531,9 @@ export function watchP2MediaReservation(context, page, input) {
         captured = validateP2MediaReservationReceipt({ page: { pathname, status: 200 }, read: await read,
           reservation: reviewed.sanitized, outbound: { intercepted: true, sent: false,
             fileSha256: target.fileSha256, fileBytes: target.fileBytes, contentType: target.contentType } }, target);
+        if (dispatchReviewed) heldRoute = route;
         accept(captured);
-        // The browser request stays paused. Closing the page discards it.
+        // Only an authenticated fixed dispatch can continue this route. Page closure discards it.
         return;
       }
       if (method === "POST") {
@@ -3564,10 +3589,17 @@ export function watchP2MediaReservation(context, page, input) {
     }
   };
   const onFailure = request => { if (request === statusRequest || request === reserveRequest) fail(); };
+  const unexpectedPage = other => {
+    if (other === page) return;
+    fail();
+    void other.close().catch(() => {});
+  };
   context.on("response", onResponse);
   context.on("requestfailed", onFailure);
+  if (dispatchReviewed) context.on("page", unexpectedPage);
   return {
     async open(expires) {
+      if (dispatchReviewed) demand(context.pages().length === 1 && context.pages()[0] === page && context.serviceWorkers().length === 0);
       await context.route(pattern, intercept);
       const response = await page.goto(source, { waitUntil: "domcontentloaded", timeout: 30_000 });
       demand(response?.status() === 200 && response.url() === source && page.url() === source);
@@ -3595,12 +3627,59 @@ export function watchP2MediaReservation(context, page, input) {
       } finally { clearTimeout(timer); }
     },
     finish() {
-      demand(!failed && captured && attempted && page.isClosed() && context.serviceWorkers().length === 0);
+      demand(!dispatchReviewed && !failed && captured && attempted && page.isClosed() && context.serviceWorkers().length === 0);
       return captured;
     },
+    hold(expires) {
+      demand(dispatchReviewed && !failed && captured && heldRoute && heldExpires === undefined && !page.isClosed()
+        && context.serviceWorkers().length === 0 && Number.isSafeInteger(expires) && Date.now() < expires * 1000);
+      heldExpires = expires;
+      const remaining = expires * 1000 - Date.now();
+      heldDeadline = performance.now() + remaining;
+      holdTimer = setTimeout(() => { fail(); void page.close().catch(() => {}); }, remaining);
+      return captured;
+    },
+    async dispatch(intent) {
+      let timer;
+      const route = heldRoute;
+      heldRoute = undefined;
+      try {
+        validateP2MediaDispatchIntent(intent, heldExpires);
+        demand(dispatchReviewed && !failed && route && !dispatched && !page.isClosed() && context.serviceWorkers().length === 0);
+        const remaining = Math.min(heldDeadline - performance.now(), intent.expiresAt * 1000 - Date.now());
+        demand(remaining > 0);
+        const dispatchDeadline = performance.now() + remaining;
+        const request = route.request();
+        dispatched = true;
+        const completed = async () => {
+          await route.continue();
+          const response = await request.response();
+          demand(response && response.request() === request && response.url() === request.url()
+            && !response.fromServiceWorker() && request.redirectedTo() === null);
+          const receipt = validateP2MediaDispatchReceipt({ attempted: true, status: response.status() });
+          // A final 204 has no body. Chromium can report ERR_ABORTED after receiving it.
+          if (receipt.status !== 204) demand(await response.finished() === null && request.failure() === null);
+          return receipt;
+        };
+        const receipt = await Promise.race([completed(), new Promise((_, refuse) => {
+          timer = setTimeout(() => refuse(refusal()), remaining);
+        })]);
+        await page.close();
+        demand(!failed && page.isClosed() && performance.now() < dispatchDeadline && Date.now() < intent.expiresAt * 1000);
+        return receipt;
+      } catch { throw new Error("P2_MEDIA_DISPATCH_REFUSED"); }
+      finally {
+        clearTimeout(timer);
+        clearTimeout(holdTimer);
+        if (!page.isClosed()) await page.close().catch(() => {});
+      }
+    },
     async close() {
+      clearTimeout(holdTimer);
+      heldRoute = undefined;
       context.off("response", onResponse);
       context.off("requestfailed", onFailure);
+      if (dispatchReviewed) context.off("page", unexpectedPage);
       // Do not remove the write fence while the selected browser page is open.
       if (!page.isClosed()) await page.close().catch(() => {});
       if (page.isClosed()) await context.unroute(pattern, intercept).catch(() => {});
@@ -4030,7 +4109,7 @@ async function runInteractiveBrowser(first) {
     return pending;
   };
   let browser, context, page, peer, peerPage, selection, mutationWatch, identityOpenedAt, verifiedIdentity, staleSessionProofs;
-  let opened = false, cleared = false, browserFenced = false;
+  let opened = false, cleared = false, browserFenced = false, mediaHeld = false;
   const permitPipe = new Socket({ fd: 4, readable: true, writable: false });
   permitPipe.pause();
   const contexts = new Map(), actions = new Set([input.actionId]);
@@ -4082,8 +4161,9 @@ async function runInteractiveBrowser(first) {
       }
       const captureIdentity = command.type === "interactive-capture-identity";
       const ownerIdentity = captureIdentity && binding.stage === "identity" && p2InteractiveIdentityContext(input) === "owner" && !input.firstOwner;
-      demand(closed(received, [...Object.keys(binding), "context", "expires", ...(ownerIdentity ? ["ownerSubjectSha256"] : [])])
-        && Number.isSafeInteger(received.expires));
+      const mediaDispatch = command.type === "interactive-dispatch-media";
+      demand(closed(received, [...Object.keys(binding), "context", "expires", ...(ownerIdentity ? ["ownerSubjectSha256"] : []),
+        ...(mediaDispatch ? ["dispatch"] : [])]) && Number.isSafeInteger(received.expires));
       const path = p2InteractiveBrowserEntryPath(input, received.context);
       const pairedIdentity = input.identity?.sessionCount === 2;
       const staleRevision = binding.stage === "lesson-stale-revision";
@@ -4133,6 +4213,20 @@ async function runInteractiveBrowser(first) {
         continue;
       }
       demand(!cleared);
+      if (mediaHeld || mediaDispatch) {
+        demand(mediaHeld && mediaDispatch && selection.context === "owner" && binding.stage === "media"
+          && input.media.operation === p2MediaUploadCallbackOperation && mutationWatch);
+        const response = await mutationWatch.dispatch(received.dispatch);
+        await context.close();
+        await mutationWatch.close();
+        mutationWatch = undefined;
+        contexts.delete("owner");
+        mediaHeld = false;
+        cleared = true;
+        pending = next();
+        await send("interactive-media-dispatched", { ...selection, response });
+        continue;
+      }
       if (command.type === "interactive-open") {
         demand(!opened && Date.now() < selection.expires * 1000);
         opened = true;
@@ -4283,6 +4377,14 @@ async function runInteractiveBrowser(first) {
         }
         const selectedContexts = peer ? [context, peer] : [context];
         await Promise.all(selectedContexts.map(expireP2InteractiveBrowserCookie));
+        if (captureMutation && binding.stage === "media" && input.media.operation === p2MediaUploadCallbackOperation) {
+          demand(selection.context === "owner" && !peer && (await context.cookies(input.browserOrigin)).every(cookie => cookie.name !== permitName));
+          const response = mutationWatch.hold(selection.expires);
+          mediaHeld = true;
+          pending = next();
+          await send("interactive-media-captured", { ...selection, response });
+          continue;
+        }
         // Teardown can queue progress or telemetry. Hold the selected page until
         // the parent closes the browser after fencing, with the permit expired.
         if (!captureMutation || !heldLessonStages.includes(binding.stage)) {

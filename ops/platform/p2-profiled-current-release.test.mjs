@@ -275,6 +275,13 @@ test('fixed current certification plan joins the original release plan, terminal
     const mediaHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
       { input: JSON.stringify(mediaPair.media), encoding: 'utf8' });
     assert.equal(mediaHostPlan.status, 0, mediaHostPlan.stderr);
+    const joinedMedia = { ...selectedMedia, mediaAction: { ...selectedMedia.mediaAction, operation: 'upload-video-and-observe-callback' } };
+    const joinedMediaPair = prepareP2ProfiledCertificationOperator(paired(joinedMedia));
+    assert.deepEqual(joinedMediaPair.media.scopedAction, joinedMedia);
+    assert.notEqual(joinedMediaPair.media.planSha256, mediaPair.media.planSha256);
+    const joinedMediaHost = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(joinedMediaPair.media), encoding: 'utf8' });
+    assert.equal(joinedMediaHost.status, 0, joinedMediaHost.stderr);
     const paidSettings = paired(selectedInteractive), paidPair = prepareP2ProfiledCertificationOperator(paidSettings);
     assert.equal(paidPair.status, 'P2_INTERACTIVE_PAID_GRANT_ACTIONS_PLANNED');
     assert.deepEqual(paidPair['paid-grant'].scopedAction, selectedInteractive);
@@ -1029,6 +1036,7 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.equal(stage, 'media');
     for (const [selection, selector] of [
       [selectedMedia, (selectedMedia.actorId + courseId + mediaLessonId).replaceAll('-', '')],
+      [joinedMedia, (joinedMedia.actorId + courseId + mediaLessonId).replaceAll('-', '')],
       [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
       [selectedAuthoring, '7032712d617574686f72696e672d7631' + selectedAuthoring.actorId.replaceAll('-', '')],
       [selectedEdit, '7032712d617574682d656469742d7631' + selectedEdit.actorId.replaceAll('-', '')],

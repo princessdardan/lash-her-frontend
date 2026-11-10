@@ -18,6 +18,7 @@ import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2Authori
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt,
   validateP2LessonEntryReceipt, validateP2LessonDenialReceipt, validateP2LessonAssessmentReceipt, validateP2LessonResumeReceipt, validateP2LessonRestoreReceipt,
   validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonVisibilityReceipt, validateP2LessonStaleRevisionReceipt,
+  p2MediaUploadCallbackOperation, validateP2MediaDispatchIntent, validateP2MediaDispatchReceipt,
   validateP2LifecycleMutationReceipt, validateP2MediaReservationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
@@ -401,6 +402,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const lifecycle = pending?.type === "interactive-lifecycle-captured";
       const authoring = pending?.type === "interactive-authoring-captured";
       const media = pending?.type === "interactive-media-captured";
+      const mediaDispatched = pending?.type === "interactive-media-dispatched";
       const learning = pending?.type === "interactive-learning-captured";
       const lessonEntry = pending?.type === "interactive-lesson-entry-captured";
       const lessonDenial = pending?.type === "interactive-lesson-denial-captured";
@@ -418,7 +420,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
         ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []),
-        ...(lifecycle || authoring || media || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
+        ...(lifecycle || authoring || media || mediaDispatched || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
@@ -429,6 +431,10 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
       if (media) validateP2MediaReservationReceipt(message.response, input.media);
+      if (mediaDispatched) {
+        demand(input.media.operation === p2MediaUploadCallbackOperation);
+        validateP2MediaDispatchReceipt(message.response);
+      }
       if (learning) validateP2LearningEnrollmentReceipt(message.response, input.learning);
       if (lessonEntry) validateP2LessonEntryReceipt(message.response, input.lessonEntry);
       if (lessonDenial) validateP2LessonDenialReceipt(message.response, input.lessonDenial);
@@ -488,8 +494,13 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     const protocolStage = edit ? "authoring-edit" : stage;
     const receipt = await command("interactive-capture-" + protocolStage, { ...binding, ...selection },
       "interactive-" + protocolStage + "-captured", selection, remaining + 5000);
-    phase = "cleared";
-    clearTimeout(phaseTimer);
+    if (stage === "media" && input.media.operation === p2MediaUploadCallbackOperation) {
+      interactiveControllers.get(controller).mediaReservation = receipt.response;
+      phase = "media-held";
+    } else {
+      phase = "cleared";
+      clearTimeout(phaseTimer);
+    }
     return edit ? receipt.responses : receipt.response;
   };
   const controller = Object.freeze({
@@ -532,6 +543,25 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     captureAuthoringResponse: context => captureMutation(context, "authoring", "owner"),
     captureAuthoringResponses: context => captureMutation(context, "authoring", "owner", true),
     captureMediaReservation: context => captureMutation(context, "media", "owner"),
+    async dispatchMedia(context, armedReceipt) {
+      const selection = requireSelection(context);
+      demand(phase === "media-held" && !closing && binding.stage === "media"
+        && input.media.operation === p2MediaUploadCallbackOperation && context === "owner");
+      phase = "media-dispatching";
+      try {
+        const { takeP2InteractiveMediaDispatch } = await import("./p2-certification-transport.mjs");
+        const dispatch = validateP2MediaDispatchIntent(takeP2InteractiveMediaDispatch(activePlan, controller, armedReceipt), selection.expires);
+        const remaining = dispatch.expiresAt * 1000 - Date.now();
+        demand(remaining > 0);
+        const receipt = await command("interactive-dispatch-media", { ...binding, ...selection, dispatch },
+          "interactive-media-dispatched", selection, remaining);
+        demand(Date.now() < dispatch.expiresAt * 1000);
+        interactiveControllers.get(controller).mediaAttempt = { response: receipt.response, intentSha256: dispatch.intentSha256 };
+        phase = "cleared";
+        clearTimeout(phaseTimer);
+        return receipt.response;
+      } catch { fail(); throw failure(); }
+    },
     captureLearningResponse: context => captureMutation(context, "learning", "learner"),
     capturePaidGrantResponse: context => captureMutation(context, "paid-grant", "owner"),
     captureLearnerAccessResponse: context => captureMutation(context, "learner-access", "learner"),
@@ -642,6 +672,13 @@ export function readP2InteractiveBrowserControllerBinding(plan, controller) {
   const source = interactiveControllers.get(controller);
   demand(source?.plan === plan && source.active());
   return { ...source.binding };
+}
+
+export function requireP2InteractiveBrowserMediaEvidence(plan, controller, reservation, dispatch) {
+  const source = interactiveControllers.get(controller);
+  demand(source && source.plan === plan && source.active() && source.mediaReservation && source.mediaReservation === reservation
+    && (dispatch === undefined || source.mediaAttempt && dispatch.response === source.mediaAttempt.response
+      && dispatch.intentSha256 === source.mediaAttempt.intentSha256));
 }
 
 export function readP2LifecycleBrowserControllerBinding(plan, controller) {

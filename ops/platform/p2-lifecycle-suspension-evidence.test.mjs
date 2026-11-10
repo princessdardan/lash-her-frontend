@@ -459,6 +459,125 @@ test("interactive recorder requires the exact in-process reviewed plan and a fix
   }
 });
 
+const mediaControllerHarness = String.raw`
+import assert from "node:assert/strict";
+import * as childProcess from "node:child_process";
+import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
+import { PassThrough } from "node:stream";
+import { mock } from "node:test";
+const { controllerUrl, behavior } = JSON.parse(readFileSync(0));
+const root = new URL("../../", controllerUrl);
+const sourceCommit = "1".repeat(40), actorId = "11111111-1111-4111-8111-111111111111";
+const courseId = "22222222-2222-4222-8222-222222222222", lessonId = "33333333-3333-4333-8333-333333333333";
+const assetId = "44444444-4444-4444-8444-444444444444", readId = "55555555-5555-4555-8555-555555555555";
+const postId = "66666666-6666-4666-8666-666666666666", fileSha256 = "e".repeat(64);
+const joined = behavior !== "reserve", stage = "media", context = "owner", expires = Math.floor(Date.now()/1000)+60;
+const dispatch = { intentSha256: "d".repeat(64), expiresAt: expires-1 }, armed = {};
+const selected = { operation: joined ? "upload-video-and-observe-callback" : "reserve-video-upload", courseId, lessonId,
+  revision: 11, currentVideoAssetId: null, fileSha256, fileBytes: 120, contentType: "video/mp4" };
+const reservation = { page: { pathname: "/admin/courses/"+courseId, status: 200 },
+  read: { requestId: readId, courseRevision: 11, currentVideoAssetId: null },
+  reservation: { requestId: postId, status: 200, assetId, lessonId, uploadId: "owned-upload", uploadTimeoutSeconds: 3600, assetStatus: "uploading" },
+  outbound: { intercepted: true, sent: false, fileSha256, fileBytes: 120, contentType: "video/mp4" } };
+const identityActor = { actorKind: "admin", actorId };
+const common = { version: 2, mode: "interactive-browser", maximumSeconds: 300, sourceCommit, operatorSourceCommit: sourceCommit,
+  nativePlan: { deploymentId: "dpl_owned", deploymentUrl: "https://owned.vercel.app" } };
+const identityPlan = { ...common, certificationActionId: "owned-identity", planSha256: "a".repeat(64), initialEpoch: "7",
+  scopedAction: { stage: "identity", windowSeconds: 120, identityActor } };
+const mediaPlan = { ...common, certificationActionId: "owned-media", planSha256: "b".repeat(64), initialEpoch: "9",
+  scopedAction: { stage, windowSeconds: 120, actorId, mediaAction: selected } };
+const binding = ({ challenge, bindingSha256, stage, epoch }) => ({ challenge, bindingSha256, stage, epoch });
+const expectedCommands = [], child = new EventEmitter();
+const stdin = new PassThrough(), permitPipe = new PassThrough();
+stdin.resume();permitPipe.resume();
+let controller, selectedInput, taken = 0;
+child.stdin=stdin;child.stdio=[stdin,null,null,null,permitPipe];child.connected=true;
+const end = (code, signal) => { if(child.connected){child.connected=false;child.emit("close",code,signal);} };
+child.kill = signal => { queueMicrotask(() => end(1,signal)); return true; };
+child.send = ({ type, input }, callback) => {
+  expectedCommands.push(type);
+  let message = { ...binding(input) };
+  switch(type){
+    case "initialize-interactive":selectedInput=input;message.type="interactive-initialized";break;
+    case "interactive-install":Object.assign(message,{type:"interactive-permit-installed",context,expires});break;
+    case "interactive-open":Object.assign(message,{type:"interactive-page-opened",context,expires,
+      path:selectedInput.stage==="identity"?"/admin/sign-in":reservation.page.pathname,httpStatus:200});break;
+    case "interactive-capture-identity":Object.assign(message,{type:"interactive-identity-captured",context,expires,
+      identity:{...identityActor,sessionVerified:true}});break;
+    case "interactive-select":selectedInput=input.next;message={type:"interactive-selected",...binding(selectedInput)};break;
+    case "interactive-capture-media":Object.assign(message,{type:"interactive-media-captured",context,expires,response:reservation});break;
+    case "interactive-dispatch-media":
+      assert.deepEqual(input,{...binding(selectedInput),context,expires,dispatch});
+      Object.assign(message,{type:"interactive-media-dispatched",context,expires,response:{attempted:true,status:204,
+        ...(behavior==="secret-reply"?{url:"fixture-private-field"}:{})}});break;
+    case "interactive-close":message.type="interactive-closed";break;
+    default:assert.fail(type);
+  }
+  queueMicrotask(()=>{callback(null);child.emit("message",message);if(type==="interactive-close")queueMicrotask(()=>end(0,null));});
+};
+const { default: defaultChild, spawn: _spawn, execFileSync: _exec, ...childExports } = childProcess;
+const spawn = () => child, execFileSync = (program,args) => {
+  assert.equal(program,"git");
+  if(args.includes("rev-parse"))return sourceCommit+"\n";
+  assert.ok(args.includes("show")&&args.at(-1).startsWith(sourceCommit+":"));
+  return readFileSync(new URL(args.at(-1).slice(41),root));
+};
+mock.module("node:child_process",{exports:{...childExports,spawn,execFileSync,default:{...defaultChild,spawn,execFileSync}}});
+mock.module(new URL("./p2-certification.mjs",controllerUrl).href,{exports:{p2CertificationParentContext(plan){assert.ok(plan===identityPlan||plan===mediaPlan);}}});
+mock.module(new URL("./p2-certification-transport.mjs",controllerUrl).href,{exports:{takeP2InteractiveMediaDispatch(plan,actual,receipt){
+  assert.equal(plan,mediaPlan);assert.equal(actual,controller);assert.equal(receipt,armed);assert.equal(++taken,1);return dispatch;
+}}});
+const {launchP2InteractiveBrowserRecorder,requireP2InteractiveBrowserMediaEvidence}=await import(controllerUrl);
+const permit = (stage,epoch,selector) => ({stage,epoch,expires,cookie:["v2",epoch,stage,expires-60,expires,"a".repeat(32),selector,"b".repeat(64)].join(".")});
+const adminSelector=createHash("sha256").update(JSON.stringify(["identity","admin"])).digest("hex");
+controller=await launchP2InteractiveBrowserRecorder(identityPlan);
+try{
+  await controller.initialized();
+  await controller.installPermit(permit("identity","8",adminSelector),context);
+  await controller.open(context);
+  await controller.captureIdentity(context,"f".repeat(64));
+  await controller.selectPlan(mediaPlan,"/owned-private-fixture.mp4");
+  await controller.installPermit(permit(stage,"10",(actorId+courseId+lessonId).replaceAll("-","")),context);
+  await controller.open(context);
+  await assert.rejects(controller.dispatchMedia(context,armed));
+  const held=await controller.captureMediaReservation(context);
+  assert.deepEqual(held,reservation);
+  if(joined){
+    requireP2InteractiveBrowserMediaEvidence(mediaPlan,controller,held);
+    assert.throws(()=>requireP2InteractiveBrowserMediaEvidence(mediaPlan,controller,{...held}));
+    if(behavior==="secret-reply"){
+      await assert.rejects(controller.dispatchMedia(context,armed),{message:"P2_INTERACTIVE_BROWSER_CHILD_FAILED"});
+    }else{
+      const response=await controller.dispatchMedia(context,armed);
+      assert.deepEqual(response,{attempted:true,status:204});
+      requireP2InteractiveBrowserMediaEvidence(mediaPlan,controller,held,{response,intentSha256:dispatch.intentSha256});
+      assert.throws(()=>requireP2InteractiveBrowserMediaEvidence(mediaPlan,controller,held,{response:{...response},intentSha256:dispatch.intentSha256}));
+      await assert.rejects(controller.dispatchMedia(context,armed));
+    }
+  }else{
+    await assert.rejects(controller.dispatchMedia(context,armed));
+    assert.throws(()=>requireP2InteractiveBrowserMediaEvidence(mediaPlan,controller,held));
+  }
+}finally{
+  assert.deepEqual(await controller.close(),{childClosed:true,browserCleanupAcknowledged:behavior!=="secret-reply"});
+}
+assert.equal(taken,Number(joined));
+assert.equal(expectedCommands.filter(type=>type==="interactive-dispatch-media").length,Number(joined));
+`;
+
+test("media controller holds one joined upload for exact source dispatch and refuses unexpected child fields", () => {
+  const controllerUrl = new URL("./p2-lifecycle-suspension-evidence.mjs", import.meta.url).href;
+  for (const behavior of ["joined", "reserve", "secret-reply"]) {
+    const result = spawnSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "--eval", mediaControllerHarness], {
+      input: JSON.stringify({ controllerUrl, behavior }), encoding: "utf8", timeout: 10_000,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+  }
+});
+
 test("private stdin accepts one bounded matching frame per phase and refuses replay, duplication, malformed bytes and EOF", async () => {
   const input = interactiveInput(), context = "owner", permit = interactivePermit(input), selection = { context, expires: permit.expires };
   const frame = privateFrame(input, context, permit), stream = new PassThrough();

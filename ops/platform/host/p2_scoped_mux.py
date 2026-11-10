@@ -27,11 +27,15 @@ _PROFILE_ID = "staging-current"
 _PROFILE_SHA256 = "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
 _PROFILE = {"version": 1, "id": _PROFILE_ID, "sha256": _PROFILE_SHA256}
 _ACTION_KEYS = {"attemptId", "generation", "environmentId", "assetId", "uploadId", "eventType"}
+_RESERVATION_KEYS = {"courseId", "lessonId", "courseRevision", "attemptId", "uploadId", "generation", "environmentId",
+                     "status", "isCurrent", "readOnly"}
 _PROVIDER = re.compile(r"[A-Za-z0-9_-]{1,255}")
 _UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}")
 _SHA = re.compile(r"[a-f0-9]{64}")
+_EPOCH = re.compile(r"[1-9][0-9]{0,17}")
+_UPLOAD_EVENT = "video.upload.asset_created"
 _EVENTS = {
-    "video.upload.asset_created",
+    _UPLOAD_EVENT,
     "video.asset.created",
     "video.asset.ready",
     "video.asset.errored",
@@ -44,6 +48,7 @@ _STATUSES = {"pending", "uploading", "processing", "ready", "errored"}
 _MAX_WINDOW_MS = 120_000
 _MAX_STATE_BYTES = 4096
 _MAX_OBSERVATION_BYTES = 16384
+_ZERO = {"newWork": 0, "recovery": 0}
 
 
 _COURSE_QUERY = r'''import pg from "pg";
@@ -62,6 +67,43 @@ try{
  await client.query("ROLLBACK");
  process.stdout.write(JSON.stringify({identity:identity.rows[0],rows:result.rows}));
 }finally{await client.end().catch(()=>{});}
+'''
+
+_ONE_SHOT_COURSE_QUERY = r'''import { Client } from "/app/node_modules/pg/esm/index.mjs";
+import { directMigrationConnection, hasVerifiedMigrationTransport } from "/app/dist-migration/src/db/migration-lineage.js";
+try {
+ const chunks=[];let length=0;
+ for await(const chunk of process.stdin){length+=chunk.length;if(length>16384)throw Error();chunks.push(chunk);}
+ const {attemptId,connectionUrl,target}=JSON.parse(Buffer.concat(chunks));
+ if(new URL(connectionUrl).search!=="?sslmode=verify-full")throw Error();
+ const client=new Client({...directMigrationConnection(connectionUrl,target),enableChannelBinding:true,
+    options:"-c default_transaction_read_only=on -c search_path=pg_catalog -c statement_timeout=10000 -c lock_timeout=2000"});
+ let disconnected=false,identity,rows;
+ client.on("error",()=>{disconnected=true;});
+ try {
+    await client.connect();
+    if(!hasVerifiedMigrationTransport(client,target.host))throw Error();
+    await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    [identity]=(await client.query(`SELECT current_user AS "user",current_database() AS database,
+        current_setting('server_version_num')::int AS server_version_num,
+        current_setting('transaction_read_only') AS read_only,current_setting('search_path') AS search_path`)).rows;
+    if(identity?.read_only!=="on"||identity.search_path!=="pg_catalog")throw Error();
+    ({rows}=await client.query(`SELECT a.id::text AS "attemptId",l.id::text AS "lessonId",c.id::text AS "courseId",
+        c.revision AS "courseRevision",a.generation,a.managed_by_course AS "managedByCourse",
+        a.provider_environment_id AS "environmentId",a.mux_upload_id AS "uploadId",a.mux_asset_id AS "assetId",
+        a.status,a.is_current AS "isCurrent",a.deleted_at::text AS "deletedAt",a.superseded_at::text AS "supersededAt",
+        a.recovery_attempts AS "recoveryAttempts",a.recovery_lease_owner IS NOT NULL AS "recoveryLeasePresent",
+        a.recovery_next_attempt_at::text AS "wakeAt",a.last_error_code AS "lastErrorCode"
+      FROM public.video_assets a JOIN public.lessons l ON l.id=a.lesson_id
+      JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
+      WHERE a.id=$1::uuid AND c.status='draft' AND l.archived_at IS NULL AND m.archived_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM public.video_assets later WHERE later.lesson_id=l.id AND later.generation>a.generation)`,[attemptId]));
+    await client.query("ROLLBACK");
+    if(!hasVerifiedMigrationTransport(client,target.host))throw Error();
+ }finally{await client.end();}
+ if(disconnected)throw Error();
+ process.stdout.write(JSON.stringify({identity,rows})+"\n");
+}catch{process.stderr.write("P2_SCOPED_MUX_COURSE_QUERY_REFUSED\n");process.exitCode=1;}
 '''
 
 
@@ -102,7 +144,7 @@ def _write_all(descriptor, raw):
 class P2ScopedMuxStage:
     """One process-local scoped callback window owned by a reviewed controller."""
 
-    def __init__(self, broker):
+    def __init__(self, broker, *, reservation=None, expires_at=None):
         # Lazy imports avoid making this module another broker entry point.
         from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
 
@@ -110,10 +152,30 @@ class P2ScopedMuxStage:
                  "P2_SCOPED_MUX_PROFILED_CERTIFICATION_PARENT_REQUIRED")
         self.broker, self.scope = broker, broker.scope
         self.plan = broker.initial["certificationPlan"]
+        self._one_shot = reservation is not None
         _require(broker.certification_profile() == _PROFILE and self.scope._expected_profile == _PROFILE and
-                 self.plan.get("mode") == "mux-callback-recovery" and broker.external_armed is True,
+                 broker.external_armed is True and
+                 (self.plan.get("mode") == "interactive-browser" and broker.guard_arm_verified is True if self._one_shot
+                  else self.plan.get("mode") == "mux-callback-recovery" and expires_at is None),
                  "P2_SCOPED_MUX_SOURCE_MODE_REQUIRED")
-        self.action = self._validate_action(self.plan.get("scopedAction"))
+        self._reservation = None
+        if self._one_shot:
+            from p2_interactive_window import media_upload_selected, validate_interactive_plan_action
+
+            scoped = validate_interactive_plan_action(self.plan)
+            _require(media_upload_selected(self.plan) and self.plan.get("startState") == "already-closed" and
+                     type(self.plan.get("initialEpoch")) is str and _EPOCH.fullmatch(self.plan["initialEpoch"]) is not None and
+                     int(self.plan["initialEpoch"]) <= 10**18 - 3 and
+                     type(expires_at) is int and time.time() < expires_at <= time.time() + 300,
+                     "P2_SCOPED_MUX_ONE_SHOT_WINDOW_REQUIRED")
+            self._reservation = self._validate_reservation(reservation, scoped["mediaAction"])
+            self._expires_at = expires_at
+            self.action = self._validate_action({
+                **{key: reservation[key] for key in ("attemptId", "generation", "environmentId", "uploadId")},
+                "assetId": None, "eventType": _UPLOAD_EVENT,
+            })
+        else:
+            self.action = self._validate_action(self.plan.get("scopedAction"))
         _require(type(self.plan.get("maximumSeconds")) is int and self.plan["maximumSeconds"] == 300,
                  "P2_SCOPED_MUX_BOUNDED_PLAN_REQUIRED")
         source_hashes = broker.initial.get("sourceSha256")
@@ -126,9 +188,11 @@ class P2ScopedMuxStage:
         self._scoped_raw = None
         self._scoped_sha256 = None
         self._original_raw = None
+        self._original_metadata = None
         self._original_sha256 = None
         self._managed_before = None
         self._observed = None
+        self._observed_managed = None
         self._admission_fd = os.dup(broker.admission_fd)
         try:
             self._preflight()
@@ -146,10 +210,23 @@ class P2ScopedMuxStage:
                  (value["assetId"] is None or _provider(value["assetId"])) and
                  (value["uploadId"] is None or _provider(value["uploadId"])),
                  "P2_SCOPED_MUX_ACTION_REQUIRED")
-        upload = value["eventType"] == "video.upload.asset_created"
+        upload = value["eventType"] == _UPLOAD_EVENT
         track = value["eventType"] in _TRACK_EVENTS
         _require((not upload or value["uploadId"] is not None) and (not track or value["assetId"] is not None),
                  "P2_SCOPED_MUX_EVENT_BINDING_REQUIRED")
+        return copy.deepcopy(value)
+
+    @staticmethod
+    def _validate_reservation(value, selected):
+        _require(type(value) is dict and set(value) == _RESERVATION_KEYS and
+                 all(value[key] == selected[key] for key in ("courseId", "lessonId")) and
+                 type(value["courseRevision"]) is int and value["courseRevision"] == selected["revision"] + 1 and
+                 type(value["attemptId"]) is str and _UUID.fullmatch(value["attemptId"]) is not None and
+                 value["attemptId"] != selected["currentVideoAssetId"] and type(value["generation"]) is int and
+                 1 <= value["generation"] <= 2_147_483_647 and _provider(value["environmentId"]) and
+                 _provider(value["uploadId"]) and value["status"] == "uploading" and
+                 value["isCurrent"] is (selected["currentVideoAssetId"] is None) and value["readOnly"] is True,
+                 "P2_SCOPED_MUX_ONE_SHOT_RESERVATION_REQUIRED")
         return copy.deepcopy(value)
 
     def _check(self):
@@ -167,6 +244,10 @@ class P2ScopedMuxStage:
                  admission["newWork"] is False and admission["recovery"] is False and
                  admission["active"] == 0 and admission["uncertain"] == 0,
                  "P2_SCOPED_MUX_FRONTEND_CLOSED_REQUIRED")
+        if self._one_shot:
+            _require(admission["epoch"] == str(int(self.plan["initialEpoch"]) + 2) and
+                     all(type(admission[key]) is int for key in ("active", "uncertain")),
+                     "P2_SCOPED_MUX_ONE_SHOT_FRONTEND_EPOCH_REQUIRED")
         return copy.deepcopy(admission)
 
     def _gateway_observation(self):
@@ -176,6 +257,7 @@ class P2ScopedMuxStage:
         _require(type(value) is dict and value.get("status") == "P2_FAULT_GATEWAY_CURRENT" and
                  value.get("processSha256") == self.plan["gatewayProcessSha256"] and
                  value.get("gatewayConfigurationSha256") == self.plan["gatewayConfigurationSha256"] and
+                 (not self._one_shot or value.get("faultLeasePresent") is False) and
                  value.get("admissionDirectory") == {"device": str(os.fstat(self._admission_fd).st_dev),
                                                       "inode": str(os.fstat(self._admission_fd).st_ino)},
                  "P2_SCOPED_MUX_EXACT_GATEWAY_REQUIRED")
@@ -192,7 +274,7 @@ class P2ScopedMuxStage:
                  "P2_SCOPED_MUX_ROOT_ADMISSION_MOUNT_REQUIRED")
         return opened
 
-    def _read_state(self):
+    def _read_state(self, *, with_metadata=False):
         descriptor = os.open("state.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=self._admission_fd)
         try:
             info = os.fstat(descriptor)
@@ -200,18 +282,24 @@ class P2ScopedMuxStage:
                      0 < info.st_size <= _MAX_STATE_BYTES, "P2_SCOPED_MUX_ADMISSION_FILE_REQUIRED")
             raw = os.read(descriptor, _MAX_STATE_BYTES + 1)
             _require(len(raw) == info.st_size, "P2_SCOPED_MUX_ADMISSION_READ_REQUIRED")
+            if with_metadata:
+                _require(info.st_nlink == 1 and not stat.S_IMODE(info.st_mode) & 0o7000 and len(raw) == info.st_size,
+                         "P2_SCOPED_MUX_ADMISSION_FILE_REQUIRED")
+                return raw, stat.S_IMODE(info.st_mode), info.st_gid
             return raw
         finally:
             os.close(descriptor)
 
-    def _replace_state(self, raw, label):
+    def _replace_state(self, raw, label, *, mode=0o644, gid=None):
         _require(type(raw) is bytes and 0 < len(raw) <= _MAX_STATE_BYTES and
                  re.fullmatch(r"[a-z0-9-]{1,64}", label), "P2_SCOPED_MUX_ADMISSION_BYTES_REQUIRED")
         name = ".p2-scoped-mux-" + label + "-" + uuid.uuid4().hex
         descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644,
                              dir_fd=self._admission_fd)
         try:
-            os.fchmod(descriptor, 0o644)
+            if gid is not None:
+                os.fchown(descriptor, 0, gid)
+            os.fchmod(descriptor, mode)
             _write_all(descriptor, raw)
             os.replace(name, "state.json", src_dir_fd=self._admission_fd, dst_dir_fd=self._admission_fd)
             os.fsync(self._admission_fd)
@@ -221,6 +309,15 @@ class P2ScopedMuxStage:
                 os.unlink(name, dir_fd=self._admission_fd)
             except FileNotFoundError:
                 pass
+
+    def _restore_original(self, label):
+        if self._one_shot:
+            mode, gid = self._original_metadata
+            self._replace_state(self._original_raw, label, mode=mode, gid=gid)
+            _require(self._read_state(with_metadata=True) == (self._original_raw, mode, gid),
+                     "P2_SCOPED_MUX_CLOSED_STATE_READBACK_REQUIRED")
+        else:
+            self._replace_state(self._original_raw, label)
 
     def _ordinary_closed(self, value):
         expected = {"actionId", "candidateSha256", "environment", "newWork", "recovery", "releaseId", "version"}
@@ -232,44 +329,71 @@ class P2ScopedMuxStage:
                  "P2_SCOPED_MUX_INITIAL_CLOSED_STATE_REQUIRED")
         return value
 
-    def _managed_attempt(self, phase="current"):
+    def _managed_attempt(self, phase="current", *, asset_id=None, prior=None):
         _require(phase in ("before", "after", "current"), "P2_SCOPED_MUX_MANAGED_PHASE_REQUIRED")
         info = self.broker.jobs["course"]
         job = info["job"]
         credential = self.broker.initial["credentials"]["COURSE_STAGING_DATABASE_URL"]
         _require(type(credential) is str and credential and info["image"] == self.broker.selected["artifacts"]["courseMigration"]["image"],
                  "P2_SCOPED_MUX_COURSE_IMAGE_REQUIRED")
-        container = "lash-p2-scoped-mux-course-" + uuid.uuid4().hex
-        args = ["docker", "run", "--rm", "--name", container, "--interactive", "--network", "host", "--read-only",
-                "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--pids-limit", "64",
-                "--env", "STAGING_DATABASE_URL", "--entrypoint", "node", info["image"], "--input-type=module", "--eval", _COURSE_QUERY]
+        payload = {"attemptId": self.action["attemptId"]}
+        if self._one_shot:
+            container = "lash-p2-certification-api-check-course-" + uuid.uuid4().hex
+            args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
+                    "--interactive", "--network", "bridge", "--read-only", "--cap-drop", "ALL",
+                    "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
+                    "--cpus", "0.5", "--pids-limit", "64", "--entrypoint", "node", info["image"], "--input-type=module",
+                    "--eval", _ONE_SHOT_COURSE_QUERY]
+            environment = runtime.SAFE_ENV
+            payload.update(connectionUrl=credential, target=job["target"])
+        else:
+            container = "lash-p2-scoped-mux-course-" + uuid.uuid4().hex
+            args = ["docker", "run", "--rm", "--name", container, "--interactive", "--network", "host", "--read-only",
+                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--pids-limit", "64",
+                    "--env", "STAGING_DATABASE_URL", "--entrypoint", "node", info["image"], "--input-type=module", "--eval", _COURSE_QUERY]
+            environment = {**runtime.SAFE_ENV, "STAGING_DATABASE_URL": credential}
+        payload = json.dumps(payload)
+        _require(len(payload.encode()) <= _MAX_OBSERVATION_BYTES, "P2_SCOPED_MUX_COURSE_QUERY_INPUT_REQUIRED")
         try:
-            result = self.scope.run(args, env={**runtime.SAFE_ENV, "STAGING_DATABASE_URL": credential},
-                                    input=json.dumps({"attemptId": self.action["attemptId"]}), text=True,
+            result = self.scope.run(args, env=environment, input=payload, text=True,
                                     timeout=30, check=True, capture_output=True)
             _require(not result.stderr and 0 < len(result.stdout.encode()) <= _MAX_OBSERVATION_BYTES,
                      "P2_SCOPED_MUX_COURSE_QUERY_REQUIRED")
-            value = json.loads(result.stdout)
+            if self._one_shot:
+                from qualification_target_profile import decode_qualification_target_json
+
+                value = decode_qualification_target_json(result.stdout, "carrier")
+                _require(type(value) is dict and set(value) == {"identity", "rows"},
+                         "P2_SCOPED_MUX_COURSE_QUERY_REQUIRED")
+            else:
+                value = json.loads(result.stdout)
             target = job["target"]
             identity = value.get("identity")
             rows = value.get("rows")
-            _require(type(identity) is dict and set(identity) == {"user", "database", "server_version_num"} and
+            identity_keys = {"user", "database", "server_version_num"}
+            if self._one_shot:
+                identity_keys |= {"read_only", "search_path"}
+            _require(type(identity) is dict and set(identity) == identity_keys and
                      identity["user"] == target["user"] and identity["database"] == target["database"] and
                      type(identity["server_version_num"]) is int and identity["server_version_num"] // 10000 == target["serverMajor"] and
+                     (not self._one_shot or identity["read_only"] == "on" and identity["search_path"] == "pg_catalog") and
                      type(rows) is list and len(rows) == 1, "P2_SCOPED_MUX_COURSE_DATABASE_REQUIRED")
             row = rows[0]
-            keys = {"attemptId", "generation", "managedByCourse", "environmentId", "uploadId", "assetId",
-                    "status", "isCurrent", "deletedAt"}
-            upload_asset = self.action["eventType"] == "video.upload.asset_created"
-            asset_matches = row["assetId"] == self.action["assetId"]
-            if upload_asset and phase == "after" and self.action["assetId"] is None:
-                asset_matches = _provider(row["assetId"])
+            keys = {"attemptId", "generation", "managedByCourse", "environmentId", "uploadId", "assetId", "status", "isCurrent", "deletedAt"}
+            if self._one_shot:
+                keys |= {"courseId", "lessonId", "courseRevision", "supersededAt", "recoveryAttempts", "recoveryLeasePresent", "wakeAt", "lastErrorCode"}
             _require(type(row) is dict and set(row) == keys and row["attemptId"] == self.action["attemptId"] and
-                     row["generation"] == self.action["generation"] and row["managedByCourse"] is True and
+                     type(row["generation"]) is int and row["generation"] == self.action["generation"] and row["managedByCourse"] is True and
                      row["environmentId"] == self.action["environmentId"] and row["uploadId"] == self.action["uploadId"] and
-                     asset_matches and row["status"] in _STATUSES and
-                     type(row["isCurrent"]) is bool and row["deletedAt"] is None,
+                     row["status"] in _STATUSES and type(row["isCurrent"]) is bool and row["deletedAt"] is None,
                      "P2_SCOPED_MUX_MANAGED_ATTEMPT_REQUIRED")
+            if self._one_shot:
+                self._one_shot_managed_attempt(row, phase, asset_id, prior)
+            else:
+                asset_matches = row["assetId"] == self.action["assetId"]
+                if self.action["eventType"] == _UPLOAD_EVENT and phase == "after" and self.action["assetId"] is None:
+                    asset_matches = _provider(row["assetId"])
+                _require(asset_matches, "P2_SCOPED_MUX_MANAGED_ATTEMPT_REQUIRED")
             return {"row": row, "rowSha256": _hash(_canonical(row)),
                     "databaseIdentitySha256": _hash(_canonical(identity))}
         finally:
@@ -279,6 +403,34 @@ class P2ScopedMuxStage:
                                         "--format", "{{.ID}}"], env=runtime.SAFE_ENV, timeout=15,
                                        check=True, capture_output=True, text=True)
             _require(not remaining.stdout, "P2_SCOPED_MUX_COURSE_QUERY_CONTAINER_REMAINS")
+
+    def _one_shot_managed_attempt(self, row, phase, asset_id, prior):
+        reservation = self._reservation
+        _require(all(row[key] == reservation[key] for key in ("courseId", "lessonId", "courseRevision")) and
+                 type(row["courseRevision"]) is int and row["supersededAt"] is None and
+                 type(row["recoveryAttempts"]) is int and 0 <= row["recoveryAttempts"] <= 2_147_483_647 and
+                 type(row["recoveryLeasePresent"]) is bool and type(row["wakeAt"]) is str and 0 < len(row["wakeAt"]) <= 64 and
+                 (row["lastErrorCode"] is None or _provider(row["lastErrorCode"])) and row["lastErrorCode"] != "PROVIDER_OWNERSHIP_MISMATCH",
+                 "P2_SCOPED_MUX_ONE_SHOT_MANAGED_LINEAGE_REQUIRED")
+        if phase == "before":
+            _require(row["assetId"] is None and row["status"] == "uploading" and row["isCurrent"] is reservation["isCurrent"],
+                     "P2_SCOPED_MUX_ONE_SHOT_RESERVATION_CHANGED")
+            return
+        _require(phase == "after" and _provider(asset_id) and type(prior) is dict and
+                 (row["assetId"] is None or row["assetId"] == asset_id) and
+                 row["status"] in ("uploading", "processing", "ready", "errored") and
+                 (row["status"] != "ready" or row["assetId"] == asset_id and row["isCurrent"] is True) and
+                 (prior["assetId"] is None or prior["assetId"] == row["assetId"]) and
+                 (not prior["isCurrent"] or row["isCurrent"]) and
+                 (row["isCurrent"] == prior["isCurrent"] or row["status"] == "ready") and
+                 (prior["status"] != "ready" or row["status"] in ("ready", "errored")) and
+                 row["recoveryAttempts"] >= prior["recoveryAttempts"],
+                 "P2_SCOPED_MUX_ONE_SHOT_MANAGED_LINEAGE_REQUIRED")
+        # Course's webhook wakes this row. Asset adoption and status promotion
+        # belong to the worker and may be visible before either held readback.
+        changed = any(row[key] != prior[key] for key in ("assetId", "status", "isCurrent"))
+        _require(not changed or prior["recoveryLeasePresent"] or row["recoveryAttempts"] > prior["recoveryAttempts"],
+                 "P2_SCOPED_MUX_ONE_SHOT_MANAGED_WORKER_RACE_UNPROVED")
 
     def _preflight(self):
         self._check()
@@ -298,7 +450,15 @@ class P2ScopedMuxStage:
                  for group in ("active", "uncertain") for key in ("newWork", "recovery")) and
                  gateway.get("admissionDirectory") == {"device": str(storage.st_dev), "inode": str(storage.st_ino)},
                  "P2_SCOPED_MUX_INITIAL_GATEWAY_CLOSED_REQUIRED")
-        raw = self._read_state()
+        if self._one_shot:
+            from current_databases import read_certification_api_proof
+
+            read_certification_api_proof(self.broker.api_proof, self.scope, self.broker.selected, self.broker.jobs,
+                                         expected_profile=_PROFILE)
+            raw, mode, gid = self._read_state(with_metadata=True)
+            self._original_metadata = (mode, gid)
+        else:
+            raw = self._read_state()
         try:
             ordinary = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError):
@@ -324,7 +484,8 @@ class P2ScopedMuxStage:
                 "originalStateSha256": self._original_sha256, "managedRowSha256": self._managed_before["rowSha256"],
                 "databaseIdentitySha256": self._managed_before["databaseIdentitySha256"],
                 "ordinaryNewWorkAuthorized": False, "ordinaryRecoveryAuthorized": False,
-                "nativeSchedulesEnabled": False, "trafficAuthorized": False, "releaseAccepted": False}
+                "nativeSchedulesEnabled": False, "trafficAuthorized": False, "releaseAccepted": False,
+                **({"oneShot": True} if self._one_shot else {})}
 
     def _scoped_marker(self):
         gateway = self._gateway_observation()
@@ -342,20 +503,30 @@ class P2ScopedMuxStage:
             _require(type(admission[group]) is dict and set(admission[group]) == {"newWork", "recovery"} and
                      all(type(value) is int and 0 <= value <= 128 for value in admission[group].values()),
                      "P2_SCOPED_MUX_GATEWAY_COUNTER_REQUIRED")
-        evidence = admission["muxCallbackEvidence"]
+        evidence = self._require_gateway_evidence(admission["muxCallbackEvidence"])
+        if self._one_shot:
+            _require(all(admission[group]["newWork"] == 0 and admission[group]["recovery"] <= evidence["admitted"]
+                         for group in ("active", "uncertain")),
+                     "P2_SCOPED_MUX_ONE_SHOT_COUNTER_REQUIRED")
+        return copy.deepcopy(admission)
+
+    def _require_gateway_evidence(self, evidence):
+        maximum = 1 if self._one_shot else 16
         _require(type(evidence) is dict and set(evidence) == {"admitted", "managedAcks"} and
-                 type(evidence["admitted"]) is int and 0 <= evidence["admitted"] <= 16 and
-                 type(evidence["managedAcks"]) is list and len(evidence["managedAcks"]) <= 16,
+                 type(evidence["admitted"]) is int and 0 <= evidence["admitted"] <= maximum and
+                 type(evidence["managedAcks"]) is list and len(evidence["managedAcks"]) <= maximum,
                  "P2_SCOPED_MUX_GATEWAY_EVIDENCE_REQUIRED")
         seen = set()
+        fields = {"requestId", "eventId", "upstreamStatus"} | ({"assetId"} if self._one_shot else set())
         for row in evidence["managedAcks"]:
-            _require(type(row) is dict and set(row) == {"requestId", "eventId", "upstreamStatus"} and
-                     _provider(row["requestId"]) and _provider(row["eventId"]) and row["upstreamStatus"] == 200 and
+            _require(type(row) is dict and set(row) == fields and _provider(row["requestId"]) and _provider(row["eventId"]) and
+                     type(row["upstreamStatus"]) is int and row["upstreamStatus"] == 200 and
+                     (not self._one_shot or _UUID.fullmatch(row["requestId"]) is not None and _provider(row["assetId"])) and
                      (row["requestId"], row["eventId"]) not in seen, "P2_SCOPED_MUX_MANAGED_ACK_REQUIRED")
             seen.add((row["requestId"], row["eventId"]))
         _require(evidence["admitted"] >= len(evidence["managedAcks"]),
                  "P2_SCOPED_MUX_MANAGED_ACK_COUNT_REQUIRED")
-        return copy.deepcopy(admission)
+        return evidence
 
     @staticmethod
     def _marker_disposition(marker):
@@ -376,10 +547,16 @@ class P2ScopedMuxStage:
         self._storage_identity()
         milliseconds = int(time.time() * 1000)
         duration = min(self.plan["maximumSeconds"] * 1000, _MAX_WINDOW_MS)
+        if self._one_shot:
+            _require(self._read_state(with_metadata=True) == (self._original_raw, *self._original_metadata),
+                     "P2_SCOPED_MUX_UNRELATED_STATE_PRESERVED")
+            duration = min(duration, self._expires_at * 1000 - milliseconds)
+            _require(duration > 0, "P2_SCOPED_MUX_ONE_SHOT_WINDOW_EXPIRED")
         callback = {**copy.deepcopy(self.action), "issuedAt": _instant(milliseconds),
                     "expiresAt": _instant(milliseconds + duration),
                     "gatewayProcessSha256": self._gateway_process_sha256,
-                    "mountDevice": self._mount["device"], "mountInode": self._mount["inode"]}
+                    "mountDevice": self._mount["device"], "mountInode": self._mount["inode"],
+                    **({"oneShot": True} if self._one_shot else {})}
         state = {"version": 2, "environment": "staging", "releaseId": self.broker.selected["releaseId"],
                  "candidateSha256": self.broker.initial["candidateSha256"], "actionId": self.broker.action_id(),
                  "newWork": False, "recovery": False, "muxCallback": callback}
@@ -387,12 +564,26 @@ class P2ScopedMuxStage:
         _require(len(raw) <= _MAX_STATE_BYTES, "P2_SCOPED_MUX_STATE_BOUNDS")
         self._scoped_raw, self._scoped_sha256 = raw, _hash(raw)
         self._opened_at, self._deadline = time.monotonic(), time.monotonic() + duration / 1000
-        self._replace_state(raw, "open")
+        if not self._one_shot:
+            self._replace_state(raw, "open")
         try:
+            if self._one_shot:
+                self._replace_state(raw, "open")
             _require(self._read_state() == raw, "P2_SCOPED_MUX_STATE_READBACK_REQUIRED")
             marker = self._scoped_marker()
+            if self._one_shot:
+                _require(marker["muxCallbackActive"] is True and marker["muxCallbackEvidence"]["admitted"] == 0 and
+                         time.monotonic() < self._deadline and time.time() * 1000 < milliseconds + duration,
+                         "P2_SCOPED_MUX_ONE_SHOT_ARM_REQUIRED")
         except BaseException:
-            self._replace_state(self._original_raw, "rollback")
+            if self._one_shot:
+                current = self._read_state(with_metadata=True)
+                if current[0] == raw:
+                    self._restore_original("rollback")
+                else:
+                    _require(current == (self._original_raw, *self._original_metadata), "P2_SCOPED_MUX_UNRELATED_STATE_PRESERVED")
+            else:
+                self._restore_original("rollback")
             self._state = "closed"
             raise
         self._state = "open"
@@ -422,17 +613,29 @@ class P2ScopedMuxStage:
                    "effectObserved": False, "gatewayEffectDrained": False}
         if disposition != "observed":
             return waiting
-        managed = self._managed_attempt("after")
-        _require(managed["rowSha256"] != "0" * 64, "P2_SCOPED_MUX_MANAGED_EFFECT_REQUIRED")
         acknowledgments = evidence["managedAcks"]
+        if self._one_shot:
+            managed = self._managed_attempt("after", asset_id=acknowledgments[0]["assetId"], prior=self._managed_before["row"])
+            _require(managed["databaseIdentitySha256"] == self._managed_before["databaseIdentitySha256"],
+                     "P2_SCOPED_MUX_ONE_SHOT_MANAGED_LINEAGE_REQUIRED")
+            self._observed_managed = managed
+        else:
+            managed = self._managed_attempt("after")
+        _require(managed["rowSha256"] != "0" * 64, "P2_SCOPED_MUX_MANAGED_EFFECT_REQUIRED")
         self._observed = {**self._base_receipt("P2_SCOPED_MUX_EFFECT_OBSERVED"),
                           "scopedStateSha256": self._scoped_sha256,
                           "managedRowSha256": managed["rowSha256"],
                           "managedRowChanged": managed["rowSha256"] != self._managed_before["rowSha256"],
                           "managedAckCount": len(acknowledgments),
                           "managedAcksSha256": _hash(_canonical(acknowledgments)),
-                          "effectObserved": True, "gatewayEffectDrained": True}
+                          "effectObserved": True, "gatewayEffectDrained": True,
+                          **(self._one_shot_ack_fields(acknowledgments[0], managed["row"]) if self._one_shot else {})}
         return copy.deepcopy(self._observed)
+
+    @staticmethod
+    def _one_shot_ack_fields(ack, row):
+        return {"admitted": 1, **{key: ack[key] for key in ("requestId", "eventId", "assetId")},
+                "managedAssetId": row["assetId"], "managedStatus": row["status"], "wakeTransactionAcknowledged": True}
 
     def close(self):
         _require(self._state == "open", "P2_SCOPED_MUX_CLOSE_ORDER_REQUIRED")
@@ -440,7 +643,7 @@ class P2ScopedMuxStage:
         # It deliberately does not depend on the scoped lease still being live.
         current = self._read_state()
         _require(current == self._scoped_raw, "P2_SCOPED_MUX_UNRELATED_STATE_PRESERVED")
-        self._replace_state(self._original_raw, "close")
+        self._restore_original("close")
         self._state = "closed"
         _require(self._read_state() == self._original_raw, "P2_SCOPED_MUX_CLOSED_STATE_READBACK_REQUIRED")
         self._check()
@@ -456,16 +659,38 @@ class P2ScopedMuxStage:
             time.sleep(0.1)
             self._check()
         _require(self._observed is not None, "P2_SCOPED_MUX_EFFECT_NOT_OBSERVED")
-        managed = self._managed_attempt("after")
-        _require(managed["rowSha256"] == self._observed["managedRowSha256"], "P2_SCOPED_MUX_EFFECT_CHANGED_BEFORE_CLOSE")
+        final = {}
+        if self._one_shot:
+            ordinary = json.loads(self._original_raw)
+            _require(_canonical({key: gateway.get(key) for key in ordinary}) == _canonical(ordinary) and
+                     all(_canonical(gateway[group]) == _canonical(_ZERO) for group in ("active", "uncertain")),
+                     "P2_SCOPED_MUX_ONE_SHOT_FINAL_STATE_REQUIRED")
+            receipt = gateway.get("muxCallbackFinal")
+            _require(type(receipt) is dict and set(receipt) == {"scopedStateSha256", "admitted", "managedAcks"} and
+                     receipt["scopedStateSha256"] == self._scoped_sha256,
+                     "P2_SCOPED_MUX_ONE_SHOT_FINAL_EVIDENCE_REQUIRED")
+            evidence = self._require_gateway_evidence({key: receipt[key] for key in ("admitted", "managedAcks")})
+            acks = evidence["managedAcks"]
+            _require(evidence["admitted"] == len(acks) == 1 and _hash(_canonical(acks)) == self._observed["managedAcksSha256"],
+                     "P2_SCOPED_MUX_ONE_SHOT_FINAL_ACK_REQUIRED")
+            managed = self._managed_attempt("after", asset_id=acks[0]["assetId"], prior=self._observed_managed["row"])
+            _require(managed["databaseIdentitySha256"] == self._managed_before["databaseIdentitySha256"] and
+                     self._read_state(with_metadata=True) == (self._original_raw, *self._original_metadata),
+                     "P2_SCOPED_MUX_ONE_SHOT_FINAL_OWNERSHIP_REQUIRED")
+            final = {**self._one_shot_ack_fields(acks[0], managed["row"]), "gatewayStateSha256": gateway["sha256"],
+                     "gatewayStateRestored": True}
+            self._check()
+        else:
+            managed = self._managed_attempt("after")
+            _require(managed["rowSha256"] == self._observed["managedRowSha256"], "P2_SCOPED_MUX_EFFECT_CHANGED_BEFORE_CLOSE")
         frontend = self._frontend_closed()
         return {**self._base_receipt("P2_SCOPED_MUX_CLOSED"), "scopedStateSha256": self._scoped_sha256,
-                "managedRowSha256": self._observed["managedRowSha256"],
-                "managedRowChanged": self._observed["managedRowChanged"],
+                "managedRowSha256": managed["rowSha256"],
+                "managedRowChanged": managed["rowSha256"] != self._managed_before["rowSha256"],
                 "managedAckCount": self._observed["managedAckCount"],
                 "managedAcksSha256": self._observed["managedAcksSha256"],
                 "frontendAdmission": frontend, "gatewayAdmissionClosed": True,
-                "effectObserved": True, "gatewayEffectDrained": True}
+                "effectObserved": True, "gatewayEffectDrained": True, **final}
 
     def __del__(self):
         descriptor = getattr(self, "_admission_fd", None)

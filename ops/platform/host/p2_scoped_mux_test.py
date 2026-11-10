@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
+import time
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -100,6 +102,7 @@ class ScopedMuxTests(unittest.TestCase):
         broker = self.typed_parent()
         stage.broker, stage.scope, stage.plan = broker, broker.scope, broker.initial["certificationPlan"]
         stage.action = action()
+        stage._one_shot = False
         stage._state, stage._opened_at, stage._deadline = "new", None, None
         stage._scoped_raw = stage._scoped_sha256 = stage._observed = None
         stage._original_raw = mux._canonical(self.original)
@@ -121,12 +124,14 @@ class ScopedMuxTests(unittest.TestCase):
         stage._managed_attempt = lambda _phase="current": managed("after")
         return stage
 
-    def marker(self, stage, *, acknowledgments, admitted=None, active=0, uncertain=0):
+    def marker(self, stage, *, acknowledgments, admitted=None, active=0, uncertain=0, final=None):
         raw = (self.admission / "state.json").read_bytes()
         value = json.loads(raw)
         if value["version"] == 1:
             admission = {"valid": True, "sha256": mux._hash(raw), **value,
                          "active": {"newWork": 0, "recovery": 0}, "uncertain": {"newWork": 0, "recovery": 0}}
+            if final is not None:
+                admission["muxCallbackFinal"] = final
         else:
             admission = {"valid": False, "sha256": mux._hash(raw), "version": 2, "environment": "staging",
                          "releaseId": "release-owned", "candidateSha256": "c" * 64,
@@ -137,7 +142,146 @@ class ScopedMuxTests(unittest.TestCase):
                                                  "managedAcks": acknowledgments}}
         return {"status": "P2_FAULT_GATEWAY_CURRENT", "processSha256": "a" * 64,
                 "gatewayConfigurationSha256": "b" * 64,
-                "admissionDirectory": stage._mount, "admission": admission}
+                "admissionDirectory": stage._mount, "faultLeasePresent": False, "admission": admission}
+
+    def one_shot_fixture(self):
+        from p2_interactive_window import MEDIA_UPLOAD_CALLBACK
+        from p2_interactive_ingress_test import MediaReservationWindowTests
+
+        plan, _, evidence = MediaReservationWindowTests().fixture(replaces=True)
+        plan["scopedAction"]["mediaAction"]["operation"] = MEDIA_UPLOAD_CALLBACK
+        reservation = evidence["courseWitness"]
+        broker = self.typed_parent()
+        broker.guard_arm_verified = True
+        broker.api_proof = object()
+        broker.initial["certificationPlan"].update(plan, mode="interactive-browser", startState="already-closed")
+        frontend = {"epoch": "9", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
+        broker.observer = SimpleNamespace(probe=lambda _: {"admission": frontend})
+        row = {**{key: reservation[key] for key in ("courseId", "lessonId", "courseRevision", "attemptId", "uploadId",
+                                                    "generation", "environmentId", "status", "isCurrent")},
+               "managedByCourse": True, "assetId": None, "deletedAt": None, "supersededAt": None,
+               "recoveryAttempts": 1, "recoveryLeasePresent": False, "wakeAt": "before", "lastErrorCode": None}
+        runner = Runner({"identity": {"user": "course_runtime", "database": "course", "server_version_num": 160011,
+                                      "read_only": "on", "search_path": "pg_catalog"}, "rows": [row]})
+        broker.scope.run = runner.run
+        return broker, frontend, reservation, row, runner
+
+    def one_shot_stage(self, broker, reservation, *, expires_at=None):
+        if expires_at is None:
+            expires_at = int(time.time()) + 60
+        with patch("current_databases.read_certification_api_proof"):
+            stage = mux.P2ScopedMuxStage(broker, reservation=reservation, expires_at=expires_at)
+        self.addCleanup(stage.__del__)
+        return stage
+
+    def test_one_shot_constructor_requires_joined_reservation_mode_epoch_and_expiry(self):
+        broker, _, reservation, _, _ = self.one_shot_fixture()
+        with (patch.object(mux.os, "geteuid", return_value=0),
+              patch.object(mux.P2ScopedMuxStage, "_preflight", return_value=None)):
+            stage = self.one_shot_stage(broker, reservation)
+            self.assertEqual(stage.action, {**{key: reservation[key] for key in ("attemptId", "generation", "uploadId", "environmentId")},
+                                            "assetId": None, "eventType": "video.upload.asset_created"})
+            for bad in ({**reservation, "courseRevision": reservation["courseRevision"] - 1},
+                        {**reservation, "readOnly": 1}, {**reservation, "isCurrent": True},
+                        {**reservation, "assetId": "unverified"}):
+                with self.assertRaisesRegex(ValueError, "ONE_SHOT_RESERVATION_REQUIRED"):
+                    self.one_shot_stage(broker, bad)
+            with self.assertRaisesRegex(ValueError, "ONE_SHOT_WINDOW_REQUIRED"):
+                self.one_shot_stage(broker, reservation, expires_at=int(time.time()))
+            broker.guard_arm_verified = False
+            with self.assertRaisesRegex(ValueError, "SOURCE_MODE_REQUIRED"):
+                self.one_shot_stage(broker, reservation)
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned file metadata fixture")
+    def test_one_shot_closes_with_same_ack_when_only_woken_or_worker_already_adopted_asset(self):
+        for worker_raced in (False, True):
+            with self.subTest(worker_raced=worker_raced):
+                path = self.admission / "state.json"
+                original = (json.dumps(self.original, sort_keys=True) + "\n").encode()
+                path.write_bytes(original)
+                os.chown(path, 0, 65532)
+                path.chmod(0o640)
+                broker, frontend, reservation, row, runner = self.one_shot_fixture()
+                storage = os.fstat(self.fd)
+                mounted = SimpleNamespace(_mount={"device": str(storage.st_dev), "inode": str(storage.st_ino)})
+                acks = []
+                final = {}
+                broker._gateway_observation = lambda: self.marker(mounted, acknowledgments=acks, final=final or None)
+                stage = self.one_shot_stage(broker, reservation)
+                self.assertEqual(stage._original_metadata, (0o640, 65532))
+                self.assertNotIn("postgresql://private", repr(runner.calls[0][0]))
+                self.assertNotIn("STAGING_DATABASE_URL", runner.calls[0][1]["env"])
+                self.assertEqual(json.loads(runner.calls[0][1]["input"])["connectionUrl"], "postgresql://private")
+                self.assertIn("hasVerifiedMigrationTransport", runner.calls[0][0][-1])
+                opened = stage.open()
+                self.assertIs(json.loads(path.read_bytes())["muxCallback"]["oneShot"], True)
+                self.assertIs(opened["oneShot"], True)
+                self.assertEqual(stage.observe()["status"], "P2_SCOPED_MUX_WAITING")
+                ack = {"requestId": ATTEMPT, "eventId": "event_owned", "assetId": "asset_owned", "upstreamStatus": 200}
+                acks.append(ack)
+                row["wakeAt"] = "after"
+                observed = stage.observe()
+                self.assertIsNone(observed["managedAssetId"])
+                self.assertEqual(observed["assetId"], "asset_owned")
+                if worker_raced:
+                    row.update(assetId="asset_owned", status="ready", isCurrent=True, recoveryAttempts=2)
+                final.update(scopedStateSha256=opened["scopedStateSha256"], admitted=1, managedAcks=acks)
+                closed = stage.close()
+                self.assertEqual(path.read_bytes(), original)
+                self.assertEqual((stat.S_IMODE(path.stat().st_mode), path.stat().st_gid), (0o640, 65532))
+                self.assertEqual(closed["frontendAdmission"], frontend)
+                self.assertEqual(closed["gatewayStateSha256"], mux._hash(original))
+                self.assertEqual(closed["managedAcksSha256"], observed["managedAcksSha256"])
+                self.assertEqual(closed["managedAssetId"], "asset_owned" if worker_raced else None)
+                self.assertEqual(closed["managedStatus"], "ready" if worker_raced else "uploading")
+                self.assertEqual((closed["requestId"], closed["eventId"]), (ATTEMPT, "event_owned"))
+                self.assertIs(closed["wakeTransactionAcknowledged"], True)
+                self.assertIs(closed["gatewayStateRestored"], True)
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned file metadata fixture")
+    def test_one_shot_rejects_early_ack_expiry_changed_final_ack_and_frontend_epoch(self):
+        storage = os.fstat(self.fd)
+        mounted = SimpleNamespace(_mount={"device": str(storage.st_dev), "inode": str(storage.st_ino)})
+        path = self.admission / "state.json"
+        original = path.read_bytes()
+        ack = {"requestId": ATTEMPT, "eventId": "event_owned", "assetId": "asset_owned", "upstreamStatus": 200}
+        for fault in ("early", "expired", "final", "epoch"):
+            with self.subTest(fault=fault):
+                broker, frontend, reservation, _, _ = self.one_shot_fixture()
+                acks, final = [ack] if fault == "early" else [], {}
+                broker._gateway_observation = lambda: self.marker(mounted, acknowledgments=acks, final=final or None)
+                stage = self.one_shot_stage(broker, reservation)
+                if fault == "expired":
+                    stage._expires_at = int(time.time())
+                if fault == "epoch":
+                    frontend["epoch"] = "10"
+                if fault == "final":
+                    opened = stage.open()
+                    acks.append(ack)
+                    stage.observe()
+                    final.update(scopedStateSha256=opened["scopedStateSha256"], admitted=1,
+                                 managedAcks=[{**ack, "eventId": "different_event"}])
+                    with self.assertRaisesRegex(ValueError, "ONE_SHOT_FINAL_ACK_REQUIRED"):
+                        stage.close()
+                else:
+                    code = {"early": "ONE_SHOT_ARM_REQUIRED", "expired": "ONE_SHOT_WINDOW_EXPIRED",
+                            "epoch": "ONE_SHOT_FRONTEND_EPOCH_REQUIRED"}[fault]
+                    with self.assertRaisesRegex(ValueError, code):
+                        stage.open()
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_one_shot_refuses_unproved_worker_mutations_and_foreign_asset(self):
+        _, _, reservation, prior, _ = self.one_shot_fixture()
+        stage = self.manual_stage()
+        stage._reservation = reservation
+        stage._one_shot_managed_attempt(prior, "before", None, None)
+        stage._one_shot_managed_attempt({**prior, "wakeAt": "after"}, "after", "asset_owned", prior)
+        with self.assertRaisesRegex(ValueError, "WORKER_RACE_UNPROVED"):
+            stage._one_shot_managed_attempt({**prior, "assetId": "asset_owned"}, "after", "asset_owned", prior)
+        for changed in ({"assetId": "asset_foreign"}, {"recoveryAttempts": 0}, {"supersededAt": "later"},
+                        {"lastErrorCode": "PROVIDER_OWNERSHIP_MISMATCH"}):
+            with self.assertRaisesRegex(ValueError, "MANAGED_LINEAGE_REQUIRED"):
+                stage._one_shot_managed_attempt({**prior, "recoveryAttempts": 2, **changed}, "after", "asset_owned", prior)
 
     def test_constructor_requires_exact_typed_profiled_parent_mode_and_installed_source(self):
         broker = self.typed_parent()

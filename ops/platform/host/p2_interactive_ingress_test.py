@@ -684,6 +684,88 @@ class MediaReservationWindowTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "MEDIA_ACKNOWLEDGEMENTS_REQUIRED"):
                     window.browser_case_evidence(plan, evidence, gateway_artifact=altered)
 
+    def test_joined_media_arm_is_durable_and_closes_before_retention(self):
+        from p2_certification_parent import P2ProfiledCertificationBroker
+
+        plan, gateway, evidence = self.fixture(replaces=True)
+        plan.update(gatewayProcessSha256="a" * 64, candidateSha256="b" * 64)
+        action = plan["scopedAction"]
+        action["mediaAction"]["operation"] = window.MEDIA_UPLOAD_CALLBACK
+        browser, witness = evidence["browserResponse"], evidence["courseWitness"]
+        closed_epoch = {"epoch": "9", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
+        ack = {"requestId": "10000000-0000-4000-8000-000000000032", "eventId": "owned-event",
+               "assetId": "owned-mux-asset", "upstreamStatus": 200}
+        closed_gateway = {"valid": True, "version": 1, "sha256": "d" * 64, "newWork": False, "recovery": False,
+                          "active": dict(window._ZERO), "uncertain": dict(window._ZERO),
+                          "muxCallbackFinal": {"scopedStateSha256": "e" * 64, "admitted": 1, "managedAcks": [ack]}}
+        callback = {"version": 2, "qualificationTargetProfile": plan["qualificationTargetProfile"],
+                    "status": "P2_SCOPED_MUX_CLOSED", "actionId": plan["certificationActionId"],
+                    "candidateSha256": plan["candidateSha256"], "oneShot": True, "wakeTransactionAcknowledged": True,
+                    "gatewayStateRestored": True, "gatewayAdmissionClosed": True, "effectObserved": True, "gatewayEffectDrained": True,
+                    "admitted": 1, "managedAckCount": 1, "managedAcksSha256": window._hash(window._canonical([ack])),
+                    "gatewayProcessSha256": plan["gatewayProcessSha256"], "scopedStateSha256": "e" * 64,
+                    "originalStateSha256": "d" * 64, "gatewayStateSha256": "d" * 64, "frontendAdmission": closed_epoch,
+                    "scopedAction": {**{key: witness[key] for key in ("attemptId", "uploadId", "generation", "environmentId")},
+                                     "assetId": None, "eventType": "video.upload.asset_created"},
+                    **{key: ack[key] for key in ("requestId", "eventId", "assetId")}}
+        broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
+        broker.scoped_gate_lock = threading.RLock()
+        broker.media_upload = broker.scoped_mux_sha256 = None
+        broker._gateway_current = lambda: {"admission": closed_gateway}
+        events = []
+        expires = int(time.time()) + 60
+        stage = SimpleNamespace(action=action, verify_fenced=lambda: events.append("frontend-closed"),
+                                observe_media_reservation=lambda result: events.append("managed-read") or witness,
+                                media_dispatch_expiry=lambda: expires)
+
+        def operation(name, **values):
+            return broker._interactive_media_upload("interactive-media-" + name, values, plan, stage, gateway)
+
+        with tempfile.TemporaryDirectory() as directory:
+            broker.directory = Path(directory)
+            intent_file = broker.directory / window.browser_artifact(plan, "upload-intent")
+            statuses = iter(("P2_SCOPED_MUX_WAITING", "P2_SCOPED_MUX_EFFECT_OBSERVED"))
+
+            def observe():
+                self.assertTrue(intent_file.is_file())
+                self.assertTrue((broker.directory / window.browser_artifact(plan, "upload-http")).is_file())
+                return {"status": next(statuses)}
+
+            opened = {"expiresAt": window._instant(expires), "managedAckCount": 0, "admitted": 0,
+                      **{key: callback[key] for key in ("gatewayProcessSha256", "scopedStateSha256", "originalStateSha256")}}
+            scope = SimpleNamespace(open=lambda: events.append("callback-open") or opened, observe=observe,
+                                    close=lambda: events.append("callback-closed") or callback)
+            with patch("p2_scoped_mux.P2ScopedMuxStage", return_value=scope) as make:
+                armed = operation("arm", caseEvidence={"browserResponse": browser})
+                make.assert_called_once_with(broker, reservation=witness, expires_at=expires)
+                self.assertEqual(armed["expiresAt"], expires)
+                original = json.loads(intent_file.read_bytes())
+                self.assertEqual(armed["intentSha256"], window._receipt_sha(original))
+                with self.assertRaisesRegex(ValueError, "SINGLE_ARM_REQUIRED"):
+                    operation("arm", caseEvidence={"browserResponse": browser})
+                self.assertEqual(events, ["frontend-closed", "managed-read", "callback-open"])
+                with self.assertRaisesRegex(ValueError, "DISPATCH_OUTCOME_REQUIRED"):
+                    operation("observe", dispatchEvidence={"attempted": True, "status": 500})
+                self.assertEqual(operation("observe", dispatchEvidence={"attempted": True, "status": 204})["status"],
+                                 "P2_INTERACTIVE_MEDIA_UPLOAD_WAITING")
+                with self.assertRaisesRegex(ValueError, "DISPATCH_OUTCOME_CHANGED"):
+                    operation("observe", dispatchEvidence={"attempted": True, "status": 200})
+                observed = operation("observe", dispatchEvidence={"attempted": True, "status": 204})
+                self.assertEqual(observed["assetId"], ack["assetId"])
+                self.assertEqual(events[-1], "callback-closed")
+                self.assertIsNone(broker.scoped_mux_sha256)
+            retained = broker.media_upload["evidence"]
+            joined = window.browser_case_evidence(plan, retained, gateway_artifact=gateway)
+            self.assertIs(joined["uploadSent"], True)
+            self.assertIs(retained["browserResponse"]["outbound"]["sent"], False)
+            self.assertEqual(joined["upload"]["httpStatus"], 204)
+            self.assertEqual(joined["upload"]["callbackReceiptSha256"], observed["callbackReceiptSha256"])
+            with self.assertRaisesRegex(ValueError, "FINAL_GATEWAY_REQUIRED"):
+                window.require_media_upload_gateway(retained, {**closed_gateway, "muxCallbackFinal": None})
+            with self.assertRaisesRegex(ValueError, "CALLBACK_ACK_REQUIRED"):
+                window.browser_case_evidence(plan, {**retained, "callback": {**callback, "assetId": "foreign"}},
+                                             gateway_artifact=gateway)
+
     def test_media_ledger_requires_exact_three_completed_new_work_operations(self):
         plan, _, _ = self.fixture()
         producer = hashlib.sha256(("lash-her:p2q:interactive-producer:v1\n" + "a" * 40 + "\n" + "b" * 64).encode()).hexdigest()

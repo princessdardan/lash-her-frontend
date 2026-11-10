@@ -93,6 +93,8 @@ SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'interactive-browse
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
 PAID_REVOKE_COURSE_SOURCE = '54fd289a5a8579bfbe343afb07482f406b56ad5b'
+MERGED_COURSE_RUNTIME_SOURCE = '09e3aaf234d9d9c1296c438d7c872e6bd67db074'
+PAID_REVOKE_COURSE_SOURCES = frozenset((PAID_REVOKE_COURSE_SOURCE, MERGED_COURSE_RUNTIME_SOURCE))
 PROFILED_MODES = SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
                                     'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
@@ -2004,6 +2006,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.failure_lock = threading.RLock()
         self.scoped_gate_lock = threading.RLock()
         self.scoped_stage = self.scoped_case = self.scoped_mux_sha256 = None
+        self.media_upload = None
         self.gateway_observation_attempted = False
         initial = self.initial
         plan = initial['certificationPlan']
@@ -2059,10 +2062,12 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration,
             self.source / 'ops/platform/compose.yaml', **self.profile_arguments())
         course_source = self.selected['sources']['course']['commit']
-        require(mode != 'mux-callback-recovery' or course_source in (SCOPED_MUX_COURSE_SOURCE, PAID_REVOKE_COURSE_SOURCE),
+        from p2_interactive_window import media_upload_selected
+        require((mode != 'mux-callback-recovery' and not media_upload_selected(plan)) or
+                course_source == SCOPED_MUX_COURSE_SOURCE or course_source in PAID_REVOKE_COURSE_SOURCES,
                 'P2_SCOPED_MUX_MANAGED_COURSE_SOURCE_REQUIRED')
         require(mode != 'interactive-browser' or plan['scopedAction']['stage'] != 'paid-revoke' or
-                course_source == PAID_REVOKE_COURSE_SOURCE, 'P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED')
+                course_source in PAID_REVOKE_COURSE_SOURCES, 'P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED')
         runtime.assert_host(self.plan)
         self.lock_fd = self.shared_lock_fd
         self.lock_info = os.fstat(self.lock_fd)
@@ -2142,20 +2147,93 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
 
     def _verify_gateway_boundary(self):
         mode = self.initial['certificationPlan']['mode']
-        if mode == 'interactive-browser':
-            with self.scoped_gate_lock:
-                return self.scoped_stage.verify_gateway_boundary()
-        if mode != 'mux-callback-recovery':
+        if mode not in ('interactive-browser', 'mux-callback-recovery'):
             return super()._verify_gateway_boundary()
         with self.scoped_gate_lock:
             if self.scoped_mux_sha256 is None:
-                return self._gateway_current()
+                return self.scoped_stage.verify_gateway_boundary() if mode == 'interactive-browser' else self._gateway_current()
             observed = self._gateway_observation()['admission']
             require(observed.get('version') == 2 and observed.get('muxCallbackActive') is True and
                     observed.get('sha256') == self.scoped_mux_sha256 and
                     observed.get('uncertain') == {'newWork': 0, 'recovery': 0},
                     'P2_CERTIFICATION_SCOPED_MUX_BOUNDARY_CHANGED')
             return observed
+
+    def _interactive_media_upload(self, operation, value, plan, stage, gateway_artifact):
+        from p2_interactive_window import (browser_artifact, browser_case_evidence, browser_receipt,
+                                           media_reservation_bindings, media_upload_selected, require_media_upload_gateway)
+        from p2_scoped_mux import P2ScopedMuxStage
+
+        require(media_upload_selected(plan), 'P2_INTERACTIVE_MEDIA_UPLOAD_PLAN_REQUIRED')
+        with self.scoped_gate_lock:
+            if operation == 'interactive-media-arm':
+                incoming = value['caseEvidence']
+                require(self.media_upload is None and type(incoming) is dict and set(incoming) == {'browserResponse'},
+                        'P2_INTERACTIVE_MEDIA_SINGLE_ARM_REQUIRED')
+                self.media_upload = {'phase': 'arming'}
+                stage.verify_fenced()
+                browser = incoming['browserResponse']
+                witness = stage.observe_media_reservation(browser)
+                bindings = media_reservation_bindings(plan, stage.action, browser, witness, gateway_artifact)
+                scope = P2ScopedMuxStage(self, reservation=witness, expires_at=stage.media_dispatch_expiry())
+                opened = scope.open()
+                self.scoped_mux_sha256 = opened['scopedStateSha256']
+                try:
+                    expiry = int(datetime.datetime.fromisoformat(opened['expiresAt']).timestamp())
+                    require(expiry > time.time() and opened['managedAckCount'] == opened['admitted'] == 0,
+                            'P2_INTERACTIVE_MEDIA_UNUSED_CALLBACK_WINDOW_REQUIRED')
+                    intent = {**browser_receipt(plan, 'UPLOAD_DISPATCH_INTENT'),
+                              **{key: bindings[key] for key in ('attemptId', 'uploadId', 'generation', 'environmentId',
+                                  'browserResponseSha256', 'courseWitnessSha256', 'gatewayEvidenceSha256')},
+                              **{key: opened[key] for key in ('gatewayProcessSha256', 'scopedStateSha256', 'originalStateSha256')},
+                              'expiresAt': expiry}
+                    migrate.write_json(self.directory, browser_artifact(plan, 'upload-intent'), intent)
+                    require(expiry > time.time(), 'P2_INTERACTIVE_MEDIA_DISPATCH_EXPIRED')
+                    self.media_upload.update(phase='armed', scope=scope, browserResponse=copy.deepcopy(browser),
+                                             courseWitness=witness, dispatchIntent=intent)
+                    return {**browser_receipt(plan, 'UPLOAD_ARMED'), 'intentSha256': _sha(_canonical(intent)), 'expiresAt': expiry}
+                except BaseException:
+                    try:
+                        scope.close()
+                    except Exception:
+                        pass
+                    raise
+
+            upload = self.media_upload
+            dispatch = value['dispatchEvidence']
+            require(operation == 'interactive-media-observe' and upload is not None and upload['phase'] in ('armed', 'observing') and
+                    time.time() < upload['dispatchIntent']['expiresAt'] and type(dispatch) is dict and
+                    set(dispatch) == {'attempted', 'status'} and dispatch['attempted'] is True and
+                    type(dispatch['status']) is int and 200 <= dispatch['status'] < 300,
+                    'P2_INTERACTIVE_MEDIA_DISPATCH_OUTCOME_REQUIRED')
+            result = {**browser_receipt(plan, 'UPLOAD_HTTP_OBSERVED'), 'attempted': True, 'httpStatus': dispatch['status'],
+                      'intentSha256': _sha(_canonical(upload['dispatchIntent']))}
+            if upload['phase'] == 'armed':
+                migrate.write_json(self.directory, browser_artifact(plan, 'upload-http'), result)
+                upload.update(phase='observing', dispatchOutcome=result)
+            require(upload['dispatchOutcome'] == result, 'P2_INTERACTIVE_MEDIA_DISPATCH_OUTCOME_CHANGED')
+            scope = upload['scope']
+            try:
+                observed = scope.observe()
+                if observed['status'] == 'P2_SCOPED_MUX_WAITING':
+                    return browser_receipt(plan, 'UPLOAD_WAITING')
+                require(observed['status'] == 'P2_SCOPED_MUX_EFFECT_OBSERVED', 'P2_INTERACTIVE_MEDIA_CALLBACK_UNCERTAIN')
+            except BaseException:
+                try:
+                    scope.close()
+                except Exception:
+                    pass
+                raise
+            callback = scope.close()
+            self.scoped_mux_sha256 = None
+            keys = ('browserResponse', 'courseWitness', 'dispatchIntent', 'dispatchOutcome')
+            evidence = {**{key: upload[key] for key in keys}, 'callback': callback}
+            bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
+            require_media_upload_gateway(evidence, self._gateway_current()['admission'])
+            migrate.write_json(self.directory, browser_artifact(plan, 'upload-callback'), callback)
+            upload.update(phase='observed', evidence=evidence)
+            return {**browser_receipt(plan, 'UPLOAD_OBSERVED'),
+                    **{key: bindings['upload'][key] for key in ('callbackReceiptSha256', 'requestId', 'eventId', 'assetId')}}
 
     def _prepare_lifecycle_stages(self,mode):
         if mode == 'interactive-browser':
@@ -2184,12 +2262,15 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
 
     def interactive_operation(self, operation, value):
         from p2_interactive_window import (EXECUTABLE_BROWSER_STAGES, SCOPED_GATEWAY_BROWSER_STAGES, P2InteractiveWindow,
-                                           browser_artifact, browser_case_evidence, browser_receipt)
+                                           browser_artifact, browser_case_evidence, browser_receipt, media_upload_selected,
+                                           require_media_upload_gateway)
         self.check()
         plan, stage = self.initial['certificationPlan'], self.scoped_stage
         fields = {'id', 'operation', 'controllerChallenge'}
-        if operation == 'interactive-retain':
+        if operation in ('interactive-retain', 'interactive-media-arm'):
             fields.add('caseEvidence')
+        if operation == 'interactive-media-observe':
+            fields.add('dispatchEvidence')
         require(plan['mode'] == 'interactive-browser' and type(stage) is P2InteractiveWindow and
                 stage.action['stage'] in EXECUTABLE_BROWSER_STAGES and stage.action == plan['scopedAction'] and
                 self.external_armed and self.guard_arm_verified and
@@ -2220,17 +2301,27 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 stage.fence_gateway()
                 fenced = stage.verify_gateway_fenced()
             return {**browser_receipt(plan, 'FENCED'), **fenced}
-        require(operation == 'interactive-retain', 'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
-        evidence = value['caseEvidence']
+        require(operation in ('interactive-retain', 'interactive-media-arm', 'interactive-media-observe'),
+                'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
         gateway_artifact = None
         if stage.action['stage'] in SCOPED_GATEWAY_BROWSER_STAGES:
             from qualification_target_profile import decode_qualification_target_json
             gateway_artifact = decode_qualification_target_json(migrate.read_input(self.directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
+        if operation != 'interactive-retain':
+            return self._interactive_media_upload(operation, value, plan, stage, gateway_artifact)
+        evidence = value['caseEvidence']
         if stage.action['stage'] == 'media':
             require(type(evidence) is dict and set(evidence) == {'browserResponse'},
                     'P2_INTERACTIVE_MEDIA_BROWSER_RESPONSE_REQUIRED')
             fenced = stage.verify_fenced(retain=True)
-            evidence = {**evidence, 'courseWitness': stage.observe_media_reservation(evidence['browserResponse'])}
+            if media_upload_selected(plan):
+                require(self.media_upload is not None and self.media_upload['phase'] == 'observed' and
+                        evidence['browserResponse'] == self.media_upload['browserResponse'],
+                        'P2_INTERACTIVE_MEDIA_UPLOAD_UNJOINED')
+                evidence = self.media_upload['evidence']
+                require_media_upload_gateway(evidence, self._gateway_current()['admission'])
+            else:
+                evidence = {**evidence, 'courseWitness': stage.observe_media_reservation(evidence['browserResponse'])}
             bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
         else:
             bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact)
