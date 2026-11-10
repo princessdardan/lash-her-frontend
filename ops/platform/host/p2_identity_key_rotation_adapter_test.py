@@ -100,12 +100,16 @@ class RotationConfigurationTest(unittest.TestCase):
         compose = output / "compose.yaml"; compose.write_text("services: {}\n"); compose.chmod(0o600)
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
         adapter.configurations, adapter.output, adapter.compose_file = selected, output, compose
+        adapter.scope = Scope()
         adapter.selected = {"environment": "staging"}
         adapter.jobs = {name: {"job": {"target": {"host": "db", "port": 5432, "database": name,
             "user": f"{name}_owner"}, "runtimeRole": f"{name}_runtime"}} for name in ("course", "community")}
         snapshot = adapter._snapshot("overlap")
         self.assertFalse((snapshot / "frontend.env").exists())
         self.assertEqual(rotation._runtime_phase_hash(snapshot), selected.runtime_private_hashes["overlap"])
+        restored = adapter._snapshot("overlap", restoration=True)
+        self.assertEqual(restored, output / "runtime-restoration-overlap")
+        self.assertEqual(rotation._runtime_phase_hash(restored), rotation._runtime_phase_hash(snapshot))
 
 
 class Scope:
@@ -118,6 +122,39 @@ class Scope:
 
 
 class AdapterTest(unittest.TestCase):
+    def test_managed_scope_joins_exact_profiled_custody_to_its_own_descriptor(self):
+        from p2_certification_parent import P2CertificationScope
+        from p2_identity_rotation_replacement import ReplacementRotationCustody
+
+        custody = ReplacementRotationCustody.__new__(ReplacementRotationCustody)
+        profiled = P2CertificationScope.__new__(P2CertificationScope)
+        custody.expected = profiled._expected_profile = {"owned": True}
+        custody._scope = profiled
+        profiled.verify = lambda: None
+        profiled.require_frontend = lambda release, info: {"verified": release == profiled.release and info == profiled.jobs["frontend"]}
+        profiled.receipt, profiled.candidate_sha256 = {"version": 2}, "a" * 64
+        profiled.release, profiled.jobs = {"environment": "staging"}, {"frontend": {"job": {}}}
+        profiled.certification_plan = {"certificationActionId": "p2-key-rotation-owned"}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "held"
+            fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                profiled.descriptor, profiled.path = fd, path
+                fields = {"action_id": profiled.certification_plan["certificationActionId"], "binding_sha256": "b" * 64,
+                          "source_commit": "a" * 40, "browser_program_sha256": "c" * 64, "release": profiled.release,
+                          "jobs": profiled.jobs, "configuration_sha256": dict.fromkeys(rotation.PHASES, "d" * 64),
+                          "private_configuration_sha256": dict.fromkeys(rotation.PHASES, "e" * 64),
+                          "replacement_custody": custody, "profiled_scope": profiled}
+                with patch.object(rotation.vercel, "release_identity", return_value=("staging", "owned", "a" * 40)) as identity:
+                    scope = rotation.P2IdentityRotationScope(fd, path, lambda: None, profiled.receipt, profiled.candidate_sha256, **fields)
+                    self.assertEqual(scope.require_frontend(profiled.release, profiled.jobs["frontend"]), {"verified": True})
+                    identity.assert_called_once_with(profiled.release, expected_profile=custody.expected)
+                    with self.assertRaisesRegex(ValueError, "REPLACEMENT_SCOPE_REQUIRED"):
+                        rotation.P2IdentityRotationScope(fd, path, lambda: None, {"version": 2, "changed": True},
+                                                         profiled.candidate_sha256, **fields)
+            finally:
+                os.close(fd)
+
     def test_browser_source_record_is_bound_to_current_deployment_and_retained_as_signer_receipt(self):
         output = Path(tempfile.mkdtemp()); os.chmod(output, 0o700)
         attempt = output / "frontend-overlap"; attempt.mkdir(mode=0o700)
@@ -130,7 +167,7 @@ class AdapterTest(unittest.TestCase):
             "deploymentUrl": "https://owned.vercel.app", "sourceCommit": "a" * 40,
             "configurationSha256": "d" * 64, "workloadReceiptSha256": "e" * 64}
         source = {"version": 1, "status": "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED", "environment": "staging",
-            "actionId": "p2-key-rotation-owned", "bindingSha256": "b" * 64, "sourceCommit": "a" * 40,
+            "actionId": "p2-key-rotation-owned", "challenge": "5" * 64, "bindingSha256": "b" * 64, "sourceCommit": "a" * 40,
             "candidateSha256": "c" * 64, "phase": "overlap", "configurationSha256": "d" * 64,
             "deploymentId": "dpl_owned", "deploymentUrl": "https://owned.vercel.app",
             "browserOrigin": "https://staging.lashher.com", "canonicalAliasReadbackSha256": "7" * 64,
@@ -156,6 +193,7 @@ class AdapterTest(unittest.TestCase):
 
     def test_frontend_inventory_never_requests_secret_values(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.scope = Scope()
         calls = []
         adapter.selected = {}
         adapter.client = types.SimpleNamespace(request=lambda method, path: (
@@ -170,6 +208,90 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(set(rows), {"COURSE_LEARNER_JWT_CURRENT_SECRET"})
         self.assertNotIn("value", rows["COURSE_LEARNER_JWT_CURRENT_SECRET"])
         self.assertEqual(calls, [("GET", "/v10/projects/project/env?decrypt=false")])
+
+    def test_frontend_inventory_refuses_incomplete_or_hidden_production_records(self):
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.scope, adapter.selected = Scope(), {}
+        with patch.object(rotation.vercel, "release_identity", return_value=("staging", "project", "a" * 40)):
+            for metadata in ({"pagination": {"next": 15}}, {"pagination": {}}, {"hiddenProductionEnvCount": 1},
+                             {"hiddenProductionEnvCount": False}, {"envs": [None]}):
+                with self.subTest(metadata=metadata):
+                    adapter.client = types.SimpleNamespace(request=lambda *_: {"envs": [], **metadata})
+                    with self.assertRaisesRegex(ValueError, "ROTATION_FRONTEND_ENVIRONMENT_UNAVAILABLE"):
+                        adapter._frontend_environment()
+            adapter.client = types.SimpleNamespace(request=lambda *_: {
+                "envs": [], "pagination": {"next": None}, "hiddenProductionEnvCount": 0})
+            self.assertEqual(adapter._frontend_environment(), ("project", {}))
+
+    def test_frontend_inventory_refuses_a_second_production_effective_secret_scope(self):
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.scope, adapter.selected = Scope(), {}
+        exact = {"key": "COURSE_LEARNER_JWT_PREVIOUS_SECRET", "id": "env_previous", "type": "sensitive", "target": ["production"]}
+        with patch.object(rotation.vercel, "release_identity", return_value=("staging", "project", "a" * 40)):
+            for changed in ({"target": ["production", "preview"]}, {"target": "production"}, {"gitBranch": "other"},
+                            {"customEnvironmentIds": ["env_other"]}):
+                adapter.client = types.SimpleNamespace(request=lambda *_: {"envs": [exact, {**exact, "id": "env_other", **changed}]})
+                with self.assertRaisesRegex(ValueError, "ROTATION_FRONTEND_ENVIRONMENT_AMBIGUOUS"):
+                    adapter._frontend_environment()
+
+    def test_frontend_current_only_removes_exact_previous_records_and_refuses_foreign_ack(self):
+        for foreign_field in (None, "id", "key", "uid"):
+            with self.subTest(foreign_field=foreign_field), tempfile.TemporaryDirectory() as private:
+                output = Path(private)
+                fixture = ConfigurationFixture(output)
+                configurations = rotation.RotationConfigurationSet(output, fixture.hashes, fixture.private_hashes, fixture=True)
+                attempt = output / "attempt"
+                attempt.mkdir(mode=0o700)
+                project = rotation.vercel.PROJECTS["staging"]
+                adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+                adapter.output, adapter.configurations = output, configurations
+                adapter.scope, adapter.selected = Scope(), {}
+                rows = {key: {"key": key, "id": f"env_{index}", "target": ["production"], "updatedAt": 1,
+                              "type": "plain" if key == "APP_ENV" else "sensitive"}
+                        for index, key in enumerate(configurations.frontend["overlap"])}
+                deletes, observations = [], []
+                previous = {key: row["id"] for key, row in rows.items() if key.endswith("_PREVIOUS_SECRET")}
+
+                def request(method, path, body=None):
+                    if method == "GET":
+                        self.assertEqual(path, f"/v10/projects/{project}/env?decrypt=false")
+                        observations.append(path)
+                        return {"envs": list(rows.values()), "pagination": {"next": None}, "hiddenProductionEnvCount": 0}
+                    if method == "POST":
+                        self.assertEqual(path, f"/v10/projects/{project}/env?upsert=true")
+                        return {"failed": [], "created": rows[body["key"]]}
+                    self.assertEqual(method, "DELETE")
+                    environment_id = path.removeprefix(f"/v9/projects/{project}/env/")
+                    key = next(key for key, identity in previous.items() if identity == environment_id)
+                    stem = "rotation-env-" + key.lower().replace("_", "-")
+                    intent = rotation.migrate.read_json(attempt, stem + "-intent.json")
+                    self.assertEqual(intent["previousEnvironmentId"], environment_id)
+                    self.assertFalse((attempt / (stem + "-ack.json")).exists())
+                    deletes.append((key, stem))
+                    del rows[key]
+                    if foreign_field == "uid":
+                        return {"uid": environment_id, "key": key}
+                    result = {"id": environment_id, "key": key}
+                    if foreign_field is not None:
+                        result[foreign_field] = "FOREIGN"
+                    return result
+
+                adapter.client = types.SimpleNamespace(request=request)
+                with patch.object(rotation.vercel, "release_identity", return_value=("staging", project, "a" * 40)):
+                    if foreign_field is not None:
+                        with self.assertRaisesRegex(ValueError, "ROTATION_FRONTEND_DELETE_ACK_UNVERIFIED"):
+                            adapter._configure_frontend("current-only", attempt, ("overlap",))
+                        self.assertEqual(len(deletes), 1)
+                        self.assertEqual(len(observations), 1)
+                        self.assertFalse((attempt / (deletes[0][1] + "-ack.json")).exists())
+                        self.assertFalse((attempt / "rotation-frontend-configuration.json").exists())
+                        continue
+                    adapter._configure_frontend("current-only", attempt, ("overlap",))
+                self.assertEqual(len(observations), 2)
+                self.assertEqual({key for key, _ in deletes}, set(previous))
+                self.assertEqual(set(rows), set(configurations.frontend["current-only"]))
+                receipt = rotation.migrate.read_json(attempt, "rotation-frontend-configuration.json")
+                self.assertEqual(adapter._validate_frontend_configuration_receipt(receipt, "current-only", attempt), receipt)
 
     def test_frontend_overlap_writes_every_fixed_secret_and_retains_ack_without_secret_readback(self):
         output = Path(tempfile.mkdtemp()); os.chmod(output, 0o700)
@@ -191,15 +313,44 @@ class AdapterTest(unittest.TestCase):
         inventories = iter([("project", metadata(old)), ("project", metadata(overlap))])
         adapter._frontend_environment = lambda: next(inventories)
         calls = []
-        adapter.client = types.SimpleNamespace(request=lambda method, path, body: (
-            calls.append((method, path, body["key"])) or {"failed": [], "created": {"key": body["key"],
-                "target": ["production"], "type": "sensitive", "gitBranch": None, "customEnvironmentIds": []}}))
+        def request(method, path, body):
+            key = body["key"]
+            stem = "rotation-env-" + key.lower().replace("_", "-")
+            intent = json.loads((attempt / (stem + "-intent.json")).read_text())
+            self.assertEqual(intent["key"], key)
+            self.assertNotIn(body["value"], json.dumps(intent))
+            self.assertFalse((attempt / (stem + "-ack.json")).exists())
+            calls.append((method, path, key))
+            return {"failed": [], "created": {"key": key, "target": ["production"], "type": "sensitive",
+                                              "gitBranch": None, "customEnvironmentIds": []}}
+        adapter.client = types.SimpleNamespace(request=request)
         adapter._configure_frontend("overlap", attempt, ("baseline",))
         self.assertEqual(len(calls), 8)
         self.assertTrue(all(method == "POST" and "?upsert=true" in path for method, path, _key in calls))
         receipt = json.loads((attempt / "rotation-frontend-configuration.json").read_text())
         self.assertFalse(receipt["secretValuesReadBack"])
         self.assertEqual(len(receipt["acknowledgements"]), 8)
+        self.assertEqual(adapter._validate_frontend_configuration_receipt(receipt, "overlap", attempt), receipt)
+        first_key = sorted(overlap)[0].lower().replace("_", "-")
+        (attempt / ("rotation-env-" + first_key + "-ack.json")).unlink()
+        with self.assertRaises((ValueError, FileNotFoundError)):
+            adapter._validate_frontend_configuration_receipt(receipt, "overlap", attempt)
+
+        attempt = output / "lost"; attempt.mkdir(mode=0o700)
+        adapter._frontend_environment = lambda: ("project", metadata(old))
+        calls.clear()
+        def lose_second(method, path, body):
+            response = request(method, path, body)
+            if len(calls) == 2:
+                raise ValueError("owned acknowledgement loss")
+            return response
+        adapter.client = types.SimpleNamespace(request=lose_second)
+        with self.assertRaisesRegex(ValueError, "owned acknowledgement loss"):
+            adapter._configure_frontend("overlap", attempt, ("baseline",))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(list(attempt.glob("rotation-env-*-intent.json"))), 2)
+        self.assertEqual(len(list(attempt.glob("rotation-env-*-ack.json"))), 1)
+        self.assertFalse((attempt / "rotation-frontend-configuration.json").exists())
 
     def test_capture_and_both_phase_observers_reuse_exact_retained_token_bytes(self):
         directory = Path(tempfile.mkdtemp()); os.chmod(directory, 0o700)
@@ -379,6 +530,22 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(mutations[0][0][-2:], ["course-api", "community-api"])
         self.assertFalse(result["sqlExecuted"]); self.assertFalse(result["rolesPrepared"]); self.assertFalse(result["loginChanged"])
 
+    def test_managed_restoration_preflights_a_separate_snapshot_with_the_exact_profile(self):
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.scope, adapter.selected, adapter.jobs = Scope(), {"environment": "staging"}, {}
+        adapter.scope._expected_profile = {"owned": True}
+        snapshot = Path("/private/runtime-restoration-overlap")
+        adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64}, directory=lambda _phase: snapshot)
+        adapter.observe_api_configuration = lambda _phase: {"containers": [], "runtimeVerified": True}
+        with patch.object(adapter, "_snapshot", return_value=snapshot, create=True) as select, \
+             patch.object(runtime, "preflight") as preflight, patch.object(runtime, "compose_command", return_value=["docker", "compose"]), \
+             patch.object(runtime, "runtime_environment", return_value={}) as environment:
+            adapter.recreate_apis("overlap", restoration=True)
+        select.assert_called_once_with("overlap", restoration=True)
+        preflight.assert_called_once_with(adapter.selected, snapshot, adapter.jobs, pull=False, expected_profile={"owned": True})
+        environment.assert_called_once_with(adapter.selected, snapshot, expected_profile={"owned": True})
+        self.assertEqual(adapter.api_mount_configuration, snapshot)
+
     def test_frontend_rollout_calls_one_build_and_one_promotion(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
         adapter.scope = Scope(); adapter.scope.binding_sha256 = "b" * 64; adapter.scope.candidate_sha256 = "c" * 64
@@ -414,10 +581,11 @@ class AdapterTest(unittest.TestCase):
         }.items():
             (attempt / name).write_text(json.dumps(value)); (attempt / name).chmod(0o600)
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.scope = Scope()
         adapter.output = output; adapter.selected = {}; adapter.client = object()
         adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
         adapter._intent = lambda intent: intent
-        adapter._validate_frontend_configuration_receipt = lambda value, phase: value
+        adapter._validate_frontend_configuration_receipt = lambda value, phase, attempt: value
         adapter.observe_frontend_configuration = lambda phase: {
             "configurationSha256": "a" * 64, "deploymentId": "dpl_owned"}
         observed = []

@@ -584,6 +584,89 @@ class PersistenceProbeTests(unittest.TestCase):
 
         return broker, private, reviewed, original, original_raw, bind_original
 
+    def rotated_persistence_fixture(self, directory):
+        broker, private, reviewed, original, original_raw, bind_original = self.replacement_persistence_fixture(directory)
+        initial, cert = broker.initial, broker.scope.certification_plan
+        cert['rotationSuccessor'] = {'kind': 'identity-key-rotation-mixed-mount-v1', 'actionId': 'p2-key-rotation-owned',
+                                     'bindingSha256': 'a' * 64, 'receiptSha256': 'b' * 64}
+        cert['originalFrontendReady'] = {'deploymentId': original['deploymentId'], 'deploymentUrl': 'https://owned-original.vercel.app',
+                                         'readyReceiptSha256': copy.deepcopy(cert['readyReceiptSha256'])}
+        initial['originalReadyReceipts'] = copy.deepcopy(initial['readyReceipts'])
+        native = cert['nativePlan']
+        native.update(deploymentId='dpl_ownedRotated', deploymentUrl='https://owned-current.vercel.app')
+        active = {}
+        for name, encoded in initial['originalReadyReceipts'].items():
+            record = json.loads(base64.b64decode(encoded))
+            raw = json.dumps({**record, 'deploymentId': native['deploymentId']}).encode() + b'\n'
+            active[name] = base64.b64encode(raw).decode()
+            cert['readyReceiptSha256'][name] = probe._hash(raw)
+        initial['readyReceipts'] = active
+        native['configurationRecordSha256'] = cert['readyReceiptSha256']['frontend-workload-outcome.json']
+        reviewed['plan']['frontendDeploymentSha256'] = cert['readyReceiptSha256']['frontend-promotion-outcome.json']
+        return broker, private, reviewed, original_raw, bind_original
+
+    def test_rotated_persistence_joins_immutable_original_and_active_promotion(self):
+        promotion = 'frontend-promotion-outcome.json'
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp).resolve()
+            with mock.patch.object(probe, 'ROOT', directory):
+                broker, private, _reviewed, original_raw, bind_original = self.rotated_persistence_fixture(directory)
+                evidence = bind_original(original_raw)
+                initial, scope = broker.initial, broker.scope
+                self.assertNotEqual(evidence['frontendDeploymentRecord'], initial['originalReadyReceipts'][promotion])
+                component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                result = {'version': 2, 'qualificationTargetProfile': scope._expected_profile,
+                          'status': probe.SCOPED_PERSISTENCE_STATUS['capture-export-ready'],
+                          'readOnly': True, 'providerTouched': False, 'releaseAccepted': False}
+                with mock.patch.object(probe, 'execute_profiled', return_value=result) as reader:
+                    self.assertIs(component.observe(), result)
+                    self.assertEqual(reader.call_args.args[5], evidence)
+                    self.assertIs(reader.call_args.args[6], scope)
+                scope.require_replacement_original.assert_called_once_with(original_raw)
+                self.assertEqual(private, {})
+
+    def test_rotated_persistence_rejects_stale_crossed_or_tampered_release_evidence(self):
+        promotion, workload = 'frontend-promotion-outcome.json', 'frontend-workload-outcome.json'
+        for defect in ('stale active promotion', 'rehashed stale promotion', 'wrong active deployment',
+                       'crossed original promotion', 'crossed original workload', 'wrong original workload pin',
+                       'wrong original deployment', 'missing original binding', 'rehashed original terminal'):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp).resolve()
+                with mock.patch.object(probe, 'ROOT', directory):
+                    broker, private, reviewed, original_raw, bind_original = self.rotated_persistence_fixture(directory)
+                    initial, cert = broker.initial, broker.scope.certification_plan
+                    original = cert['originalFrontendReady']
+                    active = cert['readyReceiptSha256']
+                    if defect in ('stale active promotion', 'rehashed stale promotion'):
+                        initial['readyReceipts'][promotion] = initial['originalReadyReceipts'][promotion]
+                        if defect == 'rehashed stale promotion':
+                            active[promotion] = original['readyReceiptSha256'][promotion]
+                    elif defect == 'wrong active deployment':
+                        record = json.loads(base64.b64decode(initial['readyReceipts'][promotion]))
+                        raw = json.dumps({**record, 'deploymentId': 'dpl_ownedUnrelated'}).encode() + b'\n'
+                        initial['readyReceipts'][promotion] = base64.b64encode(raw).decode()
+                        active[promotion] = probe._hash(raw)
+                    elif defect == 'crossed original promotion':
+                        original['readyReceiptSha256'][promotion] = active[promotion]
+                    elif defect == 'crossed original workload':
+                        original['readyReceiptSha256'][workload] = active[workload]
+                    elif defect == 'wrong original workload pin':
+                        original['readyReceiptSha256'][workload] = 'e' * 64
+                    elif defect == 'wrong original deployment':
+                        original['deploymentId'] = 'dpl_ownedUnrelated'
+                    elif defect == 'missing original binding':
+                        del cert['originalFrontendReady']
+                    else:
+                        original_raw += b' '
+                    reviewed['plan']['frontendDeploymentSha256'] = active[promotion]
+                    bind_original(original_raw)
+                    component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                    with mock.patch.object(probe, 'execute_profiled') as reader:
+                        with self.assertRaisesRegex(probe.PersistenceFailure, 'persistence-scoped-stage-refused'):
+                            component.observe()
+                        reader.assert_not_called()
+                    self.assertEqual(private, {})
+
     def test_replacement_evidence_requires_held_lifecycle_stage_and_exact_guardian_terminal(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp).resolve()

@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { closeSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { chownSync, closeSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -38,7 +38,10 @@ export function assertOwnedFrontendReplacementCluster(handle, target) {
   return lease.proof;
 }
 
-export async function openOwnedFrontendReplacementCluster(directory, pgBin, user, key, cert) {
+export async function openOwnedFrontendReplacementCluster(directory, pgBin, user, key, cert, options = {}) {
+  const runAsPostgres = options.runAsPostgres === true;
+  demand(Object.keys(options).join() === (runAsPostgres ? "runAsPostgres" : "") &&
+    (!runAsPostgres || process.platform === "linux" && process.getuid() === 0));
   const info = lstatSync(directory);
   demand(resolve(directory) === directory && realpathSync(directory) === directory && info.isDirectory() &&
     info.uid === process.getuid() && (info.mode & 0o077) === 0 && readdirSync(directory).length === 0 &&
@@ -51,23 +54,40 @@ export async function openOwnedFrontendReplacementCluster(directory, pgBin, user
     const fileInfo = lstatSync(file);
     demand(fileInfo.isFile() && fileInfo.uid === process.getuid() && (fileInfo.mode & (file === key ? 0o077 : 0o022)) === 0);
   }
+  let asPostgres = (program, args) => [program, args];
+  let ownPostgresFile = () => {};
+  if (runAsPostgres) {
+    const [uid, gid] = ["-u", "-g"].map(flag => Number(run("/usr/bin/id", [flag, "postgres"]).trim()));
+    demand([uid, gid].every(value => Number.isSafeInteger(value) && value > 0));
+    // This opt-in is limited to the freshly created private fixture. exec
+    // through setpriv so the retained child PID is the actual postmaster.
+    ownPostgresFile = path => chownSync(path, uid, gid);
+    for (const path of [workspace, directory]) ownPostgresFile(path);
+    asPostgres = (program, args) => ["/usr/bin/setpriv",
+      ["--reuid", String(uid), "--regid", String(gid), "--clear-groups", "--", program, ...args]];
+  }
   const postgres = join(pgBin, "postgres");
-  const serverMajor = Number(/PostgreSQL\) (16|18)\./u.exec(run(postgres, ["--version"]))?.[1]);
+  const serverMajor = Number(/PostgreSQL\) (16|18)\./u.exec(run(...asPostgres(postgres, ["--version"])))?.[1]);
   demand([16, 18].includes(serverMajor));
   const dataDirectory = join(directory, "data"), port = await loopbackPort();
-  run(join(pgBin, "initdb"), ["-D", dataDirectory, "-A", "trust", "-U", user, "-E", "UTF8", "--locale=C"]);
+  run(...asPostgres(join(pgBin, "initdb"), ["-D", dataDirectory, "-A", "trust", "-U", user, "-E", "UTF8", "--locale=C"]));
   demand(realpathSync(dataDirectory) === dataDirectory);
-  const systemIdentifier = /^Database system identifier:\s+([1-9][0-9]*)\s*$/mu.exec(run(join(pgBin, "pg_controldata"), [dataDirectory]))?.[1];
+  const systemIdentifier = /^Database system identifier:\s+([1-9][0-9]*)\s*$/mu.exec(
+    run(...asPostgres(join(pgBin, "pg_controldata"), [dataDirectory])))?.[1];
   demand(systemIdentifier);
   // Only helper-owned copies are named in the generated configuration.
   writeFileSync(join(dataDirectory, "server.key"), readFileSync(key), { mode: 0o600, flag: "wx" });
   const certificate = readFileSync(cert, "utf8");
   writeFileSync(join(dataDirectory, "server.crt"), certificate, { mode: 0o600, flag: "wx" });
+  for (const name of ["server.key", "server.crt"]) ownPostgresFile(join(dataDirectory, name));
   writeFileSync(join(dataDirectory, "postgresql.conf"), `listen_addresses='${host}'\nport=${port}\nunix_socket_directories=''\nssl=on\nssl_cert_file='server.crt'\nssl_key_file='server.key'\npassword_encryption='scram-sha-256'\n`);
   writeFileSync(join(dataDirectory, "pg_hba.conf"), `hostssl all ${user} ${host}/32 trust\nhostssl all all ${host}/32 scram-sha-256\n`);
   const fd = openSync(join(directory, "postgres.log"), "wx", 0o600);
   let child;
-  try { child = spawn(postgres, ["-D", dataDirectory], { stdio: ["ignore", fd, fd], env: commandEnvironment }); }
+  try {
+    const [program, args] = asPostgres(postgres, ["-D", dataDirectory]);
+    child = spawn(program, args, { stdio: ["ignore", fd, fd], env: commandEnvironment });
+  }
   finally { closeSync(fd); }
   const proof = Object.freeze({ dataDirectory, systemIdentifier });
   const lease = { active: true, exited: false, child, proof, port, user, serverMajor };
@@ -109,7 +129,7 @@ export async function openOwnedFrontendReplacementCluster(directory, pgBin, user
         identity.login === user && identity.major === serverMajor && identity.host === host && identity.port === port);
       verifyLease(lease);
     } finally { await observer.end(); }
-    const handle = Object.freeze({ port, connect, stop });
+    const handle = Object.freeze({ port, serverMajor, connect, stop });
     owned.set(handle, lease);
     return handle;
   } catch (error) { await stop(); throw error; }

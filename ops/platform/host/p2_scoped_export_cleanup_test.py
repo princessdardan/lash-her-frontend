@@ -86,7 +86,8 @@ class ScopedCleanupTests(unittest.TestCase):
         observer = P2CertificationPhysicalObserver.__new__(P2CertificationPhysicalObserver)
         broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
         broker.scope, broker.observer, broker.selected = scope, observer, {"releaseId": "owned-release"}
-        broker.initial = {"certificationPlan": self.plan, "persistenceReviewed": self.reviewed}
+        broker.initial = {"certificationPlan": self.plan, "persistenceReviewed": self.reviewed,
+                          "scopedCronSecret": "owned-runtime-bearer"}
         broker.directory, broker.vercel = self.directory, object()
         self.broker = broker
         self.admissions = [self.admission("10", False), self.admission("10", False), self.admission("10", False),
@@ -104,7 +105,8 @@ class ScopedCleanupTests(unittest.TestCase):
                     "active": {"newWork": 0, "recovery": 0}, "uncertain": {"newWork": 0, "recovery": 0}}}),
             mock.patch("p2_certification_parent.P2CertificationPhysicalObserver.probe", autospec=True,
                 side_effect=self.probe),
-            mock.patch.object(cleanup.native, "observe", side_effect=self.native),
+            mock.patch.object(cleanup.native, "observe", side_effect=AssertionError("expired private probe used")),
+            mock.patch("p2_day_two_workload.observe", side_effect=self.day_two),
             mock.patch.object(cleanup.native, "observe_metadata", side_effect=self.native),
             mock.patch.object(cleanup.vercel, "_project", return_value={"protectionBypass": "private"}),
             mock.patch.object(cleanup.frontend_probe, "_automation_bypass", return_value="owned-bypass"),
@@ -123,6 +125,12 @@ class ScopedCleanupTests(unittest.TestCase):
     def native(self, context, _client, **_kwargs):
         plan = context["plan"]
         return {key: plan[key] for key in ("projectId", "deploymentId", "sourceCommit", "deploymentUrl", "schedule")} | {"nativeEnabled": False}
+
+    def day_two(self, context, client, bearer, *, expected_profile):
+        self.assertEqual(bearer, self.broker.initial["scopedCronSecret"])
+        self.assertEqual(expected_profile, PROFILE)
+        self.assertIsInstance(client, cleanup.LockedClient)
+        return self.native(context, client)
 
     def probe(self, _observer, operation):
         admission = self.admissions.pop(0)
@@ -184,6 +192,16 @@ class ScopedCleanupTests(unittest.TestCase):
                 finally:
                     self.record = original_record
                     self.plan["scopedAction"]["readyRecordSha256"] = original_digest
+
+    def test_changed_day_two_deployment_refuses_before_cleanup_request(self):
+        stage = self.stage()
+        other = {**self.native({"plan": self.native_plan}, None), "deploymentId": "dpl_foreign"}
+        with mock.patch("p2_day_two_workload.observe", return_value=other) as observed:
+            with self.assertRaisesRegex(ValueError, "NATIVE_OFF_REQUIRED"):
+                stage.preflight("owned-secret")
+        observed.assert_called_once()
+        cleanup.native.observe.assert_not_called()
+        self.assertEqual(self.direct.calls, [])
 
     def test_persistence_review_digest_refuses_before_retained_read_or_http(self):
         self.plan["persistenceReviewedSha256"] = "f" * 64

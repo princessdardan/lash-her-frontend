@@ -28,6 +28,8 @@ OUTCOME_PREFIXES = {
     'runtime-outcome.json': 'runtime-profiled-frontend-replacement-',
 }
 SUCCESSOR_OPERATION = 'read-successor-runtime'
+ROTATION_SUCCESSOR_OPERATION = 'read-identity-rotation-successor'
+ROTATION_FRONTEND_READY_OPERATION = 'read-identity-rotation-frontend-ready'
 SUCCESSOR_RECEIPT = 'p2-replacement-successor-runtime.json'
 SUCCESSOR_STATUS = 'P2_REPLACEMENT_SUCCESSOR_RUNTIME_VERIFIED'
 SUCCESSOR_PREFIXES = {
@@ -78,6 +80,10 @@ def read_reviewed_action(request, plan_sha):
 
 def read_replacement_evidence(request):
     require(type(request) is dict)
+    if request.get('operation') == ROTATION_SUCCESSOR_OPERATION:
+        return read_rotation_successor_evidence(request)
+    if request.get('operation') == ROTATION_FRONTEND_READY_OPERATION:
+        return read_rotation_frontend_ready_evidence(request)
     if 'operation' in request:
         return read_successor_runtime_evidence(request)
     require(set(request) == REQUEST_FIELDS | {'reviewedPlanSha256', 'name'})
@@ -91,15 +97,10 @@ def read_replacement_evidence(request):
     return raw
 
 
-def read_successor_runtime_evidence(request):
-    from p2_certification_parent import REPLACEMENT_RELEASE_HASHES, require_certification_replacement_release
+def _read_original_terminal(request):
     from p2_replacement_terminal import TERMINAL, TERMINAL_STATUS, exact_receipt
 
-    require(set(request) == REQUEST_FIELDS | {'operation', 'kind', 'actionId', 'originalReleasePlanSha256',
-            'originalReleaseReceiptSha256'} and request['operation'] == SUCCESSOR_OPERATION and
-            type(request['kind']) is str and request['kind'] in SUCCESSOR_PREFIXES and
-            action_id(request['actionId']) and request['actionId'] != request['releaseId'] and
-            digest(request['originalReleaseReceiptSha256']))
+    require(digest(request['originalReleaseReceiptSha256']))
     results, original = read_reviewed_action(request, request['originalReleasePlanSha256'])
     terminal_raw = private_record(original, TERMINAL)
     require(migrate.file_hash(terminal_raw) == request['originalReleaseReceiptSha256'])
@@ -109,6 +110,18 @@ def read_successor_runtime_evidence(request):
             terminal.get('trafficAuthorized') is False and terminal.get('releaseAccepted') is False and
             terminal.get('reviewedPlanSha256') == request['originalReleasePlanSha256'] and
             all(terminal.get(key) == request[key] for key in IDENTITY))
+    return results, terminal
+
+
+def read_successor_runtime_evidence(request):
+    from p2_certification_parent import REPLACEMENT_RELEASE_HASHES, require_certification_replacement_release
+    from p2_replacement_terminal import exact_receipt
+
+    require(set(request) == REQUEST_FIELDS | {'operation', 'kind', 'actionId', 'originalReleasePlanSha256',
+            'originalReleaseReceiptSha256'} and request['operation'] == SUCCESSOR_OPERATION and
+            type(request['kind']) is str and request['kind'] in SUCCESSOR_PREFIXES and
+            action_id(request['actionId']) and request['actionId'] != request['releaseId'])
+    results, terminal = _read_original_terminal(request)
     directory = results / (SUCCESSOR_PREFIXES[request['kind']] + request['actionId'])
     migrate.private_directory(directory)
     raw = private_record(directory, SUCCESSOR_RECEIPT)
@@ -128,6 +141,92 @@ def read_successor_runtime_evidence(request):
             (receipt['runtimeActionId'] != request['actionId'] if request['kind'] == 'known-ack' else
              receipt['runtimeActionId'] == request['actionId'] and receipt['terminalSha256'] == receipt['runtimeReceiptSha256']))
     return raw
+
+
+def read_rotation_successor_evidence(request):
+    from p2_identity_key_rotation_parent import SESSION_CLOSED_RECEIPT
+    from p2_identity_rotation_successor import MUTATIONS, PHASES, RECEIPT, STATUS, rotation_frontend_successor
+    from p2_release_supervisor import ROTATION_LAYOUT
+    from p2_replacement_terminal import exact_receipt
+    from release import SERVICES
+    from p2_identity_key_rotation_adapter import API_SERVICES
+
+    pins = ('originalReleasePlanSha256', 'originalReleaseReceiptSha256')
+    identity = (*IDENTITY, 'actionId', 'bindingSha256')
+    require(set(request) == REQUEST_FIELDS | {'operation', 'actionId', 'bindingSha256', *pins}
+            and request['operation'] == ROTATION_SUCCESSOR_OPERATION
+            and type(request['actionId']) is str and re.fullmatch(r'p2-key-rotation-[a-z0-9-]{1,40}', request['actionId'])
+            and request['actionId'] != request['releaseId'] and digest(request['bindingSha256']))
+    results, original = _read_original_terminal(request)
+    directory = results / (ROTATION_LAYOUT['receiptPrefix'] + request['actionId'])
+    migrate.private_directory(directory)
+    terminal_raw = private_record(directory, ROTATION_LAYOUT['terminalName'])
+    closed_raw = private_record(directory, SESSION_CLOSED_RECEIPT)
+    raw = private_record(directory, RECEIPT)
+    terminal, closed, receipt = map(exact_receipt, (terminal_raw, closed_raw, raw))
+    hashes = {'predecessorRuntimeInventorySha256', 'terminalReceiptSha256', 'frontendSessionClosedSha256',
+              'configurationSha256', 'currentOnlyRuntimeConfigurationSha256', 'runtimeInventorySha256',
+              'gatewayProcessSha256', 'gatewayConfigurationSha256'}
+    flags = {'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted', 'g2Accepted'}
+    fields = {'version', 'qualificationTargetProfile', 'status', 'kind', *identity, *pins, *hashes, *flags,
+              'hostMachineId', 'targetSha256', 'frontendEpoch', 'frontend', 'mutationReceipts', 'phaseRuntimeInventoryReceiptSha256',
+              'unchangedOriginalServices', 'currentOnlyRecreatedServices', 'frontendAdmissionClosed', 'gatewayAdmissionClosed'}
+    require((set(receipt) == fields or set(receipt) == fields | {'predecessorSuccessorReceiptSha256'} and
+             digest(receipt['predecessorSuccessorReceiptSha256'])) and receipt['status'] == STATUS
+            and receipt['kind'] == 'identity-key-rotation-mixed-mount-v1'
+            and all(receipt[key] == request[key] for key in (*identity, *pins))
+            and all(digest(receipt[key]) for key in hashes)
+            and receipt['targetSha256'] == original.get('targetSha256')
+            and receipt['gatewayConfigurationSha256'] == original.get('configurationSha256', {}).get('gateway.json')
+            and type(receipt['hostMachineId']) is str and re.fullmatch(r'(?!0+$)[a-f0-9]{32}', receipt['hostMachineId'])
+            and type(receipt['frontendEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', receipt['frontendEpoch'])
+            and receipt['unchangedOriginalServices'] == [name for name in SERVICES if name not in API_SERVICES]
+            and receipt['currentOnlyRecreatedServices'] == list(API_SERVICES)
+            and all(receipt[key] is True for key in ('frontendAdmissionClosed', 'gatewayAdmissionClosed'))
+            and all(receipt[key] is False for key in flags))
+    mutations = receipt['mutationReceipts']
+    inventory = receipt['phaseRuntimeInventoryReceiptSha256']
+    require(type(mutations) is list and len(mutations) == len(MUTATIONS)
+            and all(type(row) is dict and set(row) == {'phase', 'kind', 'attemptReceiptSha256', 'observationReceiptSha256'}
+                    and (row['phase'], row['kind']) == phase_kind and digest(row['attemptReceiptSha256'])
+                    and digest(row['observationReceiptSha256']) for row, phase_kind in zip(mutations, MUTATIONS))
+            and type(inventory) is dict and set(inventory) == set(PHASES) and all(digest(value) for value in inventory.values()))
+    require(terminal.get('status') == ROTATION_LAYOUT['terminalStatus'] and terminal.get('keyRemovalVerified') is True
+            and all(terminal.get(key) == request[key] for key in identity if key != 'releaseId')
+            and terminal.get('frontendFinalEpoch') == receipt['frontendEpoch']
+            and terminal.get('configurationSha256') == receipt['configurationSha256']
+            and all(terminal.get(key) is False for key in flags)
+            and receipt['terminalReceiptSha256'] == migrate.file_hash(terminal_raw)
+            and receipt['frontendSessionClosedSha256'] == terminal.get('frontendSessionCloseReceiptSha256') == migrate.file_hash(closed_raw)
+            and closed.get('status') == 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED'
+            and all(closed.get(key) == request[key] for key in ('environment', 'releaseId', 'sourceCommit'))
+            and closed.get('targetSha256') == receipt['targetSha256']
+            and closed.get('admission') == {'epoch': receipt['frontendEpoch'], 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+            and all(closed.get(key) is True for key in ('backendAbsent', 'migrationLockReleased', 'nonceLockReleased')))
+    require(receipt['frontend'] == rotation_frontend_successor(directory, terminal))
+    return raw
+
+
+def read_rotation_frontend_ready_evidence(request):
+    from p2_certification_parent import READY_FILES
+    from p2_release_supervisor import ROTATION_LAYOUT
+    from p2_replacement_terminal import exact_receipt
+
+    require(digest(request.get('successorReceiptSha256')))
+    successor_request = {**request, 'operation': ROTATION_SUCCESSOR_OPERATION}
+    successor_digest = successor_request.pop('successorReceiptSha256')
+    successor_raw = read_rotation_successor_evidence(successor_request)
+    require(migrate.file_hash(successor_raw) == successor_digest)
+    expected = exact_receipt(successor_raw)['frontend']['readyReceiptSha256']
+    directory = Path(request['results']) / (ROTATION_LAYOUT['receiptPrefix'] + request['actionId']) / 'frontend-current-only'
+    require(directory == directory.resolve())
+    migrate.private_directory(directory)
+    records = {}
+    for name in READY_FILES:
+        raw = private_record(directory, name)
+        require(migrate.file_hash(raw) == expected[name])
+        records[name] = base64.b64encode(raw).decode('ascii')
+    return json.dumps(records, separators=(',', ':')).encode()
 
 
 if __name__ == '__main__':

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { prepareP2IdentityRotationBrowserReadPlan, recordP2IdentityRotationBrowserReads } from "./p2-identity-key-rotation-browser-recorder.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
+import { launchP2IdentityRotationBrowserReadRecorder, prepareP2IdentityRotationBrowserReadPlan,
+  recordP2IdentityRotationBrowserReads } from "./p2-identity-key-rotation-browser-recorder.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex"), uuid = digit => `${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}`;
 const rotation = { version: 1, environment: "staging", actionId: "p2-key-rotation-owned", bindingSha256: sha("binding"),
@@ -27,18 +29,45 @@ test("fixed plan binds one rollout and the bounded frontend-only read admission 
   const plan = prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", deployment, canonical);
   assert.equal(plan.configurationSha256, rotation.configuration.overlap.sha256);
   assert.equal(plan.maximumWindowSeconds, 60);
-  assert.equal(plan.admissionClass, "bounded-frontend-new-work-read-only");
+  assert.equal(plan.admissionClass, "closed-frontend-read-only");
   assert.equal(plan.gatewayAdmissionRequired, false);
   assert.throws(() => prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", { ...deployment, configurationSha256: sha("other") }, canonical));
   assert.throws(() => prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", deployment,
     { ...canonical, browserOrigin: "https://owned.vercel.app" }));
 });
 
+test("fixed child initializes from the module directory and binds post-removal to the current deployment", async () => {
+  const current = { ...deployment, phase: "current-only", configurationSha256: rotation.configuration["current-only"].sha256 };
+  const plan = prepareP2IdentityRotationBrowserReadPlan(rotation, "post-removal", current, canonical);
+  assert.equal(plan.phase, "post-removal");
+  assert.equal(plan.configurationSha256, current.configurationSha256);
+  assert.throws(() => prepareP2IdentityRotationBrowserReadPlan(rotation, "post-removal", deployment, canonical));
+  if (process.env.P2_ROTATION_OWNED_REHEARSAL !== "true") {
+    let launched = false;
+    assert.throws(() => launchP2IdentityRotationBrowserReadRecorder(plan, () => { launched = true; }),
+      /P2_IDENTITY_ROTATION_BROWSER_REFUSED/u);
+    assert.equal(launched, false);
+  }
+  const controller = launchP2IdentityRotationBrowserReadRecorder(plan);
+  try {
+    assert.equal(await controller.initialized(), true);
+    await assert.rejects(() => controller.authenticate({}), /P2_IDENTITY_ROTATION_BROWSER_REFUSED/u);
+  } finally { await controller.close(); }
+});
+
+test("managed browser reads bind the profiled workload proof to its exact candidate", () => {
+  const managed = { ...rotation, version: 2, qualificationTargetProfile: profile, candidateObjectSha256: sha("candidate-object") };
+  const receipt = { ...canonical, version: 2, qualificationTargetProfile: profile,
+    candidateSha256: managed.candidateObjectSha256, phase2ContractManifestSha256: "sha256:" + sha("contract") };
+  assert.equal(prepareP2IdentityRotationBrowserReadPlan(managed, "overlap", deployment, receipt).deploymentId, deployment.deploymentId);
+  assert.throws(() => prepareP2IdentityRotationBrowserReadPlan(managed, "overlap", deployment, canonical));
+  assert.throws(() => prepareP2IdentityRotationBrowserReadPlan(managed, "overlap", deployment,
+    { ...receipt, candidateSha256: sha("other-candidate") }));
+});
+
 test("ordinary isolated customer/admin contexts exercise exact same-origin Course reads without token capture", async () => {
-  const calls = [], now = Math.floor(Date.now() / 1000), requestId = uuid("6"), course = { course: { id: rotation.courseId } };
-  const page = (profile, subject) => ({ request: { get: async url => { calls.push([profile, url]);
-    if (url.endsWith("/api/customer-auth/session")) return response(200, {}, { user: { id: subject } });
-    if (url.endsWith("/api/auth/session")) return response(200, {}, { user: { id: subject, authenticatedAt: now } });
+  const calls = [], requestId = uuid("6"), course = { course: { id: rotation.courseId } };
+  const page = profile => ({ request: { get: async url => { calls.push([profile, url]);
     return response(200, { "cache-control": "private, no-store", "x-request-id": requestId }, course); } } });
   const input = { version: 1, environment: "staging", actionId: rotation.actionId, challenge: sha("challenge"),
     bindingSha256: rotation.bindingSha256, sourceCommit: rotation.sourceCommit, candidateSha256: rotation.candidateSha256,
@@ -49,16 +78,16 @@ test("ordinary isolated customer/admin contexts exercise exact same-origin Cours
     browserProgramSha256: prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", deployment, canonical).browserProgramSha256,
     courseId: rotation.courseId, customerId: rotation.subjects["course-learner"], adminId: rotation.subjects["course-admin"] };
   const record = await recordP2IdentityRotationBrowserReads(input,
-    { customer: page("customer", input.customerId), admin: page("admin", input.adminId) });
+    { customer: page("customer"), admin: page("admin") });
   assert.equal(record.status, "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED");
+  assert.equal(record.challenge, input.challenge);
   assert.deepEqual(record.profiles.map(row => [row.profile, row.httpStatus]), [["course-learner", 200], ["course-admin", 200]]);
   assert.equal(record.tokenBytesOutput, false); assert.equal(record.requestsIntercepted, false); assert.equal(record.storageInjected, false);
   assert.deepEqual(calls.map(row => row[1]), [
-    "https://staging.lashher.com/api/customer-auth/session", "https://staging.lashher.com/api/auth/session",
     `https://staging.lashher.com/api/academy/courses/${rotation.courseId}`, `https://staging.lashher.com/api/admin/courses/${rotation.courseId}`]);
 });
 
-test("redirects, non-private responses, wrong subjects and non-200 reads refuse", async () => {
+test("redirects and non-200 protected reads refuse", async () => {
   const input = { version: 1, environment: "staging", actionId: rotation.actionId, challenge: sha("challenge"), bindingSha256: rotation.bindingSha256,
     sourceCommit: rotation.sourceCommit, candidateSha256: rotation.candidateSha256, phase: "overlap", configurationSha256: deployment.configurationSha256,
     deploymentId: deployment.deploymentId, deploymentUrl: deployment.deploymentUrl, browserOrigin: canonical.browserOrigin,
@@ -66,8 +95,6 @@ test("redirects, non-private responses, wrong subjects and non-200 reads refuse"
     workloadReceiptSha256: deployment.workloadReceiptSha256,
     browserProgramSha256: prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", deployment, canonical).browserProgramSha256,
     courseId: rotation.courseId, customerId: rotation.subjects["course-learner"], adminId: rotation.subjects["course-admin"] };
-  const bad = { request: { get: async url => url.endsWith("session")
-    ? response(200, {}, { user: { id: "wrong", authenticatedAt: Math.floor(Date.now() / 1000) } })
-    : response(302, { location: "/sign-in" }, {}) } };
+  const bad = { request: { get: async () => response(302, { location: "/sign-in" }, {}) } };
   await assert.rejects(() => recordP2IdentityRotationBrowserReads(input, { customer: bad, admin: bad }), /P2_IDENTITY_ROTATION_BROWSER_REFUSED/u);
 });

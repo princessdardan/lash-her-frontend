@@ -51,7 +51,8 @@ export function createWriterAdmissionRunner(dependencies: {
       if (identity?.username !== target.user || identity.database !== target.database || identity.major !== target.serverMajor) throw new Error();
       const interactive = await getInteractiveWriter(configuration);
       // Read-only observations can reach protected reads without opening a writer.
-      if (interactive?.lessonDenial || interactive?.stalledPlaybackRenewal ||
+      if (interactive?.lessonDenial || interactive?.stalledPlaybackRenewal || interactive?.rotationAdmin ||
+        (interactive?.identityRotation && kind !== interactive.identityRotationWriterKind) ||
         (interactive?.lessonAssessment && (kind !== "new-work" || !interactive.lessonAssessmentWrite)) ||
         (interactive?.lessonResume && (kind !== "new-work" || !interactive.lessonResumeWrite)) ||
         (interactive?.lessonRestore && (kind !== "new-work" || !interactive.lessonRestoreWrite)) ||
@@ -80,7 +81,7 @@ export function createWriterAdmissionRunner(dependencies: {
           producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 },
         interactive?.lifecycleSelectionSha256, interactive?.identityCustomerId, interactive?.identityEnrollment,
         interactive?.authoringActorId, interactive?.authoringOperation, interactive?.paidGrant?.actorId ?? interactive?.paidRevoke?.actorId,
-        interactive?.firstOwner);
+        interactive?.firstOwner, interactive?.identityRotation);
         // A 5xx may describe an uncertain provider result. Preserve an unresolved
         // operation even when a domain handler catches its own exception.
         if (connectionLost || options?.uncertainResult?.(result)) throw new Error();

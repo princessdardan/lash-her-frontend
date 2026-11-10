@@ -179,15 +179,19 @@ class P2LifecycleWorkerEvidenceStage:
             and digest(migrate.read_input(self.source, "ops/platform/host/p2_lifecycle_worker_evidence.py")) == self.plan["hostProgramSha256"]
             and digest(migrate.read_input(self.source, DENIAL)) == self.plan["denialSourceSha256"],
             "P2_WORKER_CANONICAL_SOURCE_REQUIRED")
-        token = runtime._command_scope.set(self.scope)
-        try:
-            actual = runtime.check_containers(self.selected, self.configuration, expected_profile=expected)
-        finally:
-            runtime._command_scope.reset(token)
+        if expected is not None:
+            actual = self.scope.read_runtime_inventory(self.configuration)
+        else:
+            token = runtime._command_scope.set(self.scope)
+            try:
+                actual = runtime.check_containers(self.selected, self.configuration, expected_profile=expected)
+            finally:
+                runtime._command_scope.reset(token)
         demand(actual == self.reviewed["containers"], "P2_WORKER_RUNTIME_CHANGED")
-        import p2_identity_negative_probe as identity
-        for service in ("gateway", "course-api", "community-api"):
-            identity._one_container(next(row for row in actual if row["service"] == service), self.configuration, self.scope)
+        if expected is None:
+            import p2_identity_negative_probe as identity
+            for service in ("gateway", "course-api", "community-api"):
+                identity._one_container(next(row for row in actual if row["service"] == service), self.configuration, self.scope)
         self.inventory = actual
 
     def _gateway(self, recovery):
@@ -342,11 +346,12 @@ class P2LifecycleWorkerEvidenceStage:
         command = self.prior["pendingRecord"]["pending"]["command"]
         browser = self.prior["browserRecord"]
         course = P2LifecycleSuspensionEvidenceStage._course_runtime(self)
-        community_file = self.configuration/"community-api.env"
+        expected = self.expected_profile
+        configuration = self.scope.runtime_mount_configuration("community-api", self.configuration) if expected is not None else self.configuration
+        community_file = configuration/"community-api.env"
         info = community_file.lstat()
         demand(not community_file.is_symlink() and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600, "P2_WORKER_PRIVATE_COMMUNITY_RUNTIME_REQUIRED")
-        expected = self.expected_profile
-        community = runtime.environment_values(migrate.read_input(self.configuration, community_file.name, 65536), "staging", "community-api", self.jobs,
+        community = runtime.environment_values(migrate.read_input(configuration, community_file.name, 65536), "staging", "community-api", self.jobs,
             expected_profile=expected)
         program = denial_program(self.source)
         values = {}

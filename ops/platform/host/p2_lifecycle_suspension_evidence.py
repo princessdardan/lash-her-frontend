@@ -57,7 +57,7 @@ def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=
     demand(isinstance(pins, dict) and set(pins) == set(READY_FILES)
         and certification.get("originalReleaseReceiptSha256") == reviewed["plan"]["originalReleaseSha256"],
         "P2_SUSPENSION_RELEASE_EVIDENCE_PINS_REQUIRED")
-    raw, values = {}, {}
+    values = {}
     from qualification_target_profile import decode_qualification_target_json
     for name, encoded in release_evidence["readyReceipts"].items():
         demand(isinstance(encoded, str), "P2_SUSPENSION_RELEASE_EVIDENCE_REQUIRED")
@@ -68,7 +68,7 @@ def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=
         demand(parsed.get("version") == 2 and parsed.get("environment") == "staging"
             and parsed.get("releaseId") == plan.get("releaseId") and parsed.get("sourceCommit") == plan.get("sourceCommit"),
             "P2_SUSPENSION_RELEASE_EVIDENCE_CONTEXT_CHANGED")
-        raw[name], values[name] = value, parsed
+        values[name] = parsed
     original = release_evidence["originalReleaseReceipt"]
     demand(isinstance(original, str), "P2_SUSPENSION_RELEASE_EVIDENCE_REQUIRED")
     original_raw = base64.b64decode(original, validate=True)
@@ -86,11 +86,26 @@ def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=
         persistence.HeldCertificationPersistenceScope._replacement_release_evidence(scope, reviewed, persistence_evidence, expected)
     else:
         persistence._release_evidence(reviewed, persistence_evidence, expected)
-    workload = values["frontend-workload-outcome.json"]
-    promotion = values["frontend-promotion-outcome.json"]
-    demand(digest(raw["frontend-workload-outcome.json"]) == plan.get("configurationRecordSha256")
-        and original_value.get("frontendWorkloadReceiptSha256") == digest(raw["frontend-workload-outcome.json"])
-        and digest(raw["frontend-promotion-outcome.json"]) == reviewed["plan"]["frontendDeploymentSha256"]
+    workload_name, promotion_name = "frontend-workload-outcome.json", "frontend-promotion-outcome.json"
+    original_workload_sha = pins[workload_name]
+    if "rotationSuccessor" in certification:
+        original_ready = certification.get("originalFrontendReady")
+        demand("replacementRelease" in certification and isinstance(original_ready, dict)
+            and isinstance(original_ready.get("readyReceiptSha256"), dict)
+            and set(original_ready["readyReceiptSha256"]) == set(READY_FILES)
+            and isinstance(original_ready.get("deploymentId"), str)
+            and original_value.get("deploymentId") == original_ready["deploymentId"] != plan.get("deploymentId"),
+            "P2_SUSPENSION_ROTATION_ORIGINAL_READY_REFUSED")
+        original_pins = original_ready["readyReceiptSha256"]
+        demand(all(isinstance(original_pins[name], str) and SHA.fullmatch(original_pins[name])
+            and original_pins[name] != pins[name] for name in (workload_name, promotion_name))
+            and original_value.get("frontendPromotionReceiptSha256") == original_pins[promotion_name],
+            "P2_SUSPENSION_ROTATION_ORIGINAL_READY_REFUSED")
+        original_workload_sha = original_pins[workload_name]
+    workload, promotion = values[workload_name], values[promotion_name]
+    demand(pins[workload_name] == plan.get("configurationRecordSha256")
+        and original_value.get("frontendWorkloadReceiptSha256") == original_workload_sha
+        and pins[promotion_name] == reviewed["plan"]["frontendDeploymentSha256"]
         and workload.get("status") == "FRONTEND_VERIFIED" and workload.get("deploymentId") == plan.get("deploymentId")
         and workload.get("featureControls") == plan.get("featureControls")
         and workload.get("writerAdmissionBinding") == plan.get("writerAdmissionBinding")
@@ -100,8 +115,8 @@ def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=
         and promotion.get("trafficAuthorized") is False,
         "P2_SUSPENSION_RELEASE_EVIDENCE_SEMANTICS_REQUIRED")
     return {"originalReleaseReceiptSha256": digest(original_raw),
-        "frontendWorkloadReceiptSha256": digest(raw["frontend-workload-outcome.json"]),
-        "frontendPromotionReceiptSha256": digest(raw["frontend-promotion-outcome.json"])}
+        "frontendWorkloadReceiptSha256": pins[workload_name],
+        "frontendPromotionReceiptSha256": pins[promotion_name]}
 
 
 def _milliseconds(value):
@@ -203,10 +218,14 @@ class P2LifecycleSuspensionEvidenceStage:
             "status": status, **fields}
 
     def _inventory(self):
+        if self.expected_profile is not None:
+            observed = self.scope.read_runtime_inventory(self.configuration)
+            demand(observed == self.reviewed["containers"], "P2_SUSPENSION_REVIEWED_RUNTIME_CHANGED")
+            return observed
         self.scope.verify()
         token = runtime._command_scope.set(self.scope)
         try:
-            observed = runtime.check_containers(self.selected, self.configuration, expected_profile=getattr(self, "expected_profile", None))
+            observed = runtime.check_containers(self.selected, self.configuration)
         finally:
             runtime._command_scope.reset(token)
         demand(observed == self.reviewed["containers"], "P2_SUSPENSION_REVIEWED_RUNTIME_CHANGED")
@@ -257,12 +276,15 @@ class P2LifecycleSuspensionEvidenceStage:
 
     def _course_runtime(self):
         self.verify()
-        path = self.configuration / "course-api.env"
+        configuration = self.configuration
+        if self.expected_profile is not None:
+            configuration = self.scope.runtime_mount_configuration("course-api", configuration)
+        path = configuration / "course-api.env"
         info = path.lstat()
         demand(not path.is_symlink() and stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600,
             "P2_SUSPENSION_PRIVATE_COURSE_RUNTIME_REQUIRED")
-        values = runtime.environment_values(migrate.read_input(self.configuration, path.name, 65536), "staging", "course-api", self.jobs,
-            expected_profile=getattr(self, "expected_profile", None))
+        values = runtime.environment_values(migrate.read_input(configuration, path.name, 65536), "staging", "course-api", self.jobs,
+            expected_profile=self.expected_profile)
         program = """import{readFileSync}from'node:fs';try{const raw=readFileSync(0);if(raw.length>65536)throw Error();const input=JSON.parse(raw);
 const excluded=new Set(['NODE_ENV','NODE_OPTIONS','PORT','HTTP_BIND_ADDRESS','INTERNAL_SERVICE_TRUSTED_PROXY_CIDRS','INTERNAL_SERVICE_ALLOWED_IPS','COURSE_COMMUNITY_READ_ALLOWED_IPS','INTERNAL_TRUSTED_PROXY_CIDRS']);
 if(process.env.NODE_ENV!=='production'||process.env.DATABASE_TARGET!=='staging'||!Object.entries(input).every(([k,v])=>excluded.has(k)||process.env[k]===v)||typeof input.COURSE_LEARNER_JWT_CURRENT_SECRET!=='string'||input.COURSE_LEARNER_JWT_CURRENT_SECRET.length<32)throw Error();

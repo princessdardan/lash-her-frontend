@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { observeRecoveryPhysical } from "./p2-recovery-current-probe.mjs";
+import { requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const SHA = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
@@ -30,8 +31,37 @@ export async function observeIdentityRotationBoundary(context, dependencies = {}
   requireBoundary(host && typeof host.verify === "function" && host.sourceCommit === context.sourceCommit
     && host.candidateSha256 === context.candidateSha256 && host.bindingSha256 === context.bindingSha256, "host-scope-binding");
   await frontend.verify(); host.verify();
-  const physical = await (dependencies.observePhysical ?? observeRecoveryPhysical)(
-    { ...frontend.probe, operation: "verify-schema" }, dependencies.physicalDependencies);
+  const managed = frontend.probe.version === 2 || frontend.receipt.version === 2;
+  let physical;
+  if (managed) {
+    const { probe, receipt } = frontend;
+    requireQualificationTargetProfile(profile, probe, receipt, probe.plan);
+    const initial = probe.plan?.initialEpoch;
+    requireBoundary(probe.version === 2 && receipt.version === 2 && receipt.status === "P2_CERTIFICATION_DATABASE_CURRENT"
+      && probe.receipt === receipt && probe.plan?.mode === "contain-native" && probe.plan.certificationActionId === context.actionId
+      && receipt.planSha256 === probe.plan.planSha256 && receipt.candidateSha256 === probe.plan.candidateSha256
+      && probe.replacementRelease && isDeepStrictEqual(probe.replacementRelease, receipt.replacementRelease)
+      && /^[1-9][0-9]{0,17}$/u.test(initial ?? "") && receipt.admission?.epoch === initial
+      && SHA.test(receipt.journalSha256 ?? "") && typeof frontend.currentEpoch === "function" && typeof frontend.observeCurrent === "function",
+    "managed-frontend-session-binding");
+    const epoch = frontend.currentEpoch();
+    requireBoundary(typeof epoch === "string" && [0n, 2n, 4n, 6n].some(delta => String(BigInt(initial) + delta) === epoch),
+      "managed-frontend-epoch");
+    physical = await frontend.observeCurrent();
+    requireQualificationTargetProfile(profile, physical);
+    requireBoundary(physical.version === 2 && physical.marker === probe.marker && physical.backendPid === probe.backendPid
+      && physical.backendStart === probe.backendStart && physical.environment === "staging"
+      && physical.releaseId === receipt.releaseId && physical.targetSha256 === receipt.targetSha256
+      && physical.journalSha256 === receipt.journalSha256 && physical.admission?.epoch === epoch
+      && SHA.test(physical.witnessSha256 ?? "")
+      && physical.effectiveLoginBoundaryVerified === true && physical.predecessorRuntimeRoleAbsent === true
+      && isDeepStrictEqual(physical.replacementRelease, probe.replacementRelease), "managed-frontend-physical-fence");
+  } else {
+    requireBoundary(!Object.hasOwn(frontend.probe, "qualificationTargetProfile")
+      && !Object.hasOwn(frontend.receipt, "qualificationTargetProfile"), "frontend-session-binding");
+    physical = await (dependencies.observePhysical ?? observeRecoveryPhysical)(
+      { ...frontend.probe, operation: "verify-schema" }, dependencies.physicalDependencies);
+  }
   requireBoundary(physical?.status === "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED"
     && physical.sourceCommit === context.sourceCommit && physical.admission?.newWork === false
     && physical.admission?.recovery === false && physical.admission?.active === 0 && physical.admission?.uncertain === 0,

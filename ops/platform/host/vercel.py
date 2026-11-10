@@ -35,8 +35,10 @@ class Client:
                                                   urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
     def request(self, method, path, body=None):
+        staging_env_delete = (re.fullmatch(rf"/v9/projects/{PROJECTS['staging']}/env/([A-Za-z0-9_-]{{1,128}})", path)
+                              if method == "DELETE" and body is None and isinstance(path, str) else None)
         demand((method in ("GET", "POST", "PATCH") or method == "DELETE" and body is None and
-                isinstance(path, str) and re.fullmatch(r"/v13/deployments/dpl_[A-Za-z0-9]+", path)) and isinstance(path, str)
+                isinstance(path, str) and (staging_env_delete or re.fullmatch(r"/v13/deployments/dpl_[A-Za-z0-9]+", path))) and isinstance(path, str)
                and re.fullmatch(r"/v[0-9]+/[A-Za-z0-9_/?=&.-]+", path), "VERCEL_REQUEST_REFUSED")
         separator = "&" if "?" in path else "?"
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
@@ -55,6 +57,14 @@ class Client:
                                 for project in PROJECTS.values())):
                     return {}
                 value = json.loads(raw)
+                if staging_env_delete:
+                    # Vercel documents both an object and an array. A reviewed
+                    # ID selects one record and only its metadata leaves here.
+                    removed = value if isinstance(value, list) else [value]
+                    demand(response.status == 200 and len(removed) == 1 and isinstance(removed[0], dict) and
+                           removed[0].get("id") == staging_env_delete[1] and isinstance(removed[0].get("key"), str) and
+                           re.fullmatch(r"[A-Z][A-Z0-9_]*", removed[0]["key"]), "VERCEL_ENV_DELETE_ACK_REFUSED")
+                    return {"id": removed[0]["id"], "key": removed[0]["key"]}
                 demand(isinstance(value, dict), "VERCEL_RESPONSE_REFUSED")
                 return value
         except urllib.error.HTTPError as error:

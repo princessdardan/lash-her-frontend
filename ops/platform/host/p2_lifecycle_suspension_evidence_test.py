@@ -139,6 +139,63 @@ class SuspensionEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'RELEASE_EVIDENCE_REFUSED'):
             evidence._release_evidence(scope, reviewed, plan, carrier)
 
+    def test_rotation_release_evidence_keeps_original_and_active_deployments_distinct(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        profile = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        common = {"version": 2, "qualificationTargetProfile": profile, "environment": "staging",
+                  "releaseId": "owned-release", "sourceCommit": "a" * 40}
+        active_id, original_id = "dpl_OwnedCurrent", "dpl_OwnedOriginal"
+        active_records = {name: {**common, "deploymentId": active_id} for name in evidence.READY_FILES}
+        active_records["frontend-workload-outcome.json"].update(status="FRONTEND_VERIFIED",
+            featureControls={}, writerAdmissionBinding={}, trafficAuthorized=False, nativeSchedulerVerified=False)
+        active_records["frontend-promotion-outcome.json"].update(status="FRONTEND_DOMAINS_PROMOTED",
+            phase="completed", frontendDomainsPromoted=True, trafficAuthorized=False)
+        encode = lambda record: evidence.canonical(record) + b"\n"
+        encode_base64 = lambda data: base64.b64encode(data).decode()
+        active_ready = {name: encode(record) for name, record in active_records.items()}
+        original_ready = {name: encode({**record, "deploymentId": original_id}) for name, record in active_records.items()}
+        active_pins = {name: evidence.digest(raw) for name, raw in active_ready.items()}
+        original_pins = {name: evidence.digest(raw) for name, raw in original_ready.items()}
+        workload, promotion = "frontend-workload-outcome.json", "frontend-promotion-outcome.json"
+        original_terminal = encode({**common, "deploymentId": original_id,
+            "frontendWorkloadReceiptSha256": original_pins[workload], "frontendPromotionReceiptSha256": original_pins[promotion]})
+        original_digest = evidence.digest(original_terminal)
+        scope = SimpleNamespace(certification_plan={"replacementRelease": {}, "rotationSuccessor": {},
+            "originalReleaseReceiptSha256": original_digest, "readyReceiptSha256": active_pins,
+            "originalFrontendReady": {"deploymentId": original_id, "readyReceiptSha256": original_pins}})
+        reviewed = {"plan": {"originalReleaseSha256": original_digest, "frontendDeploymentSha256": active_pins[promotion]}}
+        plan = {**common, "deploymentId": active_id, "configurationRecordSha256": active_pins[workload],
+                "featureControls": {}, "writerAdmissionBinding": {}}
+        suspension_sha = evidence.digest(evidence.canonical(plan))
+        carrier = {"originalReleaseReceipt": encode_base64(original_terminal),
+                   "readyReceipts": {name: encode_base64(raw) for name, raw in active_ready.items()}}
+        expected = {"originalReleaseReceiptSha256": original_digest, "frontendWorkloadReceiptSha256": active_pins[workload],
+                    "frontendPromotionReceiptSha256": active_pins[promotion]}
+        with patch.object(evidence.persistence.HeldCertificationPersistenceScope, "_replacement_release_evidence") as joined:
+            for mode in ("browser-pending", "direct-worker"):
+                with self.subTest(mode=mode):
+                    scope.certification_plan.update(mode=mode, browserPlanSha256=suspension_sha,
+                        workerPlan={"suspensionPlanSha256": suspension_sha})
+                    self.assertEqual(evidence._release_evidence(scope, reviewed, plan, carrier, profile), expected)
+                    joined.assert_called_with(scope, reviewed, {"originalReleaseReceipt": carrier["originalReleaseReceipt"],
+                        "frontendDeploymentRecord": carrier["readyReceipts"][promotion]}, profile)
+
+            for field, wrong in (("deploymentId", active_id), ("readyReceiptSha256", active_pins)):
+                with self.subTest(field=field):
+                    original = scope.certification_plan["originalFrontendReady"]
+                    scope.certification_plan["originalFrontendReady"] = {**original, field: wrong}
+                    with self.assertRaisesRegex(ValueError, "ROTATION_ORIGINAL_READY_REFUSED"):
+                        evidence._release_evidence(scope, reviewed, plan, carrier, profile)
+                    scope.certification_plan["originalFrontendReady"] = original
+
+            stale = {**carrier, "readyReceipts": {**carrier["readyReceipts"], promotion: encode_base64(original_ready[promotion])}}
+            with self.assertRaisesRegex(ValueError, "RELEASE_EVIDENCE_CHANGED"):
+                evidence._release_evidence(scope, reviewed, plan, stale, profile)
+            wrong_original = {**original_pins, workload: "b" * 64}
+            scope.certification_plan["originalFrontendReady"] = {"deploymentId": original_id, "readyReceiptSha256": wrong_original}
+            with self.assertRaisesRegex(ValueError, "RELEASE_EVIDENCE_SEMANTICS_REQUIRED"):
+                evidence._release_evidence(scope, reviewed, plan, carrier, profile)
+
     def test_exclusive_private_file_is_hashed_and_cannot_be_replaced(self):
         value = {"version": 1, "status": "OWNED_RECORD"}
         result = evidence.private_record(self.directory, "browser-parent-intent.json", value)
@@ -202,22 +259,42 @@ class SuspensionEvidenceTests(unittest.TestCase):
         self.assertEqual(stage.capture["controlledUser"]["token"], "")
         self.assertTrue(stage.scrub_controlled_credentials()["controlledCredentialsRemoved"])
 
+    def test_profiled_inventory_uses_the_typed_current_runtime(self):
+        stage = evidence.P2LifecycleSuspensionEvidenceStage.__new__(evidence.P2LifecycleSuspensionEvidenceStage)
+        stage.expected_profile = {"fixture": "profiled"}
+        stage.configuration = self.directory
+        containers = [{"service": "course-api", "containerId": "a" * 64}]
+        stage.reviewed = {"containers": containers}
+        stage.scope = SimpleNamespace(read_runtime_inventory=Mock(return_value=containers))
+        with patch.object(evidence.identity, "_one_container") as legacy:
+            self.assertEqual(stage._inventory(), containers)
+            stage.scope.read_runtime_inventory.assert_called_once_with(self.directory)
+            stage.scope.read_runtime_inventory.return_value = [{"service": "course-api", "containerId": "b" * 64}]
+            with self.assertRaisesRegex(ValueError, "REVIEWED_RUNTIME_CHANGED"):
+                stage._inventory()
+        legacy.assert_not_called()
+
     def test_course_runtime_parser_receives_only_the_source_selected_current_profile(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
         stage = evidence.P2LifecycleSuspensionEvidenceStage.__new__(evidence.P2LifecycleSuspensionEvidenceStage)
         stage.expected_profile = ref; stage.configuration = self.directory; stage.jobs = {'course': {'job': {}}}
         stage.inventory = [{'service': 'course-api', 'containerId': 'a' * 64}]
-        stage.scope = SimpleNamespace(run=Mock(return_value=subprocess.CompletedProcess([], 0,
-            b'{"status":"P2_SUSPENSION_COURSE_RUNTIME_BOUND"}\n', b'')))
+        active = self.directory / "current-only"
+        stage.scope = SimpleNamespace(runtime_mount_configuration=Mock(return_value=active),
+            run=Mock(return_value=subprocess.CompletedProcess([], 0,
+                b'{"status":"P2_SUSPENSION_COURSE_RUNTIME_BOUND"}\n', b'')))
         stage.verify = Mock()
         values = {'COURSE_LEARNER_JWT_CURRENT_SECRET': 'x' * 32}
         info = SimpleNamespace(st_mode=0o100600, st_uid=0)
         with patch.object(Path, 'lstat', return_value=info), \
-                patch.object(evidence.migrate, 'read_input', return_value=b'owned'), \
+                patch.object(evidence.migrate, 'read_input', return_value=b'owned') as read, \
                 patch.object(evidence.runtime, 'environment_values', return_value=values) as parser:
             self.assertEqual(stage._course_runtime(), values)
+        stage.scope.runtime_mount_configuration.assert_called_once_with("course-api", self.directory)
+        read.assert_called_once_with(active, "course-api.env", 65536)
         parser.assert_called_once_with(b'owned', 'staging', 'course-api', stage.jobs, expected_profile=ref)
+        self.assertIn(stage.inventory[0]["containerId"], stage.scope.run.call_args.args[0])
 
 
 if __name__ == "__main__":

@@ -1887,6 +1887,7 @@ class IndependentGuardTests(unittest.TestCase):
         request = {'probe': probe, 'receipt': base64.b64encode(json.dumps(receipt).encode()).decode()}
         broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
         broker._initialize_certification_state()
+        broker.rotation_successor = None
         broker.initial, broker.directory, broker.source = initial, directory, directory
         broker.configuration = directory / 'configuration'
         (broker.configuration / 'admission').mkdir(parents=True)

@@ -28,6 +28,23 @@ export interface AdminAuthService {
   ): Promise<AdminActor>;
 }
 
+export async function readSelectedAdminGoogleUser(
+  userStore: Pick<AdminUserStore, "findByProviderUserId" | "findByEmailNormalized">,
+  identity: { email: unknown; emailVerified: unknown; providerUserId: unknown },
+  selectedId: string,
+): Promise<AdminUserRecord | null> {
+  const { email, emailVerified, providerUserId } = identity;
+  if (emailVerified !== true || typeof email !== "string" || !email.trim() || typeof providerUserId !== "string" || !providerUserId) return null;
+  const emailNormalized = normalizeEmail(email);
+  const [providerUser, emailUser] = await settleWriterEffects([
+    userStore.findByProviderUserId(providerUserId),
+    userStore.findByEmailNormalized(emailNormalized),
+  ]);
+  const matches = (user: AdminUserRecord | null) => user?.id === selectedId && user.status === "active" &&
+    user.emailNormalized === emailNormalized && user.providerUserId === providerUserId;
+  return matches(providerUser) && matches(emailUser) ? providerUser : null;
+}
+
 export function createAdminAuth(
   dependencies: AdminAuthDependencies,
 ): AdminAuthService {

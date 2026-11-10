@@ -16,14 +16,18 @@ a Community feature or a public debug/token endpoint.
 
 The package includes a source-fixed config-only parent, single-use SSH
 transport, exact source-CI/install operator, typed host broker/scope, canonical
-staging-origin observer, and normal frontend Course read recorder. The
-controller remains live-ineligible. The operator's reviewed plan still needs
-a fixed projection to the controller's private record bindings, a shared
-transport authority, and a retained-state join across the local controller
-and remote Linux broker. That integration needs qualification on the actual
-Linux/Docker/Vercel/staging path.
-`keyRemovalVerified` remains false outside a successful joined run. The
-parent is designed to retain the Linux release
+staging-origin observer, and normal frontend Course read recorder. The Node
+parent and transport share the same frozen reviewed plan. The controller
+checks the retained review and writes atomic, private records in the action
+result directory. The managed source joins the profiled replacement lease,
+scoped browser writer permit, host-owned retained state, and independent
+post-reap closure. The live entry refuses before remote work pending an
+integrated rehearsal on owned infrastructure. Qualify that path and review the
+managed entry switches before freezing the staging candidate. The operator
+source must match the released frontend source. Dardan separately starts the
+reviewed staging rotation and retains its deployed evidence.
+`keyRemovalVerified` remains false outside a successful joined run.
+The parent retains the Linux release
 flock and frontend PostgreSQL physical advisory/nonce lock throughout each
 configuration mutation, runtime recreation, frontend build/promotion, and
 proof. Retained-READY recovery and failed/canceled forward recovery are not
@@ -78,10 +82,12 @@ each build. An old or expired probe record is never reused as workload proof.
 Vercel Sensitive values are not readable after creation. The adapter never
 requests or claims secret-value readback. It inventories fixed Production
 metadata first, writes every desired profile value from the reviewed private
-reference, requires each provider acknowledgement, retains a nonsecret
-acknowledgement record, and then proves the staged build behavior. A lost or
-partial environment-variable acknowledgement cannot be inferred from the
-metadata inventory and remains closed for review.
+reference and verifies the held scope around every provider request. It
+retains an exclusive intent before each write and a sanitized acknowledgment
+after the verified response. The aggregate receipt requires those individual
+records for GET-first reconciliation. A lost or partial acknowledgment
+leaves the original attempt available for review. The later staged build
+verifies the exact deployment and workload.
 
 ## Fixed order
 
@@ -191,6 +197,37 @@ python3 -m unittest \
   ops/platform/host/p2_identity_key_rotation_adapter_test.py \
   ops/platform/host/p2_identity_key_rotation_parent_test.py
 ```
+
+The host's close-prepared receipt records the exact evidence while the frontend
+session is still held. The independent supervisor publishes the terminal after
+the broker exits, the fixed database observer repeats the closed-session
+result, and the scoped observer containers are absent.
+The supervisor verifies the mixed runtime against the reviewed retained and
+recreated services. After successful guardian exit, the fixed read-only
+evidence action joins the original replacement terminal, rotation terminal,
+and closed database session. The guardian also binds the current-only frontend
+deployment to its six READY records and the canonical post-removal signer
+witness. The Node parent retains the original successor and READY bytes in its
+private action directory and returns only their digests.
+
+For a later scoped certification review, select the retained rotation action
+and successor digest in `rotationSuccessor`. The planner preserves the
+original deployment receipts as release provenance and uses the current-only
+receipts for the new action. The guarded path derives both mount roots from
+the retained evidence, checks the exact current API configuration, and
+challenges the canonical staging deployment while holding both locks.
+Mixed-runtime apply remains gated pending an integrated owned rehearsal. Any
+held action planned after rotation needs the mixed-runtime entry qualified in
+the same staging candidate source.
+
+The rotation requires a second, fresh browser signer witness after both
+receivers report current-only verification. Each authentication phase has one
+scoped writer epoch for two selected actors. The corresponding protected reads
+run with both admission flags closed and keep the same epoch. The managed
+replacement lease binds three authentication windows and their exact final
+epoch. The Node adapter and independent host observer check all four closed
+epochs. The actual staging path must exercise that agreement before the
+fixed live entry can be enabled.
 
 These are non-live checks. They use synthetic keys, owned HTTP/verifier
 fixtures, and no staging, provider, database, Vercel, Course, or Community

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { requirePermission } from "@/lib/admin/auth";
+import { requirePermission, requireRotationAdminCourseEditor } from "@/lib/admin/auth";
 import { AdminAuthError } from "@/lib/admin/types";
 import type { AdminPermissionAction } from "@/lib/admin/permissions";
 import { getCustomerActor, issueCustomerApplicationToken } from "@/lib/customer-auth/session";
@@ -42,6 +42,7 @@ export function createCourseClient(dependencies: {
   getLessonStaleRevision?: () => Promise<LessonSelection | undefined>;
   getStalledPlaybackRenewal?: () => Promise<LessonSelection | undefined>;
   getAdmin?: typeof requirePermission;
+  getRotationAdmin?: typeof requireRotationAdminCourseEditor;
   mintToken?: (principal: ApplicationPrincipal) => string;
   enabled?: (feature: IntegrationFeature) => boolean;
   run?: WriterAdmissionRunner;
@@ -64,7 +65,12 @@ export function createCourseClient(dependencies: {
     if (Object.entries(input.params ?? {}).some(([name, value]) => !new RegExp(`^[A-Za-z0-9_-]{1,${name === "trackId" ? 255 : 160}}$`, "u").test(value))) throw new IntegrationServiceError("invalid_request", 400);
     if (input.idempotencyKey && !/^[A-Za-z0-9._:-]{1,255}$/u.test(input.idempotencyKey)) throw new IntegrationServiceError("invalid_request", 400);
     validateCandidateRequest("course", path, method, input);
-    const signedScope = access === "learner" ? await readInteractiveBrowserRequest() : null;
+    const signedScope = access !== "public" ? await readInteractiveBrowserRequest() : null;
+    const rotationAdmin = signedScope?.rotationAdmin;
+    if (rotationAdmin && (access !== "editor" || method !== "get" || path !== "/v1/admin/courses/{courseId}" ||
+      input.params?.courseId !== rotationAdmin.courseId || input.query || input.body !== undefined || input.idempotencyKey !== undefined)) {
+      throw new IntegrationServiceError("forbidden", 403);
+    }
     const selectedLearner = access === "learner" && dependencies.getLearnerAccess ? await dependencies.getLearnerAccess() : signedScope?.learnerAccess;
     const lessonEntry = access === "learner" && dependencies.getLessonEntry ? await dependencies.getLessonEntry() : signedScope?.lessonEntry;
     const lessonDenial = access === "learner" && dependencies.getLessonDenial ? await dependencies.getLessonDenial() : signedScope?.lessonDenial;
@@ -125,7 +131,8 @@ export function createCourseClient(dependencies: {
           applicationToken = issued.token;
         } else if (access === "editor" || access === "support") {
           const permission: AdminPermissionAction = access === "editor" ? "courses:edit" : "courses:support";
-          const actor = await getAdmin(permission);
+          const actor = rotationAdmin ? await (dependencies.getRotationAdmin ?? requireRotationAdminCourseEditor)(rotationAdmin.actorId) : await getAdmin(permission);
+          if (rotationAdmin && actor.user.id !== rotationAdmin.actorId) throw new IntegrationServiceError("forbidden", 403);
           const capabilities = courseCapabilitiesForActor(actor);
           if (!capabilities.includes(access === "editor" ? "course-editor" : "course-support")) throw new IntegrationServiceError("forbidden", 403);
           applicationToken = mintToken({ profile: "course-admin", adminId: actor.user.id, capabilities });
@@ -158,6 +165,9 @@ export function createCourseClient(dependencies: {
           const owned = (value as { progress: { userId: string } | Array<{ userId: string }> }).progress;
           if ((Array.isArray(owned) ? owned : [owned]).some(row => row.userId !== customerId)) throw new Error("INTEGRATION_OWNER_MISMATCH");
         }
+        if (rotationAdmin && (value as { course: { id: string } }).course.id !== rotationAdmin.courseId) {
+          throw new Error("INTEGRATION_COURSE_MISMATCH");
+        }
         if (access === "editor" && method !== "get") {
           // The upstream mutation is already confirmed. A cache invalidation
           // failure must not replay it; the public TTL is bounded to 90 seconds.
@@ -173,7 +183,8 @@ export function createCourseClient(dependencies: {
     };
     // Named mutation helpers are admitted even when called directly by actions.
     // Deterministic documented denials settle before they become UI errors.
-    const result = access === "editor" || access === "support" ? await runCourseAdminOperation(execute, run) : method === "get" ? await execute() : await run("new-work", execute);
+    const result = (access === "editor" || access === "support") && !rotationAdmin ? await runCourseAdminOperation(execute, run) :
+      method === "get" ? await execute() : await run("new-work", execute);
     if ("failure" in result) throw result.failure;
     return result.value;
   }

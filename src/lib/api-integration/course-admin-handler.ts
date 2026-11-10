@@ -7,7 +7,7 @@ import { runCourseAdminOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
 import { validateCandidateRequest } from "./candidate-validation";
 import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
-import { validMediaReservationBody } from "@/lib/writer-admission/interactive-proof";
+import { INTERACTIVE_ORIGIN, readInteractiveBrowserRequest, validMediaReservationBody } from "@/lib/writer-admission/interactive-proof";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 type Client = ReturnType<typeof createCourseClient>;
@@ -54,7 +54,11 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
         } else query[name] = value;
       }
       const body = request.method === "GET" ? undefined : await readSameOriginJson(request, dependencies.origin?.() ?? process.env.AUTH_URL);
-      return await runCourseAdminOperation(async () => {
+      const rotation = operation === "get-course" ? (await readInteractiveBrowserRequest())?.rotationAdmin : undefined;
+      if (rotation && (params.courseId !== rotation.courseId || request.url !== `${INTERACTIVE_ORIGIN}/api/admin/courses/${rotation.courseId}`)) {
+        throw new IntegrationServiceError("forbidden", 403);
+      }
+      const execute = async () => {
         try {
           const course = dependencies.client?.() ?? createCourseClient({ onResponse: value => { requestId = value; } });
           let result: unknown;
@@ -146,7 +150,8 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
           }
           return Response.json(result, { headers: { "cache-control": "private, no-store", "x-request-id": requestId, "x-content-type-options": "nosniff" } });
         } catch (error) { return integrationErrorResponse(error); }
-      }, dependencies.run);
+      };
+      return rotation ? await execute() : await runCourseAdminOperation(execute, dependencies.run);
     } catch (error) { return integrationErrorResponse(error); }
   };
 }

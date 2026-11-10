@@ -29,6 +29,12 @@ const replacementBackendStart=`pg_catalog.to_char(backend_start AT TIME ZONE 'UT
 const replacementStart=value=>typeof value==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/u.test(value);
 const replacementProof=replacementRelease=>({replacementRelease,effectiveLoginBoundaryVerified:true,predecessorRuntimeRoleAbsent:true});
 const interactiveMode='interactive-browser';
+const rotationWriterOperation='writer-scope';
+const rotationWriterFlag='--profiled-replacement-rotation-writer-scope';
+const rotationGuardFlag='--profiled-replacement-rotation-guard-fence';
+const rotationEpochs=6n;
+const rotationWriterLimit=32;
+const interactiveProducerDigest=plan=>createHash('sha256').update(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`).digest('hex');
 const interactiveWindowEpoch=plan=>(BigInt(plan.initialEpoch)+1n).toString();
 const interactiveClosedEpoch=plan=>(BigInt(plan.initialEpoch)+2n).toString();
 const bodies={admit:'e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be21504',begin_operation:'c634f0f3f018062fb2b115f923ab8637f02a34c515e8532b41ccd912762917d3',current_policy:'1322b30139dcb101aafcbd461536c1788233da1f0ab6e9084745513a4da1694e',finish_operation:'84257c2f6b8be184397e3d326d9908f11a6e9d75facde5c7abb5bad2e9db4e1d',settle:'a6fb927fbc0df4d7262aba5c6185ebffa737d1adafcf5766080078e0d0f45fbd'};
@@ -198,7 +204,7 @@ function admissionPolicy(plan,value,initial,interrupted){
 }
 
 async function observeInteractiveProducers(client,plan,ordinary,runtime,admission){
-  const producerSha256=createHash('sha256').update(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`).digest('hex');
+  const producerSha256=interactiveProducerDigest(plan);
   const enabled=admission.epoch===interactiveWindowEpoch(plan);
   const ordinaryBindings=new Map(ordinary.map(row=>[row.producerSha256,row.role.oid]));
   demand(isDeepStrictEqual(runtime,plan.nativePlan.producer.role)&&ordinaryBindings.size===ordinary.length&&
@@ -223,6 +229,79 @@ function requireInteractiveOperations(plan,admission,operations,interactive){
     (row.reconciliation_sha256===null||row.state==='completed'&&digest(row.reconciliation_sha256)))&&
     operations.filter(row=>row.state==='active').length===admission.active&&
     operations.filter(row=>row.state==='uncertain').length===admission.uncertain);
+}
+
+function requireRotationFrontendPlan(input){
+  const {plan,job:{target}}=input;
+  const native=plan.nativePlan;
+  demand(typeof target.host==='string'&&/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u.test(target.host)&&!/pooler|pgbouncer/u.test(target.host)&&
+    name(target.database)&&Number.isSafeInteger(target.port)&&target.port>0&&target.port<65536&&[16,18].includes(target.serverMajor),
+    'current-rotation-writer-target');
+  demand(plan.mode==='contain-native'&&epoch(plan.initialEpoch)&&
+    digest(plan.candidateSha256)&&digest(plan.planSha256)&&native.initialEpoch===plan.initialEpoch&&
+    Array.isArray(native.commandWitnesses)&&native.commandWitnesses.length===0&&native.providerQueuedInventory===null&&
+    ['automaticReplayAllowed','migrationAuthorized','wholeReleaseAccepted'].every(key=>native[key]===false)&&
+    exact(native.producer,['producerSha256','role']),'current-rotation-frontend-plan');
+}
+
+function requireRotationWriterRequest(input){
+  requireRotationFrontendPlan(input);
+  const {plan,writerScope}=input;
+  demand(input.operation===rotationWriterOperation&&exact(writerScope,['operationEpoch','operationRegistry'])&&
+    epoch(writerScope.operationEpoch)&&BigInt(writerScope.operationEpoch)>=BigInt(plan.initialEpoch)&&
+    ['ordinary','interactive'].includes(writerScope.operationRegistry),
+    'current-rotation-writer-request');
+}
+
+async function readRotationRegistry(client,plan,runtime,currentEpoch){
+  const ordinary=plan.nativePlan.producer.producerSha256,interactive=interactiveProducerDigest(plan);
+  const {rows}=await client.query(`SELECT p.producer_sha256,p.source_sha,p.database_role::text AS role_oid,
+    p.enabled,r.rolname,r.rolcanlogin
+    FROM frontend_admission.producers p LEFT JOIN pg_catalog.pg_roles r ON r.oid=p.database_role
+    WHERE p.enabled OR p.producer_sha256=ANY($1::text[]) ORDER BY p.producer_sha256 LIMIT 3`,[[ordinary,interactive]]);
+  const seen=new Set(rows.map(row=>row.producer_sha256));
+  const enabled=rows.filter(row=>row.enabled===true);
+  demand(ordinary!==interactive&&seen.size===rows.length&&seen.has(ordinary)&&enabled.length===1&&
+    (currentEpoch===plan.initialEpoch||seen.has(interactive))&&rows.every(row=>
+      [ordinary,interactive].includes(row.producer_sha256)&&row.source_sha===plan.sourceCommit&&
+      row.role_oid===runtime.oid&&row.rolname===runtime.name&&row.rolcanlogin===true&&typeof row.enabled==='boolean'),
+    'current-rotation-writer-registry');
+  const producerSha256=enabled[0].producer_sha256;
+  const producers=[{producerSha256,role:{name:runtime.name,oid:runtime.oid}}];
+  return {kind:producerSha256===ordinary?'ordinary':'interactive',ordinary,interactive,producers,registrySha256:hash(producers)};
+}
+
+async function readRotationWriterScope(client,plan,runtime,admission,writerScope){
+  const {operationEpoch,operationRegistry}=writerScope;
+  const currentEpoch=admission.epoch;
+  demand(epoch(currentEpoch)&&BigInt(currentEpoch)>=BigInt(plan.initialEpoch)&&
+    typeof admission.newWork==='boolean'&&admission.newWork===admission.recovery&&
+    ['active','uncertain'].every(key=>Number.isInteger(admission[key])&&admission[key]>=0),
+    'current-rotation-writer-admission');
+  const currentRegistry=admission.newWork?'interactive':'ordinary';
+  const delta=BigInt(operationEpoch)-BigInt(currentEpoch);
+  demand(delta===0n?operationRegistry===currentRegistry:
+    (delta===1n||delta===-1n)&&currentRegistry==='ordinary'&&operationRegistry==='interactive',
+    'current-rotation-writer-epoch');
+
+  const registry=await readRotationRegistry(client,plan,runtime,currentEpoch);
+  demand(registry.kind===currentRegistry,'current-rotation-writer-registry');
+
+  const {rows:operations}=await client.query(`SELECT id::text,epoch::text,kind,state,producer_sha256,source_sha,
+    database_role::text AS role_oid,completed_at,reconciliation_sha256 FROM frontend_admission.operations
+    WHERE epoch=$1::bigint ORDER BY started_at,id LIMIT $2`,[operationEpoch,rotationWriterLimit+1]);
+  const operationProducer=registry[operationRegistry];
+  const expectedCounts=delta===1n||delta===0n&&currentRegistry==='ordinary'?{active:0,uncertain:0}:admission;
+  demand(operations.length<=rotationWriterLimit&&(delta!==1n||operations.length===0)&&
+    operations.every(row=>uuid(row.id)&&row.epoch===operationEpoch&&row.producer_sha256===operationProducer&&
+      row.source_sha===plan.sourceCommit&&row.role_oid===runtime.oid&&['new-work','recovery'].includes(row.kind)&&
+      ['active','uncertain','completed'].includes(row.state)&&
+      (row.state==='completed'?row.completed_at instanceof Date&&Number.isFinite(+row.completed_at):row.completed_at===null)&&
+      (row.reconciliation_sha256===null||row.state==='completed'&&digest(row.reconciliation_sha256)))&&
+    ['active','uncertain'].every(key=>admission[key]===expectedCounts[key]&&
+      operations.filter(row=>row.state===key).length===expectedCounts[key]),
+    'current-rotation-writer-operations');
+  return {currentEpoch,operationEpoch,currentRegistry,operationRegistry,operations,producers:registry.producers,registrySha256:registry.registrySha256};
 }
 
 export function readP2CertificationCurrent(client,prepared,plan,verify,initial=false,expectedProfile){
@@ -260,7 +339,7 @@ function requireAcknowledgedDeliveries(deliveries,checkpoint){
     checkpoint);
 }
 
-async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,interrupted){
+async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,interrupted,writerScope){
   const {job,artifact,baseline}=prepared.migration,target=job.target,owner=prepared.plan.owner;
   const {historicalLogins,replacementRelease}=prepared.plan;
   const replacementKnownAck=replacementRelease&&plan.mode===knownAckMode;
@@ -316,7 +395,11 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
     const controls=(await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
     const counts=(await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
     demand(controls.length===1&&controls[0].environment==='staging'&&controls[0].target_sha256===plan.targetSha256);
-    checkpoint='current-admission-state';const admission={epoch:controls[0].epoch,newWork:controls[0].new_work,recovery:controls[0].recovery,...counts};admissionPolicy(plan,admission,initial,interrupted);
+    checkpoint='current-admission-state';
+    const admission={epoch:controls[0].epoch,newWork:controls[0].new_work,recovery:controls[0].recovery,...counts};
+    if(writerScope)return {environment:'staging',releaseId:job.releaseId,targetSha256:plan.targetSha256,admission,journalSha256:hash(after),
+      writerScope:await readRotationWriterScope(client,plan,runtime,admission,writerScope)};
+    admissionPolicy(plan,admission,initial,interrupted);
     if(replacementRelease&&initial)demand(isDeepStrictEqual(admission,{epoch:plan.initialEpoch,newWork:false,recovery:false,active:0,uncertain:0}));
     let interactive;
     if(plan.mode===interactiveMode){
@@ -458,6 +541,10 @@ export function observeP2ProfiledInterruptedReplacementFrontendPhysical(input,de
   return observeCertificationPhysical(input,dependencies,currentProfile,true,true);
 }
 
+export function observeP2ProfiledReplacementRotationWriterScope(input,dependencies){
+  return observeCertificationPhysical(input,dependencies,currentProfile,false,true,true);
+}
+
 function requireReplacementReceipt(input,artifact){
   const {job,plan,receipt,owner,producers,replacementRelease}=input;
   requireQualificationTargetProfile(currentProfile,receipt,receipt?.target);
@@ -505,16 +592,17 @@ async function verifyReplacementParent(client,input,closing,observationLocked){
     'current-replacement-lock-identity');
 }
 
-async function observeCertificationPhysical(input,{getUrl},expectedProfile,interrupted,replacing=false){
+async function observeCertificationPhysical(input,{getUrl},expectedProfile,interrupted,replacing=false,rotationWriter=false){
   const replacementRelease=replacing?input?.replacementRelease:undefined;
   demand(Object.hasOwn(input??{},'replacementRelease')===replacing&&
     (!replacing||exact(input,['operation','version','qualificationTargetProfile','marker','backendPid','backendStart','job','baseline',
-      'owner','producers','replacementRelease','plan','receipt'])),'current-replacement-probe');
+      'owner','producers','replacementRelease','plan','receipt',...(rotationWriter?['writerScope']:[])])),'current-replacement-probe');
   const selectedProfile=profileFields(expectedProfile,input?.plan,input?.job,input?.historicalLogins,interrupted,replacementRelease);
   if(expectedProfile===undefined)demand(!Object.hasOwn(input,'qualificationTargetProfile'));
   else requireQualificationTargetProfile(currentProfile,input);
   const closing=input.operation==='verify-closed';
-  demand(input.version===input.plan.version&&['observe','verify-schema','witness','fence','verify-closed'].includes(input.operation)&&
+  demand(input.version===input.plan.version&&
+    (rotationWriter?input.operation===rotationWriterOperation:['observe','verify-schema','witness','fence','verify-closed'].includes(input.operation))&&
     (expectedProfile===undefined?!closing:input.operation!=='fence')&&/^[a-f0-9]{64}$/u.test(input.marker??'')&&Number.isSafeInteger(input.backendPid)&&typeof input.backendStart==='string');
   if(interrupted){
     const {receipt,plan,job}=input;
@@ -530,6 +618,7 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
   }
   const replacementArtifact=replacing?frontendMigrationArtifact():undefined;
   if(replacing)requireReplacementReceipt(input,replacementArtifact);
+  if(rotationWriter)requireRotationWriterRequest(input);
   const client=new Client(options(await getUrl(),input.job.target,interrupted||replacing));let lost=false,observationLocked=false;client.on('error',()=>{lost=true;});
   try{
     await client.connect();demand(client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
@@ -575,7 +664,8 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
     const verifyCurrent=expectedProfile===undefined?verify:async()=>{await verify();await verifyParent();};
     const prepared={migration:{job:input.job,artifact:replacementArtifact??frontendMigrationArtifact(),baseline:input.baseline},plan:{owner:input.owner,producers:input.producers,
       ...(replacing?{replacementRelease}:{historicalLogins:input.historicalLogins}),targetSha256:input.plan.targetSha256}};
-    const current=await readCurrent(client,prepared,input.plan,verifyCurrent,false,expectedProfile,interrupted);
+    const current=await readCurrent(client,prepared,input.plan,verifyCurrent,false,expectedProfile,interrupted,
+      rotationWriter?input.writerScope:undefined);
     if(expectedProfile!==undefined)await verifyCurrent();
     if(observationLocked){
       const {rows:[lock]}=await client.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS released',[FRONTEND_MIGRATION_LOCK]);
@@ -589,10 +679,12 @@ async function observeCertificationPhysical(input,{getUrl},expectedProfile,inter
     if(closing)demand(current.admission.newWork===false&&current.admission.recovery===false&&current.admission.active===0&&current.admission.uncertain===0&&
       (input.plan.mode!==interactiveMode||current.admission.epoch===interactiveClosedEpoch(input.plan)&&
         current.witness.operations.every(row=>row.reconciliation_sha256===null)), 'current-admission-closure');
-    return{version:input.version,...selectedProfile,status:closing?'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED':'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
+    return{version:input.version,...selectedProfile,status:rotationWriter?'P2_ROTATION_WRITER_SCOPE_VERIFIED':
+      closing?'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED':'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
       ...(expectedProfile===undefined?{}:{backendStart:input.backendStart,environment:current.environment,releaseId:current.releaseId,targetSha256:current.targetSha256}),
       ...(replacing?replacementProof(replacementRelease):{}),
-      witnessSha256:current.witnessSha256,...(input.operation==='witness'?{witness:current.witness}:{}),
+      ...(rotationWriter?{writerScope:current.writerScope}:{witnessSha256:current.witnessSha256}),
+      ...(input.operation==='witness'?{witness:current.witness}:{}),
       ...(closing?{backendAbsent:true,migrationLockReleased:true,nonceLockReleased:true}:{})};
   }finally{try{await client.end();demand(!lost);}catch{throw new Error('P2_CERTIFICATION_OBSERVER_CLEANUP_UNCERTAIN');}}
 }
@@ -607,7 +699,19 @@ export function containP2ProfiledReplacementCertificationAdmission(probe,depende
   return containProfiledCertificationAdmission(probe,dependencies,true);
 }
 
-async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
+export function containP2ProfiledReplacementRotationAdmission(probe,dependencies){
+  return containProfiledCertificationAdmission(probe,dependencies,true,true);
+}
+
+function requireRotationGuardState(plan,row,registry){
+  const offset=BigInt(row.epoch)-BigInt(plan.initialEpoch);
+  demand(offset>=0n&&offset<=rotationEpochs&&row.new_work===row.recovery&&
+    (row.new_work?offset%2n===1n&&registry.kind==='interactive':
+      offset%2n===0n&&(registry.kind==='ordinary'||offset>0n)),
+    'guard-rotation-admission-state');
+}
+
+async function containProfiledCertificationAdmission(probe,{getUrl},replacing,rotationGuard=false){
   const {job,plan,owner,historicalLogins,receipt}=probe;
   demand(Object.hasOwn(probe,'replacementRelease')===replacing&&
     (!replacing||exact(probe,['version','qualificationTargetProfile','marker','backendPid','backendStart','job','baseline',
@@ -615,6 +719,10 @@ async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
   const replacementRelease=replacing?probe.replacementRelease:undefined;
   const selectedProfile=profileFields(currentProfile,plan,job,historicalLogins,false,replacementRelease);
   if(replacing)requireReplacementReceipt(probe,frontendMigrationArtifact());
+  if(rotationGuard){
+    requireRotationFrontendPlan(probe);
+    demand(epoch((BigInt(plan.initialEpoch)+rotationEpochs).toString()),'guard-rotation-epoch');
+  }
   requireQualificationTargetProfile(currentProfile,probe,receipt,receipt.target);
   const target=job.target;
   demand(probe.version===2&&receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT'&&
@@ -667,12 +775,21 @@ async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
     const row=rows[0];
     demand(rows.length===1&&row.environment==='staging'&&row.target_sha256===plan.targetSha256&&/^[1-9][0-9]{0,17}$/u.test(row.epoch??'')&&
       typeof row.new_work==='boolean'&&typeof row.recovery==='boolean'&&BigInt(row.epoch)>=BigInt(plan.initialEpoch)&&
-      BigInt(row.epoch)<=BigInt(plan.initialEpoch)+4n);
+      BigInt(row.epoch)<=BigInt(plan.initialEpoch)+(rotationGuard?rotationEpochs:4n));
+    let rotationRegistry;
+    if(rotationGuard){
+      // Hold the control row and producer registry across the flag-only write.
+      // An admitted operation can still finish against its unchanged record.
+      await client.query('LOCK TABLE frontend_admission.producers IN SHARE MODE NOWAIT');
+      rotationRegistry=await readRotationRegistry(client,plan,receipt.runtime,row.epoch);
+      requireRotationGuardState(plan,row,rotationRegistry);
+    }
     const changed=row.new_work||row.recovery;
     const epoch=changed?(await client.query('UPDATE frontend_admission.control SET new_work=false,recovery=false,epoch=epoch+1 WHERE singleton AND epoch=$1::bigint RETURNING epoch::text',[row.epoch])).rows[0]?.epoch:row.epoch;
     demand(epoch===(BigInt(row.epoch)+(changed?1n:0n)).toString());
     await client.query('COMMIT');started=false;await verify();
-    await client.query('BEGIN READ ONLY');started=true;
+    if(rotationGuard)await verifyReplacementParent(client,probe,true,true);
+    await client.query(rotationGuard?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN READ ONLY');started=true;
     await client.query(`SET LOCAL ROLE "${owner.name}"`);
     const closed=(await client.query('SELECT epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton AND environment=$1 AND target_sha256=$2',['staging',plan.targetSha256])).rows;
     demand(closed.length===1&&closed[0].epoch===epoch&&closed[0].new_work===false&&closed[0].recovery===false);
@@ -683,12 +800,24 @@ async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
       demand(counts&&['active','uncertain'].every(key=>Number.isInteger(counts[key])&&counts[key]>=0),'guard-replacement-known-ack-ledger');
       knownAckLedger={...counts,closedZero:counts.active===0&&counts.uncertain===0};
     }
+    let rotationState;
+    if(rotationGuard){
+      const registry=await readRotationRegistry(client,plan,receipt.runtime,epoch);
+      requireRotationGuardState(plan,closed[0],registry);
+      demand(isDeepStrictEqual(registry,rotationRegistry),'guard-rotation-registry-changed');
+      const {rows:[counts]}=await client.query(`SELECT count(*) FILTER(WHERE state='active')::int AS active,
+        count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations WHERE state<>'completed'`);
+      demand(counts&&['active','uncertain'].every(key=>Number.isInteger(counts[key])&&counts[key]>=0),'guard-rotation-ledger');
+      rotationState={newWork:false,recovery:false,...counts,registry:registry.kind,registrySha256:registry.registrySha256};
+    }
     await client.query('ROLLBACK');started=false;await verify();
-    return {version:2,...selectedProfile,status:'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED',environment:'staging',
+    if(rotationGuard)await verifyReplacementParent(client,probe,true,true);
+    return {version:2,...selectedProfile,status:rotationGuard?'P2_PROFILED_ROTATION_GUARD_FRONTEND_CLOSED':
+      'P2_PROFILED_CERTIFICATION_GUARD_FRONTEND_CLOSED',environment:'staging',
       releaseId:job.releaseId,sourceCommit:job.sourceCommit,certificationActionId:plan.certificationActionId,
       candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
       epoch,frontendAdmissionClosed:true,admissionChanged:changed,sqlReplayed:false,releaseAccepted:false,
-      ...(replacing?replacementProof(replacementRelease):{}),...(knownAckLedger?{knownAckLedger}:{})};
+      ...(replacing?replacementProof(replacementRelease):{}),...(knownAckLedger?{knownAckLedger}:{}),...rotationState};
   }finally{
     if(started)try{await client.query('ROLLBACK');}catch{lost=true;}
     try{await client.end();}catch{lost=true;}
@@ -700,7 +829,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
     const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence',
       '--profiled-known-ack-interrupted','--profiled-replacement','--profiled-replacement-guard-fence',
-      '--profiled-replacement-known-ack-interrupted'].includes(flags[0])));
+      '--profiled-replacement-known-ack-interrupted',rotationWriterFlag,rotationGuardFlag].includes(flags[0])));
     const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);
     const expectedProfile=flags.length?currentProfile:undefined;
     const input=expectedProfile?decodeQualificationTargetJson(raw,'carrier'):JSON.parse(raw);
@@ -709,6 +838,10 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
       ?await containP2ProfiledCertificationAdmission(input,dependencies)
       :flags[0]==='--profiled-replacement-guard-fence'
         ?await containP2ProfiledReplacementCertificationAdmission(input,dependencies)
+      :flags[0]===rotationGuardFlag
+        ?await containP2ProfiledReplacementRotationAdmission(input,dependencies)
+      :flags[0]===rotationWriterFlag
+        ?await observeP2ProfiledReplacementRotationWriterScope(input,dependencies)
       :flags[0]==='--profiled-replacement'
         ?await observeP2ProfiledReplacementFrontendPhysical(input,dependencies)
       :flags[0]==='--profiled-replacement-known-ack-interrupted'

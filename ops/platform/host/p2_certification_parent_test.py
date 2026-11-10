@@ -15,7 +15,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import migrate
 import release_test
 import p2_release_scope_test as scope_fixture
@@ -25,6 +25,11 @@ from p2_source_closure import TYPES, REQUIRED, verify_source_closure
 
 
 PROFILED_CURRENT_SOURCE_ONLY = frozenset({
+    'ops/platform/host/p2_frontend_replacement_parent.py',
+    'ops/platform/host/p2_replacement_operator_evidence.py',
+    'ops/platform/host/p2_replacement_runtime_containment.py',
+    'ops/platform/host/p2_replacement_runtime_review.py',
+    'ops/platform/host/p2_replacement_terminal.py',
     'ops/platform/host/p2_identity_replacement_provenance.py',
     'ops/platform/host/p2_scoped_mux_readiness.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
@@ -45,6 +50,11 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/host/p2_profiled_known_ack_restoration_parent.py',
     'ops/platform/host/p2_profiled_known_ack_runtime.py',
     'ops/platform/host/p2_profiled_known_ack_runtime_test.py',
+    'ops/platform/host/p2_identity_rotation_browser_scope.py',
+    'ops/platform/host/p2_identity_rotation_replacement.py',
+    'ops/platform/host/p2_identity_rotation_successor.py',
+    'ops/platform/host/p2_scoped_mux_replacement.py',
+    'ops/platform/p2-identity-key-rotation-replacement.mjs',
     'ops/platform/p2-profiled-current-frontend-adapters.mjs',
     'ops/platform/p2-profiled-current-frontend-adapters.test.mjs',
     'ops/platform/p2-profiled-current-probe.mjs',
@@ -1038,6 +1048,45 @@ class ProfiledCertificationInputTests(unittest.TestCase):
                   'certification_plan': self.plan, 'expected_profile': self.profile, 'physical_observer': fixture.observer}
         return parent.P2CertificationScope(fixture.fd, fixture.lock, lambda: None, fixture.receipt,
                                           self.initial['candidateSha256'], **{**kwargs, **overrides})
+
+    def test_lifecycle_runtime_reads_require_the_armed_profiled_broker_and_exact_processes(self):
+        from p2_certification_rotation_successor import RotationSuccessorRuntime
+
+        scope = parent.P2CertificationScope.__new__(parent.P2CertificationScope)
+        scope._expected_profile = self.profile
+        scope.certification_plan = {'mode': 'browser-pending'}
+        scope.verify = Mock()
+        scope.require_configuration = Mock()
+        broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
+        broker.scope, scope._profiled_broker = scope, broker
+        broker.configuration = Path('/owned/predecessor')
+        broker.guard_arm_verified = False
+        broker.external_armed = True
+        broker.process_snapshot = [{'pid': '2'}]
+        broker.runtime_current = [{'service': 'course-api'}]
+        broker._runtime_processes = Mock(return_value=broker.process_snapshot)
+        broker._read_runtime_inventory = Mock(return_value=broker.runtime_current)
+        successor_path = Path('/owned/current-only')
+        broker.rotation_successor = RotationSuccessorRuntime(broker.configuration, successor_path,
+            'a' * 64, {}, broker.runtime_current, '7')
+        with self.assertRaisesRegex(ValueError, 'RUNTIME_SCOPE_REQUIRED'):
+            scope.read_runtime_inventory(broker.configuration)
+        broker._read_runtime_inventory.assert_not_called()
+        broker.guard_arm_verified = True
+        with self.assertRaisesRegex(ValueError, 'RUNTIME_SCOPE_REQUIRED'):
+            scope.read_runtime_inventory(successor_path)
+        self.assertEqual(scope.read_runtime_inventory(broker.configuration), broker.runtime_current)
+        broker._runtime_processes.return_value = [{'pid': '3'}]
+        with self.assertRaisesRegex(ValueError, 'RUNTIME_SCOPE_CHANGED'):
+            scope.read_runtime_inventory(broker.configuration)
+        with patch('p2_identity_key_rotation_adapter._runtime_phase_hash', return_value='a' * 64) as checksum:
+            self.assertEqual(scope.runtime_mount_configuration('community-api', broker.configuration), successor_path)
+            checksum.assert_called_once_with(successor_path)
+            checksum.return_value = 'b' * 64
+            with self.assertRaisesRegex(ValueError, 'RUNTIME_SCOPE_CHANGED'):
+                scope.runtime_mount_configuration('course-api', broker.configuration)
+            with self.assertRaisesRegex(ValueError, 'RUNTIME_SERVICE_REFUSED'):
+                scope.runtime_mount_configuration('gateway', broker.configuration)
 
     def test_profiled_observer_uses_only_the_fixed_read_only_source_and_checks_current_identity(self):
         fixture = self.physical_fixture()

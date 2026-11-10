@@ -3,7 +3,7 @@
 import { completeAdminSignOut } from "@/lib/admin/sign-out";
 import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { withinInteractiveAdminGoogleAction } from "@/lib/writer-admission/interactive-proof";
-import { currentWriterFirstOwner } from "@/lib/writer-admission/context";
+import { currentWriterFirstOwner, currentWriterIdentityRotation } from "@/lib/writer-admission/context";
 import { P2_FIRST_OWNER_PATH } from "../../../ops/platform/p2-first-owner-identity.mjs";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -29,9 +29,11 @@ export async function signInWithGoogleAction(
 ): Promise<void> {
   const returnTo = getSafeAdminReturnTo(formData.get("returnTo"));
 
-  const url = await withinInteractiveAdminGoogleAction(() => runAdminIdentityWriter("new-work", () =>
-    signIn("google", { redirectTo: currentWriterFirstOwner() ? P2_FIRST_OWNER_PATH : returnTo, redirect: false }),
-  ));
+  const url = await withinInteractiveAdminGoogleAction(() => runAdminIdentityWriter("new-work", () => {
+    const redirectTo = currentWriterFirstOwner() ? P2_FIRST_OWNER_PATH :
+      currentWriterIdentityRotation()?.actorKind === "admin" ? "/admin/not-authorized" : returnTo;
+    return signIn("google", { redirectTo, redirect: false });
+  }));
   redirect(url);
 }
 

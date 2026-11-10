@@ -1,3 +1,4 @@
+import base64
 import json
 import tempfile
 import unittest
@@ -127,6 +128,85 @@ class ReplacementOperatorEvidenceTest(unittest.TestCase):
                 evidence.read_replacement_evidence(request)
             path.rename(directory / 'other.json')
             path.symlink_to(directory / 'other.json')
+            with self.assertRaises(ValueError):
+                evidence.read_replacement_evidence(request)
+
+    def test_mixed_rotation_requires_the_independent_terminal_and_returns_exact_bytes(self):
+        from p2_certification_parent import READY_FILES
+        from p2_identity_key_rotation_adapter import API_SERVICES
+        from p2_identity_key_rotation_parent import SESSION_CLOSED_RECEIPT
+        from p2_identity_rotation_successor import MUTATIONS, PHASES, RECEIPT, STATUS
+        from p2_release_supervisor import ROTATION_LAYOUT
+        from release import SERVICES
+
+        root, _, _, base, _ = self.successor_fixture('known-ack')
+        base.pop('kind')
+        request = {**base, 'operation': evidence.ROTATION_SUCCESSOR_OPERATION, 'actionId': 'p2-key-rotation-owned',
+                   'bindingSha256': 'f' * 64}
+        directory = Path(request['results']) / (ROTATION_LAYOUT['receiptPrefix'] + request['actionId'])
+        directory.mkdir(mode=0o700)
+        ready_directory = directory / 'frontend-current-only'
+        ready_directory.mkdir(mode=0o700)
+        ready = {name: (json.dumps({'fixture': name}) + '\n').encode() for name in READY_FILES}
+        for name, raw in ready.items():
+            migrate.write_exact_bytes(ready_directory, name, raw)
+        migrate.write_json(ready_directory, 'frontend.env', {'private': 'fixture'})
+        identity = {key: request[key] for key in ('environment', 'sourceCommit', 'releaseId', 'candidateSha256', 'actionId', 'bindingSha256')}
+        profile = {'version': 2, 'qualificationTargetProfile': request['qualificationTargetProfile']}
+        flags = dict.fromkeys(('nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted', 'g2Accepted'), False)
+        target, epoch = 'e' * 64, '15'
+        closed = {**profile, **{key: identity[key] for key in ('environment', 'sourceCommit', 'releaseId')},
+                  'status': 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED', 'targetSha256': target,
+                  'admission': {'epoch': epoch, 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0},
+                  **dict.fromkeys(('backendAbsent', 'migrationLockReleased', 'nonceLockReleased'), True)}
+        migrate.write_json(directory, SESSION_CLOSED_RECEIPT, closed)
+        closed_digest = migrate.file_hash((directory / SESSION_CLOSED_RECEIPT).read_bytes())
+        terminal = {**profile, **identity, **flags, 'status': ROTATION_LAYOUT['terminalStatus'], 'keyRemovalVerified': True,
+                    'frontendSessionCloseReceiptSha256': closed_digest, 'frontendFinalEpoch': epoch, 'configurationSha256': 'a' * 64}
+        frontend = {'deploymentId': 'dpl_CurrentOnly', 'deploymentUrl': 'https://current-only.vercel.app',
+                    'readyReceiptSha256': {name: migrate.file_hash(value) for name, value in ready.items()},
+                    'postRemovalSignerReceiptSha256': '8' * 64}
+        terminal_raw = (json.dumps(terminal) + '\n').encode()
+        receipt = {**profile, **identity, **flags, 'status': STATUS, 'kind': 'identity-key-rotation-mixed-mount-v1',
+                   **{key: request[key] for key in ('originalReleasePlanSha256', 'originalReleaseReceiptSha256')},
+                   'hostMachineId': 'f' * 32, 'targetSha256': target, 'frontendEpoch': epoch, 'frontend': frontend,
+                   'terminalReceiptSha256': migrate.file_hash(terminal_raw), 'frontendSessionClosedSha256': closed_digest,
+                   'configurationSha256': terminal['configurationSha256'], 'currentOnlyRuntimeConfigurationSha256': 'a' * 64,
+                   'runtimeInventorySha256': '1' * 64,
+                   'predecessorRuntimeInventorySha256': '2' * 64, 'gatewayProcessSha256': '3' * 64, 'gatewayConfigurationSha256': 'd' * 64,
+                   'phaseRuntimeInventoryReceiptSha256': dict.fromkeys(PHASES, '5' * 64),
+                   'mutationReceipts': [{'phase': phase, 'kind': kind, 'attemptReceiptSha256': '6' * 64,
+                                         'observationReceiptSha256': '7' * 64} for phase, kind in MUTATIONS],
+                   'unchangedOriginalServices': [name for name in SERVICES if name not in API_SERVICES],
+                   'currentOnlyRecreatedServices': list(API_SERVICES), 'frontendAdmissionClosed': True, 'gatewayAdmissionClosed': True}
+        raw = (json.dumps(receipt, indent=2) + '\n').encode()
+        migrate.write_exact_bytes(directory, RECEIPT, raw)
+        with (patch.object(evidence, 'ROOT', root),
+              patch('p2_identity_rotation_successor.rotation_frontend_successor', return_value=frontend) as rejoin):
+            with self.assertRaises(FileNotFoundError):
+                evidence.read_replacement_evidence(request)
+            migrate.write_exact_bytes(directory, ROTATION_LAYOUT['terminalName'], terminal_raw)
+            self.assertEqual(evidence.read_replacement_evidence(request), raw)
+            rejoin.assert_called_once_with(directory, terminal)
+            ready_request = {**request, 'operation': evidence.ROTATION_FRONTEND_READY_OPERATION,
+                             'successorReceiptSha256': migrate.file_hash(raw)}
+            self.assertEqual({name: base64.b64decode(value, validate=True) for name, value in
+                              json.loads(evidence.read_replacement_evidence(ready_request)).items()}, ready)
+            for changed in ({'name': 'frontend.env'}, {'successorReceiptSha256': '9' * 64}):
+                with self.assertRaises(ValueError):
+                    evidence.read_replacement_evidence({**ready_request, **changed})
+            (ready_directory / READY_FILES[0]).write_bytes(b'{}\n')
+            with self.assertRaises(ValueError):
+                evidence.read_replacement_evidence(ready_request)
+            rejoin.return_value = {**frontend, 'deploymentId': 'dpl_Drifted'}
+            with self.assertRaises(ValueError):
+                evidence.read_replacement_evidence(request)
+            rejoin.return_value = frontend
+            for changed in ({'bindingSha256': '9' * 64}, {'originalReleasePlanSha256': '9' * 64},
+                            {'actionId': 'p2-key-rotation-other'}, {'name': SESSION_CLOSED_RECEIPT}):
+                with self.assertRaises((FileNotFoundError, ValueError)):
+                    evidence.read_replacement_evidence({**request, **changed})
+            (directory / SESSION_CLOSED_RECEIPT).write_bytes(b'{}\n')
             with self.assertRaises(ValueError):
                 evidence.read_replacement_evidence(request)
 

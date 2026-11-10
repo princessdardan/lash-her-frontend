@@ -20,6 +20,7 @@ import {prepareP2OperatorRelease} from './p2-release.mjs';
 import {prepareP2ProfiledCurrentRelease,verifyP2ProfiledCurrentReleaseConfiguration} from './p2-profiled-current-release.mjs';
 import {prepareP2CertificationReplacementRelease,validP2CertificationReplacementDescriptor} from './p2-certification-replacement-release.mjs';
 import {prepareP2ReplacementSuccessor} from './p2-replacement-successor.mjs';
+import {prepareP2CertificationRotationSuccessor,rotationSuccessorKind} from './p2-certification-rotation-successor.mjs';
 import {frontendConnectionOptions} from './frontend-migration.mjs';
 import {frontendRolesHash} from './frontend-role-preparation.mjs';
 import {assertSourceCheckout} from './source-checkout.mjs';
@@ -79,6 +80,8 @@ const muxReplacementStatus={
   'cleanup-after-expiry':'P2_SCOPED_MUX_CLEANED_AFTER_EXPIRY',
 };
 const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
+const rotationSuccessorModes=new Set([...scopedPlanningModes,'auth-preparation','browser-pending','direct-worker']);
+const rotationSuccessorLiveEligible=true;
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
@@ -408,10 +411,17 @@ function scopedActionValid(mode, value){
   return assetEvents.has(value.eventType)||(trackEvents.has(value.eventType)&&value.assetId!==null);
 }
 
-export function bindP2CertificationReadyReceipts(directory,plan){
+function certificationReadyReceipt(source,name){
+  if(typeof source==='string')return readFrontendReleaseEvidence(source,name);
+  const bytes=source?.get(name);
+  demand(Buffer.isBuffer(bytes));
+  return bytes;
+}
+
+export function bindP2CertificationReadyReceipts(source,plan){
   const profiled=plan.version===2, records={};
   for(const name of P2_CERTIFICATION_READY_FILES){
-    const bytes=readFrontendReleaseEvidence(directory,name);demand(rawHash(bytes)===plan.readyReceiptSha256[name]);
+    const bytes=certificationReadyReceipt(source,name);demand(rawHash(bytes)===plan.readyReceiptSha256[name]);
     records[name]=profiled?decodeQualificationTargetJson(bytes,'carrier'):JSON.parse(bytes);
   }
   if(profiled){
@@ -433,7 +443,7 @@ export function bindP2CertificationReadyReceipts(directory,plan){
       (name==='frontend-build-started.json'||row.deploymentId===plan.nativePlan.deploymentId);})&&
     build.deploymentId===plan.nativePlan.deploymentId&&workload.status==='FRONTEND_VERIFIED'&&workload.contractPhase==='p2'&&
     workload.phase2ContractManifestSha256===candidate.phase2ContractManifestSha256&&isDeepStrictEqual(workload.featureControls,plan.nativePlan.featureControls)&&
-    isDeepStrictEqual(workload.writerAdmissionBinding,plan.nativePlan.writerAdmissionBinding)&&rawHash(readFrontendReleaseEvidence(directory,'frontend-workload-outcome.json'))===plan.nativePlan.configurationRecordSha256);
+    isDeepStrictEqual(workload.writerAdmissionBinding,plan.nativePlan.writerAdmissionBinding)&&rawHash(certificationReadyReceipt(source,'frontend-workload-outcome.json'))===plan.nativePlan.configurationRecordSha256);
   return records;
 }
 
@@ -442,6 +452,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
   const replacement=profiledRelease?.replacementRelease;
   const successorRuntime=profiledRelease?.successorRuntime;
+  const rotationSuccessor=profiledRelease?.rotationSuccessor;
   if(replacement!==undefined){
     demand(profile&&validP2CertificationReplacementDescriptor(replacement)&&
       isDeepStrictEqual(replacement,inventory.replacementRelease)&&replacement.reviewedPlanSha256===profiledRelease.planSha256&&
@@ -457,6 +468,14 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     input.mode!=='known-ack-recovery'&&
     [input.initialEpoch,profiledRelease.successorFrontendEpoch].every(value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value))&&
     BigInt(input.initialEpoch)>=BigInt(profiledRelease.successorFrontendEpoch));
+  if(rotationSuccessor!==undefined){
+    demand(replacement&&successorRuntime===undefined&&rotationSuccessor.kind===rotationSuccessorKind&&
+      ![rotationSuccessor.actionId,rotationSuccessor.predecessorRuntime?.actionId,rotationSuccessor.predecessorRuntime?.runtimeActionId].includes(input.certificationActionId)&&
+      rotationSuccessorModes.has(input.mode));
+    const floor=profiledRelease.rotationSuccessorFrontendEpoch;
+    if(![input.initialEpoch,floor].every(value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value))||
+      BigInt(input.initialEpoch)<BigInt(floor))throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_EPOCH_REFUSED');
+  }
   const scoped=scopedPlanningModes.has(input?.mode);
   if(scoped)demand(profile&&scopedActionValid(input.mode,input.scopedAction));
   else demand(input?.scopedAction===undefined);
@@ -527,6 +546,10 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     wholeReleaseAccepted:false};
   if(replacement)base.replacementRelease=structuredClone(replacement);
   if(successorRuntime)base.successorRuntime=structuredClone(successorRuntime);
+  if(rotationSuccessor){
+    base.rotationSuccessor=structuredClone(rotationSuccessor);
+    base.originalFrontendReady=structuredClone(profiledRelease.originalFrontendReady);
+  }
   if(scoped)base.scopedAction=structuredClone(input.scopedAction);
   if(persistenceModes.has(input.mode))base.persistenceReviewedSha256=input.persistenceReviewedSha256;
   if(input.mode==='known-ack-recovery'){
@@ -913,7 +936,17 @@ export function p2CertificationReviewView(plan){
   }}};
 }
 
+function requireRotationSuccessorExecution(plan){
+  if(plan.rotationSuccessor!==undefined&&(!rotationSuccessorLiveEligible||plan.version!==2||
+    !isDeepStrictEqual(plan.qualificationTargetProfile,currentProfile)||plan.environment!=='staging'||
+    plan.startState!=='already-closed'||plan.mode!=='mux-readiness'||
+    plan.rotationSuccessor?.kind!==rotationSuccessorKind||!validP2CertificationReplacementDescriptor(plan.replacementRelease))){
+    throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
+  }
+}
+
 async function runBoundedCertification(plan,dependencies,profile){
+  requireRotationSuccessorExecution(plan);
   const mode=profile?'p2-bounded-certification-profiled-current':'p2-bounded-certification';
   const terminalStatus=profile?'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED':'P2_BOUNDED_CERTIFICATION_CONTAINED';
   const versionFields={version:profile?2:1,...(profile?{qualificationTargetProfile:profile}:{})};
@@ -1172,12 +1205,13 @@ function readProfiledCurrentCertificationRelease(releaseSettings){
 function prepareProfiledCertification(settings){
   const replacement=Object.hasOwn(settings??{},'replacementRelease');
   const successor=Object.hasOwn(settings??{},'successorRuntime');
+  const rotation=Object.hasOwn(settings??{},'rotationSuccessor');
   const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
     :settings?.certification?.mode==='direct-worker'?['worker']
       :settings?.certification?.mode==='interactive-browser'&&pairedBrowserStages.has(settings.certification.scopedAction?.stage)?['interactiveIdentity']:[];
   demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra,
-    ...(replacement?['replacementRelease']:[]),...(successor?['successorRuntime']:[])])&&settings.version===2&&settings.environment==='staging'&&
-    (!successor||replacement));
+    ...(replacement?['replacementRelease']:[]),...(successor?['successorRuntime']:[]),...(rotation?['rotationSuccessor']:[])])&&settings.version===2&&settings.environment==='staging'&&
+    (!(successor||rotation)||replacement)&&!(successor&&rotation));
   requireQualificationTargetProfile(currentProfile,settings);
   const checked=replacement?prepareP2CertificationReplacementRelease(settings.releaseSettings,settings.replacementRelease)
     :readProfiledCurrentCertificationRelease(settings.releaseSettings);
@@ -1187,16 +1221,25 @@ function prepareProfiledCertification(settings){
   const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
   demand(replacement===Object.hasOwn(profiledRelease,'replacementRelease')&&settings.operatorSourceCommit===release.sourceCommit&&
     input.gatewayConfigurationSha256===release.configurationSha256['gateway.json']&&
-    input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
-    input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
+    (rotation||input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
+      input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256));
   const {results,knownHosts,sshKey}=replacement?settings.releaseSettings.arm:settings.releaseSettings;
   const recovered=successor?prepareP2ReplacementSuccessor(settings.successorRuntime,{original,profiledRelease,host,results,input}):null;
-  const activeHost=recovered?{...host,configuration:recovered.configuration}:host;
-  const activeRelease=recovered?{...profiledRelease,successorRuntime:recovered.binding,successorFrontendEpoch:recovered.frontendEpoch}:profiledRelease;
+  const rotated=rotation?prepareP2CertificationRotationSuccessor(settings.rotationSuccessor,checked,input,results,P2_CERTIFICATION_READY_FILES):null;
+  const activeHost=recovered||rotated?{...host,configuration:(recovered??rotated).configuration}:host;
+  const activeRelease=recovered?{...profiledRelease,successorRuntime:recovered.binding,successorFrontendEpoch:recovered.frontendEpoch}
+    :rotated?{...profiledRelease,rotationSuccessor:rotated.binding,rotationSuccessorFrontendEpoch:rotated.frontendEpoch,
+      originalFrontendReady:rotated.originalFrontendReady}:profiledRelease;
   const releaseSettings={results,knownHosts,sshKey,host:activeHost,providerContext:settings.releaseSettings.providerContext};
+  const activeReady=rotated?.currentReady??frontendReceipts;
   const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,{...settings,releaseSettings},
-    {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease:activeRelease},currentProfile);
-  return {...checked,...stages,host:activeHost,releaseSettings};
+    {frontendReceipts:activeReady,configurationSha256:release.configurationSha256,profiledRelease:activeRelease},currentProfile);
+  if(rotated){
+    const {deploymentId,deploymentUrl,readyReceiptSha256}=rotated.originalFrontendReady;
+    bindP2CertificationReadyReceipts(rotated.originalReady,{...stages.plan,candidate:original.migration.candidate,readyReceiptSha256,
+      nativePlan:{...stages.plan.nativePlan,deploymentId,deploymentUrl,configurationRecordSha256:receipt.frontendWorkloadReceiptSha256}});
+  }
+  return {...checked,...stages,host:activeHost,releaseSettings,frontendReceipts:activeReady,rotationSuccessorReview:rotated};
 }
 
 export function prepareP2ProfiledCertificationOperator(settings){
@@ -1268,12 +1311,12 @@ async function retainReplacementSuccessorRuntime(settings){
 }
 
 function bindProfiledCertificationHostPlan(checked,source,plan){
-  const {suspensionPlan,original,frontendReceipts,originalReleaseReceipt}=checked;
+  const {suspensionPlan,original,frontendReceipts,originalReleaseReceipt,rotationSuccessorReview}=checked;
   const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
   const sourceClosureSha256=rawHash(JSON.stringify(Object.entries(sourceSha256).sort(([a],[b])=>a<b?-1:a>b?1:0)));
   demand(sourceClosureSha256===plan.operatorSourceClosureSha256);
   const readyReceipts=Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name=>{
-    const bytes=readFrontendReleaseEvidence(frontendReceipts,name);
+    const bytes=certificationReadyReceipt(frontendReceipts,name);
     demand(rawHash(bytes)===plan.readyReceiptSha256[name]);
     return [name,bytes.toString('base64')];
   }));
@@ -1286,6 +1329,12 @@ function bindProfiledCertificationHostPlan(checked,source,plan){
     owner:inventory.owner,inventory,inventorySha256:release.inventorySha256,certification:release.certification,
     expectedWriterAdmissionBinding:release.writerAdmissionBinding,certificationActionId:plan.certificationActionId,certificationPlan:plan,
     originalReleaseReceipt:originalReleaseReceipt.toString('base64'),readyReceipts,
+    ...(rotationSuccessorReview?{rotationSuccessorReceipt:rotationSuccessorReview.rawReceiptBase64,
+      originalReadyReceipts:Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name=>{
+        const bytes=certificationReadyReceipt(rotationSuccessorReview.originalReady,name);
+        demand(rawHash(bytes)===plan.originalFrontendReady.readyReceiptSha256[name]);
+        return [name,bytes.toString('base64')];
+      }))}:{}),
     ...(suspensionPlan?{sourceSuspensionPlan:suspensionPlan}:{})};
 }
 
@@ -1363,10 +1412,14 @@ export function prepareP2CertificationOperator(settings){
 }
 
 export async function p2ProfiledCertificationOperator(settings,{confirmation}={}){
+  if(Object.hasOwn(settings??{},'rotationSuccessor')&&(!rotationSuccessorLiveEligible||settings.certification?.mode!=='mux-readiness')){
+    throw new Error('P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED');
+  }
   demand(process.versions.node.split('.')[0]==='24');
   const {execution,...selection}=settings;
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
+  for(const action of [plan,authPlan,identityPlan].filter(Boolean))requireRotationSuccessorExecution(action);
   const interactive=plan.mode==='interactive-browser'&&pairedBrowserStages.has(plan.scopedAction.stage)&&identityPlan!==undefined;
   const authoring=interactive&&plan.scopedAction.stage==='authoring';
   const media=interactive&&plan.scopedAction.stage==='media';
