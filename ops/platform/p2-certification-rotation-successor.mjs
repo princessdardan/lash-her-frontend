@@ -17,6 +17,34 @@ const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.
   equal(Reflect.ownKeys(value).sort(), [...keys].sort());
 const pick = (value, keys) => Object.fromEntries(keys.map(key => [key, value[key]]));
 const phaseNames = ["baseline", "overlap", "current-only"];
+
+export function requireP2CertificationRotationTerminal(initial, terminal, caseOutcome) {
+  const { certificationPlan: plan } = initial;
+  requireQualificationTargetProfile(profile, plan, terminal);
+  const observation = terminal?.rotationFrontendObservationSha256;
+  const advancesEpoch = ["auth-preparation", "browser-pending", "direct-worker", "export-cleanup", "interactive-browser"]
+    .includes(plan.mode);
+  const closedEpoch = (BigInt(plan.initialEpoch) + (advancesEpoch ? 2n : 0n)).toString();
+  const zero = { newWork: 0, recovery: 0 };
+  const gateway = terminal?.gatewayAdmission;
+  demand(plan.rotationSuccessor?.kind === rotationSuccessorKind && terminal?.version === 2 &&
+    terminal.status === "P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED" && terminal.nativeDisabled === true &&
+    terminal.releaseId === plan.originalReleaseId &&
+    ["environment", "mode", "planSha256", "certificationActionId", "sourceCommit", "operatorSourceCommit", "candidateSha256",
+      "candidateObjectSha256", "targetSha256", "inventorySha256", "contractPhase", "phase2ContractManifestSha256",
+      "originalReleaseId", "originalReleaseReceiptSha256", "originalReleasePlanSha256"].every(key => terminal[key] === plan[key]) &&
+    equal(terminal.configurationSha256, initial.configurationSha256) && equal(terminal.replacementRelease, plan.replacementRelease) &&
+    equal(terminal.rotationSuccessor, plan.rotationSuccessor) && exact(observation, ["arm", "terminal"]) &&
+    digest(observation.arm) && digest(observation.terminal) && observation.arm !== observation.terminal &&
+    equal(terminal.frontendAdmission, { epoch: closedEpoch, newWork: false, recovery: false, active: 0, uncertain: 0 }) &&
+    gateway?.valid === true && gateway.newWork === false && gateway.recovery === false &&
+    equal(gateway.active, zero) && equal(gateway.uncertain, zero) && terminal.caseStatus === caseOutcome.status &&
+    terminal.caseOutcomeSha256 === hash(caseOutcome) &&
+    ["sqlReplayed", "frontendSqlApplied", "runtimeReplaced", "rolesPrepared", "historicalLoginsRestored", "frontendBuilt",
+      "frontendPromoted", "trafficAuthorized", "wholeReleaseAccepted", "releaseAccepted", "deployedCertificationComplete"]
+      .every(key => terminal[key] === false));
+  return terminal;
+}
 const mutationOrder = [["overlap", "api"], ["overlap", "frontend"], ["current-only", "frontend"], ["current-only", "api"]];
 const unchangedServices = ["community-tls", "course-tls", "course-snapshot", "community-worker",
   "course-media", "course-export-cleanup", "course-publisher", "gateway"];

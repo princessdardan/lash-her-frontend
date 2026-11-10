@@ -8,6 +8,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
+import {requireP2CertificationRotationTerminal} from './p2-certification-rotation-successor.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.mjs';
 import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt,
@@ -1474,10 +1475,14 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             disarm:()=>call('fault-disarm'),closeGateway:()=>call('fault-close-gateway')};},
         async prepareClose(caseOutcome,requestEvidence){demand(armed&&!prepared&&(!interactivePlan||
           interactiveRetained&&isDeepStrictEqual(caseOutcome,interactiveRetained)&&requestEvidence===undefined));
-          const value=await request('certification-prepare-close','CERTIFICATION_CLOSE_PREPARED',{caseOutcome,requestEvidence},240_000);prepared=true;return value.receipt;},
+          const value=await request('certification-prepare-close','CERTIFICATION_CLOSE_PREPARED',{caseOutcome,requestEvidence},240_000);
+          if(initial.certificationPlan.rotationSuccessor)requireP2CertificationRotationTerminal(initial,value.receipt,caseOutcome);
+          prepared=true;return value.receipt;},
         async finish(outcome){demand(prepared);const name=profiled?'p2-certification-close-prepared.json':'p2-certification-outcome.json';
           const bytes=readFrontendReleaseEvidence(directory,name);demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(outcome));
-          joined=await request('finish','P2_CERTIFICATION_JOINED',{certification:bytes.toString('base64')});return joined.receipt;},
+          joined=await request('finish','P2_CERTIFICATION_JOINED',{certification:bytes.toString('base64')});
+          if(initial.certificationPlan.rotationSuccessor)demand(isDeepStrictEqual(joined.receipt,outcome));
+          return joined.receipt;},
         failClosed:fail,
       };
       await verify();result=await task(verify,controller.signal,host);await verify();demand(joined&&!failed);

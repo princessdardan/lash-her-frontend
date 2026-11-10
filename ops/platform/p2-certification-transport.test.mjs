@@ -6,6 +6,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {p2CertificationEnvironmentLock,readP2CertificationAuthenticationStage,readP2CertificationSuspensionStage,readP2CertificationWorkerStage,readP2CertificationKnownAckStage,readP2CertificationInteractiveStage,usesP2ProfiledDayTwoAuthority} from './p2-certification-transport.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
+import {requireP2CertificationRotationTerminal,rotationSuccessorKind} from './p2-certification-rotation-successor.mjs';
+import {p2NativeHash} from './p2-lifecycle-native.mjs';
 const program=String.raw`
 import base64,fcntl,json,os,sys
 fd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -70,6 +72,36 @@ function fixture(mode='ready',profiled=false,certificationMode='contain-native')
  const bind=(packet=initial)=>p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},packet,directory,{expectedProfile:profiled?profile:undefined,launch(executable,args,options){captured={executable,args,options};return spawn('python3',['-I','-u','-c',program,lock,mode],options);}});
  return{directory,receipt,outcome,initial,bind,factory:bind(),lock,getCaptured:()=>captured,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
 }
+
+test('rotation successor terminal binds the exact closed epoch, scoped case and distinct frontend observations',()=>{
+  const digest=digit=>digit.repeat(64);
+  const plan={version:2,qualificationTargetProfile:profile,environment:'staging',mode:'mux-readiness',initialEpoch:'7',
+    certificationActionId:'owned-mux',originalReleaseId:'owned-replacement',sourceCommit:'a'.repeat(40),operatorSourceCommit:'a'.repeat(40),
+    candidateSha256:digest('1'),candidateObjectSha256:digest('2'),targetSha256:digest('3'),inventorySha256:digest('4'),
+    planSha256:digest('5'),contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+digest('6'),
+    originalReleaseReceiptSha256:digest('7'),originalReleasePlanSha256:digest('8'),
+    replacementRelease:{reviewedPlanSha256:digest('8')},rotationSuccessor:{kind:rotationSuccessorKind,receiptSha256:digest('9')}};
+  const initial={certificationPlan:plan,configurationSha256:{'gateway.json':digest('a')}};
+  const caseOutcome={status:'P2_SCOPED_MUX_READY_OBSERVED',frontendEpoch:'7'};
+  const zero={newWork:0,recovery:0};
+  const terminal={...plan,status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',nativeDisabled:true,releaseId:plan.originalReleaseId,
+    configurationSha256:initial.configurationSha256,caseStatus:caseOutcome.status,caseOutcomeSha256:p2NativeHash(caseOutcome),
+    frontendAdmission:{epoch:'7',newWork:false,recovery:false,active:0,uncertain:0},
+    gatewayAdmission:{valid:true,newWork:false,recovery:false,active:zero,uncertain:zero},
+    rotationFrontendObservationSha256:{arm:digest('b'),terminal:digest('c')},
+    ...Object.fromEntries(['sqlReplayed','frontendSqlApplied','runtimeReplaced','rolesPrepared','historicalLoginsRestored','frontendBuilt',
+      'frontendPromoted','trafficAuthorized','wholeReleaseAccepted','releaseAccepted','deployedCertificationComplete'].map(key=>[key,false]))};
+  assert.equal(requireP2CertificationRotationTerminal(initial,terminal,caseOutcome),terminal);
+  for(const changed of [
+    {rotationSuccessor:{...plan.rotationSuccessor,receiptSha256:digest('d')}},
+    {rotationFrontendObservationSha256:{arm:digest('b'),terminal:digest('b')}},
+    {frontendAdmission:{...terminal.frontendAdmission,epoch:'8'}},
+    {gatewayAdmission:{...terminal.gatewayAdmission,uncertain:{...zero,recovery:1}}},
+    {configurationSha256:{'gateway.json':digest('e')}},
+    {caseOutcomeSha256:digest('f')},
+  ])assert.throws(()=>requireP2CertificationRotationTerminal(initial,{...terminal,...changed},caseOutcome),
+    /P2_CERTIFICATION_ROTATION_SUCCESSOR_REFUSED/u);
+});
 
 test('profiled day-two authority sends only a fixed runtime bearer privately for the three authority modes',async()=>{
  for(const mode of ['auth-preparation','browser-pending','direct-worker']){
