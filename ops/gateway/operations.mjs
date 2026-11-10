@@ -102,7 +102,8 @@ export function interactiveCourseStagePermits(stage, method, target) {
   if (method !== "GET") return false;
   if (stage === "media") return group === "authoring";
   if (stage === "learning") return group === "catalog";
-  if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-visibility-save", "lesson-stale-revision"].includes(stage) && group === "learning") {
+  if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-visibility-save", "lesson-stale-revision",
+    "stalled-playback-renewal"].includes(stage) && group === "learning") {
     const lessonId = selectedLessonProgress.exec(target)?.[1];
     return path === target && learnerAccessPath.test(path) || lessonId !== undefined && courseUuid.test(lessonId);
   }

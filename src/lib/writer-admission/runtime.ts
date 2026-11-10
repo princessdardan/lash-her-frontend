@@ -50,8 +50,8 @@ export function createWriterAdmissionRunner(dependencies: {
         current_setting('server_version_num')::int/10000 AS major`)).rows[0];
       if (identity?.username !== target.user || identity.database !== target.database || identity.major !== target.serverMajor) throw new Error();
       const interactive = await getInteractiveWriter(configuration);
-      // A denial witness can reach protected reads without opening a writer.
-      if (interactive?.lessonDenial ||
+      // Read-only observations can reach protected reads without opening a writer.
+      if (interactive?.lessonDenial || interactive?.stalledPlaybackRenewal ||
         (interactive?.lessonAssessment && (kind !== "new-work" || !interactive.lessonAssessmentWrite)) ||
         (interactive?.lessonResume && (kind !== "new-work" || !interactive.lessonResumeWrite)) ||
         (interactive?.lessonRestore && (kind !== "new-work" || !interactive.lessonRestoreWrite)) ||

@@ -240,6 +240,19 @@ class SuccessorRuntimeTests(unittest.TestCase):
         fixture['docker'].assert_not_called()
         self.assertFalse((fixture['prior_dir'] / successor.RECEIPT).exists())
 
+    def test_read_only_provenance_needs_no_fresh_frontend_epoch_but_certification_does(self):
+        fixture = self.fixture('interrupted-known-ack')
+        self.write(fixture)
+        plan = self.next_plan(fixture)
+        del plan['initialEpoch']
+        del plan['certificationActionId']
+        observed = successor.require_successor_runtime_provenance(fixture['initial'], plan, fixture['selected'],
+            fixture['results'], fixture['source'], fixture['profile'])
+        self.assertEqual(observed, (fixture['configuration'], '6'))
+        with self.assertRaisesRegex(ValueError, successor.REFUSED):
+            self.read(fixture, plan)
+        fixture['docker'].assert_called_once()
+
     def test_writer_refuses_foreign_inventory_lease_and_changed_gateway_process(self):
         fixture = self.fixture('known-ack')
         fixture['inventory'].return_value = (fixture['members'], 1)

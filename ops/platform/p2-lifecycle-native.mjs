@@ -348,6 +348,21 @@ const reviewedMediaUploadDependencies = {
   "ops/gateway/admission.mjs": "3d85973ef2110b21c8df6eda6757009a9b2d8e34469232c613d93417fd1c143e",
   "ops/gateway/server.mjs": "6120bb91b636242c83e2bd158824c5c8f4531c116068c0e15c82ea0517fbad1a"
 };
+const reviewedStalledRenewalSource = {
+  ...reviewedFirstOwnerSource,
+  "src/lib/writer-admission/runtime.ts": "495092ddd9d80df5b27c03e1b7cd27ac24b9a5d5b2a3c2d37b8a7f64fe46a9cd"
+};
+const reviewedStalledRenewalDependencies = {
+  ...reviewedMediaUploadDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "85c8b60c357350dbfbb4f9b7e26ca1807fc07925e56f1c3df6dd3ed56f04c69c",
+  "src/lib/api-integration/academy-handler.ts": "ea9e370a0bc4df3f39feaa21d49b7c7c605c55f4342b103f65c0eec77e35859e",
+  "src/lib/api-integration/course-client.ts": "2a2b7e0913e68b1af2280e19050f2867ca12b0216764a95d9573e3b69acdabdb",
+  "src/components/learning/lesson-experience.tsx": "e17eb97ddfb65b75db6572336f32f5b479c6013109a8191a2703993f1417368e",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "625060f454d7d0c241511c0be97530655e3ef1ce662bbd5af06e4bb9769ce1bd",
+  "ops/gateway/admission.mjs": "da0223c354d50a58c51effda0c1ae61648db8dceed5881748d486bbe967ac7a8",
+  "ops/gateway/operations.mjs": "7a4e49ce5147cc50894329082bc1067f36df15b34a8e1f595cb0b380bd5349af",
+  "ops/gateway/server.mjs": "2a7b8ff7765f5c8fd1261b961e34fbe370d779598ba9397866ec6d5c81e325b9"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -387,7 +402,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]],
     [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies, reviewedVisibilityCoalescingDependencies]],
     [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]],
-    [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies, reviewedMediaReservationDependencies, reviewedMediaUploadDependencies]]]
+    [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies, reviewedMediaReservationDependencies, reviewedMediaUploadDependencies]],
+    [reviewedStalledRenewalSource, [reviewedStalledRenewalDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

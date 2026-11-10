@@ -297,6 +297,23 @@ The IDs below are acceptance references, not a mandatory numeric schedule. Run t
 | S16: accessibility and device states | Desktop and mobile: keyboard-only sign-in, catalog, editor reorder, enrollment, player, transcript/captions, quiz/history/retry and account confirmation. Check meaningful names/errors/status announcements, focus/dirty-dialog return, visible focus, zoom/reflow/no horizontal overflow and current brand tokens. Capture loading/pending/revoked/processing/unavailable/retry states without exposing private data. | Browser/version/device/viewport, screen-reader/manual keyboard notes and redacted screenshots. Chromium device emulation is labelled emulation, not live iOS/Safari proof. Record the actual supported browser coverage and unresolved defects. |
 | S17: existing-site and commerce regression | Public navigation, course canonical URLs/SEO, contact/training forms with optional marketing, Fresha redirects/closed new reservation endpoints, existing booking/payment/confirmation and authorized staff views remain compatible. Product/training/Square/Afterpay and shipping/reconciliation behavior already in scope must retain existing boundaries and recovery; this adds no paid online-course checkout or production charge. | Exact-source local/CI browser/DB/provider-fixture evidence plus staging read-only smoke on owned retained records. Any staging sandbox financial/provider mutation needs its already qualified scoped scenario and serialized recovery; unsupported live regression steps stay OPEN. No new reservations, ordinary marketing sends, real refunds or postage purchases as a smoke shortcut. |
 
+### S13 stalled playback renewal
+
+Use a separately reviewed `interactive-browser` action with stage `stalled-playback-renewal`, the already authenticated test learner as `actorId` and a `stalledRenewalAction` with the exact `courseId`, `lessonId` and `playbackIdSha256`. Select an accessible lesson with a ready managed video and an available quiz, so all six reads return 200. Hash the actual playback identifier from the reviewed private handoff and keep its raw value out of common evidence.
+
+Review six single-use Course GET rows, in the following order, with the SHA-256 of the empty body. The first five may acknowledge in any order. The playback acknowledgement must be last.
+
+1. `/course/v1/student/courses/<courseId>`
+2. `/course/v1/student/lessons/<lessonId>`
+3. `/course/v1/student/progress?lessonId=<lessonId>`
+4. `/course/v1/student/lessons/<lessonId>/quiz`
+5. `/course/v1/student/lessons/<lessonId>/quiz/attempts`
+6. `/course/v1/student/lessons/<lessonId>/playback`
+
+The normal signed learner page renders the actual player in read-only mode. Observe its first authorized playback response and successful HLS traffic. The controller fences and drains frontend and gateway admission, verifies zero active and uncertain operations under the held host guard, then clears the permit. The permit and open admission remain limited to 300 seconds. The outer 900-second action allows the same browser to observe the issued authorization expire after fencing. It holds exactly one renewal request locally and checks player removal and retry availability without sending that request to the frontend.
+
+Retain the host fence and joined receipts with the original gateway playback acknowledgement. Require zero frontend operations, the exact selected playback ID hash and the closed terminal readback. This action supplies the stalled-renewal browser case. Complete the separate Course user-token and Mux authorization timing checks and the account suspension/receiver checks with their own receipts.
+
 ### S10 paid access through the owner workspace
 
 Publish a dedicated paid CAD staging course through the normal authoring UI and establish an active test customer through normal staging identity. From that course's owner workspace, open `/admin/courses/<courseId>/manual-grants` and grant access to the test customer's immutable UUID at the displayed course revision. Retain the grant, idempotency and audit references and verify that all order, payment and provider references are null. If acknowledgement is lost, use the form's status lookup and preserve the unresolved original attempt. Exercise access from the customer's browser, then verify the archive warning, Cancel, Confirm and validated republish against the grant and independent Community eligibility. Record both receivers' actual outcomes wherever the action changes eligibility. The existing [source qualification](baselines/2026-11-06-p2q-owner-manual-grant/README.md) covers the normal entrypoint and owned persistence. The deployed grant and downstream outcome still require certification.

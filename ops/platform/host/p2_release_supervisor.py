@@ -1331,7 +1331,8 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
     if plan['mode'] == 'interactive-browser':
         from p2_interactive_window import (SCOPED_GATEWAY_BROWSER_STAGES, browser_artifact, browser_case_evidence,
                                             browser_evidence_limit, browser_receipt, browser_status, media_upload_selected,
-                                            require_browser_ledger, require_media_upload_gateway, verify_browser_controller)
+                                            require_browser_ledger, require_media_upload_gateway, stalled_renewal_selected,
+                                            verify_browser_controller)
         scoped_status = browser_status(plan, 'JOINED')
     if scoped_status is not None:
         directory = _profiled_certification_directory(initial)
@@ -1354,7 +1355,12 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
             gateway_artifact = None
             if plan['scopedAction']['stage'] in SCOPED_GATEWAY_BROWSER_STAGES:
                 gateway_artifact = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'gateway'), 8192), 'carrier')
-            expected_case = {**browser_receipt(plan, 'JOINED'), **browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact),
+            observation_fence = None
+            if stalled_renewal_selected(plan):
+                observation_fence = decode_qualification_target_json(
+                    migrate.read_input(directory, browser_artifact(plan, 'observation-fence'), 8192), 'carrier')
+            bindings = browser_case_evidence(plan, evidence, gateway_artifact=gateway_artifact, observation_fence=observation_fence)
+            expected_case = {**browser_receipt(plan, 'JOINED'), **bindings,
                              'browserProgramSha256': program_sha, 'frontendAdmission': frontend,
                              'frontendOperationCount': operation_count, 'gatewayAdmissionClosed': True,
                              'gatewayActive': 0, 'gatewayUncertain': 0}

@@ -125,6 +125,9 @@ def verify_profiled_current_source_closure(initial, root):
         }.get(certification.get('mode'))
         if scoped is not None:
             required |= scoped | {'ops/platform/host/p2_day_two_workload.py'}
+        if certification.get('mode') == 'interactive-browser' and \
+                (certification.get('scopedAction') or {}).get('stage') == 'stalled-playback-renewal':
+            required.add('ops/platform/p2-certification-transport.mjs')
     return _verify_source_closure(initial, root, required, 544, 48_000_000)
 
 

@@ -13,7 +13,7 @@ import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.m
 import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt,
   validateP2LessonStaleRevisionReceipt,validP2MediaReservationAction,p2MediaReservationBody,
   p2MediaUploadCallbackOperation,validateP2MediaDispatchIntent,validateP2MediaDispatchReceipt,
-  validateP2MediaReservationReceipt} from './p2-lifecycle-browser-recorder.mjs';
+  validateP2MediaReservationReceipt,p2StalledRenewalStage,validateP2StalledPlaybackRenewalBaseline,validateP2StalledPlaybackRenewalReceipt} from './p2-lifecycle-browser-recorder.mjs';
 import {lessonAckLossBodies,lessonExitSaveBodies,lessonStaleRevisionBodies} from '../gateway/lesson-resume-position.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 
@@ -25,6 +25,7 @@ const workerStages=new WeakMap();
 const knownAckStages=new WeakMap();
 const interactiveStages=new WeakMap();
 const mediaDispatchReceipts=new WeakMap();
+const stalledFenceReceipts=new WeakMap();
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 const sha256=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value);
 const nonzeroSha256=value=>sha256(value)&&!/^0+$/u.test(value);
@@ -83,6 +84,7 @@ export function readP2CertificationInteractiveStage(handle,plan){
   const selected=interactiveStages.get(handle);demand(selected&&selected.plan===plan&&selected.active());
   if(plan.scopedAction.mediaAction?.operation===p2MediaUploadCallbackOperation)
     demand(typeof selected.methods.armMedia==='function'&&typeof selected.methods.observeMedia==='function');
+  if(plan.scopedAction.stage===p2StalledRenewalStage)demand(typeof selected.methods.confirmObservationFence==='function');
   return selected.methods;
 }
 
@@ -91,6 +93,12 @@ export function takeP2InteractiveMediaDispatch(plan,controller,receipt){
   demand(source&&source.plan===plan&&source.controller===controller&&source.active()&&source.dispatch.expiresAt*1000>Date.now());
   mediaDispatchReceipts.delete(receipt);
   return source.dispatch;
+}
+
+export function takeP2InteractiveStalledObservationFence(plan,controller,receipt){
+  const source=stalledFenceReceipts.get(receipt);
+  demand(source&&source.plan===plan&&source.controller===controller&&source.active());
+  stalledFenceReceipts.delete(receipt);
 }
 
 function reviewedWriteRequest(row,method,target){
@@ -249,6 +257,15 @@ function reviewedLessonEntryAction(action){
   ]));
   const lessonEntry={actorId:action.actorId,...selected};
   return {selection:{...lessonEntry,actorKind:'customer'},lessonEntry};
+}
+
+export function validateP2InteractiveStalledRenewalAction(selected,requests){
+  if(!exact(selected,['courseId','lessonId','playbackIdSha256'])||![selected.courseId,selected.lessonId].every(canonicalUuid)||
+    !nonzeroSha256(selected.playbackIdSha256))return false;
+  const {courseId,lessonId}=selected,student='/course/v1/student',lesson=student+'/lessons/'+lessonId;
+  return isDeepStrictEqual(requests,[student+'/courses/'+courseId,lesson,student+'/progress?lessonId='+lessonId,
+    lesson+'/quiz',lesson+'/quiz/attempts',lesson+'/playback']
+    .map(target=>({method:'GET',target,uses:1,bodySha256:emptyBodySha256})));
 }
 
 function reviewedLessonDenialAction(action){
@@ -467,18 +484,18 @@ function reviewedInteractivePlan(plan,initial){
   const ackLoss=action?.stage==='lesson-ack-loss';
   const exitSave=action?.stage==='lesson-exit-save';
   const visibility=action?.stage==='lesson-visibility-save';
-  const staleRevision=action?.stage==='lesson-stale-revision';
-  const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
+  const staleRevision=action?.stage==='lesson-stale-revision',stalledRenewal=action?.stage===p2StalledRenewalStage;
+  const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision||stalledRenewal;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   const firstOwner=identity&&Object.hasOwn(action,'firstOwner');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
-    plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
+    plan.maximumSeconds===(stalledRenewal?900:300)&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
       firstOwner?'firstOwner':enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':media?'mediaAction':learning?'learningAction':
         paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':
           lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':resume?'resumeAction':restore?'restoreAction':
-            ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':staleRevision?'staleRevisionAction':'frontendAction'])&&
+            ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':staleRevision?'staleRevisionAction':stalledRenewal?'stalledRenewalAction':'frontendAction'])&&
     Array.isArray(action.requests)&&(gatewayScoped||action.requests.length===0)&&
     Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
@@ -501,6 +518,11 @@ function reviewedInteractivePlan(plan,initial){
   if(exitSave)return reviewedExitSaveAction(action);
   if(visibility)return reviewedVisibilityAction(action);
   if(staleRevision)return reviewedStaleRevisionAction(action);
+  if(stalledRenewal){
+    demand(canonicalUuid(action.actorId)&&validateP2InteractiveStalledRenewalAction(action.stalledRenewalAction,action.requests));
+    const target={actorId:action.actorId,...action.stalledRenewalAction};
+    return {selection:{...target,actorKind:'customer',operation:p2StalledRenewalStage},stalledRenewal:target};
+  }
   if(paidRevoke)return reviewedPaidRevokeAction(action);
   if(firstOwner){
     demand(action.actorId===null&&validP2FirstOwnerSelection(action.firstOwner));
@@ -609,13 +631,14 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const resume=operation===resumeOperation,restore=operation===restoreOperation,ackLoss=operation===ackLossOperation;
   const exitSave=exitSaveOperations.has(operation);
   const visibility=operation===visibilityOperation;
-  const staleRevision=operation===staleRevisionOperation;
+  const staleRevision=operation===staleRevisionOperation,stalledRenewal=operation===p2StalledRenewalStage;
   const phaseMatches=(start,end,expected)=>isDeepStrictEqual(
     acks.slice(start,end).map(row=>row.requestIndex).sort((left,right)=>left-right),expected);
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
-    Array.isArray(acks)&&acks.length===(lessonEntry||visibility?9:lessonDenial?15:assessment||exitSave?11:resume?10:restore?8:ackLoss?18:staleRevision?27:sequences[0].length)&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
+    Array.isArray(acks)&&acks.length===(lessonEntry||visibility?9:lessonDenial?15:assessment||exitSave?11:resume?10:restore?8:ackLoss?18:staleRevision?27:stalledRenewal?6:sequences[0].length)&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
       canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId))&&
-    (lessonEntry?acks.every(row=>row.upstreamStatus===200)&&
+    (stalledRenewal?acks.every(row=>row.upstreamStatus===200)&&phaseMatches(0,5,[0,1,2,3,4])&&acks[5].requestIndex===5:
+      lessonEntry?acks.every(row=>row.upstreamStatus===200)&&
       phaseMatches(0,2,[0,1])&&phaseMatches(2,7,[0,2,3,4,5])&&phaseMatches(7,9,[6,7]):
       lessonDenial?acks.every(row=>row.upstreamStatus===403)&&phaseMatches(0,5,[0,1,2,3,4])&&
         phaseMatches(5,10,[0,1,2,3,4])&&isDeepStrictEqual(acks.slice(10).map(row=>row.requestIndex),[1,5,2,3,4]):
@@ -694,6 +717,19 @@ function learnerAccessJoinedEvidence(evidence,selected,observed){
     isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,actorId,grantId,revision,effectiveAccess,readOnly:true}));
   return {actorId,operation,courseId,lessonId,grantId,revision,outcome,effectiveAccess,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
+}
+
+function stalledRenewalJoinedEvidence(evidence,target,observed,baseline,fence){
+  demand(exact(evidence,['stalledRenewalBrowser']));
+  const browser=validateP2StalledPlaybackRenewalReceipt(evidence.stalledRenewalBrowser,target);
+  validateP2StalledPlaybackRenewalBaseline(baseline,target);
+  const playbackGatewayRequestId=observed.gatewayAcknowledgements.find(row=>row.requestIndex===5)?.requestId;
+  const fenceTime=Date.parse(fence.observedAt), marks=browser.observation;
+  demand(isDeepStrictEqual(baseline,{page:browser.page,playback:browser.playback})&&
+    canonicalUuid(playbackGatewayRequestId)&&browser.playback.requestId===playbackGatewayRequestId&&utc(fence.observedAt)&&
+    Date.parse(marks.baseline.observedAt)-2_000<=fenceTime&&fenceTime<=Date.parse(marks.fenceConfirmed.observedAt)+2_000&&
+    fenceTime<Date.parse(marks.renewalStarted.observedAt));
+  return {...target,playbackGatewayRequestId,browserResponseSha256:p2NativeHash(browser),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 
 function lessonEntryJoinedEvidence(evidence,selected,observed){
@@ -1129,7 +1165,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
         async interactiveStage(browserController){
           demand(launch===spawn&&interactivePlan&&armed&&!prepared&&!interactiveCreated&&active&&!failed);
           interactiveCreated=true;
-          const {readP2InteractiveBrowserControllerBinding,requireP2InteractiveBrowserMediaEvidence}=await import('./p2-lifecycle-suspension-evidence.mjs');
+          const {readP2InteractiveBrowserControllerBinding,requireP2InteractiveBrowserMediaEvidence,
+            requireP2InteractiveBrowserStalledRenewalEvidence}=await import('./p2-lifecycle-suspension-evidence.mjs');
           const {validateP2InteractiveBrowserPermit}=await import('./p2-lifecycle-browser-recorder.mjs');
           const binding=structuredClone(initial.interactiveController),snapshot=structuredClone(interactivePlan);
           const alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&
@@ -1144,12 +1181,12 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const ackLoss=stage==='lesson-ack-loss';
           const exitSave=stage==='lesson-exit-save';
           const visibility=stage==='lesson-visibility-save';
-          const staleRevision=stage==='lesson-stale-revision';
-          const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
+          const staleRevision=stage==='lesson-stale-revision',stalledRenewal=stage===p2StalledRenewalStage;
+          const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision||stalledRenewal;
           const {selection,enrollment,firstOwner,authoring:authoringPermit,media:mediaPermit,learning:learningPermit,paidGrant:paidGrantPermit,
             learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit,lessonEntry:lessonEntryPermit,
             lessonDenial:lessonDenialPermit,assessment:assessmentPermit,resume:resumePermit,restore:restorePermit,ackLoss:ackLossPermit,
-            exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit}=selectedInteractive;
+            exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit,stalledRenewal:stalledRenewalTarget}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const joinedUpload=media&&selection.operation===p2MediaUploadCallbackOperation;
           const context=selection.actorKind==='admin'?'owner':'learner';
@@ -1158,9 +1195,9 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               learnerAccess?{learnerAccess:learnerAccessPermit}:paidRevoke?{paidRevoke:paidRevokePermit}:
               lessonEntry?{lessonEntry:lessonEntryPermit}:lessonDenial?{lessonDenial:lessonDenialPermit}:assessment?{assessment:assessmentPermit}:resume?{resume:resumePermit}:restore?{restore:restorePermit}:
               ackLoss?{ackLoss:ackLossPermit}:exitSave?{exitSave:exitSavePermit}:visibility?{visibility:visibilityPermit}:
-              staleRevision?{staleRevision:staleRevisionPermit}:
+              staleRevision?{staleRevision:staleRevisionPermit}:stalledRenewal?{stalledRenewal:stalledRenewalTarget}:
               firstOwner?{firstOwner}:enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
-          let phase='new',expiresAt,installed=false,gatewayObservation,mediaArm,mediaUpload,heldMediaResponse;
+          let phase='new',expiresAt,installed=false,gatewayObservation,mediaArm,mediaUpload,heldMediaResponse,stalledBaseline,stalledFence;
           const statusFor=disposition=>`P2_INTERACTIVE_${stageLabel}_${disposition}`;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000,waitingDisposition)=>{
             demand(alive());
@@ -1204,11 +1241,15 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               finally{if(packet){if(packet.permit&&typeof packet.permit==='object')delete packet.permit.cookie;delete packet.permit;}}
             },
             ...(gatewayScoped?{
-              async observe(){
-                demand(phase==='installed');requireRecorder();phase='observing';
+              async observe(baseline){
+                demand(phase==='installed'&&(stalledRenewal||baseline===undefined));requireRecorder();phase='observing';
                 try{
                   const receipt=await call('interactive-observe','GATEWAY_OBSERVED',interactiveGatewayKeys);
                   requireInteractiveGatewayObservation(receipt,epoch,selection);
+                  if(stalledRenewal){
+                    stalledBaseline=structuredClone(validateP2StalledPlaybackRenewalBaseline(baseline,stalledRenewalTarget));
+                    demand(stalledBaseline.playback.requestId===receipt.gatewayAcknowledgements[5].requestId);
+                  }
                   gatewayObservation=structuredClone(receipt);phase='observed';return receipt;
                 }catch{phase='observe-failed';throw new Error(`P2_CERTIFICATION_INTERACTIVE_${stageLabel}_OBSERVE_FAILED`);}
               },
@@ -1271,9 +1312,23 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               const receipt=await call('interactive-fence','FENCED',gatewayFenceKeys);
               demand(closedGateway(receipt));phase='fenced';return receipt;
             },
+            ...(stalledRenewal?{
+              async confirmObservationFence(){
+                demand(phase==='fenced'&&stalledBaseline&&gatewayObservation);requireRecorder();phase='confirming-fence';
+                const receipt=await call('interactive-confirm-fence','OBSERVATION_FENCED',
+                  ['observedAt','frontendAdmission','frontendOperationCount',...gatewayFenceKeys]);
+                demand(utc(receipt.observedAt)&&receipt.frontendOperationCount===0&&closedGateway(receipt)&&
+                  isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0}));
+                stalledFence=structuredClone(receipt);phase='observation-fenced';
+                const handle=Object.freeze(receipt);
+                stalledFenceReceipts.set(handle,{plan:interactivePlan,controller:browserController,active:()=>alive()&&phase==='observation-fenced'});
+                return handle;
+              },
+            }:{}),
             async retain(caseEvidence){
-              demand(phase===(joinedUpload?'media-observed':'fenced')&&installed&&(!gatewayScoped||gatewayObservation)&&
+              demand(phase===(joinedUpload?'media-observed':stalledRenewal?'observation-fenced':'fenced')&&installed&&(!gatewayScoped||gatewayObservation)&&
                 (!joinedUpload||mediaUpload&&caseEvidence?.browserResponse===heldMediaResponse));requireRecorder();
+              if(stalledRenewal)requireP2InteractiveBrowserStalledRenewalEvidence(interactivePlan,browserController,caseEvidence?.stalledRenewalBrowser);
               const evidence=structuredClone(caseEvidence);
               const expected=media?mediaReservationJoinedEvidence(evidence,selection,gatewayObservation):
                 learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
@@ -1289,6 +1344,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 exitSave?exitSaveJoinedEvidence(evidence,selection,gatewayObservation):
                 visibility?visibilityJoinedEvidence(evidence,selection,gatewayObservation):
                 staleRevision?staleRevisionJoinedEvidence(evidence,selection,gatewayObservation):
+                stalledRenewal?stalledRenewalJoinedEvidence(evidence,stalledRenewalTarget,gatewayObservation,stalledBaseline,stalledFence):
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
@@ -1304,7 +1360,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 (!media||Number.isSafeInteger(receipt.generation)&&receipt.generation>=1&&receipt.generation<=2_147_483_647&&
                   typeof receipt.environmentId==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(receipt.environmentId)&&nonzeroSha256(receipt.courseWitnessSha256))&&
                 isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0})&&
-                (learnerAccess||lessonDenial?receipt.frontendOperationCount===0:lessonEntry?receipt.frontendOperationCount===1:
+                (learnerAccess||lessonDenial||stalledRenewal?receipt.frontendOperationCount===0:lessonEntry?receipt.frontendOperationCount===1:
                   assessment?receipt.frontendOperationCount===3:
                   resume?receipt.frontendOperationCount===4:
                   restore?receipt.frontendOperationCount===2:

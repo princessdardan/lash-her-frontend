@@ -25,12 +25,15 @@ export function LessonExperience({
   initialProgress,
   quizState,
   preview = false,
+  playbackObservation = false,
 }: {
   lesson: LearnerLesson;
   initialProgress: LessonProgress | null;
   quizState: LessonQuizState;
   preview?: boolean;
+  playbackObservation?: boolean;
 }) {
+  const writesEnabled = !preview && !playbackObservation;
   const [progress, setProgress] = useState(initialProgress);
   const [status, setStatus] = useState<ProgressSyncStatus>("ready");
   const [failure, setFailure] = useState<unknown>(null);
@@ -60,11 +63,12 @@ export function LessonExperience({
     }),
   );
   useEffect(() => {
+    if (playbackObservation) return;
     if (!preview) void sync.queue({ event: "lesson_started" });
     return () => {
       void sync.flush(true);
     };
-  }, [sync, preview]);
+  }, [sync, preview, playbackObservation]);
   const completed = Boolean(progress?.completedAt);
   return (
     <>
@@ -76,7 +80,7 @@ export function LessonExperience({
           Preview lesson. Enroll in the course to save progress and assessments
           to your account.
         </p>
-      ) : (
+      ) : playbackObservation ? null : (
         <div aria-live="polite" className="mt-6 text-sm text-lh-muted">
           {status === "saving"
             ? "Saving progress…"
@@ -94,7 +98,7 @@ export function LessonExperience({
         resume={initialProgress?.resumePositionSeconds ?? 0}
         flushPositionRef={flushPositionRef}
         onPosition={(resume, watched, keepalive) => {
-          if (!preview && !assessmentPending.current)
+          if (writesEnabled && !assessmentPending.current)
             void sync.queue(
               {
                 resumePositionSeconds: resume,
@@ -107,7 +111,7 @@ export function LessonExperience({
         }}
       />
       <LessonContent lesson={lesson} />
-      {!preview && status === "error" ? (
+      {writesEnabled && status === "error" ? (
         <div role="alert" className="mt-6 border border-lh-primary/20 p-5">
           <p>{learningErrorText(failure)} Progress has not been confirmed.</p>
           {failure instanceof LearningRequestError &&
@@ -131,7 +135,7 @@ export function LessonExperience({
           )}
         </div>
       ) : null}
-      {!preview && status === "conflict" ? (
+      {writesEnabled && status === "conflict" ? (
         <div role="alert" className="mt-6 border border-lh-primary/20 p-5">
           <p>
             Saved progress changed. Reload to use your latest saved
@@ -146,7 +150,7 @@ export function LessonExperience({
           </button>
         </div>
       ) : null}
-      {quizState.kind === "ready" && !preview ? (
+      {quizState.kind === "ready" && writesEnabled ? (
         <LessonQuiz
           key={`${quizState.quiz.id}-${quizState.quiz.revision}`}
           quiz={quizState.quiz}
@@ -166,7 +170,7 @@ export function LessonExperience({
             }
           }}
         />
-      ) : !preview && quizState.kind === "unavailable" ? (
+      ) : writesEnabled && quizState.kind === "unavailable" ? (
         <div role="status" className="mt-10 border-t border-lh-primary/20 pt-8">
           <h2 className="font-heading text-3xl">Assessment unavailable</h2>
           <p className="mt-3">
@@ -182,7 +186,7 @@ export function LessonExperience({
           </button>
         </div>
       ) : null}
-      {!preview && quizState.kind === "none" ? (
+      {writesEnabled && quizState.kind === "none" ? (
         <div className="mt-10 border-t border-lh-primary/20 pt-8">
           <button
             type="button"

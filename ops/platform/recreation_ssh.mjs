@@ -203,6 +203,13 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
         `/opt/lash-her/operators/${commit}/ops/platform/host/p2_replacement_operator_evidence.py`],
         payload,15_000,2_700_000,false,8192);
     },
+    replacementIdentityProbe:(commit,payload)=> {
+      assert.match(commit,/^(?!0+$)[a-f0-9]{40}$/u);
+      assert.ok(payload?.version===2&&["plan-replacement","execute-replacement-readonly"].includes(payload.operation));
+      return run(["sudo","-n","/usr/bin/python3","-I","-u",
+        `/opt/lash-her/operators/${commit}/ops/platform/host/p2_identity_probe_current.py`],
+        payload,payload.operation==="plan-replacement"?30_000:630_000,65_536,false,262_144);
+    },
     prepare:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
       assert.ok(["bootstrap","cache-compatible","cache-current"].includes(payload.operation));

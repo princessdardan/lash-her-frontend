@@ -92,6 +92,25 @@ test("large public source handoff does not expand private phase input limits",as
   await assert.rejects(f.ssh.phase("a".repeat(40),{operation:"rollback",...payload}),/Bounded SSH input required/u);
   assert.equal(calls.length,1);
 });
+test("replacement identity probe uses only the fixed version-two host program and bounded stdin",async t=> {
+  const calls=[];
+  const f=await fixture(t,async(args,stdin,options)=> {
+    calls.push({args,stdin,options});
+    return {exitCode:0,stdout:Buffer.from('{"status":"owned"}'),stderr:Buffer.alloc(0)};
+  });
+  const commit="a".repeat(40);
+  const packet={version:2,operation:"plan-replacement",priorEvidence:null};
+  await f.ssh.replacementIdentityProbe(commit,packet);
+  assert.deepEqual(JSON.parse(calls[0].stdin),packet);
+  assert.equal(calls[0].options.timeout,30_000);
+  assert.match(calls[0].args.at(-1),new RegExp(`/opt/lash-her/operators/${commit}/ops/platform/host/p2_identity_probe_current\\.py`,"u"));
+  await f.ssh.replacementIdentityProbe(commit,{version:2,operation:"execute-replacement-readonly",priorEvidence:{owned:"probe"}});
+  assert.equal(calls[1].options.timeout,630_000);
+  assert.ok(!calls[1].args.at(-1).includes("owned"));
+  assert.throws(()=>f.ssh.replacementIdentityProbe(commit,{version:1,operation:"execute-current-readonly"}));
+  await assert.rejects(f.ssh.replacementIdentityProbe(commit,{...packet,extra:"x".repeat(262_144)}),/Bounded SSH input required/u);
+  assert.equal(calls.length,2);
+});
 test("fixed installer enforces source count, decoded aggregate and per-file limits",async t=> {
   const outcomes=[];
   const f=await fixture(t,async(args,stdin)=> {

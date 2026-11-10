@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import test from "node:test";
 import { createCourseClient } from "./course-client";
 import { createAcademyHandler } from "./academy-handler";
@@ -15,6 +16,11 @@ import { GET as catalogRoute } from "@/app/api/academy/catalog/route";
 import { GET as myCoursesRoute } from "@/app/api/academy/courses/route";
 import { GET as progressRoute } from "@/app/api/academy/progress/route";
 import { GET as adminCoursesRoute } from "@/app/api/admin/courses/route";
+import { POST as recordProgressRoute } from "@/app/api/academy/lessons/[lessonId]/progress/route";
+import { POST as submitQuizAttemptRoute } from "@/app/api/academy/lessons/[lessonId]/quiz/attempts/route";
+import { POST as enrollFreeRoute } from "@/app/api/academy/courses/[courseId]/enrollments/route";
+import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
+import { INTERACTIVE_COOKIE, INTERACTIVE_ORIGIN } from "@/lib/writer-admission/interactive-proof";
 
 const customerId = "11111111-1111-4111-8111-111111111111";
 const lessonId = "22222222-2222-4222-8222-222222222222";
@@ -434,6 +440,76 @@ test("scoped stale lesson progress settles the conflict before reporting the san
     ["POST", `/v1/student/lessons/${lessonId}/progress`, JSON.stringify(staleBody), token],
     ["GET", `/v1/student/progress?lessonId=${lessonId}`, undefined, token],
   ]);
+});
+
+test("stalled playback renewal binds protected reads to the selected learner and refuses writes before admission", async () => {
+  const courseId = adminId, token = "scoped.playback-observation.jwt";
+  const selected = { actorId: customerId, courseId, lessonId };
+  const playback = { playbackId: "owned-playback", playbackToken: "fixture-playback", thumbnailToken: "fixture-thumbnail",
+    expiresAt: at, thumbnailExpiresAt: at };
+  const calls: GatewayRequest[] = [];
+  let issued = { customerId: adminId, token };
+  const client = createCourseClient({ enabled: allowed, getStalledPlaybackRenewal: async () => selected, issueCustomerToken: async () => issued,
+    run: async () => assert.fail("playback observation opened a writer"), getTransport: () => async request => {
+      calls.push(request);
+      return Response.json(request.path.endsWith("/playback") ? playback : { progress: [progress] });
+    } });
+  const forbidden = { code: "forbidden", status: 403 };
+  await assert.rejects(client.authorizePlayback(lessonId), forbidden);
+  issued = { customerId, token };
+  for (const call of [
+    () => client.authorizePlayback(courseId), () => client.getMyCourse(customerId), () => client.listProgress({ courseId }),
+    () => client.recordProgress(lessonId, { event: "lesson_started", expectedProgressRevision: 0 }),
+    () => client.submitQuizAttempt(lessonId, { quizRevision: 1, requestId: courseId, answers: [{ questionId: "q", optionId: "a" }] }),
+    () => client.enrollFree(courseId, { idempotencyKey: lessonId }),
+  ]) await assert.rejects(call(), forbidden);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await client.authorizePlayback(lessonId), playback);
+  assert.deepEqual(await client.listProgress({ lessonId }), { progress: [progress] });
+  assert.deepEqual(calls.map(({ method, path, applicationToken }) => [method, path, applicationToken]), [
+    ["GET", `/v1/student/lessons/${lessonId}/playback`, token],
+    ["GET", `/v1/student/progress?lessonId=${lessonId}`, token],
+  ]);
+});
+
+test("actual academy write routes reject the authenticated stalled-renewal cookie without a proxy proof", async t => {
+  const target = "a".repeat(64);
+  const env = {
+    APP_ENV: "staging", FRONTEND_WRITER_ADMISSION_MODE: "enforce", VERCEL: "1", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
+    APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    VERCEL_URL: "owned.vercel.app", VERCEL_GIT_COMMIT_SHA: "b".repeat(40), CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2),
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ targetSha256: target }), CUSTOMER_AUTH_URL: INTERACTIVE_ORIGIN,
+  };
+  const saved = Object.keys(env).map(key => [key, process.env[key]] as const);
+  t.after(() => {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+  Object.assign(process.env, env);
+  const issued = Math.floor(Date.now() / 1000);
+  const selector = [customerId, adminId, lessonId].map(id => id.replaceAll("-", "")).join("");
+  const body = ["v2", "7", "stalled-playback-renewal", issued, issued + 120, "a".repeat(32), selector].join(".");
+  const mac = createHmac("sha256", env.CRON_SECRET)
+    .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${target}\n${body}`).digest("hex");
+  const signed = `${body}.${mac}`;
+  const post = (path: string, cookie: string) => new Request(INTERACTIVE_ORIGIN + path, { method: "POST", body: "wrong content type",
+    headers: { cookie, "content-type": "text/plain", "x-lash-csrf": "1", origin: INTERACTIVE_ORIGIN } });
+  const progressPath = `/api/academy/lessons/${lessonId}/progress`;
+  const lessonContext = { params: Promise.resolve({ lessonId }) };
+  const cookie = `${INTERACTIVE_COOKIE}=${signed}`;
+  for (const response of [
+    await recordProgressRoute(post(progressPath, cookie), lessonContext),
+    await submitQuizAttemptRoute(post(`/api/academy/lessons/${lessonId}/quiz/attempts`, cookie), lessonContext),
+    await enrollFreeRoute(post(`/api/academy/courses/${adminId}/enrollments`, cookie), { params: Promise.resolve({ courseId: adminId }) }),
+  ]) {
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.equal((await response.json()).error.code, "forbidden");
+  }
+  assert.equal((await recordProgressRoute(post(progressPath, cookie + "x"), lessonContext)).status, 415);
+  process.env.APP_ENV = "production";
+  assert.equal((await recordProgressRoute(post(progressPath, cookie), lessonContext)).status, 415);
 });
 
 test("lesson denial binds the selected customer and returns only safe protected read denials", async () => {

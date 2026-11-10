@@ -25,6 +25,7 @@ from p2_source_closure import TYPES, REQUIRED, verify_source_closure
 
 
 PROFILED_CURRENT_SOURCE_ONLY = frozenset({
+    'ops/platform/host/p2_identity_replacement_provenance.py',
     'ops/platform/host/p2_profiled_current_frontend.py',
     'ops/platform/host/p2_profiled_current_frontend_test.py',
     'ops/platform/host/p2_profiled_current_parent.py',
@@ -49,6 +50,12 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
+LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
+    'ops/platform/evidence/2026-11-06-p2-identity-negative-probes/' + name for name in (
+        'owned-operator-source-closure.json', 'owned-verifiers-current-only.json',
+        'owned-verifiers.json', 'validation.json',
+    )
+)
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
@@ -71,7 +78,8 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
 
 def legacy_source_fixture(source, destination):
     """Install the v1 fixture with all production and required source files."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY, include_tests=False)
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY,
+                                   include_tests=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
     return names
@@ -632,6 +640,32 @@ class ProfiledCertificationInputTests(unittest.TestCase):
              patch.object(migrate, 'write_json', side_effect=AssertionError('unexpected receipt write')), \
              patch.object(parent.vercel.Client, 'request', side_effect=AssertionError('unexpected provider request')):
             return parent.prepare_profiled_current_certification_input(self.initial, self.source)
+
+    def test_stalled_renewal_extends_only_the_outer_observation_lease(self):
+        actor, course, lesson = [f'10000000-0000-4000-8000-{index:012d}' for index in (1, 2, 3)]
+        lesson_api = f'/course/v1/student/lessons/{lesson}'
+        targets = (f'/course/v1/student/courses/{course}', lesson_api, f'/course/v1/student/progress?lessonId={lesson}',
+                   f'{lesson_api}/quiz', f'{lesson_api}/quiz/attempts', f'{lesson_api}/playback')
+        action = {'stage': 'stalled-playback-renewal', 'actorId': actor, 'windowSeconds': 300,
+                  'stalledRenewalAction': {'courseId': course, 'lessonId': lesson, 'playbackIdSha256': '9' * 64},
+                  'requests': [{'method': 'GET', 'target': target, 'bodySha256': self.hash(b''), 'uses': 1} for target in targets]}
+        baseline = self.plan['nativePlan']
+        control = {key: baseline[key] for key in parent.BROWSER_CONTROL_FIELDS if key not in ('purpose', 'planSha256')}
+        control.update(purpose='scoped-certification-control-only', commandWitnesses=[])
+        control['planSha256'] = self.hash(control, canonical=True)
+        self.plan.update(mode='interactive-browser', maximumSeconds=900, scopedAction=action, nativePlan=control)
+        self.rehash()
+        self.assertEqual(parent._profiled_initial(self.initial, self.profile), self.plan)
+        for seconds, scoped, code in (
+            (300, action, 'PLAN_BINDING_REQUIRED'),
+            (900, {**action, 'windowSeconds': 900}, 'ACTION_REQUIRED'),
+            (900, {'stage': 'identity', 'actorId': None, 'windowSeconds': 60, 'requests': [],
+                   'identityActor': {'actorKind': 'customer', 'actorId': actor}}, 'PLAN_BINDING_REQUIRED'),
+        ):
+            self.plan.update(maximumSeconds=seconds, scopedAction=scoped)
+            self.rehash()
+            with self.subTest(seconds=seconds, stage=scoped['stage']), self.assertRaisesRegex(ValueError, code):
+                parent._profiled_initial(self.initial, self.profile)
 
     def test_current_packet_binds_actual_sources_jobs_and_receipts_without_effects(self):
         before = sorted(self.original.iterdir())

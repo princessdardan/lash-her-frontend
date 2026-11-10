@@ -49,8 +49,11 @@ export default async function LessonPage({
     lessonHref(courseId, lessonId) +
     (typeof query.course === "string" ? `?course=${query.course}` : "");
   const scope = await readInteractiveBrowserRequest();
+  const stalledPlaybackRenewal = scope?.stalledPlaybackRenewal;
+  if (stalledPlaybackRenewal && (query.course !== undefined ||
+    stalledPlaybackRenewal.courseId !== courseId || stalledPlaybackRenewal.lessonId !== lessonId)) notFound();
   const prefetch = scope?.lessonEntry || scope?.lessonAssessment || scope?.lessonResume || scope?.lessonRestore ||
-    scope?.lessonAckLoss || scope?.lessonExitSave || scope?.lessonVisibilitySave ? false : undefined;
+    scope?.lessonAckLoss || scope?.lessonExitSave || scope?.lessonVisibilitySave || stalledPlaybackRenewal ? false : undefined;
   const result = await readLearningPage(async () => {
     const client = getCourseClient();
     const [
@@ -185,6 +188,7 @@ export default async function LessonPage({
             initialProgress={progress}
             quizState={quizState}
             preview={preview}
+            playbackObservation={stalledPlaybackRenewal !== undefined}
           />
           <nav
             aria-label="Lesson navigation"

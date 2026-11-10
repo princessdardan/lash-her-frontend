@@ -19,6 +19,7 @@ import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2Authori
   validateP2LessonEntryReceipt, validateP2LessonDenialReceipt, validateP2LessonAssessmentReceipt, validateP2LessonResumeReceipt, validateP2LessonRestoreReceipt,
   validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonVisibilityReceipt, validateP2LessonStaleRevisionReceipt,
   p2MediaUploadCallbackOperation, validateP2MediaDispatchIntent, validateP2MediaDispatchReceipt,
+  p2StalledRenewalStage, validateP2StalledPlaybackRenewalBaseline, validateP2StalledPlaybackRenewalReceipt,
   validateP2LifecycleMutationReceipt, validateP2MediaReservationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
@@ -212,7 +213,7 @@ const interactiveBinding = input => ({ challenge: input.challenge, bindingSha256
 async function reviewedInteractiveInput(plan, challenge, mediaFile) {
   const { p2CertificationParentContext } = await import("./p2-certification.mjs");
   p2CertificationParentContext(plan);
-  demand(plan.mode === "interactive-browser" && plan.version === 2 && plan.maximumSeconds === 300
+  demand(plan.mode === "interactive-browser" && plan.version === 2 && plan.maximumSeconds === (plan.scopedAction?.stage === p2StalledRenewalStage ? 900 : 300)
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
     && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const action = plan.scopedAction;
@@ -357,6 +358,7 @@ async function reviewedInteractiveInput(plan, challenge, mediaFile) {
     ...(assessment ? { assessment } : {}), ...(resume ? { resume } : {}), ...(restore ? { restore } : {}),
     ...(ackLoss ? { ackLoss } : {}), ...(exitSave ? { exitSave } : {}), ...(visibility ? { visibility } : {}),
     ...(staleRevision ? { staleRevision } : {}),
+    ...(action.stage === p2StalledRenewalStage ? { stalledRenewal: { actorId: action.actorId, ...action.stalledRenewalAction } } : {}),
     ...(paidRevoke ? { paidRevoke } : {}) });
 }
 
@@ -413,6 +415,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const exitSave = pending?.type === "interactive-lesson-exit-save-captured";
       const visibility = pending?.type === "interactive-lesson-visibility-save-captured";
       const staleRevision = pending?.type === "interactive-lesson-stale-revision-captured";
+      const stalledBaseline = pending?.type === "interactive-" + p2StalledRenewalStage + "-captured";
+      const stalledObservation = pending?.type === "interactive-stalled-renewal-observed";
       const paidGrant = pending?.type === "interactive-paid-grant-captured";
       const learnerAccess = pending?.type === "interactive-learner-access-captured";
       const paidRevoke = pending?.type === "interactive-paid-revoke-captured";
@@ -420,13 +424,13 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
         ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []),
-        ...(lifecycle || authoring || media || mediaDispatched || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
+        ...(lifecycle || authoring || media || mediaDispatched || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || stalledBaseline || stalledObservation || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
-          && (!(isP2InteractiveAuthoringDetail(input) || ["media", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(input.stage)) || message.httpStatus === 200));
+          && (!(isP2InteractiveAuthoringDetail(input) || ["media", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke", p2StalledRenewalStage].includes(input.stage)) || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
@@ -445,6 +449,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       if (exitSave) validateP2LessonExitSaveReceipt(message.response, input.exitSave);
       if (visibility) validateP2LessonVisibilityReceipt(message.response, input.visibility);
       if (staleRevision) validateP2LessonStaleRevisionReceipt(message.response, input.staleRevision);
+      if (stalledBaseline) validateP2StalledPlaybackRenewalBaseline(message.response, input.stalledRenewal);
+      if (stalledObservation) validateP2StalledPlaybackRenewalReceipt(message.response, input.stalledRenewal);
       if (paidGrant) validateP2PaidGrantReceipt(message.response, input.paidGrant);
       if (learnerAccess) validateP2PaidLearnerAccessReceipt(message.response, input.learnerAccess);
       if (paidRevoke) validateP2PaidRevokeReceipt(message.response, input.paidRevoke);
@@ -497,6 +503,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     if (stage === "media" && input.media.operation === p2MediaUploadCallbackOperation) {
       interactiveControllers.get(controller).mediaReservation = receipt.response;
       phase = "media-held";
+    } else if (stage === p2StalledRenewalStage) {
+      phase = "stalled-baseline-held";
     } else {
       phase = "cleared";
       clearTimeout(phaseTimer);
@@ -574,6 +582,20 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     captureExitSaveResponse: context => captureMutation(context, "lesson-exit-save", "learner"),
     captureVisibilityResponse: context => captureMutation(context, "lesson-visibility-save", "learner"),
     captureStaleRevisionResponse: context => captureMutation(context, "lesson-stale-revision", "learner"),
+    captureStalledRenewalBaseline: context => captureMutation(context, p2StalledRenewalStage, "learner"),
+    async confirmStalledRenewalFenced(context, fence) {
+      const selection = requireSelection(context);
+      demand(phase === "stalled-baseline-held" && !closing && binding.stage === p2StalledRenewalStage && context === "learner");
+      phase = "observing-stalled-renewal";
+      const { takeP2InteractiveStalledObservationFence } = await import("./p2-certification-transport.mjs");
+      takeP2InteractiveStalledObservationFence(activePlan, controller, fence);
+      const receipt = await command("interactive-confirm-stalled-renewal-fenced", { ...binding, ...selection },
+        "interactive-stalled-renewal-observed", selection, 610_000);
+      interactiveControllers.get(controller).stalledRenewalObservation = freeze(receipt.response);
+      phase = "stalled-renewal-observed";
+      clearTimeout(phaseTimer);
+      return receipt.response;
+    },
     async confirmVisibilityFenced(context) {
       const selection = requireSelection(context);
       demand(phase === "cleared" && !closing && binding.stage === "lesson-visibility-save" && context === "learner");
@@ -626,12 +648,12 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
           && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
           && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
-        if (input.stage === "identity" || ["authoring", "media", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(next.stage)) {
+        if (input.stage === "identity" || ["authoring", "media", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke", p2StalledRenewalStage].includes(next.stage)) {
           demand(input.stage === "identity" && verifiedIdentity?.sessionVerified === true
             && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && BigInt(next.epoch) === BigInt(input.epoch) + 2n
             && (next.stage === "lifecycle" && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
               || ["authoring", "media", "paid-grant", "paid-revoke"].includes(next.stage) && verifiedIdentity.actorKind === "admin"
-              || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "learner-access"].includes(next.stage) && verifiedIdentity.actorKind === "customer"));
+              || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "learner-access", p2StalledRenewalStage].includes(next.stage) && verifiedIdentity.actorKind === "customer"));
         }
         demand((next.stage === "lesson-stale-revision") === (input.identity?.sessionCount === 2));
         const receipt = await command("interactive-select", { ...binding, next }, "interactive-selected", {}, 30_000, nextBinding);
@@ -672,6 +694,12 @@ export function readP2InteractiveBrowserControllerBinding(plan, controller) {
   const source = interactiveControllers.get(controller);
   demand(source?.plan === plan && source.active());
   return { ...source.binding };
+}
+
+export function requireP2InteractiveBrowserStalledRenewalEvidence(plan, controller, observation) {
+  const source = interactiveControllers.get(controller);
+  demand(source?.plan === plan && source.active() && plan.scopedAction?.stage === p2StalledRenewalStage
+    && observation && source.stalledRenewalObservation === observation);
 }
 
 export function requireP2InteractiveBrowserMediaEvidence(plan, controller, reservation, dispatch) {
