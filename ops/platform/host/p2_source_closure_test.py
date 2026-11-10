@@ -160,6 +160,27 @@ class SourceClosureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
             verify_profiled_current_source_closure(successor, self.root)
 
+    def test_profiled_suspension_source_closure_requires_day_two_and_worker_helpers(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        workload = 'ops/platform/host/p2_day_two_workload.py'
+        canonical = 'ops/platform/host/p2_canonical_browser_origin.py'
+        worker = 'ops/platform/host/p2_lifecycle_worker_evidence.py'
+        for name in (PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | {workload, canonical, worker}) - manifest.keys():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned certification source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {'mode': PROFILED_CERTIFICATION_MODE,
+                    'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)}
+        for mode in ('auth-preparation', 'browser-pending', 'direct-worker'):
+            plan = {**selected, **self.make(manifest), 'certificationPlan': {'mode': mode}}
+            self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
+            for name in (workload, canonical, worker) if mode == 'direct-worker' else (workload, canonical):
+                missing = {key: digest for key, digest in manifest.items() if key != name}
+                with self.subTest(mode=mode, name=name), self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                    verify_profiled_current_source_closure({**plan, **self.make(missing)}, self.root)
+
     def test_profiled_mux_gateway_closure_requires_shared_request_parsers(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)

@@ -429,6 +429,86 @@ class ActualCertificationEntryTests(unittest.TestCase):
 
 
 class ProfiledCertificationInputTests(unittest.TestCase):
+    def test_profiled_suspension_start_accepts_only_day_two_credential(self):
+        for mode in ('auth-preparation', 'browser-pending', 'direct-worker'):
+            fields = set(parent.PROFILED_INITIAL_FIELDS) | {'sourceSuspensionPlan', 'confirmation', 'credentials',
+                'vercelToken', '_guardLayout', '_guardObserverSource', '_guardObserverProgram', '_guardLockDescriptor'}
+            if mode in parent.BROWSER_MODES:
+                fields.add('sourceParentChallenge')
+            if mode != 'auth-preparation':
+                fields.add('persistenceReviewed')
+            if mode == 'browser-pending':
+                fields.add('browserResources')
+            initial = dict.fromkeys(fields, '/owned')
+            initial.update(certificationPlan={'mode': mode}, certificationActionId='owned', confirmation='staging/owned',
+                _guardLockDescriptor=8)
+            broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
+            broker.shared_lock_fd = 8
+            broker.safety_write = broker.guard_read = 1
+            broker.start_parent_watch = lambda: None
+            with self.subTest(mode=mode), patch.object(parent.os, 'geteuid', return_value=0), \
+                    patch.object(parent, 'prepare_profiled_current_certification_input',
+                        return_value={'originalReleasePlanHashHostVerified': True}), \
+                    patch.object(parent.runtime, 'make_plan', side_effect=ValueError('OWNED_PAST_PRIVATE_VALIDATION')):
+                for credential in ({}, {'privateProbe': {}}, {'privateProbe': {}, 'scopedCronSecret': 'owned-bearer'}):
+                    broker.initial = {**initial, **credential}
+                    with self.assertRaisesRegex(ValueError, 'FIXED_GUARDED_START_REQUIRED'):
+                        broker.initialize()
+                broker.initial = {**initial, 'scopedCronSecret': 'wrong\tcharacters'}
+                with self.assertRaisesRegex(ValueError, 'SCOPED_CRON_CREDENTIAL_REQUIRED'):
+                    broker.initialize()
+                broker.initial = {**initial, 'scopedCronSecret': 'owned-bearer'}
+                with self.assertRaisesRegex(ValueError, 'OWNED_PAST_PRIVATE_VALIDATION'):
+                    broker.initialize()
+
+    def test_profiled_browser_origin_and_native_select_only_fixed_guarded_readers(self):
+        import p2_day_two_workload as day_two
+        broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
+        broker.vercel = object()
+        broker.check = lambda: None
+        context = {'candidate': 'owned'}
+        broker._native_context = lambda: context
+        origin = parent.canonical_browser.ORIGIN
+        broker.initial = {'certificationPlan': {'mode': 'auth-preparation'}, 'browserPlan': {'browserOrigin': origin},
+            'scopedCronSecret': 'owned-bearer'}
+        with patch.object(day_two, 'observe', return_value={'nativeEnabled': False}) as workload, \
+                patch.object(day_two, 'observe_browser_origin', return_value={'browserOrigin': origin}) as browser, \
+                patch.object(parent.native, 'observe', side_effect=AssertionError('expired probe accessed')) as legacy:
+            for mode in ('auth-preparation', 'browser-pending'):
+                broker.initial['certificationPlan']['mode'] = mode
+                self.assertEqual(broker._observe_browser_origin(), browser.return_value)
+                args, kwargs = browser.call_args
+                self.assertIs(args[0], context)
+                self.assertIs(args[1].client, broker.vercel)
+                self.assertIs(args[1].verify, broker.check)
+                self.assertEqual(args[2], 'owned-bearer')
+                self.assertEqual(kwargs, broker.profile_arguments())
+            broker.initial['browserPlan']['browserOrigin'] = 'https://other.invalid'
+            with self.assertRaisesRegex(ValueError, 'CANONICAL_BROWSER_PLAN_REQUIRED'):
+                broker._observe_browser_origin()
+            broker.initial['certificationPlan']['mode'] = 'direct-worker'
+            with self.assertRaisesRegex(ValueError, 'CANONICAL_BROWSER_PLAN_REQUIRED'):
+                broker._observe_browser_origin()
+            self.assertEqual(broker._native_observe(), {'nativeEnabled': False})
+            workload.assert_called_once()
+            legacy.assert_not_called()
+
+    def test_profiled_worker_accepts_only_the_pinned_runtime_bearer(self):
+        broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
+        broker.check = lambda: None
+        broker.external_armed = True
+        broker.initial = {'certificationPlan': {'mode': 'direct-worker'}, 'scopedCronSecret': 'owned-bearer'}
+        broker.worker_stage = unittest.mock.Mock()
+        for operation, handler in (('worker-credential', 'preflight_credential'), ('worker-invoke', 'invoke_direct')):
+            target = getattr(broker.worker_stage, handler)
+            for secret in (None, 'different', 'owned-bearer ', 'invalid非'):
+                with self.subTest(operation=operation, secret=secret), \
+                        self.assertRaisesRegex(ValueError, 'WORKER_DAY_TWO_CREDENTIAL_MISMATCH'):
+                    broker.worker_operation(operation, {'secret': secret})
+            target.assert_not_called()
+            self.assertIs(broker.worker_operation(operation, {'secret': 'owned-bearer'}), target.return_value)
+            target.assert_called_once_with('owned-bearer')
+
     def test_profiled_fault_correlates_an_admitted_503_to_its_completed_operation(self):
         broker = parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker)
         producer, source, target = 'a' * 64, 'b' * 40, 'c' * 64
