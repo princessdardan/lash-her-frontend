@@ -29,7 +29,7 @@ PRIVATE_DB_MIGRATION_HOST=127.0.0.1 \
 npm run db:migrate
 ```
 
-The protected file selects the matching loopback `DATABASE_URL`; the local script loads dotenv explicitly. The operator release component does not load dotenv or fall back to `DATABASE_URL`. Runtime and migration credentials remain separate. Never point `TEST_DATABASE_URL` at staging or production. Run the relevant source/database/browser checks on isolated fixtures, then perform environment-safe application smoke checks during the release.
+The protected file selects the matching loopback `DATABASE_URL`. The URL uses the PostgreSQL scheme, supplies the host and optional port in its authority, and names the database in its path. An omitted port selects 5432. The local script loads dotenv explicitly. The operator release component does not load dotenv or fall back to `DATABASE_URL`. Runtime and migration credentials remain separate. Never point `TEST_DATABASE_URL` at staging or production. Run the relevant source/database/browser checks on isolated fixtures, then perform environment-safe application smoke checks during the release.
 
 ## Historical lineage
 
