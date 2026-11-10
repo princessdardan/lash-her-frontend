@@ -69,7 +69,8 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
-LEGACY_FIXTURE_OFFLINE_ONLY = frozenset(
+# The archived interrupted-restoration engine also consumes this exclusion set.
+LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
     'ops/platform/evidence/2026-11-06-p2-identity-negative-probes/' + name for name in (
         'owned-operator-source-closure.json', 'owned-verifiers-current-only.json',
         'owned-verifiers.json', 'validation.json',
@@ -97,7 +98,7 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
 
 def legacy_source_fixture(source, destination):
     """Install the v1 fixture with all production and required source files."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_OFFLINE_ONLY,
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY,
                                    include_tests=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
