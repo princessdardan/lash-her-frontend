@@ -21,6 +21,7 @@ import { prepareP2IdentityRotationReplacementLease, readP2IdentityRotationReplac
 import { runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
 import { recordP2IdentityRotationBrowserReads } from "./p2-identity-key-rotation-browser-recorder.mjs";
 import { runIdentityKeyRotationController } from "./p2-identity-key-rotation-controller.mjs";
+import { withP2IdentityRotationTransport } from "./p2-identity-key-rotation-transport.mjs";
 import { P2_IDENTITY_ROTATION_SERVICES } from "./p2-identity-key-rotation-observer.mjs";
 import { readProfiledCurrentOperatorSourceFiles } from "./recreation_source.mjs";
 
@@ -321,6 +322,11 @@ test("reviewed writer windows derive exact epochs and closure refuses role, jour
     else assert.equal((await run).frontendSessionClosed.admission.epoch, lease.plan.finalEpoch);
   }
   const wrong = observerFixture(lease);
+  await assert.rejects(withP2IdentityRotationReplacementLease(lease, {
+    getUrl: () => assert.fail("Unbranded host must refuse before credential access"),
+    verifyEnvironment: () => assert.fail("Unbranded host must refuse before verification"),
+  }, () => assert.fail("Unbranded host must refuse before dispatch"), { heldHost: { active: () => true } }),
+  { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
   await assert.rejects(withP2IdentityRotationReplacementLease(lease, wrong.dependencies, () => {}, wrong.options), proofRefusal);
   assert.equal(wrong.observationCalls.some(([operation]) => operation === "verify-closed"), false);
 });
@@ -472,6 +478,9 @@ test("managed source dispatch joins the actual controller, fixed wire, reviewed 
     },
   };
   const input = { confirmation, transport: dispatch.transport };
+  await assert.rejects(withP2IdentityRotationTransport(dispatch.transport, dispatch.plan,
+    () => assert.fail("Fixture transport must refuse a live call")), { message: "P2_IDENTITY_ROTATION_TRANSPORT_REFUSED" });
+  assert.equal(hostStarted, false);
   const reviewPath = join(dispatch.directory, "frontend-custody.json");
   const exactReview = readFileSync(reviewPath);
   writeFileSync(reviewPath, "{}\n");

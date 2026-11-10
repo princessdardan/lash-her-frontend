@@ -24,6 +24,7 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = value => { if (!value) throw new Error("P2_IDENTITY_ROTATION_OPERATOR_REFUSED"); };
 const SHA = /^[a-f0-9]{64}$/u, COMMIT = /^[a-f0-9]{40}$/u, UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const managedSelections = new WeakMap();
+const reviewedManagedTransports = new WeakSet();
 const gatewayHostname = new URL(resolveQualificationTargetProfile(profile).gateway.publicOrigin).hostname;
 const credentialNames = ["FRONTEND_STAGING_MIGRATION_DATABASE_URL", "COURSE_STAGING_DATABASE_URL", "COMMUNITY_STAGING_DATABASE_URL"];
 const phases = ["baseline", "overlap", "current-only"];
@@ -44,6 +45,10 @@ function privateBytes(path, maximum = 24_000_000) {
   finally { closeSync(descriptor); }
 }
 function privateObject(path, maximum) { const value = JSON.parse(privateBytes(path, maximum)); demand(value && typeof value === "object" && !Array.isArray(value)); return value; }
+
+export function isReviewedManagedIdentityRotationTransport(transport) {
+  return reviewedManagedTransports.has(transport);
+}
 
 function embeddedRotationProgramSha256(sourceRoot) {
   const script = "import hashlib,sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import p2_identity_key_rotation as p;print(hashlib.sha256(p.private_program(Path(sys.argv[2]))).hexdigest())";
@@ -303,7 +308,13 @@ export async function p2IdentityRotationOperator(settings, { apply = false, conf
     demand((await ssh.machine()).machineId === selected.plan.hostMachineId);
     const installed = await ssh.installProfiledCurrentSource({ commit: settings.operatorSourceCommit, files: committed.files });
     demand(installed.status === "EXACT_OPERATOR_SOURCE_INSTALLED" && installed.commit === settings.operatorSourceCommit);
-    const joined = await runP2IdentityRotationParent(dispatch.plan, { confirmation, transport: dispatch.transport });
+    reviewedManagedTransports.add(dispatch.transport);
+    let joined;
+    try {
+      joined = await runP2IdentityRotationParent(dispatch.plan, { confirmation, transport: dispatch.transport });
+    } finally {
+      reviewedManagedTransports.delete(dispatch.transport);
+    }
     const frontend = selected.lease.plan.frontendPlan;
     const evidenceRequest = {
       version: 1, qualificationTargetProfile: profile, environment: "staging",

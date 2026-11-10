@@ -11,9 +11,10 @@ import { closeFrontendInteractiveAdmission, observeFrontendDrain, openFrontendIn
 import { frontendPrivateReceiptDirectory, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { writeFrontendReceipt } from "./frontend-migration.mjs";
 import { p2NativeHash } from "./p2-lifecycle-native.mjs";
-import { readP2IdentityRotationReplacementCustody, withP2IdentityRotationReplacementLease } from "./p2-identity-key-rotation-replacement.mjs";
+import { readP2IdentityRotationReplacementCustody, selectIdentityRotationWriter,
+  withP2IdentityRotationReplacementLease } from "./p2-identity-key-rotation-replacement.mjs";
 import { requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
-import { withP2IdentityRotationTransport } from "./p2-identity-key-rotation-transport.mjs";
+import { P2_IDENTITY_ROTATION_TRANSPORT, withP2IdentityRotationTransport } from "./p2-identity-key-rotation-transport.mjs";
 import { launchP2IdentityRotationBrowserReadRecorder, prepareP2IdentityRotationBrowserReadPlan,
   readP2IdentityRotationBrowserControllerBinding, readP2IdentityRotationBrowserReadArtifact } from "./p2-identity-key-rotation-browser-recorder.mjs";
 
@@ -139,9 +140,9 @@ async function withFrontendOwner(context, client, verify, task) {
   finally { await client.query("RESET ROLE"); await verify(); }
 }
 
-async function drainFrontendWindow(state, client, withOwner, deadline) {
+async function drainFrontendWindow(observe, deadline) {
   while (true) {
-    const observed = await withOwner(() => observeFrontendDrain(client, state.target, state.epoch));
+    const observed = await observe();
     if (observed.ledgerDrained === true && observed.active === 0 && observed.uncertain === 0) return observed;
     demand(Date.now() < deadline, "P2_IDENTITY_ROTATION_FRONTEND_DRAIN_UNRESOLVED");
     await pause(Math.min(250, Math.max(0, deadline - Date.now())));
@@ -170,15 +171,16 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
   const physical = fixture ? options.observePhysical : observeRecoveryPhysical;
   const managedOptions = fixture ? { fixture: true,
     ...(options.withSession || physical ? { withSession: options.withSession, observePhysical: physical } : {}) } : {};
-  const withSession = managed
-    ? task => withP2IdentityRotationReplacementLease(context.lease, context.dependencies, task, managedOptions)
-    : task => legacySession(context.prepared, context.recoveryAction, context.dependencies, task);
   demand(typeof withTransport === "function" && (managed || typeof legacySession === "function" && typeof physical === "function"),
     "P2_IDENTITY_ROTATION_PARENT_FIXED_DEPENDENCY_REQUIRED");
   const legacyFixtureOnly = !managed && fixture && options.fixtureTerminal !== true;
   let managedEvidence;
   const outcome = await withTransport(input.transport, plan, async host => {
     const { controllerPlan } = context;
+    const withSession = managed
+      ? task => withP2IdentityRotationReplacementLease(context.lease, context.dependencies, task,
+        fixture ? managedOptions : { heldHost: host })
+      : task => legacySession(context.prepared, context.recoveryAction, context.dependencies, task);
     const sessionResult = await withSession(async scope => {
       const { client, verify, receipt, probe } = scope;
       await verify();
@@ -195,7 +197,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         rolePreparationAuthorized: false, loginChangeAuthorized: false });
       const admission = { epoch: managed ? receipt.admission.epoch : receipt.admissionEpoch,
         target: { environment: "staging", targetSha256: managed ? plan.targetSha256 : context.prepared.plan.targetSha256 } };
-      const withOwner = managed ? scope.withOwner : operation => withFrontendOwner(context, client, verify, operation);
+      const withOwner = operation => withFrontendOwner(context, client, verify, operation);
       const frontendSession = { verify, receipt, probe,
         ...(managed ? { observeCurrent: () => scope.observeCurrent(admission.epoch), currentEpoch: () => admission.epoch } : {}) };
       const hostScope = Object.freeze({ sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256,
@@ -207,7 +209,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         }
         await verify(); await host.check(); await verifyBoundary();
       };
-      let writerSelection;
+      let writerPrepared = false, writerSelection;
       const physicalState = async expected => {
         await verify(); await host.check();
         const value = managed ? await scope.observeCurrent(admission.epoch) :
@@ -220,17 +222,15 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         return value;
       };
       const prepareWriter = async () => {
-        if (writerSelection) return;
-        const { roleName, producerSha256 } = plan.writerAdmissionBinding;
-        const ordinaryProducers = managed ? probe.producers : receipt.producers;
-        const runtimeProducer = ordinaryProducers?.find(row => row.producerSha256 === producerSha256 && row.role.name === roleName);
-        demand(runtimeProducer, "P2_IDENTITY_ROTATION_WRITER_SELECTION_REFUSED");
-        const selected = { sourceCommit: plan.sourceCommit, ordinaryProducers, runtimeProducer,
-          interactiveProducer: { role: runtimeProducer.role, producerSha256: createHash("sha256")
-            .update(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${admission.target.targetSha256}`).digest("hex") } };
-        admission.target.runtimeRole = roleName;
-        await withOwner(() => prepareFrontendInteractiveProducer(client, admission.target, admission.epoch, selected));
-        writerSelection = selected;
+        if (writerPrepared) return;
+        if (managed) await scope.prepareWriter(admission.epoch);
+        else {
+          writerSelection = selectIdentityRotationWriter(plan.sourceCommit, admission.target.targetSha256,
+            receipt.producers, plan.writerAdmissionBinding);
+          admission.target.runtimeRole = writerSelection.runtimeProducer.role.name;
+          await withOwner(() => prepareFrontendInteractiveProducer(client, admission.target, admission.epoch, writerSelection));
+        }
+        writerPrepared = true;
       };
       const withBrowserWindow = async (browserPlan, controller, kind, maximumSeconds, task) => {
         demand(kind === "authentication" && maximumSeconds === 300 || kind === "signer-read" && maximumSeconds === 60,
@@ -257,7 +257,8 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         let opened = false, result, taskError, closeError;
         try {
           if (authentication) {
-            const state = await withOwner(() => openFrontendInteractiveAdmission(client, admission.target, admission.epoch, writerSelection));
+            const state = managed ? await scope.openWriter(admission.epoch) :
+              await withOwner(() => openFrontendInteractiveAdmission(client, admission.target, admission.epoch, writerSelection));
             demand(state.epoch === intent.expectedOpenEpoch && state.newWork === true && state.recovery === true,
               "P2_IDENTITY_ROTATION_FRONTEND_WINDOW_CHANGE_REFUSED");
             admission.epoch = state.epoch;
@@ -279,13 +280,15 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
               demand(closing?.status === "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSING"
                 && closing.epoch === admission.epoch, "P2_IDENTITY_ROTATION_FRONTEND_WINDOW_CLOSING_REFUSED");
               if (authentication) {
-                const state = await withOwner(() => closeFrontendInteractiveAdmission(client, admission.target, admission.epoch, writerSelection));
+                const state = managed ? await scope.closeWriter(admission.epoch) :
+                  await withOwner(() => closeFrontendInteractiveAdmission(client, admission.target, admission.epoch, writerSelection));
                 demand(state.epoch === (BigInt(admission.epoch) + 1n).toString() && state.newWork === false && state.recovery === false,
                   "P2_IDENTITY_ROTATION_FRONTEND_WINDOW_CHANGE_REFUSED");
                 admission.epoch = state.epoch;
               }
               if (managed) demand(admission.epoch === window.closedEpoch, "P2_IDENTITY_ROTATION_MANAGED_EPOCH_REFUSED");
-              const drained = await drainFrontendWindow(admission, client, withOwner, Date.now() + 300_000);
+              const drained = await drainFrontendWindow(managed ? () => scope.observeDrain(admission.epoch)
+                : () => withOwner(() => observeFrontendDrain(client, admission.target, admission.epoch)), Date.now() + 300_000);
               await physicalState({ newWork: false, active: 0, uncertain: 0 });
               const closed = await host.endBrowserWindow({ ...base, epoch: admission.epoch, drain: drained });
               demand(closed?.status === "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSED"
@@ -388,7 +391,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
       frontendSessionClosed: true, keyRemovalVerified: false, liveEligible: false,
       releaseAccepted: false, trafficAuthorized: false });
     return Object.freeze(joined);
-  });
+  }, { fixture });
   if (managed) {
     demand(managedEvidence, "P2_IDENTITY_ROTATION_PARENT_CLOSE_REFUSED");
     const prefix = fixture ? "fixture-" : "";
@@ -398,6 +401,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
   return outcome;
 }
 
-export const P2_IDENTITY_ROTATION_PARENT = Object.freeze({ sourceDispatchIntegrated: true, liveEligible: false, managedLiveEligible: false,
+export const P2_IDENTITY_ROTATION_PARENT = Object.freeze({ sourceDispatchIntegrated: true, liveEligible: false,
+  get managedLiveEligible() { return P2_IDENTITY_ROTATION_TRANSPORT.managedLiveEligible; },
   requiresDedicatedSupervisorLayout: true, configOnly: true, nativeSchedulesEnabled: false,
   businessSchedulesEnabled: false, sqlAuthorized: false, rolePreparationAuthorized: false, loginChangeAuthorized: false });

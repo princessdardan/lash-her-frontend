@@ -13,6 +13,7 @@ from uuid import uuid4
 import migrate
 import p2_certification_parent as certification
 import p2_release_supervisor as supervisor
+from p2_identity_rotation_successor import verify_replacement_rotation_pins
 from p2_replacement_successor import verify_replacement_runtime_before_arm
 from p2_source_closure import private_observer_program
 import release as runtime
@@ -382,6 +383,7 @@ class ReplacementRotationCustody:
         require(self._armed_probe_sha is None, REFUSED)
         probe = copy.deepcopy(probe)
         self._verify_review()
+        verify_replacement_rotation_pins(self._review, self.source, self._selected, self.expected)
         observer = self._observer(probe, 'guard-replacement-verify-schema')
         observed = self._observe(observer, 'verify-schema', self._plan['initialEpoch'])
         verify_replacement_runtime_before_arm(self._guard, self.source)

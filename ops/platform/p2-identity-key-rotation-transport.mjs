@@ -4,8 +4,10 @@ import { createInterface } from "node:readline";
 import { sshCommand } from "./recreation_ssh.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
+import { isReviewedManagedIdentityRotationTransport } from "./p2-identity-key-rotation-operator.mjs";
 
 const handles = new WeakMap();
+const heldManagedHosts = new WeakMap();
 const MAXIMUM = 4_000_000;
 // The fixed Vercel build and promotion observers alone allow 900s and 180s.
 const FRONTEND_ROLLOUT_TIMEOUT_MS = 1_320_000;
@@ -26,6 +28,13 @@ export function requireP2IdentityRotationCaptureMetadata(value) {
     && row.profile === captureProfiles[index] && row.status === "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
     && captureTime(row.tokenExpiresAt) - captureTime(row.tokenIssuedAt) === 300_000));
   return value;
+}
+
+export function isHeldManagedIdentityRotationHost(host, frontendPlan, { armed = false } = {}) {
+  const held = heldManagedHosts.get(host);
+  return Boolean(held && held.active(armed) && held.plan.frontendCustodyPlanSha256 === frontendPlan?.planSha256 &&
+    held.plan.actionId === frontendPlan.certificationActionId && held.plan.sourceCommit === frontendPlan.sourceCommit &&
+    held.plan.candidateSha256 === frontendPlan.candidateSha256 && held.plan.targetSha256 === frontendPlan.targetSha256);
 }
 
 const managedSharedFields = ["qualificationTargetProfile", "environment", "sourceCommit", "sourceSha256", "sourceClosureSha256",
@@ -59,9 +68,12 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
   demand(Buffer.byteLength(packet) <= MAXIMUM);
   const openOwnedChannel = options.openOwnedChannel;
   const handle = Object.freeze({});
-  handles.set(handle, async (selectedPlan, task) => {
+  const run = async (selectedPlan, task) => {
     demand(selectedPlan === plan && typeof task === "function");
-    if (!fixture && !P2_IDENTITY_ROTATION_TRANSPORT.liveEligible) throw new Error("P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED");
+    if (!fixture && (managed ? !P2_IDENTITY_ROTATION_TRANSPORT.managedLiveEligible ||
+      !isReviewedManagedIdentityRotationTransport(handle) : !P2_IDENTITY_ROTATION_TRANSPORT.liveEligible)) {
+      throw new Error("P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED");
+    }
     const command = ["sudo", "-n", "/usr/bin/python3", "-I", "-u",
       `/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_identity_key_rotation_parent.py`, "--supervisor"];
     const child = fixture ? openOwnedChannel() :
@@ -103,8 +115,19 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
       const host = Object.freeze({
         active: () => active && !failed && armed && !finished,
         check,
-        async arm({ receipt, probe }) { demand(!armed && !finished); const value = await call("rotation-arm", "ROTATION_ARMED",
-          { receipt: Buffer.from(JSON.stringify(receipt)).toString("base64"), probe }, 240_000); armed = true; return value; },
+        async arm({ receipt, probe }) {
+          demand(!armed && !finished);
+          const value = await call("rotation-arm", "ROTATION_ARMED",
+            { receipt: Buffer.from(JSON.stringify(receipt)).toString("base64"), probe }, 240_000);
+          if (managed) {
+            requireQualificationTargetProfile(profile, value);
+            demand(value?.status === "P2_IDENTITY_ROTATION_PARENT_ARMED" && value.version === 2 &&
+              value.trafficAuthorized === false && ["actionId", "bindingSha256", "sourceCommit", "candidateSha256"]
+                .every(key => value[key] === plan[key]));
+          }
+          armed = true;
+          return value;
+        },
         observeRuntime: () => call("rotation-observe-runtime", "ROTATION_OBSERVED"),
         observeFrontendProvider: () => call("rotation-observe-frontend", "ROTATION_OBSERVED"),
         applyMutation: intent => call("rotation-apply-mutation", "ROTATION_MUTATION", { intent },
@@ -138,7 +161,13 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
           return joined;
         },
       });
-      await check(); result = await task(host); demand(finished && joined && !failed);
+      await check();
+      if (managed && !fixture) {
+        heldManagedHosts.set(host, { plan, active: needsArm => active && !failed && !closePrepared && !finished && (!needsArm || armed) });
+      }
+      try { result = await task(host); }
+      finally { heldManagedHosts.delete(host); }
+      demand(finished && joined && !failed);
       const committed = await request("commit", "COMMITTED", {}, 120_000); demand(JSON.stringify(committed.receipt) === JSON.stringify(joined));
       active = false;
     } catch (cause) {
@@ -155,13 +184,18 @@ export function p2IdentityRotationEnvironmentLock(settings, initial, options = {
       if (exited !== 0) error ??= new Error("P2_IDENTITY_ROTATION_HOST_CLEANUP_UNCERTAIN");
     }
     if (error) throw error; return result;
-  });
+  };
+  handles.set(handle, { fixture, run });
   return handle;
 }
 
-export async function withP2IdentityRotationTransport(handle, plan, task) {
-  const factory = handles.get(handle); demand(factory && typeof task === "function"); handles.delete(handle); return factory(plan, task);
+export async function withP2IdentityRotationTransport(handle, plan, task, { fixture = false } = {}) {
+  const factory = handles.get(handle);
+  demand(factory && factory.fixture === fixture && typeof task === "function");
+  handles.delete(handle);
+  return factory.run(plan, task);
 }
 
 export const P2_IDENTITY_ROTATION_TRANSPORT = Object.freeze({ sharedSupervisorLayoutIntegrated: true, liveEligible: false,
+  managedLiveEligible: false,
   fixedHostEntry: "ops/platform/host/p2_identity_key_rotation_parent.py", reusable: false });

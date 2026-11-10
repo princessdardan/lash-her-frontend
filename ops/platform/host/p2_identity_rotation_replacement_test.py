@@ -73,6 +73,7 @@ class ReplacementRotationCustodyTests(unittest.TestCase):
         self.validate = self.mock(custody.supervisor, '_validate_profiled_certification_arm')
         self.frontend = self.mock(custody.certification, 'P2CertificationPhysicalObserver', return_value=self.observer)
         self.runtime = self.mock(custody, 'verify_replacement_runtime_before_arm')
+        self.pins = self.mock(custody, 'verify_replacement_rotation_pins')
 
     def mock(self, module, name, **kwargs):
         active = patch.object(module, name, **kwargs)
@@ -95,6 +96,7 @@ class ReplacementRotationCustodyTests(unittest.TestCase):
         self.assertEqual(selected.verify_closed(self.probe, '11'), self.observation('verify-closed', '11'))
         self.assertEqual([row.args for row in self.observer.probe.call_args_list], [('verify-schema',), ('verify-closed',)])
         self.assertEqual(self.prepare.call_count, 3)
+        self.pins.assert_called_once_with(self.review, self.source, self.candidate, self.profile)
         self.runtime.assert_called_once()
         self.assertEqual(self.runtime.call_args.args[0]['_guardLockDescriptor'], 11)
         for call in self.frontend.call_args_list:
@@ -106,6 +108,15 @@ class ReplacementRotationCustodyTests(unittest.TestCase):
             selected.verify_arm(self.probe)
         with self.assertRaisesRegex(ValueError, custody.REFUSED):
             selected.verify_closed({**self.probe, 'backendPid': 32}, '11')
+
+    def test_refuses_unqualified_predecessor_before_starting_the_arm_observer(self):
+        selected = self.prepare_custody()
+        self.pins.side_effect = ValueError('P2_ROTATION_MIXED_SUCCESSOR_REFUSED')
+        with self.assertRaisesRegex(ValueError, 'P2_ROTATION_MIXED_SUCCESSOR_REFUSED'):
+            selected.verify_arm(self.probe)
+        self.frontend.assert_not_called()
+        self.runtime.assert_not_called()
+        self.assertIsNone(selected._armed_probe_sha)
 
     def test_requires_fresh_closed_zero_on_both_sides(self):
         selected = self.prepare_custody()

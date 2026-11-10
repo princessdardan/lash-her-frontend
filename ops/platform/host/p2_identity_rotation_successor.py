@@ -177,33 +177,35 @@ def _configuration(initial, source, selected, directory):
     return original, rotation, current
 
 
-def _replacement_pins(initial, source, selected, review, expected):
+def verify_replacement_rotation_pins(custody, source, selected, expected):
+    """Rejoin the managed original before ARM and again at successor publication."""
     from p2_certification_parent import require_certification_replacement_release
     from p2_frontend_replacement_parent import managed_catalog
     from p2_replacement_successor import require_successor_runtime_provenance
 
+    review = custody["certificationPlan"]
     descriptor = require_certification_replacement_release(review["replacementRelease"], expected)
-    results = Path(initial["results"])
+    results = Path(custody["results"])
     original = results / ("p2-profiled-replacement-write-" + selected["releaseId"])
     _private(original)
     receipt = private_record(original, REPLACEMENT_TERMINAL)
     reviewed = private_record(original, "reviewed-plan.json", 2_000_000)
     plan = decode_qualification_target_json(reviewed, "carrier")
     migrate.require_profile(expected, plan)
-    require(receipt == base64.b64decode(initial["frontendCustody"]["originalReleaseReceipt"], validate=True) and
+    require(receipt == base64.b64decode(custody["originalReleaseReceipt"], validate=True) and
             migrate.file_hash(receipt) == review["originalReleaseReceiptSha256"] and
             migrate.file_hash(reviewed) == review["originalReleasePlanSha256"] == descriptor["reviewedPlanSha256"] and
-            managed_catalog(initial, plan, source=source) is not None, REFUSED)
+            managed_catalog(custody, plan, source=source) is not None, REFUSED)
     pins = {"originalReleaseReceiptSha256": review["originalReleaseReceiptSha256"],
             "originalReleasePlanSha256": review["originalReleasePlanSha256"],
             "predecessorRuntimeInventorySha256": review["runtimeInventorySha256"]}
     if "successorRuntime" in review:
-        mount, epoch = require_successor_runtime_provenance(initial["frontendCustody"], review, selected, results, source, expected)
+        mount, epoch = require_successor_runtime_provenance(custody, review, selected, results, source, expected)
         require(int(review["initialEpoch"]) >= int(epoch), REFUSED)
         pins["predecessorSuccessorReceiptSha256"] = review["successorRuntime"]["receiptSha256"]
     else:
         mount = results / ("runtime-profiled-frontend-replacement-" + selected["releaseId"]) / "configuration"
-    require(Path(initial["configuration"]) == mount, REFUSED)
+    require(Path(custody["configuration"]) == mount, REFUSED)
     return pins
 
 
@@ -383,7 +385,7 @@ def retain_rotation_successor(initial, source, terminal, committed, fresh_closed
                              terminal_pending=terminal_pending)
     custody = initial["frontendCustody"]
     frontend = rotation_frontend_successor(directory, terminal, selected=selected, custody=custody, expected=expected)
-    replacement_pins = _replacement_pins(initial, source, selected, review, expected)
+    replacement_pins = verify_replacement_rotation_pins(custody, source, selected, expected)
     original, rotation, current = _configuration(initial, source, selected, directory)
     current_configuration_sha = _runtime_phase_hash(current)
     inventory, phase_receipts = _retained_inventories(directory, selected, plan, review)
@@ -394,7 +396,7 @@ def retain_rotation_successor(initial, source, terminal, committed, fresh_closed
             _closed_terminal(directory, terminal, committed, fresh_closed, selected, plan, review, expected,
                              terminal_pending=terminal_pending) == proof and
             rotation_frontend_successor(directory, terminal, selected=selected, custody=custody, expected=expected) == frontend and
-            _replacement_pins(initial, source, selected, review, expected) == replacement_pins and
+            verify_replacement_rotation_pins(custody, source, selected, expected) == replacement_pins and
             _retained_inventories(directory, selected, plan, review) == (inventory, phase_receipts) and
             _mutations(directory, rotation, plan) == mutations, REFUSED)
     verify_guard_boundary(initial, source)

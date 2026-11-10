@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { frontendCoordinationHash } from "./frontend-release-inventory.mjs";
@@ -8,6 +9,9 @@ import { prepareP2CertificationReplacementRelease, validP2CertificationReplaceme
 import { P2_LIFECYCLE_NATIVE_SCHEDULE, p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { prepareP2ReplacementSuccessor } from "./p2-replacement-successor.mjs";
 import { validateP2HostSettings } from "./p2-release.mjs";
+import { isHeldManagedIdentityRotationHost } from "./p2-identity-key-rotation-transport.mjs";
+import { closeFrontendInteractiveAdmission, observeFrontendDrain, openFrontendInteractiveAdmission,
+  prepareFrontendInteractiveProducer } from "./frontend-admission.mjs";
 import { decodeQualificationTargetJson, requireQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -17,6 +21,13 @@ export const P2_IDENTITY_ROTATION_REPLACEMENT_LEASE = Object.freeze({ liveEligib
 const demand = condition => { if (!condition) throw new Error(refusal); };
 const contexts = new WeakMap();
 const profileFields = { version: 2, qualificationTargetProfile: profile, environment: "staging" };
+
+export function selectIdentityRotationWriter(sourceCommit, targetSha256, ordinaryProducers, { roleName, producerSha256 }) {
+  const runtimeProducer = ordinaryProducers?.find(row => row.producerSha256 === producerSha256 && row.role.name === roleName);
+  if (!runtimeProducer) throw new Error("P2_IDENTITY_ROTATION_WRITER_SELECTION_REFUSED");
+  return { sourceCommit, ordinaryProducers, runtimeProducer, interactiveProducer: { role: runtimeProducer.role,
+    producerSha256: createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${sourceCommit}\n${targetSha256}`).digest("hex") } };
+}
 const action = value => typeof value === "string" && /^p2-key-rotation-[a-z0-9-]{1,40}$/u.test(value);
 const commit = value => typeof value === "string" && /^(?!0+$)[a-f0-9]{40}$/u.test(value);
 const digest = value => typeof value === "string" && /^(?!0+$)[a-f0-9]{64}$/u.test(value);
@@ -254,22 +265,25 @@ async function withPhysicalOwner(client, owner, verify, operation) {
 }
 
 /**
- * Exercise the exact replacement lease in an owned fixture. The future
- * guardian owns live activation, scoped admission and independent recovery.
+ * The fixed host transport must be held to use the live replacement lease.
+ * Owner writes also require its independently verified ARM acknowledgement.
  */
 export async function withP2IdentityRotationReplacementLease(lease, dependencies, task, options = {}) {
   const context = contexts.get(lease);
   demand(context);
   const fixture = options.fixture === true;
-  if (!fixture && !P2_IDENTITY_ROTATION_REPLACEMENT_LEASE.liveEligible) throw new Error(liveRefusal);
+  const { plan: { frontendPlan, finalEpoch, authenticationWindows } } = lease;
+  const requireHost = (armed = false) => {
+    if (!fixture && !isHeldManagedIdentityRotationHost(options.heldHost, frontendPlan, { armed })) throw new Error(liveRefusal);
+  };
+  requireHost();
   const mocked = Object.hasOwn(options, "withSession") || Object.hasOwn(options, "observePhysical");
-  demand(exact(options, fixture ? (mocked ? ["fixture", "withSession", "observePhysical"] : ["fixture"]) : []) &&
+  demand(exact(options, fixture ? (mocked ? ["fixture", "withSession", "observePhysical"] : ["fixture"]) : ["heldHost"]) &&
     (!mocked || fixture && typeof options.withSession === "function" && typeof options.observePhysical === "function") &&
     exact(dependencies, ["getUrl", "verifyEnvironment"]) && typeof dependencies.getUrl === "function" &&
     typeof dependencies.verifyEnvironment === "function" && typeof task === "function");
   const withSession = mocked ? options.withSession : withP2CertificationFrontendSession;
   const observePhysical = mocked ? options.observePhysical : observeP2ProfiledReplacementFrontendPhysical;
-  const { plan: { frontendPlan, finalEpoch, authenticationWindows } } = lease;
   const prepared = { migration: context.original.migration, plan: context.original.inventory };
   const { owner } = prepared.plan;
   const getUrl = async () => {
@@ -280,14 +294,16 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
     }
     return value;
   };
-  const sessionDependencies = { ...dependencies, getUrl };
+  const sessionDependencies = { ...dependencies, getUrl: () => { requireHost(); return getUrl(); } };
   const approvedClosedEpochs = new Set([frontendPlan.initialEpoch, ...authenticationWindows.map(window => window.closedEpoch)]);
+  const beforeWriterEpochs = new Set(authenticationWindows.map(window => window.beforeEpoch));
+  const openWriterEpochs = new Set(authenticationWindows.map(window => window.openEpoch));
   let retainedProbe, heldFinal;
   const result = await withSession(prepared, frontendPlan, sessionDependencies, async ({ client, verify, receipt, probe }) => {
     retainedProbe = requireInitialProbe(probe, receipt, frontendPlan, prepared);
     let active = true, ownerActive = false;
     const requireHeld = () => demand(active && !ownerActive);
-    const verifyHeld = async () => { requireHeld(); await verify(); };
+    const verifyHeld = async () => { requireHeld(); requireHost(); await verify(); };
     const observe = async expectedEpoch => {
       await verifyHeld();
       const proof = await observePhysical({ ...retainedProbe, operation: "observe" }, { getUrl });
@@ -299,10 +315,24 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
     demand(initial.witnessSha256 === retainedProbe.receipt.witnessSha256);
     const withOwner = async operation => {
       requireHeld();
+      requireHost(true);
       demand(typeof operation === "function");
       ownerActive = true;
-      try { return await withPhysicalOwner(client, owner, verify, operation); }
+      try {
+        return await withPhysicalOwner(client, owner, async () => { requireHost(true); await verify(); }, selected => {
+          requireHost(true);
+          return operation(selected);
+        });
+      }
       finally { ownerActive = false; }
+    };
+    const writerOperation = (epoch, allowedEpochs, operation) => {
+      demand(allowedEpochs.has(epoch));
+      const { sourceCommit, targetSha256, nativePlan } = frontendPlan;
+      const binding = nativePlan.writerAdmissionBinding;
+      const target = { environment: "staging", targetSha256, runtimeRole: binding.roleName };
+      const selected = selectIdentityRotationWriter(sourceCommit, targetSha256, retainedProbe.producers, binding);
+      return withOwner(connection => operation(connection, target, epoch, selected));
     };
     const observeClosed = (phase, boundary) => {
       const selected = authenticationWindows.find(window => window.phase === phase);
@@ -324,7 +354,11 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
       return result;
     };
     try {
-      const value = await task(Object.freeze({ client, verify: verifyHeld, withOwner, observeClosed, observeCurrent, prepareClose,
+      const value = await task(Object.freeze({ ...(fixture ? { client, withOwner } : {}), verify: verifyHeld,
+        prepareWriter: epoch => writerOperation(epoch, beforeWriterEpochs, prepareFrontendInteractiveProducer),
+        openWriter: epoch => writerOperation(epoch, beforeWriterEpochs, openFrontendInteractiveAdmission),
+        closeWriter: epoch => writerOperation(epoch, openWriterEpochs, closeFrontendInteractiveAdmission),
+        observeDrain: epoch => writerOperation(epoch, approvedClosedEpochs, observeFrontendDrain), observeClosed, observeCurrent, prepareClose,
         receipt: retainedProbe.receipt, probe: retainedProbe, initial }));
       if (!heldFinal) heldFinal = await finalObservation();
       return value;
