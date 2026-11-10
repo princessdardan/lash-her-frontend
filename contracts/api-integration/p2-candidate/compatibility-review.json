@@ -7,7 +7,7 @@
     "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488"
   },
   "candidate": {
-    "manifestSha256": "1175cac76379c3456bbf645d2ea7a78f052d0372c059f9d0c54ed816c9bf1e27"
+    "manifestSha256": "9e4696f51655ab2655aa02200657744600d6161040f08efb5b5a69c05b8ef6c1"
   },
   "changes": [
     {
@@ -40,11 +40,12 @@
       "location": "post /v1/internal/accounts/commands",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "87dbc6ed7057a48928ac0e04935fbf0f18933f942112e627e8e695d66f67b331",
+      "afterSha256": "771ae9a9a1919631192dcd7821ad71c15e7a6ca4865d967944c7d2a092cdb730",
       "requirementIds": [
-        "P2-11"
+        "P2-11",
+        "P2-12"
       ],
-      "reason": "Add a dedicated service-authenticated account lifecycle receiver/export operation or security profile, preserving ordered commands, exact replay and terminal deletion semantics."
+      "reason": "Add a staging-only guarded sequence-gap request alongside the canonical v1 lifecycle command. The receiver verifies the pinned suspended head under its existing locks and cannot persist the proposed command."
     },
     {
       "document": "course",
@@ -559,11 +560,12 @@
       "location": "post /v1/internal/accounts/commands",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "00d77813c0fd4c1e76c0226d6c46b8e94a2182dbc7d4ba1734a903e41e198ee9",
+      "afterSha256": "974cc020616ad631b6661ccd6fab4fd1850e0bbcc2311ae8c9e10283fa480973",
       "requirementIds": [
-        "P2-11"
+        "P2-11",
+        "P2-12"
       ],
-      "reason": "Add a dedicated service-authenticated account lifecycle receiver/export operation or security profile, preserving ordered commands, exact replay and terminal deletion semantics."
+      "reason": "Add a staging-only guarded sequence-gap request alongside the canonical v1 lifecycle command. The receiver verifies the pinned suspended head under its existing locks and cannot persist the proposed command."
     },
     {
       "document": "course",

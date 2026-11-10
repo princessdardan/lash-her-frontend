@@ -148,7 +148,7 @@ class FixedDispatchTests(unittest.TestCase):
                     broker = certification.P2ProfiledCertificationBroker
                     native = certification.contain_profiled_certification_native
                     contain_frontend = certification.contain_profiled_certification_frontend
-                    frontend['mode'] = {'known-ack': 'known-ack-recovery', 'rotation': 'lifecycle-persistence'}.get(kind, kind)
+                    frontend['mode'] = {'known-ack': 'known-ack-recovery', 'rotation': 'mux-readiness'}.get(kind, kind)
                     fields = certification.profiled_certification_review_fields(frontend)
                     initial.update(mode=supervisor.PROFILED_CERTIFICATION_MODE, certificationActionId='owned',
                                    certificationPlan=frontend, _guardLayout=layout)
@@ -254,6 +254,7 @@ class FixedDispatchTests(unittest.TestCase):
                       patch.object(certification, 'prepare_profiled_current_certification_input', return_value=verified),
                       patch.object(interrupted, 'prepare_profiled_interrupted_input',
                                    return_value=(initial['reviewedPlan'], None, candidate, jobs)),
+                      patch('p2_scoped_mux_replacement.retain_guard', side_effect=record('mux-guard')),
                       patch.dict(sys.modules, {'p2_replacement_successor': Mock(retain_successor_runtime=retain,
                           verify_replacement_runtime_before_arm=verify_runtime,
                           verify_rotation_successor_guard_runtime=verify_rotation_terminal)})):
@@ -280,7 +281,7 @@ class FixedDispatchTests(unittest.TestCase):
                 else:
                     expected.extend(('terminal', *(['physical'] if replacement else [])))
                 if kind == 'rotation':
-                    expected.append('terminal-runtime')
+                    expected.extend(('terminal-runtime', 'mux-guard'))
                 elif replacement and kind != 'contain-native':
                     expected.append('successor')
                 if refused is not None:

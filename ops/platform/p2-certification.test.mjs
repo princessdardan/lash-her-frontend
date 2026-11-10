@@ -1,14 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,realpathSync,chmodSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,realpathSync,chmodSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {nativeDocuments} from './harness/p2-native-unit-fixture.mjs';
 import {frontendCoordinationHash as hash} from './frontend-release-inventory.mjs';
-import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts,p2CertificationReviewView} from './p2-certification.mjs';
+import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts,p2CertificationReviewView,requireP2GuardedReceiverContracts} from './p2-certification.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {readKnownAckRuntimeDatabaseUrl} from './p2-known-ack-loss-probe.mjs';
+import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
+import {phase2ContractManifestBinding} from './release.mjs';
+
+test('guarded receiver qualification requires both exact sources and complete request schemas',()=>{
+  const manifest=phase2ContractManifestBinding(undefined,{requireReleased:true});
+  const services=['course','community'];
+  const candidate={phase2ContractManifestSha256:manifest.phase2ContractManifestSha256,
+    sources:Object.fromEntries(services.map(service=>[service,{commit:manifest.phase2ContractRevisions[service]}]))};
+  const refused={message:'P2_CERTIFICATION_GUARDED_RECEIVER_CONTRACT_REQUIRED'};
+  requireP2GuardedReceiverContracts(profile,candidate,manifest);
+  assert.throws(()=>requireP2GuardedReceiverContracts(null,candidate,manifest),refused);
+  assert.throws(()=>requireP2GuardedReceiverContracts(profile,{...candidate,phase2ContractManifestSha256:'sha256:'+'1'.repeat(64)},manifest),refused);
+  for(const service of services){
+    const foreign={...candidate,sources:{...candidate.sources,[service]:{commit:'1'.repeat(40)}}};
+    assert.throws(()=>requireP2GuardedReceiverContracts(profile,foreign,manifest),refused);
+    for(const mutate of [
+      schema=>{schema.anyOf.push({type:'object'});},
+      schema=>{delete schema.anyOf[1].required;},
+      schema=>{delete schema.anyOf[1].properties.command.required;},
+      schema=>{delete schema.anyOf[1].properties.expectedHead.properties.canonicalSha256.pattern;},
+      schema=>{delete schema.anyOf[1].properties.command.properties.accountVersion.maximum;},
+    ]){
+      assert.throws(()=>requireP2GuardedReceiverContracts(profile,candidate,manifest,selected=>{
+        const document=JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${selected}-api.json`,import.meta.url)));
+        const schema=document.paths['/v1/internal/accounts/commands'].post.requestBody.content['application/json'].schema;
+        if(selected===service)mutate(schema);
+        return schema;
+      }),refused);
+    }
+  }
+});
 
 function fixture(startState='already-closed',gateway=false){
   const root=realpathSync(mkdtempSync(join(tmpdir(),'p2-certification-plan-')));chmodSync(root,0o700);const receipts=join(root,'ready');mkdirSync(receipts,{mode:0o700});

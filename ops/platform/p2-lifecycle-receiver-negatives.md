@@ -10,7 +10,7 @@ release policy. Plan generation does not authorize a live action.
 
 ## Fixed cases and prerequisites
 
-The only implemented live profile is `suspended-head-negatives-v1`. The source-owned
+The standalone profile is `suspended-head-negatives-v1`. The source-owned
 persistence reader reconstructs an actual frontend suspend command at version N.
 Frontend and both receiver heads must be N/suspended, each immutable receiver
 command digest must match the original, both frontend deliveries must be
@@ -45,6 +45,30 @@ separate source change with actual current frontend and gateway new-work/recover
 admission closed, native scheduling off, global active/uncertain zero, no selected
 pending/in-flight deliveries, and stable N/both ACKs under the actual lease. No
 caller boolean or historical receipt substitutes for these facts.
+
+## Guarded staging-current action
+
+Select `receiverNegatives: {"profile":"suspended-head-negatives-v2"}` inside the
+reviewed profiled `direct-worker` input. The planner binds the exact host runner
+and Node child bytes. The option uses the same owner-started worker action and
+its normal suspension, canonical command and two-receiver prerequisites.
+
+After the worker reaches closed admission and verifies both acknowledgements,
+the fixed host runs all four cases for Course, then repeats them for Community.
+The guarded future-gap POST wraps the canonical N+2 suspend and the exact
+observed head version, command ID and digest in a distinct request body. Both
+released receiver contracts must advertise the guarded body. Each receiver
+checks the head under its existing transaction locks and returns the normal
+version conflict without applying the command. A changed head or a receiver
+that refuses the new body stops the action.
+
+The host checks the active runtime and native schedule, brackets
+each request with reads of all three databases and retains the intent before
+sending. Each readback must preserve the original account and domain state.
+An uncertain response stops the action and leaves the intent for reconciliation.
+The joined worker receipt binds all eight private case records to the original
+suspension witness. This guarded path needs both updated receiver artifacts and
+its own deployed evidence. The standalone v1 action still leaves future-gap open.
 
 ## Source and transport
 

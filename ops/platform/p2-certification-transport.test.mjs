@@ -43,6 +43,12 @@ for raw in sys.stdin:
  elif op in ('worker-credential','worker-invoke'):
   assert certification_mode=='direct-worker' and p['secret']==initial['scopedCronSecret']
   value.update(status='CERTIFICATION_WORKER_OBSERVED',receipt={'status':'P2_OWNED_FIXTURE_WORKER'})
+ elif op in ('worker-receiver-negative-next','worker-receiver-negatives-joined'):
+  assert certification_mode=='direct-worker' and initial['certificationPlan']['workerPlan']['receiverNegatives']['profile']=='suspended-head-negatives-v2'
+  if op=='worker-receiver-negative-next':
+   assert set(p)=={'id','operation','runtimeUrl'} and p['runtimeUrl']=='fixture-private-runtime-url'
+  else:assert set(p)=={'id','operation'}
+  value.update(status='CERTIFICATION_WORKER_OBSERVED',receipt={'status':'P2_OWNED_FIXTURE_RECEIVER'})
  elif op=='certification-prepare-close':value.update(status='CERTIFICATION_CLOSE_PREPARED',receipt=terminal)
  elif op=='finish':
   assert json.loads(base64.b64decode(p['certification']))==terminal
@@ -166,11 +172,11 @@ test('legacy, native and fault transports refuse the profiled authority bearer',
  }finally{for(const f of cases)f.cleanup();}
 });
 
-test('profiled direct worker only invokes with the bearer used to establish current workload identity',()=>{
+test('profiled direct worker uses the established bearer and fixed receiver evidence pipe',()=>{
  const f=fixture('ready',true,'direct-worker');
  try{
   const initial=f.initial;
-  Object.assign(initial.certificationPlan,{workerPlan:{binding:'owned-worker'},workerPlanSha256:'d'.repeat(64)});
+  Object.assign(initial.certificationPlan,{workerPlan:{binding:'owned-worker',receiverNegatives:{profile:'suspended-head-negatives-v2'}},workerPlanSha256:'d'.repeat(64)});
   const source=String.raw`
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -182,6 +188,7 @@ const operations=[];
 const spawn=(executable,args,options)=>{
  assert.equal(executable,'/usr/bin/ssh');
  assert.equal(JSON.stringify({args,options}).includes(initial.scopedCronSecret),false);
+ assert.equal(JSON.stringify({args,options}).includes('fixture-private-runtime-url'),false);
  const child=realSpawn('python3',['-I','-u','-c',program,lock,'ready'],options);
  const write=child.stdin.write.bind(child.stdin);
  child.stdin.write=(value,...rest)=>{operations.push(JSON.parse(value).operation);return write(value,...rest);};
@@ -192,6 +199,8 @@ const reviewed=Object.freeze({}),drifted=Object.freeze({});
 mock.module(workerUrl,{exports:{readP2LifecycleWorkerCronSecret(handle){
  assert.ok(handle===reviewed||handle===drifted);
  return handle===reviewed?initial.scopedCronSecret:'fixture-drifted-bearer';
+},async readP2LifecycleWorkerRuntimeUrl(handle){
+ assert.equal(handle,reviewed);return 'fixture-private-runtime-url';
 }}});
 const {p2CertificationEnvironmentLock,readP2CertificationWorkerStage}=await import(transportUrl);
 const hold=p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},initial,directory,{expectedProfile:profile});
@@ -204,9 +213,13 @@ await hold(async(_verify,_signal,host)=>{
  assert.equal((await worker.preflightCredential(reviewed)).status,'P2_OWNED_FIXTURE_WORKER');
  await assert.rejects(worker.invokeDirect(drifted));
  assert.equal((await worker.invokeDirect(reviewed)).status,'P2_OWNED_FIXTURE_WORKER');
+ await assert.rejects(worker.observeNextReceiverNegative(drifted));
+ assert.equal((await worker.observeNextReceiverNegative(reviewed)).status,'P2_OWNED_FIXTURE_RECEIVER');
+ assert.equal((await worker.joinedReceiverNegatives()).status,'P2_OWNED_FIXTURE_RECEIVER');
  await host.prepareClose({status:'P2_OWNED_FIXTURE'});await host.finish(outcome);
 });
-assert.deepEqual(operations.filter(op=>op?.startsWith('worker-')),['worker-ready','worker-credential','worker-invoke']);
+assert.deepEqual(operations.filter(op=>op?.startsWith('worker-')),['worker-ready','worker-credential','worker-invoke',
+ 'worker-receiver-negative-next','worker-receiver-negatives-joined']);
 `;
   const result=spawnSync(process.execPath,['--experimental-test-module-mocks','--input-type=module','--eval',source],{encoding:'utf8',timeout:20_000,
    input:JSON.stringify({initial,profile,program,lock:f.lock,directory:f.directory,receipt:f.receipt,outcome:f.outcome,

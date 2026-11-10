@@ -32,6 +32,7 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/host/p2_replacement_terminal.py',
     'ops/platform/host/p2_identity_replacement_provenance.py',
     'ops/platform/host/p2_scoped_mux_readiness.py',
+    'ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
     'ops/platform/p2-frontend-replacement-arm-transport.mjs',
     'ops/platform/p2-frontend-replacement-plan.mjs',
@@ -68,12 +69,13 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
+# The archived interrupted-restoration engine also consumes this exclusion set.
 LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
     'ops/platform/evidence/2026-11-06-p2-identity-negative-probes/' + name for name in (
         'owned-operator-source-closure.json', 'owned-verifiers-current-only.json',
         'owned-verifiers.json', 'validation.json',
     )
-)
+) | {'ops/platform/harness/owned-p2-lifecycle-receivers.mjs'}
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
@@ -894,6 +896,20 @@ class ProfiledCertificationInputTests(unittest.TestCase):
                          workerPlanSha256=self.hash(worker, canonical=True))
         self.rehash()
         self.assertIs(self.prepare()['executionEligible'], False)
+        negative = {'profile': 'suspended-head-negatives-v2',
+                    'sourceSha256': self.files['ops/platform/p2-lifecycle-receiver-post.mjs'],
+                    'hostSourceSha256': self.files['ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py']}
+        worker['receiverNegatives'] = negative
+        self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
+        self.rehash()
+        self.assertIs(self.prepare()['executionEligible'], False)
+        worker['receiverNegatives'] = {**negative, 'sourceSha256': '8' * 64}
+        self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
+        self.rehash()
+        with self.assertRaisesRegex(ValueError, 'RECEIVER_NEGATIVE_SOURCE_REQUIRED'):
+            self.prepare()
+        del worker['receiverNegatives']
+        self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
         worker['pendingRecordSha256'] = '5' * 64
         self.rehash()
         with self.assertRaisesRegex(ValueError, 'SOURCE_WORKER_REQUIRED'):

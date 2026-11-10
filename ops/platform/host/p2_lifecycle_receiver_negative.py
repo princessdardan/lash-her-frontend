@@ -19,6 +19,9 @@ from p2_lifecycle_receiver_scope import CurrentLifecycleReceiverScope, CASES
 demand = migrate.demand
 PROGRAM = "ops/platform/p2-lifecycle-receiver-post.mjs"
 PROFILE = "suspended-head-negatives-v1"
+SCOPED_REFUSAL = "P2_SCOPED_RECEIVER_NEGATIVES_REFUSED"
+WITNESS_PROGRAM = "ops/platform/p2-lifecycle-state-witness.mjs"
+TARGET_PROFILE_PROGRAM = "ops/platform/qualification-target-profile.mjs"
 SHA = re.compile(r"^[a-f0-9]{64}$")
 
 
@@ -34,14 +37,31 @@ def _closed(value, fields):
     return isinstance(value, dict) and set(value) == set(fields)
 
 
-def private_program(source):
-    witness = base64.b64encode(migrate.read_input(source, "ops/platform/p2-lifecycle-state-witness.mjs", 524288)).decode()
+def private_program(source, expected_profile=None, *, guarded_future_gap=False):
+    expected = migrate.profile_context(expected_profile)
+    demand(type(guarded_future_gap) is bool and (not guarded_future_gap or expected is not None), SCOPED_REFUSAL)
+    witness = base64.b64encode(migrate.read_input(source, WITNESS_PROGRAM, 524288)).decode()
     source_bytes = migrate.read_input(source, PROGRAM, 524288)
     module = source_bytes.decode().replace("./p2-lifecycle-state-witness.mjs", "data:text/javascript;base64," + witness)
+    argument = ""
+    if expected is not None:
+        profile = migrate.read_input(source, TARGET_PROFILE_PROGRAM, 524288).decode()
+        registry, specifier = "const registry = loadSourceRegistry();", '"./qualification-target-profile.mjs"'
+        demand(profile.count(registry) == 1 and module.count(specifier) == 1, SCOPED_REFUSAL)
+        profile = profile.replace(registry,
+            'const registry = new Map([["staging-current",Object.freeze({body:CURRENT_CANONICAL_BODY,sha256:CURRENT_SHA256})]]);')
+        profile_module = base64.b64encode(profile.encode()).decode()
+        module = module.replace(specifier, '"data:text/javascript;base64,' + profile_module + '"')
+        argument = _canonical(expected).decode()
+        if guarded_future_gap:
+            argument += ",true"
     encoded = base64.b64encode(module.encode()).decode()
-    return (f'import("data:text/javascript;base64,{encoded}").then(module=>module.runPrivateReceiverPostFromStdin())'
+    program = (f'import("data:text/javascript;base64,{encoded}").then(module=>module.runPrivateReceiverPostFromStdin({argument}))'
         '.catch(()=>{process.stdout.write(JSON.stringify({version:1,status:"P2_LIFECYCLE_RECEIVER_CASE_FAILED",'
         'check:"private-receiver-case-failed",globallyReadOnly:false,oidcVerified:false,releaseAccepted:false})+"\\n");process.exitCode=1})').encode()
+    if expected is not None:
+        demand(len(program) <= persistence.PERSISTENCE_PROGRAM_MAXIMUM, SCOPED_REFUSAL)
+    return program
 
 
 def validate_reviewed(value):

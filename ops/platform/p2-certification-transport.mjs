@@ -1446,6 +1446,15 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async invokeDirect(handle){const secret=readers.readP2LifecycleWorkerCronSecret(handle);demand(credential!==undefined&&secret===credential);return call('worker-invoke',{secret},120_000);},
             async observeLifecycleWitness(handle){const runtimeUrl=await readers.readP2LifecycleWorkerRuntimeUrl(handle);return call('worker-witness',{runtimeUrl},240_000);},
             observeReceiverDenials:()=>call('worker-denials',{},120_000),
+            async observeNextReceiverNegative(handle){
+              demand(profiled&&plan.receiverNegatives);
+              const runtimeUrl=await readers.readP2LifecycleWorkerRuntimeUrl(handle);
+              return call('worker-receiver-negative-next',{runtimeUrl},240_000);
+            },
+            joinedReceiverNegatives:()=>{
+              demand(profiled&&plan.receiverNegatives);
+              return call('worker-receiver-negatives-joined');
+            },
             finalClosedReadback:()=>call('worker-final-closed'),
             async retainJoined(handle){const source=readers.readP2DirectWorkerSourceArtifact(plan,handle);demand(Buffer.isBuffer(source.bytes)&&source.bytes.length>0&&source.bytes.length<=262144);
               return call('worker-retain',{record:source.record,sourceArtifact:source.bytes.toString('base64')});},

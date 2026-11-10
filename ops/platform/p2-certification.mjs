@@ -27,6 +27,7 @@ import {assertSourceCheckout} from './source-checkout.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
+import {phase2ContractManifestBinding} from './release.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
@@ -87,7 +88,13 @@ const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
 const paidRevokeCourseSource='54fd289a5a8579bfbe343afb07482f406b56ad5b';
 const mergedCourseRuntimeSource='09e3aaf234d9d9c1296c438d7c872e6bd67db074';
-const paidRevokeCourseSources=new Set([paidRevokeCourseSource,mergedCourseRuntimeSource]);
+const guardedGapCourseRuntimeSource='95963723a4955cc42b845d0aaf1152c2e2ac8535';
+const paidRevokeCourseSources=new Set([paidRevokeCourseSource,mergedCourseRuntimeSource,guardedGapCourseRuntimeSource]);
+// Canonical hashes of the complete reviewed v1/v2 account-command request schemas.
+const guardedReceiverSchemaSha256=Object.freeze({
+  course:'068ff8223ce8905280e1c8200b4af09795bfec0e302fe7298c593588751b9561',
+  community:'e967f5aef534b8c2b011d1596e8ebac954cbe2741a34154cbe80c9dc26f03e8e',
+});
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
@@ -1338,6 +1345,20 @@ function bindProfiledCertificationHostPlan(checked,source,plan){
     ...(suspensionPlan?{sourceSuspensionPlan:suspensionPlan}:{})};
 }
 
+function readGuardedReceiverRequestSchema(service){
+  const document=JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${service}-api.json`,import.meta.url)));
+  return document.paths?.['/v1/internal/accounts/commands']?.post?.requestBody?.content?.['application/json']?.schema;
+}
+
+export function requireP2GuardedReceiverContracts(profile,candidate,manifest,readSchema=readGuardedReceiverRequestSchema){
+  if(!profile||candidate.phase2ContractManifestSha256!==manifest.phase2ContractManifestSha256||
+    !Object.entries(guardedReceiverSchemaSha256).every(([service,digest])=>
+      candidate.sources?.[service]?.commit===manifest.phase2ContractRevisions[service]&&
+      p2NativeHash(readSchema(service)??null)===digest)){
+    throw new Error('P2_CERTIFICATION_GUARDED_RECEIVER_CONTRACT_REQUIRED');
+  }
+}
+
 function prepareCertificationStages(prepared,input,candidateBytes,settings,options,profile){
   const {candidate,job}=prepared.migration;
   let suspensionPlan,authPlan,identityPlan;
@@ -1362,6 +1383,10 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
   };
   if(input.mode==='direct-worker'){
     demand(settings.worker&&input.worker&&(!profile||exactKeys(settings.worker,['suspensionInput'])));
+    if(input.worker.input?.receiverNegatives){
+      const manifest=phase2ContractManifestBinding(undefined,{requireReleased:true});
+      requireP2GuardedReceiverContracts(profile,candidate,manifest);
+    }
     const selected=prepareSuspension(settings.worker.suspensionInput);
     demand((!profile||selected.actionId!==input.certificationActionId)&&
       (input.worker.suspensionPlan===undefined||isDeepStrictEqual(input.worker.suspensionPlan,selected)));

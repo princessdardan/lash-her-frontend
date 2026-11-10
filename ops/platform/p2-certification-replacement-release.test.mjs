@@ -350,6 +350,14 @@ function profiledFixture(t) {
   return { f, original, plan, inventory, sourceCommit, deploymentId, readyReceiptSha256, certification, settings };
 }
 
+test("guarded worker planning accepts the pinned receiver contracts and still validates suspension input", t => {
+  const { settings, certification } = profiledFixture(t);
+  const guarded = { ...certification, mode: "direct-worker",
+    worker: { input: { receiverNegatives: { profile: "suspended-head-negatives-v2" } } } };
+  assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, certification: guarded, worker: { suspensionInput: {} } }),
+    { message: "QUALIFICATION_TARGET_PROFILE_REQUIRED" });
+});
+
 test("profiled certification planner consumes replacement readiness and binds the known acknowledgement intent", t => {
   const { f, original, plan, inventory, sourceCommit, deploymentId, readyReceiptSha256, certification, settings } = profiledFixture(t);
   const selected = prepareP2ProfiledCertificationOperator(settings);

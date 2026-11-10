@@ -98,7 +98,10 @@ ROTATION_SUCCESSOR_LIVE_ELIGIBLE = True
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
 PAID_REVOKE_COURSE_SOURCE = '54fd289a5a8579bfbe343afb07482f406b56ad5b'
 MERGED_COURSE_RUNTIME_SOURCE = '09e3aaf234d9d9c1296c438d7c872e6bd67db074'
-PAID_REVOKE_COURSE_SOURCES = frozenset((PAID_REVOKE_COURSE_SOURCE, MERGED_COURSE_RUNTIME_SOURCE))
+GUARDED_GAP_COURSE_RUNTIME_SOURCE = '95963723a4955cc42b845d0aaf1152c2e2ac8535'
+PAID_REVOKE_COURSE_SOURCES = frozenset((
+    PAID_REVOKE_COURSE_SOURCE, MERGED_COURSE_RUNTIME_SOURCE, GUARDED_GAP_COURSE_RUNTIME_SOURCE,
+))
 PROFILED_MODES = SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
                                     'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
@@ -490,7 +493,16 @@ def _profiled_suspension_plan(initial, plan, expected):
         return
     worker = plan['workerPlan']
     vercel.require_record_profile(expected, worker)
-    require(set(worker) == WORKER_PLAN_FIELDS and worker.get('environment') == 'staging' and
+    negative_fields = {'receiverNegatives'} if 'receiverNegatives' in worker else set()
+    if negative_fields:
+        negative = worker['receiverNegatives']
+        pins = {'sourceSha256': 'ops/platform/p2-lifecycle-receiver-post.mjs',
+                'hostSourceSha256': 'ops/platform/host/p2_scoped_lifecycle_receiver_negatives.py'}
+        require(type(negative) is dict and set(negative) == set(pins) | {'profile'} and
+                negative['profile'] == 'suspended-head-negatives-v2' and
+                all(_profiled_digest(negative[key]) and negative[key] == initial['sourceSha256'].get(path)
+                    for key, path in pins.items()), 'P2_PROFILED_CERTIFICATION_RECEIVER_NEGATIVE_SOURCE_REQUIRED')
+    require(set(worker) == WORKER_PLAN_FIELDS | negative_fields and worker.get('environment') == 'staging' and
             plan['workerPlanSha256'] == _sha(_canonical(worker)) and worker.get('suspensionPlanSha256') == suspension_hash and
             worker.get('actionId') == plan['certificationActionId'] != suspension['actionId'] and
             worker.get('profile') == 'direct-known-suspension-v1' and worker.get('nativePlanSha256') == native_plan['planSha256'] and
@@ -1856,6 +1868,12 @@ class P2CertificationBroker(Broker):
         if operation=='worker-invoke':return stage.invoke_direct(value.get('secret'))
         if operation=='worker-witness':return stage.observe_lifecycle_witness(value.get('runtimeUrl'))
         if operation=='worker-denials':return stage.observe_receiver_denials()
+        if operation=='worker-receiver-negative-next':
+            require(set(value) == {'id','operation','runtimeUrl'}, 'P2_CERTIFICATION_RECEIVER_NEGATIVE_INPUT_REFUSED')
+            return stage.receiver_negative_stage().observe_next(value['runtimeUrl'])
+        if operation=='worker-receiver-negatives-joined':
+            require(set(value) == {'id','operation'}, 'P2_CERTIFICATION_RECEIVER_NEGATIVE_INPUT_REFUSED')
+            return stage.receiver_negative_stage().require_joined()
         if operation=='worker-final-closed':return stage.final_closed_readback()
         if operation=='worker-retain':
             raw,record=decode(value.get('sourceArtifact'));require(len(raw)<=262144 and record==value.get('record'),'P2_CERTIFICATION_WORKER_SOURCE_BYTES_REQUIRED')

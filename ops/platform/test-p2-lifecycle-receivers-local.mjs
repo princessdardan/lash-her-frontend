@@ -29,6 +29,10 @@ async function main() {
   assert.equal(process.versions.node.split(".")[0], "24", "Node 24 required");
   const containerMode = process.argv.length === 3 && process.argv[2] === POSTGRES18_MODE;
   assert.equal(process.argv.length, containerMode ? 3 : 2, "Fixed owned mode required");
+  const profiledMode = process.env.P2_LIFECYCLE_RECEIVER_PROFILED_OWNED_TEST === "true";
+  const guardedMode = process.env.P2_LIFECYCLE_RECEIVER_GUARDED_OWNED_TEST === "true";
+  assert.ok(!profiledMode || !containerMode, "Profiled wire fixture requires the native source tree for host composition");
+  assert.ok(!guardedMode || profiledMode, "Guarded gap fixture requires the profiled owned wire opt-in");
   const postgresMajor = Number(process.env.OWNED_POSTGRES_MAJOR ?? "16");
   assert.equal(postgresMajor, containerMode ? 18 : 16, "Selected PostgreSQL major required");
   failurePostgresMajor = postgresMajor;
@@ -108,7 +112,9 @@ async function main() {
     const require = createRequire(join(root, "package.json"));
     const child = fork(join(root, "ops/platform/harness/owned-p2-lifecycle-receivers.mjs"), [], { cwd: root,
       execArgv: ["--import", require.resolve("tsx")],
-      env: { ...clean, NODE_ENV: "test", DOTENV_CONFIG_QUIET: "true", DOTENV_CONFIG_PATH: join(directory, "no-dotenv-file") },
+      env: { ...clean, NODE_ENV: "test", DOTENV_CONFIG_QUIET: "true", DOTENV_CONFIG_PATH: join(directory, "no-dotenv-file"),
+        ...(profiledMode && { P2_LIFECYCLE_RECEIVER_PROFILED_OWNED_TEST: "true" }),
+        ...(guardedMode && { P2_LIFECYCLE_RECEIVER_GUARDED_OWNED_TEST: "true" }) },
       stdio: ["ignore", "pipe", "pipe", "ipc"] });
     let diagnostic = "";
     child.stdout.on("data", () => {}); child.stderr.on("data", value => { if (diagnostic.length < 1000) diagnostic += value.toString(); });
@@ -124,12 +130,24 @@ async function main() {
     } finally {
       if (child.exitCode === null) await new Promise(done => { const timer = setTimeout(() => child.kill("SIGKILL"), 5000); child.once("exit", () => { clearTimeout(timer); done(); }); });
     }
+    assert.equal(Object.hasOwn(result, "profiledWire"), profiledMode);
+    if (profiledMode) {
+      assert.equal(result.profiledWire.cases.length, 6);
+      assert.equal(result.profiledWire.responseLoss.actualPostCount, 1);
+      assert.equal(Object.hasOwn(result.profiledWire, "guardedFutureGap"), guardedMode);
+      if (guardedMode) {
+        assert.deepEqual(result.profiledWire.guardedFutureGap.cases.map(({ service, case: name, actualPostCount }) =>
+          [service, name, actualPostCount]), [["course", "future-gap", 1], ["community", "future-gap", 1]]);
+      }
+    }
     const receipt = { version: 1, status: `P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES${postgresMajor}_PASS`, postgresMajor, frontendMigrations: 83,
       courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: result.checks, httpCaseCount: result.httpCaseCount, skipped: 0, domainStatePreserving: true, globallyReadOnly: false,
       quotaWritesObserved: result.quotaWritesObserved, deployedFutureGapQualified: false, hostDockerPathQualified: false,
       fixtureOnly: true, providerTouched: false, liveCertification: false,
+      ...(profiledMode && { profiledWire: result.profiledWire }),
       ...(containerMode ? { sourceMode: "parent-issued-manifest-and-mounted-readback", sourceManifestSha256 } : {}),
       sourceSha256: Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs", "p2-lifecycle-receiver-post.mjs",
+        ...(profiledMode ? ["host/p2_lifecycle_receiver_negative.py", "qualification-target-profile.mjs"] : []),
         ...(containerMode ? ["p2-lifecycle-owned-source-manifest.mjs"] : []), "p2-lifecycle-receiver-negatives.mjs",
         "harness/owned-p2-lifecycle-receivers.mjs", "test-p2-lifecycle-receivers-local.mjs"]
         .map(name => [name, hash(readFileSync(join(root, "ops/platform", name)))])) };

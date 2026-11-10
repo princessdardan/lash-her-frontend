@@ -6,6 +6,10 @@ import { validateP2LifecycleStateWitness, p2LifecycleStateWitnessSha256 } from "
 const receiverUuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const receiverSha = /^[a-f0-9]{64}$/u;
 const receiverCases = Object.freeze(["exact-replay", "changed-replay", "stale-restore", "future-gap"]);
+const receiverPostFields = ["version", "mode", "environment", "service", "case", "bindingSha256", "witness", "freshCommandId", "secret",
+  "gatewayConfigurationSha256", "gatewayCaSha256"];
+const receiverRuntimeFields = ["version", "mode", "environment", "service", "bindingSha256", "runtimeEnvironment"];
+const canonicalCommandFields = ["version", "commandId", "userId", "accountVersion", "action", "issuedAt"];
 const receiverClosed = (value, names) => Boolean(value && typeof value === "object" && !Array.isArray(value)
   && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...names].sort()));
 const receiverHash = value => receiverCrypto.createHash("sha256").update(value).digest("hex");
@@ -15,6 +19,23 @@ export class P2LifecycleReceiverError extends Error {
   constructor(check) { super("P2_LIFECYCLE_RECEIVER_REFUSED"); this.check = check; }
 }
 const receiverDemand = (condition, check) => { if (!condition) throw new P2LifecycleReceiverError(check); };
+
+async function loadProfiledReceiverProtocol(expectedProfile) {
+  const { decodeQualificationTargetJson, requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } =
+    await import("./qualification-target-profile.mjs");
+  const profile = requireQualificationTargetProfile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, {
+    qualificationTargetProfile: expectedProfile,
+  });
+  return { profile, decode: raw => decodeQualificationTargetJson(raw, "private-packet"),
+    verify: input => requireQualificationTargetProfile(profile, input) };
+}
+
+const receiverVersionFields = protocol => protocol ? { version: 2, qualificationTargetProfile: protocol.profile } : { version: 1 };
+const receiverEnvelope = (input, fields, protocol) => {
+  protocol?.verify(input);
+  return receiverClosed(input, protocol ? [...fields, "qualificationTargetProfile"] : fields) && input.version === (protocol ? 2 : 1);
+};
+const profiledReceiverDigest = value => typeof value === "string" && receiverSha.test(value) && value !== "0".repeat(64);
 
 export function assertReceiverNegativeBaseline(value) {
   const witness = validateP2LifecycleStateWitness(value), command = witness.command, frontend = witness.frontend;
@@ -46,25 +67,33 @@ export function deriveReceiverNegativeCommand(witness, caseName, freshCommandId 
   return Object.freeze(command);
 }
 
-export function validateReceiverPostInput(input) {
-  receiverDemand(receiverClosed(input, ["version", "mode", "environment", "service", "case", "bindingSha256", "witness", "freshCommandId", "secret",
-    "gatewayConfigurationSha256", "gatewayCaSha256"]) && input.version === 1 && input.environment === "staging"
+function deriveReceiverPostEnvelope(input, protocol, allowFutureGap = false) {
+  receiverDemand(receiverEnvelope(input, receiverPostFields, protocol) && input.environment === "staging"
     && input.mode === "post"
     && ["course", "community"].includes(input.service) && receiverSha.test(input.bindingSha256)
     && receiverSha.test(input.gatewayConfigurationSha256) && receiverSha.test(input.gatewayCaSha256)
+    && (!protocol || ([input.bindingSha256, input.gatewayConfigurationSha256, input.gatewayCaSha256].every(profiledReceiverDigest)
+      && (input.freshCommandId === null || typeof input.freshCommandId === "string")))
     && typeof input.secret === "string" && Buffer.byteLength(input.secret) >= 32 && Buffer.byteLength(input.secret) <= 8192, "private-input-shape");
-  // No serializable caller assertion can establish the live gap's quiescence.
-  // Its command derivation remains pure for the exclusive owned fixture only.
-  receiverDemand(input.case !== "future-gap", "live-future-gap-quiescence-unproved");
-  deriveReceiverNegativeCommand(input.witness, input.case, input.freshCommandId);
+  receiverDemand(allowFutureGap || input.case !== "future-gap", "live-future-gap-quiescence-unproved");
+  return deriveReceiverNegativeCommand(input.witness, input.case, input.freshCommandId);
+}
+
+export function validateReceiverPostInput(input) {
+  deriveReceiverPostEnvelope(input);
   return input;
 }
 
-export function verifyLifecycleReceiverRuntime(input, environment = process.env) {
-  receiverDemand(receiverClosed(input, ["version", "mode", "environment", "service", "bindingSha256", "runtimeEnvironment"])
-    && input.version === 1 && input.mode === "runtime-binding" && input.environment === "staging"
+export async function deriveProfiledReceiverPostCommand(input, expectedProfile) {
+  return deriveReceiverPostEnvelope(input, await loadProfiledReceiverProtocol(expectedProfile), true);
+}
+
+function verifyReceiverRuntime(input, environment, protocol) {
+  receiverDemand(receiverEnvelope(input, receiverRuntimeFields, protocol) && input.mode === "runtime-binding" && input.environment === "staging"
     && ["course", "community"].includes(input.service) && receiverSha.test(input.bindingSha256)
     && input.runtimeEnvironment?.DATABASE_TARGET === "staging" && typeof input.runtimeEnvironment.STAGING_DATABASE_URL === "string"
+    && (!protocol || (profiledReceiverDigest(input.bindingSha256)
+      && Object.values(input.runtimeEnvironment).every(value => typeof value === "string")))
     && environment.DATABASE_TARGET === "staging" && environment.NODE_ENV === "production", "running-staging-runtime-required");
   const overrides = new Set(["NODE_ENV", "NODE_OPTIONS", "PORT", "HTTP_BIND_ADDRESS", "INTERNAL_SERVICE_TRUSTED_PROXY_CIDRS",
     "INTERNAL_SERVICE_ALLOWED_IPS", "COURSE_COMMUNITY_READ_ALLOWED_IPS", "INTERNAL_TRUSTED_PROXY_CIDRS"]);
@@ -72,8 +101,12 @@ export function verifyLifecycleReceiverRuntime(input, environment = process.env)
   const key = input.service.toUpperCase() + "_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET";
   receiverDemand(typeof environment[key] === "string" && Buffer.byteLength(environment[key]) >= 32
     && environment[key] === input.runtimeEnvironment[key], "running-dedicated-lifecycle-key");
-  return { version: 1, status: "P2_LIFECYCLE_RECEIVER_RUNTIME_BOUND", service: input.service, bindingSha256: input.bindingSha256,
+  return { ...receiverVersionFields(protocol), status: "P2_LIFECYCLE_RECEIVER_RUNTIME_BOUND", service: input.service, bindingSha256: input.bindingSha256,
     runtimeConfigurationVerified: true, globallyReadOnly: true, releaseAccepted: false };
+}
+
+export function verifyLifecycleReceiverRuntime(input, environment = process.env) {
+  return verifyReceiverRuntime(input, environment);
 }
 
 function receiverToken(service, secret) {
@@ -85,10 +118,13 @@ function receiverToken(service, secret) {
 }
 
 export function createReceiverPrivateTlsPost(ca, makeRequest = receiverHttpsRequest) {
-  return async (service, command, token) => {
-    receiverDemand(["course", "community"].includes(service) && receiverClosed(command,
-      ["version", "commandId", "userId", "accountVersion", "action", "issuedAt"]), "fixed-private-receiver-required");
-    const body = Buffer.from(receiverCanonical(command));
+  return async (service, wire, token) => {
+    const guarded = wire?.version === 2;
+    const command = guarded ? wire.command : wire;
+    receiverDemand(["course", "community"].includes(service) && receiverClosed(command, canonicalCommandFields)
+      && command.version === 1 && (!guarded || (receiverClosed(wire, ["version", "command", "expectedHead"])
+        && receiverClosed(wire.expectedHead, ["accountVersion", "commandId", "canonicalSha256"]))), "fixed-private-receiver-required");
+    const body = Buffer.from(receiverCanonical(wire));
     receiverDemand(body.length <= 4096, "command-body-bound");
     return new Promise((resolve, reject) => {
       const request = makeRequest({ protocol: "https:", hostname: service + "-tls", port: 8443, servername: service + "-tls",
@@ -109,16 +145,21 @@ export function createReceiverPrivateTlsPost(ca, makeRequest = receiverHttpsRequ
   };
 }
 
-export async function postReceiverNegative(input, options = {}) {
-  validateReceiverPostInput(input);
+async function sendReceiverNegative(input, command, options, protocol) {
   const gateway = (options.readGateway ?? (() => receiverReadFile("/config/gateway.json")))();
   const ca = (options.readCa ?? (() => receiverReadFile("/tls/ca.pem")))();
   receiverDemand(receiverHash(gateway) === input.gatewayConfigurationSha256 && receiverHash(ca) === input.gatewayCaSha256, "private-gateway-configuration-changed");
   const config = JSON.parse(gateway.toString());
   receiverDemand(config.appEnv === "staging" && config.courseOrigin === "https://course-tls:8443"
     && config.communityOrigin === "https://community-tls:8443" && config.upstreamCaFile === "/tls/ca.pem", "fixed-private-origins-required");
-  const command = deriveReceiverNegativeCommand(input.witness, input.case, input.freshCommandId);
-  const result = await (options.post ?? createReceiverPrivateTlsPost(ca))(input.service, command, receiverToken(input.service, input.secret));
+  let wire = command;
+  if (input.case === "future-gap") {
+    // This envelope is deliberately incompatible with a receiver that only
+    // accepts v1. Sending the inner command by itself could mutate a newer head.
+    const { accountVersion, commandId, canonicalSha256 } = input.witness.command;
+    wire = { version: 2, command, expectedHead: { accountVersion, commandId, canonicalSha256 } };
+  }
+  const result = await (options.post ?? createReceiverPrivateTlsPost(ca))(input.service, wire, receiverToken(input.service, input.secret));
   receiverDemand(typeof result.headers?.["cache-control"] === "string" && /(?:^|,)\s*private\b/iu.test(result.headers["cache-control"])
     && /(?:^|,)\s*no-store\b/iu.test(result.headers["cache-control"]), "private-no-store-required");
   const expectedStatus = input.case === "exact-replay" ? 200 : 409;
@@ -130,23 +171,44 @@ export async function postReceiverNegative(input, options = {}) {
   else receiverDemand(receiverClosed(result.body, input.service === "course" ? ["error"] : ["error", "requestId"]) && receiverClosed(result.body.error, ["code", "message"])
     && result.body.error.code === expectedCode && typeof result.body.error.message === "string"
     && (input.service === "course" || typeof result.body.requestId === "string" && result.body.requestId.length <= 200), "exact-conflict-receipt-required");
-  return { version: 1, status: "P2_LIFECYCLE_RECEIVER_CASE_PASS", service: input.service, case: input.case,
+  return { ...receiverVersionFields(protocol), status: "P2_LIFECYCLE_RECEIVER_CASE_PASS", service: input.service, case: input.case,
     bindingSha256: input.bindingSha256, witnessSha256: p2LifecycleStateWitnessSha256(input.witness), httpStatus: result.status,
     result: expectedStatus === 200 ? "duplicate" : rawCode, domainStatePreservationRequiresReadback: true,
     globallyReadOnly: false, oidcVerified: false, releaseAccepted: false };
 }
 
-export async function runPrivateReceiverPostFromStdin() {
+export async function postReceiverNegative(input, options = {}) {
+  return sendReceiverNegative(input, deriveReceiverPostEnvelope(input), options);
+}
+
+function postProfiledReceiverCommand(input, protocol, guardedFutureGap = false) {
+  receiverDemand(typeof guardedFutureGap === "boolean", "guarded-future-gap-profile-required");
+  return sendReceiverNegative(input, deriveReceiverPostEnvelope(input, protocol, guardedFutureGap), {}, protocol);
+}
+
+export async function postProfiledReceiverNegative(input, expectedProfile, guardedFutureGap = false) {
+  return postProfiledReceiverCommand(input, await loadProfiledReceiverProtocol(expectedProfile), guardedFutureGap);
+}
+
+export async function runPrivateReceiverPostFromStdin(expectedProfile, guardedFutureGap = false) {
+  let protocol;
   try {
+    if (expectedProfile !== undefined) protocol = await loadProfiledReceiverProtocol(expectedProfile);
+    receiverDemand(guardedFutureGap === false || guardedFutureGap === true && protocol !== undefined, "guarded-future-gap-profile-required");
     let bytes = 0; const chunks = [];
     for await (const chunk of process.stdin) { bytes += chunk.length; receiverDemand(bytes <= 262144, "private-input-bound"); chunks.push(chunk); }
-    const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    const result = input.mode === "runtime-binding" ? verifyLifecycleReceiverRuntime(input) : await postReceiverNegative(input);
-    if (input.secret) input.secret = "";
-    process.stdout.write(JSON.stringify(result) + "\n");
+    const raw = Buffer.concat(chunks);
+    const input = protocol ? protocol.decode(raw) : JSON.parse(raw.toString("utf8"));
+    try {
+      const result = input.mode === "runtime-binding" ? verifyReceiverRuntime(input, process.env, protocol)
+        : await (protocol ? postProfiledReceiverCommand(input, protocol, guardedFutureGap) : postReceiverNegative(input));
+      process.stdout.write(JSON.stringify(result) + "\n");
+    } finally {
+      if (input?.secret) input.secret = "";
+    }
   } catch (error) {
     const check = error instanceof P2LifecycleReceiverError ? error.check : "private-receiver-case-failed";
-    process.stdout.write(JSON.stringify({ version: 1, status: "P2_LIFECYCLE_RECEIVER_CASE_FAILED", check,
+    process.stdout.write(JSON.stringify({ ...receiverVersionFields(protocol), status: "P2_LIFECYCLE_RECEIVER_CASE_FAILED", check,
       globallyReadOnly: false, oidcVerified: false, releaseAccepted: false }) + "\n");
     process.exitCode = 1;
   }

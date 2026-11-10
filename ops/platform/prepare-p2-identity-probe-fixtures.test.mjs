@@ -19,7 +19,7 @@ import { P2_LIFECYCLE_OWNED_API_REVISIONS, P2_LIFECYCLE_OWNED_FINAL_API_REVISION
 const sha = value => createHash("sha256").update(value).digest("hex");
 const revisions = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
 const rehearsalRevisions = { course: "54fd289a5a8579bfbe343afb07482f406b56ad5b", community: "929fdeb13e0e5f5e25454a457961d6ed965dedff" };
-const finalRevisions = { course: "09e3aaf234d9d9c1296c438d7c872e6bd67db074", community: "5993d248a7c687e04792266b356aa9efb4928be3" };
+const finalRevisions = { course: "95963723a4955cc42b845d0aaf1152c2e2ac8535", community: "8141533249f6c59a59e67e8663907c2f108c1d34" };
 const correctedExpiryCheck = "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry";
 const contents = { course: Buffer.from('{"openapi":"3.1.0","info":{"title":"course"}}\n'), community: Buffer.from('{"openapi":"3.1.0","info":{"title":"community"}}\n'),
   enrollmentEvent: Buffer.from('{"$schema":"https://json-schema.org/draft/2020-12/schema"}\n') };
