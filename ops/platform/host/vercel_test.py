@@ -61,6 +61,7 @@ class VercelControlTests(unittest.TestCase):
 
             do_POST = do_GET
             do_PATCH = do_GET
+            do_DELETE = do_GET
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -86,6 +87,28 @@ class VercelControlTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
         self.directory.cleanup()
+
+    def test_staging_environment_delete_normalizes_provider_acknowledgement(self):
+        path = f"/v9/projects/{vercel.PROJECTS['staging']}/env/env_owned_1"
+        row = {"id": "env_owned_1", "key": "COURSE_SIGNING_PRIVATE_KEY", "type": "sensitive", "value": "owned-fixture"}
+        for response in (row, [row]):
+            self.responses.append((200, response, {}))
+            self.assertEqual(self.client.request("DELETE", path), {"id": row["id"], "key": row["key"]})
+            self.assertEqual(self.calls[-1], {"method": "DELETE", "path": path + "?teamId=" + vercel.TEAM,
+                                             "authorization": "Bearer fixture-private-token", "body": None})
+        for status, response in ((200, []), (200, [row, row]), (200, {**row, "id": "env_foreign"}),
+                                 (200, {**row, "key": "invalid/key"}), (201, row)):
+            self.responses.append((status, response, {}))
+            with self.assertRaisesRegex(ValueError, "VERCEL_REQUEST_FAILED_REQUIRES_REVIEW"):
+                self.client.request("DELETE", path)
+
+    def test_staging_environment_delete_refuses_foreign_scope_before_request(self):
+        staging = f"/v9/projects/{vercel.PROJECTS['staging']}/env/env_owned_1"
+        for path, body in ((staging, {}), (staging + "?slug=foreign", None), (staging + "/child", None),
+                           (staging.replace(vercel.PROJECTS["staging"], vercel.PROJECTS["production"]), None)):
+            with self.assertRaisesRegex(ValueError, "VERCEL_REQUEST_REFUSED"):
+                self.client.request("DELETE", path, body)
+        self.assertEqual(self.calls, [])
 
     def project(self, enabled=False, deployment="dpl_previous"):
         return {"id": vercel.PROJECTS["staging"], "accountId": vercel.TEAM,

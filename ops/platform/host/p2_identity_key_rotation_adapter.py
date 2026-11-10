@@ -679,12 +679,19 @@ class P2IdentityRotationHostAdapter:
 
     def _frontend_environment(self):
         project = vercel.release_identity(self.selected, **self.profile_arguments())[1]
-        rows = self.client.request("GET", f"/v10/projects/{project}/env?decrypt=false").get("envs")
-        demand(isinstance(rows, list), "ROTATION_FRONTEND_ENVIRONMENT_UNAVAILABLE")
+        response = self.client.request("GET", f"/v10/projects/{project}/env?decrypt=false")
+        rows, pagination = response.get("envs"), response.get("pagination")
+        hidden = response.get("hiddenProductionEnvCount", 0)
+        demand(isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+               and (pagination is None or isinstance(pagination, dict) and "next" in pagination and pagination["next"] is None)
+               and type(hidden) is int and hidden == 0, "ROTATION_FRONTEND_ENVIRONMENT_UNAVAILABLE")
         selected = {}
         for row in rows:
-            if row.get("target") != ["production"] or row.get("gitBranch") or row.get("customEnvironmentIds"):
+            target = row.get("target")
+            if target != "production" and (not isinstance(target, list) or "production" not in target):
                 continue
+            demand(target == ["production"] and not row.get("gitBranch") and not row.get("customEnvironmentIds"),
+                   "ROTATION_FRONTEND_ENVIRONMENT_AMBIGUOUS")
             key = row.get("key")
             demand(isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key) and key not in selected
                    and row.get("type") in ("sensitive", "encrypted", "plain")
@@ -781,7 +788,7 @@ class P2IdentityRotationHostAdapter:
             migrate.write_json(attempt, stem + "-intent.json", intent)
             if value is None:
                 result = self.client.request("DELETE", f"/v9/projects/{project}/env/{current['id']}")
-                demand(result.get("id") == current["id"] or result.get("uid") == current["id"], "ROTATION_FRONTEND_DELETE_ACK_UNVERIFIED")
+                demand(result == {"id": current["id"], "key": key}, "ROTATION_FRONTEND_DELETE_ACK_UNVERIFIED")
                 acknowledgement = {"key": key, "operation": "delete", "environmentId": current["id"]}
             else:
                 result = self.client.request("POST", f"/v10/projects/{project}/env?upsert=true", {

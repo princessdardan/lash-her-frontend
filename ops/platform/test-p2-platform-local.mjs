@@ -85,6 +85,8 @@ export const P2_OWNED_FIXTURES = Object.freeze([
       'independent-guard-fence-without-sql-replay',
       'replacement-known-ack-exact-uncertainty-and-selected-settlement',
       'replacement-known-ack-guard-preserves-uncertainty-and-fresh-interrupted-closure',
+      'rotation-writer-scope-read-only-initial-open-and-closed-exact-epoch-and-registry',
+      'rotation-guard-flag-only-fence-and-idempotent-scoped-preservation',
     ]) }),
 ]);
 

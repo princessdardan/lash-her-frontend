@@ -21,8 +21,12 @@ parent and transport share the same frozen reviewed plan. The controller
 checks the retained review and writes atomic, private records in the action
 result directory. The managed source joins the profiled replacement lease,
 scoped browser writer permit, host-owned retained state, and independent
-post-reap closure. The live entry refuses before remote work pending a staging
-rehearsal. `keyRemovalVerified` remains false outside a successful joined run.
+post-reap closure. The live entry refuses before remote work pending an
+integrated rehearsal on owned infrastructure. Qualify that path and review the
+managed entry switches before freezing the staging candidate. The operator
+source must match the released frontend source. Dardan separately starts the
+reviewed staging rotation and retains its deployed evidence.
+`keyRemovalVerified` remains false outside a successful joined run.
 The parent retains the Linux release
 flock and frontend PostgreSQL physical advisory/nonce lock throughout each
 configuration mutation, runtime recreation, frontend build/promotion, and
@@ -212,7 +216,9 @@ original deployment receipts as release provenance and uses the current-only
 receipts for the new action. The guarded path derives both mount roots from
 the retained evidence, checks the exact current API configuration, and
 challenges the canonical staging deployment while holding both locks.
-Mixed-runtime apply remains gated pending an integrated staging rehearsal.
+Mixed-runtime apply remains gated pending an integrated owned rehearsal. Any
+held action planned after rotation needs the mixed-runtime entry qualified in
+the same staging candidate source.
 
 The rotation requires a second, fresh browser signer witness after both
 receivers report current-only verification. Each authentication phase has one

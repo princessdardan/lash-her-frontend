@@ -77,6 +77,19 @@ test('strict certification consumer requires the current interrupted and interac
   assert.equal(originalTen.checks.length,10);assert.throws(()=>validateP2FixtureReceipt(fixture,originalTen,18));
 });
 
+test('replacement certification requires both physical rotation checks in order', () => {
+  const fixture = P2_OWNED_FIXTURES.find(value => value.id === 'replacement-certification');
+  const actual = receipt(fixture);
+  assert.equal(validateP2FixtureReceipt(fixture, actual, 18).executedChecks, 10);
+  const [scope, fence] = actual.checks.slice(-2);
+  assert.deepEqual([scope, fence], ['rotation-writer-scope-read-only-initial-open-and-closed-exact-epoch-and-registry',
+    'rotation-guard-flag-only-fence-and-idempotent-scoped-preservation']);
+  for (const checks of [actual.checks.slice(0, -1), actual.checks.filter(value => value !== scope),
+    [...actual.checks.slice(0, -2), fence, scope]]) {
+    assert.throws(() => validateP2FixtureReceipt(fixture, { ...actual, checks }, 18));
+  }
+});
+
 test('native success cannot substitute for an enabled schedule, unfinished ledger or modeled app path', () => {
   const fixture = P2_OWNED_FIXTURES[2], actual = receipt(fixture);
   for (const changed of [{ ...actual, actualAppCron: false }, { ...actual, actualRuntimeTrace: false },
