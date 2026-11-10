@@ -47,7 +47,7 @@ function managedFixture(t, owned) {
   return { f, lease, path, rotation };
 }
 
-test("managed operator plan pins the reviewed lease, phases, actors and exact local source while apply stays gated", async t => {
+test("managed operator plan pins the reviewed lease, phases, actors and exact local source", async t => {
   const { f, lease, path, rotation } = managedFixture(t);
   const { plan, hostReview } = bindP2ManagedIdentityRotationPlan(lease, sourceFiles, path, rotation);
   assert.equal(plan.frontendCustodyPlanSha256, hostReview.certificationPlan.planSha256);
@@ -61,7 +61,7 @@ test("managed operator plan pins the reviewed lease, phases, actors and exact lo
   assert.throws(() => bindP2ManagedIdentityRotationPlan(lease, sourceFiles, path + "/other", rotation));
   assert.throws(() => bindP2ManagedIdentityRotationPlan(f.load(), sourceFiles, path, rotation));
   await assert.rejects(() => p2IdentityRotationOperator({ version: 2 }, { apply: true }),
-    { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
+    { message: "P2_IDENTITY_ROTATION_OPERATOR_REFUSED" });
 });
 
 function fixture(t, owned) {
@@ -530,7 +530,7 @@ test("managed source dispatch joins the actual controller, fixed wire, reviewed 
   assert.deepEqual(JSON.parse(readFileSync(join(dispatch.directory, "fixture-host-rotation-joined.json"), "utf8")), joined);
   assert.deepEqual(JSON.parse(readFileSync(join(dispatch.directory, "fixture-frontend-session-close-observation.json"), "utf8")), observedClosure);
   await assert.rejects(runP2IdentityRotationParent(dispatch.plan, { confirmation, transport: dispatch.transport }),
-    { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
+    { message: "P2_IDENTITY_ROTATION_TRANSPORT_REFUSED" });
 });
 
 const ownedWindows = {

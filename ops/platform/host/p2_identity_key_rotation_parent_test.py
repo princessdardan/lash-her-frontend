@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import threading
 import time
@@ -703,9 +704,17 @@ class TerminalCustodyTest(unittest.TestCase):
             verify.assert_called_once_with(broker.initial, broker.source)
 
     def test_fixed_entry_and_direct_supervisor_refuse_before_reading_live_inputs(self):
-        with patch.object(sys, "argv", ["rotation", "--supervisor"]), patch.object(sys, "stdin", None):
+        with (patch.object(sys, "argv", ["rotation", "--supervisor"]), patch.object(sys, "stdin", None),
+              patch.object(parent, "MANAGED_LIVE_ELIGIBLE", False)):
             with self.assertRaisesRegex(ValueError, "LIVE_EXECUTION_UNQUALIFIED"):
                 parent.main()
+        for version in (1, True, 2.0):
+            raw = (json.dumps({"version": version, "mode": "p2-identity-key-rotation"}) + "\n").encode()
+            with (patch.object(sys, "argv", ["rotation", "--supervisor"]),
+                  patch.object(sys, "stdin", types.SimpleNamespace(buffer=io.BytesIO(raw))),
+                  patch.object(supervisor, "supervise", side_effect=AssertionError("unqualified dispatch reached"))):
+                with self.subTest(version=version), self.assertRaisesRegex(ValueError, "LIVE_EXECUTION_UNQUALIFIED"):
+                    parent.main()
         with self.assertRaisesRegex(ValueError, "LIVE_EXECUTION_UNQUALIFIED"):
             supervisor.supervise({"mode": "p2-identity-key-rotation"}, broker_type=parent.P2IdentityRotationBroker,
                                  observer_type=parent.P2IdentityRotationPhysicalObserver,

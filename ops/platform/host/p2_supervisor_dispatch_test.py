@@ -953,22 +953,22 @@ class ManagedRotationSupervisorTests(unittest.TestCase):
 
     def test_managed_rotation_requires_exact_source_dispatch_and_version(self):
         with patch.object(supervisor.os, 'geteuid', return_value=1):
-            with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
-                supervise(dict(self.initial), **self.options)
-            with patch.object(self.parent, 'LIVE_ELIGIBLE', True):
+            with patch.object(self.parent, 'MANAGED_LIVE_ELIGIBLE', False):
                 with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
                     supervise(dict(self.initial), **self.options)
-            with patch.object(self.parent, 'MANAGED_LIVE_ELIGIBLE', True):
-                with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
-                    supervise(dict(self.initial), **self.options)
-                for version in (1, True, 2.0, None):
-                    with self.subTest(version=version), self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
-                        supervise({**self.initial, 'version': version}, **self.options)
-                for changed in ({'observer_type': certification.P2CertificationPhysicalObserver},
-                                {'observer_source': 'ops/platform/p2-recovery-current-probe.mjs'},
-                                {'frontend_containment': lambda: None}):
-                    with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
-                        supervise(dict(self.initial), **{**self.options, **changed})
+                with patch.object(self.parent, 'LIVE_ELIGIBLE', True):
+                    with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
+                        supervise(dict(self.initial), **self.options)
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(dict(self.initial), **self.options)
+            for version in (1, True, 2.0, None):
+                with self.subTest(version=version), self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
+                    supervise({**self.initial, 'version': version}, **self.options)
+            for changed in ({'observer_type': certification.P2CertificationPhysicalObserver},
+                            {'observer_source': 'ops/platform/p2-recovery-current-probe.mjs'},
+                            {'frontend_containment': lambda: None}):
+                with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                    supervise(dict(self.initial), **{**self.options, **changed})
 
     def test_durable_guard_arm_requires_exact_ready_and_probe_bytes(self):
         with self.assertRaises(FileNotFoundError):

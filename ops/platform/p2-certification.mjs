@@ -81,7 +81,7 @@ const muxReplacementStatus={
 };
 const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
 const rotationSuccessorModes=new Set([...scopedPlanningModes,'auth-preparation','browser-pending','direct-worker']);
-const rotationSuccessorLiveEligible=false;
+const rotationSuccessorLiveEligible=true;
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';

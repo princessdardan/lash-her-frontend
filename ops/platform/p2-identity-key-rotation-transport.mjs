@@ -232,5 +232,5 @@ export async function withP2IdentityRotationTransport(handle, plan, task, { fixt
 }
 
 export const P2_IDENTITY_ROTATION_TRANSPORT = Object.freeze({ sharedSupervisorLayoutIntegrated: true, liveEligible: false,
-  managedLiveEligible: false,
+  managedLiveEligible: true,
   fixedHostEntry: "ops/platform/host/p2_identity_key_rotation_parent.py", reusable: false });

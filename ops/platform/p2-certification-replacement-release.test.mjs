@@ -551,8 +551,8 @@ test("profiled mixed successor plans with current READY evidence and retains the
     assert.equal(digest(Buffer.from(review.rawReceiptBase64, "base64")), settings.rotationSuccessor.receiptSha256);
     assert.equal(digest(review.originalReady.get("frontend-workload-outcome.json")), fixture.f.terminal.frontendWorkloadReceiptSha256);
     assert.equal(digest(review.currentReady.get("frontend-workload-outcome.json")), selected.nativePlan.configurationRecordSha256);
-    await assert.rejects(p2ProfiledCertificationOperator(settings, { confirmation: "staging/owned-certification" }),
-      { message: "P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED" });
+    await assert.rejects(p2ProfiledCertificationOperator(settings, { confirmation: "staging/other-certification" }),
+      { message: "P2_CERTIFICATION_PARENT_REFUSED" });
   }
 });
 

@@ -703,11 +703,9 @@ def main():
             def run_scoped(scope, *args, **kwargs):
                 return platform.certification_scope_run(scope, *args, **kwargs)
 
-            patches.enter_context(patch.object(certification, 'ROTATION_SUCCESSOR_LIVE_ELIGIBLE', True))
             patches.enter_context(patch.object(certification, '_profiled_replacement_original_terminal', platform.predecessor_terminal))
             patches.enter_context(patch.object(certification.P2CertificationScope, 'run', run_scoped))
         else:
-            patches.enter_context(patch.object(rotation, 'MANAGED_LIVE_ELIGIBLE', True))
             patches.enter_context(patch.object(rotation, 'P2IdentityRotationHostAdapter', platform.rotation_adapter))
             patches.enter_context(patch.object(replacement, '_observe', platform.prearm_docker))
             patches.enter_context(patch.object(certification, 'prepare_profiled_current_certification_input', platform.predecessor_review))

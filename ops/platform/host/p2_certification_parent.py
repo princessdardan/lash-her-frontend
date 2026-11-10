@@ -93,7 +93,7 @@ PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
 SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'mux-readiness', 'mux-replacement-evidence', 'interactive-browser'}
 DAY_TWO_WORKLOAD_MODES = SCOPED_MODES | SUSPENSION_MODES
 ROTATION_SUCCESSOR_REVIEW_FIELDS = frozenset(('rotationSuccessorReceipt', 'originalReadyReceipts'))
-ROTATION_SUCCESSOR_LIVE_ELIGIBLE = False
+ROTATION_SUCCESSOR_LIVE_ELIGIBLE = True
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
 PAID_REVOKE_COURSE_SOURCE = '54fd289a5a8579bfbe343afb07482f406b56ad5b'
