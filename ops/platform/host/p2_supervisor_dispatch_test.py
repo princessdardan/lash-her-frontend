@@ -942,14 +942,19 @@ class ManagedRotationSupervisorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
                 supervise(dict(self.initial), **self.options)
             with patch.object(self.parent, 'LIVE_ELIGIBLE', True):
+                with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
+                    supervise(dict(self.initial), **self.options)
+            with patch.object(self.parent, 'MANAGED_LIVE_ELIGIBLE', True):
                 with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
                     supervise(dict(self.initial), **self.options)
-                for value, options in (({'version': 1}, {}), ({'version': True}, {}), ({'version': 2.0}, {}),
-                                       ({}, {'observer_type': certification.P2CertificationPhysicalObserver}),
-                                       ({}, {'observer_source': 'ops/platform/p2-recovery-current-probe.mjs'}),
-                                       ({}, {'frontend_containment': lambda: None})):
-                    with self.subTest(value=value, options=options), self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
-                        supervise({**self.initial, **value}, **{**self.options, **options})
+                for version in (1, True, 2.0, None):
+                    with self.subTest(version=version), self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
+                        supervise({**self.initial, 'version': version}, **self.options)
+                for changed in ({'observer_type': certification.P2CertificationPhysicalObserver},
+                                {'observer_source': 'ops/platform/p2-recovery-current-probe.mjs'},
+                                {'frontend_containment': lambda: None}):
+                    with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                        supervise(dict(self.initial), **{**self.options, **changed})
 
     def test_durable_guard_arm_requires_exact_ready_and_probe_bytes(self):
         with self.assertRaises(FileNotFoundError):
@@ -1040,7 +1045,7 @@ class ManagedRotationSupervisorTests(unittest.TestCase):
               patch.object(supervisor.migrate, 'make_plan', return_value=(self.candidate, {'frontend': {}})),
               patch.object(supervisor.migrate, 'profiled_current_job_hashes', return_value=self.initial['frontendCustody']['apiJobSha256']),
               patch.object(supervisor.migrate, 'read_input', side_effect=read),
-              patch.object(self.parent, 'LIVE_ELIGIBLE', True),
+              patch.object(self.parent, 'MANAGED_LIVE_ELIGIBLE', True),
               patch.object(self.custody_module, 'prepare_replacement_rotation_custody',
                            return_value=Mock(verify_arm=check_arm, verify_closed=check_closed)),
               patch.object(successor, 'retain_rotation_successor', side_effect=retain)):

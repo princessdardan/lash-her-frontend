@@ -54,10 +54,15 @@ MANAGED_ARM_SECONDS = 90
 MANAGED_CLOSE_PREPARE_SECONDS = 75
 MANAGED_CLOSE_SECONDS = 90
 LIVE_ELIGIBLE = False
+MANAGED_LIVE_ELIGIBLE = False
 OBSERVER_SOURCE = "ops/platform/p2-recovery-current-probe.mjs"
 PREPARED_RECEIPT = "p2-identity-key-rotation-close-prepared.json"
 SESSION_CLOSED_RECEIPT = "p2-identity-key-rotation-frontend-session-closed.json"
 JOINED_RECEIPT = "p2-identity-key-rotation-joined.json"
+
+
+def live_rotation_eligible(version):
+    return type(version) is int and (version == 1 and LIVE_ELIGIBLE or version == 2 and MANAGED_LIVE_ELIGIBLE)
 
 
 def _receipt_bytes(value):
@@ -1169,12 +1174,14 @@ class P2IdentityRotationBroker(Broker):
 
 
 def main():
-    require(sys.argv[1:] == ["--supervisor"] and LIVE_ELIGIBLE, "P2_ROTATION_LIVE_EXECUTION_UNQUALIFIED")
+    require(sys.argv[1:] == ["--supervisor"] and (LIVE_ELIGIBLE or MANAGED_LIVE_ELIGIBLE),
+            "P2_ROTATION_LIVE_EXECUTION_UNQUALIFIED")
     raw = sys.stdin.buffer.readline(MAXIMUM + 1)
     require(0 < len(raw) <= MAXIMUM and raw.endswith(b"\n"), "P2_ROTATION_INITIAL_INPUT_REFUSED")
     initial = json.loads(raw)
-    require(initial.get("mode") == "p2-identity-key-rotation", "P2_ROTATION_FIXED_MODE_REQUIRED")
-    managed = type(initial.get("version")) is int and initial["version"] == 2
+    require(type(initial) is dict and initial.get("mode") == "p2-identity-key-rotation", "P2_ROTATION_FIXED_MODE_REQUIRED")
+    require(live_rotation_eligible(initial.get("version")), "P2_ROTATION_LIVE_EXECUTION_UNQUALIFIED")
+    managed = initial["version"] == 2
     if managed:
         from qualification_target_profile import decode_qualification_target_json
         initial = decode_qualification_target_json(raw, "private-packet")

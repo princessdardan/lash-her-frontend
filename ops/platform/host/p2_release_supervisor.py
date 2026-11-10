@@ -1883,16 +1883,16 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
     rotation = managed_rotation = False
     if layout == ROTATION_LAYOUT:
-        from p2_identity_key_rotation_parent import LIVE_ELIGIBLE, P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
+        from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver, live_rotation_eligible
         from p2_identity_rotation_replacement import ReplacementRotationPhysicalObserver
 
-        require(LIVE_ELIGIBLE, 'P2_ROTATION_LIVE_EXECUTION_UNQUALIFIED')
+        version = initial.get('version')
+        require(live_rotation_eligible(version), 'P2_ROTATION_LIVE_EXECUTION_UNQUALIFIED')
         rotation = (initial.get('mode') == 'p2-identity-key-rotation' and broker_type is P2IdentityRotationBroker
                     and native_containment is None and frontend_containment is None)
-        version = initial.get('version')
-        managed_rotation = (rotation and type(version) is int and version == 2 and
+        managed_rotation = (rotation and version == 2 and
                             observer_type is ReplacementRotationPhysicalObserver and observer_source == CERTIFICATION_OBSERVER)
-        rotation = managed_rotation or (rotation and type(version) is int and version == 1 and
+        rotation = managed_rotation or (rotation and version == 1 and
                                         'qualificationTargetProfile' not in initial and
                                         observer_type is P2IdentityRotationPhysicalObserver and
                                         observer_source == 'ops/platform/p2-recovery-current-probe.mjs')
