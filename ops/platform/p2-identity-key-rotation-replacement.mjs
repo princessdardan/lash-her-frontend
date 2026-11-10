@@ -254,14 +254,19 @@ function requireInitialProbe(probe, receipt, frontendPlan, prepared) {
   return freeze(structuredClone(probe));
 }
 
-async function withPhysicalOwner(client, owner, verify, operation) {
+async function withPhysicalOwner(client, owner, verify, operation, invalidate) {
   await verify();
   const { rows } = await client.query(`SELECT oid::text FROM pg_catalog.pg_roles WHERE rolname=$1 AND NOT rolcanlogin
     AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolsuper AND NOT rolinherit AND NOT rolreplication AND NOT rolbypassrls`, [owner.name]);
   demand(isDeepStrictEqual(rows, [{ oid: owner.oid }]) && /^[a-z][a-z0-9_]{0,62}$/u.test(owner.name));
-  await client.query(`SET ROLE "${owner.name}"`);
-  try { return await operation(client); }
-  finally { await client.query("RESET ROLE"); await verify(); }
+  try {
+    await client.query(`SET ROLE "${owner.name}"`);
+    return await operation(client);
+  }
+  finally {
+    try { await client.query("RESET ROLE"); await verify(); }
+    catch (error) { invalidate(); throw error; }
+  }
 }
 
 /**
@@ -322,7 +327,7 @@ export async function withP2IdentityRotationReplacementLease(lease, dependencies
         return await withPhysicalOwner(client, owner, async () => { requireHost(true); await verify(); }, selected => {
           requireHost(true);
           return operation(selected);
-        });
+        }, () => { active = false; });
       }
       finally { ownerActive = false; }
     };

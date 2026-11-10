@@ -222,7 +222,7 @@ test("both exact successor kinds select the retained active mount and reject sta
   }
 });
 
-function observerFixture(lease, alter = proof => proof) {
+function observerFixture(lease, alter = proof => proof, afterQuery = () => {}) {
   const { frontendPlan, initialEpoch } = lease.plan;
   const { replacementRelease, nativePlan } = frontendPlan;
   const observationCalls = [], statements = [];
@@ -247,6 +247,7 @@ function observerFixture(lease, alter = proof => proof) {
         backendStart: "2026-11-09T14:00:00.000001Z", job, baseline, owner, producers, replacementRelease, plan, receipt };
       const client = { query: async (sql, parameters) => {
         statements.push(sql);
+        afterQuery(sql);
         if (sql.startsWith("SELECT")) {
           assert.deepEqual(parameters, [nativePlan.owner.name]);
           return { rows: [{ oid: nativePlan.owner.oid }] };
@@ -329,6 +330,29 @@ test("reviewed writer windows derive exact epochs and closure refuses role, jour
   { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
   await assert.rejects(withP2IdentityRotationReplacementLease(lease, wrong.dependencies, () => {}, wrong.options), proofRefusal);
   assert.equal(wrong.observationCalls.some(([operation]) => operation === "verify-closed"), false);
+});
+
+test("owner role cleanup runs after ambiguous SET ROLE and invalidates a failed reset", async t => {
+  const lease = fixture(t).load();
+  const lostSet = new Error("owned SET ROLE acknowledgement lost");
+  const cleanup = observerFixture(lease, undefined, sql => {
+    if (sql.startsWith("SET ROLE")) throw lostSet;
+  });
+  await withP2IdentityRotationReplacementLease(lease, cleanup.dependencies, async scope => {
+    await assert.rejects(scope.withOwner(() => assert.fail("Owner operation ran after lost acknowledgement")), lostSet);
+    assert.equal(cleanup.statements.at(-1), "RESET ROLE");
+  }, cleanup.options);
+
+  const lostReset = new Error("owned RESET ROLE acknowledgement lost");
+  const poisoned = observerFixture(lease, undefined, sql => {
+    if (sql === "RESET ROLE") throw lostReset;
+  });
+  await assert.rejects(withP2IdentityRotationReplacementLease(lease, poisoned.dependencies, async scope => {
+    await assert.rejects(scope.withOwner(() => {}), lostReset);
+    await assert.rejects(scope.verify(), proofRefusal);
+    throw lostReset;
+  }, poisoned.options), lostReset);
+  assert.equal(poisoned.observationCalls.some(([operation]) => operation === "verify-closed"), false);
 });
 
 function ownedChannel(handle) {
