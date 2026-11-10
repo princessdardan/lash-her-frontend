@@ -593,8 +593,8 @@ class ReplacementArmTests(unittest.TestCase):
                 return self.raw_abort
 
             real_require_custody = parent.require_write_custody
-            def staged_custody(*args):
-                result = real_require_custody(*args)
+            def staged_custody(*args, **kwargs):
+                result = real_require_custody(*args, **kwargs)
                 if kill_guard == 'before-reply':
                     stage_marker.touch()
                     time.sleep(5)
