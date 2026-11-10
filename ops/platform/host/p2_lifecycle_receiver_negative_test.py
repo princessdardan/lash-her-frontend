@@ -1,4 +1,5 @@
 """Owned process/flock and closed protocol tests. No Docker or provider calls."""
+import base64
 import fcntl
 import copy
 import json
@@ -201,7 +202,8 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         scope = self.scope = P2CertificationScope.__new__(P2CertificationScope)
         worker.scope, worker.expected_profile, scope._expected_profile = scope, self.profile, self.profile
         worker.source = self.source
-        worker.directory = self.directory
+        worker.directory = self.directory / "worker"
+        worker.directory.mkdir(mode=0o700)
         worker.configuration = self.directory / "reviewed-original"
         worker.configuration.mkdir()
         (worker.configuration / "tls/gateway").mkdir(parents=True)
@@ -225,12 +227,12 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         owner = patch.object(Path, "lstat", owned_env_stat)
         owner.start()
         self.addCleanup(owner.stop)
-        worker.reviewed = {"operatorSourceFiles": manifest, "plan": {"owned": "profiled"}}
+        worker.reviewed = {"operatorSourceFiles": manifest, "plan": {"owned": "profiled", "qualificationTargetProfile": self.profile}}
         worker.selected = worker.jobs = {}
         worker.database_proof = object()
         worker.witness_record_sha256 = self.positive_sha
         worker.invocation_attempted = True
-        worker.invocation = {"status": "P2_DIRECT_WORKER_HTTP_OBSERVED", "httpStatus": 200}
+        worker.invocation = {"status": "P2_DIRECT_WORKER_HTTP_OBSERVED", "httpStatus": 200, "workerInvokedAt": "2026-11-09T00:01:00.000Z"}
         worker._boundary = Mock(return_value={"epoch": "9", "newWork": False, "recovery": False, "active": 0, "uncertain": 0})
         worker.inventory = [{"service": service, "containerId": str(index) * 64}
             for index, service in enumerate(("gateway", "course-api", "community-api"), 1)]
@@ -238,11 +240,14 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         issued = "2026-11-09T00:00:00.000Z"
         command = {"version": 1, "commandId": command_id, "userId": user_id, "accountVersion": 2, "action": "suspend", "issuedAt": issued}
         command_sha = action._hash(action._canonical(command))
-        worker.prior = {"pendingRecord": {"pending": {"command": command}}}
+        worker.prior = {"pendingRecord": {"pending": {"command": command}}, "releaseEvidence": {"owned": "prior-release-pins"}}
         worker.plan = {"actionId": "owned-worker", "receiverNegatives": {"profile": scoped.SCOPED_PROFILE,
             "sourceSha256": manifest[action.PROGRAM], "hostSourceSha256": manifest[scoped.HOST_PROGRAM]},
             "canonicalCommandSha256": command_sha,
-            "gatewayConfigurationSha256": action._hash((worker.configuration / "gateway.json").read_bytes())}
+            "gatewayConfigurationSha256": action._hash((worker.configuration / "gateway.json").read_bytes()),
+            "sourceProgramSha256": action._hash((self.source / "ops/platform/p2-lifecycle-worker-evidence.mjs").read_bytes()),
+            "candidateSha256": "1" * 64, "configurationSha256": "2" * 64, "sourceCommit": "3" * 40,
+            "targetSha256": "4" * 64, "pendingRecordSha256": "5" * 64}
         scope.certification_plan = {"mode": "direct-worker", "certificationActionId": "owned-worker",
             "workerPlan": copy.deepcopy(worker.plan), "workerPlanSha256": action._hash(canonical(worker.plan)), "initialEpoch": "7"}
         scope.verify = Mock()
@@ -265,6 +270,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         scope.run = Mock(side_effect=self.child)
         self.config = {"COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET": "owned-course-private-fixture",
                        "COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET": "owned-community-private-fixture"}
+        self.read_retained_capture = action.persistence.load_retained_capture
         for patcher in (patch.object(scoped, "private_program", return_value=b"owned exact profiled child"),
                 patch.object(action.persistence, "load_retained_capture", side_effect=lambda *args, **kwargs: copy.deepcopy(self.retained)),
                 patch.object(action.persistence, "HeldCertificationPersistenceScope", return_value=object()),
@@ -302,7 +308,7 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         else:
             self.assertEqual(args[9], "1" * 64)
             case = payload["case"]
-            intent = self.stage.directory / f"{service}-{case}-intent.json"
+            intent = self.worker.directory / "receiver-negatives" / f"{service}-{case}-intent.json"
             self.assertTrue(intent.is_file())
             self.assertFalse(json.loads(intent.read_bytes())["automaticReplayAllowed"])
             self.posts.append((service, case))
@@ -321,6 +327,111 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
     def start(self):
         self.stage = scoped.P2ScopedLifecycleReceiverNegatives(self.worker)
         return self.stage
+
+    def composed_broker(self):
+        """Use real dispatch, worker retention, receiver orchestration and fsync.
+
+        The already-armed lease, completed worker invocation and denials,
+        mounted runtime, database snapshots, and child HTTP are projections.
+        """
+        from p2_certification_parent import P2ProfiledCertificationBroker
+
+        worker = self.worker
+        worker.denials = {"course": {"status": "owned-course-denial"},
+                          "community": {"status": "owned-community-denial"}}
+        command = worker.prior["pendingRecord"]["pending"]["command"]
+        private = {"stage": "lifecycle-account", "userId": command["userId"],
+                   "selectedCommand": {"commandId": command["commandId"], "accountVersion": command["accountVersion"]}}
+        positive = {**self.retained["record"], "version": 2, "qualificationTargetProfile": self.profile,
+                    "stage": "lifecycle-account", "subjectBindingSha256": action.persistence._subject_binding(private),
+                    "contextSha256": action.persistence._context_binding(worker.reviewed["plan"]), "privateEvidence": None}
+        worker.witness_record_sha256 = action.persistence._retain(worker.directory, "lifecycle-account", positive)
+        action.persistence.load_retained_capture.side_effect = self.read_retained_capture
+        broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
+        broker.check = Mock()
+        broker.external_armed = True
+        broker.initial = {"certificationPlan": self.scope.certification_plan}
+        broker.worker_stage = worker
+        return broker
+
+    def broker_command(self, broker, operation, **fields):
+        return broker.worker_operation(operation, {"id": 1, "operation": operation, **fields})
+
+    def composed_worker_record(self, receiver_negatives):
+        worker = self.worker
+        command = worker.prior["pendingRecord"]["pending"]["command"]
+        return {**{key: worker.plan[key] for key in ("candidateSha256", "configurationSha256", "sourceCommit",
+                    "targetSha256", "pendingRecordSha256", "sourceProgramSha256")},
+                "version": 2, "qualificationTargetProfile": self.profile, "status": "P2_DIRECT_LIFECYCLE_WORKER_JOINED",
+                "bindingSha256": self.scope.certification_plan["workerPlanSha256"],
+                "commandId": command["commandId"], "accountVersion": command["accountVersion"], "action": command["action"],
+                "workerInvokedAt": worker.invocation["workerInvokedAt"], "invocation": worker.invocation,
+                "nativeScheduleEnabled": False, "nativeInvocationQualified": False,
+                "lifecyclePrivateRecordSha256": worker.witness_record_sha256,
+                "receiverDenials": worker.denials, "receiverDeniedCount": 2, "receiverDeniedHttpCount": 1,
+                "frontendActive": 0, "frontendUncertain": 0, "releaseAccepted": False,
+                "receiverNegatives": receiver_negatives}
+
+    def retain_composed_worker(self, broker, record):
+        raw = action._canonical(record) + b"\n"
+        return self.broker_command(broker, "worker-retain", record=record, sourceArtifact=base64.b64encode(raw).decode()), raw
+
+    def test_broker_dispatch_joins_six_receiver_cases_to_the_actual_retained_worker(self):
+        from p2_certification_parent import P2CertificationBroker
+
+        broker = self.composed_broker()
+        with self.assertRaisesRegex(ValueError, "RECEIVER_NEGATIVE_INPUT_REFUSED"):
+            self.broker_command(broker, "worker-receiver-negative-next", runtimeUrl="owned-private-runtime-url", case="future-gap")
+        self.assertFalse(hasattr(self.worker, "_receiver_negative_stage"))
+        self.scope.run.assert_not_called()
+
+        rows = [self.broker_command(broker, "worker-receiver-negative-next", runtimeUrl="owned-private-runtime-url")
+                for _ in scoped.CASE_ORDER]
+        self.assertEqual(self.posts, list(scoped.CASE_ORDER))
+        self.assertEqual(self.read_count, 12)
+        self.assertIs(type(self.worker._receiver_negative_stage), scoped.P2ScopedLifecycleReceiverNegatives)
+        joined = self.broker_command(broker, "worker-receiver-negatives-joined")
+        self.assertEqual(joined["cases"], rows)
+        self.assertEqual(joined["positiveWitnessSha256"],
+                         action._hash((self.worker.directory / "lifecycle-account.json").read_bytes()))
+        joined_file = self.worker.directory / "receiver-negatives" / "receiver-negatives-joined.json"
+        self.assertEqual(joined["privateRecordSha256"], action._hash(joined_file.read_bytes()))
+
+        record = self.composed_worker_record(joined)
+        joined_worker = self.worker.directory / "joined-worker.json"
+        foreign = {**record, "receiverNegatives": {**joined, "privateRecordSha256": "a" * 64}}
+        with self.assertRaisesRegex(ValueError, "WORKER_RECEIVER_NEGATIVE_JOIN_REQUIRED"):
+            self.retain_composed_worker(broker, foreign)
+        self.assertFalse(joined_worker.exists())
+        retained, source_raw = self.retain_composed_worker(broker, record)
+        machine_raw = joined_worker.read_bytes()
+        self.assertEqual(json.loads(machine_raw)["record"], record)
+        self.assertEqual(retained["privateRecordSha256"], action._hash(machine_raw))
+        self.assertEqual(broker.worker_source_sha256, action._hash(source_raw))
+        P2CertificationBroker._require_worker_outcome(broker, {"version": 2, "qualificationTargetProfile": self.profile,
+            "status": "P2_CERTIFICATION_DIRECT_WORKER_JOINED", "workerPlanSha256": record["bindingSha256"],
+            "workerSourceArtifactSha256": action._hash(source_raw), "workerMachineArtifactSha256": action._hash(machine_raw)})
+        for raw in (source_raw, machine_raw, joined_file.read_bytes()):
+            self.assertNotIn(b"owned-private-runtime-url", raw)
+            self.assertNotIn(b"owned-course-private-fixture", raw)
+
+    def test_broker_dispatch_cannot_replay_or_retain_after_lost_receiver_response(self):
+        broker = self.composed_broker()
+        self.lose_reply = True
+        next_case = lambda: self.broker_command(broker, "worker-receiver-negative-next", runtimeUrl="owned-private-runtime-url")
+        with self.assertRaisesRegex(TimeoutError, "owned response lost"):
+            next_case()
+        stage = self.worker._receiver_negative_stage
+        for operation in (next_case,
+                lambda: self.broker_command(broker, "worker-receiver-negatives-joined"),
+                lambda: self.retain_composed_worker(broker, self.composed_worker_record({}))):
+            with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+                operation()
+        self.assertIs(self.worker._receiver_negative_stage, stage)
+        self.assertEqual(self.posts, [("course", "exact-replay")])
+        self.assertEqual([path.name for path in stage.directory.iterdir()], ["course-exact-replay-intent.json"])
+        self.assertFalse((self.worker.directory / "joined-worker.json").exists())
+        self.assertFalse(hasattr(broker, "worker_retained"))
 
     def test_six_ordered_cases_with_fresh_brackets_and_durable_idempotent_join(self):
         stage = self.start()

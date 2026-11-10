@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import test from "node:test";
@@ -68,6 +69,111 @@ test("profiled direct-worker plan joins the original current native and suspensi
     assert.throws(() => prepareP2LifecycleWorkerEvidencePlan(value.nativePlan, value.suspensionPlan, value.input, current));
   }
   assert.throws(() => prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, selected));
+});
+test("profiled worker joins all six host cases before retaining source and stops on response loss", () => {
+  const program = String.raw`
+import assert from 'node:assert/strict';
+import {existsSync,mkdtempSync,realpathSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {mock} from 'node:test';
+import {Client} from 'pg';
+import {nativeDocuments} from './ops/platform/harness/p2-native-unit-fixture.mjs';
+import {p2NativeHash,prepareP2LifecycleNativePlan} from './ops/platform/p2-lifecycle-native.mjs';
+import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './ops/platform/qualification-target-profile.mjs';
+const transport = new URL('./ops/platform/p2-certification-transport.mjs', 'file://' + process.cwd() + '/').href;
+let expectedHandle, stage;
+mock.module(transport,{exports:{readP2CertificationWorkerStage(handle){assert.equal(handle,expectedHandle);return stage;}}});
+const worker = await import('./ops/platform/p2-lifecycle-worker-evidence.mjs');
+const profileFields={version:2,qualificationTargetProfile:profile};
+const source = nativeDocuments();
+Object.assign(source.candidate,profileFields,{version:3});
+for(const carrier of [source.candidate.workload,source.candidate.sources.frontend,source.settings.target])carrier.qualificationTargetProfile=profile;
+Object.assign(source.settings,profileFields,{epoch:'2'});
+const native=prepareP2LifecycleNativePlan(source.candidate,source.settings,profile);
+const suspend={...profileFields,profile:'normal-ui-suspension-pending-v1',environment:'staging',releaseId:native.actionId,
+ sourceCommit:native.sourceCommit,candidateObjectSha256:native.candidateSha256,candidateSha256:'e'.repeat(64),targetSha256:native.targetSha256,
+ configurationRecordSha256:native.configurationRecordSha256,configurationSha256:'f'.repeat(64)};
+const selection={...profileFields,actionId:'owned-worker',commandIndex:0,pendingRecordSha256:'1'.repeat(64),canonicalCommandSha256:'2'.repeat(64),
+ gatewayProcessSha256:'3'.repeat(64),gatewayConfigurationSha256:'4'.repeat(64),denialProgramSha256:'5'.repeat(64),
+ receiverNegatives:{profile:'suspended-head-negatives-v2'}};
+const services=['course','community'], caseNames=['exact-replay','changed-replay','stale-restore'];
+const command=native.commandWitnesses[0], at=new Date().toISOString(), witnessSha='6'.repeat(64), retainedSha='7'.repeat(64);
+for(const failure of [null,'lost-response','mismatched-terminal']){
+ const plan=worker.prepareP2LifecycleWorkerEvidencePlan(native,suspend,selection,profile), bindingSha256=p2NativeHash(plan);
+ const fields={...profileFields,bindingSha256,releaseAccepted:false}, phase=[];
+ const operation={id:randomUUID(),producer_sha256:native.producer.producerSha256,source_sha:native.sourceCommit,role_oid:native.producer.role.oid,
+  epoch:'2',kind:'recovery',state:'completed',started_at:at,completed_at:at,reconciliation_sha256:null};
+ let epoch='1', recovery=false, delivered=false, count=0;
+ const client=new Client({host:native.target.host,port:native.target.port});
+ client.connection.stream={encrypted:true,authorized:true};
+ client.query=async sql=>{
+  if(sql.includes('pg_backend_pid() AS pid'))return {rows:[{pid:1,held:true,role:native.target.user,session_role:native.target.user,
+   database:native.target.database,major:native.target.serverMajor}]};
+  if(sql.includes('schema_owner_oid'))return {rows:[{username:native.owner.name,role_oid:native.owner.oid,schema_owner_oid:native.owner.oid}]};
+  if(sql.includes('frontend_admission.control'))return {rows:[{environment:'staging',target_sha256:native.targetSha256,epoch,new_work:false,recovery}]};
+  if(sql.includes('frontend_admission.producers'))return {rows:[{source_sha:native.sourceCommit,role_oid:native.producer.role.oid,enabled:true}]};
+  if(sql.includes('count(*) FILTER'))return {rows:[{active:0,uncertain:0}]};
+  if(sql.includes('operations WHERE epoch'))return {rows:delivered?[operation]:[]};
+  if(sql.includes('SELECT command_id::text,account_version'))return {rows:[{command_id:command.commandId,account_version:command.accountVersion,action:'suspend'}]};
+  if(sql.includes('SELECT command_id::text,receiver'))return {rows:services.map(receiver=>({command_id:command.commandId,receiver,
+   status:delivered?'acknowledged':'pending',attempts:delivered?1:0,acknowledged_at:delivered?at:null,lease_id:null,lease_until:null,ready:true}))};
+  if(sql.includes('SELECT count(*)::int AS count'))return {rows:[{count:0}]};
+  assert.match(sql,/^(BEGIN|ROLLBACK|SET LOCAL ROLE|SELECT later.command_id)/u);
+  return {rows:[]};
+ };
+ const cases=services.flatMap(service=>caseNames.map((name,index)=>({...fields,status:'P2_DIRECT_WORKER_RECEIVER_NEGATIVE_CASE_OBSERVED',
+  service,case:name,httpStatus:index===0?200:409,result:['duplicate','idempotency_conflict','account_version_conflict'][index],
+  beforeWitnessSha256:witnessSha,afterWitnessSha256:witnessSha,privateRecordSha256:'8'.repeat(64),
+  accountAndDomainStateUnchanged:true,quotaWritesExcluded:true,globallyReadOnly:false})));
+ const summary={...fields,status:'P2_DIRECT_WORKER_RECEIVER_NEGATIVES_JOINED',positiveWitnessSha256:witnessSha,cases,
+  openCases:services.map(service=>({service,case:'future-gap',status:'OPEN',reason:'current-quiescence-not-positively-proved'})),
+  domainStatePreserving:true,quotaWritesExcluded:true,globallyReadOnly:false,oidcVerified:false,privateRecordSha256:retainedSha};
+ const denial={version:1,status:'P2_LIFECYCLE_RECEIVER_DENIAL_OBSERVED',denialStatusCode:403,accountRestrictionVerified:true};
+ const resolver=worker.createP2LifecycleWorkerPrivateResolvers(()=>({frontendRuntimeDatabaseUrl:'owned-private-only'}));
+ expectedHandle={};
+ stage={
+  async preflightCredential(handle){assert.equal(handle,resolver);return {...fields,status:'P2_DIRECT_WORKER_CREDENTIAL_VERIFIED_CLOSED',
+   invalidStatus:401,validClosedStatus:503,operationIdIssued:false,credentialBytesRetained:false,credentialHashesOutput:false};},
+  async invokeDirect(handle){assert.equal(handle,resolver);delivered=true;return {...fields,status:'P2_DIRECT_WORKER_HTTP_OBSERVED',httpStatus:200,
+   operationId:operation.id,invocationClass:'direct-source-authenticated-cron',nativeInvocationQualified:false,workerInvokedAt:at,credentialBytesRetained:false};},
+  async observeLifecycleWitness(handle){assert.equal(handle,resolver);phase.push('witness');return {...fields,status:'P2_DIRECT_WORKER_BOTH_ACK_WITNESSED',
+   privateRecordSha256:witnessSha,receiverAcknowledgedCount:2,pendingOrDeliveringCount:0,readOnly:true};},
+  async observeReceiverDenials(){phase.push('denials');return {...fields,status:'P2_DIRECT_WORKER_RECEIVERS_DENIED',
+   course:{...denial,evidenceClass:'actual-protected-course-http',httpStatus:403},
+   community:{...denial,evidenceClass:'deployed-private-community-account-access-guard',httpStatus:null}};},
+  async observeNextReceiverNegative(handle){assert.equal(handle,resolver);phase.push('next');const row=cases[count++];
+   if(failure==='lost-response')throw Error('owned receiver response lost');return row;},
+  async joinedReceiverNegatives(){phase.push('join');return failure==='mismatched-terminal'?{...summary,positiveWitnessSha256:'9'.repeat(64)}:summary;},
+  async finalClosedReadback(){phase.push('closed');return {...fields,status:'P2_DIRECT_WORKER_FINAL_CLOSED',frontendAdmissionClosed:true,
+   gatewayAdmissionClosed:true,nativeEnabled:false,active:0,uncertain:0};},
+ };
+ const directory=realpathSync(mkdtempSync(join(tmpdir(),'owned-s12-node-'))), noop=async()=>{};
+ const dependencies={directory,verifyEnvironment:noop,verifySession:noop,withOwner:task=>task()};
+ try{
+  const credential=await worker.preflightP2DirectLifecycleWorker(plan,expectedHandle,resolver,client,dependencies);
+  epoch='2';recovery=true;
+  const invocation=await worker.invokeP2DirectLifecycleWorker(plan,credential,client,dependencies);
+  epoch='3';recovery=false;
+  const finish=()=>worker.joinP2DirectLifecycleWorker(plan,invocation,client,dependencies);
+  if(failure){
+   await assert.rejects(finish());await assert.rejects(finish());
+   assert.equal(existsSync(join(directory,'p2-lifecycle-worker-source.json')),false);
+   assert.equal(count,failure==='lost-response'?1:6);assert.equal(phase.includes('closed'),false);
+  }else{
+   const retained=worker.readP2DirectWorkerSourceArtifact(plan,await finish());
+   assert.deepEqual(retained.record.receiverNegatives,summary);
+   assert.deepEqual(phase,['witness','denials',...Array(6).fill('next'),'join','closed']);
+   assert.equal(retained.bytes.includes('owned-private-only'),false);
+  }
+ }finally{rmSync(directory,{recursive:true,force:true});}
+}
+`;
+  const result = spawnSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "--eval", program],
+    { encoding: "utf8", timeout: 20_000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
 });
 test("Course403 must be the exact account restriction, never generic403/401/429/503", async () => {
   const { createHash } = await import("node:crypto"), ca = Buffer.from("OWNED-UNIT-CA");
