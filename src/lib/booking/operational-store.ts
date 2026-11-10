@@ -30,6 +30,7 @@ end
 return 0`;
 
 let redisClient: Redis | null = null;
+let calendarOAuthConsumeRedis: Redis | null = null;
 
 function getRedis(): Redis {
   if (redisClient !== null) {
@@ -43,6 +44,19 @@ function getRedis(): Redis {
   });
 
   return redisClient;
+}
+
+function getCalendarOAuthConsumeRedis(): Redis {
+  if (calendarOAuthConsumeRedis === null) {
+    const env = getBookingEnv();
+    calendarOAuthConsumeRedis = new Redis({
+      url: env.kvRestApiUrl,
+      token: env.kvRestApiToken,
+      // A retry after a lost delete receipt can incorrectly report an absent key.
+      retry: { retries: 0 },
+    });
+  }
+  return calendarOAuthConsumeRedis;
 }
 
 export async function getGoogleRefreshToken(
@@ -133,7 +147,7 @@ export async function saveBookingCalendarOAuthState(
 
 export async function consumeBookingCalendarOAuthState(
   state: string,
-  storage: BookingCalendarOAuthStateStorage = getRedis(),
+  storage: BookingCalendarOAuthStateStorage = getCalendarOAuthConsumeRedis(),
 ): Promise<BookingCalendarOAuthState | null> {
   return consumeCalendarOAuthState(state, storage);
 }

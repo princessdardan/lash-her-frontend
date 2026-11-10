@@ -194,22 +194,27 @@ async function issueAdminStepUpProofWork(input: {
     now,
   });
   const token = randomBytes(32).toString("base64url");
+  const nonceHash = hashNonce(token);
   const expiresAt = new Date(
     Math.min(
       now.getTime() + ADMIN_STEP_UP_PROOF_TTL_MS,
       input.authenticatedAt.getTime() + ADMIN_STEP_UP_PROOF_TTL_MS,
     ),
   );
-  await getPrivateDb()
+  const inserted = await getPrivateDb()
     .insert(adminStepUpProofs)
     .values({
       action: normalizeScope(input.action, "action"),
       actorAdminUserId: input.actorAdminUserId,
       authenticatedAt: input.authenticatedAt,
       expiresAt,
-      nonceHash: hashNonce(token),
+      nonceHash,
       target: createAdminStepUpTarget(input.target),
-    });
+    })
+    .returning({ nonceHash: adminStepUpProofs.nonceHash });
+  if (inserted.length !== 1 || inserted[0].nonceHash !== nonceHash) {
+    throw new Error("Step-up proof was not persisted");
+  }
   return { expiresAt, token };
 }
 
@@ -231,7 +236,7 @@ async function consumeAdminStepUpProofWork(input: {
       .where(eq(adminStepUpProofs.nonceHash, hashNonce(input.token)))
       .for("update");
     if (!proof || proof.consumedAt) return "missing" as const;
-    await tx
+    const consumed = await tx
       .update(adminStepUpProofs)
       .set({ consumedAt: now })
       .where(
@@ -239,7 +244,20 @@ async function consumeAdminStepUpProofWork(input: {
           eq(adminStepUpProofs.id, proof.id),
           isNull(adminStepUpProofs.consumedAt),
         ),
-      );
+      )
+      .returning({
+        id: adminStepUpProofs.id,
+        nonceHash: adminStepUpProofs.nonceHash,
+        consumedAt: adminStepUpProofs.consumedAt,
+      });
+    if (
+      consumed.length !== 1 ||
+      consumed[0].id !== proof.id ||
+      consumed[0].nonceHash !== proof.nonceHash ||
+      consumed[0].consumedAt?.getTime() !== now.getTime()
+    ) {
+      throw new Error("Step-up proof consumption was not persisted");
+    }
     if (proof.expiresAt <= now) return "expired" as const;
     if (
       proof.actorAdminUserId !== input.actorAdminUserId ||

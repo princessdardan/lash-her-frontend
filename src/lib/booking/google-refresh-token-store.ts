@@ -34,10 +34,11 @@ export async function writeGoogleRefreshToken(
   storage: GoogleRefreshTokenStorage,
   environment: BookingDeploymentEnvironment,
 ): Promise<void> {
-  await storage.set(
+  const receipt = await storage.set(
     toGoogleRefreshTokenKey(getBookingDeploymentEnvironment(environment)),
     refreshToken,
   );
+  if (receipt !== "OK") throw new Error("Calendar credential write was not acknowledged");
 }
 
 function getBookingDeploymentEnvironment(

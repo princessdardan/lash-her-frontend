@@ -1,10 +1,12 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
 const CONSUME_VALUE_SCRIPT = `#!lua flags=allow-key-locking
 local value = redis.call("GET", KEYS[1])
 if not value then
-  return nil
+  return {0}
 end
 redis.call("DEL", KEYS[1])
-return value`;
+return {1, value}`;
 
 export interface BookingCalendarOAuthState {
   actorAdminUserId: string;
@@ -53,23 +55,32 @@ export async function consumeBookingCalendarOAuthState(
 ): Promise<BookingCalendarOAuthState | null> {
   assertOAuthState(state);
 
-  const value = await storage.eval<[], unknown>(
+  const receipt = await storage.eval<[], unknown>(
     CONSUME_VALUE_SCRIPT,
     [toBookingCalendarOAuthStateKey(state)],
     [],
   );
 
-  // @upstash/redis may JSON-deserialize EVAL results before returning them.
-  let payload = value;
-  if (typeof value === "string") {
+  // The tag distinguishes a miss from a deleted value that deserializes to null.
+  if (Array.isArray(receipt) && receipt.length === 1 && receipt[0] === 0) return null;
+  if (!Array.isArray(receipt) || receipt.length !== 2 || receipt[0] !== 1) {
+    markWriterOperationUncertain();
+    return null;
+  }
+
+  let payload: unknown = receipt[1];
+  if (typeof payload === "string") {
     try {
-      payload = JSON.parse(value);
+      payload = JSON.parse(payload);
     } catch {
+      markWriterOperationUncertain();
       return null;
     }
   }
 
-  return isBookingCalendarOAuthState(payload) ? payload : null;
+  if (isBookingCalendarOAuthState(payload)) return payload;
+  markWriterOperationUncertain();
+  return null;
 }
 
 export function isBookingCalendarOAuthState(

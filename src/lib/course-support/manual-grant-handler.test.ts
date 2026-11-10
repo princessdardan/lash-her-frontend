@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { actor, body, fixture, otherId, userId } from "../../../tests/course-support/manual-grant-fixture";
-import { createWriterAdmissionRunner } from "@/lib/writer-admission/runtime";
+import { withWriterOperationContext } from "@/lib/writer-admission/context";
+import { createWriterAdmissionRunner, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
+
+function trackedFixture() {
+  const settlements: Array<"completed" | "uncertain"> = [];
+  const run: WriterAdmissionRunner = async (_kind, work) => {
+    try {
+      const response = await withWriterOperationContext(work);
+      settlements.push("completed");
+      return response;
+    } catch (error) {
+      assert.match(String(error), /WRITER_OPERATION_REQUIRES_REVIEW/u);
+      settlements.push("uncertain");
+      throw error;
+    }
+  };
+  return { ...fixture(run), settlements };
+}
 
 test("owner grant uses one semantic admission, canonical support client, immutable audit and orderless readback", async () => {
   const { state, call } = fixture(); const input = body(); const response = await call(input); const receipt = await response.json();
@@ -60,9 +77,38 @@ test("lost ACK is never retried; explicit GET recovers actual command and effect
   state.lostAck = false; const result = await call(input, "GET"); assert.equal(result.status, 200); assert.equal((await result.json()).command.commandId, state.commands[0].commandId); assert.equal(state.post, 1);
 });
 test("accepted course race preserves actual receipt, including after changed-course reconciliation", async () => {
-  const { state, call } = fixture(); state.race = true; const input = body();
+  const { state, call, settlements } = trackedFixture(); state.race = true; const input = body();
   const response = await call(input); assert.equal(response.status, 202); const value = await response.json(); assert.equal(value.state, "accepted-needs-review"); assert.equal(value.command.commandId, state.commands[0].commandId);
   assert.equal((await call(input, "GET")).status, 202); assert.equal(state.post, 1);
+  assert.deepEqual(settlements, ["completed", "completed"]);
+});
+test("a new POST with missing or mismatched durable grant readback cannot settle cleanly", async () => {
+  type GrantRow = Record<string, unknown>;
+  for (const project of [() => [], (rows: GrantRow[]) => rows.map(row => ({ ...row, grantId: otherId }))]) {
+    const { state, call, settlements } = trackedFixture();
+    const input = body();
+    let projectReadback = true;
+    // Keep the actual persisted grant, but project a faulty receiver readback.
+    Object.defineProperty(state.grants, "toJSON", {
+      value: () => projectReadback ? project([...state.grants]) : [...state.grants],
+    });
+    const response = await call(input);
+    assert.equal(response.status, 202);
+    const receipt = await response.json();
+    assert.equal(receipt.state, "accepted-needs-review");
+    assert.equal(receipt.command.commandId, state.commands[0].commandId);
+    assert.equal(receipt.mutationRetried, false);
+    assert.deepEqual(settlements, ["uncertain"]);
+
+    const replay = await call(input);
+    assert.equal(replay.status, 202);
+    assert.deepEqual(settlements, ["uncertain", "completed"]);
+    projectReadback = false;
+    const recovered = await call(input, "GET");
+    assert.equal(recovered.status, 200);
+    assert.equal((await recovered.json()).grant.grantId, state.grants[0].grantId);
+    assert.equal(state.post, 1);
+  }
 });
 test("post-accept readback failure or mismatched audit poisons admission and retains receiver command", async () => {
   for (const flag of ["failReadback", "tamperAudit", "tamperCommandId", "duplicateAudit"] as const) {

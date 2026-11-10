@@ -39,7 +39,8 @@ export function createCustomerAuthHandler(dependencies: {
   const getConfiguration = dependencies.configuration ?? resolveCustomerAuthConfiguration;
   const getStore = dependencies.store ?? createCustomerAuthStore;
   const handle = dependencies.handle ?? ((request, configuration, store) => {
-    const handlers = NextAuth(createCustomerAuthConfig(configuration, store)).handlers;
+    const isGoogleCallback = request.nextUrl.pathname === `${CUSTOMER_AUTH_BASE_PATH}/callback/google`;
+    const handlers = NextAuth(createCustomerAuthConfig(configuration, store, isGoogleCallback)).handlers;
     return handlers[request.method === "POST" ? "POST" : "GET"](request);
   });
   const admitted = withWriterAdmission("new-work", async (original: NextRequest, configuration: CustomerAuthConfiguration) => withCustomerWriterContext(async () => {

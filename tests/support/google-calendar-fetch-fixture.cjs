@@ -240,14 +240,13 @@ function handleOAuthStateRedisCommand(command) {
 
     const stored = currentOAuthStateValue(key);
     deleteOAuthStateValue(key);
+    // Match the Lua receipt and Upstash encoding for the stored string.
     return {
       handled: true,
       value:
         stored === null
-          ? null
-          : Buffer.from(JSON.stringify(stored.value), "utf8").toString(
-              "base64",
-            ),
+          ? [0]
+          : [1, Buffer.from(stored.value, "utf8").toString("base64")],
     };
   }
 

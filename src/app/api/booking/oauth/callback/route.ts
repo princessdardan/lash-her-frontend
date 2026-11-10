@@ -64,9 +64,9 @@ async function handleGet(req: NextRequest): Promise<Response> {
     return new Response("Google Calendar booking OAuth is connected", {
       status: 200,
     });
-  } catch (error) {
+  } catch {
     markWriterOperationUncertain();
-    console.error("[booking oauth callback] Failed:", getErrorMessage(error));
+    console.error("[booking oauth callback] Legacy Calendar authorization could not be completed");
 
     return new Response("OAuth setup failed", { status: 500 });
   }
@@ -169,13 +169,5 @@ const adminCallbackDependencies: AdminCalendarOAuthCallbackDependencies = {
     return saveAdminGoogleCalendarCredential(input);
   },
 };
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Unknown error";
-}
 
 export const GET = withWriterAdmission("recovery", handleGet);

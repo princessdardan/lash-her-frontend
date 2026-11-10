@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import { generateKeyPair, SignJWT } from "jose";
 import { NextRequest } from "next/server";
 import { createCustomerAuthHandler } from "./handler";
 import { createCustomerAuthConfig } from "./config";
@@ -9,6 +10,7 @@ import { createCustomerAuthStore, type CustomerAuthStore } from "./store";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import { withWriterOperationContext, type WriterIdentityEnrollment } from "@/lib/writer-admission/context";
+import { interactiveAdmissionFixture } from "@/lib/writer-admission/interactive-fixture";
 import { assertCustomerWriterContext, withCustomerWriterContext } from "./context";
 
 const configuration: CustomerAuthConfiguration = { origin: "https://example.com", secret: "s".repeat(32), googleId: "google", googleSecret: "google-secret", resendKey: "resend-secret", emailFrom: "account@example.com", secure: true };
@@ -66,6 +68,120 @@ test("customer configuration isolates all cookies and explicitly forbids email-o
   const google = config.providers[0] as { options: { allowDangerousEmailAccountLinking: boolean; checks: string[] } };
   assert.equal(google.options.allowDangerousEmailAccountLinking, false);
   assert.deepEqual(google.options.checks, ["pkce", "state", "nonce"]);
+});
+
+test("real customer Auth.js callbacks preserve settled denials and leave unknown Google outcomes uncertain", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalAuthUrl = process.env.AUTH_URL;
+  const account = { id: "33a4ad34-9e01-407b-82db-d32bb1067ce1", email: "owned@example.com", emailVerified: null };
+  let mode = "", nonce = "", exchanges = 0;
+  const defaultStore = createCustomerAuthStore(() => { throw new Error("Unexpected database operation"); });
+  const store: CustomerAuthStore = {
+    ...defaultStore,
+    adapter: {
+      ...defaultStore.adapter,
+      getUserByAccount: async () => mode === "accepted" ? account : null,
+      getUserByEmail: async () => account,
+      createSession: async session => session,
+      useVerificationToken: async () => null,
+    },
+    consumeThrottle: async () => true,
+    isActive: async () => true,
+  };
+  const { privateKey } = await generateKeyPair("RS256");
+  const ordinary = createCustomerAuthHandler({ configuration: () => configuration, store: () => store, run: async (_kind, work) => work() });
+  const cookies = (response: Response) => response.headers.getSetCookie().map(value => value.split(";", 1)[0]);
+  const clientHeaders = { "x-vercel-forwarded-for": "192.0.2.20" };
+  process.env.AUTH_URL = configuration.origin;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://accounts.google.com/.well-known/openid-configuration") {
+      if (mode === "malformed-discovery") return Response.json({});
+      return Response.json({
+        issuer: "https://accounts.google.com", authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token", userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs", response_types_supported: ["code"],
+        subject_types_supported: ["public"], id_token_signing_alg_values_supported: ["RS256"],
+      });
+    }
+    assert.equal(url, "https://oauth2.googleapis.com/token");
+    assert.equal(init?.method, "POST");
+    exchanges++;
+    if (mode === "lost-exchange") throw new TypeError("synthetic transport failure");
+    if (mode === "provider-unavailable") return Response.json({ error: "server_error" }, { status: 503 });
+    if (mode === "invalid-grant") return Response.json({ error: "invalid_grant" }, { status: 400 });
+    if (mode === "malformed-token") return Response.json({ access_token: "owned-token", token_type: "Bearer" });
+    const token = await new SignJWT({ sub: "owned-google-account", email: account.email, email_verified: mode !== "unverified", nonce })
+      .setProtectedHeader({ alg: "RS256", kid: "owned-key" }).setIssuer("https://accounts.google.com")
+      .setAudience(configuration.googleId).setIssuedAt().setExpirationTime("5m").sign(privateKey);
+    return Response.json({ access_token: "owned-token", token_type: "Bearer", id_token: token });
+  };
+  async function callback(scenario: string, { off = false, json = false } = {}) {
+    mode = "";
+    exchanges = 0;
+    const csrf = await ordinary(request("/csrf"));
+    const { csrfToken } = await csrf.json();
+    const started = await ordinary(request("/signin/google", {
+      method: "POST", headers: { ...clientHeaders, origin: configuration.origin, cookie: cookies(csrf).join("; "), "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrfToken, callbackUrl: "/account" }),
+    }));
+    const authorization = new URL(started.headers.get("location")!);
+    assert.equal(authorization.origin, "https://accounts.google.com");
+    nonce = authorization.searchParams.get("nonce")!;
+    const state = authorization.searchParams.get("state")!;
+    assert.ok(nonce && state);
+    const cookie = Array.from(new Map([...cookies(csrf), ...cookies(started)].map(pair => [pair.split("=", 1)[0], pair])).values()).join("; ");
+    const params = new URLSearchParams({
+      ...(scenario === "provider-denied" ? { error: "access_denied" } : { code: "owned-code" }),
+      state: scenario === "invalid-state" ? "wrong-state" : state,
+    });
+    mode = scenario;
+    const fixture = interactiveAdmissionFixture();
+    const handler = off ? ordinary : createCustomerAuthHandler({ configuration: () => configuration, store: () => store, run: fixture.run });
+    const response = await handler(request("/callback/google?" + params, { headers: { ...clientHeaders, cookie, ...(json ? { "x-auth-return-redirect": "1" } : {}) } }));
+    if (!off) assert.deepEqual(fixture.events, ["admitted", "settled"]);
+    return { response, uncertain: fixture.state.uncertain };
+  }
+  try {
+    for (const [scenario, attempted, json] of [
+      ["lost-exchange", 1, false], ["lost-exchange", 1, true], ["provider-unavailable", 1, false],
+      ["malformed-token", 1, false], ["malformed-discovery", 0, false],
+    ] as const) {
+      const { response, uncertain } = await callback(scenario, { json });
+      assert.equal(response.status, 503, scenario);
+      assert.equal(response.headers.get("retry-after"), "30");
+      assert.equal(response.headers.get("set-cookie"), null);
+      assert.equal(uncertain, true);
+      assert.equal(exchanges, attempted);
+    }
+    for (const [scenario, attempted, error] of [
+      ["invalid-state", 0, "Configuration"], ["provider-denied", 0, "OAuthCallbackError"], ["invalid-grant", 1, "Configuration"],
+      ["unverified", 1, "AccessDenied"], ["unlinked-account", 1, "OAuthAccountNotLinked"],
+    ] as const) {
+      const { response, uncertain } = await callback(scenario);
+      assert.equal(response.status, 302, scenario);
+      assert.equal(response.headers.get("location"), configuration.origin + "/sign-in?error=" + error);
+      assert.equal(uncertain, false, scenario);
+      assert.equal(exchanges, attempted);
+    }
+    const accepted = await callback("accepted");
+    assert.equal(accepted.response.headers.get("location"), configuration.origin + "/account");
+    assert.ok(cookies(accepted.response).some(cookie => cookie.startsWith("__Host-lash-customer.session-token=")));
+    assert.equal(accepted.uncertain, false);
+    const { response } = await callback("lost-exchange", { off: true, json: true });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { url: configuration.origin + "/sign-in?error=Configuration" });
+    const fixture = interactiveAdmissionFixture();
+    const resend = createCustomerAuthHandler({ configuration: () => configuration, store: () => store, run: fixture.run });
+    const expired = await resend(request("/callback/resend?token=expired&email=owned%40example.com", { headers: clientHeaders }));
+    assert.equal(expired.status, 302);
+    assert.equal(expired.headers.get("location"), configuration.origin + "/sign-in?error=Verification");
+    assert.deepEqual(fixture.events, ["admitted", "settled"]);
+    assert.equal(fixture.state.uncertain, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalAuthUrl === undefined) delete process.env.AUTH_URL; else process.env.AUTH_URL = originalAuthUrl;
+  }
 });
 
 test("an exhausted client cannot allocate new email throttle buckets", async () => {

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/security/checkout-abuse-control.test.ts",
   "src/app/api/internal/release-probe/handler.test.ts",
   "src/app/api/internal/release-scheduler-probe/handler.test.ts",
   "src/lib/api-integration/phase2-gateway-smoke.test.ts",
@@ -16,6 +17,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/course-support/manual-grant-handler.test.ts",
   "src/lib/course-support/manual-revoke-handler.test.ts",
   "src/lib/admin/authorization-operation.test.ts",
+  "src/lib/admin/auth-callback-admission.test.ts",
   "src/lib/writer-admission/resend-binding-probe.test.ts",
   "src/lib/customer-lifecycle/worker.test.ts",
   "src/lib/customer-lifecycle/cron.test.ts",
@@ -44,6 +46,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/writer-admission/commerce-capture.test.ts",
   "src/lib/writer-admission/booking-outcome.test.ts",
   "src/app/api/booking/square/return/route.test.ts",
+  "src/app/api/booking/oauth/start/route.test.ts",
   "src/lib/writer-admission/runtime.test.ts",
   "src/lib/writer-admission/square-refund.test.ts",
   "src/lib/writer-admission/square-invoice.test.ts",

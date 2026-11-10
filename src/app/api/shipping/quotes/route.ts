@@ -43,6 +43,7 @@ import {
   assertUsShippingContractCurrent,
   CheckoutNotReadyError,
 } from "@/lib/shipping/readiness";
+import { withWriterAdmission } from "@/lib/writer-admission/route";
 
 export const runtime = "nodejs";
 const SHIPPING_QUOTE_BODY_MAX_BYTES = 32_000;
@@ -173,7 +174,7 @@ function buildQuoteTaxContext(destination: {
   }
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function handlePost(req: NextRequest): Promise<Response> {
   if (!isChitChatsCheckoutEnabled())
     return NextResponse.json(
       { error: "Shipping quotes are unavailable" },
@@ -218,6 +219,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     throw error;
   }
 }
+
+export const POST = withWriterAdmission("new-work", handlePost);
 
 async function createQuote(
   req: NextRequest,

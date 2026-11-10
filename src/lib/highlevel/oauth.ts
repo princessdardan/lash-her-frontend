@@ -23,6 +23,46 @@ export interface TokenResponse extends Credentials {
   userType: string;
   scope: string;
 }
+
+export function parseOAuthTokenResponse(
+  value: unknown,
+  expectedLocationId: string,
+): TokenResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new HighLevelError("oauth_invalid_location_or_token");
+  const token = value as Record<string, unknown>;
+  const expiresIn = token.expires_in;
+  const expiresAt =
+    typeof expiresIn === "number"
+      ? new Date(Date.now() + expiresIn * 1000).getTime()
+      : Number.NaN;
+  if (
+    typeof token.access_token !== "string" ||
+    !token.access_token.trim() ||
+    typeof token.refresh_token !== "string" ||
+    !token.refresh_token.trim() ||
+    !Number.isSafeInteger(expiresIn) ||
+    (expiresIn as number) <= 0 ||
+    !Number.isFinite(expiresAt) ||
+    typeof token.locationId !== "string" ||
+    token.locationId !== expectedLocationId ||
+    token.userType !== "Location" ||
+    typeof token.scope !== "string"
+  )
+    throw new HighLevelError("oauth_invalid_location_or_token");
+  const scopes = new Set(token.scope.split(/[ ,]+/).filter(Boolean));
+  if (HIGHLEVEL_SCOPES.some((scope) => !scopes.has(scope)))
+    throw new HighLevelError("oauth_missing_scopes");
+  return {
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    expires_in: expiresIn as number,
+    locationId: token.locationId,
+    userType: token.userType,
+    scope: token.scope,
+  };
+}
+
 export const stateHash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
@@ -70,20 +110,7 @@ async function exchange(
     }),
   });
   if (!response.ok) throw new HighLevelError(`oauth_http_${response.status}`);
-  const token = (await response.json()) as TokenResponse;
-  if (
-    token.locationId !== locationId() ||
-    token.userType !== "Location" ||
-    !token.access_token ||
-    !token.refresh_token ||
-    !Number.isFinite(token.expires_in) ||
-    token.expires_in <= 0
-  )
-    throw new HighLevelError("oauth_invalid_location_or_token");
-  const scopes = new Set(token.scope?.split(/[ ,]+/));
-  if (HIGHLEVEL_SCOPES.some((scope) => !scopes.has(scope)))
-    throw new HighLevelError("oauth_missing_scopes");
-  return token;
+  return parseOAuthTokenResponse(await response.json(), locationId());
 }
 
 export async function completeInstallation(
@@ -144,10 +171,13 @@ export async function accessToken(
   if (!claim.rows.length)
     throw new HighLevelError("oauth_refresh_in_progress", true);
   try {
-    const token = await exchangeToken({
-      grant_type: "refresh_token",
-      refresh_token: credentials.refresh_token,
-    });
+    const token = parseOAuthTokenResponse(
+      await exchangeToken({
+        grant_type: "refresh_token",
+        refresh_token: credentials.refresh_token,
+      }),
+      id,
+    );
     const ciphertext = encryptCredential(
       { access_token: token.access_token, refresh_token: token.refresh_token },
       id,

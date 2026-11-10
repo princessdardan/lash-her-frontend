@@ -101,13 +101,17 @@ export function createManualCourseGrantHandler(dependencies: {
             command = saved.commands[0];
             retained = command;
             const grants = await client.listGrants({ userId: command.userId, courseId, idempotencyKey: key(attempt), limit: 2 });
+            const grant = grants.grants[0];
+            const grantAcknowledged = command.outcome === "applied" && command.targetGrantId === null && !grants.nextCursor && grants.grants.length === 1 && command.effects.length === 1 &&
+              grant.grantId === command.effects[0].grantId && grant.userId === command.userId && grant.courseId === courseId && grant.idempotencyKey === key(attempt) &&
+              command.affectedGrantCount === 1 && command.effects[0].effectType === "grant_created" && command.effects[0].previousStatus === null && command.effects[0].resultingStatus === "active" &&
+              grant.grantReason === "manual" && grant.orderId === null && grant.externalPaymentId === null && grant.provider === null;
+            if (accepted && !grantAcknowledged) throw new Error("GRANT_EFFECT_READBACK_MISMATCH");
+
             const after = (await client.getAdminCourse(courseId)).course;
             const revision = Number(/^\[paid-course revision ([1-9][0-9]*)\] /u.exec(command.reason)![1]);
-            const grant = grants.grants[0];
             const customerActive = await (dependencies.activeCustomer ?? activeCustomer)(command.userId);
-            const confirmed = customerActive && command.outcome === "applied" && command.targetGrantId === null && !grants.nextCursor && grants.grants.length === 1 && command.effects.length === 1 &&
-              grant.grantId === command.effects[0].grantId && grant.userId === command.userId && grant.courseId === courseId && grant.idempotencyKey === key(attempt) &&
-              command.affectedGrantCount === 1 && command.effects[0].effectType === "grant_created" && command.effects[0].previousStatus === null && command.effects[0].resultingStatus === "active" && grant.grantReason === "manual" && grant.orderId === null && grant.externalPaymentId === null && grant.provider === null && grant.status === "active" &&
+            const confirmed = grantAcknowledged && customerActive && grant.status === "active" &&
               after.id === courseId && after.status === "published" && after.accessMode === "paid" && after.currency === "CAD" && after.priceCents > 0 && after.revision === revision;
             return Response.json({ state: confirmed ? "confirmed" : "accepted-needs-review", idempotencyKey: attempt, command,
               grant: grant ? { grantId: grant.grantId, userId: grant.userId, courseId: grant.courseId, status: grant.status, grantReason: grant.grantReason,

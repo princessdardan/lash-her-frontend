@@ -6,10 +6,12 @@ import Google from "next-auth/providers/google";
 import Resend from "next-auth/providers/resend";
 import { assertStagingEmailRecipients } from "@/lib/env/staging-email-policy.mjs";
 import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterIdentityRotation, markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { createGoogleCallbackAdmission } from "@/lib/writer-admission/google-auth-callback";
 import { CUSTOMER_AUTH_BASE_PATH, CUSTOMER_EMAIL_MAX_AGE, CUSTOMER_SESSION_MAX_AGE, customerSessionCookieName, normalizeCustomerEmail, safeCustomerReturn, type CustomerAuthConfiguration } from "./policy";
 import { customerEnrollmentScopeId, generateCustomerSessionToken, type CustomerAuthStore } from "./store";
 
-export function createCustomerAuthConfig(configuration: CustomerAuthConfiguration, store: CustomerAuthStore): NextAuthConfig {
+export function createCustomerAuthConfig(configuration: CustomerAuthConfiguration, store: CustomerAuthStore, isGoogleCallback = false): NextAuthConfig {
+  const callbackAdmission = createGoogleCallbackAdmission(isGoogleCallback);
   const cookie = (suffix: string, maxAge?: number) => ({
     name: `${configuration.secure ? "__Host-" : ""}lash-customer.${suffix}`,
     options: { httpOnly: true, secure: configuration.secure, sameSite: "lax" as const, path: "/", ...(maxAge === undefined ? {} : { maxAge }) },
@@ -41,6 +43,7 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
         checks: ["pkce", "state", "nonce"],
         allowDangerousEmailAccountLinking: false,
         account: () => ({}),
+        ...callbackAdmission?.providerOptions,
       }),
       Resend({
         apiKey: configuration.resendKey, from: configuration.emailFrom,
@@ -105,7 +108,10 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
         return { expires: session.expires, user: { id: user.id, name: user.name ?? null, email: user.email, image: null } } as typeof session;
       },
     },
-    logger: { error() { /* Auth.js errors can include tokens/provider profiles. */ }, warn() {}, debug() {} },
+    logger: {
+      // Auth.js errors can include tokens and provider profiles.
+      error(error) { callbackAdmission?.recordError(error); }, warn() {}, debug() {},
+    },
     debug: false,
   };
 }
