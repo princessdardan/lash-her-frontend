@@ -1,9 +1,14 @@
 """Fixed source dispatch checks. Full recovery is qualified by its owned harness."""
+from concurrent.futures import Future
+from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import fcntl
 import json
+import os
 import re
+import sys
 import unittest
 from p2_release_broker import Broker, PhysicalObserver
 from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, ROTATION_LAYOUT, cleanup_recovery_current_containers, cleanup_rotation_readonly_containers
@@ -32,6 +37,219 @@ class FixedDispatchTests(unittest.TestCase):
                 'targetSha256': 'f' * 64, 'restorationActionId': 'restoration-2',
                 'reviewedPlan': plan, 'results': str(root) if root else '/private/owned',
                 '_guardLayout': supervisor.PROFILED_INTERRUPTED_LAYOUT}
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'owned Linux root flock fixture')
+    def test_replacement_guard_checks_runtime_before_arm_and_retains_successor_after_close(self):
+        import p2_profiled_known_ack_restoration_parent as interrupted
+
+        cases = (('known-ack', True, None), ('interrupted-known-ack', True, None),
+                 ('known-ack', False, None), ('interrupted-known-ack', False, None),
+                 ('contain-native', True, None), ('known-ack', True, 'terminal'),
+                 ('interrupted-known-ack', True, 'physical'), ('interrupted-known-ack', True, 'gateway'),
+                 ('known-ack', True, 'successor'), ('known-ack', True, 'prearm-runtime'))
+        cleanup = supervisor.finish_failure_cleanup
+        for kind, replacement, refused in cases:
+            with self.subTest(kind=kind, replacement=replacement, refused=refused), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initial = self.profiled_interrupted(root)
+                candidate = initial['candidate']
+                frontend = initial['reviewedPlan']['frontendPlan']
+                if replacement:
+                    frontend['replacementRelease'] = {'kind': 'frontend-replacement'}
+                    if kind == 'contain-native':
+                        frontend['successorRuntime'] = {'kind': 'known-ack'}
+                if kind == 'interrupted-known-ack':
+                    layout = supervisor.PROFILED_INTERRUPTED_LAYOUT
+                    broker = interrupted.P2ProfiledInterruptedKnownAckBroker
+                    native = interrupted.contain_profiled_interrupted_native
+                    contain_frontend = interrupted.contain_profiled_interrupted_frontend
+                    fields = interrupted.INITIAL_FIELDS
+                else:
+                    layout = supervisor.PROFILED_CERTIFICATION_LAYOUT
+                    broker = certification.P2ProfiledCertificationBroker
+                    native = certification.contain_profiled_certification_native
+                    contain_frontend = certification.contain_profiled_certification_frontend
+                    fields = certification.PROFILED_INITIAL_FIELDS
+                    frontend['mode'] = 'known-ack-recovery' if kind == 'known-ack' else kind
+                    initial.update(mode=supervisor.PROFILED_CERTIFICATION_MODE, certificationActionId='owned',
+                                   certificationPlan=frontend, _guardLayout=layout)
+                initial.update(dict.fromkeys(fields - initial.keys()))
+                raw_candidate = b'owned candidate\n'
+                initial.update(bundle=str(root), candidateSha256=supervisor.migrate.file_hash(raw_candidate),
+                               sourceSha256={supervisor.CERTIFICATION_OBSERVER: '1' * 64})
+                source = Path('/opt/lash-her/operators') / initial['sourceCommit']
+                lock = root / 'owned.lock'
+                directory = root / (layout['receiptPrefix'] + supervisor.action_id(initial))
+                directory.mkdir(mode=0o700)
+                admission = {'epoch': '3', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+                closed = {'admission': admission}
+                terminal = {'frontendAdmission': admission}
+                raw_terminal = json.dumps(terminal).encode()
+                committed = supervisor.migrate.file_hash(raw_terminal)
+                (directory / layout['terminalName']).write_bytes(raw_terminal)
+                (directory / 'p2-certification-frontend-session-closed.json').write_text(json.dumps(closed))
+                read_input = supervisor.migrate.read_input
+                events = []
+                probe = {'owned': 'physical-request'}
+
+                def record(stage, value=None):
+                    def effect(*args, **kwargs):
+                        events.append(stage)
+                        if refused == stage:
+                            raise ValueError('FIXTURE_REFUSAL')
+                        return value
+                    return effect
+
+                def read(root, relative, *args):
+                    if relative == 'release.candidate.json':
+                        return raw_candidate
+                    if relative == supervisor.CERTIFICATION_OBSERVER:
+                        return b'owned observer\n'
+                    return read_input(root, relative, *args)
+
+                def watch(_child, _safety, _health, arm, *, publish_verified_arm, **_):
+                    waiting = arm(probe)
+                    if waiting is not None:
+                        publish_verified_arm(waiting.result())
+                    return record('reaped', committed)()
+
+                def observe(_initial, _source_probe, _source, operation):
+                    return record('schema' if operation == 'verify-schema' else 'physical', closed)()
+
+                def verify_runtime(actual, actual_source):
+                    self.assertIs(actual, initial)
+                    self.assertEqual(actual_source, source)
+                    self.assertEqual('successorRuntime' in actual['certificationPlan'], kind == 'contain-native')
+                    with lock.open('rb') as contender, self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    record('prearm-runtime')()
+
+                def on_failure(actual, armed, actual_source, child, **options):
+                    record('cleanup')()
+                    if refused == 'prearm-runtime':
+                        self.assertIsNone(armed)
+                        cleanup(actual, armed, actual_source, child, **options)
+
+                def retain(actual, actual_source, actual_terminal, actual_digest, *, kind):
+                    self.assertIs(actual, initial)
+                    self.assertEqual((actual_source, actual_terminal, actual_digest), (source, terminal, committed))
+                    self.assertEqual(kind, 'interrupted-known-ack' if layout == supervisor.PROFILED_INTERRUPTED_LAYOUT else 'known-ack')
+                    with lock.open('rb') as contender, self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    record('successor')()
+
+                jobs = {'frontend': {}}
+                verified = {'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED', 'executionEligible': False,
+                            'planSha256': frontend['planSha256']}
+                with (patch.multiple(supervisor, __file__=str(source / 'ops/platform/host/p2_release_supervisor.py'),
+                                     LOCK=lock, _verify_guard_source=Mock(), watch_broker=Mock(side_effect=watch),
+                                     members=Mock(side_effect=record('no-children', [])),
+                                     _validate_profiled_certification_arm=Mock(), _validate_profiled_interrupted_arm=Mock(),
+                                     _retain_profiled_certification_arm=Mock(side_effect=record('armed')),
+                                     _retain_profiled_interrupted_arm=Mock(side_effect=record('armed')),
+                                     require_profiled_certification_guard_arm=Mock(), require_profiled_interrupted_guard_arm=Mock(),
+                                     require_profiled_interrupted_frontend_closed=Mock(return_value=closed),
+                                     _profiled_certification_containers=Mock(),
+                                     _observe_profiled_replacement_certification=Mock(side_effect=observe),
+                                     _require_profiled_certification_terminal=Mock(side_effect=record('terminal', terminal)),
+                                     _require_profiled_interrupted_terminal=Mock(side_effect=record('terminal', terminal)),
+                                     _require_profiled_interrupted_gateway_after_reap=Mock(side_effect=record('gateway')),
+                                     _stop_profiled_certification_group=Mock(return_value=True),
+                                     cleanup_profiled_certification_containers=Mock(),
+                                     _stop_profiled_certification_runtime=Mock(side_effect=AssertionError('prearm runtime stop')),
+                                     finish_failure_cleanup=Mock(side_effect=on_failure)),
+                      patch.object(supervisor.ctypes, 'CDLL', return_value=Mock(prctl=Mock(return_value=0))),
+                      patch.object(supervisor.os, 'fork', return_value=1234),
+                      patch.object(supervisor.migrate, 'make_plan', return_value=(candidate, jobs)),
+                      patch.object(supervisor.migrate, 'profiled_current_job_hashes', return_value=None),
+                      patch.object(supervisor.migrate, 'read_input', side_effect=read),
+                      patch.object(certification, 'prepare_profiled_current_certification_input', return_value=verified),
+                      patch.object(interrupted, 'prepare_profiled_interrupted_input',
+                                   return_value=(initial['reviewedPlan'], None, candidate, jobs)),
+                      patch.dict(sys.modules, {'p2_replacement_successor': Mock(retain_successor_runtime=retain,
+                                                                                verify_replacement_runtime_before_arm=verify_runtime)})):
+                    options = dict(broker_type=broker, observer_type=certification.P2CertificationPhysicalObserver,
+                                   observer_source=supervisor.CERTIFICATION_OBSERVER, layout=layout,
+                                   native_containment=native, frontend_containment=contain_frontend)
+                    if refused is None:
+                        supervise(initial, **options)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'FIXTURE_REFUSAL'):
+                            supervise(initial, **options)
+                    if refused == 'prearm-runtime':
+                        supervisor._retain_profiled_certification_arm.assert_not_called()
+                        supervisor._stop_profiled_certification_runtime.assert_not_called()
+                        failure = json.loads((directory / 'p2-independent-guard-outcome.json').read_bytes())
+                        self.assertEqual(failure['status'], 'P2_GUARD_REFUSED_BEFORE_CERTIFICATION_STAGE')
+                        self.assertIs(failure['runtimeStopAttempted'], False)
+                expected = ['schema'] if replacement else []
+                if replacement and kind != 'interrupted-known-ack':
+                    expected.append('prearm-runtime')
+                expected.extend(('armed', 'reaped', 'no-children'))
+                if kind == 'interrupted-known-ack':
+                    expected.extend((*(['physical'] if replacement else []), 'terminal', 'gateway'))
+                else:
+                    expected.extend(('terminal', *(['physical'] if replacement else [])))
+                if replacement and kind != 'contain-native':
+                    expected.append('successor')
+                if refused is not None:
+                    expected = expected[:expected.index(refused) + 1] + ['cleanup']
+                self.assertEqual(events, expected)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'owned Linux pipe fixture')
+    def test_async_guard_cannot_publish_after_the_broker_aborts_or_disconnects(self):
+        probe, digest = {'owned': True}, '1' * 64
+        for disposition in ('commit', 'early-commit', 'abort', 'disconnect'):
+            with self.subTest(disposition=disposition):
+                safety_r, safety_w = os.pipe()
+                health_r, health_w = os.pipe()
+                signal_r, signal_w = os.pipe()
+                child = os.fork()
+                if child == 0:
+                    os.close(safety_r)
+                    os.close(health_w)
+                    os.close(signal_w)
+                    try:
+                        os.write(safety_w, json.dumps({'operation': 'armed', 'probe': probe}).encode() + b'\n')
+                        if os.read(signal_r, 1) and disposition != 'disconnect':
+                            final = {'operation': 'abort'} if disposition == 'abort' else {'operation': 'committed', 'sha256': digest}
+                            os.write(safety_w, json.dumps(final).encode() + b'\n')
+                    finally:
+                        os._exit(0)
+                os.close(safety_w)
+                os.close(signal_r)
+                waiting = Future()
+                published = []
+
+                def verify(request):
+                    self.assertEqual(request, probe)
+                    if disposition == 'commit':
+                        waiting.set_result(request)
+                    else:
+                        os.write(signal_w, b'1')
+                    return waiting
+
+                def publish(request):
+                    published.append(request)
+                    os.write(signal_w, b'1')
+
+                try:
+                    options = dict(profiled_certification=True, async_arm=True, publish_verified_arm=publish)
+                    if disposition == 'commit':
+                        self.assertEqual(supervisor.watch_broker(child, safety_r, health_w, verify, **options), digest)
+                        self.assertEqual(published, [probe])
+                    else:
+                        refusal = {'early-commit': 'SAFETY_COMMIT_REFUSED', 'abort': 'BROKER_ABORTED',
+                                   'disconnect': 'SAFETY_TERMINAL_REFUSED'}[disposition]
+                        with self.assertRaisesRegex(ValueError, refusal):
+                            supervisor.watch_broker(child, safety_r, health_w, verify, **options)
+                        waiting.set_result(probe)
+                        self.assertEqual(published, [])
+                finally:
+                    for fd in (safety_r, health_r, health_w, signal_w):
+                        os.close(fd)
+                    with suppress(ChildProcessError):
+                        os.waitpid(child, 0)
 
     def test_profiled_interrupted_dispatch_requires_exact_source_types_and_callbacks(self):
         import p2_profiled_known_ack_restoration_parent as parent

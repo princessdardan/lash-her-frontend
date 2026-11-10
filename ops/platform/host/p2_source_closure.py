@@ -50,20 +50,22 @@ PROFILED_INTERRUPTED_REQUIRED = {'ops/platform/host/p2_profiled_known_ack_restor
                                  'ops/platform/host/p2_known_ack_interrupted_restoration.py',
                                  'ops/platform/p2-known-ack-interrupted-restoration.mjs'}
 PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED = {
+    'ops/gateway/p2-certification-fault.mjs',
     'ops/platform/p2-certification-replacement-release.mjs',
     'ops/platform/p2-frontend-replacement-release-review.mjs',
     'ops/platform/p2-frontend-replacement-closed.mjs',
     'ops/platform/p2-frontend-replacement-written.mjs',
+    'ops/platform/host/p2_certification_fault.py',
     'ops/platform/host/p2_frontend_replacement_parent.py',
     'ops/platform/host/p2_replacement_runtime_review.py',
     'ops/platform/host/p2_replacement_runtime_containment.py',
+    'ops/platform/host/p2_replacement_successor.py',
     'ops/platform/host/p2_replacement_terminal.py',
 }
 PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED = {
     'ops/platform/host/p2_known_ack_loss.py',
     'ops/platform/host/p2_profiled_known_ack_runtime.py',
     'ops/platform/p2-known-ack-loss-probe.mjs',
-    'ops/gateway/p2-certification-fault.mjs',
 }
 
 
@@ -103,6 +105,11 @@ def verify_profiled_current_source_closure(initial, root):
             required |= PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED
             if certification.get('mode') == 'known-ack-recovery':
                 required |= PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED
+            if 'successorRuntime' in certification:
+                required |= PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED | {
+                    'ops/platform/p2-replacement-successor.mjs',
+                    'ops/platform/host/p2_replacement_operator_evidence.py',
+                }
         scoped = {
             'export-cleanup': {'ops/platform/host/p2_scoped_export_cleanup.py', 'ops/platform/host/p2_interactive_ingress.py'},
             'mux-callback-recovery': {'ops/platform/host/p2_scoped_mux.py', 'ops/gateway/admission.mjs',

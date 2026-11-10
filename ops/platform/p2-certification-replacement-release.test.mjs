@@ -11,6 +11,7 @@ import { frontendCandidateSurfaces } from "./frontend-release-inventory.mjs";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-role-preparation.mjs";
 import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
+import { p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { prepareP2CertificationReplacementRelease, validP2CertificationReplacementDescriptor } from "./p2-certification-replacement-release.mjs";
 import { P2_CERTIFICATION_READY_FILES, prepareP2ProfiledCertificationOperator } from "./p2-certification.mjs";
 import { prepareP2FrontendReplacementPlan } from "./p2-frontend-replacement-plan.mjs";
@@ -374,6 +375,31 @@ test("profiled certification planner consumes replacement readiness and binds th
   const wrong = structuredClone(knownSettings);
   wrong.certification.knownAckRecovery.receiverTargets.course.database = "foreign";
   assert.throws(() => prepareP2ProfiledCertificationOperator(wrong));
+  const prior = "owned-prior-certification", runtimeActionId = "owned-known-replacement";
+  const priorDirectory = join(f.settings.arm.results, prior);
+  mkdirSync(priorDirectory, { mode: 0o700 });
+  const receiptFile = join(priorDirectory, "p2-replacement-successor-runtime.json");
+  const receiptSha256 = write(receiptFile, {
+    version: 2, qualificationTargetProfile: profile, status: "P2_REPLACEMENT_SUCCESSOR_RUNTIME_VERIFIED", environment,
+    kind: "known-ack", actionId: prior, runtimeActionId, releaseId, sourceCommit, hostMachineId: f.settings.arm.host.machineId,
+    candidateSha256: plan.candidateSha256, targetSha256: plan.targetSha256, configurationCanonicalSha256: p2NativeHash(plan.configurationSha256),
+    replacementRelease: inventory.replacementRelease, originalReleaseReceiptSha256: f.selection.terminalSha256,
+    originalReleasePlanSha256: f.settings.arm.reviewedPlanSha256, terminalSha256: "a".repeat(64), runtimeReceiptSha256: "b".repeat(64),
+    frontendSessionClosedSha256: "c".repeat(64), frontendEpoch: "4", runtimeInventorySha256: "d".repeat(64), gatewayProcessSha256: "e".repeat(64),
+  });
+  const successorSettings = { ...settings, successorRuntime: { receiptFile, receiptSha256 }, certification: {
+    ...certification, initialEpoch: "4", runtimeInventorySha256: "d".repeat(64), gatewayProcessSha256: "e".repeat(64),
+  } };
+  const successorPlan = prepareP2ProfiledCertificationOperator(successorSettings);
+  assert.deepEqual(successorPlan.successorRuntime, { kind: "known-ack", actionId: prior, runtimeActionId, receiptSha256 });
+  assert.equal(successorPlan.originalReleasePlanSha256, selected.originalReleasePlanSha256);
+  assert.equal(successorPlan.originalReleaseReceiptSha256, selected.originalReleaseReceiptSha256);
+  assert.throws(() => prepareP2ProfiledCertificationOperator({ ...successorSettings, certification: {
+    ...successorSettings.certification, initialEpoch: "3",
+  } }));
+  assert.throws(() => prepareP2ProfiledCertificationOperator({ ...successorSettings, certification: {
+    ...known, initialEpoch: "4", runtimeInventorySha256: "d".repeat(64), gatewayProcessSha256: "e".repeat(64),
+  } }));
   const path = join(f.vercel, "frontend-build-outcome.json"), originalReady = readFileSync(path);
   writeFileSync(path, Buffer.concat([originalReady, Buffer.from("\n")]));
   assert.throws(() => prepareP2ProfiledCertificationOperator(settings));

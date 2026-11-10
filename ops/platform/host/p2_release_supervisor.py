@@ -548,7 +548,7 @@ def sticky_cleanup_signals():
 
 def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False, async_arm=False,
                  authorize_replacement_write=None, verify_replacement_written=None, start_replacement_runtime=None,
-                 verify_replacement_closed=None):
+                 verify_replacement_closed=None, publish_verified_arm=None):
     require(authorize_replacement_write is None or profiled_certification and async_arm,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     require(verify_replacement_written is None or authorize_replacement_write is not None,
@@ -557,6 +557,8 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     require(verify_replacement_closed is None or start_replacement_runtime is not None,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    require(publish_verified_arm is None or callable(publish_verified_arm) and profiled_certification and
+            async_arm and authorize_replacement_write is None, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     buffer, last_alive, committed, status = b'', time.monotonic(), None, None
     armed = False
     pending_arm = None
@@ -633,12 +635,24 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                             pending_closed.result()
                     if profiled_certification:
                         require(armed and committed is None and type(value['sha256']) is str and
+                                (publish_verified_arm is None or pending_arm is None) and
                                 re.fullmatch(r'[a-f0-9]{64}', value['sha256']), 'P2_PROFILED_CERTIFICATION_SAFETY_COMMIT_REFUSED')
                     committed = value['sha256']
                 else:
                     raise ValueError('P2_BROKER_ABORTED')
-        if pending_arm is not None and pending_arm.done():
-            pending_arm.result()
+        if (pending_arm is not None and pending_arm.done() and
+                (publish_verified_arm is None or not buffer and not select.select([safety_read], [], [], 0)[0])):
+            verified = pending_arm.result()
+            if publish_verified_arm is not None:
+                # Only the watcher can publish. Handle any queued abort or EOF
+                # first, and do not let executor shutdown arm a dead broker.
+                require(status is None and time.monotonic() - last_alive < 5,
+                        'P2_PROFILED_CERTIFICATION_ARM_BROKER_LOST')
+                pid, observed_status = os.waitpid(child, os.WNOHANG)
+                if pid:
+                    status = observed_status
+                require(status is None, 'P2_PROFILED_CERTIFICATION_ARM_BROKER_LOST')
+                publish_verified_arm(verified)
             pending_arm = None
         if pending_write is not None and pending_write.done():
             pending_write.result()
@@ -1632,15 +1646,23 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                     and probe['baseline'] == json.loads(verified_jobs['frontend']['schema']), 'P2_SAFETY_SCOPE_REFUSED')
 
         def arm_replacement(probe):
-            nonlocal armed
             _observe_profiled_replacement_certification(initial, probe, source, 'verify-schema')
+            if replacement_certification:
+                from p2_replacement_successor import verify_replacement_runtime_before_arm
+                verify_replacement_runtime_before_arm(initial, source)
+            return probe
+
+        def publish_replacement_arm(probe):
+            nonlocal armed
+            verify_guard_lock(initial)
             armed = probe
             retain_arm = _retain_profiled_interrupted_arm if replacement_interrupted else _retain_profiled_certification_arm
             retain_arm(initial, probe)
 
         with (ThreadPoolExecutor(max_workers=1) if replacement_guarded else contextlib.nullcontext()) as observer_worker:
             committed = (watch_broker(child, safety_read, health_write, arm, profiled_certification=True,
-                                      async_arm=replacement_guarded)
+                                      async_arm=replacement_guarded,
+                                      publish_verified_arm=publish_replacement_arm if replacement_guarded else None)
                          if profiled_certification or profiled_interrupted else
                          watch_broker(child, safety_read, health_write, arm))
         result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
@@ -1663,6 +1685,9 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             if initial['certificationPlan'].get('scopedAction', {}).get('stage') == 'lesson-resume':
                 from p2_certification_parent import retain_profiled_resume_guard
                 retain_profiled_resume_guard(initial, terminal, committed)
+            if replacement_certification and initial['certificationPlan']['mode'] == 'known-ack-recovery':
+                from p2_replacement_successor import retain_successor_runtime
+                retain_successor_runtime(initial, source, terminal, committed, kind='known-ack')
             return
         if profiled_interrupted:
             require(not members(child), 'P2_PROFILED_INTERRUPTED_TERMINAL_CHILD_REMAINS')
@@ -1675,6 +1700,9 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                 _profiled_certification_containers(remove=False)
             terminal = _require_profiled_interrupted_terminal(initial, result, committed)
             _require_profiled_interrupted_gateway_after_reap(initial, source, terminal)
+            if replacement_interrupted:
+                from p2_replacement_successor import retain_successor_runtime
+                retain_successor_runtime(initial, source, terminal, committed, kind='interrupted-known-ack')
             return
         terminal = json.loads(result)
         if expected is not None:

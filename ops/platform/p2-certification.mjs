@@ -5,7 +5,7 @@ import {frontendCoordinationHash as rawHash} from './frontend-release-inventory.
 import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {prepareP2LifecycleNativePlan,p2NativeHash,P2_LIFECYCLE_NATIVE_SCHEDULE} from './p2-lifecycle-native.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
-import {mkdirSync,existsSync,lstatSync,realpathSync,openSync,closeSync,fstatSync,readFileSync,constants} from 'node:fs';
+import {mkdirSync,mkdtempSync,existsSync,lstatSync,realpathSync,openSync,closeSync,fstatSync,fsyncSync,readFileSync,writeFileSync,linkSync,unlinkSync,constants} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
 import {setTimeout as pause} from 'node:timers/promises';
 import {frontendReleaseReceiptStore,frontendPrivateReceiptDirectory} from './frontend-release-receipts.mjs';
@@ -19,6 +19,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {prepareP2OperatorRelease} from './p2-release.mjs';
 import {prepareP2ProfiledCurrentRelease,verifyP2ProfiledCurrentReleaseConfiguration} from './p2-profiled-current-release.mjs';
 import {prepareP2CertificationReplacementRelease,validP2CertificationReplacementDescriptor} from './p2-certification-replacement-release.mjs';
+import {prepareP2ReplacementSuccessor} from './p2-replacement-successor.mjs';
 import {frontendConnectionOptions} from './frontend-migration.mjs';
 import {frontendRolesHash} from './frontend-role-preparation.mjs';
 import {assertSourceCheckout} from './source-checkout.mjs';
@@ -425,12 +426,22 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   const candidate=prepared?.migration?.candidate,inventory=prepared?.plan,job=prepared?.migration?.job;
   const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
   const replacement=profiledRelease?.replacementRelease;
+  const successorRuntime=profiledRelease?.successorRuntime;
   if(replacement!==undefined){
     demand(profile&&validP2CertificationReplacementDescriptor(replacement)&&
       isDeepStrictEqual(replacement,inventory.replacementRelease)&&replacement.reviewedPlanSha256===profiledRelease.planSha256&&
       job.target.allowEmptyBootstrap===true&&job.target.approvedPendingTags.length>0);
   }else demand(!Object.hasOwn(inventory??{},'replacementRelease')&&
     (!profile||job.target.allowEmptyBootstrap===false&&job.target.approvedPendingTags.length===0));
+  if(successorRuntime!==undefined)demand(replacement&&
+    exactKeys(successorRuntime,['kind','actionId','runtimeActionId','receiptSha256'])&&
+    ['known-ack','interrupted-known-ack'].includes(successorRuntime.kind)&&
+    action(successorRuntime.actionId)&&action(successorRuntime.runtimeActionId)&&sha(successorRuntime.receiptSha256)&&
+    (successorRuntime.actionId===successorRuntime.runtimeActionId)===(successorRuntime.kind==='interrupted-known-ack')&&
+    ![successorRuntime.actionId,successorRuntime.runtimeActionId].some(id=>[input.certificationActionId,job.releaseId].includes(id))&&
+    input.mode!=='known-ack-recovery'&&
+    [input.initialEpoch,profiledRelease.successorFrontendEpoch].every(value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value))&&
+    BigInt(input.initialEpoch)>=BigInt(profiledRelease.successorFrontendEpoch));
   const scoped=scopedPlanningModes.has(input?.mode);
   if(scoped)demand(profile&&scopedActionValid(input.mode,input.scopedAction));
   else demand(input?.scopedAction===undefined);
@@ -500,6 +511,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     frontendSqlReplay:false,apiSqlReplay:false,rolePreparationAllowed:false,historicalLoginRestorationAllowed:false,buildAllowed:false,promotionAllowed:false,
     wholeReleaseAccepted:false};
   if(replacement)base.replacementRelease=structuredClone(replacement);
+  if(successorRuntime)base.successorRuntime=structuredClone(successorRuntime);
   if(scoped)base.scopedAction=structuredClone(input.scopedAction);
   if(persistenceModes.has(input.mode))base.persistenceReviewedSha256=input.persistenceReviewedSha256;
   if(input.mode==='known-ack-recovery'){
@@ -1101,11 +1113,13 @@ function readProfiledCurrentCertificationRelease(releaseSettings){
 
 function prepareProfiledCertification(settings){
   const replacement=Object.hasOwn(settings??{},'replacementRelease');
+  const successor=Object.hasOwn(settings??{},'successorRuntime');
   const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
     :settings?.certification?.mode==='direct-worker'?['worker']
       :settings?.certification?.mode==='interactive-browser'&&pairedBrowserStages.has(settings.certification.scopedAction?.stage)?['interactiveIdentity']:[];
   demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra,
-    ...(replacement?['replacementRelease']:[])])&&settings.version===2&&settings.environment==='staging');
+    ...(replacement?['replacementRelease']:[]),...(successor?['successorRuntime']:[])])&&settings.version===2&&settings.environment==='staging'&&
+    (!successor||replacement));
   requireQualificationTargetProfile(currentProfile,settings);
   const checked=replacement?prepareP2CertificationReplacementRelease(settings.releaseSettings,settings.replacementRelease)
     :readProfiledCurrentCertificationRelease(settings.releaseSettings);
@@ -1118,10 +1132,13 @@ function prepareProfiledCertification(settings){
     input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
     input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
   const {results,knownHosts,sshKey}=replacement?settings.releaseSettings.arm:settings.releaseSettings;
-  const releaseSettings={results,knownHosts,sshKey,host,providerContext:settings.releaseSettings.providerContext};
+  const recovered=successor?prepareP2ReplacementSuccessor(settings.successorRuntime,{original,profiledRelease,host,results,input}):null;
+  const activeHost=recovered?{...host,configuration:recovered.configuration}:host;
+  const activeRelease=recovered?{...profiledRelease,successorRuntime:recovered.binding,successorFrontendEpoch:recovered.frontendEpoch}:profiledRelease;
+  const releaseSettings={results,knownHosts,sshKey,host:activeHost,providerContext:settings.releaseSettings.providerContext};
   const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,{...settings,releaseSettings},
-    {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease},currentProfile);
-  return {...checked,...stages,releaseSettings};
+    {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease:activeRelease},currentProfile);
+  return {...checked,...stages,host:activeHost,releaseSettings};
 }
 
 export function prepareP2ProfiledCertificationOperator(settings){
@@ -1141,6 +1158,55 @@ function profiledCertificationHostPlan(settings,authentication=false){
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
   return bindProfiledCertificationHostPlan(checked,source,plan);
+}
+
+async function retainReplacementSuccessorRuntime(settings){
+  demand(process.versions.node.split('.')[0]==='24'&&
+    exactKeys(settings,['version','environment','qualificationTargetProfile','releaseSettings','replacementRelease','predecessor'])&&
+    settings.version===2&&settings.environment==='staging');
+  requireQualificationTargetProfile(currentProfile,settings);
+  const {predecessor}=settings;
+  demand(exactKeys(predecessor,['kind','actionId'])&&['known-ack','interrupted-known-ack'].includes(predecessor.kind)&&action(predecessor.actionId));
+  const {original:{plan:release},profiledRelease,host}=prepareP2CertificationReplacementRelease(settings.releaseSettings,settings.replacementRelease);
+  demand(predecessor.actionId!==release.releaseId);
+  const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
+  assertSourceCheckout(root,release.sourceCommit);
+  const {results,knownHosts,sshKey}=settings.releaseSettings.arm;
+  const directory=frontendPrivateReceiptDirectory(join(results,predecessor.actionId));
+  const diagnostics=mkdtempSync(join(directory,'successor-evidence-ssh-'));
+  const ssh=await recreationSsh({knownHosts,keyFile:sshKey,diagnostics});
+  demand((await ssh.machine()).machineId===host.machineId);
+  const remote=await ssh.replacementEvidence(release.sourceCommit,{
+    version:1,operation:'read-successor-runtime',qualificationTargetProfile:currentProfile,environment:'staging',
+    releaseId:release.releaseId,sourceCommit:release.sourceCommit,candidateSha256:release.candidateSha256,results:host.results,
+    ...predecessor,originalReleasePlanSha256:profiledRelease.planSha256,originalReleaseReceiptSha256:profiledRelease.receiptSha256,
+  });
+  demand(exactKeys(remote,['bytes'])&&typeof remote.bytes==='string');
+  const raw=Buffer.from(remote.bytes,'base64');
+  demand(raw.length>0&&raw.length<=16_384&&raw.toString('base64')===remote.bytes);
+  const value=decodeQualificationTargetJson(raw,'carrier');
+  requireQualificationTargetProfile(currentProfile,value);
+  demand(value.version===2&&value.environment==='staging'&&value.status==='P2_REPLACEMENT_SUCCESSOR_RUNTIME_VERIFIED'&&
+    value.hostMachineId===host.machineId&&value.releaseId===release.releaseId&&value.sourceCommit===release.sourceCommit&&
+    value.candidateSha256===release.candidateSha256&&value.targetSha256===release.targetSha256&&
+    value.configurationCanonicalSha256===p2NativeHash(release.configurationSha256)&&
+    value.originalReleasePlanSha256===profiledRelease.planSha256&&value.originalReleaseReceiptSha256===profiledRelease.receiptSha256&&
+    isDeepStrictEqual(value.replacementRelease,profiledRelease.replacementRelease)&&
+    value.kind===predecessor.kind&&value.actionId===predecessor.actionId);
+  const name='p2-replacement-successor-runtime.json',receiptFile=join(directory,name);
+  frontendPrivateReceiptDirectory(directory);
+  if(!lstatSync(receiptFile,{throwIfNoEntry:false})){
+    const staged=join(diagnostics,name);
+    const fd=openSync(staged,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
+    try{
+      try{writeFileSync(fd,raw);fsyncSync(fd);}finally{closeSync(fd);}
+      try{linkSync(staged,receiptFile);}catch(error){if(error.code!=='EEXIST')throw error;}
+    }finally{unlinkSync(staged);}
+  }
+  demand(readFrontendReleaseEvidence(directory,name).equals(raw));
+  const parent=openSync(directory,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+  try{fsyncSync(parent);}finally{closeSync(parent);}
+  return {receiptFile,receiptSha256:rawHash(raw)};
 }
 
 function bindProfiledCertificationHostPlan(checked,source,plan){
@@ -1452,10 +1518,13 @@ export async function p2CertificationOperator(settings,{apply=false,confirmation
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply','apply-profiled-current'].includes(operation)&&typeof path==='string'&&
+  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply','apply-profiled-current','retain-successor-runtime'].includes(operation)&&typeof path==='string'&&
     (operation.startsWith('apply')?flag==='--confirm'&&typeof confirmation==='string':confirmation===undefined&&
       (flag===undefined||operation==='host-plan-profiled-current'&&flag==='--authentication')));
-    if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'||operation==='apply-profiled-current'){
+    if(operation==='retain-successor-runtime'){
+      const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
+      console.log(JSON.stringify(await retainReplacementSuccessorRuntime(settings)));
+    }else if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'||operation==='apply-profiled-current'){
       const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
       if(operation==='apply-profiled-current')console.log(JSON.stringify(await p2ProfiledCertificationOperator(settings,{confirmation})));
       else {

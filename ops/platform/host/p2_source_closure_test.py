@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_CERTIFICATION_REQUIRED
+from p2_source_closure import PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED, PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED
 
 
 class SourceClosureTests(unittest.TestCase):
@@ -105,6 +106,16 @@ class SourceClosureTests(unittest.TestCase):
         replacement = {**current, 'certificationPlan': {**current['certificationPlan'], 'replacementRelease': {}}}
         with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
             verify_profiled_current_source_closure(replacement, self.root)
+        for name in (PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED | PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED) - manifest.keys():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned successor certification source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        replacement.update(self.make(manifest))
+        self.assertEqual(verify_profiled_current_source_closure(replacement, self.root), replacement['sourceClosureSha256'])
+        successor = {**replacement, 'certificationPlan': {**replacement['certificationPlan'], 'successorRuntime': {}}}
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure(successor, self.root)
 
     def test_profiled_mux_gateway_closure_requires_shared_request_parsers(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE

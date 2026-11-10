@@ -284,6 +284,9 @@ def _profiled_initial(initial, expected):
                 plan.get('originalReleasePlanSha256') == replacement['reviewedPlanSha256'],
                 'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
         extra.add('replacementRelease')
+        if 'successorRuntime' in plan:
+            require(mode != 'known-ack-recovery', 'P2_PROFILED_CERTIFICATION_SUCCESSOR_MODE_REFUSED')
+            extra.add('successorRuntime')
     else:
         require(type(initial['inventory']) is dict and 'replacementRelease' not in initial['inventory'],
                 'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
@@ -759,7 +762,17 @@ def prepare_profiled_current_certification_input(initial, source):
                     for service,row in plan['knownAckReceiverTargets'].items()), 'P2_PROFILED_KNOWN_ACK_API_JOB_CHANGED')
         validate_known_configuration_input(plan['knownAckConfigurationInputDirectory'], configuration, selected, jobs,
                                            initial['configurationSha256'], expected_profile=expected)
-    terminal_sha, plan_hash_verified = _profiled_original_terminal(initial, plan, selected, results, expected)
+    original_initial = initial
+    if 'successorRuntime' in plan:
+        from p2_replacement_successor import require_successor_runtime
+        require(require_successor_runtime(initial, plan, selected, results, source, expected) == configuration,
+                'P2_PROFILED_CERTIFICATION_SUCCESSOR_MOUNT_REQUIRED')
+        original_mount = results / ('runtime-profiled-frontend-replacement-' + selected['releaseId']) / 'configuration'
+        require(original_mount == original_mount.resolve() and
+                staging_state.configuration_hashes(original_mount) == initial['configurationSha256'],
+                'P2_PROFILED_CERTIFICATION_ORIGINAL_MOUNT_CHANGED')
+        original_initial = {**initial, 'configuration': str(original_mount)}
+    terminal_sha, plan_hash_verified = _profiled_original_terminal(original_initial, plan, selected, results, expected)
     if plan['mode'] == 'interactive-browser' and plan['scopedAction']['stage'] == 'lesson-restore':
         _require_profiled_restore_prior(plan, results, expected)
     return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
@@ -769,7 +782,8 @@ def prepare_profiled_current_certification_input(initial, source):
             'originalReleaseReceiptSha256': plan['originalReleaseReceiptSha256'], 'hostOriginalReleaseReceiptSha256': terminal_sha,
             'originalReleasePlanSha256': plan['originalReleasePlanSha256'], 'originalReleasePlanHashHostVerified': plan_hash_verified,
             'executionEligible': False, 'providerTouched': False, 'admissionChanged': False, 'releaseAccepted': False,
-            **({'replacementRelease': plan['replacementRelease']} if replacement else {})}
+            **({'replacementRelease': plan['replacementRelease']} if replacement else {}),
+            **({'successorRuntime': plan['successorRuntime']} if 'successorRuntime' in plan else {})}
 
 
 def _iso(value):
@@ -2085,7 +2099,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def _accept_guard_arm(self,probe):
         from p2_release_supervisor import require_profiled_certification_guard_arm
         self.safety({'operation':'armed','probe':probe})
-        expires = time.monotonic() + (45 if 'replacementRelease' in self.initial['certificationPlan'] else 10)
+        expires = time.monotonic() + (75 if 'replacementRelease' in self.initial['certificationPlan'] else 10)
         while True:
             self.check()
             try:
