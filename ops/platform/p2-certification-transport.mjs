@@ -74,6 +74,7 @@ const scopedOperations={
   'mux-callback-recovery':['scoped-mux-open','scoped-mux-observe','scoped-mux-close'],
   'lifecycle-persistence':['scoped-persistence-observe'],
   'mux-readiness':['scoped-mux-readiness-observe'],
+  'mux-replacement-evidence':['scoped-mux-replacement-observe'],
 };
 const dayTwoAuthorityModes=new Set(['auth-preparation','browser-pending','direct-worker']);
 export const usesP2ProfiledDayTwoAuthority=mode=>dayTwoAuthorityModes.has(mode);

@@ -261,6 +261,14 @@ test('fixed current certification plan joins the original release plan, terminal
     const selectedReadyMux = { attemptId: selectedMux.attemptId, generation: selectedMux.generation,
       environmentId: selectedMux.environmentId, assetId: 'owned-ready-asset', uploadId: selectedMux.uploadId,
       courseId, lessonId: mediaLessonId, playbackIdSha256: 'c'.repeat(64) };
+    const replacementPrior = (actionId, digit) => ({ actionId, hostTerminalSha256: digit.repeat(64) });
+    const muxReplacement = { stage: 'superseded-before-expiry', predecessor: selectedReadyMux,
+      successor: { ...selectedReadyMux, attemptId: '10000000-0000-4000-8000-00000000000b', generation: 3,
+        uploadId: 'owned-replacement-upload', assetId: 'owned-replacement-asset', playbackIdSha256: 'e'.repeat(64) },
+      playback: replacementPrior('owned-mux-playback', 'a'), predecessorReady: replacementPrior('owned-mux-old-ready', 'b'),
+      replacementUpload: replacementPrior('owned-mux-upload', 'c'), beforeExpiry: null };
+    const muxAfterExpiry = { ...muxReplacement, stage: 'cleanup-after-expiry',
+      beforeExpiry: replacementPrior('owned-mux-before-expiry', 'd') };
     const mediaTarget = '/course/v1/admin/lessons/' + mediaLessonId + '/video';
     const selectedMedia = { stage: 'media', actorId: selectedInteractive.actorId, windowSeconds: 90,
       mediaAction: { operation: 'reserve-video-upload', courseId, lessonId: mediaLessonId, revision: 1,
@@ -955,6 +963,7 @@ test('fixed current certification plan joins the original release plan, terminal
     });
     for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
       ['lifecycle-persistence', selectedPersistence], ['mux-readiness', selectedReadyMux],
+      ['mux-replacement-evidence', muxReplacement], ['mux-replacement-evidence', muxAfterExpiry],
       ...firstEnrollments.map(selected => ['interactive-browser', selected])]) {
       const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
       assert.deepEqual(preparedScope.scopedAction, selected);
@@ -983,6 +992,15 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('mux-readiness', selected)));
       const invalid = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
         { input: JSON.stringify({ mode: 'mux-readiness', scopedAction: selected }), encoding: 'utf8' });
+      assert.equal(invalid.status, 1);
+    }
+    for (const selected of [{ ...muxAfterExpiry, beforeExpiry: null },
+      { ...muxReplacement, beforeExpiry: muxAfterExpiry.beforeExpiry }, { ...muxReplacement, playback: muxReplacement.replacementUpload },
+      { ...muxReplacement, successor: { ...muxReplacement.successor, environmentId: 'other' } },
+      { ...muxReplacement, successor: { ...muxReplacement.successor, generation: 1 } }]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('mux-replacement-evidence', selected)));
+      const invalid = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify({ mode: 'mux-replacement-evidence', scopedAction: selected }), encoding: 'utf8' });
       assert.equal(invalid.status, 1);
     }
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('lifecycle-persistence',

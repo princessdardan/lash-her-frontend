@@ -73,7 +73,11 @@ const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value)&&!/^0+$/
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const exactKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort());
 const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
-const scopedModes=new Set(['export-cleanup','mux-callback-recovery','mux-readiness','lifecycle-persistence']);
+const scopedModes=new Set(['export-cleanup','mux-callback-recovery','mux-readiness','mux-replacement-evidence','lifecycle-persistence']);
+const muxReplacementStatus={
+  'superseded-before-expiry':'P2_SCOPED_MUX_SUPERSEDED_BEFORE_EXPIRY',
+  'cleanup-after-expiry':'P2_SCOPED_MUX_CLEANED_AFTER_EXPIRY',
+};
 const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
@@ -383,6 +387,19 @@ function scopedActionValid(mode, value){
     'courseId','lessonId','playbackIdSha256'])&&[value.attemptId,value.courseId,value.lessonId].every(uuid)&&
     Number.isSafeInteger(value.generation)&&value.generation>=1&&value.generation<=2_147_483_647&&
     [value.environmentId,value.assetId,value.uploadId].every(providerId)&&sha(value.playbackIdSha256);
+  if(mode==='mux-replacement-evidence'){
+    if(!exactKeys(value,['stage','predecessor','successor','playback','predecessorReady','replacementUpload','beforeExpiry'])||
+       typeof value.stage!=='string'||!Object.hasOwn(muxReplacementStatus,value.stage)||
+       ![value.predecessor,value.successor].every(selection=>scopedActionValid('mux-readiness',selection)))return false;
+    const validRef=ref=>exactKeys(ref,['actionId','hostTerminalSha256'])&&action(ref.actionId)&&sha(ref.hostTerminalSha256);
+    const refs=[value.playback,value.predecessorReady,value.replacementUpload];
+    if(value.stage==='cleanup-after-expiry')refs.push(value.beforeExpiry);
+    else if(value.beforeExpiry!==null)return false;
+    const {predecessor:old,successor:next}=value;
+    return refs.every(validRef)&&new Set(refs.map(ref=>ref.actionId)).size===refs.length&&
+      ['courseId','lessonId','environmentId'].every(key=>old[key]===next[key])&&
+      ['attemptId','uploadId','assetId','playbackIdSha256'].every(key=>old[key]!==next[key])&&old.generation<next.generation;
+  }
   if(!exactKeys(value,['attemptId','generation','environmentId','assetId','uploadId','eventType'])||
      !uuid(value.attemptId)||!Number.isSafeInteger(value.generation)||value.generation<1||value.generation>2_147_483_647||
      !providerId(value.environmentId)||(value.assetId!==null&&!providerId(value.assetId))||
@@ -628,9 +645,11 @@ export async function runP2BoundedCertification(plan,dependencies){
 }
 
 async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,client,policy}){
-  if(plan.mode==='mux-readiness'){
-    const receipt=await host.scopedStage('scoped-mux-readiness-observe');
-    demand(receipt.status==='P2_SCOPED_MUX_READY_OBSERVED'&&receipt.planSha256===plan.planSha256&&
+  if(['mux-readiness','mux-replacement-evidence'].includes(plan.mode)){
+    const replacement=plan.mode==='mux-replacement-evidence';
+    const receipt=await host.scopedStage(replacement?'scoped-mux-replacement-observe':'scoped-mux-readiness-observe');
+    const status=replacement?muxReplacementStatus[plan.scopedAction.stage]:'P2_SCOPED_MUX_READY_OBSERVED';
+    demand(receipt.status===status&&receipt.planSha256===plan.planSha256&&
       receipt.frontendEpoch===plan.initialEpoch&&isDeepStrictEqual(receipt.scopedAction,plan.scopedAction)&&
       receipt.readOnly===true&&receipt.nativeEnabled===false&&receipt.muxProviderTouched===false&&
       receipt.trafficAuthorized===false&&receipt.releaseAccepted===false);
@@ -1384,7 +1403,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   const mediaUpload=media&&plan.scopedAction.mediaAction.operation===p2MediaUploadCallbackOperation;
   const selectedCourseSource=original.migration.candidate.sources.course.commit;
-  demand((!['mux-callback-recovery','mux-readiness'].includes(plan.mode)&&!mediaUpload)||
+  demand((!['mux-callback-recovery','mux-readiness','mux-replacement-evidence'].includes(plan.mode)&&!mediaUpload)||
     selectedCourseSource===scopedMuxCourseSource||paidRevokeCourseSources.has(selectedCourseSource));
   const {releaseSettings}=checked;
   const directory=releaseSettings.results;
