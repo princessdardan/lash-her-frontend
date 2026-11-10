@@ -257,6 +257,24 @@ test('fixed current certification plan joins the original release plan, terminal
     };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet)';
+    const mediaLessonId = '10000000-0000-4000-8000-00000000000a';
+    const mediaTarget = '/course/v1/admin/lessons/' + mediaLessonId + '/video';
+    const selectedMedia = { stage: 'media', actorId: selectedInteractive.actorId, windowSeconds: 90,
+      mediaAction: { operation: 'reserve-video-upload', courseId, lessonId: mediaLessonId, revision: 1,
+        currentVideoAssetId: null, fileSha256: 'c'.repeat(64), fileBytes: 123, contentType: 'video/mp4' },
+      requests: [
+        { method: 'GET', target: '/course/v1/admin/courses/' + courseId, bodySha256: emptyBodySha256, uses: 1 },
+        { method: 'GET', target: mediaTarget, bodySha256: emptyBodySha256, uses: 1 },
+        { method: 'POST', target: mediaTarget + '-upload',
+          bodySha256: rawHash(JSON.stringify({ expectedCourseRevision: 1, expectedCurrentVideoAssetId: null })), uses: 1 },
+      ] };
+    const mediaPair = prepareP2ProfiledCertificationOperator(paired(selectedMedia));
+    assert.equal(mediaPair.status, 'P2_INTERACTIVE_MEDIA_ACTIONS_PLANNED');
+    assert.deepEqual(mediaPair.media.scopedAction, selectedMedia);
+    assert.deepEqual(mediaPair.identity.scopedAction.identityActor, { actorKind: 'admin', actorId: selectedMedia.actorId });
+    const mediaHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(mediaPair.media), encoding: 'utf8' });
+    assert.equal(mediaHostPlan.status, 0, mediaHostPlan.stderr);
     const paidSettings = paired(selectedInteractive), paidPair = prepareP2ProfiledCertificationOperator(paidSettings);
     assert.equal(paidPair.status, 'P2_INTERACTIVE_PAID_GRANT_ACTIONS_PLANNED');
     assert.deepEqual(paidPair['paid-grant'].scopedAction, selectedInteractive);
@@ -1003,16 +1021,14 @@ test('fixed current certification plan joins the original release plan, terminal
     const privateFixture = spawnSync('python3', ['-B', '-c',
       'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _material;print(json.dumps(_material(*json.load(sys.stdin))))',
       join(root, 'ops/platform/host')], { input: JSON.stringify(material), encoding: 'utf8' });
-    assert.equal(privateFixture.status, 0, privateFixture.stderr);
+    assert.equal(privateFixture.status, 1);
+    assert.match(privateFixture.stderr, /P2_INTERACTIVE_FRONTEND_BINDING_REQUIRED/);
     const [secret, deployment, sourceCommit, targetSha, epoch, stage, issued, duration, nonce] = material;
     const host = new URL(deployment).host, expires = issued + duration, binding = `${host}\n${sourceCommit}\n${targetSha}`;
     const sign = message => createHmac('sha256', secret).update(message).digest('hex');
-    const cookieBody = `v1.${epoch}.${stage}.${issued}.${expires}.${nonce}`;
-    assert.deepEqual(JSON.parse(privateFixture.stdout), [
-      `${cookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${cookieBody}`)}`,
-      sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${stage}\n${nonce}`), host, expires,
-    ]);
+    assert.equal(stage, 'media');
     for (const [selection, selector] of [
+      [selectedMedia, (selectedMedia.actorId + courseId + mediaLessonId).replaceAll('-', '')],
       [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
       [selectedAuthoring, '7032712d617574686f72696e672d7631' + selectedAuthoring.actorId.replaceAll('-', '')],
       [selectedEdit, '7032712d617574682d656469742d7631' + selectedEdit.actorId.replaceAll('-', '')],
@@ -1048,7 +1064,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${scopedEpoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore',
+      const selectedGatewayKey = ['authoring', 'media', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore',
         'lesson-ack-loss', 'lesson-exit-save', 'lesson-visibility-save', 'lesson-stale-revision', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${scopedEpoch}\n${selection.stage}\n${scopedNonce}`) : null;
       const frontendCookie = `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`;
