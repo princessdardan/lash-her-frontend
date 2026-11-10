@@ -27,7 +27,17 @@ Use `plan-profiled-current` and `host-plan-profiled-current` with version 2 sett
 
 The interrupted observer verifies the full original apply-forward job and fresh read-only database state. It binds the named settled frontend operation and its original reconciliation digest, the exact login OIDs, both advisory locks and independent session closure. The guard preserves unresolved ledger rows if it has to close the ordinary recovery window.
 
-Before later certification stages can run after either recovery outcome, the current runtime needs a separate lineage check. The original release receipt continues to refer to its immutable configuration. The successor proof must derive the active configuration path from the fixed prior action ID and join the raw host terminal, closure, gateway lineage and live ten-service runtime to the same original candidate and configuration hashes. This handoff remains open.
+## Continuing certification on the recovered runtime
+
+After either replacement recovery outcome, the guardian retains `p2-replacement-successor-runtime.json` after broker exit and fresh frontend closure. The receipt joins the raw terminal, runtime and closure files to the original candidate, verified gateway lineage and exact ten-service inventory. The original release receipt continues to refer to its immutable configuration.
+
+Prepare a private version 2 settings file with the original `qualificationTargetProfile`, `environment`, `releaseSettings` and `replacementRelease` selection. Add `predecessor` with the completed prior `actionId` and kind `known-ack` for same-session recovery or `interrupted-known-ack` for interrupted restoration.
+
+```sh
+node ops/platform/p2-certification.mjs retain-successor-runtime /absolute/private/successor-settings.json
+```
+
+The command retrieves the original guardian bytes from the selected host and returns `receiptFile` and `receiptSha256`. Copy that selection to `successorRuntime` in the next bounded certification settings. Use the receipt's `runtimeInventorySha256` and `gatewayProcessSha256`, and separately review the next actual frontend epoch. Paired browser stages each start at or after the recovered epoch. The host derives the active mount from the prior action, rechecks the original configuration and independently proves the active runtime and exact requested epoch before allowing the next case. This path supports follow-on certification stages after the reviewed recovery.
 
 ## Outcome and containment
 
