@@ -85,8 +85,8 @@ async function enforceCartPreviewRateLimit(
     subject: "all",
   });
   // Fail open: cart preview runs on ordinary cart edits, so a missing client IP
-  // or a rate-limiter outage must not block shopping. The limiter only throttles
-  // floods when the backend is reachable.
+  // or an unavailable limiter must not block shopping. The Redis write is
+  // admitted separately so a fenced limiter leaves the read-only preview available.
   if (!key) return null;
   try {
     const decision = await checkCartPreviewRateLimit({ key, now: new Date() });

@@ -1,9 +1,12 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
+import type { NextRequest } from "next/server";
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 import { getAdminUserStore } from "@/lib/admin/admin-user-store";
 import { readSelectedAdminGoogleUser } from "@/lib/admin/auth-service";
-import { currentWriterFirstOwner, currentWriterIdentityRotation, matchesWriterFirstOwner, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
+import { currentWriterFirstOwner, currentWriterIdentityRotation, markWriterOperationUncertain,
+  matchesWriterFirstOwner, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
+import { createGoogleCallbackAdmission } from "@/lib/writer-admission/google-auth-callback";
 
 interface GoogleIdentityProfile {
   email?: unknown;
@@ -15,11 +18,13 @@ async function isSelectedRotationAdmin(actorId: string, email: unknown, emailVer
   try {
     return (await readSelectedAdminGoogleUser(getAdminUserStore(), { email, emailVerified, providerUserId }, actorId)) !== null;
   } catch {
+    markWriterOperationUncertain();
     return false;
   }
 }
 
-export const { auth, handlers, signIn, signOut } = NextAuth({
+const googleAuthorization = { params: { scope: "openid profile email" } };
+const adminAuthConfig: NextAuthConfig = {
   callbacks: {
     async jwt({ account, profile, token }) {
       if (account?.provider === "google") {
@@ -89,17 +94,31 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     error: "/admin/sign-in",
     signIn: "/admin/sign-in",
   },
-  providers: [
-    Google({
-      authorization: {
-        params: {
-          scope: "openid profile email",
-        },
-      },
-    }),
-  ],
+  providers: [Google({ authorization: googleAuthorization })],
   session: {
     maxAge: 8 * 60 * 60,
     strategy: "jwt",
   },
-});
+};
+
+const { auth, handlers: defaultHandlers, signIn, signOut } = NextAuth(adminAuthConfig);
+export { auth, signIn, signOut };
+
+function adminAuthHandlers(request: NextRequest): typeof defaultHandlers {
+  const callbackAdmission = createGoogleCallbackAdmission(request.nextUrl.pathname === "/api/auth/callback/google");
+  if (!callbackAdmission) return defaultHandlers;
+  return NextAuth({
+    ...adminAuthConfig,
+    providers: [Google({ authorization: googleAuthorization, ...callbackAdmission.providerOptions })],
+    logger: {
+      error(error) {
+        if (callbackAdmission.recordError(error)) console.error("[auth][error] Admin Google callback outcome could not be determined.");
+      },
+    },
+  }).handlers;
+}
+
+export const handlers: typeof defaultHandlers = {
+  GET: request => adminAuthHandlers(request).GET(request),
+  POST: request => adminAuthHandlers(request).POST(request),
+};

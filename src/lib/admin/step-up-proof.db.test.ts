@@ -7,8 +7,8 @@ const dbTestSkipReason = process.env.TEST_DATABASE_URL
 
 const scenario = String.raw`
   import assert from "node:assert/strict";
-  import { createHash } from "node:crypto";
-  import { eq } from "drizzle-orm";
+  import { createHash, randomUUID } from "node:crypto";
+  import { eq, sql } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
   import { adminStepUpProofs, adminUsers } from "./src/lib/private-db/schema.ts";
   import { consumeAdminStepUpProof, createAdminStepUpTarget, issueAdminStepUpProof } from "./src/lib/admin/step-up-proof.ts";
@@ -36,6 +36,59 @@ const scenario = String.raw`
       status: "active",
     }).returning({ id: adminUsers.id });
     const now = new Date("2026-08-15T12:00:00.000Z");
+
+    const suppressedAction = "owned:step_up_receipt";
+    const suppressedConsumeAction = "owned:step_up_consume_receipt";
+    const alteredConsumeAction = "owned:step_up_altered_consume_receipt";
+    const fixtureName = "owned_step_up_" + randomUUID().replaceAll("-", "");
+    await db.transaction(async (tx) => {
+      await tx.execute(sql.raw(
+        "CREATE FUNCTION " + fixtureName + "() RETURNS trigger LANGUAGE plpgsql AS $$ " +
+        "BEGIN " +
+        "IF TG_OP = 'INSERT' AND NEW.action = 'owned:step_up_receipt' THEN RETURN NULL; END IF; " +
+        "IF TG_OP = 'UPDATE' AND NEW.action = 'owned:step_up_consume_receipt' THEN RETURN NULL; END IF; " +
+        "IF TG_OP = 'UPDATE' AND NEW.action = 'owned:step_up_altered_consume_receipt' " +
+        "THEN NEW.consumed_at = NEW.consumed_at + INTERVAL '1 second'; END IF; " +
+        "RETURN NEW; END; $$",
+      ));
+      await tx.execute(sql.raw(
+        "CREATE TRIGGER " + fixtureName + " BEFORE INSERT OR UPDATE ON public.admin_step_up_proofs " +
+        "FOR EACH ROW EXECUTE FUNCTION " + fixtureName + "()",
+      ));
+    });
+    try {
+      await assert.rejects(issueAdminStepUpProof({
+        action: suppressedAction,
+        actorAdminUserId: actor.id,
+        authenticatedAt: now,
+        now,
+        target: "owned",
+      }), /Step-up proof was not persisted/);
+
+      for (const action of [suppressedConsumeAction, alteredConsumeAction]) {
+        const input = { action, actorAdminUserId: actor.id, authenticatedAt: now, now, target: "owned" };
+        const proof = await issueAdminStepUpProof(input);
+        for (const attempt of [
+          input,
+          { ...input, target: "other" },
+          { ...input, now: new Date(now.getTime() + 301_000) },
+        ]) {
+          await assert.rejects(
+            consumeAdminStepUpProof({ ...attempt, token: proof.token }),
+            /Step-up proof consumption was not persisted/,
+          );
+        }
+        const [stored] = await db.select({ consumedAt: adminStepUpProofs.consumedAt })
+          .from(adminStepUpProofs)
+          .where(eq(adminStepUpProofs.nonceHash, createHash("sha256").update(proof.token).digest("hex")));
+        assert.equal(stored.consumedAt, null);
+      }
+    } finally {
+      await db.transaction(async (tx) => {
+        await tx.execute(sql.raw("DROP TRIGGER " + fixtureName + " ON public.admin_step_up_proofs"));
+        await tx.execute(sql.raw("DROP FUNCTION " + fixtureName + "()"));
+      });
+    }
 
     const mismatched = await issueAdminStepUpProof({
       action: "address:address_approval",
@@ -194,7 +247,7 @@ const scenario = String.raw`
 `;
 
 test(
-  "step-up proof is action/target bound, single-use, and expiring",
+  "step-up proof requires persisted issue and consume receipts and is action/target bound, single-use, and expiring",
   { skip: dbTestSkipReason },
   () => {
     execFileSync(

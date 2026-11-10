@@ -2,12 +2,13 @@ import { nanoid } from "nanoid";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getOAuthConsentUrl } from "@/lib/booking/google-calendar";
+import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { getBookingEnv } from "@/sanity/env";
 
 const OAUTH_STATE_COOKIE = "booking_oauth_state";
 const OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60;
 
-export function GET(req: NextRequest): NextResponse {
+async function handleGet(req: NextRequest): Promise<NextResponse> {
   const env = getBookingEnv();
   const secret = req.nextUrl.searchParams.get("secret");
 
@@ -28,3 +29,5 @@ export function GET(req: NextRequest): NextResponse {
 
   return response;
 }
+
+export const GET = withWriterAdmission("new-work", handleGet);

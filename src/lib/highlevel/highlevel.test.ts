@@ -18,7 +18,12 @@ import {
   verifyHighLevelSignature,
 } from "./webhook";
 import { createCrmCronHandler } from "./worker";
-import { crmMarketingEnabled, highLevelOwnsMarketing } from "./config";
+import {
+  crmMarketingEnabled,
+  HIGHLEVEL_SCOPES,
+  highLevelOwnsMarketing,
+} from "./config";
+import { parseOAuthTokenResponse } from "./oauth";
 
 test("marketing consent requires explicit booleans and a usable SMS destination", () => {
   assert.deepEqual(parseCheckoutMarketing(undefined), {});
@@ -95,6 +100,48 @@ test("OAuth credential encryption is authenticated and location bound", () => {
   assert.throws(() => decryptCredential(envelope, "wrong-location"));
   assert.throws(() =>
     decryptCredential(envelope.slice(0, -4) + "AAAA", "test"),
+  );
+});
+
+test("OAuth token responses reject malformed truthy fields before persistence", () => {
+  const valid = {
+    access_token: "access-token",
+    refresh_token: "refresh-token",
+    expires_in: 3600,
+    locationId: "test-location",
+    userType: "Location",
+    scope: HIGHLEVEL_SCOPES.join(" "),
+  };
+  assert.deepEqual(parseOAuthTokenResponse(valid, valid.locationId), valid);
+
+  for (const changed of [
+    { access_token: {} },
+    { access_token: "   " },
+    { refresh_token: [] },
+    { refresh_token: "   " },
+    { expires_in: "3600" },
+    { expires_in: 1.5 },
+    { expires_in: Number.MAX_SAFE_INTEGER },
+    { locationId: { value: valid.locationId } },
+    { locationId: "different-location" },
+    { userType: { value: "Location" } },
+    { scope: { value: valid.scope } },
+  ]) {
+    assert.throws(
+      () => parseOAuthTokenResponse({ ...valid, ...changed }, valid.locationId),
+      (error: unknown) =>
+        error instanceof HighLevelError &&
+        error.code === "oauth_invalid_location_or_token",
+    );
+  }
+  assert.throws(
+    () =>
+      parseOAuthTokenResponse(
+        { ...valid, scope: "contacts.readonly" },
+        valid.locationId,
+      ),
+    (error: unknown) =>
+      error instanceof HighLevelError && error.code === "oauth_missing_scopes",
   );
 });
 

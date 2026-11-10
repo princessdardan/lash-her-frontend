@@ -3,6 +3,10 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { Redis } from "@upstash/redis";
 import {
+  runWriterAdmission,
+  type WriterAdmissionRunner,
+} from "@/lib/writer-admission/runtime";
+import {
   checkSlidingWindowRateLimitWithStore,
   type RateLimitDecision,
 } from "./kv-rate-limiter";
@@ -31,16 +35,18 @@ export function checkProductCheckoutRateLimit(input: {
  * on ordinary cart edits, so the limit is generous — it exists to blunt request
  * floods against the data layer, not to gate normal shopping.
  */
-export function checkCartPreviewRateLimit(input: {
-  key: string;
-  now: Date;
-}): Promise<RateLimitDecision> {
-  return runSlidingWindow({
-    key: input.key,
-    limit: 60,
-    windowMs: 60_000,
-    now: input.now,
-  });
+export function checkCartPreviewRateLimit(
+  input: { key: string; now: Date },
+  run: WriterAdmissionRunner = runWriterAdmission,
+): Promise<RateLimitDecision> {
+  return run("new-work", () =>
+    runSlidingWindow({
+      key: input.key,
+      limit: 60,
+      windowMs: 60_000,
+      now: input.now,
+    }),
+  );
 }
 
 function runSlidingWindow(input: {
@@ -51,7 +57,8 @@ function runSlidingWindow(input: {
 }): Promise<RateLimitDecision> {
   const url = requireEnv("KV_REST_API_URL");
   const token = requireEnv("KV_REST_API_TOKEN");
-  const redis = new Redis({ token, url });
+  // A dropped response may already have changed the rate-limit window.
+  const redis = new Redis({ token, url, retry: { retries: 0 } });
   return checkSlidingWindowRateLimitWithStore(
     {
       eval: <TResult>(script: string, keys: string[], args: string[]) =>

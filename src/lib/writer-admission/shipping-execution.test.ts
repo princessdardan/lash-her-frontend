@@ -5,6 +5,7 @@ import {
   createShippingWorkerCronHandler,
   defaultDependencies,
 } from "@/app/api/cron/chitchats-shipping/handler";
+import { POST as shippingQuotePost } from "@/app/api/shipping/quotes/route";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { resolveWriterAdmissionConfiguration } from "./config";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -416,5 +417,24 @@ test("maintenance configuration and outcome failures cannot be skipped as a know
       return "looks-successful";
     }), WriterAdmissionError);
     assert.deepEqual(f.state.outcomes, ["uncertain"]);
+  }
+});
+
+test("the shipping quote POST export refuses malformed admission before request or quote work", async () => {
+  const previousMode = process.env.FRONTEND_WRITER_ADMISSION_MODE;
+  const request = new Request("https://owned.invalid/api/shipping/quotes", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ owned: "unread" }),
+  });
+  process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
+  try {
+    const response = await shippingQuotePost(request as never);
+    assert.equal(response.status, 503);
+    assert.equal(request.bodyUsed, false);
+  } finally {
+    if (previousMode === undefined)
+      delete process.env.FRONTEND_WRITER_ADMISSION_MODE;
+    else process.env.FRONTEND_WRITER_ADMISSION_MODE = previousMode;
   }
 });
