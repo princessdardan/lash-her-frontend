@@ -388,6 +388,14 @@ const reviewedManagedRotationDependencies = {
   "src/lib/customer-auth/config.ts": "45bcbc26a912c440b14bd548e8ca6ad47089a1d36963211d6a849b5e38665f2f",
   "src/lib/writer-admission/interactive-proof.ts": "79fa696689af88a23215beaa182e4850df5136286cfebecabdb085ab52bf911e"
 };
+const reviewedRouteReceiptDependencies = {
+  ...reviewedManagedRotationDependencies,
+  "src/auth.ts": "ea80d8bbb12fb130b8d4298c4bad86a3c83ec60d6d88209d1f9ae7562d9ee6d2",
+  "src/lib/course-support/manual-grant-handler.ts": "834bab64adc2c4114a4476637876c392274b4ab4e374bb7d4885ca3071b3a733",
+  "src/lib/customer-auth/config.ts": "531df55bbaa4795e090698a9a06e6b7377daee4acfafef7a5717e067560d286a",
+  "src/lib/customer-auth/handler.ts": "ddfed6f62f4912609a7c2e79f2d6658f963b5c50011f779bdbbce66132137d36",
+  "src/lib/writer-admission/google-auth-callback.ts": "a9fb4a1307b0b168dd90b7664dff1590531e2d4b56c37aae86e21c602ff9180a"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -409,6 +417,13 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
+  if (same(selected, reviewedManagedRotationSource)) {
+    const expected = readSourceHash("src/auth.ts") === reviewedRouteReceiptDependencies["src/auth.ts"]
+      ? reviewedRouteReceiptDependencies : reviewedManagedRotationDependencies;
+    const dependencies = Object.fromEntries(Object.keys(expected).map(file => [file, readSourceHash(file)]));
+    demand(same(dependencies, expected));
+    return { ...selected, ...dependencies };
+  }
   const browserPolicy = [[reviewedCustomerIdentitySource, [reviewedCustomerIdentityDependencies]],
     [reviewedFirstIdentitySource, [reviewedFirstIdentityDependencies]],
     [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies,
@@ -429,8 +444,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]],
     [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies, reviewedMediaReservationDependencies, reviewedMediaUploadDependencies]],
     [reviewedStalledRenewalSource, [reviewedStalledRenewalDependencies]],
-    [reviewedCanonicalWorkloadSource, [reviewedCanonicalWorkloadDependencies]],
-    [reviewedManagedRotationSource, [reviewedManagedRotationDependencies]]]
+    [reviewedCanonicalWorkloadSource, [reviewedCanonicalWorkloadDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
