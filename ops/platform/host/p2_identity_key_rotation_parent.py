@@ -645,8 +645,11 @@ class P2IdentityRotationBroker(Broker):
         self.window["closed"] = (self.observer.transition(self.window["open"], False)
                                  if window["kind"] == "authentication" else self.window["open"])
         self.window["stage"] = "closing"
-        return {"status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSING", "epoch": self.window["open"],
-                "phase": window["phase"], "kind": window["kind"]}
+        acknowledgement = {"status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSING", "epoch": self.window["open"],
+                           "phase": window["phase"], "kind": window["kind"]}
+        if self._managed():
+            acknowledgement["bindingSha256"] = window["bindingSha256"]
+        return acknowledgement
 
     def _end_window(self, value):
         require(self.window is not None and self.window["stage"] == "closing", "P2_ROTATION_BROWSER_WINDOW_STAGE_REFUSED")
