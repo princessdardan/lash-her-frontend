@@ -488,6 +488,23 @@ test("legacy frontend migration writes refuse release targets and remote local-l
   }
 });
 
+test("local frontend migration requires a PostgreSQL URL with one connection target", () => {
+  for (const [url, expected] of [
+    ["https://127.0.0.1:1/lash_fixture", /require a PostgreSQL connection URL/u],
+    ["postgresql://owned@127.0.0.1:1/lash_fixture?host=127.0.0.1", /host and port must be in the URL authority/u],
+    ["postgresql://owned@127.0.0.1:1/lash_fixture?port=1", /host and port must be in the URL authority/u],
+    ["postgresql://owned@127.0.0.1:1/", /require a database name in the connection URL/u],
+  ]) {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "scripts/migrate-private-db.ts"], {
+      encoding: "utf8", timeout: 10_000,
+      env: { PATH: process.env.PATH, DOTENV_CONFIG_PATH: "/dev/null", DATABASE_URL: url,
+        PRIVATE_DB_MIGRATION_TARGET: "local", PRIVATE_DB_MIGRATION_HOST: "127.0.0.1" },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, expected);
+  }
+});
+
 test("finalization runs after durable core continuation verification with the original physical lock held", async () => {
   const r = runner(fixture()); let finalized = false;
   r.dependencies.afterDatabaseVerified = async (_database, verifySession) => { await verifySession(); };

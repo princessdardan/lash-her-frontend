@@ -28,8 +28,7 @@ interface NamedMigrationMeta extends MigrationMeta {
 }
 
 async function main(): Promise<void> {
-  const databaseUrl = getCheckoutDatabaseUrl();
-  assertMigrationTarget(databaseUrl);
+  const databaseUrl = verifyLocalMigrationUrl(getCheckoutDatabaseUrl());
   const migrations = readNamedMigrationFiles();
 
   const pool = new Pool(createPrivateDbPoolConfig(databaseUrl));
@@ -180,7 +179,7 @@ function getCheckoutDatabaseUrl(): string {
   return databaseUrl;
 }
 
-function assertMigrationTarget(databaseUrl: string): void {
+function verifyLocalMigrationUrl(databaseUrl: string): string {
   const target = process.env.PRIVATE_DB_MIGRATION_TARGET;
 
   if (!target || !KNOWN_TARGETS.has(target)) {
@@ -194,6 +193,15 @@ function assertMigrationTarget(databaseUrl: string): void {
   }
 
   const parsedUrl = parseDatabaseUrl(databaseUrl);
+  if (!["postgres:", "postgresql:"].includes(parsedUrl.protocol)) {
+    throw new Error("Local migrations require a PostgreSQL connection URL.");
+  }
+  if (parsedUrl.searchParams.has("host") || parsedUrl.searchParams.has("port")) {
+    throw new Error("Local migration connection host and port must be in the URL authority.");
+  }
+  if (!parsedUrl.pathname || parsedUrl.pathname === "/") {
+    throw new Error("Local migrations require a database name in the connection URL.");
+  }
   const host = parsedUrl.hostname.toLowerCase();
   if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) {
     throw new Error("Local migrations require an isolated loopback database; remote targets use the operator release command");
@@ -212,6 +220,9 @@ function assertMigrationTarget(databaseUrl: string): void {
       `DATABASE_URL host mismatch: expected ${expectedHost}, received ${host}.`,
     );
   }
+  // Keep an omitted port independent of any ambient PGPORT setting.
+  if (!parsedUrl.port) parsedUrl.port = "5432";
+  return parsedUrl.href;
 }
 
 function parseDatabaseUrl(databaseUrl: string): URL {
