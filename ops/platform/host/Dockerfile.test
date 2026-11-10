@@ -1,5 +1,10 @@
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
-RUN apt-get update \
+# This fixture needs only Main. Keep the release, updates and security suites.
+# Use Ubuntu's Azure mirror for the hosted amd64 runners; retain the archive keyring.
+RUN sed -E -i -e 's/^Components: .*/Components: main/' -e '/^Suites: /s/ noble-backports//' \
+        -e 's@^URIs: http://(archive|security)\.ubuntu\.com/ubuntu/$@URIs: http://azure.archive.ubuntu.com/ubuntu/@' \
+        /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends iptables python3 openssl ca-certificates systemd \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
