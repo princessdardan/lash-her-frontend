@@ -21,7 +21,7 @@ Dardan approved provisioning `lash-her-frontend-p2-staging-db` on the existing V
 
 ## Offline review command
 
-Run the fixed planner from the reviewed frontend checkout with Node 24. The bundle contains `release.candidate.json`, `jobs/frontend.json` and `schema/frontend.json`. Keep the bundle, review and original predecessor observation in private directories outside Git. If using the archived lineage receipt, copy its original bytes and verify them against the retained digest first.
+Run the fixed planner from the reviewed frontend checkout with Node 24. Verify and retain the original signed staging candidate and its exact build evidence before assembling the profiled bundle. The bundle contains `release.candidate.json`, `jobs/frontend.json` and `schema/frontend.json`. The planner accepts the qualified version 3 staging build with release approval pending. The owner starts the reviewed release separately, and the live action produces the migration and deployment receipts. Keep the bundle, review and original predecessor observation in private directories outside Git. If using the archived lineage receipt, copy its original bytes and verify them against the retained digest first.
 
 ```sh
 node ops/platform/p2-frontend-replacement-plan.mjs --plan \

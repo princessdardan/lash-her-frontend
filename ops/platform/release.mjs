@@ -16,16 +16,16 @@ const REPOSITORIES = {
 const ARTIFACTS = ["courseRuntime", "courseMigration", "communityRuntime", "communityMigration", "gateway", "frontendMigration"];
 
 const ownProfile = (value) => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
+const digest = (value) => typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value) && !/^sha256:0+$/u.test(value);
 
 function profiledCandidateCarriers(value) {
   return [value, value?.sourceApproval, value?.integration, ...Object.values(value?.sources ?? {}), value?.workload,
     value?.approval, ...(value?.frontendMigration === undefined ? [] : [value.frontendMigration])];
 }
 
-export function validatePlatformRelease(value, now = new Date(), expectedQualificationTargetProfile) {
+function validatePlatformManifest(value, expectedQualificationTargetProfile) {
   const failures = [];
   const require = (condition, message) => { if (!condition) failures.push(message); };
-  const digest = (value) => typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value) && !/^sha256:0+$/u.test(value);
   const commit = (value) => typeof value === "string" && /^[0-9a-f]{40}$/u.test(value) && !/^0+$/u.test(value);
   if (!value || typeof value !== "object") return ["Release manifest required"];
   let expected, profile;
@@ -65,6 +65,18 @@ export function validatePlatformRelease(value, now = new Date(), expectedQualifi
   }
   require(value.artifacts?.courseRuntime?.image !== value.artifacts?.courseMigration?.image, "Course runtime and migration artifacts must differ");
   require(value.artifacts?.communityRuntime?.image !== value.artifacts?.communityMigration?.image, "Community runtime and migration artifacts must differ");
+  require(value.workload?.environment === "production" && typeof value.workload?.projectId === "string" && /^prj_[A-Za-z0-9]+$/u.test(value.workload.projectId), "Exact workload project/target required");
+  if (expected !== undefined) require(profile?.kind === "existing-staging" && profile.selectionPolicy === "existing-staging-v1" &&
+    value.environment === profile.environment && value.environment === "staging" &&
+    value.workload?.environment === profile.frontend?.workloadEnvironment && value.workload?.projectId === profile.frontend?.projectId,
+  "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  return failures;
+}
+
+export function validatePlatformRelease(value, now = new Date(), expectedQualificationTargetProfile) {
+  const failures = validatePlatformManifest(value, expectedQualificationTargetProfile);
+  if (!value || typeof value !== "object") return failures;
+  const require = (condition, message) => { if (!condition) failures.push(message); };
   require(value.approval?.state === "approved" && value.approval?.operator === "Dardan" &&
     value.approval.environment === value.environment && value.approval.releaseId === value.releaseId &&
     Number.isFinite(Date.parse(value.approval.approvedAt)) && Date.parse(value.approval.approvedAt) <= now.getTime(),
@@ -85,14 +97,30 @@ export function validatePlatformRelease(value, now = new Date(), expectedQualifi
   require(value.recovery?.state === "verified", "Compatible recovery/rollback evidence required");
   // Dardan's November 1 scope decision removes billing/spending evidence from
   // release acceptance. Affordability metadata is advisory, not authorization.
-  require(value.workload?.environment === "production" && typeof value.workload?.projectId === "string" && /^prj_[A-Za-z0-9]+$/u.test(value.workload.projectId), "Exact workload project/target required");
-  if (expected !== undefined) require(profile?.kind === "existing-staging" && profile.selectionPolicy === "existing-staging-v1" &&
-    value.environment === profile.environment && value.environment === "staging" &&
-    value.workload?.environment === profile.frontend?.workloadEnvironment && value.workload?.projectId === profile.frontend?.projectId,
-  "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
   require(value.scheduler?.state === "verified" && value.scheduler?.cancellation === "verified", "Qualified scheduler and strict cancellation required");
   // Operational monitoring/alerts are deferred by the operator's October 29
   // scope decision. They do not gate this plan's release manifest.
+  return failures;
+}
+
+// A replacement plan binds a qualified build before live receipts can exist.
+export function validateStagingReplacementCandidate(value) {
+  const failures = validatePlatformManifest(value, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE);
+  if (failures.length) return failures;
+  const { buildWorkflow, sourceApproval, integration, approval, migrations, recovery, scheduler, staging } = value;
+  if (value.contractPhase !== "p2" || buildWorkflow?.repository !== "princessdardan/lash-her-frontend" ||
+      buildWorkflow?.ref !== "refs/heads/staging" || buildWorkflow.commit !== value.sources.frontend.commit ||
+      buildWorkflow.runId !== sourceApproval.runId || buildWorkflow.attempt !== String(sourceApproval.runAttempt) ||
+      integration?.state !== "passed" || !digest(integration.reportSha256) || !digest(integration.frontendMigrationRehearsalSha256)) {
+    failures.push("Qualified staging candidate build required");
+  }
+  if (approval?.state !== "pending" || approval.operator !== "Dardan" || approval.approvedAt !== null ||
+      approval.environment !== value.environment || approval.releaseId !== value.releaseId ||
+      migrations?.course?.state !== "held" || migrations?.community?.state !== "held" || migrations.frontend !== undefined ||
+      recovery?.state !== "pending" || scheduler?.state !== "pending" || scheduler.cancellation !== "pending" ||
+      (staging !== undefined && staging?.state !== "pending")) {
+    failures.push("Unapplied staging candidate required");
+  }
   return failures;
 }
 

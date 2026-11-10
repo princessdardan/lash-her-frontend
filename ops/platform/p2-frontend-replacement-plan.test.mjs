@@ -6,12 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { bindStagingCandidateProfile } from "./artifact-candidate.mjs";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-role-preparation.mjs";
 import { prepareP2FrontendReplacementPlan } from "./p2-frontend-replacement-plan.mjs";
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
-import { phase2ContractManifestBinding } from "./release.mjs";
+import { phase2ContractManifestBinding, validatePlatformRelease } from "./release.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const command = fileURLToPath(new URL("./p2-frontend-replacement-plan.mjs", import.meta.url));
@@ -123,6 +124,45 @@ test("offline plan binds exact replacement, retained lineage and complete SQL or
   const result = cli(f.options);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), plan);
+});
+
+test("replacement review accepts the published pending candidate while release validation still refuses it", async t => {
+  const f = fixture(t);
+  const original = structuredClone(f.candidate);
+  for (const carrier of [original, original.approval, original.sourceApproval, original.integration, original.frontendMigration,
+    original.workload, ...Object.values(original.sources)]) delete carrier.qualificationTargetProfile;
+  const { approval, migrations, recovery, scheduler, staging } = JSON.parse(readFileSync(new URL("./release.candidate.json", import.meta.url)));
+  const published = bindStagingCandidateProfile({ ...original, version: 2, approval: { ...approval, releaseId },
+    migrations, recovery, scheduler, staging,
+    integration: { state: "passed", reportSha256: "sha256:" + "4".repeat(64), frontendMigrationRehearsalSha256: "sha256:" + "5".repeat(64) },
+    buildWorkflow: { repository: "princessdardan/lash-her-frontend", ref: "refs/heads/staging", commit: sourceCommit, runId: "1", attempt: "1" },
+  }, "refs/heads/staging");
+  function review(candidate) {
+    const candidateSha256 = write(f.files.candidate, candidate);
+    const reviewSha256 = write(f.files.review, { ...f.review, candidateSha256 });
+    return { ...f.options, reviewSha256 };
+  }
+  const options = review(published);
+  const { plan, probe } = prepareP2FrontendReplacementPlan(options);
+  assert.deepEqual(probe.candidate, published);
+  assert.equal(plan.candidateSha256, digest(serialize(published)));
+  assert.equal(plan.migrationAuthorized, false);
+  assert.equal(plan.releaseAccepted, false);
+  assert.equal(cli(options).status, 0);
+  assert.ok(validatePlatformRelease(published, new Date(), profile).includes("Operator approval for this release and environment required"));
+  for (const [name, change] of [
+    ["foreign workflow", value => { value.buildWorkflow.ref = "refs/heads/main"; }],
+    ["unmatched workflow run", value => { value.buildWorkflow.attempt = "2"; }],
+    ["missing qualification digest", value => { delete value.integration.frontendMigrationRehearsalSha256; }],
+    ["unqualified integration", value => { value.integration.state = "held"; }],
+    ["mismatched approval binding", value => { value.approval.releaseId = "other"; }],
+    ["asserted migration result", value => { value.migrations.frontend = { state: "verified" }; }],
+    ["asserted staging result", value => { value.staging.state = "passed"; }],
+  ]) await t.test(name, () => {
+    const mutated = structuredClone(published);
+    change(mutated);
+    assert.throws(() => prepareP2FrontendReplacementPlan(review(mutated)));
+  });
 });
 
 test("managed Neon review binds only the pinned catalog reference without changing the physical probe", async t => {
