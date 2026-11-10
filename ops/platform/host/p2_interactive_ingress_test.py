@@ -1297,6 +1297,7 @@ class InteractiveWindowTests(unittest.TestCase):
                         "interactiveEvidence": {"admitted": 2, "acknowledged": []}}
 
             stage._gateway = gateway
+            broker.scoped_mux_sha256 = None
             self.assertEqual(broker._verify_gateway_boundary()["version"], 3)
             request = {"id": 1, "controllerChallenge": "e" * 64}
             result = broker.interactive_operation("interactive-observe", {**request, "operation": "interactive-observe"})
