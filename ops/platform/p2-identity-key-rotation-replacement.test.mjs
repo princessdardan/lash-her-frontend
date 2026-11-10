@@ -14,7 +14,8 @@ import { P2_CERTIFICATION_READY_FILES } from "./p2-certification.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
-import { bindP2ManagedIdentityRotationPlan, p2IdentityRotationOperator, prepareP2ManagedIdentityRotationDispatch } from "./p2-identity-key-rotation-operator.mjs";
+import { bindP2ManagedIdentityRotationPlan, p2IdentityRotationOperator, prepareP2ManagedIdentityRotationDispatch,
+  validateP2ManagedRotationFrontendReady, validateP2ManagedRotationSuccessorEvidence } from "./p2-identity-key-rotation-operator.mjs";
 import { prepareP2IdentityRotationReplacementLease, readP2IdentityRotationReplacementCustody,
   readP2IdentityRotationReplacementHostReview, withP2IdentityRotationReplacementLease } from "./p2-identity-key-rotation-replacement.mjs";
 import { runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
@@ -491,13 +492,19 @@ test("managed source dispatch joins the actual controller, fixed wire, reviewed 
     { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
 });
 
-function ownedOverlapBrowser(postgres, browserProgramSha256, evidence, command, args, options) {
+const ownedWindows = {
+  overlap: { open: "2", closed: "3", deploymentId: "dpl_OwnedOverlap" },
+  "current-only": { open: "4", closed: "5", deploymentId: "dpl_OwnedCurrentOnly" },
+  "post-removal": { open: "6", closed: "7", deploymentId: "dpl_OwnedCurrentOnly" },
+};
+
+function ownedRotationBrowser(postgres, browserProgramSha256, evidence, command, args, options) {
   assert.equal(command, process.execPath);
   assert.deepEqual(args.slice(0, 2), ["--input-type=module", "--eval"]);
   assert.equal(p2NativeHash(args[2]), browserProgramSha256);
   assert.deepEqual(options.stdio, ["ignore", "ignore", "ignore", "ipc"]);
   const child = new EventEmitter();
-  let source, ended = false;
+  let source, window, phaseEvidence, ended = false;
   const exit = (code, signal = null) => {
     if (ended) return;
     ended = true;
@@ -509,8 +516,12 @@ function ownedOverlapBrowser(postgres, browserProgramSha256, evidence, command, 
     void Promise.resolve().then(async () => {
       if (type === "initialize") {
         assert.equal(source, undefined);
-        assert.equal(input.phase, "overlap");
-        assert.equal(input.deploymentId, "dpl_OwnedOverlap");
+        const phase = Object.keys(ownedWindows)[evidence.phases.size];
+        assert.equal(input.phase, phase);
+        window = ownedWindows[phase];
+        assert.equal(input.deploymentId, window.deploymentId);
+        phaseEvidence = { reads: [] };
+        evidence.phases.set(phase, phaseEvidence);
         source = input;
         child.emit("message", { type: "initialized", challenge: source.challenge });
         return;
@@ -518,11 +529,11 @@ function ownedOverlapBrowser(postgres, browserProgramSha256, evidence, command, 
       assert.equal(input.challenge, source.challenge);
       if (type === "authenticate") {
         assert.equal(input.permit.stage, "identity");
-        assert.equal(input.permit.epoch, "2");
+        assert.equal(input.permit.epoch, window.open);
         assert.ok(typeof input.permit.customerCookie === "string" && typeof input.permit.adminCookie === "string" &&
           input.permit.customerCookie !== input.permit.adminCookie);
-        assert.equal(evidence.operationIds, undefined);
-        evidence.operationIds = await postgres.exerciseAuthentication(input.permit.epoch);
+        assert.equal(phaseEvidence.operationIds, undefined);
+        phaseEvidence.operationIds = await postgres.exerciseAuthentication(input.permit.epoch);
         child.emit("message", { type: "authenticated", challenge: source.challenge, value: {
           customerAuthenticated: true, adminFresh: true, observedAt: new Date().toISOString(),
         } });
@@ -530,24 +541,134 @@ function ownedOverlapBrowser(postgres, browserProgramSha256, evidence, command, 
       }
       assert.equal(type, "arm");
       assert.equal(input.permit.stage, "rotation-admin");
-      assert.equal(input.permit.epoch, "3");
+      assert.equal(input.permit.epoch, window.closed);
       assert.ok(!Object.hasOwn(input.permit, "customerCookie"));
       const page = path => ({ request: { async get(url) {
         assert.equal(url, `${source.browserOrigin}/api/${path}/courses/${source.courseId}`);
-        evidence.reads.push(path);
+        phaseEvidence.reads.push(path);
         return { status: () => 200, allHeaders: async () => ({ "cache-control": "private, no-store", "x-request-id": randomUUID() }),
           body: async () => raw({ course: { id: source.courseId } }) };
       } } });
-      evidence.sourceRecord = await recordP2IdentityRotationBrowserReads(source, { customer: page("academy"), admin: page("admin") });
-      child.emit("message", { type: "complete", challenge: source.challenge, value: evidence.sourceRecord });
+      phaseEvidence.sourceRecord = await recordP2IdentityRotationBrowserReads(source, { customer: page("academy"), admin: page("admin") });
+      child.emit("message", { type: "complete", challenge: source.challenge, value: phaseEvidence.sourceRecord });
       exit(0);
-    }).catch(error => { evidence.error = error; child.emit("error", error); exit(1); });
+    }).catch(error => { evidence.error ??= error; child.emit("error", error); exit(1); });
     return true;
   };
   return child;
 }
 
-async function rehearseManagedWire(t, afterOverlap) {
+const ownedProfilePrefixes = {
+  "course-api.env": ["COURSE_LEARNER", "COURSE_ADMIN"],
+  "community-api.env": ["COMMUNITY_MEMBER", "COMMUNITY_ADMIN"],
+  "frontend.env": ["COURSE_LEARNER", "COURSE_ADMIN", "COMMUNITY_MEMBER", "COMMUNITY_ADMIN"],
+};
+
+function ownedProfileConfiguration(name, phase) {
+  const variables = [name === "frontend.env" ? "APP_ENV=staging" : "DATABASE_TARGET=staging"];
+  for (const prefix of ownedProfilePrefixes[name]) {
+    const previous = p2NativeHash("p2-owned-baseline-" + prefix);
+    const current = phase === "baseline" ? previous : p2NativeHash("p2-owned-current-" + prefix);
+    variables.push(`${prefix}_JWT_CURRENT_SECRET=${current}`);
+    if (phase === "overlap") variables.push(`${prefix}_JWT_PREVIOUS_SECRET=${previous}`);
+  }
+  return Buffer.from(variables.join("\n") + "\n");
+}
+
+function retainOwnedPhaseConfigurations(configuration, rotation, names) {
+  return Object.fromEntries(["baseline", "overlap", "current-only"].map(phase => {
+    const digest = createHash("sha256");
+    for (const name of [...names, "frontend.env"].sort()) {
+      const bytes = Object.hasOwn(ownedProfilePrefixes, name) ? ownedProfileConfiguration(name, phase) :
+        readFileSync(join(configuration, name));
+      const path = join(rotation, phase, name);
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, bytes, { mode: 0o600, flag: "wx" });
+      digest.update(name).update("\0").update(bytes).update("\0");
+    }
+    return [phase, digest.digest("hex")];
+  }));
+}
+
+function assertOwnedRotationTerminal(dispatch, hostAction, closed, result, browserEvidence, inventory, hostReview) {
+  const read = name => readFileSync(join(hostAction, name));
+  const terminalBytes = read("p2-identity-key-rotation-outcome.json");
+  const terminal = JSON.parse(terminalBytes);
+  const closeBytes = read("p2-identity-key-rotation-frontend-session-closed.json");
+  const successorBytes = read("p2-identity-rotation-successor-runtime.json");
+  const successor = JSON.parse(successorBytes);
+  assert.equal(existsSync(join(hostAction, "p2-independent-guard-outcome.json")), false);
+  assert.equal(result.status, "P2_IDENTITY_KEY_ROTATION_PARENT_FIXTURE_JOINED");
+  assert.equal(result.keyRemovalVerified, false);
+  assert.equal(result.liveEligible, false);
+  assert.equal(result.frontendSessionClosedSha256, p2NativeHash(closed));
+  assert.deepEqual(terminalBytes, read("p2-identity-key-rotation-joined.json"));
+  assert.deepEqual(JSON.parse(closeBytes), closed);
+  assert.deepEqual(JSON.parse(readFileSync(join(dispatch.directory, "fixture-host-rotation-joined.json"))), terminal);
+  assert.deepEqual(JSON.parse(readFileSync(join(dispatch.directory, "fixture-frontend-session-close-observation.json"))), closed);
+  assert.equal(terminal.status, "P2_IDENTITY_KEY_ROTATION_QUALIFIED");
+  assert.equal(terminal.keyRemovalVerified, true);
+  assert.equal(terminal.frontendFinalEpoch, "7");
+  assert.equal(terminal.frontendSessionCloseReceiptSha256, p2NativeHash(closeBytes));
+  assert.deepEqual(terminal.frontendSignerReceiptSha256,
+    Object.fromEntries([...browserEvidence.phases].map(([phase, evidence]) => [phase, evidence.signer.receiptSha256])));
+  assert.deepEqual(Object.keys(terminal.profileReceiptSha256).sort(),
+    ["community-admin", "community-member", "course-admin", "course-learner"]);
+  for (const value of Object.values(terminal.profileReceiptSha256)) {
+    assert.deepEqual(Object.keys(value).sort(), ["current-only", "overlap"]);
+    assert.ok(Object.values(value).every(sha => /^[a-f0-9]{64}$/u.test(sha)));
+  }
+
+  const reviewed = hostReview.certificationPlan;
+  assert.equal(successor.terminalReceiptSha256, p2NativeHash(terminalBytes));
+  assert.equal(successor.frontendSessionClosedSha256, p2NativeHash(closeBytes));
+  assert.equal(successor.originalReleasePlanSha256, reviewed.originalReleasePlanSha256);
+  assert.equal(successor.originalReleaseReceiptSha256, reviewed.originalReleaseReceiptSha256);
+  assert.equal(successor.predecessorRuntimeInventorySha256, p2NativeHash(inventory));
+  assert.equal(successor.gatewayProcessSha256, reviewed.gatewayProcessSha256);
+  assert.equal(successor.gatewayConfigurationSha256, reviewed.gatewayConfigurationSha256);
+  assert.equal(successor.frontendEpoch, "7");
+  assert.equal(successor.frontend.deploymentId, "dpl_OwnedCurrentOnly");
+  assert.equal(successor.frontend.deploymentUrl, "https://owned-current-only.vercel.app");
+  const phaseInventories = Object.fromEntries(["baseline", "overlap", "current-only"].map(phase => {
+    const bytes = read(`host-runtime-${phase}-inventory.json`);
+    assert.equal(successor.phaseRuntimeInventoryReceiptSha256[phase], p2NativeHash(bytes));
+    return [phase, JSON.parse(bytes).containers];
+  }));
+  assert.deepEqual(phaseInventories.baseline, inventory);
+  assert.equal(successor.runtimeInventorySha256, p2NativeHash(phaseInventories["current-only"]));
+  const recreated = ["course-api", "community-api"];
+  assert.deepEqual(successor.currentOnlyRecreatedServices, recreated);
+  assert.deepEqual(successor.unchangedOriginalServices, inventory.map(row => row.service).filter(name => !recreated.includes(name)));
+  for (const [index, row] of inventory.entries()) {
+    const observed = Object.values(phaseInventories).map(phase => phase[index]);
+    assert.ok(observed.every(item => item.service === row.service && item.image === row.image));
+    assert.equal(new Set(observed.map(item => item.containerId)).size, recreated.includes(row.service) ? 3 : 1);
+  }
+  const mutationOrder = [["overlap", "api"], ["overlap", "frontend"], ["current-only", "frontend"], ["current-only", "api"]];
+  assert.deepEqual(successor.mutationReceipts, mutationOrder.map(([phase, kind]) => ({
+    phase, kind, attemptReceiptSha256: p2NativeHash(read(`host-${phase}-${kind}-attempted.json`)),
+    observationReceiptSha256: p2NativeHash(read(`host-${phase}-${kind}-observed.json`)),
+  })));
+  const runtimeConfiguration = createHash("sha256");
+  for (const name of Object.keys(hostReview.configurationSha256).sort()) {
+    runtimeConfiguration.update(name).update("\0").update(read(`runtime-current-only/${name}`)).update("\0");
+  }
+  assert.equal(successor.currentOnlyRuntimeConfigurationSha256, runtimeConfiguration.digest("hex"));
+  const evidence = validateP2ManagedRotationSuccessorEvidence({ bytes: successorBytes.toString("base64") }, dispatch.plan, terminal);
+  assert.equal(evidence.receiptSha256, p2NativeHash(successorBytes));
+  const ready = Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name => [name, read(`frontend-current-only/${name}`).toString("base64")]));
+  assert.deepEqual(validateP2ManagedRotationFrontendReady({ bytes: raw(ready).toString("base64") }, evidence),
+    { successorReceiptSha256: evidence.receiptSha256, originalBytesBase64: ready });
+  const controller = name => JSON.parse(readFileSync(join(dispatch.directory, "controller", name)));
+  const drained = controller("overlap-drained.json"), capture = controller("pre-removal-capture-intent.json");
+  assert.equal(drained.frontendIssuanceCutoffAt, browserEvidence.phases.get("overlap").signer.issuanceCutoffAt);
+  assert.ok(Date.parse(drained.verifiedAt) - Date.parse(drained.frontendIssuanceCutoffAt) >= 330_000);
+  assert.ok(Date.parse(capture.startedAt) >= Date.parse(controller("current-frontend-verified.json").verifiedAt));
+}
+
+async function rehearseManagedWire(t, checkpoint) {
+  const fullRotation = checkpoint === "terminal", browserRuns = checkpoint !== "arm";
   assert.equal(process.platform, "linux");
   assert.equal(process.getuid(), 0);
   assert.ok(existsSync("/.dockerenv") && Object.values(networkInterfaces()).flat().every(address => address.internal));
@@ -583,15 +704,16 @@ async function rehearseManagedWire(t, afterOverlap) {
       .map(service => `${service}.env`)];
   const configurationSha256 = Object.fromEntries(configurationFiles.map(name => {
     const destination = join(configuration, name);
-    const contents = name.endsWith(".json") ? raw({ ...base, hostMachineId, releaseId }) : Buffer.from(`owned fixture ${name}\n`);
+    const contents = fullRotation && Object.hasOwn(ownedProfilePrefixes, name) ? ownedProfileConfiguration(name, "baseline") :
+      name.endsWith(".json") ? raw({ ...base, hostMachineId, releaseId }) : Buffer.from(`owned fixture ${name}\n`);
     mkdirSync(dirname(destination), { recursive: true, mode: 0o700 });
     writeFileSync(destination, contents, { mode: 0o600, flag: "wx" });
     return [name, p2NativeHash(contents)];
   }));
   const compose = readFileSync(join(installed, "ops/platform/compose.yaml"));
   writeFileSync(join(configuration, "compose.yaml"), compose, { mode: 0o600, flag: "wx" });
-  const artifacts = Object.fromEntries(["gateway", "courseRuntime", "communityRuntime"].map((name, index) => [name, {
-    image: `ghcr.io/princessdardan/lash-her-platform-owned-rotation-${name.toLowerCase()}@sha256:${pin("abc"[index])}`,
+  const artifacts = Object.fromEntries(["gateway", "courseRuntime", "communityRuntime", "courseMigration", "communityMigration"].map((name, index) => [name, {
+    image: `ghcr.io/princessdardan/lash-her-platform-owned-rotation-${name.toLowerCase()}@sha256:${pin("abcde"[index])}`,
   }]));
   const services = ["community-api", "course-api", "community-tls", "course-tls", "course-snapshot", "community-worker",
     "course-media", "course-export-cleanup", "course-publisher", "gateway"];
@@ -601,9 +723,12 @@ async function rehearseManagedWire(t, afterOverlap) {
       : service.startsWith("course-") ? "courseRuntime" : "communityRuntime"].image,
     health: service.endsWith("-tls") ? "none" : "healthy",
   }));
+  const predecessor = fullRotation ? await (await import("./harness/p2-rotation-owned-predecessor.test.mjs"))
+    .prepareOwnedRotationPredecessor(sourceRoot) : null;
   const { withOwnedP2RotationPostgres } = await import("./p2-certification-replacement-probe.test.mjs");
   await withOwnedP2RotationPostgres({ pgBin: process.env.PG_BIN, serverMajor: 18, runAsPostgres: true,
-    sourceCommit, releaseId, producerSha256: pin("b") }, async postgres => {
+    sourceCommit, releaseId, producerSha256: pin("b"),
+    ...(predecessor ? { reviewedPlanSha256: predecessor.reviewedPlanSha256 } : {}) }, async postgres => {
     const { f, lease, path, rotation } = managedFixture(t, { postgres, hostRoot, hostMachineId, artifacts,
       composeSha256: "sha256:" + p2NativeHash(compose), configurationSha256,
       runtimeInventorySha256: p2NativeHash(inventory), sourceClosureSha256: closureSha });
@@ -611,6 +736,10 @@ async function rehearseManagedWire(t, afterOverlap) {
     writeFileSync(join(configuration, "admission/state.json"), raw({ version: 1, environment: "staging", releaseId,
       candidateSha256: f.loaded.original.plan.candidateSha256, actionId: "owned-fixture", newWork: false, recovery: false }),
     { mode: 0o644, flag: "wx" });
+    if (predecessor) {
+      predecessor.retain(f.loaded.host.results, releaseId, f.loaded.originalReleaseReceipt);
+      rotation.privateConfigurationSha256 = retainOwnedPhaseConfigurations(configuration, path, configurationFiles);
+    }
     const selected = bindP2ManagedIdentityRotationPlan(lease, files, path, rotation);
     const program = "import hashlib,sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import p2_identity_key_rotation as p;print(hashlib.sha256(p.private_program(Path(sys.argv[2]))).hexdigest())";
     const operatorProgramSha256 = execFileSync("/usr/bin/python3", ["-I", "-B", "-c", program,
@@ -621,8 +750,8 @@ async function rehearseManagedWire(t, afterOverlap) {
       vercelToken: "owned-vercel-projection", scopedCronSecret: "owned-cron-projection".repeat(2),
       gatewayHost: new URL(resolveQualificationTargetProfile(profile).gateway.publicOrigin).hostname, operatorProgramSha256,
       rotationBrowserProgramSha256: p2NativeHash(Buffer.concat([browser, Buffer.from("\nawait runP2IdentityRotationBrowserChild();\n")])) };
-    let exited, probe, overlapSigner;
-    const browserEvidence = { reads: [] };
+    let exited, probe, overlapStartedAt;
+    const browserEvidence = { phases: new Map() };
     const diagnostics = [];
     const dispatch = prepareP2ManagedIdentityRotationDispatch(selected, privateInputs, { verifyEnvironment: postgres.verifyEnvironment },
       { fixture: true, openOwnedChannel: () => {
@@ -639,11 +768,11 @@ async function rehearseManagedWire(t, afterOverlap) {
       } });
     const hostAction = join(f.loaded.host.results, `p2-identity-key-rotation-${dispatch.plan.actionId}`);
     const readReceipt = name => JSON.parse(readFileSync(join(hostAction, name), "utf8"));
-    await assert.rejects(runP2IdentityRotationParent(dispatch.plan,
+    const run = runP2IdentityRotationParent(dispatch.plan,
       { confirmation: `staging/${dispatch.plan.actionId}`, transport: dispatch.transport }, {
         fixture: true,
-        ...(afterOverlap ? { openOwnedBrowserChild: (...args) =>
-          ownedOverlapBrowser(postgres, privateInputs.rotationBrowserProgramSha256, browserEvidence, ...args) } : {}),
+        ...(browserRuns ? { openOwnedBrowserChild: (...args) =>
+          ownedRotationBrowser(postgres, privateInputs.rotationBrowserProgramSha256, browserEvidence, ...args) } : {}),
         runController: async (controllerPlan, parent, dependencies, options) => {
           assert.equal(parent.hostLockHeld, true);
           assert.equal(parent.frontendPhysicalLockHeld, true);
@@ -653,71 +782,88 @@ async function rehearseManagedWire(t, afterOverlap) {
           assert.equal(readReceipt("p2-identity-rotation-guard-ready.json").status, "P2_MANAGED_ROTATION_GUARD_ARM_READY");
           assert.throws(() => execFileSync("/usr/bin/flock", ["-n", "/run/lock/lash-her-release.lock", "/usr/bin/true"]), { status: 1 });
           probe = dependencies.frontendSession.probe;
-          if (!afterOverlap) throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_ARM");
+          if (!browserRuns) throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_ARM");
           return runIdentityKeyRotationController(controllerPlan, parent, {
             ...dependencies,
             observeFrontendSigner: async phase => {
-              assert.equal(phase, "overlap");
+              if (phase === "overlap") overlapStartedAt = performance.now();
+              if (phase === "current-only") assert.ok(performance.now() - overlapStartedAt >= 330_000);
               const signer = await dependencies.observeFrontendSigner(phase);
+              const window = ownedWindows[phase], evidence = browserEvidence.phases.get(phase);
               assert.equal(signer.status, "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED");
-              assert.equal(signer.receiptSha256, p2NativeHash(browserEvidence.sourceRecord));
+              assert.equal(signer.receiptSha256, p2NativeHash(evidence.sourceRecord));
               assert.deepEqual((await dependencies.frontendSession.observeCurrent()).admission,
-                { epoch: "3", newWork: false, recovery: false, active: 0, uncertain: 0 });
-              overlapSigner = signer;
-              throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_OVERLAP_SIGNER");
+                { epoch: window.closed, newWork: false, recovery: false, active: 0, uncertain: 0 });
+              evidence.signer = signer;
+              if (!fullRotation) throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_OVERLAP_SIGNER");
+              return signer;
             },
           }, options);
         },
-      }), { message: "P2_IDENTITY_ROTATION_FAILED_REQUIRES_REVIEW" });
-    assert.ok(probe, `Owned broker did not reach ARM (${diagnostics.join(", ")})`);
-    if (afterOverlap) {
+      });
+    const result = fullRotation ? await run.catch(error => {
       assert.ifError(browserEvidence.error);
-      assert.ok(overlapSigner, `Owned broker did not retain the overlap signer (${diagnostics.join(", ")})`);
-      assert.deepEqual(browserEvidence.reads, ["academy", "admin"]);
-      const authentication = readReceipt("browser-overlap-authentication-writer-scope.json");
-      const signer = readReceipt("browser-overlap-signer-read-writer-scope.json");
-      for (const scope of [authentication, signer]) {
-        assert.equal(scope.status, "P2_ROTATION_BROWSER_WRITER_SCOPE_CLOSED");
-        assert.equal(scope.closedEpoch, "3");
-        assert.equal(scope.challengeSha256, p2NativeHash(browserEvidence.sourceRecord.challenge));
-        assert.deepEqual(Object.fromEntries(["newWork", "recovery", "active", "uncertain"].map(key => [key, scope[key]])),
-          { newWork: false, recovery: false, active: 0, uncertain: 0 });
-        const receipt = readReceipt(`browser-overlap-${scope.kind}-closed.json`);
-        assert.equal(receipt.writerScopeSha256, p2NativeHash(readFileSync(join(hostAction,
-          `browser-overlap-${scope.kind}-writer-scope.json`))));
-      }
-      assert.equal(authentication.permitEpoch, "2");
-      assert.deepEqual(authentication.operationCounts, { "new-work": 5, recovery: 2 });
-      assert.equal(signer.permitEpoch, "3");
-      assert.deepEqual(signer.operationCounts, { "new-work": 0, recovery: 0 });
+      throw new Error(`Owned terminal did not commit (${diagnostics.join(", ")})`, { cause: error });
+    }) : await assert.rejects(run, { message: "P2_IDENTITY_ROTATION_FAILED_REQUIRES_REVIEW" });
+    assert.ok(probe, `Owned broker did not reach ARM (${diagnostics.join(", ")})`);
+    if (browserRuns) {
+      assert.ifError(browserEvidence.error);
+      assert.deepEqual([...browserEvidence.phases.keys()], fullRotation ? Object.keys(ownedWindows) : ["overlap"]);
       const { rows } = await postgres.admin.query(`SELECT id::text, epoch::text, kind, state, source_sha,
         database_role::text AS role_oid, reconciliation_sha256 FROM frontend_admission.operations ORDER BY started_at,id`);
-      assert.deepEqual(rows.map(row => row.id), browserEvidence.operationIds);
-      assert.equal(rows.length, 7);
-      assert.ok(rows.every(row => row.epoch === "2" && row.state === "completed" && row.source_sha === sourceCommit &&
+      for (const [phase, evidence] of browserEvidence.phases) {
+        assert.ok(evidence.signer, `Owned broker did not retain ${phase} signer (${diagnostics.join(", ")})`);
+        assert.deepEqual(evidence.reads, ["academy", "admin"]);
+        const { open, closed } = ownedWindows[phase];
+        for (const [kind, permitEpoch, operationCounts] of [
+          ["authentication", open, { "new-work": 5, recovery: 2 }], ["signer-read", closed, { "new-work": 0, recovery: 0 }],
+        ]) {
+          const scopeName = `browser-${phase}-${kind}-writer-scope.json`;
+          const scope = readReceipt(scopeName);
+          assert.equal(scope.status, "P2_ROTATION_BROWSER_WRITER_SCOPE_CLOSED");
+          assert.equal(scope.closedEpoch, closed);
+          assert.equal(scope.permitEpoch, permitEpoch);
+          assert.deepEqual(scope.operationCounts, operationCounts);
+          assert.equal(scope.challengeSha256, p2NativeHash(evidence.sourceRecord.challenge));
+          assert.deepEqual(Object.fromEntries(["newWork", "recovery", "active", "uncertain"].map(key => [key, scope[key]])),
+            { newWork: false, recovery: false, active: 0, uncertain: 0 });
+          const receipt = readReceipt(`browser-${phase}-${kind}-closed.json`);
+          assert.equal(receipt.writerScopeSha256, p2NativeHash(readFileSync(join(hostAction, scopeName))));
+        }
+        assert.deepEqual(rows.filter(row => row.epoch === open).map(row => row.id), evidence.operationIds);
+      }
+      assert.equal(rows.length, browserEvidence.phases.size * 7);
+      assert.ok(rows.every(row => row.state === "completed" && row.source_sha === sourceCommit &&
         row.role_oid === postgres.selected.prepared.plan.producers[0].role.oid && row.reconciliation_sha256 === null));
-      assert.equal(existsSync(join(hostAction, "host-current-only-frontend-attempted.json")), false);
     }
-    assert.equal(exited, 1);
-    const failure = readReceipt("p2-independent-guard-outcome.json");
-    assert.equal(failure.workerProcessesQuiesced, true);
-    assert.equal(failure.managedRotationArmReceiptVerified, true);
-    assert.equal(failure.frontendAdmissionClosed, true);
-    assert.equal(failure.gatewayAdmissionAcknowledged, true);
-    assert.equal(failure.runtimeStopped, true);
-    assert.deepEqual(Object.fromEntries(["epoch", "newWork", "recovery", "active", "uncertain", "admissionChanged"]
-      .map(key => [key, failure.frontendFence[key]])),
-    { epoch: afterOverlap ? "3" : "1", newWork: false, recovery: false, active: 0, uncertain: 0, admissionChanged: false });
-    assert.equal(existsSync(join(hostAction, "p2-identity-key-rotation-outcome.json")), false);
+    const finalAdmission = { epoch: fullRotation ? "7" : browserRuns ? "3" : "1", newWork: false, recovery: false, active: 0, uncertain: 0 };
+    assert.equal(exited, fullRotation ? 0 : 1);
     execFileSync("/usr/bin/flock", ["-n", "/run/lock/lash-her-release.lock", "/usr/bin/true"]);
     const closed = await postgres.observeClosed(probe);
     assert.equal(closed.backendAbsent && closed.migrationLockReleased && closed.nonceLockReleased, true);
-    assert.deepEqual(closed.admission, { epoch: afterOverlap ? "3" : "1", newWork: false, recovery: false, active: 0, uncertain: 0 });
+    assert.deepEqual(closed.admission, finalAdmission);
+    if (fullRotation) {
+      assertOwnedRotationTerminal(dispatch, hostAction, closed, result, browserEvidence, inventory, selected.hostReview);
+    } else {
+      const failure = readReceipt("p2-independent-guard-outcome.json");
+      assert.equal(failure.workerProcessesQuiesced, true);
+      assert.equal(failure.managedRotationArmReceiptVerified, true);
+      assert.equal(failure.frontendAdmissionClosed, true);
+      assert.equal(failure.gatewayAdmissionAcknowledged, true);
+      assert.equal(failure.runtimeStopped, true);
+      assert.deepEqual(Object.fromEntries(["epoch", "newWork", "recovery", "active", "uncertain", "admissionChanged"]
+        .map(key => [key, failure.frontendFence[key]])), { ...finalAdmission, admissionChanged: false });
+      assert.equal(existsSync(join(hostAction, "p2-identity-key-rotation-outcome.json")), false);
+      assert.equal(existsSync(join(hostAction, "host-current-only-frontend-attempted.json")), false);
+    }
   });
 }
 
 const ownedWireOptions = { skip: process.env.P2_ROTATION_OWNED_REHEARSAL !== "true", timeout: 300_000 };
 test("owned Linux managed wire arms a real frontend lease and fences after controller loss",
-  ownedWireOptions, t => rehearseManagedWire(t, false));
+  ownedWireOptions, t => rehearseManagedWire(t, "arm"));
 test("owned Linux managed wire retains overlap signer scopes and fences a real closed epoch",
-  ownedWireOptions, t => rehearseManagedWire(t, true));
+  ownedWireOptions, t => rehearseManagedWire(t, "overlap"));
+test("owned Linux managed wire commits a mixed successor after the full overlap drain", {
+  skip: ownedWireOptions.skip || process.env.P2_ROTATION_OWNED_TERMINAL !== "true", timeout: 720_000,
+}, t => rehearseManagedWire(t, "terminal"));

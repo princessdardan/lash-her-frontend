@@ -25,6 +25,50 @@ FLAGS = {'--profiled-replacement', '--profiled-replacement-rotation-writer-scope
          '--profiled-replacement-rotation-guard-fence'}
 INITIAL_MAXIMUM = 4_000_000
 REAL_RUN = subprocess.run
+ROTATION_PROBE = 'ops/platform/p2-identity-key-rotation.mjs'
+DEPLOYMENTS = {
+    'overlap': ('dpl_OwnedOverlap', 'https://owned-overlap.vercel.app'),
+    'current-only': ('dpl_OwnedCurrentOnly', 'https://owned-current-only.vercel.app'),
+}
+OWNED_PRIVATE_PROBE = r'''
+import { createHmac, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const { captureRotationTokens, observeCourseRotation, observeCommunityRotation } = await import(pathToFileURL(process.argv[1]));
+const { input, environment } = JSON.parse(readFileSync(0, 'utf8'));
+const prefix = input.profile.toUpperCase().replaceAll('-', '_');
+const keys = [environment[`${prefix}_JWT_CURRENT_SECRET`], environment[`${prefix}_JWT_PREVIOUS_SECRET`]].filter(Boolean);
+const authenticate = token => {
+  const [header, payload, signature] = token.split('.');
+  if (!keys.some(key => createHmac('sha256', key).update(`${header}.${payload}`).digest('base64url') === signature)) return null;
+  const claims = JSON.parse(Buffer.from(payload, 'base64url'));
+  return claims.sub === input.subject && claims.exp * 1000 > Date.now() ? claims : null;
+};
+let value;
+if (input.mode === 'rotation-capture') {
+  value = captureRotationTokens(input);
+} else if (input.mode === 'rotation-course-http') {
+  value = await observeCourseRotation(input, { ca: readFileSync(process.argv[2]), read(path, token) {
+    const admin = input.profile === 'course-admin';
+    if (path !== `/v1/${admin ? 'admin' : 'student'}/courses/${input.courseId}`) throw new Error('Owned path refused');
+    const claims = authenticate(token);
+    const status = !claims ? 401 : admin && !claims.capabilities?.includes('course-editor') ? 403 : 200;
+    return { status, requestId: randomUUID(), observedAt: new Date().toISOString() };
+  } });
+} else {
+  value = await observeCommunityRotation(input, { environment, loadVerifier: async () => ({
+    configured: { env: environment, resolveCommunityUserRuntime: env => env },
+    implementation: { createCommunityUserVerifier: () => ({
+      verifyMember: authorization => authenticate(authorization.slice(7)),
+      verifyAdmin(authorization) {
+        const claims = authenticate(authorization.slice(7));
+        return claims?.capabilities?.includes('community-moderator') ? claims : null;
+      },
+    }) },
+  }) });
+}
+process.stdout.write(JSON.stringify(value));
+'''
 
 
 def demand(condition, code='P2_OWNED_REHEARSAL_INPUT_REFUSED'):
@@ -55,6 +99,7 @@ class OwnedPlatform:
         self.custody = initial['frontendCustody']
         self.plan = self.custody['certificationPlan']
         self.configuration = Path(initial['configuration'])
+        self.action_directory = Path(initial['results']) / ('p2-identity-key-rotation-' + initial['rotationActionId'])
         self.credential = initial['credentials'][CREDENTIAL]
         self.node = shutil.which('node')
         self.ca = Path(os.environ['NODE_EXTRA_CA_CERTS'])
@@ -103,11 +148,41 @@ class OwnedPlatform:
         if phase == 'baseline':
             deployment_id, url, workload = (native[key] for key in ('deploymentId', 'deploymentUrl', 'configurationRecordSha256'))
         else:
-            demand(phase == 'overlap')
-            deployment_id, url, workload = 'dpl_OwnedOverlap', 'https://owned-overlap.vercel.app', digest(b'p2-owned-overlap-workload')
+            deployment_id, url = DEPLOYMENTS[phase]
+            workload = digest((self.action_directory / f'frontend-{phase}' / 'frontend-workload-outcome.json').read_bytes())
         return {'phase': phase, 'deploymentId': deployment_id, 'deploymentUrl': url,
                 'sourceCommit': self.initial['sourceCommit'], 'workloadReceiptSha256': workload,
                 'configurationSha256': self.initial['rotationPlan']['configuration'][phase]['sha256']}
+
+    def write_frontend_ready(self, phase, previous):
+        import migrate
+        from p2_certification_parent import READY_FILES
+
+        deployment_id, url = DEPLOYMENTS[phase]
+        attempt = self.action_directory / f'frontend-{phase}'
+        attempt.mkdir(mode=0o700)
+        native = self.initial['nativePlan']
+        base = {'version': 2, 'qualificationTargetProfile': self.initial['qualificationTargetProfile'],
+                'environment': 'staging', 'projectId': native['projectId'], 'sourceCommit': native['sourceCommit'],
+                'releaseId': self.selected['releaseId'], 'previousDeploymentId': previous['deploymentId']}
+        closed = {'trafficAuthorized': False, 'promotionAuthorized': False}
+        deployed = {'deploymentId': deployment_id}
+        previous_alias = 1 if phase == 'overlap' else 2
+        promoting = {**deployed, 'previousAliasRequestedAt': previous_alias}
+        records = (
+            closed,
+            {**closed, **deployed},
+            {**closed, **deployed, 'status': 'FRONTEND_STAGED', 'phase': 'completed', 'url': url, 'readyState': 'READY'},
+            {**deployed, 'status': 'FRONTEND_VERIFIED', 'phase': 'completed', 'trafficAuthorized': False,
+             'nativeSchedulerVerified': False, 'checks': ['frontend-server-gateway-course-catalog-p2'],
+             **migrate.contract_identity(self.selected), 'featureControls': native['featureControls'],
+             'writerAdmissionBinding': native['writerAdmissionBinding']},
+            promoting,
+            {**promoting, 'status': 'FRONTEND_DOMAINS_PROMOTED', 'phase': 'completed', 'trafficAuthorized': False,
+             'gatewayTrafficAuthorized': False, 'frontendDomainsPromoted': True, 'aliasRequestedAt': previous_alias + 1},
+        )
+        for name, record in zip(READY_FILES, records, strict=True):
+            migrate.write_json(attempt, name, {**base, **record})
 
     # This rehearsal starts at the rotation boundary. The predecessor rollout
     # and API migration bundle are projections. The actual frontend job and
@@ -169,6 +244,60 @@ class OwnedPlatform:
                         **{**kwargs, 'env': {'PATH': os.environ['PATH'], 'NODE_EXTRA_CA_CERTS': str(self.ca),
                                              CREDENTIAL: self.credential}})
 
+    def mounted_root(self, service):
+        phase = self.read_state()['runtime']
+        if phase != 'baseline' and service in ('course-api', 'community-api'):
+            return self.action_directory / f'runtime-{phase}'
+        return self.configuration
+
+    def mounted_files(self, service):
+        relative = {
+            'gateway': {'/config/gateway.json': 'gateway.json', '/admission': 'admission', '/tls': 'tls/gateway'},
+            'course-tls': {'/config/course-tls.json': 'course-tls.json', '/tls': 'tls/course'},
+            'community-tls': {'/config/community-tls.json': 'community-tls.json', '/tls': 'tls/community'},
+            'course-publisher': {'/tls/ca.pem': 'tls/ca.pem'},
+            'community-worker': {'/tls/ca.pem': 'tls/ca.pem'},
+            'community-api': {'/tls/ca.pem': 'tls/ca.pem'},
+        }
+        root = self.mounted_root(service)
+        return [{'Destination': destination, 'Source': str(root / name), 'Type': 'bind', 'RW': False}
+                for destination, name in relative.get(service, {}).items()]
+
+    def inspect_container(self, identity, fields):
+        import docker_inspect
+
+        container = next(row for row in self.containers if row['containerId'] == identity)
+        service, image = container['service'], container['image']
+        running = 'false' if self.runtime_stopped else 'true'
+        if fields == self.prior.PROCESS_FIELDS:
+            demand(service == 'gateway')
+            return '|'.join((image.split('@')[1], running, '0' if self.runtime_stopped else '4242',
+                             '2026-01-01T00:00:00.000000000Z', '0', 'lash-her-staging', service))
+        if fields == docker_inspect.RUNTIME_FIELDS:
+            return '|'.join((image.split('@')[1], running, container['health'], 'lash-her-staging', service))
+        if fields == '{{json .Mounts}}':
+            return json.dumps(self.mounted_files(service))
+        if fields == '{{.HostConfig.ReadonlyRootfs}}|{{json .Mounts}}':
+            return 'true|' + json.dumps(self.mounted_files(service))
+        demand(fields == ('{{.Config.Image}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|'
+                          '{{index .Config.Labels "com.docker.compose.project.config_files"}}'))
+        root = self.mounted_root(service)
+        return '|'.join((image, str(root), str(root / 'compose.yaml')))
+
+    def inspect_gateway_fault(self, args):
+        from p2_certification_fault import GATEWAY_OBSERVER, MODULE
+
+        demand(args == ['docker', 'exec', '--workdir', '/app', self.gateway['containerId'], 'node',
+                        '--input-type=module', '--eval', GATEWAY_OBSERVER])
+        directory = (self.configuration / 'admission').lstat()
+        admission = self.gateway_admission(self.configuration, {'releaseId': self.selected['releaseId'],
+            'candidateSha256': self.initial['candidateSha256']}, lambda: None, None, None)['admission']
+        return json.dumps({'version': 1, 'status': 'P2_FAULT_GATEWAY_CURRENT', 'processSha256': self.plan['gatewayProcessSha256'],
+                           'gatewayConfigurationSha256': self.plan['gatewayConfigurationSha256'],
+                           'faultModuleSha256': digest((self.source / MODULE).read_bytes()), 'faultLeasePresent': False,
+                           'admissionDirectory': {'device': str(directory.st_dev), 'inode': str(directory.st_ino)},
+                           'admission': {**admission, 'valid': True}})
+
     def run(self, args, **kwargs):
         demand(type(args) is list and args and args[0] == 'docker', 'P2_OWNED_REHEARSAL_DOCKER_COMMAND_REFUSED')
         if args[1] == 'run':
@@ -181,21 +310,22 @@ class OwnedPlatform:
             if any(item.startswith('name=') for item in args):
                 output = ''
             else:
-                demand('label=com.docker.compose.project=lash-her-staging' in args and
-                       'label=com.docker.compose.service=gateway' in args)
-                output = self.gateway['containerId'] + '\n'
+                demand('label=com.docker.compose.project=lash-her-staging' in args)
+                rows = [self.gateway] if 'label=com.docker.compose.service=gateway' in args else self.containers
+                output = '\n'.join(row['containerId'] for row in rows) + '\n'
         elif args[:3] == ['docker', 'inspect', '--format']:
-            demand(args[-1] == self.gateway['containerId'])
-            if args[-2] == self.prior.PROCESS_FIELDS:
-                image = self.gateway['image'].split('@')[1]
-                output = '|'.join((image, 'false' if self.runtime_stopped else 'true',
-                                   '0' if self.runtime_stopped else '4242', '2026-01-01T00:00:00.000000000Z',
-                                   '0', 'lash-her-staging', 'gateway')) + '\n'
-            else:
-                demand(args[-2] == '{{json .Mounts}}')
-                output = json.dumps([{'Destination': destination, 'Source': str(self.configuration / relative),
-                                      'Type': 'bind', 'RW': False} for destination, relative in
-                                     (('/config/gateway.json', 'gateway.json'), ('/admission', 'admission'))]) + '\n'
+            demand(len(args) == 5)
+            output = self.inspect_container(args[-1], args[-2]) + '\n'
+        elif args[:7] == ['docker', 'image', 'inspect', '--platform', 'linux/amd64', '--format', '{{.Id}}']:
+            demand(len(args) == 8 and args[-1] in {row['image'] for row in self.containers})
+            output = args[-1].split('@')[1] + '\n'
+        elif args[:2] == ['docker', 'compose']:
+            snapshot = self.mounted_root('course-api')
+            prefix = self.runtime.compose_command(snapshot, 'staging')
+            demand(args[:-4] == prefix and args[-4:-1] == ['ps', '--all', '--quiet'])
+            output = next(row['containerId'] for row in self.containers if row['service'] == args[-1]) + '\n'
+        elif args[:2] == ['docker', 'exec']:
+            output = self.inspect_gateway_fault(args) + '\n'
         elif args[:2] == ['docker', 'ps']:
             demand('label=com.docker.compose.project=lash-her-staging' in args)
             output = ('' if self.runtime_stopped else ''.join(f"{row['containerId']} {row['service']}\n" for row in self.containers))
@@ -266,7 +396,10 @@ class OwnedPlatform:
 
     def rotation_adapter(self, scope, selected, jobs, rotation_configuration, configuration, output, compose,
                          client, _gateway_host, source, _program_sha256):
-        from p2_identity_key_rotation_adapter import P2IdentityRotationHostAdapter
+        import migrate
+        from p2_identity_key_rotation_adapter import (PHASES, P2IdentityRotationHostAdapter, RotationConfigurationSet,
+                                                      _runtime_phase_hash)
+        from staging_state import CONFIGURATION_FILES
         import vercel
 
         demand(selected == self.selected and source == self.source and configuration == self.configuration and
@@ -275,27 +408,77 @@ class OwnedPlatform:
                rotation_configuration == Path(self.initial['rotationConfiguration']))
         adapter = P2IdentityRotationHostAdapter.__new__(P2IdentityRotationHostAdapter)
         adapter.scope, adapter.output = scope, output
-        adapter.configurations = SimpleNamespace(hashes=scope.rotation_configuration_sha256,
-                                                directory=lambda phase: rotation_configuration / phase)
+        phase_directories = [(rotation_configuration / phase).is_dir() for phase in PHASES]
+        full_configuration = all(phase_directories)
+        if full_configuration:
+            adapter.configurations = RotationConfigurationSet(rotation_configuration, scope.rotation_configuration_sha256,
+                                                              scope.private_rotation_configuration_sha256)
+        else:
+            demand(not any(phase_directories))
+            adapter.configurations = SimpleNamespace(hashes=scope.rotation_configuration_sha256,
+                                                    directory=lambda phase: rotation_configuration / phase)
+
+        def snapshot(phase):
+            demand(full_configuration and phase in ('overlap', 'current-only'))
+            reviewed = adapter.configurations.directory(phase)
+            destination = output / f'runtime-{phase}'
+            if not destination.exists():
+                destination.mkdir(mode=0o700)
+                for filename in (*CONFIGURATION_FILES, 'compose.yaml'):
+                    target = destination / filename
+                    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    raw = compose.read_bytes() if filename == 'compose.yaml' else migrate.read_input(reviewed, filename, 65_536)
+                    migrate.write_exact_bytes(target.parent, target.name, raw)
+            demand(_runtime_phase_hash(destination) == adapter.configurations.runtime_private_hashes[phase] and
+                   migrate.read_input(destination, 'compose.yaml', 65_536) == compose.read_bytes())
+            return destination
 
         def runtime_phase(phase):
             scope.verify()
             demand(phase == self.read_state()['runtime'] and not self.runtime_stopped)
+            if full_configuration:
+                if phase == 'baseline':
+                    demand(_runtime_phase_hash(configuration) == adapter.configurations.runtime_private_hashes['baseline'])
+                else:
+                    snapshot(phase)
             return adapter.configurations.hashes[phase]
 
         def public_containers():
             return [{key: row[key] for key in ('service', 'containerId', 'image')} for row in self.containers]
 
         def recreate_apis(phase):
-            demand(runtime_phase('baseline') and phase == 'overlap')
-            self.update_state(runtime='overlap')
+            demand(phase in ('overlap', 'current-only') and (phase == 'overlap' or full_configuration))
+            runtime_phase('baseline' if phase == 'overlap' else 'overlap')
+            demand(self.read_state()['frontend'] == ('baseline' if phase == 'overlap' else 'current-only'))
+            if full_configuration:
+                snapshot(phase)
+            self.update_state(runtime=phase)
 
         def rollout_frontend(phase, feature_controls, writer_binding):
             scope.verify()
-            demand(phase == 'overlap' and self.read_state() == {'runtime': 'overlap', 'frontend': 'baseline', 'stopped': False} and
+            demand(phase in ('overlap', 'current-only') and (phase == 'overlap' or full_configuration) and
+                   self.read_state() == {'runtime': 'overlap', 'frontend': 'baseline' if phase == 'overlap' else 'overlap',
+                                         'stopped': False} and
                    feature_controls == self.initial['expectedFeatureControls'] and writer_binding == self.initial['expectedWriterAdmissionBinding'])
-            (output / 'frontend-overlap').mkdir(mode=0o700)
-            self.update_state(frontend='overlap')
+            self.write_frontend_ready(phase, self.deployment())
+            self.update_state(frontend=phase)
+
+        def private_child(phase, service, payload):
+            runtime_phase(phase)
+            profile = payload['profile']
+            if payload['mode'] == 'rotation-capture':
+                demand(phase == 'overlap' and service == 'gateway')
+            else:
+                demand(service == ('gateway' if profile.startswith('course-') else 'community-api'))
+            api_service = 'course-api' if profile.startswith('course-') else 'community-api'
+            environment = adapter.configurations.api[phase][api_service]
+            result = REAL_RUN([self.node, '--input-type=module', '--eval', OWNED_PRIVATE_PROBE,
+                               str(source / ROTATION_PROBE), str(snapshot(phase) / 'tls/ca.pem')],
+                              input=json.dumps({'input': payload, 'environment': environment}), capture_output=True,
+                              text=True, env={'PATH': os.environ['PATH']}, timeout=15, check=False)
+            demand(result.returncode == 0 and not result.stderr and 0 < len(result.stdout.encode()) <= 131_072,
+                   'P2_OWNED_REHEARSAL_PRIVATE_PROBE_REFUSED')
+            return json.loads(result.stdout)
 
         def frontend_deployment(phase):
             scope.verify()
@@ -328,6 +511,9 @@ class OwnedPlatform:
 
         adapter.recreate_apis, adapter.rollout_frontend = recreate_apis, rollout_frontend
         adapter.frontend_deployment, adapter.observe_frontend_configuration = frontend_deployment, observe_frontend
+        adapter._snapshot, adapter._private_child = snapshot, private_child
+        adapter.observe_api_configuration = lambda phase: {'configurationSha256': runtime_phase(phase),
+                                                           'containers': self.containers, 'runtimeVerified': True}
         adapter.observe_runtime_boundary = lambda phase: {'configurationSha256': runtime_phase(phase), 'containers': public_containers(),
             'nativeSchedulesEnabled': False, 'businessSchedulesEnabled': False, 'courseCurrent': True, 'communityCurrent': True,
             'boundaryChecks': sorted(self.runtime.PROBE_CHECKS)}
