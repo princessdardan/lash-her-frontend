@@ -20,6 +20,13 @@ const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-
 const closed = (value, fields) => value && typeof value === "object" && !Array.isArray(value) && isDeepStrictEqual(Object.keys(value).sort(), [...fields].sort());
 const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 const sourceRoot = realpathSync(fileURLToPath(new URL("../../", import.meta.url)));
+const receiverNegativeProfile = "suspended-head-negatives-v2";
+const receiverServices = ["course", "community"];
+const receiverNegativeCases = [
+  ["exact-replay", 200, "duplicate"],
+  ["changed-replay", 409, "idempotency_conflict"],
+  ["stale-restore", 409, "account_version_conflict"],
+];
 export const P2_DIRECT_WORKER_ELIGIBILITY_SQL = Object.freeze({
   deliveries: `SELECT command_id::text,receiver,status,attempts,lease_id::text,lease_until,acknowledged_at,
     next_run_at<=pg_catalog.clock_timestamp() AS ready FROM public.customer_account_deliveries WHERE status<>'acknowledged' ORDER BY command_id,receiver LIMIT 3`,
@@ -54,13 +61,17 @@ function sourceCarrier(plan, status, fields) {
 export function prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, input, expectedProfile = undefined) {
   if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
   const profile = profileContext(expectedProfile, nativePlan, nativePlan?.target, suspensionPlan, input);
+  const receiverNegatives = input && Object.hasOwn(input, "receiverNegatives");
+  if (receiverNegatives) demand(profile && closed(input.receiverNegatives, ["profile"])
+    && input.receiverNegatives.profile === receiverNegativeProfile);
   demand(nativePlan?.version === (profile ? 2 : 1) && nativePlan.environment === "staging" && sha(nativePlan.planSha256)
     && suspensionPlan?.profile === "normal-ui-suspension-pending-v1" && suspensionPlan.environment === "staging"
     && (!profile || suspensionPlan.version === 2)
     && nativePlan.sourceCommit === suspensionPlan.sourceCommit && nativePlan.candidateSha256 === suspensionPlan.candidateObjectSha256
     && nativePlan.targetSha256 === suspensionPlan.targetSha256 && nativePlan.configurationRecordSha256 === suspensionPlan.configurationRecordSha256
     && (!profile || nativePlan.actionId === suspensionPlan.releaseId)
-    && closed(input, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "actionId", "commandIndex", "pendingRecordSha256", "canonicalCommandSha256", "gatewayProcessSha256", "gatewayConfigurationSha256", "denialProgramSha256"])
+    && closed(input, ["version", ...(profile ? ["qualificationTargetProfile"] : []), ...(receiverNegatives ? ["receiverNegatives"] : []),
+      "actionId", "commandIndex", "pendingRecordSha256", "canonicalCommandSha256", "gatewayProcessSha256", "gatewayConfigurationSha256", "denialProgramSha256"])
     && input.version === (profile ? 2 : 1) && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && Number.isInteger(input.commandIndex)
     && input.commandIndex >= 0 && input.commandIndex < nativePlan.commandWitnesses.length
     && [input.pendingRecordSha256, input.canonicalCommandSha256, input.gatewayProcessSha256, input.gatewayConfigurationSha256, input.denialProgramSha256].every(sha));
@@ -74,6 +85,9 @@ export function prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan,
     sourceProgramSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/p2-lifecycle-worker-evidence.mjs"),
     hostProgramSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/host/p2_lifecycle_worker_evidence.py"),
     denialSourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/p2-lifecycle-receiver-denial.mjs"),
+    ...(receiverNegatives ? { receiverNegatives: { profile: receiverNegativeProfile,
+      sourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/p2-lifecycle-receiver-post.mjs"),
+      hostSourceSha256: committedSha256(nativePlan.sourceCommit, "ops/platform/host/p2_lifecycle_receiver_negative.py") } } : {}),
     workerInvocations: 1, requiredPrivateInputs: ["FRONTEND_STAGING_CRON_SECRET", "providerContext.frontendRuntimeDatabaseUrl"],
     invocationClass: "direct-source-authenticated-cron", nativeInvocationQualified: false, automaticRetryAllowed: false,
     finalDisposition: "native-off-and-admission-closed", releaseAccepted: false });
@@ -184,6 +198,8 @@ export async function joinP2DirectLifecycleWorker(plan, invocationHandle, client
     && denials.community.evidenceClass === "deployed-private-community-account-access-guard" && denials.community.httpStatus === null
     && [denials.course, denials.community].every(row => row.version === 1 && !hasProfile(row)
       && row.status === "P2_LIFECYCLE_RECEIVER_DENIAL_OBSERVED" && row.denialStatusCode === 403 && row.accountRestrictionVerified === true));
+  const receiverNegatives = plan.receiverNegatives
+    ? await joinReceiverNegatives(plan, stage, source.privateResolvers, witness.privateRecordSha256) : undefined;
   const final = await ledger(plan, client, dependencies, source.epoch);
   demand(final.newWork === false && final.recovery === false && final.active === 0 && final.uncertain === 0
     && final.operations.length === 1 && final.operations[0].id === source.result.operationId && final.operations[0].state === "completed");
@@ -200,11 +216,40 @@ export async function joinP2DirectLifecycleWorker(plan, invocationHandle, client
     workerInvokedAt: source.result.workerInvokedAt, invocationClass: "direct-source-authenticated-cron", nativeScheduleEnabled: false,
     nativeInvocationQualified: false, operation: source.operation, invocation: source.result, lifecyclePrivateRecordSha256: witness.privateRecordSha256,
     receiverDenials: { course: denials.course, community: denials.community }, receiverDeniedCount: 2, receiverDeniedHttpCount: 1,
+    ...(receiverNegatives ? { receiverNegatives } : {}),
     frontendActive: 0, frontendUncertain: 0, sourceProgramSha256: hash(readFileSync(new URL("./p2-lifecycle-worker-evidence.mjs", import.meta.url))), releaseAccepted: false }));
   frontendReleaseReceiptStore(dependencies.directory).record("p2-lifecycle-worker-source.json", record);
   const bytes = readFrontendReleaseEvidence(dependencies.directory, "p2-lifecycle-worker-source.json");
   const handle = sourceCarrier(plan, "P2_DIRECT_WORKER_JOINED_SOURCE_ISSUED", { recordSha256: hash(bytes), receiverDeniedCount: 2, receiverDeniedHttpCount: 1 });
   artifacts.set(handle, { plan, record, directory: dependencies.directory }); return handle;
+}
+
+async function joinReceiverNegatives(plan, stage, privateResolvers, positiveWitnessSha256) {
+  const bindingSha256 = hash(plan), cases = [];
+  for (const service of receiverServices) {
+    for (const [name, httpStatus, result] of receiverNegativeCases) {
+      const row = await stage.observeNextReceiverNegative(privateResolvers);
+      carrierProfile(plan, row);
+      demand(closed(row, ["version", "qualificationTargetProfile", "status", "bindingSha256", "service", "case", "httpStatus", "result",
+        "beforeWitnessSha256", "afterWitnessSha256", "privateRecordSha256", "accountAndDomainStateUnchanged", "quotaWritesExcluded",
+        "globallyReadOnly", "releaseAccepted"]) && row.status === "P2_DIRECT_WORKER_RECEIVER_NEGATIVE_CASE_OBSERVED"
+        && row.bindingSha256 === bindingSha256 && row.service === service && row.case === name && row.httpStatus === httpStatus && row.result === result
+        && sha(row.beforeWitnessSha256) && row.afterWitnessSha256 === row.beforeWitnessSha256 && sha(row.privateRecordSha256)
+        && row.accountAndDomainStateUnchanged === true && row.quotaWritesExcluded === true
+        && row.globallyReadOnly === false && row.releaseAccepted === false);
+      cases.push(row);
+    }
+  }
+  const joined = await stage.joinedReceiverNegatives();
+  carrierProfile(plan, joined);
+  const openCases = receiverServices.map(service => ({ service, case: "future-gap", status: "OPEN", reason: "current-quiescence-not-positively-proved" }));
+  demand(closed(joined, ["version", "qualificationTargetProfile", "status", "bindingSha256", "positiveWitnessSha256", "cases", "openCases",
+    "domainStatePreserving", "quotaWritesExcluded", "globallyReadOnly", "oidcVerified", "releaseAccepted", "privateRecordSha256"])
+    && joined.status === "P2_DIRECT_WORKER_RECEIVER_NEGATIVES_JOINED" && joined.bindingSha256 === bindingSha256
+    && joined.positiveWitnessSha256 === positiveWitnessSha256 && isDeepStrictEqual(joined.cases, cases) && isDeepStrictEqual(joined.openCases, openCases)
+    && joined.domainStatePreserving === true && joined.quotaWritesExcluded === true && joined.globallyReadOnly === false
+    && joined.oidcVerified === false && joined.releaseAccepted === false && sha(joined.privateRecordSha256));
+  return joined;
 }
 export function readP2DirectWorkerSourceArtifact(plan, handle) {
   const source = artifacts.get(handle); demand(plans.has(plan) && source?.plan === plan);

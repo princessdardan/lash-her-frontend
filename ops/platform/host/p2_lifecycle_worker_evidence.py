@@ -390,6 +390,15 @@ class P2LifecycleWorkerEvidenceStage:
             "frontendAdmissionClosed": True, "gatewayAdmissionClosed": True, "nativeEnabled": False,
             "active": current["active"], "uncertain": current["uncertain"]}
 
+    def receiver_negative_stage(self):
+        demand(self.expected_profile is not None and "receiverNegatives" in self.plan and
+            hasattr(self, "witness_record_sha256") and hasattr(self, "denials"),
+            "P2_WORKER_RECEIVER_NEGATIVE_STAGE_REQUIRED")
+        if not hasattr(self, "_receiver_negative_stage"):
+            from p2_lifecycle_receiver_negative import P2ScopedLifecycleReceiverNegatives
+            self._receiver_negative_stage = P2ScopedLifecycleReceiverNegatives(self)
+        return self._receiver_negative_stage
+
     def retain_joined_from_source_parent(self, record):
         demand(hasattr(self, "denials") and hasattr(self, "witness_record_sha256") and hasattr(self, "invocation"), "P2_WORKER_JOINED_SOURCE_STAGES_REQUIRED")
         self._boundary(False)
@@ -399,6 +408,11 @@ class P2LifecycleWorkerEvidenceStage:
             demand(type(record.get("version")) is int and record["version"] == 2
                 and record.get("sourceProgramSha256") == self.plan["sourceProgramSha256"],
                 "P2_WORKER_PROFILED_JOINED_SOURCE_REQUIRED")
+        if "receiverNegatives" in self.plan:
+            demand(record.get("receiverNegatives") == self.receiver_negative_stage().require_joined(),
+                "P2_WORKER_RECEIVER_NEGATIVE_JOIN_REQUIRED")
+        else:
+            demand("receiverNegatives" not in record, "P2_WORKER_RECEIVER_NEGATIVE_JOIN_REQUIRED")
         command = self.prior["pendingRecord"]["pending"]["command"]
         demand(record.get("status") == "P2_DIRECT_LIFECYCLE_WORKER_JOINED" and record.get("bindingSha256") == digest(canonical(self.plan))
             and all(record.get(name) == self.plan[name] for name in ("candidateSha256", "configurationSha256", "sourceCommit", "targetSha256", "pendingRecordSha256"))

@@ -894,6 +894,20 @@ class ProfiledCertificationInputTests(unittest.TestCase):
                          workerPlanSha256=self.hash(worker, canonical=True))
         self.rehash()
         self.assertIs(self.prepare()['executionEligible'], False)
+        negative = {'profile': 'suspended-head-negatives-v2',
+                    'sourceSha256': self.files['ops/platform/p2-lifecycle-receiver-post.mjs'],
+                    'hostSourceSha256': self.files['ops/platform/host/p2_lifecycle_receiver_negative.py']}
+        worker['receiverNegatives'] = negative
+        self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
+        self.rehash()
+        self.assertIs(self.prepare()['executionEligible'], False)
+        worker['receiverNegatives'] = {**negative, 'sourceSha256': '8' * 64}
+        self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
+        self.rehash()
+        with self.assertRaisesRegex(ValueError, 'RECEIVER_NEGATIVE_SOURCE_REQUIRED'):
+            self.prepare()
+        del worker['receiverNegatives']
+        self.plan['workerPlanSha256'] = self.hash(worker, canonical=True)
         worker['pendingRecordSha256'] = '5' * 64
         self.rehash()
         with self.assertRaisesRegex(ValueError, 'SOURCE_WORKER_REQUIRED'):

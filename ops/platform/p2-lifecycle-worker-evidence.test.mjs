@@ -45,6 +45,14 @@ test("profiled direct-worker plan joins the original current native and suspensi
   const plan = prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, selected, current);
   assert.equal(plan.version, 2); assert.deepEqual(plan.qualificationTargetProfile, current);
   assert.equal(plan.profile, "direct-known-suspension-v1"); assert.equal(plan.candidateObjectSha256, candidateObjectSha256);
+  assert.equal(Object.hasOwn(plan, "receiverNegatives"), false);
+  const receiverNegatives = { profile: "suspended-head-negatives-v2" };
+  const withNegatives = prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, { ...selected, receiverNegatives }, current);
+  assert.equal(withNegatives.receiverNegatives.profile, receiverNegatives.profile);
+  assert.match(withNegatives.receiverNegatives.sourceSha256, /^[a-f0-9]{64}$/u);
+  assert.match(withNegatives.receiverNegatives.hostSourceSha256, /^[a-f0-9]{64}$/u);
+  assert.throws(() => prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan,
+    { ...selected, receiverNegatives: { ...receiverNegatives, case: "future-gap" } }, current));
   const resolvers = createP2LifecycleWorkerPrivateResolvers(async () => ({ frontendRuntimeDatabaseUrl: "owned" }));
   const client = new Client({ host: nativePlan.target.host, port: nativePlan.target.port });
   client.connection.stream = { encrypted: true, authorized: true };
