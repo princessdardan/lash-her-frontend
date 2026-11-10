@@ -1,0 +1,51 @@
+{
+  "observedOn": "2026-11-09",
+  "timezone": "America/Toronto",
+  "scope": "owner-authorized staging source merge",
+  "repository": "princessdardan/lash-her-frontend",
+  "pullRequest": 93,
+  "reviewedHead": "667956c44768934bb2f1c9d7e8b0ff968e6dcbaf",
+  "previousStagingHead": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+  "stagingMerge": "e6d12ae56a51e9fb6822bf17e93c939de9c22177",
+  "reviewedAndMergedTree": "920853be5b13ae9ead0dca382d6a4daf6ed00f3c",
+  "frontendMainBeforeAndAfter": "9f296ff883e021b4582346f284ea06ccda29cb39",
+  "apiPins": {
+    "course": "09e3aaf234d9d9c1296c438d7c872e6bd67db074",
+    "community": "5993d248a7c687e04792266b356aa9efb4928be3"
+  },
+  "pullRequestCi": {
+    "runId": 42734129324,
+    "conclusion": "success",
+    "passingJobs": 10,
+    "githubReportedArtifactDigests": {
+      "playwright-blob-chromium": "sha256:0bbb861c977b53a030b1747d9307eb40d3c7ac6621c2bd6c98505e588b12038c",
+      "playwright-blob-firefox": "sha256:5b3449cc76ca18ad85635d5f9a1673ed75465e5ff96708b2b9f53c0e0b8b50ac",
+      "playwright-blob-webkit": "sha256:ab80705486c46924b001bbae25bde0497094e9b62a5ba60c0e522e8cc21c6543",
+      "playwright-report": "sha256:b9f72c5bd6af3ba852de6f6bcf3f484cdba8fd9f4c35dee16f6ec0a3b7f178bc",
+      "frontend-operator-schema-summary": "sha256:075ae552bf8ecf9ccde3e0e84ab4c85df706e74248cadd698a3ae5cbcbd90013",
+      "frontend-runtime-qualification": "sha256:2c0ac0b49246549ecc5fc8e43b195dc7a8869249ffd3e34a094a3eeb0c50efdd",
+      "gateway-runtime-qualification": "sha256:6e4357935436aba4216a92fada95b857417b40f14c680ac6167fa2fb1551f0a3"
+    }
+  },
+  "stagingPushCi": {
+    "runId": 42736331781,
+    "statusAtMergeReadback": "in_progress",
+    "conclusion": "success",
+    "passingJobs": 10,
+    "githubReportedArtifactDigests": {
+      "playwright-blob-chromium": "sha256:6c56080b28601e8e3fe9241736a43d30839892da3349d24d08a2c6a31788d315",
+      "playwright-blob-firefox": "sha256:fbd3887d2335ac7aadc13282a03da8e5a115df65a351d16913fb7755685421bb",
+      "playwright-blob-webkit": "sha256:47d582d8ee9945c0df136bcad4117d753133e7443b3d0fb813fbb0ce23f819f0",
+      "playwright-report": "sha256:ce71794092288fff3d0cf61ce85bf640a04a45ee09d0ba7a8447d8cd8e1520aa",
+      "frontend-operator-schema-summary": "sha256:397af205055db28fbbfd33133c87510085ad35057df70a4b5aed160d5693ecfc",
+      "frontend-runtime-qualification": "sha256:3a480f6b923cedfa9acc0a5ad6b0e824507e49511ed85d0cd7613e296411d822",
+      "gateway-runtime-qualification": "sha256:ccadba82c34890a9856b193f77567e0ed72783e943e83307642ae1cbebf892c5"
+    }
+  },
+  "vercelDeploymentsBeforeAndAfter": {
+    "lashher.com": "dpl_7xEi2kAMjKEsfuRKpkW8QPrvpi7f",
+    "staging.lashher.com": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH"
+  },
+  "candidatePublicationStarted": false,
+  "releaseStarted": false
+}

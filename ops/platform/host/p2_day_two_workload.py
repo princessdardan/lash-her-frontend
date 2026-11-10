@@ -19,6 +19,7 @@ import vercel
 
 _PATH = "/api/internal/release-probe"
 _MODE = "phase2-day-two-workload"
+_CANONICAL_MODE = "phase2-day-two-canonical-workload"
 _MAX_BODY = 65_536
 _CHECK = "gateway-course-catalog-p2"
 _FIELDS = {
@@ -41,11 +42,13 @@ class _WorkloadProbe:
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), vercel.NoRedirect(),
             urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
-    def request(self, url, bearer, bypass, challenge):
-        demand(isinstance(url, str) and frontend_probe.DEPLOYMENT_URL.fullmatch(url), "P2_DAY_TWO_FIXED_ORIGIN_REQUIRED")
+    def request(self, url, bearer, bypass, challenge, *, canonical_origin=False):
+        demand(type(canonical_origin) is bool and isinstance(url, str) and
+            (url == canonical.ORIGIN if canonical_origin else frontend_probe.DEPLOYMENT_URL.fullmatch(url)),
+            "P2_DAY_TWO_FIXED_ORIGIN_REQUIRED")
         request = urllib.request.Request(url + _PATH, method="GET", headers={
             "Authorization": "Bearer " + bearer, "X-Vercel-Protection-Bypass": bypass,
-            "X-Lash-Release-Mode": _MODE, "X-Lash-Release-Challenge": challenge,
+            "X-Lash-Release-Mode": _CANONICAL_MODE if canonical_origin else _MODE, "X-Lash-Release-Challenge": challenge,
             "Accept": "application/json", "Cache-Control": "no-cache",
         })
         try:
@@ -73,6 +76,15 @@ class _WorkloadProbe:
 
 def observe(context, client, cron_secret, *, expected_profile):
     """Challenge the immutable deployment while the parent keeps its guard held."""
+    return _observe(context, client, cron_secret, expected_profile=expected_profile, canonical_origin=False)
+
+
+def observe_browser_origin(context, client, cron_secret, *, expected_profile):
+    """Challenge the canonical staging alias against its selected deployment."""
+    return _observe(context, client, cron_secret, expected_profile=expected_profile, canonical_origin=True)
+
+
+def _observe(context, client, cron_secret, *, expected_profile, canonical_origin):
     expected = migrate.profile_context(expected_profile)
     demand(expected is not None, "QUALIFICATION_TARGET_PROFILE_REQUIRED")
     demand(isinstance(client, LockedClient) and callable(client.verify), "P2_DAY_TWO_GUARDED_CLIENT_REQUIRED")
@@ -106,8 +118,11 @@ def observe(context, client, cron_secret, *, expected_profile):
     bypass = frontend_probe._automation_bypass(project)
     alias = canonical._alias(client, plan)
     challenge = secrets.token_hex(32)
-    result = LockedProbe(client.verify, _WorkloadProbe()).request(before["deploymentUrl"], bearer, bypass, challenge)
-    demand(type(result) is dict and set(result) == _FIELDS and type(result["version"]) is int and result["version"] == 1 and
+    origin = canonical.ORIGIN if canonical_origin else before["deploymentUrl"]
+    result = LockedProbe(client.verify, _WorkloadProbe()).request(origin, bearer, bypass, challenge,
+        canonical_origin=canonical_origin)
+    fields = _FIELDS | {"authenticationOrigins", "deploymentUrl"} if canonical_origin else _FIELDS
+    demand(type(result) is dict and set(result) == fields and type(result["version"]) is int and result["version"] == 1 and
         result["status"] == "FRONTEND_WORKLOAD_PROBE_PASS" and result["challenge"] == challenge and
         result["environment"] == "staging" and result["projectId"] == plan["projectId"] and
         result["sourceCommit"] == plan["sourceCommit"] and result["gatewayOrigin"] == gateway and
@@ -116,8 +131,15 @@ def observe(context, client, cron_secret, *, expected_profile):
         frontend_probe.valid_feature_controls(result["featureControls"]) and result["featureControls"] == controls and
         frontend_probe.valid_writer_admission_binding(result["writerAdmissionBinding"]) and result["writerAdmissionBinding"] == binding,
         "P2_DAY_TWO_WORKLOAD_BINDING_REFUSED")
+    if canonical_origin:
+        origins = result["authenticationOrigins"]
+        demand(result["deploymentUrl"] == before["deploymentUrl"].removeprefix("https://") and
+            type(origins) is dict and origins == canonical.AUTHENTICATION_ORIGINS and
+            origins["customerRedirectProxyEnabled"] is False, "P2_DAY_TWO_CANONICAL_BINDING_REFUSED")
     demand(canonical._alias(client, plan) == alias and native.observe_metadata(selected, client, expected_profile=expected) == before,
         "P2_DAY_TWO_PROVIDER_CHANGED")
+    if canonical_origin:
+        return canonical._receipt(candidate, plan, result, alias, expected)
 
     metadata = {key: before[key] for key in (
         "version", "qualificationTargetProfile", "environment", "releaseId", "candidateSha256", "projectId", "deploymentId",

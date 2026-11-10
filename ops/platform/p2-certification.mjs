@@ -29,7 +29,8 @@ import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
-  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validateP2InteractiveStalledRenewalAction,validP2MediaReservationRequests} from './p2-certification-transport.mjs';
+  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction,validateP2InteractiveStalledRenewalAction,validP2MediaReservationRequests,
+  usesP2ProfiledDayTwoAuthority} from './p2-certification-transport.mjs';
 import {p2MediaUploadCallbackOperation,p2StalledRenewalStage,readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
@@ -72,7 +73,7 @@ const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value)&&!/^0+$/
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const exactKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort());
 const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
-const scopedModes=new Set(['export-cleanup','mux-callback-recovery','lifecycle-persistence']);
+const scopedModes=new Set(['export-cleanup','mux-callback-recovery','mux-readiness','lifecycle-persistence']);
 const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
@@ -378,6 +379,10 @@ function scopedActionValid(mode, value){
   if(mode==='export-cleanup')return exactKeys(value,['commandId','readyRecordSha256'])&&uuid(value.commandId)&&sha(value.readyRecordSha256);
   if(mode==='lifecycle-persistence')return exactKeys(value,['stage','subjectBindingSha256'])&&
     ['capture-export-ready','capture-delete-baseline','verify-delete'].includes(value.stage)&&sha(value.subjectBindingSha256);
+  if(mode==='mux-readiness')return exactKeys(value,['attemptId','generation','environmentId','assetId','uploadId',
+    'courseId','lessonId','playbackIdSha256'])&&[value.attemptId,value.courseId,value.lessonId].every(uuid)&&
+    Number.isSafeInteger(value.generation)&&value.generation>=1&&value.generation<=2_147_483_647&&
+    [value.environmentId,value.assetId,value.uploadId].every(providerId)&&sha(value.playbackIdSha256);
   if(!exactKeys(value,['attemptId','generation','environmentId','assetId','uploadId','eventType'])||
      !uuid(value.attemptId)||!Number.isSafeInteger(value.generation)||value.generation<1||value.generation>2_147_483_647||
      !providerId(value.environmentId)||(value.assetId!==null&&!providerId(value.assetId))||
@@ -623,6 +628,14 @@ export async function runP2BoundedCertification(plan,dependencies){
 }
 
 async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,client,policy}){
+  if(plan.mode==='mux-readiness'){
+    const receipt=await host.scopedStage('scoped-mux-readiness-observe');
+    demand(receipt.status==='P2_SCOPED_MUX_READY_OBSERVED'&&receipt.planSha256===plan.planSha256&&
+      receipt.frontendEpoch===plan.initialEpoch&&isDeepStrictEqual(receipt.scopedAction,plan.scopedAction)&&
+      receipt.readOnly===true&&receipt.nativeEnabled===false&&receipt.muxProviderTouched===false&&
+      receipt.trafficAuthorized===false&&receipt.releaseAccepted===false);
+    return receipt;
+  }
   if(plan.mode==='lifecycle-persistence'){
     const statuses={'capture-export-ready':'P2_LIFECYCLE_EXPORT_READY_CAPTURED',
       'capture-delete-baseline':'P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED','verify-delete':'P2_LIFECYCLE_DELETE_PERSISTENCE_VERIFIED'};
@@ -1371,7 +1384,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   const mediaUpload=media&&plan.scopedAction.mediaAction.operation===p2MediaUploadCallbackOperation;
   const selectedCourseSource=original.migration.candidate.sources.course.commit;
-  demand((plan.mode!=='mux-callback-recovery'&&!mediaUpload)||
+  demand((!['mux-callback-recovery','mux-readiness'].includes(plan.mode)&&!mediaUpload)||
     selectedCourseSource===scopedMuxCourseSource||paidRevokeCourseSources.has(selectedCourseSource));
   const {releaseSettings}=checked;
   const directory=releaseSettings.results;
@@ -1421,11 +1434,12 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   demand(provider.version===2&&typeof provider.vercelToken==='string'&&provider.vercelToken.length>0&&provider.vercelToken.length<=8192&&
     (!needsRuntimeUrl||typeof provider.frontendRuntimeDatabaseUrl==='string'&&provider.frontendRuntimeDatabaseUrl.length>0&&provider.frontendRuntimeDatabaseUrl.length<=8192));
-  const scopedCronSecret=scoped?readP2LifecycleWorkerCronSecret(createP2LifecycleWorkerPrivateResolvers(()=>provider)):undefined;
+  const usesRuntimeBearer=action=>scoped||usesP2ProfiledDayTwoAuthority(action.mode);
+  const scopedCronSecret=usesRuntimeBearer(plan)?readP2LifecycleWorkerCronSecret(createP2LifecycleWorkerPrivateResolvers(()=>provider)):undefined;
   const credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
     const value=process.env[key];demand(typeof value==='string'&&value.length>0&&value.length<=16384);return[key,value];}));
   let privateProbe;
-  if(plan.mode!=='contain-native'&&!scoped){
+  if(plan.mode!=='contain-native'&&!usesRuntimeBearer(plan)){
     const path=join(checked.directory,'frontend','vercel-private','frontend-probe-private.json');
     privateProbe=decodeQualificationTargetJson(privateBytes(path,8192),'carrier');
     requireQualificationTargetProfile(currentProfile,privateProbe);
@@ -1443,9 +1457,9 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     const results=join(directory,action.certificationActionId);mkdirSync(results,{mode:0o700});
     const actionConfirmation='staging/'+action.certificationActionId;
     const initial={...reviewedPacket,confirmation:actionConfirmation,credentials,vercelToken:provider.vercelToken,
-      ...(privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
+      ...(!usesRuntimeBearer(action)&&privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
       ...(interactiveController?{interactiveController:readP2InteractiveBrowserControllerBinding(action,interactiveController)}:{}),
-      ...(scoped?{scopedCronSecret}:{}),
+      ...(usesRuntimeBearer(action)?{scopedCronSecret}:{}),
       ...(action.mode==='browser-pending'?{persistenceReviewed,browserResources:selection.browser.input.resources}:{}),
       ...(action.mode==='direct-worker'||persistenceModes.has(action.mode)?{persistenceReviewed}:{}),
       ...(action.mode==='lifecycle-persistence'?{persistencePrivate:{

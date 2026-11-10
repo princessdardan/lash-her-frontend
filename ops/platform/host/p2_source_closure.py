@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 
@@ -29,6 +30,8 @@ PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
 PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 PROFILED_REPLACEMENT_ARM_MODE = 'p2-profiled-frontend-replacement-arm'
 PROFILED_REPLACEMENT_WRITE_MODE = 'p2-profiled-frontend-replacement-write'
+MANAGED_REPLACEMENT_CATALOG = 'ops/platform/managed-neon-replacement-catalog.json'
+MANAGED_REPLACEMENT_SOURCE_REQUIRED = {MANAGED_REPLACEMENT_CATALOG, 'ops/platform/frontend-managed-neon-catalog.mjs'}
 PROFILED_REPLACEMENT_ARM_REQUIRED = {
     'ops/platform/host/p2_frontend_replacement_parent.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
@@ -67,6 +70,19 @@ PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED = {
     'ops/platform/host/p2_profiled_known_ack_runtime.py',
     'ops/platform/p2-known-ack-loss-probe.mjs',
 }
+
+
+def read_managed_replacement_catalog(initial, root, expected_sha256):
+    import migrate
+    manifest = initial.get('sourceSha256')
+    migrate.demand(type(manifest) is dict and MANAGED_REPLACEMENT_SOURCE_REQUIRED.issubset(manifest) and
+                   all(type(manifest[key]) is str and re.fullmatch(r'(?!0+$)[a-f0-9]{64}', manifest[key])
+                       for key in MANAGED_REPLACEMENT_SOURCE_REQUIRED) and
+                   manifest[MANAGED_REPLACEMENT_CATALOG] == expected_sha256,
+                   'P2_MANAGED_REPLACEMENT_CATALOG_SOURCE_REQUIRED')
+    raw = migrate.read_input(root, MANAGED_REPLACEMENT_CATALOG, 16_384)
+    migrate.demand(migrate.file_hash(raw) == expected_sha256, 'P2_MANAGED_REPLACEMENT_CATALOG_SOURCE_CHANGED')
+    return raw
 
 
 def verify_source_closure(initial, root):
@@ -115,6 +131,8 @@ def verify_profiled_current_source_closure(initial, root):
             'mux-callback-recovery': {'ops/platform/host/p2_scoped_mux.py', 'ops/gateway/admission.mjs',
                                       'ops/gateway/assessment-attempt.mjs', 'ops/gateway/lesson-resume-position.mjs',
                                       'ops/gateway/private-tls.mjs'},
+            'mux-readiness': {'ops/platform/host/p2_scoped_mux_readiness.py', 'ops/platform/host/p2_scoped_mux.py',
+                              'ops/platform/p2-certification-transport.mjs'},
             'lifecycle-persistence': {'ops/platform/host/p2_lifecycle_persistence_probe.py'},
             'interactive-browser': {'ops/platform/host/p2_interactive_window.py', 'ops/platform/host/p2_interactive_ingress.py',
                                     'ops/gateway/admission.mjs', 'ops/gateway/assessment-attempt.mjs',
@@ -125,9 +143,16 @@ def verify_profiled_current_source_closure(initial, root):
         }.get(certification.get('mode'))
         if scoped is not None:
             required |= scoped | {'ops/platform/host/p2_day_two_workload.py'}
+        if certification.get('mode') in ('auth-preparation', 'browser-pending', 'direct-worker'):
+            required |= {'ops/platform/host/p2_day_two_workload.py', 'ops/platform/host/p2_canonical_browser_origin.py'}
+        if certification.get('mode') == 'direct-worker':
+            required.add('ops/platform/host/p2_lifecycle_worker_evidence.py')
         if certification.get('mode') == 'interactive-browser' and \
                 (certification.get('scopedAction') or {}).get('stage') == 'stalled-playback-renewal':
             required.add('ops/platform/p2-certification-transport.mjs')
+    manifest = initial.get('sourceSha256')
+    if type(manifest) is dict and MANAGED_REPLACEMENT_SOURCE_REQUIRED.intersection(manifest):
+        required |= MANAGED_REPLACEMENT_SOURCE_REQUIRED
     return _verify_source_closure(initial, root, required, 544, 48_000_000)
 
 

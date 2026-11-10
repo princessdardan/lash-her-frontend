@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -78,7 +79,7 @@ class ReplacementCertificationTests(unittest.TestCase):
 
     def original(self):
         return certification._profiled_original_terminal(self.cert_initial, self.cert_plan, self.candidate,
-                                                         self.results, replacement.PROFILE)
+                                                         self.results, replacement.PROFILE, source=Path(__file__).resolve().parents[3])
 
     def test_rejoins_original_guardian_apply_forward_receipts_without_external_effects(self):
         with (patch.object(terminal.vercel.Client, 'request', side_effect=AssertionError('provider request')),
@@ -88,6 +89,43 @@ class ReplacementCertificationTests(unittest.TestCase):
         terminal_path.write_bytes(terminal_path.read_bytes() + b' ')
         with self.assertRaisesRegex(ValueError, 'TERMINAL_BYTES_CHANGED'):
             self.original()
+
+    def test_interrupted_replacement_rejoins_the_original_source_and_manifest(self):
+        import p2_known_ack_interrupted_restoration as interrupted
+        import p2_profiled_known_ack_restoration_parent as interrupted_parent
+        from p2_source_closure import MANAGED_REPLACEMENT_CATALOG, MANAGED_REPLACEMENT_SOURCE_REQUIRED, read_managed_replacement_catalog
+
+        profile = replacement.PROFILE
+        pins = {key: self.cert_plan[key] for key in certification.REPLACEMENT_LINEAGE_FIELDS}
+        original = {**self.cert_plan, 'knownAckRecovery': {'intent': pins}}
+        inputs = {**pins, 'hostOriginalReleaseReceiptSha256': pins['originalReleaseReceiptSha256'],
+                  'readyReceiptSha256': original['readyReceiptSha256']}
+        source = self.root / 'original-operator'
+        manifest = {}
+        for name in MANAGED_REPLACEMENT_SOURCE_REQUIRED:
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(('owned original ' + name).encode())
+            manifest[name] = migrate.file_hash(path.read_bytes())
+        current = {**self.cert_initial, 'reviewedPlan': self.cert_plan,
+                   'sourceSha256': dict.fromkeys(manifest, '1' * 64),
+                   'inventory': {**self.cert_initial['inventory'], 'certification': self.review['certification']}}
+        actual_custody = replacement.require_write_custody
+
+        def verify_custody(carrier, plan, *args, source):
+            raw = read_managed_replacement_catalog(carrier, source, manifest[MANAGED_REPLACEMENT_CATALOG])
+            self.assertEqual(migrate.file_hash(raw), manifest[MANAGED_REPLACEMENT_CATALOG])
+            return actual_custody(carrier, plan, *args, source=source)
+
+        with (patch.object(interrupted_parent, '_raw_original', return_value=original),
+              patch.object(replacement, 'require_write_custody', side_effect=verify_custody)):
+            directory, records = interrupted.profiled_original_replacement_paths(current, self.candidate)
+            self.assertEqual(directory, self.write_directory)
+            self.assertEqual(interrupted._profiled_original_replacement(current, self.candidate, pins, inputs, profile,
+                                                                        source=source, manifest=manifest), records)
+            with self.assertRaisesRegex(ValueError, 'MANAGED_REPLACEMENT_CATALOG_SOURCE_REQUIRED'):
+                interrupted._profiled_original_replacement(current, self.candidate, pins, inputs, profile,
+                                                           source=source, manifest=current['sourceSha256'])
 
     def test_refuses_wrong_runtime_mount_role_and_original_sql_receipt(self):
         with patch.dict(self.cert_initial, configuration=str(self.snapshot.parent)), self.assertRaisesRegex(ValueError, 'RUNTIME_MOUNT'):

@@ -23,6 +23,8 @@ test("replacement request rejects same endpoint, pooling and unreviewed admin sh
   await assert.rejects(verifyEmptyFrontendReplacement(null, { ...request, target: { ...target, host: "example-pooler.invalid" } }), refusal("input"));
   await assert.rejects(verifyEmptyFrontendReplacement(null, { ...request, administrativeLogins: [{ name: predecessorTarget.runtimeRole, oid: "12" }] }), refusal("input"));
   await assert.rejects(verifyEmptyFrontendReplacement(null, { ...request, administrativeLogins: [{ name: "owner", oid: "12", credential: "extra" }] }), refusal("input"));
+  await assert.rejects(verifyEmptyFrontendReplacement(null, { ...request, managedCatalog: { id: "reviewed" } }), refusal("input"));
+  await assert.rejects(verifyEmptyFrontendReplacement(null, { ...request, provider: { kind: "neon" } }), refusal("input"));
   await assert.rejects(verifyEmptyFrontendReplacement({}, request), refusal("tls-target"));
 });
 
@@ -92,6 +94,9 @@ test("owned TLS PostgreSQL checks empty replacement, access and standalone objec
     assert.equal(result.completeDatabaseEmptyProven, false);
     assert.equal(result.authorityIssued, false);
     assert.equal(result.readOnlyVerified, true);
+    assert.equal(result.catalogScope, "postgresql-16-18-stock-replacement-v1");
+    assert.equal(Object.hasOwn(result, "managedCatalog"), false);
+    assert.equal(Object.hasOwn(result, "catalogCounts"), false);
     assert.ok(Object.values(result.zeroCatalogCounts).every(value => value === 0));
     assert.deepEqual(result.administrativeLogins, [{ name: "owned_admin", oid }]);
     await assert.rejects(inspect({ administrativeLogins: [] }), refusal("effective-login-access"));

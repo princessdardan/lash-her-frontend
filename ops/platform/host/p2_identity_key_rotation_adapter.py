@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 from uuid import uuid4
 
 import frontend_probe
@@ -27,6 +28,14 @@ PROFILE_KEYS = frozenset(f"{prefix}_JWT_{slot}_SECRET" for prefix in PROFILE_PRE
 PROBE_OVERLAY_KEYS = frozenset(("LASH_RELEASE_PROBE_SECRET", "LASH_RELEASE_PROBE_EXPIRES_AT",
                                 "LASH_RELEASE_SCHEDULER_QUALIFICATION", "API_GATEWAY_STAGING_ORIGIN"))
 API_SERVICES = ("course-api", "community-api")
+CAPTURE_PROFILES = ("community-admin", "community-member", "course-admin", "course-learner")
+CAPTURE_RECORD = "rotation-token-captures.json"
+CAPTURE_STATUS = "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
+CAPTURE_METADATA_FIELDS = ("status", "profile", "tokenIssuedAt", "tokenExpiresAt")
+PRIVATE_CAPTURE_FIELDS = frozenset((*CAPTURE_METADATA_FIELDS, "version", "environment", "bindingSha256",
+    "configurationSha256", "oldToken", "newToken", "privateCredentialBytes", "commonTokenBytesOutput", "releaseAccepted"))
+CAPTURE_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", re.ASCII)
+CAPTURE_JWT = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
 
 def _env(raw):
@@ -261,59 +270,72 @@ class P2IdentityRotationHostAdapter:
         demand(isinstance(value, dict), "ROTATION_PRIVATE_CHILD_REFUSED")
         return value
 
+    def _require_private_capture(self, value, profile):
+        demand(type(value) is dict and set(value) == PRIVATE_CAPTURE_FIELDS
+               and type(value["version"]) is int and value["version"] == 1 and value["environment"] == "staging"
+               and value["status"] == CAPTURE_STATUS and value["profile"] == profile
+               and value["bindingSha256"] == self.scope.binding_sha256
+               and value["configurationSha256"] == self.configurations.hashes["overlap"]
+               and value["privateCredentialBytes"] is True and value["commonTokenBytesOutput"] is False
+               and value["releaseAccepted"] is False
+               and all(type(value[key]) is str and len(value[key]) <= 4096 and CAPTURE_JWT.fullmatch(value[key])
+                       for key in ("oldToken", "newToken"))
+               and value["oldToken"] != value["newToken"]
+               and all(type(value[key]) is str and CAPTURE_TIME.fullmatch(value[key])
+                       for key in ("tokenIssuedAt", "tokenExpiresAt")), "ROTATION_PRIVATE_CAPTURE_REFUSED")
+        try:
+            issued, expires = (datetime.fromisoformat(value[key].replace("Z", "+00:00"))
+                               for key in ("tokenIssuedAt", "tokenExpiresAt"))
+        except ValueError:
+            raise ValueError("ROTATION_PRIVATE_CAPTURE_REFUSED") from None
+        demand((expires - issued).total_seconds() == 300, "ROTATION_PRIVATE_CAPTURE_REFUSED")
+
     def capture_tokens(self, subjects, course_id, binding_sha256):
-        demand(isinstance(subjects, dict) and set(subjects) == {
-            "course-learner", "course-admin", "community-member", "community-admin"}
-            and all(isinstance(value, str) and re.fullmatch(r"[a-f0-9-]{36}", value) for value in subjects.values())
-            and isinstance(course_id, str) and re.fullmatch(r"[a-f0-9-]{36}", course_id)
-            and binding_sha256 == self.scope.binding_sha256, "ROTATION_CAPTURE_SUBJECT_BINDING_REQUIRED")
-        if (self.output / "rotation-token-captures.json").exists():
-            return copy.deepcopy(self._retained_captures())
-        phase, configuration = "overlap", self.configurations.hashes["overlap"]
-        gateway_ca = migrate.read_input(self._snapshot(phase), "tls/ca.pem", 65_536)
-        captures = []
-        for profile in ("community-admin", "community-member", "course-admin", "course-learner"):
-            prefix = profile.replace("-", "_").upper()
-            keys = self.configurations.frontend[phase]
-            payload = {"version": 1, "mode": "rotation-capture", "environment": "staging",
-                       "bindingSha256": binding_sha256, "phase": "pre-removal-overlap", "profile": profile,
-                       "subject": subjects[profile], "courseId": course_id,
-                       "oldKey": keys[f"{prefix}_JWT_PREVIOUS_SECRET"], "newKey": keys[f"{prefix}_JWT_CURRENT_SECRET"],
-                       "oldToken": None, "newToken": None, "tokenIssuedAt": None, "tokenExpiresAt": None,
-                       "gatewayCaSha256": migrate.file_hash(gateway_ca), "configurationSha256": configuration,
-                       "runtimeEnvironment": None}
-            value = self._private_child(phase, "gateway", payload)
-            demand(value.get("status") == "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
-                   and value.get("bindingSha256") == binding_sha256 and value.get("profile") == profile
-                   and value.get("configurationSha256") == configuration and value.get("privateCredentialBytes") is True,
-                   "ROTATION_PRIVATE_CAPTURE_REFUSED")
-            captures.append(value)
-        record = {"version": 1, "status": "P2_IDENTITY_ROTATION_PRIVATE_CAPTURE_RETAINED",
-                  "actionId": self.scope.action_id, "bindingSha256": binding_sha256,
-                  "configurationSha256": configuration, "captures": captures}
-        migrate.write_json(self.output, "rotation-token-captures.json", record)
-        return copy.deepcopy(captures)
+        demand(isinstance(subjects, dict) and set(subjects) == set(CAPTURE_PROFILES)
+               and all(isinstance(value, str) and re.fullmatch(r"[a-f0-9-]{36}", value) for value in subjects.values())
+               and isinstance(course_id, str) and re.fullmatch(r"[a-f0-9-]{36}", course_id)
+               and binding_sha256 == self.scope.binding_sha256, "ROTATION_CAPTURE_SUBJECT_BINDING_REQUIRED")
+        migrate.private_directory(self.output)
+        try:
+            (self.output / CAPTURE_RECORD).lstat()
+        except FileNotFoundError:
+            phase, configuration = "overlap", self.configurations.hashes["overlap"]
+            gateway_ca = migrate.read_input(self._snapshot(phase), "tls/ca.pem", 65_536)
+            captures = []
+            for profile in CAPTURE_PROFILES:
+                prefix = profile.replace("-", "_").upper()
+                keys = self.configurations.frontend[phase]
+                payload = {"version": 1, "mode": "rotation-capture", "environment": "staging",
+                           "bindingSha256": binding_sha256, "phase": "pre-removal-overlap", "profile": profile,
+                           "subject": subjects[profile], "courseId": course_id,
+                           "oldKey": keys[f"{prefix}_JWT_PREVIOUS_SECRET"], "newKey": keys[f"{prefix}_JWT_CURRENT_SECRET"],
+                           "oldToken": None, "newToken": None, "tokenIssuedAt": None, "tokenExpiresAt": None,
+                           "gatewayCaSha256": migrate.file_hash(gateway_ca), "configurationSha256": configuration,
+                           "runtimeEnvironment": None}
+                value = self._private_child(phase, "gateway", payload)
+                self._require_private_capture(value, profile)
+                captures.append(value)
+            migrate.write_json(self.output, CAPTURE_RECORD, {"version": 1,
+                "status": "P2_IDENTITY_ROTATION_PRIVATE_CAPTURE_RETAINED", "actionId": self.scope.action_id,
+                "bindingSha256": binding_sha256, "configurationSha256": configuration, "captures": captures})
+        return [{key: row[key] for key in CAPTURE_METADATA_FIELDS} for row in self._retained_captures()]
 
     def _retained_captures(self):
         self.configurations.directory("overlap")
-        record = migrate.read_json(self.output, "rotation-token-captures.json")
-        demand(isinstance(record, dict) and set(record) == {"version", "status", "actionId", "bindingSha256",
-            "configurationSha256", "captures"} and record.get("version") == 1
-            and record.get("status") == "P2_IDENTITY_ROTATION_PRIVATE_CAPTURE_RETAINED"
-            and record.get("actionId") == self.scope.action_id and record.get("bindingSha256") == self.scope.binding_sha256
-            and record.get("configurationSha256") == self.configurations.hashes["overlap"]
-            and isinstance(record.get("captures"), list) and len(record["captures"]) == 4
-            and {item.get("profile") for item in record["captures"]} == {
-                "course-learner", "course-admin", "community-member", "community-admin"}
-            and all(isinstance(item, dict) and item.get("status") == "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
-                and item.get("bindingSha256") == self.scope.binding_sha256
-                and item.get("configurationSha256") == self.configurations.hashes["overlap"]
-                and item.get("privateCredentialBytes") is True and item.get("commonTokenBytesOutput") is False
-                and isinstance(item.get("oldToken"), str) and isinstance(item.get("newToken"), str)
-                and re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", item["oldToken"])
-                and re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", item["newToken"])
-                and item["oldToken"] != item["newToken"] for item in record["captures"]),
-            "ROTATION_RETAINED_CAPTURE_CHANGED")
+        migrate.private_directory(self.output)
+        info = (self.output / CAPTURE_RECORD).lstat()
+        demand(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == 0o600,
+               "ROTATION_PRIVATE_CAPTURE_RECORD_REQUIRED")
+        record = migrate.read_json(self.output, CAPTURE_RECORD)
+        demand(type(record) is dict and set(record) == {"version", "status", "actionId", "bindingSha256",
+               "configurationSha256", "captures"} and type(record["version"]) is int and record["version"] == 1
+               and record["status"] == "P2_IDENTITY_ROTATION_PRIVATE_CAPTURE_RETAINED"
+               and record["actionId"] == self.scope.action_id and record["bindingSha256"] == self.scope.binding_sha256
+               and record["configurationSha256"] == self.configurations.hashes["overlap"]
+               and type(record["captures"]) is list and len(record["captures"]) == len(CAPTURE_PROFILES),
+               "ROTATION_RETAINED_CAPTURE_CHANGED")
+        for profile, capture in zip(CAPTURE_PROFILES, record["captures"]):
+            self._require_private_capture(capture, profile)
         return record["captures"]
 
     def observe_profiles(self, phase, subjects, course_id):

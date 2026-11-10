@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -27,9 +27,11 @@ const parent = { sourceOwnedFixedAction: true, hostLockHeld: true, frontendPhysi
   loginChangeAuthorized: false };
 
 function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, initialRuntime = "baseline", initialFrontend = "baseline",
-  initialClock = "2027-01-15T07:00:00.000Z", signerCutoff = "2027-01-15T07:00:00.000Z", retainedTokenIssuedAt = null } = {}) {
+  initialClock = "2027-01-15T07:00:00.000Z", signerCutoff = "2027-01-15T07:00:00.000Z",
+  currentBuildMs = 0, currentSignerMs = 0, currentApiMs = 0 } = {}) {
   let runtime = initialRuntime, frontend = initialFrontend, clock = Date.parse(initialClock), failed = false;
-  const calls = [], restored = [], failClosed = [];
+  const calls = [], timeline = [], restored = [], failClosed = [];
+  const note = (operation, details = {}) => timeline.push({ operation, runtime, frontend, clock, ...details });
   const containers = ["community-api", "community-tls", "community-worker", "course-api", "course-export-cleanup", "course-media",
     "course-publisher", "course-snapshot", "course-tls", "gateway"].map((service, index) => ({ service,
     containerId: String(index + 1).repeat(64).slice(0, 64),
@@ -55,30 +57,41 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
       aliasJobActive: false, deploymentId: `dpl_${frontend.replaceAll("-", "")}` }),
     applyMutation: async intent => {
       calls.push(`apply:${intent.phase}:${intent.kind}`);
+      note(calls.at(-1));
       if (failAt === calls.length && !failed) { failed = true; throw new Error("lost ack"); }
+      if (intent.phase === "current-only") clock += intent.kind === "frontend" ? currentBuildMs : currentApiMs;
       applyState(intent); return result(intent, false);
     },
     reconcileMutation: async intent => { calls.push(`reconcile:${intent.phase}:${intent.kind}`); applyState(intent); return result(intent, true); },
     captureTokens: async () => {
-      const issued = retainedTokenIssuedAt === null ? Math.floor(clock / 1000) * 1000 : Date.parse(retainedTokenIssuedAt);
+      note("capture");
+      const issued = Math.floor(clock / 1000) * 1000;
       return profiles.map(profile => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", profile,
-        tokenIssuedAt: new Date(issued).toISOString(), tokenExpiresAt: new Date(issued + 300_000).toISOString() }));
+        tokenIssuedAt: new Date(issued).toISOString(), tokenExpiresAt: new Date(issued + 300_000).toISOString(),
+        privateFixtureMarker: "private-capture-payload" }));
     },
     observeProfiles: async (phase, captures) => {
+      note(`observe:${phase}`, { captures });
       clock += 10_000;
       return captures.map(({ profile, tokenIssuedAt, tokenExpiresAt }) => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED",
         profile, phase, retainedTokenContinuityVerified: true, releaseAccepted: false,
+        oldResult: phase === "overlap" ? "accepted" : "rejected", newResult: "accepted",
         oldTokenIssuedAt: tokenIssuedAt, oldTokenExpiresAt: tokenExpiresAt,
         observedAt: new Date(clock).toISOString() }));
     },
-    observeFrontendSigner: async phase => ({ status: "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED",
-      configurationSha256: selected.configuration[phase].sha256, issuanceCutoffAt: signerCutoff,
-      receiptSha256: sha(`frontend-${phase}`) }),
-    wait: async (deadline, verify) => { await verify(); clock = deadline; await verify(); },
+    observeFrontendSigner: async phase => {
+      if (phase === "current-only") clock += currentSignerMs;
+      note(`signer:${phase}`);
+      return { status: "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED",
+        configurationSha256: selected.configuration[phase].sha256,
+        issuanceCutoffAt: phase === "overlap" ? signerCutoff : new Date(clock).toISOString(),
+        receiptSha256: sha(`frontend-${phase}`) };
+    },
+    wait: async (deadline, verify) => { await verify(); clock = Math.max(clock, deadline); await verify(); },
     failClosed: async value => { failClosed.push(value); },
     restoreQualified: async phase => { restored.push(phase); runtime = phase; frontend = phase; },
   };
-  return { dependencies, calls, restored, failClosed, nowMs: () => clock, guardCalls: () => guardCalls };
+  return { dependencies, calls, timeline, restored, failClosed, nowMs: () => clock, guardCalls: () => guardCalls };
 }
 
 test("fixed controller orders API/frontend phases, verifies every split state and retains same-token evidence", async () => {
@@ -95,6 +108,75 @@ test("fixed controller orders API/frontend phases, verifies every split state an
       { fixture: true, nowMs: retained.nowMs })).status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
     assert.deepEqual(retained.calls, []);
     assert.ok(retained.guardCalls() > 0);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("captures once after a frontend build longer than token life and proves both API phases with that capture", async () => {
+  const directory = fixture("slow-frontend");
+  try {
+    const selected = plan(directory), owned = harness(selected, { currentBuildMs: 420_000, currentSignerMs: 25_000 });
+    const outcome = await runIdentityKeyRotationController(selected, parent, owned.dependencies, { fixture: true, nowMs: owned.nowMs });
+    assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
+    const build = owned.timeline.find(row => row.operation === "apply:current-only:frontend");
+    const afterBuild = owned.timeline.slice(owned.timeline.indexOf(build) + 1);
+    assert.deepEqual(afterBuild.map(row => row.operation),
+      ["signer:current-only", "capture", "observe:overlap", "apply:current-only:api", "observe:current-only"]);
+    const [signer, capture, beforeRemoval, , afterRemoval] = afterBuild;
+    assert.ok(capture.clock - build.clock > 300_000);
+    assert.ok(capture.clock >= signer.clock);
+    assert.deepEqual([capture.runtime, capture.frontend], ["overlap", "current-only"]);
+    assert.deepEqual([beforeRemoval.runtime, afterRemoval.runtime], ["overlap", "current-only"]);
+    assert.strictEqual(beforeRemoval.captures, afterRemoval.captures);
+    assert.equal(beforeRemoval.captures.some(row => Object.hasOwn(row, "privateFixtureMarker")), false);
+    assert.equal(readFileSync(join(directory, "overlap-qualified.json"), "utf8").includes("private-capture-payload"), false);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("a retained receiver acknowledgement loss is reconciled without capturing another pair", async () => {
+  const directory = fixture("receiver-ack-loss");
+  try {
+    const selected = plan(directory), first = harness(selected, { failAt: 4 });
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
+      { fixture: true, nowMs: first.nowMs }), error => error.check === "rotation-failure-uncertain");
+    const beforeRemoval = first.timeline.find(row => row.operation === "observe:overlap");
+    const resumed = harness(selected, { initialRuntime: "current-only", initialFrontend: "current-only",
+      initialClock: "2027-01-15T07:06:00.000Z" });
+    const outcome = await runIdentityKeyRotationController(selected, parent, resumed.dependencies,
+      { fixture: true, nowMs: resumed.nowMs });
+    assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
+    assert.deepEqual(resumed.calls, ["reconcile:current-only:api"]);
+    assert.deepEqual(resumed.timeline.map(row => row.operation), ["observe:current-only"]);
+    assert.deepEqual(resumed.timeline[0].captures, beforeRemoval.captures);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("an incomplete retained capture stays fenced without retrying capture or removing receiver keys", async () => {
+  const directory = fixture("capture-ack-loss");
+  try {
+    const selected = plan(directory), first = harness(selected);
+    first.dependencies.captureTokens = async () => { throw new Error("lost capture acknowledgement"); };
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
+      { fixture: true, nowMs: first.nowMs }), error => error.check === "rotation-failure-uncertain");
+    assert.equal(first.calls.includes("apply:current-only:api"), false);
+    assert.deepEqual(first.restored, []);
+    const resumed = harness(selected, { initialRuntime: "overlap", initialFrontend: "current-only",
+      initialClock: "2027-01-15T07:06:00.000Z" });
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, resumed.dependencies,
+      { fixture: true, nowMs: resumed.nowMs }), error => error.check === "rotation-failure-uncertain");
+    assert.deepEqual(resumed.calls, []);
+    assert.deepEqual(resumed.timeline, []);
+    assert.deepEqual(resumed.restored, []);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("receiver transition that exhausts the capture lifetime cannot qualify", async () => {
+  const directory = fixture("expired-at-receiver");
+  try {
+    const selected = plan(directory), owned = harness(selected, { currentApiMs: 300_000 });
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, owned.dependencies,
+      { fixture: true, nowMs: owned.nowMs }), error => error.check === "rotation-failure-contained");
+    assert.equal(owned.timeline.some(row => row.operation === "observe:current-only"), false);
+    assert.deepEqual(owned.restored, ["overlap"]);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -131,20 +213,23 @@ test("successful lost API acknowledgement is reconciled before the split-state b
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("resume after overlap qualification reuses retained phase and reconciles only the current mutation", async () => {
+test("resume after overlap drain reconciles the frontend before issuing the first capture", async () => {
   const directory = fixture("phase-resume");
   try {
     const selected = plan(directory), first = harness(selected, { failAt: 3 });
     await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
       { fixture: true, nowMs: first.nowMs }), error => error.check === "rotation-failure-uncertain");
     assert.deepEqual(first.calls, ["apply:overlap:api", "apply:overlap:frontend", "apply:current-only:frontend"]);
+    assert.equal(first.timeline.some(row => row.operation === "capture"), false);
     const resumed = harness(selected, { initialRuntime: "overlap", initialFrontend: "overlap",
-      initialClock: "2027-01-15T07:06:00.000Z", retainedTokenIssuedAt: "2027-01-15T07:05:30.000Z" });
+      initialClock: "2027-01-15T07:12:00.000Z" });
     const outcome = await runIdentityKeyRotationController(selected, parent, resumed.dependencies,
       { fixture: true, nowMs: resumed.nowMs });
     assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
     assert.equal(resumed.calls[0], "reconcile:current-only:frontend");
     assert.equal(resumed.calls.some(value => value.includes("overlap")), false);
+    const capture = resumed.timeline.find(row => row.operation === "capture");
+    assert.deepEqual([capture.runtime, capture.frontend], ["overlap", "current-only"]);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -192,7 +277,7 @@ test("controller refuses observation timestamps not joined to the retained captu
       };
       await assert.rejects(() => runIdentityKeyRotationController(selected, parent, owned.dependencies,
         { fixture: true, nowMs: owned.nowMs }), error => error.check === "rotation-failure-contained");
-      assert.deepEqual(owned.calls, ["apply:overlap:api", "apply:overlap:frontend"]);
+      assert.deepEqual(owned.calls, ["apply:overlap:api", "apply:overlap:frontend", "apply:current-only:frontend"]);
       assert.deepEqual(owned.restored, ["baseline"]);
     } finally { rmSync(directory, { recursive: true, force: true }); }
   }

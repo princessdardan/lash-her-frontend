@@ -12,6 +12,8 @@ const MAX_LIFETIME_MS = 60 * 60 * 1000;
 const STAGING_AUTHENTICATION_ORIGIN = "https://staging.lashher.com";
 const STAGING_GATEWAY_ORIGIN = "https://api-staging.lashher.com";
 export const PHASE2_DAY_TWO_WORKLOAD_MODE = "phase2-day-two-workload";
+export const PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE = "phase2-day-two-canonical-workload";
+type DayTwoWorkloadMode = typeof PHASE2_DAY_TWO_WORKLOAD_MODE | typeof PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE;
 type AuthenticationOrigins = {
   customerOrigin: string;
   adminOrigin: string;
@@ -44,6 +46,7 @@ type DayTwoConfiguration = WorkloadConfiguration & {
   environment: "staging";
   writerAdmissionBinding: NonNullable<WorkloadConfiguration["writerAdmissionBinding"]>;
   secret: string;
+  canonicalIdentity?: { authenticationOrigins: AuthenticationOrigins; deploymentUrl: string };
 };
 type GatewaySmoke = (gatewayOrigin: string) => Promise<{ ok: true; service: "course"; durationMs: number }>;
 
@@ -74,30 +77,44 @@ export function readReleaseProbeConfiguration(
   return config ? { ...config, secret, authenticationOrigins: config.environment === "staging" ? readAuthenticationOrigins(env) : null } : null;
 }
 
-export function readPhase2DayTwoWorkloadConfiguration(env: Record<string, string | undefined>): DayTwoConfiguration | null {
+export function readPhase2DayTwoWorkloadConfiguration(
+  env: Record<string, string | undefined>, mode: DayTwoWorkloadMode = PHASE2_DAY_TWO_WORKLOAD_MODE,
+): DayTwoConfiguration | null {
   const secret = env.CRON_SECRET?.trim();
   if (!secret || env.VERCEL !== "1" || env.VERCEL_PROJECT_ID !== VERCEL_PROJECT_BINDINGS.stagingProjectId) return null;
   const config = readWorkloadConfiguration(env);
   if (!config || config.environment !== "staging" || config.gatewayOrigin !== STAGING_GATEWAY_ORIGIN || !config.writerAdmissionBinding) return null;
-  return { ...config, environment: config.environment, writerAdmissionBinding: config.writerAdmissionBinding, secret };
+  const workload = { ...config, environment: config.environment, writerAdmissionBinding: config.writerAdmissionBinding, secret };
+  if (mode === PHASE2_DAY_TWO_WORKLOAD_MODE) return workload;
+  const deploymentUrl = env.VERCEL_URL;
+  const authenticationOrigins = readAuthenticationOrigins(env);
+  if (!deploymentUrl || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u.test(deploymentUrl) || !authenticationOrigins) return null;
+  return { ...workload, canonicalIdentity: { authenticationOrigins, deploymentUrl } };
 }
 
 // This handler receives no provider, bootstrap, or other probe capabilities.
 export function createPhase2DayTwoWorkloadHandler(deps: {
-  configuration(): DayTwoConfiguration | null;
+  configuration(mode: DayTwoWorkloadMode): DayTwoConfiguration | null;
   phase2: GatewaySmoke;
 }) {
   return async (request: Request): Promise<Response> => {
     if (request.method !== "GET") return new Response(null, { status: 405, headers: { allow: "GET", "cache-control": "no-store" } });
-    if (request.headers.get("x-lash-release-mode") !== PHASE2_DAY_TWO_WORKLOAD_MODE) return reply(400, { error: "Invalid mode" });
+    const mode = request.headers.get("x-lash-release-mode");
+    const canonical = mode === PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE;
+    if (!canonical && mode !== PHASE2_DAY_TWO_WORKLOAD_MODE) return reply(400, { error: "Invalid mode" });
+    const host = request.headers.get("host");
+    if (canonical && (request.url !== STAGING_AUTHENTICATION_ORIGIN + "/api/internal/release-probe" ||
+      host !== null && host !== "staging.lashher.com")) return reply(404, { error: "Not found" });
     try {
-      const config = deps.configuration();
+      const config = deps.configuration(mode);
       if (!config) return reply(404, { error: "Not found" });
       if (!hasBearer(request, config.secret)) return reply(401, { error: "Unauthorized" });
       const challenge = request.headers.get("x-lash-release-challenge") ?? "";
       if (!/^[a-f0-9]{64}$/u.test(challenge)) return reply(400, { error: "Invalid challenge" });
+      const identity = canonical ? config.canonicalIdentity : undefined;
+      if (canonical && !identity) return reply(404, { error: "Not found" });
       const result = await deps.phase2(config.gatewayOrigin);
-      return phase2WorkloadResponse(config, challenge, result.durationMs);
+      return phase2WorkloadResponse(config, challenge, result.durationMs, identity?.authenticationOrigins, identity?.deploymentUrl);
     } catch { return reply(503, { error: "Release probe failed" }); }
   };
 }
@@ -146,11 +163,13 @@ function hasBearer(request: Request, secret: string): boolean {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-function phase2WorkloadResponse(config: WorkloadConfiguration, challenge: string, durationMs: number, authenticationOrigins?: AuthenticationOrigins) {
+function phase2WorkloadResponse(config: WorkloadConfiguration, challenge: string, durationMs: number,
+  authenticationOrigins?: AuthenticationOrigins, deploymentUrl?: string) {
   return reply(200, { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge,
     environment: config.environment, projectId: config.projectId, sourceCommit: config.sourceCommit, gatewayOrigin: config.gatewayOrigin,
     checks: ["gateway-course-catalog-p2"], durationMs, contractPhase: "p2", featureControls: config.featureControls,
-    writerAdmissionBinding: config.writerAdmissionBinding, ...(authenticationOrigins ? { authenticationOrigins } : {}) }, true);
+    writerAdmissionBinding: config.writerAdmissionBinding, ...(authenticationOrigins ? { authenticationOrigins } : {}),
+    ...(deploymentUrl ? { deploymentUrl } : {}) }, true);
 }
 
 function reply(status: number, body: unknown, privateResponse = false) {

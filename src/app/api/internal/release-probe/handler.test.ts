@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
-import { createPhase2DayTwoWorkloadHandler, createReleaseProbeHandler, PHASE2_DAY_TWO_WORKLOAD_MODE,
+import { createPhase2DayTwoWorkloadHandler, createReleaseProbeHandler, PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE, PHASE2_DAY_TWO_WORKLOAD_MODE,
   readPhase2DayTwoWorkloadConfiguration, readReleaseProbeConfiguration } from "./handler";
 import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 import { createFrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
@@ -113,6 +113,73 @@ test("actual route dispatch confines the cron credential to the current P2 catal
   }
   assert.equal((await GET(dayTwoRequest({ authorization: `Bearer ${secret}` }))).status, 401);
   assert.equal(outbound.mock.callCount(), 1);
+});
+
+test("canonical day-two route challenges only the canonical alias and binds the actual deployment hostname", async t => {
+  const { GET } = await import("./route");
+  const canonical = "https://staging.lashher.com", path = "/api/internal/release-probe";
+  const exp = Math.floor(Date.now() / 1000) + 1800;
+  const token = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.owned`;
+  const env: NodeJS.ProcessEnv = { ...dayTwoEnvironment(), NODE_ENV: "test", VERCEL_OIDC_TOKEN: token,
+    VERCEL_URL: "owned-immutable-deployment.vercel.app",
+    LASH_RELEASE_PROBE_EXPIRES_AT: String(Date.now() + 60_000),
+    CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true", AUTH_URL: canonical, CUSTOMER_AUTH_URL: canonical,
+    CUSTOMER_AUTH_SECRET: "customer-private-secret-value-32-characters", CUSTOMER_AUTH_GOOGLE_ID: "customer-google-id",
+    CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google-private-value", CUSTOMER_AUTH_RESEND_KEY: "customer-private-resend-value",
+    CUSTOMER_AUTH_EMAIL_FROM: "academy@example.invalid",
+  };
+  t.mock.property(process, "env", env);
+  const outbound = t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), `${stagingGateway}/course/v1/courses`);
+    assert.equal(init?.method, "GET");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("x-lash-workload-token"), token);
+    assert.equal(headers.has("authorization"), false); assert.equal(headers.has("cookie"), false);
+    return Response.json({ courses: [], nextCursor: null });
+  });
+  const get = (headers: Record<string, string> = {}, url = canonical + path) => GET(new Request(url, { headers: {
+    authorization: `Bearer ${cronSecret}`, "x-lash-release-challenge": challenge,
+    "x-lash-release-mode": PHASE2_DAY_TWO_CANONICAL_WORKLOAD_MODE, ...headers,
+  } }));
+  for (const url of [`https://${env.VERCEL_URL}${path}`, `${canonical}${path}?attempt=1`, `http://staging.lashher.com${path}`,
+    `https://staging.lashher.com.example.invalid${path}`, canonical + "/api/internal/other"]) {
+    assert.equal((await get({ host: "staging.lashher.com", "x-forwarded-host": "staging.lashher.com" }, url)).status, 404);
+  }
+  assert.equal((await get({ host: env.VERCEL_URL! })).status, 404);
+  assert.equal((await get({ authorization: `Bearer ${secret}` })).status, 401);
+  assert.equal((await get({ "x-lash-release-challenge": "invalid" })).status, 400);
+  for (const [key, value] of [
+    ["VERCEL_URL", undefined], ["VERCEL_URL", "https://owned-immutable-deployment.vercel.app"],
+    ["VERCEL_URL", "owned-immutable-deployment.vercel.app/private"], ["VERCEL_URL", "other.example.invalid"],
+    ["VERCEL_URL", "owned-immutable-deployment-.vercel.app"], ["AUTH_URL", "https://other.example.invalid"],
+    ["AUTH_REDIRECT_PROXY_URL", canonical], ["CUSTOMER_AUTH_ENABLED", "false"], ["VERCEL_TARGET_ENV", "preview"],
+  ] as const) {
+    const saved = env[key];
+    env[key] = value;
+    assert.equal((await get()).status, 404, key);
+    env[key] = saved;
+  }
+  assert.equal(outbound.mock.callCount(), 0);
+
+  const response = await get({ host: "staging.lashher.com", "x-vercel-deployment-url": "forged.vercel.app", cookie: "private-cookie" });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(response.headers.get("set-cookie"), null);
+  const { durationMs, ...receipt } = await response.json();
+  assert.ok(Number.isSafeInteger(durationMs) && durationMs >= 0);
+  assert.deepEqual(receipt, {
+    version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge, environment: "staging",
+    projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, sourceCommit: env.VERCEL_GIT_COMMIT_SHA, gatewayOrigin: stagingGateway,
+    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", featureControls: readReleaseFeatureControls(env),
+    writerAdmissionBinding: { mode: "enforce", targetSha256: "d".repeat(64), producerSha256: "b".repeat(64),
+      sourceCommit: env.VERCEL_GIT_COMMIT_SHA, roleName: "protocol_runtime" },
+    authenticationOrigins: { customerOrigin: canonical, adminOrigin: canonical, adminRedirectProxyOrigin: null, customerRedirectProxyEnabled: false },
+    deploymentUrl: env.VERCEL_URL,
+  });
+  const ordinary = await (await GET(dayTwoRequest())).json();
+  assert.equal(Object.hasOwn(ordinary, "deploymentUrl"), false);
+  assert.equal(Object.hasOwn(ordinary, "authenticationOrigins"), false);
+  assert.equal(outbound.mock.callCount(), 2);
 });
 
 test("release probe requires a live bounded credential and the reviewed Production-target project/source", () => {

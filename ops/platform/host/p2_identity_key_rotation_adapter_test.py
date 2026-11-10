@@ -224,7 +224,8 @@ class AdapterTest(unittest.TestCase):
             if payload["mode"] == "rotation-capture":
                 old, new = "old.token." + str(len(captured)), "new.token." + str(len(captured))
                 captured[profile] = (old, new)
-                return {"status": "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", "bindingSha256": "a" * 64,
+                return {"version": 1, "environment": "staging", "releaseAccepted": False,
+                    "status": "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", "bindingSha256": "a" * 64,
                     "profile": profile, "configurationSha256": "b" * 64, "privateCredentialBytes": True,
                     "commonTokenBytesOutput": False,
                     "oldToken": old, "newToken": new, "tokenIssuedAt": "2027-01-15T07:02:30.000Z",
@@ -240,10 +241,28 @@ class AdapterTest(unittest.TestCase):
             ("community-admin", "community-member", "course-admin", "course-learner"))}
         # Normalize the first UUID group to exactly eight characters.
         subjects = {profile: value[:36] for profile, value in subjects.items()}
-        captures = adapter.capture_tokens(subjects, "99999999-1111-4111-8111-111111111111", "a" * 64)
-        self.assertEqual(len(captures), 4)
-        self.assertEqual(len(adapter.observe_profiles("overlap", subjects, "99999999-1111-4111-8111-111111111111")), 4)
-        self.assertEqual(len(adapter.observe_profiles("current-only", subjects, "99999999-1111-4111-8111-111111111111")), 4)
+        course_id = "99999999-1111-4111-8111-111111111111"
+        metadata = adapter.capture_tokens(subjects, course_id, "a" * 64)
+        self.assertEqual(metadata, [{"status": rotation.CAPTURE_STATUS, "profile": profile,
+            "tokenIssuedAt": "2027-01-15T07:02:30.000Z", "tokenExpiresAt": "2027-01-15T07:07:30.000Z"}
+            for profile in rotation.CAPTURE_PROFILES])
+        record = directory / rotation.CAPTURE_RECORD
+        self.assertEqual(record.stat().st_mode & 0o777, 0o600)
+        original = record.read_bytes()
+        retained = json.loads(original)["captures"]
+        self.assertEqual({row["profile"]: (row["oldToken"], row["newToken"]) for row in retained}, captured)
+        self.assertEqual(adapter.capture_tokens(subjects, course_id, "a" * 64), metadata)
+        self.assertEqual(record.read_bytes(), original)
+        self.assertEqual(len(adapter.observe_profiles("overlap", subjects, course_id)), 4)
+        self.assertEqual(len(adapter.observe_profiles("current-only", subjects, course_id)), 4)
+        record.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "ROTATION_PRIVATE_CAPTURE_RECORD_REQUIRED"):
+            adapter.capture_tokens(subjects, course_id, "a" * 64)
+        record.chmod(0o600)
+        retained[0]["tokenExpiresAt"] = "2027-01-15T07:07:31.000Z"
+        record.write_text(json.dumps({**json.loads(original), "captures": retained}))
+        with self.assertRaisesRegex(ValueError, "ROTATION_PRIVATE_CAPTURE_REFUSED"):
+            adapter.capture_tokens(subjects, course_id, "a" * 64)
 
     def test_api_observer_passes_expected_secrets_only_over_stdin_and_checks_all_ten(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)

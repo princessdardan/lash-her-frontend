@@ -18,7 +18,8 @@ function fixture() {
     "source-policy", "release", "p2-profiled-current-probe", "p2-recovery-current-probe", "p2-frontend-replacement-probe",
     "p2-frontend-replacement-abort", "p2-frontend-replacement-written", "p2-frontend-replacement-closed", "frontend-admission-bootstrap"])
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
-  for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
+  for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json",
+    "frontend-managed-neon-catalog.mjs", "managed-neon-replacement-catalog.json"])
     copyFileSync(join(source, "ops/platform", name), join(root, "ops/platform", name));
   for (const name of ["package.json", "package-lock.json"]) copyFileSync(join(source, "ops/platform/frontend-migration-deps", name), join(root, name));
   for (const name of ["src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json"]) copyFileSync(join(source, name), join(root, name));
@@ -75,8 +76,9 @@ test("extra SQL or omitted source cannot silently enter a packaged image", () =>
   }
 });
 
-for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"]) {
-  test(`packaged image binds the original qualification selector ${name}`, () => {
+for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json",
+  "frontend-managed-neon-catalog.mjs", "managed-neon-replacement-catalog.json"]) {
+  test(`packaged image binds the qualification input ${name}`, () => {
     for (const mode of ["modified", "omitted", "unlisted"]) {
       const root = fixture(), file = `ops/platform/${name}`;
       try {
@@ -140,6 +142,9 @@ test("minimal image dependencies stay aligned with the application lock", () => 
   for (const name of ["pg", "drizzle-orm"]) assert.equal(isolated.packages[`node_modules/${name}`].version, app.packages[`node_modules/${name}`].version);
   assert.deepEqual(Object.keys(isolated.packages[""].dependencies).sort(), ["drizzle-orm", "pg"]);
   assert.ok(frontendMigrationArtifact().migrations.length > 0);
+  const imageContext = readFileSync(join(source, "ops/platform/Dockerfile.frontend-migration.dockerignore"), "utf8").split("\n");
+  for (const file of ["qualification-target-profiles.json", "managed-neon-replacement-catalog.json"])
+    assert.ok(imageContext.includes("!ops/platform/" + file));
   assert.ok(readFileSync(join(source, "ops/platform/Dockerfile.frontend-migration"), "utf8").includes("COPY contracts/api-integration/p2-candidate/ ./contracts/api-integration/p2-candidate/"));
   assert.ok(readFileSync(join(source, ".github/workflows/ci.yml"), "utf8").includes("contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly"));
   assert.ok(readFileSync(join(source, ".github/workflows/ci.yml"), "utf8").includes("verifyPublishedPhase2Contracts(process.cwd(), process.env.FRONTEND_SOURCE_REVISION)"));

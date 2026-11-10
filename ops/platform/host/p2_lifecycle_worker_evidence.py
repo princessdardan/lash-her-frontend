@@ -123,7 +123,7 @@ class HeldWorkerPersistenceScope(CurrentLifecyclePersistenceScope):
 class P2LifecycleWorkerEvidenceStage:
     def __init__(self, scope, selected, jobs, configuration, source, plan, suspension_plan, persistence_reviewed, *,
                  native_context, provider_client, observe_frontend, expected_profile=None, bundle=None,
-                 database_proof=None, release_evidence=None):
+                 database_proof=None, release_evidence=None, observe_native=None):
         expected = worker_profile(scope, plan, suspension_plan, persistence_reviewed, expected_profile)
         demand(isinstance(scope, P2ReleaseScope) and scope.path == LOCK and os.geteuid() == 0 and callable(observe_frontend)
             and plan.get("version") == (2 if expected is not None else 1) and plan.get("environment") == "staging" and plan.get("profile") == "direct-known-suspension-v1"
@@ -135,6 +135,7 @@ class P2LifecycleWorkerEvidenceStage:
         self.expected_profile = expected
         self.suspension_plan, self.reviewed = copy.deepcopy(suspension_plan), copy.deepcopy(persistence._reviewed(persistence_reviewed, expected))
         self.native_context, self.provider, self.observe_frontend = native_context, provider_client, observe_frontend
+        self.observe_native = observe_native
         migrate.require_profile(expected, native_context["plan"])
         demand(plan["suspensionPlanSha256"] == digest(canonical(suspension_plan)) and native_context["candidate"] == selected
             and native_context["plan"]["planSha256"] == plan["nativePlanSha256"]
@@ -144,12 +145,14 @@ class P2LifecycleWorkerEvidenceStage:
         if expected is not None:
             migrate.candidate_profile(selected, expected)
             demand(bundle is not None and database_proof is not None and type(release_evidence) is dict
-                and Path(self.reviewed["privateDirectory"]) == self.directory, "P2_WORKER_PROFILED_INPUTS_REQUIRED")
+                and callable(observe_native) and Path(self.reviewed["privateDirectory"]) == self.directory,
+                "P2_WORKER_PROFILED_INPUTS_REQUIRED")
             self.bundle, self.database_proof, self.release_evidence = Path(bundle), database_proof, copy.deepcopy(release_evidence)
             demand(self.bundle.is_absolute() and self.bundle.is_relative_to(ROOT) and self.bundle.resolve() == self.bundle,
                 "P2_WORKER_PROFILED_BUNDLE_REQUIRED")
         else:
-            demand(bundle is None and database_proof is None and release_evidence is None, "P2_WORKER_LEGACY_INPUTS_REQUIRED")
+            demand(bundle is None and database_proof is None and release_evidence is None and observe_native is None,
+                "P2_WORKER_LEGACY_INPUTS_REQUIRED")
         self.preflight_done = self.invocation_attempted = False
         self.verify()
         info = self.directory.parent.lstat()
@@ -212,14 +215,20 @@ class P2LifecycleWorkerEvidenceStage:
             and admission.get("recovery") is recovery and admission.get("active") == 0 and admission.get("uncertain") == 0,
             "P2_WORKER_CURRENT_FRONTEND_ADMISSION_REQUIRED")
         self._gateway(recovery)
-        value = native.observe(self.native_context, self.provider, expected_profile=expected)
+        if expected is None:
+            value = native.observe(self.native_context, self.provider)
+        else:
+            value = self.observe_native()
+            demand(value.get("status") == "P2_DAY_TWO_WORKLOAD_OBSERVED" and value.get("readOnly") is True and
+                value.get("workloadChallengeVerified") is True and value.get("aliasReadbacks") == 2,
+                "P2_WORKER_DAY_TWO_WORKLOAD_REQUIRED")
         metadata = native.observe_metadata(self.native_context, self.provider, expected_profile=expected)
         if expected is not None:
             migrate.require_profile(expected, value, metadata)
             demand(all(item.get("version") == 2 and item.get("candidateSha256") == self.plan["candidateObjectSha256"]
                 for item in (value, metadata)), "P2_WORKER_CURRENT_NATIVE_PROFILE_REQUIRED")
         demand(value.get("nativeEnabled") is False and metadata.get("nativeEnabled") is False
-            and all(value.get(name) == metadata.get(name) for name in ("projectId", "deploymentId", "sourceCommit", "deploymentUrl", "schedule")),
+            and all(value.get(name) == metadata.get(name) for name in ("projectId", "deploymentId", "sourceCommit", "deploymentUrl", "schedule", "releaseId")),
             "P2_WORKER_NATIVE_MUST_BE_DISABLED")
         return admission
 

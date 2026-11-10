@@ -4,12 +4,18 @@ import {spawn,spawnSync} from 'node:child_process';
 import {mkdtempSync,realpathSync,writeFileSync,readFileSync,existsSync,rmSync,chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {p2CertificationEnvironmentLock,readP2CertificationAuthenticationStage,readP2CertificationSuspensionStage,readP2CertificationWorkerStage,readP2CertificationKnownAckStage,readP2CertificationInteractiveStage} from './p2-certification-transport.mjs';
+import {p2CertificationEnvironmentLock,readP2CertificationAuthenticationStage,readP2CertificationSuspensionStage,readP2CertificationWorkerStage,readP2CertificationKnownAckStage,readP2CertificationInteractiveStage,usesP2ProfiledDayTwoAuthority} from './p2-certification-transport.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
 const program=String.raw`
 import base64,fcntl,json,os,sys
 fd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
 initial=json.loads(sys.stdin.readline());assert initial['mode'] in ('p2-bounded-certification','p2-bounded-certification-profiled-current')
+if initial['mode'].endswith('profiled-current'):
+ certification_mode=initial['certificationPlan']['mode']
+ if certification_mode in ('auth-preparation','browser-pending','direct-worker'):
+  assert initial['scopedCronSecret']=='fixture-authority-stdin-only' and 'privateProbe' not in initial
+ if certification_mode in ('native-window','fault-before-upstream'):
+  assert initial['privateProbe']=={'fixture':'retained'} and 'scopedCronSecret' not in initial
 print(json.dumps({'id':0,'status':'LOCKED'}),flush=True)
 terminal={'status':'P2_BOUNDED_CERTIFICATION_CONTAINED','sqlReplayed':False,'runtimeReplaced':False}
 if initial['mode'].endswith('profiled-current'):
@@ -22,7 +28,16 @@ for raw in sys.stdin:
   assert json.loads(base64.b64decode(p['receipt']))['status']=='P2_CERTIFICATION_DATABASE_CURRENT'
   if sys.argv[2]=='death':os._exit(31)
   value.update(status='CERTIFICATION_ARMED',receipt={'status':'P2_CERTIFICATION_CURRENT_READY'})
+ elif op=='scoped-mux-readiness-observe':
+  assert initial['certificationPlan']['mode']=='mux-readiness' and set(p)=={'id','operation'}
+  value.update(status='CERTIFICATION_SCOPED_OBSERVED',receipt={'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile'],
+    'status':'P2_SCOPED_MUX_READY_OBSERVED'})
  elif op=='certification-gateway-stage':value.update(status='CERTIFICATION_GATEWAY_OBSERVED',receipt={'gateway':{'newWork':p['stage']=='browser','recovery':False}})
+ elif op=='worker-ready':
+  assert certification_mode=='direct-worker';value.update(status='CERTIFICATION_WORKER_READY',receipt={'bindingSha256':initial['certificationPlan']['workerPlanSha256']})
+ elif op in ('worker-credential','worker-invoke'):
+  assert certification_mode=='direct-worker' and p['secret']==initial['scopedCronSecret']
+  value.update(status='CERTIFICATION_WORKER_OBSERVED',receipt={'status':'P2_OWNED_FIXTURE_WORKER'})
  elif op=='certification-prepare-close':value.update(status='CERTIFICATION_CLOSE_PREPARED',receipt=terminal)
  elif op=='finish':
   assert json.loads(base64.b64decode(p['certification']))==terminal
@@ -35,7 +50,7 @@ for raw in sys.stdin:
  print(json.dumps(value),flush=True)
 os.close(fd)
 `;
-function fixture(mode='ready',profiled=false){
+function fixture(mode='ready',profiled=false,certificationMode='contain-native'){
  const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-certification-pipe-')));chmodSync(directory,0o700);
  const receipt={status:'P2_CERTIFICATION_DATABASE_CURRENT'},outcome={status:'P2_BOUNDED_CERTIFICATION_CONTAINED',sqlReplayed:false,runtimeReplaced:false};
  const planSha256='c'.repeat(64);
@@ -45,12 +60,103 @@ function fixture(mode='ready',profiled=false){
  const initial={environment:'staging',sourceCommit:'a'.repeat(40),mode:'p2-bounded-certification',certificationActionId:'bounded-case',nativePlan:{planSha256:'b'.repeat(64)},
   certificationPlan:{mode:'auth-preparation'},browserPlan:{},credentials:{privateMarker:'fixture-private-stdin-only'}};
  if(profiled)Object.assign(initial,{mode:'p2-bounded-certification-profiled-current',version:2,qualificationTargetProfile:profile,
-  certificationPlan:{mode:'contain-native',version:2,qualificationTargetProfile:profile,certificationActionId:initial.certificationActionId,
+  certificationPlan:{mode:certificationMode,version:2,qualificationTargetProfile:profile,certificationActionId:initial.certificationActionId,
     nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},planSha256}});
+ if(profiled&&(usesP2ProfiledDayTwoAuthority(certificationMode)||certificationMode==='mux-readiness'))initial.scopedCronSecret='fixture-authority-stdin-only';
+ if(profiled&&['native-window','fault-before-upstream'].includes(certificationMode))initial.privateProbe={fixture:'retained'};
  const lock=join(directory,'actual.lock');let captured;
- const factory=p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},initial,directory,{expectedProfile:profiled?profile:undefined,launch(executable,args,options){captured={executable,args,options};return spawn('python3',['-I','-u','-c',program,lock,mode],options);}});
- return{directory,receipt,outcome,factory,lock,getCaptured:()=>captured,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
+ const bind=(packet=initial)=>p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},packet,directory,{expectedProfile:profiled?profile:undefined,launch(executable,args,options){captured={executable,args,options};return spawn('python3',['-I','-u','-c',program,lock,mode],options);}});
+ return{directory,receipt,outcome,initial,bind,factory:bind(),lock,getCaptured:()=>captured,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
 }
+
+test('profiled day-two authority sends only a fixed runtime bearer privately for the three authority modes',async()=>{
+ for(const mode of ['auth-preparation','browser-pending','direct-worker']){
+  const f=fixture('ready',true,mode);
+  try{
+   const {scopedCronSecret,...missing}=f.initial;
+   for(const change of [missing,{...f.initial,privateProbe:undefined},{...f.initial,privateProbe:{fixture:'old'}},
+    {...f.initial,scopedCronSecret:''},{...f.initial,scopedCronSecret:'bearer\n'},{...f.initial,scopedCronSecret:'x'.repeat(8193)}]){
+    assert.throws(()=>f.bind(change),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
+   }
+   assert.equal(f.getCaptured(),undefined);
+   const drift={...f.initial},held=f.bind(drift);
+   drift.scopedCronSecret='fixture-changed-bearer';
+   await assert.rejects(held(()=>assert.fail('drifted transport launched')),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
+   assert.equal(f.getCaptured(),undefined);
+   await f.factory(async(_verify,_signal,host)=>{
+    await host.arm({receipt:f.receipt,probe:{}});
+    await host.prepareClose({status:'P2_OWNED_FIXTURE'});await host.finish(f.outcome);
+   });
+   assert.equal(JSON.stringify(f.getCaptured()).includes(scopedCronSecret),false);
+   const terminal=readFileSync(join(f.directory,'p2-host-certification-outcome.json'),'utf8');
+   assert.equal(terminal.includes(scopedCronSecret),false);
+  }finally{f.cleanup();}
+ }
+});
+
+test('legacy, native and fault transports refuse the profiled authority bearer',async()=>{
+ const cases=[fixture(),...['native-window','fault-before-upstream'].map(mode=>fixture('ready',true,mode))];
+ try{
+  for(const f of cases){
+   assert.throws(()=>f.bind({...f.initial,scopedCronSecret:'fixture-wrong-mode-bearer'}),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
+   assert.equal(f.getCaptured(),undefined);
+   await f.factory(async(_verify,_signal,host)=>{
+    await host.arm({receipt:f.receipt,probe:{}});
+    await host.prepareClose({status:'P2_OWNED_FIXTURE'});await host.finish(f.outcome);
+   });
+  }
+ }finally{for(const f of cases)f.cleanup();}
+});
+
+test('profiled direct worker only invokes with the bearer used to establish current workload identity',()=>{
+ const f=fixture('ready',true,'direct-worker');
+ try{
+  const initial=f.initial;
+  Object.assign(initial.certificationPlan,{workerPlan:{binding:'owned-worker'},workerPlanSha256:'d'.repeat(64)});
+  const source=String.raw`
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {mock} from 'node:test';
+import * as childProcess from 'node:child_process';
+const {initial,profile,program,lock,directory,receipt,outcome,transportUrl,workerUrl}=JSON.parse(readFileSync(0));
+const {default:defaultChild,spawn:realSpawn,...childExports}=childProcess;
+const operations=[];
+const spawn=(executable,args,options)=>{
+ assert.equal(executable,'/usr/bin/ssh');
+ assert.equal(JSON.stringify({args,options}).includes(initial.scopedCronSecret),false);
+ const child=realSpawn('python3',['-I','-u','-c',program,lock,'ready'],options);
+ const write=child.stdin.write.bind(child.stdin);
+ child.stdin.write=(value,...rest)=>{operations.push(JSON.parse(value).operation);return write(value,...rest);};
+ return child;
+};
+mock.module('node:child_process',{exports:{...childExports,spawn,default:{...defaultChild,spawn}}});
+const reviewed=Object.freeze({}),drifted=Object.freeze({});
+mock.module(workerUrl,{exports:{readP2LifecycleWorkerCronSecret(handle){
+ assert.ok(handle===reviewed||handle===drifted);
+ return handle===reviewed?initial.scopedCronSecret:'fixture-drifted-bearer';
+}}});
+const {p2CertificationEnvironmentLock,readP2CertificationWorkerStage}=await import(transportUrl);
+const hold=p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},initial,directory,{expectedProfile:profile});
+await hold(async(_verify,_signal,host)=>{
+ await host.arm({receipt,probe:{}});
+ const plan=initial.certificationPlan.workerPlan;
+ const worker=readP2CertificationWorkerStage(await host.workerEvidenceStage(plan),plan);
+ await assert.rejects(worker.invokeDirect(reviewed));
+ await assert.rejects(worker.preflightCredential(drifted));
+ assert.equal((await worker.preflightCredential(reviewed)).status,'P2_OWNED_FIXTURE_WORKER');
+ await assert.rejects(worker.invokeDirect(drifted));
+ assert.equal((await worker.invokeDirect(reviewed)).status,'P2_OWNED_FIXTURE_WORKER');
+ await host.prepareClose({status:'P2_OWNED_FIXTURE'});await host.finish(outcome);
+});
+assert.deepEqual(operations.filter(op=>op?.startsWith('worker-')),['worker-ready','worker-credential','worker-invoke']);
+`;
+  const result=spawnSync(process.execPath,['--experimental-test-module-mocks','--input-type=module','--eval',source],{encoding:'utf8',timeout:20_000,
+   input:JSON.stringify({initial,profile,program,lock:f.lock,directory:f.directory,receipt:f.receipt,outcome:f.outcome,
+    transportUrl:new URL('./p2-certification-transport.mjs',import.meta.url).href,
+    workerUrl:new URL('./p2-lifecycle-worker-evidence.mjs',import.meta.url).href})});
+  assert.ifError(result.error);assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'');
+ }finally{f.cleanup();}
+});
 test('actual child pipe/flock joins only exact certification terminal and keeps credentials in stdin',async()=>{
  const f=fixture();try{
   const actual=await f.factory(async(verify,_signal,host)=>{
@@ -70,6 +176,22 @@ test('actual child pipe/flock joins only exact certification terminal and keeps 
   assert.equal(actual,'joined');assert.deepEqual(JSON.parse(readFileSync(join(f.directory,'p2-host-certification-outcome.json'))),f.outcome);
   assert.equal(JSON.stringify(f.getCaptured()).includes('fixture-private-stdin-only'),false);
   assert.equal(f.getCaptured().executable,'/usr/bin/ssh');assert.ok(f.getCaptured().args.some(value=>value.includes('p2_certification_parent.py')));
+ }finally{f.cleanup();}
+});
+
+test('profiled Mux readiness transport permits only its single scoped read command',async()=>{
+ const f=fixture('mux-readiness',true,'mux-readiness');try{
+  await f.factory(async(_verify,_signal,host)=>{
+   await assert.rejects(host.scopedStage('scoped-mux-readiness-observe'));
+   await host.arm({receipt:f.receipt,probe:{}});
+   await assert.rejects(host.scopedStage('scoped-mux-open'));
+   await assert.rejects(host.scopedStage('scoped-mux-observe'));
+   const receipt=await host.scopedStage('scoped-mux-readiness-observe');
+   assert.equal(receipt.status,'P2_SCOPED_MUX_READY_OBSERVED');
+   await host.prepareClose(receipt);
+   await assert.rejects(host.scopedStage('scoped-mux-readiness-observe'));
+   await host.finish(f.outcome);
+  });
  }finally{f.cleanup();}
 });
 

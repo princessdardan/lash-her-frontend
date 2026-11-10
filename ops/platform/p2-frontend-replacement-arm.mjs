@@ -63,7 +63,7 @@ function observedArm(probe, arm) {
 export async function observeHeldFrontendReplacement(prepared, url, { verifyEnvironment, arm, signal }) {
   demand(typeof verifyEnvironment === "function" && typeof arm === "function" && signal instanceof AbortSignal);
   const { probe, plan, administrativeLogins } = prepared;
-  const target = plan.replacement.target;
+  const { target, managedCatalog, provider } = plan.replacement;
   const guard = async () => {
     demand(!signal.aborted);
     await verifyEnvironment();
@@ -93,7 +93,8 @@ export async function observeHeldFrontendReplacement(prepared, url, { verifyEnvi
       demand(!lost && !signal.aborted);
     };
     const boundary = await verifyEmptyFrontendReplacement(client, { target, predecessorTarget: probe.predecessorTarget,
-      administrativeLogins, verifyEnvironment: guard, verifySession });
+      administrativeLogins, verifyEnvironment: guard, verifySession,
+      ...(Object.hasOwn(plan.replacement, "managedCatalog") ? { managedCatalog, provider } : {}) });
     demand(boundary.databaseOid === lockedProbe.databaseOid && boundary.migrationRoleOid === lockedProbe.migrationRoleOid);
     outcome = { boundary, physicalObservation, armReceiptSha256: armed.armReceiptSha256,
       physicalObservationSha256: armed.physicalObservationSha256 };

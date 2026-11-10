@@ -6,7 +6,10 @@ import tempfile
 import unittest
 from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_CERTIFICATION_REQUIRED
-from p2_source_closure import PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED, PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED
+from p2_source_closure import (MANAGED_REPLACEMENT_CATALOG, MANAGED_REPLACEMENT_SOURCE_REQUIRED,
+                               PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_ARM_REQUIRED,
+                               PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED, PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED,
+                               read_managed_replacement_catalog)
 
 
 class SourceClosureTests(unittest.TestCase):
@@ -89,6 +92,46 @@ class SourceClosureTests(unittest.TestCase):
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
 
+    def test_managed_replacement_source_requires_paired_catalog_bytes_and_observer(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        common = PROFILED_CURRENT_REQUIRED | PROFILED_REPLACEMENT_ARM_REQUIRED | PROFILED_CERTIFICATION_REQUIRED
+        for name in (common | PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED) - manifest.keys():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned replacement source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        arm = {'mode': PROFILED_REPLACEMENT_ARM_MODE,
+               'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)}
+        certification = {**arm, 'mode': PROFILED_CERTIFICATION_MODE, 'certificationPlan': {'replacementRelease': {}}}
+        for scope in (arm, certification):
+            selected = {**scope, **self.make(manifest)}
+            self.assertEqual(verify_profiled_current_source_closure(selected, self.root), selected['sourceClosureSha256'])
+
+        for name in MANAGED_REPLACEMENT_SOURCE_REQUIRED:
+            path = self.root / name
+            path.write_bytes(('owned ' + name).encode())
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        catalog_sha = manifest[MANAGED_REPLACEMENT_CATALOG]
+        for scope in (arm, certification):
+            selected = {**scope, **self.make(manifest)}
+            self.assertEqual(verify_profiled_current_source_closure(selected, self.root), selected['sourceClosureSha256'])
+            for name in MANAGED_REPLACEMENT_SOURCE_REQUIRED:
+                without = {key: value for key, value in manifest.items() if key != name}
+                with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                    verify_profiled_current_source_closure({**scope, **self.make(without)}, self.root)
+                with self.assertRaisesRegex(ValueError, 'CATALOG_SOURCE_REQUIRED'):
+                    read_managed_replacement_catalog(self.make(without), self.root, catalog_sha)
+        catalog = self.root / MANAGED_REPLACEMENT_CATALOG
+        self.assertEqual(read_managed_replacement_catalog(self.make(manifest), self.root, catalog_sha), catalog.read_bytes())
+        catalog.write_bytes(b'changed owned bytes')
+        with self.assertRaisesRegex(ValueError, 'CATALOG_SOURCE_CHANGED'):
+            read_managed_replacement_catalog(self.make(manifest), self.root, catalog_sha)
+        catalog.unlink()
+        catalog.symlink_to(self.root / 'ops/platform/host/release.py')
+        with self.assertRaisesRegex(ValueError, 'INPUT_SYMLINK_REFUSED'):
+            read_managed_replacement_catalog(self.make(manifest), self.root, catalog_sha)
+
     def test_replacement_certification_requires_original_release_verifiers(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)
@@ -117,6 +160,27 @@ class SourceClosureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
             verify_profiled_current_source_closure(successor, self.root)
 
+    def test_profiled_suspension_source_closure_requires_day_two_and_worker_helpers(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        workload = 'ops/platform/host/p2_day_two_workload.py'
+        canonical = 'ops/platform/host/p2_canonical_browser_origin.py'
+        worker = 'ops/platform/host/p2_lifecycle_worker_evidence.py'
+        for name in (PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | {workload, canonical, worker}) - manifest.keys():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned certification source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {'mode': PROFILED_CERTIFICATION_MODE,
+                    'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)}
+        for mode in ('auth-preparation', 'browser-pending', 'direct-worker'):
+            plan = {**selected, **self.make(manifest), 'certificationPlan': {'mode': mode}}
+            self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
+            for name in (workload, canonical, worker) if mode == 'direct-worker' else (workload, canonical):
+                missing = {key: digest for key, digest in manifest.items() if key != name}
+                with self.subTest(mode=mode, name=name), self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                    verify_profiled_current_source_closure({**plan, **self.make(missing)}, self.root)
+
     def test_profiled_mux_gateway_closure_requires_shared_request_parsers(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)
@@ -141,6 +205,29 @@ class SourceClosureTests(unittest.TestCase):
             path = self.root / parser
             path.write_bytes(b'owned shared parser')
             manifest[parser] = hashlib.sha256(path.read_bytes()).hexdigest()
+        plan = {**selected, **self.make(manifest)}
+        self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
+
+    def test_profiled_mux_readiness_requires_fixed_query_and_transport_sources(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+
+        scoped = {'ops/platform/host/p2_scoped_mux_readiness.py', 'ops/platform/host/p2_scoped_mux.py',
+                  'ops/platform/p2-certification-transport.mjs', 'ops/platform/host/p2_day_two_workload.py'}
+        manifest = dict(self.manifest)
+        for name in (PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | scoped) - set(manifest):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned readiness source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {
+            'mode': PROFILED_CERTIFICATION_MODE,
+            'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+            'certificationPlan': {'mode': 'mux-readiness'},
+        }
+        for missing in scoped:
+            incomplete = {key: value for key, value in manifest.items() if key != missing}
+            with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                verify_profiled_current_source_closure({**selected, **self.make(incomplete)}, self.root)
         plan = {**selected, **self.make(manifest)}
         self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
 

@@ -5,6 +5,8 @@
 !ops/platform/frontend-migration-deps/package.json
 !ops/platform/frontend-migration-deps/package-lock.json
 !ops/platform/*.mjs
+!ops/platform/qualification-target-profiles.json
+!ops/platform/managed-neon-replacement-catalog.json
 !src/
 !src/lib/
 !src/lib/private-db/

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
+import { selectManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 import { verifyP2FrontendReplacementObservation } from "./p2-frontend-replacement-probe.mjs";
 import { decodeQualificationTargetJson, requireQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
@@ -98,16 +99,24 @@ function validateProbe(probe, plan) {
     typeof probe.backendStart === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/u.test(probe.backendStart));
 }
 
-function validateBoundary(boundary, plan, probe) {
-  const { observedAt, zeroCatalogCounts, ...binding } = boundary;
-  demand(isDeepStrictEqual(binding, {
+function validateBoundary(boundary, plan, probe, managed) {
+  const { observedAt, ...receipt } = boundary;
+  const binding = {
     version: 1, status: "FRONTEND_REPLACEMENT_BOUNDARY_VERIFIED", target: plan.replacement.target,
     predecessorTarget: probe.predecessorTarget, databaseOid: probe.databaseOid, migrationRoleOid: probe.migrationRoleOid,
     administrativeLogins: [...plan.replacement.administrativeLogins].sort(compareName),
-    catalogScope: "postgresql-16-18-stock-replacement-v1",
     readOnlyVerified: true, completeDatabaseEmptyProven: false, authorityIssued: false,
-  }) && typeof observedAt === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(observedAt) &&
-    zeroCatalogCounts && Object.values(zeroCatalogCounts).length > 0 && Object.values(zeroCatalogCounts).every(value => value === 0));
+  };
+  demand(typeof observedAt === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(observedAt));
+  if (managed) {
+    demand(Number.isFinite(Date.parse(observedAt)) && new Date(observedAt).toISOString() === observedAt &&
+      isDeepStrictEqual(receipt, { ...binding, catalogScope: "postgresql-18-managed-neon-replacement-v1",
+      managedCatalog: managed.reference, catalogCounts: managed.expectedCatalogCounts }));
+  } else {
+    const { zeroCatalogCounts, ...stock } = receipt;
+    demand(isDeepStrictEqual(stock, { ...binding, catalogScope: "postgresql-16-18-stock-replacement-v1" }) &&
+      zeroCatalogCounts && Object.values(zeroCatalogCounts).length > 0 && Object.values(zeroCatalogCounts).every(value => value === 0));
+  }
 }
 
 function runtimeEvidenceBinding(receipt, plan, frontend) {
@@ -225,6 +234,8 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
   try {
     demand(typeof task === "function" && typeof readHostEvidence === "function");
     const initial = structuredClone(initialInput), plan = structuredClone(planInput), review = snapshotSelection(initial, plan);
+    const managed = Object.hasOwn(plan.replacement, "managedCatalog") ? selectManagedNeonCatalog(plan.replacement.managedCatalog,
+      pick(plan.replacement, ["provider", "target", "databaseOid", "migrationRoleOid", "administrativeLogins"])) : undefined;
     await send(initial, "LOCKED", [], 5_000);
     phase = "locked";
     heartbeat = setInterval(() => {
@@ -252,7 +263,7 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
       }),
       authorizeReplacementWrite: input => advance("armed", "custody", async () => {
         const emptyCatalogReceipt = structuredClone(input);
-        validateBoundary(emptyCatalogReceipt, plan, armed.probe);
+        validateBoundary(emptyCatalogReceipt, plan, armed.probe, managed);
         writeRequested = true;
         const reply = await request("authorize-replacement-write", "REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED",
           { armReceiptSha256: armed.armReceiptSha256, emptyCatalogReceipt }, ["receipt", "writeIntentSha256"]);

@@ -6,6 +6,23 @@ import { sshCommand } from "./recreation_ssh.mjs";
 const handles = new WeakMap();
 const MAXIMUM = 4_000_000;
 const demand = value => { if (!value) throw new Error("P2_IDENTITY_ROTATION_TRANSPORT_REFUSED"); };
+const captureProfiles = ["community-admin", "community-member", "course-admin", "course-learner"];
+const captureFields = "profile,status,tokenExpiresAt,tokenIssuedAt";
+
+function captureTime(value) {
+  demand(typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/u.test(value));
+  const time = Date.parse(value);
+  demand(Number.isFinite(time) && new Date(time).toISOString() === value);
+  return time;
+}
+
+export function requireP2IdentityRotationCaptureMetadata(value) {
+  demand(Array.isArray(value) && value.length === captureProfiles.length && value.every((row, index) =>
+    row && Object.getPrototypeOf(row) === Object.prototype && Object.keys(row).sort().join() === captureFields
+    && row.profile === captureProfiles[index] && row.status === "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
+    && captureTime(row.tokenExpiresAt) - captureTime(row.tokenIssuedAt) === 300_000));
+  return value;
+}
 
 export function p2IdentityRotationEnvironmentLock(settings, initial) {
   const plan = initial?.rotationPlan;
@@ -28,7 +45,12 @@ export function p2IdentityRotationEnvironmentLock(settings, initial) {
     } pending.clear(); child.stdin.end(); };
     lines.on("line", raw => { try {
       demand(Buffer.byteLength(raw) <= MAXIMUM); const value = JSON.parse(raw), waiter = pending.get(value.id);
-      demand(waiter && value.status === waiter.status); pending.delete(value.id); clearTimeout(waiter.timer); waiter.resolve(value);
+      demand(waiter && value.status === waiter.status);
+      if (value.status === "ROTATION_CAPTURED") {
+        demand(Object.keys(value).sort().join() === "id,receipt,status");
+        requireP2IdentityRotationCaptureMetadata(value.receipt);
+      }
+      pending.delete(value.id); clearTimeout(waiter.timer); waiter.resolve(value);
     } catch { fail(); } });
     child.stderr.resume(); child.on("error", fail); child.stdin.on("error", fail);
     child.on("exit", code => { exited = code; if (active || code !== 0) fail(); });

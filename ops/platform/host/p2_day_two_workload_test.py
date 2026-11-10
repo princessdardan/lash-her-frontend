@@ -42,6 +42,7 @@ class DayTwoWorkloadTests(unittest.TestCase):
         self.bearer = "fixture-day-two-bearer"
         self.challenge = "1" * 64
         self.headers = {"Content-Type": "application/json", "Cache-Control": "private, no-store"}
+        self.canonical_origin = False
         self.probe = self.probe_client()
 
     def verify(self):
@@ -61,7 +62,8 @@ class DayTwoWorkloadTests(unittest.TestCase):
 
         class OwnedTransport:
             def open(self, request, timeout):
-                owner.assertEqual(request.full_url, owner.base.plan["deploymentUrl"] + workload._PATH)
+                origin = canonical.ORIGIN if owner.canonical_origin else owner.base.plan["deploymentUrl"]
+                owner.assertEqual(request.full_url, origin + workload._PATH)
                 owner.assertEqual(request.get_method(), "GET")
                 headers = {key.lower(): value for key, value in request.header_items()}
                 owner.requests.append(headers)
@@ -76,15 +78,21 @@ class DayTwoWorkloadTests(unittest.TestCase):
             "deployment": {"id": "dpl_fixture", "url": "owned-fixture.vercel.app"}}
 
     def response(self):
-        return {**copy.deepcopy(self.base.response()), "gatewayOrigin": "https://api-staging.lashher.com", "durationMs": 2}
+        value = {**copy.deepcopy(self.base.response()), "gatewayOrigin": "https://api-staging.lashher.com", "durationMs": 2}
+        if self.canonical_origin:
+            value.update(authenticationOrigins=dict(canonical.AUTHENTICATION_ORIGINS),
+                deploymentUrl=self.base.plan["deploymentUrl"].removeprefix("https://"))
+        return value
 
-    def enqueue(self, *, body=None, status=200, headers=None, alias_before=None, alias_after=None, native_after=False):
+    def enqueue(self, *, body=None, status=200, headers=None, alias_before=None, alias_after=None,
+                native_after=False, deployment_after=None):
         self.base.enqueue_metadata()
         self.fixture.enqueue(self.base.project(), self.alias() if alias_before is None else alias_before)
         self.fixture.responses.append((status, self.response() if body is None else body,
             self.headers if headers is None else headers))
         self.fixture.enqueue(self.alias() if alias_after is None else alias_after)
-        self.base.enqueue_metadata(enabled=native_after)
+        self.fixture.enqueue(self.fixture.deployment() if deployment_after is None else deployment_after,
+            self.base.project(enabled=native_after))
 
     def observe(self, **overrides):
         inputs = {"context": self.context, "client": self.client, "cron_secret": "  " + self.bearer + "  ",
@@ -92,7 +100,8 @@ class DayTwoWorkloadTests(unittest.TestCase):
         inputs.update(overrides)
         with patch.object(workload, "_WorkloadProbe", return_value=self.probe), \
                 patch.object(frontend_probe, "_private_input", side_effect=AssertionError("legacy probe file read")):
-            return workload.observe(**inputs)
+            observe = workload.observe_browser_origin if self.canonical_origin else workload.observe
+            return observe(**inputs)
 
     def test_selected_https_has_one_fresh_challenge_and_bracketed_provider_reads(self):
         self.enqueue()
@@ -124,6 +133,65 @@ class DayTwoWorkloadTests(unittest.TestCase):
         for value in (self.bearer, self.challenge, "fixture-private-bypass", "fixture-private-token", "provider-secret-must-not-escape",
                       "authenticationOrigins", "browserOrigin", "actionAuthority", "expiresAt"):
             self.assertNotIn(value, serialized)
+
+    def test_canonical_request_binds_actual_auth_origins_and_runtime_deployment(self):
+        self.canonical_origin = True
+        response = self.response()
+        self.enqueue(body=response)
+        result = self.observe()
+        self.assertEqual(result["status"], "P2_CANONICAL_BROWSER_ORIGIN_VERIFIED")
+        self.assertEqual(result["version"], 2)
+        self.assertEqual(result["qualificationTargetProfile"], self.profile)
+        self.assertEqual(result["candidateSha256"], self.base.plan["candidateSha256"])
+        self.assertEqual(result["phase2ContractManifestSha256"], self.base.release["phase2ContractManifestSha256"])
+        self.assertEqual(result["browserOrigin"], canonical.ORIGIN)
+        self.assertEqual(result["authenticationOrigins"], canonical.AUTHENTICATION_ORIGINS)
+        self.assertEqual(result["deploymentUrl"], self.base.plan["deploymentUrl"])
+        self.assertEqual(result["releaseId"], self.base.release["releaseId"])
+        self.assertEqual(result["protectedWorkloadSha256"], canonical._digest(response))
+        self.assertEqual(result["aliasReadbacks"], 2)
+        self.assertFalse(result["aliasRedirect"])
+        self.assertFalse(result["probeExpiryExtended"])
+        self.assertFalse(result["releaseAccepted"])
+        self.assertEqual(self.guard_checks, 16)
+        self.assertEqual([call["path"].split("?", 1)[0] for call in self.fixture.calls], [
+            "/v13/deployments/dpl_fixture", "/v9/projects/" + canonical.PROJECT, "/v9/projects/" + canonical.PROJECT,
+            "/v4/aliases/" + canonical.HOST, workload._PATH, "/v4/aliases/" + canonical.HOST,
+            "/v13/deployments/dpl_fixture", "/v9/projects/" + canonical.PROJECT,
+        ])
+        self.assertEqual(self.requests[0]["x-lash-release-mode"], "phase2-day-two-canonical-workload")
+        for secret in (self.bearer, self.challenge, "fixture-private-bypass", "fixture-private-token"):
+            self.assertNotIn(secret, json.dumps(result))
+
+    def test_canonical_refuses_wrong_deployment_auth_origins_and_provider_drift(self):
+        self.canonical_origin = True
+        for key, value in (
+                ("deploymentUrl", "other-fixture.vercel.app"),
+                ("deploymentUrl", self.base.plan["deploymentUrl"]),
+                ("authenticationOrigins", {**canonical.AUTHENTICATION_ORIGINS, "adminOrigin": "https://other.invalid"}),
+                ("authenticationOrigins", {**canonical.AUTHENTICATION_ORIGINS, "customerRedirectProxyEnabled": 0}),
+                ("authenticationOrigins", {**canonical.AUTHENTICATION_ORIGINS, "adminRedirectProxyOrigin": canonical.ORIGIN})):
+            with self.subTest(key=key, value=value):
+                self.enqueue(body={**self.response(), key: value})
+                with self.assertRaisesRegex(ValueError, "CANONICAL_BINDING_REFUSED"):
+                    self.observe()
+                self.fixture.responses.clear()
+        for variant in ({"alias_after": {**self.alias(), "redirect": canonical.ORIGIN}},
+                        {"deployment_after": {**self.fixture.deployment(), "url": "other-fixture.vercel.app"}},
+                        {"deployment_after": {**self.fixture.deployment(), "meta": {"lashReleaseId": "other-release"}}},
+                        {"native_after": True}):
+            with self.subTest(variant=variant):
+                self.enqueue(**variant)
+                with self.assertRaises(ValueError):
+                    self.observe()
+                self.fixture.responses.clear()
+
+    def test_canonical_and_immutable_request_targets_cannot_be_swapped(self):
+        for url, canonical_origin in ((canonical.ORIGIN, False), (self.base.plan["deploymentUrl"], True),
+                                      ("https://staging.lashher.com/other", True), ("https://other.invalid", True)):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "FIXED_ORIGIN_REQUIRED"):
+                self.probe.request(url, self.bearer, "owned-bypass", self.challenge, canonical_origin=canonical_origin)
+        self.assertEqual(self.fixture.calls, [])
 
     def test_old_challenge_refuses_the_next_observation_without_retry(self):
         with patch.object(workload.secrets, "token_hex", side_effect=[self.challenge, "2" * 64]) as nonce:

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { PassThrough, Writable } from "node:stream";
 import test from "node:test";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
+import { selectManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 import { exchangeFrontendReplacementWrite } from "./p2-frontend-replacement-write-transport.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -106,12 +108,13 @@ const commitIntentSha256 = hash(raw(commitIntent));
 const writeOutcome = { ...commitIntent, status: "P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION" };
 const providerInitial = { ...initial, vercelToken: "owned-test-token" };
 
-function host({ mutate = value => value, slowArm = false, alterEvidence = (_name, bytes) => bytes, exit = 1 } = {}) {
+function host({ mutate = value => value, slowArm = false, alterEvidence = (_name, bytes) => bytes, exit = 1,
+  replacement = { armed, armReceiptSha256, boundary, custody, writeIntentSha256 } } = {}) {
   const child = new EventEmitter(), calls = [], reads = [], timers = [];
   const records = {
-    "p2-frontend-replacement-guard-armed.json": armed,
-    "p2-frontend-replacement-empty-catalog.json": boundary,
-    "p2-frontend-replacement-write-intent.json": custody,
+    "p2-frontend-replacement-guard-armed.json": replacement.armed,
+    "p2-frontend-replacement-empty-catalog.json": replacement.boundary,
+    "p2-frontend-replacement-write-intent.json": replacement.custody,
     "p2-frontend-replacement-written-observation.json": written,
     "p2-frontend-replacement-runtime-intent.json": runtimeIntent,
     "migration-outcome.json": migration,
@@ -143,8 +146,10 @@ function host({ mutate = value => value, slowArm = false, alterEvidence = (_name
       const operation = packet.operation ?? "initial", id = packet.id ?? 0;
       calls.push({ operation, packet });
       let response = { id, status: "LOCKED" };
-      if (operation === "arm-replacement") response = { id, status: "REPLACEMENT_ARMED", receipt: armed, armReceiptSha256 };
-      if (operation === "authorize-replacement-write") response = { id, status: "REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED", receipt: custody, writeIntentSha256 };
+      if (operation === "arm-replacement") response = { id, status: "REPLACEMENT_ARMED", receipt: replacement.armed,
+        armReceiptSha256: replacement.armReceiptSha256 };
+      if (operation === "authorize-replacement-write") response = { id, status: "REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED", receipt: replacement.custody,
+        writeIntentSha256: replacement.writeIntentSha256 };
       if (operation === "verify-replacement-written") response = { id, status: "REPLACEMENT_WRITTEN_VERIFIED", postflightSha256 };
       if (operation === "start-replacement-runtime") response = { id, status: "REPLACEMENT_API_RUNTIME_READY", runtimeOutcomeSha256, migrationOutcomeSha256 };
       if (operation === "verify-replacement-frontend") response = { id, status: "REPLACEMENT_FRONTEND_VERIFIED", proofSha256 };
@@ -204,6 +209,64 @@ test("write transport joins original receipts and heartbeats during a pending ar
     owner, runtime: runtimeRole, producerSha256 });
   const { packet } = fixture.calls.at(-1);
   assert.deepEqual(packet, { id: packet.id, operation: "start-replacement-runtime", postflightSha256 });
+});
+
+function managedReplacementFixture() {
+  const bytes = readFileSync(new URL("./managed-neon-replacement-catalog.json", import.meta.url));
+  const { id, provider, target, databaseOid, migrationRoleOid, administrativeLogins } = JSON.parse(bytes);
+  const reference = { id, sha256: hash(bytes) };
+  const managedTarget = { ...target, runtimeRole: FRONTEND_PREPARATION_ROLES.runtime };
+  const identity = { provider, target: managedTarget, databaseOid, migrationRoleOid, administrativeLogins };
+  const managed = selectManagedNeonCatalog(reference, identity);
+  const managedPlan = { ...plan, replacement: { ...plan.replacement, ...identity, managedCatalog: reference } };
+  const managedPlanBytes = raw(managedPlan), planSha256 = hash(managedPlanBytes);
+  const managedInitial = { ...noReview, reviewedPlanBytes: managedPlanBytes.toString("base64"), reviewedPlanSha256: planSha256,
+    confirmation: `staging/${release.releaseId}/replacement-write/${planSha256}` };
+  const managedProbe = { ...probe, databaseOid, migrationRoleOid, job: { ...probe.job,
+    target: { ...probe.job.target, ...managedTarget } } };
+  const physicalObservation = raw({ ...physical, databaseOid, migrationRoleOid });
+  const armReceipt = { ...armed, reviewedPlanSha256: planSha256, physicalObservation: physicalObservation.toString("base64"),
+    physicalObservationSha256: hash(physicalObservation) };
+  const { zeroCatalogCounts: _unused, ...sharedBoundary } = boundary;
+  const managedBoundary = { ...sharedBoundary, target: managedTarget, databaseOid, migrationRoleOid, administrativeLogins,
+    catalogScope: "postgresql-18-managed-neon-replacement-v1", catalogCounts: managed.expectedCatalogCounts, managedCatalog: reference };
+  const armHash = hash(raw(armReceipt));
+  const managedCustody = { ...custody, reviewedPlanSha256: planSha256, physicalObservationSha256: hash(physicalObservation),
+    armReceiptSha256: armHash, emptyCatalogReceiptSha256: hash(raw(managedBoundary)) };
+  return { plan: managedPlan, initial: managedInitial, probe: managedProbe, boundary: managedBoundary,
+    replacement: { armed: armReceipt, armReceiptSha256: armHash, boundary: managedBoundary, custody: managedCustody,
+      writeIntentSha256: hash(raw(managedCustody)) } };
+}
+
+test("managed write custody joins the exact source catalog reference and complete pinned counts", async () => {
+  const selected = managedReplacementFixture(), fixture = host({ replacement: selected.replacement });
+  let reachedCustody = false;
+  await assert.rejects(exchangeFrontendReplacementWrite(fixture.child, selected.initial, selected.plan, async operator => {
+    await operator.armReplacement(selected.probe);
+    const receipt = await operator.authorizeReplacementWrite(selected.boundary);
+    assert.deepEqual(receipt, { receipt: selected.replacement.custody, writeIntentSha256: selected.replacement.writeIntentSha256 });
+    reachedCustody = true;
+  }, { readHostEvidence: fixture.readHostEvidence }), refusal);
+  assert.equal(reachedCustody, true);
+  assert.equal(fixture.reaped(), true);
+
+  for (const drift of [
+    { managedCatalog: { ...selected.boundary.managedCatalog, sha256: "8".repeat(64) } },
+    { catalogCounts: {} },
+    { catalogCounts: { ...selected.boundary.catalogCounts, pg_default_acl: 0 } },
+    { catalogCounts: { ...selected.boundary.catalogCounts, invented: 0 } },
+    { zeroCatalogCounts: { pg_class: 0 } },
+    { catalogScope: boundary.catalogScope },
+    { observedAt: "2026-02-30T19:45:00.123Z" },
+  ]) {
+    const rejected = host({ replacement: selected.replacement });
+    await assert.rejects(exchangeFrontendReplacementWrite(rejected.child, selected.initial, selected.plan, async operator => {
+      await operator.armReplacement(selected.probe);
+      await operator.authorizeReplacementWrite({ ...selected.boundary, ...drift });
+    }, { readHostEvidence: rejected.readHostEvidence }), refusal);
+    assert.equal(rejected.calls.some(({ operation }) => operation === "authorize-replacement-write"), false);
+    assert.equal(rejected.reaped(), true);
+  }
 });
 
 test("write transport refuses mismatched, duplicate or overlong host evidence", async () => {

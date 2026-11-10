@@ -1,0 +1,77 @@
+{
+  "observedOn": "2026-11-09",
+  "timezone": "America/Toronto",
+  "scope": "owner-authorized disconnected replacement target setup",
+  "resourceName": "lash-her-frontend-p2-staging-db",
+  "neon": {
+    "organizationId": "org-wild-brook-64171335",
+    "projectId": "noisy-river-83285109",
+    "branchId": "br-holy-art-bc3aif1l",
+    "branchName": "main",
+    "directEndpointId": "ep-lingering-meadow-bc80gyj9",
+    "database": "neondb",
+    "region": "aws-us-east-1",
+    "postgresMajor": 18,
+    "readWriteComputes": 1,
+    "computeMinCu": 1,
+    "computeMaxCu": 1,
+    "suspendAfterIdleSeconds": 300
+  },
+  "marketplace": {
+    "resourceId": "store_YoqkleCjDhncT64H",
+    "installationId": "icfg_mT8CToeeYGQqiyPkza3Sq1ZA",
+    "existingPlanBeforeAndAfter": "launch_v3",
+    "providerDefaultsOwnerApproved": true,
+    "existingPlanUsageOwnerApproved": true,
+    "freeProvisioningOutcome": "refused-shared-plan-downgrade-branch-limit",
+    "firstMarketplaceAttemptAutoReview": "refused-missing-explicit-provider-default-approval",
+    "connectedProjects": 0,
+    "envPulled": false,
+    "authRequested": false,
+    "realtimeRequested": false
+  },
+  "preliminaryCatalog": {
+    "surface": "Neon SQL Editor on selected project and main branch",
+    "physicalLockHeld": false,
+    "databaseOid": "16397",
+    "databaseOwnerAndSessionRole": "neondb_owner",
+    "roleOid": "16393",
+    "publicConnect": true,
+    "publicTemporary": true,
+    "publicCreate": false,
+    "publicSchemaCreate": false,
+    "normalRelations": 0,
+    "extraSchemas": 0,
+    "extraExtensions": 0,
+    "effectiveLogins": [
+      {"name": "cloud_admin", "oid": "10", "superuser": true, "createRole": true, "replication": true},
+      {"name": "neon_service", "oid": "16395", "superuser": false, "createRole": true, "replication": true},
+      {"name": "neondb_owner", "oid": "16393", "superuser": false, "createRole": true, "replication": true}
+    ],
+    "nonzeroCatalogCounts": {
+      "pg_default_acl": 2,
+      "normal_object_dependencies": 2,
+      "local_shared_dependencies": 2
+    },
+    "providerDefaultAcl": [
+      {"oid": "16399", "owner": "cloud_admin", "schema": "public", "kind": "r", "acl": "{neon_superuser=a*r*w*d*D*m*/cloud_admin}"},
+      {"oid": "16400", "owner": "cloud_admin", "schema": "public", "kind": "S", "acl": "{neon_superuser=r*w*U*/cloud_admin}"}
+    ],
+    "dependencies": [
+      {"object": "16399", "class": "pg_default_acl", "referenceClass": "pg_namespace", "referenceOid": "2200", "type": "a"},
+      {"object": "16400", "class": "pg_default_acl", "referenceClass": "pg_namespace", "referenceOid": "2200", "type": "a"}
+    ],
+    "sharedDependencies": [
+      {"object": "16399", "class": "pg_default_acl", "referenceClass": "pg_authid", "referenceOid": "16384", "type": "a"},
+      {"object": "16400", "class": "pg_default_acl", "referenceClass": "pg_authid", "referenceOid": "16384", "type": "a"}
+    ],
+    "stockBoundaryEligible": false,
+    "qualificationReceipt": null
+  },
+  "deploymentsReadBack": {
+    "lashher.com": "dpl_7xEi2kAMjKEsfuRKpkW8QPrvpi7f",
+    "staging.lashher.com": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH"
+  },
+  "catalogWritesPerformed": false,
+  "stagingReleaseStarted": false
+}

@@ -258,6 +258,9 @@ test('fixed current certification plan joins the original release plan, terminal
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet)';
     const mediaLessonId = '10000000-0000-4000-8000-00000000000a';
+    const selectedReadyMux = { attemptId: selectedMux.attemptId, generation: selectedMux.generation,
+      environmentId: selectedMux.environmentId, assetId: 'owned-ready-asset', uploadId: selectedMux.uploadId,
+      courseId, lessonId: mediaLessonId, playbackIdSha256: 'c'.repeat(64) };
     const mediaTarget = '/course/v1/admin/lessons/' + mediaLessonId + '/video';
     const selectedMedia = { stage: 'media', actorId: selectedInteractive.actorId, windowSeconds: 90,
       mediaAction: { operation: 'reserve-video-upload', courseId, lessonId: mediaLessonId, revision: 1,
@@ -951,7 +954,7 @@ test('fixed current certification plan joins the original release plan, terminal
       return { stage: 'identity', actorId: null, requests: [], windowSeconds: 240, identityEnrollment: { provider, emailSha256, nonce } };
     });
     for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
-      ['lifecycle-persistence', selectedPersistence],
+      ['lifecycle-persistence', selectedPersistence], ['mux-readiness', selectedReadyMux],
       ...firstEnrollments.map(selected => ['interactive-browser', selected])]) {
       const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
       assert.deepEqual(preparedScope.scopedAction, selected);
@@ -973,6 +976,15 @@ test('fixed current certification plan joins the original release plan, terminal
       { ...selectedMux, eventType: 'video.asset.track.ready' })));
     await assert.rejects(p2ProfiledCertificationOperator(scoped('mux-callback-recovery', selectedMux),
       { confirmation: 'staging/owned-scoped-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+    for (const changed of [{ playbackId: 'private-playback-id' }, { playbackIdSha256: '0'.repeat(64) },
+      { generation: 0 }, { environmentId: 'other/environment' }, { assetId: null },
+      { uploadId: null }, { courseId: 'invalid' }, { lessonId: null }]) {
+      const selected = { ...selectedReadyMux, ...changed };
+      assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('mux-readiness', selected)));
+      const invalid = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify({ mode: 'mux-readiness', scopedAction: selected }), encoding: 'utf8' });
+      assert.equal(invalid.status, 1);
+    }
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('lifecycle-persistence',
       { ...selectedPersistence, stage: 'unreviewed-stage' })));
     await assert.rejects(p2ProfiledCertificationOperator(scoped('interactive-browser', selectedInteractive),

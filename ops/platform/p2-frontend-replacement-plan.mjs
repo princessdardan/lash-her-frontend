@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { selectManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 import { validateFrontendLineageObservationRequest } from "./frontend-lineage-observation.mjs";
 import { prepareFrontendMigration } from "./frontend-migration.mjs";
 import { frontendPrivateReceiptDirectory, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
@@ -105,8 +106,10 @@ export function prepareP2FrontendReplacementPlan(options) {
     "candidateSha256", "frontendJobSha256", "schemaBaselineFileSha256", "predecessor", "replacement"]) &&
     review.version === 1 && review.environment === environment);
   const { predecessor, replacement } = review;
+  const hasManagedCatalog = Object.hasOwn(replacement ?? {}, "managedCatalog");
   demand(exact(predecessor, ["provider", "target", "lineageSha256", "deploymentId", "recoveryRef"]) &&
-    exact(replacement, ["provider", "databaseOid", "migrationRoleOid", "administrativeLogins", "recoveryRef"]) &&
+    exact(replacement, ["provider", "databaseOid", "migrationRoleOid", "administrativeLogins", "recoveryRef",
+      ...(hasManagedCatalog ? ["managedCatalog"] : [])]) &&
     exact(predecessor.target, fullTargetFields) && matches(predecessor.deploymentId, /^dpl_[A-Za-z0-9]{1,128}$/u) &&
     reference(predecessor.recoveryRef) && reference(replacement.recoveryRef));
   frontendPrivateReceiptDirectory(bundle);
@@ -142,6 +145,9 @@ export function prepareP2FrontendReplacementPlan(options) {
       login.oid !== migrationRoleOid && login.name !== target.user && !reservedRoles.includes(login.name)) &&
     new Set(administrativeLogins.map(login => login.name)).size === administrativeLogins.length &&
     new Set(administrativeLogins.map(login => login.oid)).size === administrativeLogins.length);
+  if (hasManagedCatalog) selectManagedNeonCatalog(replacement.managedCatalog, {
+    provider: replacement.provider, target, databaseOid, migrationRoleOid, administrativeLogins,
+  });
   const observation = reviewedJson(lineageFile, predecessor.lineageSha256);
   verifyPredecessorLineage(observation, predecessorTarget, artifact);
 

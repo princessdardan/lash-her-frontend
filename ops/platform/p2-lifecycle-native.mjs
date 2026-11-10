@@ -363,6 +363,14 @@ const reviewedStalledRenewalDependencies = {
   "ops/gateway/operations.mjs": "7a4e49ce5147cc50894329082bc1067f36df15b34a8e1f595cb0b380bd5349af",
   "ops/gateway/server.mjs": "2a7b8ff7765f5c8fd1261b961e34fbe370d779598ba9397866ec6d5c81e325b9"
 };
+const reviewedCanonicalWorkloadSource = {
+  ...reviewedStalledRenewalSource,
+  "src/app/api/internal/release-probe/handler.ts": "09d59a7acf52ad636b0df36466eb16fcc2b4255a9ba8a44d7a7c17b26e85d763"
+};
+const reviewedCanonicalWorkloadDependencies = {
+  ...reviewedStalledRenewalDependencies,
+  "src/app/api/internal/release-probe/route.ts": "6c54747f87fe39b2030b2fc410293f92e6da617c2ea5c8b6368e992e364b7973"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -403,7 +411,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies, reviewedVisibilityCoalescingDependencies]],
     [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]],
     [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies, reviewedMediaReservationDependencies, reviewedMediaUploadDependencies]],
-    [reviewedStalledRenewalSource, [reviewedStalledRenewalDependencies]]]
+    [reviewedStalledRenewalSource, [reviewedStalledRenewalDependencies]],
+    [reviewedCanonicalWorkloadSource, [reviewedCanonicalWorkloadDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

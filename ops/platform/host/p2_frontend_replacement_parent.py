@@ -29,7 +29,7 @@ import release as runtime
 import staging_state
 from p2_release_broker import Broker, LOCK, MAXIMUM, PhysicalObserver
 from p2_source_closure import (PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE,
-                               verify_profiled_current_source_closure)
+                               read_managed_replacement_catalog, verify_profiled_current_source_closure)
 from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, decode_qualification_target_json
 
 require = migrate.demand
@@ -69,6 +69,14 @@ NO_AUTHORITY = {'bootstrapAuthorized': False, 'migrationAuthorized': False,
 WRITTEN_REQUEST_FIELDS = frozenset(('writeIntentSha256', 'databaseReceipt', 'continuationStarted',
                                     'owner', 'runtime', 'producerSha256'))
 TARGET_FIELDS = ('host', 'port', 'database', 'user', 'runtimeRole', 'serverMajor')
+REPLACEMENT_FIELDS = {'provider', 'databaseOid', 'migrationRoleOid', 'administrativeLogins', 'recoveryRef',
+                      'target', 'approvedPendingTags'}
+MANAGED_CATALOG_ID = 'staging-neon-replacement-2026-11-09'
+MANAGED_CATALOG_SCOPE = 'postgresql-18-managed-neon-replacement-v1'
+MANAGED_CATALOG_COUNTS = {'pg_default_acl': 2, 'normal_object_dependencies': 2, 'local_shared_dependencies': 2}
+MANAGED_CATALOG_FIELDS = {'version', 'id', 'provider', 'target', 'databaseOid', 'migrationRoleOid',
+                          'administrativeLogins', 'roles', 'memberships', 'defaultAcl', 'dependencies',
+                          'sharedDependencies', 'databaseAclBefore', 'databaseAclAfter', 'expectedNonzeroCatalogCounts'}
 PROBE_IDENTITY = ('marker', 'backendPid', 'backendStart')
 INITIAL_FIELDS = {'version', 'mode', 'qualificationTargetProfile', 'environment', 'sourceCommit', 'sourceSha256',
                   'sourceClosureSha256', 'hostMachineId', 'bundle', 'results', 'candidateSha256',
@@ -80,7 +88,7 @@ PLAN_FIELDS = {'version', 'qualificationTargetProfile', 'environment', 'operatio
                'replacementObserved', 'releaseAccepted', *NO_AUTHORITY}
 EMPTY_CATALOG_COUNTERS = set("""
 pg_am pg_cast pg_class pg_collation pg_constraint pg_conversion pg_language pg_namespace pg_opclass pg_operator
-pg_opfamily pg_proc pg_rewrite pg_statistic_ext pg_trigger pg_ts_config pg_ts_dict pg_ts_parser pg_ts_template
+pg_opfamily pg_proc pg_rewrite pg_statistic_ext pg_trigger pg_ts_config pg_ts_dict pg_ts_parser pg_ts_template pg_type
 pg_default_acl pg_event_trigger pg_foreign_data_wrapper pg_foreign_server pg_foreign_table pg_largeobject_metadata
 pg_policy pg_publication pg_publication_namespace pg_publication_rel pg_transform pg_user_mappings unexpected_schemas
 additional_extensions local_subscriptions normal_object_dependencies local_shared_dependencies relevant_role_settings
@@ -161,6 +169,34 @@ def reviewed_plan(initial, *, mode=MODE):
     return raw, plan
 
 
+def managed_catalog(initial, plan, source=None):
+    selected = plan['replacement']
+    if 'managedCatalog' not in selected:
+        return None
+    ref = selected['managedCatalog']
+    require(set(selected) == REPLACEMENT_FIELDS | {'managedCatalog'} and type(ref) is dict and set(ref) == {'id', 'sha256'} and
+            ref['id'] == MANAGED_CATALOG_ID and digest(ref['sha256']), REFUSED)
+    if source is None:
+        source = Path(__file__).resolve().parents[3]
+    raw = read_managed_replacement_catalog(initial, source, ref['sha256'])
+    catalog = decode_qualification_target_json(raw, 'carrier')
+    require(type(catalog) is dict and set(catalog) == MANAGED_CATALOG_FIELDS and
+            type(catalog['version']) is int and catalog['version'] == 1 and catalog['id'] == ref['id'] and
+            canonical(catalog['expectedNonzeroCatalogCounts']) == canonical(MANAGED_CATALOG_COUNTS) and
+            all(canonical(catalog[key]) == canonical(selected[key])
+                for key in ('provider', 'target', 'databaseOid', 'migrationRoleOid')), REFUSED)
+    provider, target, admins = (catalog[key] for key in ('provider', 'target', 'administrativeLogins'))
+    require(type(provider) is dict and set(provider) == {'kind', 'projectId', 'branchId', 'endpointId', 'directHost'} and
+            provider['kind'] == 'neon' and type(target) is dict and set(target) == set(TARGET_FIELDS) and
+            type(target['serverMajor']) is int and target['serverMajor'] == 18 and provider['directHost'] == target['host'] and
+            oid(catalog['databaseOid']) and oid(catalog['migrationRoleOid']) and
+            type(admins) is list and type(selected['administrativeLogins']) is list and
+            all(type(row) is dict and set(row) == {'name', 'oid'} and match(row['name'], r'[a-z][a-z0-9_]{0,62}') and
+                oid(row['oid']) for row in (*admins, *selected['administrativeLogins'])) and
+            canonical(admins) == canonical(selected['administrativeLogins']), REFUSED)
+    return catalog
+
+
 def prepare(initial, source, *, mode=MODE):
     raw, plan = reviewed_plan(initial, mode=mode)
     require(source == Path('/opt/lash-her/operators') / initial['sourceCommit'] and source == source.resolve(), REFUSED)
@@ -177,8 +213,7 @@ def prepare(initial, source, *, mode=MODE):
             and all(job[key] == plan[key] for key in ('migrationImageDigest', 'sqlArtifactSha256', 'schemaBaselineSha256',
                                                       'contractManifestSha256', 'phase2ContractManifestSha256')), REFUSED)
     replacement, predecessor = plan['replacement'], plan['predecessor']
-    require(type(replacement) is dict and set(replacement) == {
-        'provider', 'databaseOid', 'migrationRoleOid', 'administrativeLogins', 'recoveryRef', 'target', 'approvedPendingTags'}
+    require(type(replacement) is dict and set(replacement) in (REPLACEMENT_FIELDS, REPLACEMENT_FIELDS | {'managedCatalog'})
         and type(predecessor) is dict and set(predecessor) == {
         'provider', 'target', 'lineageSha256', 'deploymentId', 'recoveryRef', 'databaseOid', 'loginRoleOid', 'sourceCommit',
         'observedAt', 'appliedCount', 'appliedPrefixSha256', 'pendingTags', 'phase2ContractManifestSha256'}, REFUSED)
@@ -201,6 +236,7 @@ def prepare(initial, source, *, mode=MODE):
                   'predecessorTarget': previous, 'targetSha256': plan['targetSha256'],
                   'databaseOid': replacement['databaseOid'], 'migrationRoleOid': replacement['migrationRoleOid']}
     verify_bundle(bundle, plan, base_probe)
+    managed_catalog(initial, plan, source)
     layout = supervisor.PROFILED_REPLACEMENT_WRITE_LAYOUT if mode == WRITE_MODE else LAYOUT
     directory = results / (layout['receiptPrefix'] + plan['releaseId'])
     return raw, plan, base_probe, job_info['image'], directory
@@ -374,15 +410,23 @@ def verify_and_retain(initial, plan, base_probe, image, directory, source, probe
     migrate.write_json(directory, READY, ready_receipt(private_record(directory, ARM)))
 
 
-def empty_catalog_receipt(plan, probe, boundary):
+def empty_catalog_receipt(initial, plan, probe, boundary, *, source=None):
     selected = plan['replacement']
+    catalog = managed_catalog(initial, plan, source)
     admins = sorted(selected['administrativeLogins'], key=lambda item: item['name'])
     expected = {'version': 1, 'status': 'FRONTEND_REPLACEMENT_BOUNDARY_VERIFIED',
                 'target': selected['target'], 'predecessorTarget': probe['predecessorTarget'],
                 'databaseOid': probe['databaseOid'], 'migrationRoleOid': probe['migrationRoleOid'],
-                'administrativeLogins': admins, 'catalogScope': 'postgresql-16-18-stock-replacement-v1',
-                'zeroCatalogCounts': dict.fromkeys(EMPTY_CATALOG_COUNTERS, 0), 'readOnlyVerified': True,
+                'administrativeLogins': admins, 'readOnlyVerified': True,
                 'completeDatabaseEmptyProven': False, 'authorityIssued': False}
+    counts = dict.fromkeys(EMPTY_CATALOG_COUNTERS, 0)
+    if catalog is None:
+        expected.update(catalogScope='postgresql-16-18-stock-replacement-v1', zeroCatalogCounts=counts)
+    else:
+        require(all(catalog[key] == probe[key] for key in ('databaseOid', 'migrationRoleOid')) and
+                canonical(catalog['target']) == canonical({key: probe['job']['target'][key] for key in TARGET_FIELDS}), REFUSED)
+        counts.update(catalog['expectedNonzeroCatalogCounts'])
+        expected.update(catalogScope=MANAGED_CATALOG_SCOPE, catalogCounts=counts, managedCatalog=selected['managedCatalog'])
     require(type(boundary) is dict and set(boundary) == set(expected) | {'observedAt'} and
             match(boundary['observedAt'], r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z') and
             all(canonical(boundary[key]) == canonical(value) for key, value in expected.items()), REFUSED)
@@ -419,14 +463,14 @@ def require_observer_pair(initial, probe, physical, directory, names):
         require(canonical(actual) == canonical(write_observer_receipt(initial, probe, physical, status)), REFUSED)
 
 
-def require_write_custody(initial, plan, probe, directory, arm_sha, boundary):
+def require_write_custody(initial, plan, probe, directory, arm_sha, boundary, *, source=None):
     ready = decode_qualification_target_json(private_record(directory, WRITE_READY), 'carrier')
     intent = private_record(directory, WRITE_INTENT)
     receipt = decode_qualification_target_json(intent, 'carrier')
     armed, actual_arm = require_arm(initial, plan, probe, directory)
     physical = unbase64(armed['physicalObservation'], 8192)
     require_write_observer_returned(initial, probe, physical, directory)
-    boundary_raw = empty_catalog_receipt(plan, probe, boundary)
+    boundary_raw = empty_catalog_receipt(initial, plan, probe, boundary, source=source)
     require(arm_sha == actual_arm and private_record(directory, WRITE_BOUNDARY) == boundary_raw and
             canonical(ready) == canonical(write_ready_receipt(intent)) and
             canonical(receipt) == canonical(write_custody(initial, plan, armed, arm_sha, boundary_raw)), REFUSED)
@@ -440,7 +484,7 @@ def verify_and_retain_write_custody(initial, plan, base_probe, image, directory,
     verify_bundle(Path(initial['bundle']), plan, base_probe)
     armed, arm_sha = require_arm(initial, plan, probe, directory)
     require(request['armReceiptSha256'] == arm_sha, REFUSED)
-    boundary_raw = empty_catalog_receipt(plan, probe, request['emptyCatalogReceipt'])
+    boundary_raw = empty_catalog_receipt(initial, plan, probe, request['emptyCatalogReceipt'], source=source)
     physical = unbase64(armed['physicalObservation'], 8192)
     require(not cancelled.is_set(), REFUSED)
     migrate.write_json(directory, WRITE_OBSERVER_STARTED, write_observer_receipt(initial, probe, physical, 'STARTED'))
@@ -451,7 +495,8 @@ def verify_and_retain_write_custody(initial, plan, base_probe, image, directory,
     require(raw == physical, REFUSED)
     supervisor.verify_guard_boundary(initial, source)
     verify_bundle(Path(initial['bundle']), plan, base_probe)
-    require(not cancelled.is_set() and require_arm(initial, plan, probe, directory) == (armed, arm_sha), REFUSED)
+    require(not cancelled.is_set() and require_arm(initial, plan, probe, directory) == (armed, arm_sha) and
+            empty_catalog_receipt(initial, plan, probe, request['emptyCatalogReceipt'], source=source) == boundary_raw, REFUSED)
     migrate.write_exact_bytes(directory, WRITE_BOUNDARY, boundary_raw)
     migrate.write_json(directory, WRITE_INTENT, write_custody(initial, plan, armed, arm_sha, boundary_raw))
     migrate.write_json(directory, WRITE_READY, write_ready_receipt(private_record(directory, WRITE_INTENT)))
@@ -486,7 +531,7 @@ def verify_and_retain_written(initial, plan, base_probe, image, directory, sourc
     verify_bundle(Path(initial['bundle']), plan, base_probe)
     def current_custody():
         return require_write_custody(initial, plan, probe, directory,
-                                     custody['armReceiptSha256'], custody['emptyCatalogReceipt'])[1:]
+                                     custody['armReceiptSha256'], custody['emptyCatalogReceipt'], source=source)[1:]
     intent_sha, physical = current_custody()
     require(request['writeIntentSha256'] == intent_sha and not cancelled.is_set(), REFUSED)
     packet = written_packet(plan, probe, physical, request)
@@ -515,7 +560,7 @@ def retain_runtime_intent(initial, plan, review, source, directory, probe, physi
     require(not cancelled.is_set() and prepare_runtime_review(initial, plan, source, probe) == review and
             migrate.file_hash(private_record(directory, RUNTIME_REVIEW)) == initial['runtimeReviewSha256'], REFUSED)
     require(require_write_custody(initial, plan, probe, directory, custody['armReceiptSha256'],
-                                  custody['emptyCatalogReceipt'])[1:] == (written_request['writeIntentSha256'], physical), REFUSED)
+                                  custody['emptyCatalogReceipt'], source=source)[1:] == (written_request['writeIntentSha256'], physical), REFUSED)
     require_write_observer_returned(initial, probe, physical, directory, written=True)
     readback = private_record(directory, WRITTEN_OBSERVATION, 8192)
     written_result(written_packet(plan, probe, physical, written_request), readback)
@@ -549,7 +594,7 @@ def retain_closed_observation(initial, plan, review, source, directory, image, p
     verify()
     verify_bundle(Path(initial['bundle']), plan, probe)
     require(require_write_custody(initial, plan, probe, directory, custody['armReceiptSha256'],
-                                  custody['emptyCatalogReceipt'])[1:] == (written_request['writeIntentSha256'], physical), REFUSED)
+                                  custody['emptyCatalogReceipt'], source=source)[1:] == (written_request['writeIntentSha256'], physical), REFUSED)
     written = written_packet(plan, probe, physical, written_request)
     postflight = private_record(directory, WRITTEN_OBSERVATION, 8192)
     require_write_observer_returned(initial, probe, physical, directory, written=True)
@@ -880,7 +925,7 @@ class ReplacementWriteBroker(ReplacementArmBroker):
         self.check()
         armed, arm_sha = require_arm(self.initial, self.plan, self.probe, self.directory)
         require(value['armReceiptSha256'] == arm_sha, REFUSED)
-        empty_catalog_receipt(self.plan, self.probe, value['emptyCatalogReceipt'])
+        empty_catalog_receipt(self.initial, self.plan, self.probe, value['emptyCatalogReceipt'], source=self.source)
         with self.write_mutex:
             self.check()
             self.write_observation = unbase64(armed['physicalObservation'], 8192)
@@ -891,7 +936,7 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             require(not self.failed.is_set() and self.guard_alive and time.monotonic() < deadline, REFUSED)
             try:
                 receipt, intent_sha, physical = require_write_custody(
-                    self.initial, self.plan, self.probe, self.directory, arm_sha, value['emptyCatalogReceipt'])
+                    self.initial, self.plan, self.probe, self.directory, arm_sha, value['emptyCatalogReceipt'], source=self.source)
                 break
             except FileNotFoundError:
                 time.sleep(0.05)
@@ -909,7 +954,7 @@ class ReplacementWriteBroker(ReplacementArmBroker):
         self.last_command = time.monotonic()
         self.check()
         _, intent_sha, physical = require_write_custody(self.initial, self.plan, self.probe, self.directory,
-                                                        self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'])
+                                                        self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'], source=self.source)
         require(value['writeIntentSha256'] == intent_sha and physical == self.write_observation, REFUSED)
         packet = written_packet(self.plan, self.probe, physical, value)
         require(self.runtime_review is None or packet['producerSha256'] == self.runtime_review['producerSha256'], REFUSED)
@@ -939,7 +984,7 @@ class ReplacementWriteBroker(ReplacementArmBroker):
                 REFUSED)
 
         require(require_write_custody(self.initial, self.plan, self.probe, self.directory,
-                                      self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'])[1:] ==
+                                      self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'], source=self.source)[1:] ==
                 (self.write_intent_sha, self.write_observation), REFUSED)
         verify_bundle(Path(self.initial['bundle']), self.plan, self.probe)
         require(migrate.profiled_current_job_hashes(Path(self.initial['bundle'])) == self.runtime_review['apiJobSha256'] and
@@ -1359,7 +1404,7 @@ def _supervise_replacement(initial, source, *, writing):
                 require(provider_selected and write_physical is not None and written_request is not None and
                         not supervisor.members(child), REFUSED)
                 require(require_write_custody(initial, plan, armed_probe, directory, custody_request['armReceiptSha256'],
-                                              custody_request['emptyCatalogReceipt'])[1:] ==
+                                              custody_request['emptyCatalogReceipt'], source=source)[1:] ==
                         (written_request['writeIntentSha256'], write_physical), REFUSED)
                 finalize_replacement_terminal(initial, plan, runtime_review, source, directory, image, armed_probe, write_physical,
                                               written_request, committed)

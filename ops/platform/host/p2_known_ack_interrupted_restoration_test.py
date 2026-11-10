@@ -615,7 +615,9 @@ class ProfiledRetainedChainTests(unittest.TestCase):
         fixture.component.restore(); fixture.stop(); fixture.refresh_pins()
         pins = fixture.initial['reviewedPlan']
 
-        def rejoin(carrier, original, selected, results, profile):
+        def rejoin(carrier, original, selected, results, profile, *, source):
+            self.assertEqual(source, c.OPERATORS / fixture.source_commit)
+            self.assertEqual(carrier['sourceSha256'], fixture.fixture.broker.initial['sourceSha256'])
             self.assertEqual(carrier['configuration'], str(fixture.fixture.broker.configuration))
             self.assertEqual(carrier['certification'], {'owned': 'fixture'})
             self.assertEqual(original, fixture.fixture.broker.initial['certificationPlan'])
