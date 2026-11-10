@@ -38,7 +38,6 @@ function selection({
   port = 5432, serverMajor = 16, catalog = {}, databaseOid = "42", migrationRoleOid = "43",
   owner = { name: roles.owner, oid: "44" }, runtime = { name: roles.runtime, oid: "45" }, administrativeLogins = [],
   sourceCommit = defaults.sourceCommit, producerSha256 = defaults.producerSha256, releaseId = defaults.releaseId,
-  reviewedPlanSha256 = digest("c"),
 } = {}) {
   const { sqlArtifactSha256, contractManifestSha256, contractPhase, phase2ContractManifestSha256 } = artifact;
   const contracts = { contractManifestSha256, contractPhase, phase2ContractManifestSha256 };
@@ -58,7 +57,7 @@ function selection({
     frontendMigration: { qualificationTargetProfile: profile, sourceCommit, sqlArtifactSha256, ...contracts,
       schemaBaselines: { [serverMajor]: schemaBaselineSha256 } } };
   const replacementRelease = { version: 1, kind: "frontend-replacement", qualificationTargetProfile: profile,
-    reviewedPlanSha256, runtimeReviewSha256: digest("d"), postflightSha256: digest("e"),
+    reviewedPlanSha256: digest("c"), runtimeReviewSha256: digest("d"), postflightSha256: digest("e"),
     frontendSessionClosedSha256: digest("f"), frontendDatabaseReceiptSha256: digest("1"),
     databaseOid, migrationRoleOid, predecessorRuntimeRole: "owned_predecessor_runtime", administrativeLogins };
   const producer = { producerSha256, role: runtime };
@@ -489,12 +488,10 @@ async function verifyRotationGuardContainment({ admin, selected, dependencies, c
 // database endpoint or reuse a pre-existing server. Python observes the same
 // cluster through the fixed Node observer on a separate physical connection.
 export async function withOwnedP2RotationPostgres({ pgBin, serverMajor: expectedMajor, runAsPostgres = false,
-  sourceCommit = defaults.sourceCommit, releaseId = defaults.releaseId, producerSha256 = defaults.producerSha256,
-  reviewedPlanSha256 = digest("c") }, task) {
+  sourceCommit = defaults.sourceCommit, releaseId = defaults.releaseId, producerSha256 = defaults.producerSha256 }, task) {
   assert.ok(typeof pgBin === "string" && resolve(pgBin) === pgBin && typeof task === "function");
   assert.ok(/^(?!0+$)[a-f0-9]{40}$/u.test(sourceCommit) && /^(?!0+$)[a-f0-9]{64}$/u.test(producerSha256));
   assert.match(releaseId, /^[a-z0-9][a-z0-9-]{0,63}$/u);
-  assert.match(reviewedPlanSha256, /^(?!0+$)[a-f0-9]{64}$/u);
   assert.equal(typeof runAsPostgres, "boolean");
   assert.ok(expectedMajor === undefined || [16, 18].includes(expectedMajor));
   const directory = mkdtempSync(join(realpathSync(tmpdir()), "p2-cert-replacement-"));
@@ -525,7 +522,7 @@ export async function withOwnedP2RotationPostgres({ pgBin, serverMajor: expected
     const { rows: [identity] } = await initializer.query(`SELECT datid::text AS "databaseOid",usesysid::text AS "migrationRoleOid"
       FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()`);
     const oldPid = initializer.processID;
-    const base = { port: cluster.port, serverMajor, sourceCommit, producerSha256, releaseId, reviewedPlanSha256, ...identity };
+    const base = { port: cluster.port, serverMajor, sourceCommit, producerSha256, releaseId, ...identity };
     const { prepared: { migration: { candidate, job } } } = selection(base);
     await initializer.query("SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
     const verifySession = async () => {

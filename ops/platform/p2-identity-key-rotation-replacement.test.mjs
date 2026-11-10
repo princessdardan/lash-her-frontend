@@ -78,7 +78,8 @@ function fixture(t, owned) {
   if (owned) {
     candidate.workload = { projectId, environment: "production", qualificationTargetProfile: profile };
     candidate.sources = Object.fromEntries(["frontend", "course", "community"].map(service => [service, {
-      commit: sourceCommit, ...candidate.sources[service], qualificationTargetProfile: profile,
+      commit: service === "course" && owned.courseSourceCommit ? owned.courseSourceCommit : sourceCommit,
+      ...candidate.sources[service], qualificationTargetProfile: profile,
     }]));
     for (const key of ["integration", "sourceApproval", "approval"]) {
       candidate[key] = { ...candidate[key], qualificationTargetProfile: profile };
@@ -87,13 +88,15 @@ function fixture(t, owned) {
     candidate.runtime = { composeSha256: owned.composeSha256 };
   }
   const candidateBytes = raw(candidate), candidateSha256 = p2NativeHash(candidateBytes);
+  const predecessor = owned?.preparePredecessor({ releaseId, sourceCommit, candidateSha256 });
   const target = physical?.job.target ?? { qualificationTargetProfile: profile, host: "owned-neon.invalid", port: 5432, database: "owned_frontend",
     user: "owned_migration", serverMajor: 16, runtimeRole: "owned_runtime" };
   const job = physical?.job ?? { ...base, releaseId, sourceCommit, target, phase2ContractManifestSha256 };
   const owner = prepared?.plan.owner ?? { name: "owned_owner", oid: "103" };
   const runtime = prepared?.plan.producers[0].role ?? { name: target.runtimeRole, oid: "104" };
   const producer = prepared?.plan.producers[0] ?? { producerSha256: pin("4"), role: runtime };
-  const replacementRelease = prepared?.plan.replacementRelease ?? { version: 1, kind: "frontend-replacement", qualificationTargetProfile: profile,
+  const replacementRelease = prepared ? { ...prepared.plan.replacementRelease, reviewedPlanSha256: predecessor.reviewedPlanSha256 } :
+    { version: 1, kind: "frontend-replacement", qualificationTargetProfile: profile,
     reviewedPlanSha256: pin("1"), runtimeReviewSha256: pin("2"), postflightSha256: pin("5"),
     frontendSessionClosedSha256: pin("6"), frontendDatabaseReceiptSha256: pin("7"),
     databaseOid: "101", migrationRoleOid: "102", predecessorRuntimeRole: "owned_previous", administrativeLogins: [] };
@@ -106,20 +109,21 @@ function fixture(t, owned) {
   const writerAdmissionBinding = { mode: "enforce", targetSha256, producerSha256: producer.producerSha256,
     sourceCommit, roleName: runtime.name };
   const configurationSha256 = owned?.configurationSha256 ?? { "runtime.json": pin("8"), "gateway.json": pin("9") };
-  const apiJobSha256 = { course: pin("a"), community: pin("b") };
+  const apiJobSha256 = owned?.apiJobSha256 ?? { course: pin("a"), community: pin("b") };
   const frontendReceipts = join(results, "vercel");
   mkdirSync(frontendReceipts, { mode: 0o700 });
   const deploymentId = "dpl_Owned", previousDeploymentId = "dpl_Prior";
-  const identity = { ...base, releaseId, sourceCommit, projectId, previousDeploymentId, trafficAuthorized: false };
+  const readyIdentity = { ...base, releaseId, sourceCommit, projectId, previousDeploymentId };
+  const identity = { ...readyIdentity, trafficAuthorized: false };
   const provider = { ...identity, deploymentId };
   const documents = [
-    { ...identity, status: "FRONTEND_BUILD_STARTED", promotionAuthorized: false },
-    { ...provider, status: "FRONTEND_BUILD_CREATED", promotionAuthorized: false },
+    { ...identity, promotionAuthorized: false },
+    { ...provider, promotionAuthorized: false },
     { ...provider, status: "FRONTEND_STAGED", promotionAuthorized: false, readyState: "READY",
       phase: "completed", url: "https://owned.vercel.app" },
     { ...provider, status: "FRONTEND_VERIFIED", phase: "completed", contractPhase: "p2", phase2ContractManifestSha256,
       nativeSchedulerVerified: false, featureControls, writerAdmissionBinding, checks: ["frontend-server-gateway-course-catalog-p2"] },
-    { ...provider, status: "FRONTEND_PROMOTION_STARTED", previousAliasRequestedAt: 1 },
+    { ...readyIdentity, deploymentId, previousAliasRequestedAt: 1 },
     { ...provider, status: "FRONTEND_DOMAINS_PROMOTED", phase: "completed", previousAliasRequestedAt: 1, aliasRequestedAt: 2,
       frontendDomainsPromoted: true, gatewayTrafficAuthorized: false },
   ];
@@ -134,12 +138,16 @@ function fixture(t, owned) {
     ...(owned && { runtimeReviewSha256: replacementRelease.runtimeReviewSha256, postflightSha256: replacementRelease.postflightSha256,
       frontendSessionClosedSha256: replacementRelease.frontendSessionClosedSha256,
       frontendDatabaseReceiptSha256: replacementRelease.frontendDatabaseReceiptSha256,
+      configurationSha256, trafficAuthorized: false, releaseAccepted: false,
       frontendSqlApplied: true, frontendSqlReplayed: false, frontendSessionClosed: true }),
     frontendWorkloadReceiptSha256: p2NativeHash(records["frontend-workload-outcome.json"]),
     frontendPromotionReceiptSha256: p2NativeHash(records["frontend-promotion-outcome.json"]) });
   const profiledRelease = { replacementRelease, receiptSha256: p2NativeHash(originalReleaseReceipt),
     planSha256: replacementRelease.reviewedPlanSha256, configurationDirectory: host.configuration, apiJobSha256 };
-  const inventory = { ...base, actionId: releaseId, sourceCommit, targetSha256, owner, producers: [producer], replacementRelease };
+  const inventory = { ...base, actionId: releaseId, sourceCommit, targetSha256, owner, producers: [producer], replacementRelease,
+    ...(owned && { admissionMode: "existing", runtimeProducerSha256: producer.producerSha256, certification,
+      restoration: { ...base, newWork: false, recovery: false, nativeSchedulesEnabled: false,
+        providerIngress: "replacement-closed", gatewayBindingSha256: pin("e") } }) };
   const original = { plan: { ...base, releaseId, sourceCommit, candidateSha256, targetSha256, configurationSha256,
     phase2ContractManifestSha256, apiJobSha256, inventorySha256: frontendCoordinationHash(inventory), writerAdmissionBinding,
     certification }, inventory, migration: { ...physical, candidate, job, baseline: physical?.baseline ?? { version: 1 } } };
@@ -173,7 +181,7 @@ function fixture(t, owned) {
     writeFileSync(receiptFile, bytes, { mode: 0o600 });
     return { selection: { receiptFile, receiptSha256: p2NativeHash(bytes) }, bytes, actionId, runtimeActionId };
   };
-  return { settings, load, loaded, records, successor };
+  return { settings, load, loaded, records, successor, predecessor };
 }
 
 test("replacement custody composes exact profiled host packet and retains the original promotion and API job pins", t => {
@@ -599,6 +607,7 @@ const ownedProfilePrefixes = {
 
 function ownedProfileConfiguration(name, phase) {
   const variables = [name === "frontend.env" ? "APP_ENV=staging" : "DATABASE_TARGET=staging"];
+  if (name === "course-api.env") variables.push("MUX_ENVIRONMENT_ID=owned-mux-environment");
   for (const prefix of ownedProfilePrefixes[name]) {
     const previous = p2NativeHash("p2-owned-baseline-" + prefix);
     const current = phase === "baseline" ? previous : p2NativeHash("p2-owned-current-" + prefix);
@@ -691,17 +700,20 @@ function assertOwnedRotationTerminal(dispatch, hostAction, closed, result, brows
   const evidence = validateP2ManagedRotationSuccessorEvidence({ bytes: successorBytes.toString("base64") }, dispatch.plan, terminal);
   assert.equal(evidence.receiptSha256, p2NativeHash(successorBytes));
   const ready = Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name => [name, read(`frontend-current-only/${name}`).toString("base64")]));
-  assert.deepEqual(validateP2ManagedRotationFrontendReady({ bytes: raw(ready).toString("base64") }, evidence),
+  const readyEvidence = validateP2ManagedRotationFrontendReady({ bytes: raw(ready).toString("base64") }, evidence);
+  assert.deepEqual(readyEvidence,
     { successorReceiptSha256: evidence.receiptSha256, originalBytesBase64: ready });
   const controller = name => JSON.parse(readFileSync(join(dispatch.directory, "controller", name)));
   const drained = controller("overlap-drained.json"), capture = controller("pre-removal-capture-intent.json");
   assert.equal(drained.frontendIssuanceCutoffAt, browserEvidence.phases.get("overlap").signer.issuanceCutoffAt);
   assert.ok(Date.parse(drained.verifiedAt) - Date.parse(drained.frontendIssuanceCutoffAt) >= 330_000);
   assert.ok(Date.parse(capture.startedAt) >= Date.parse(controller("current-frontend-verified.json").verifiedAt));
+  return { terminalBytes, successor, evidence, readyEvidence };
 }
 
 async function rehearseManagedWire(t, checkpoint) {
-  const fullRotation = checkpoint === "terminal", browserRuns = checkpoint !== "arm";
+  const consumeSuccessor = checkpoint === "consumer";
+  const fullRotation = checkpoint === "terminal" || consumeSuccessor, browserRuns = checkpoint !== "arm";
   assert.equal(process.platform, "linux");
   assert.equal(process.getuid(), 0);
   assert.ok(existsSync("/.dockerenv") && Object.values(networkInterfaces()).flat().every(address => address.internal));
@@ -757,19 +769,22 @@ async function rehearseManagedWire(t, checkpoint) {
     health: service.endsWith("-tls") ? "none" : "healthy",
   }));
   const { prepareOwnedRotationPredecessor } = await import("./harness/p2-rotation-owned-predecessor.test.mjs");
-  const predecessor = prepareOwnedRotationPredecessor(sourceRoot);
+  const consumer = consumeSuccessor ? await import("./harness/p2-rotation-owned-consumer.test.mjs") : null;
   const { withOwnedP2RotationPostgres } = await import("./p2-certification-replacement-probe.test.mjs");
   await withOwnedP2RotationPostgres({ pgBin: process.env.PG_BIN, serverMajor: 18, runAsPostgres: true,
-    sourceCommit, releaseId, producerSha256: pin("b"),
-    reviewedPlanSha256: predecessor.reviewedPlanSha256 }, async postgres => {
+    sourceCommit, releaseId, producerSha256: pin("b") }, async postgres => {
+    const apiJobSha256 = consumer?.retainOwnedConsumerApiJobs(join(hostRoot, "bundle"),
+      postgres.selected.prepared.migration.job.phase2ContractManifestSha256);
     const { f, lease, path, rotation } = managedFixture(t, { postgres, hostRoot, hostMachineId, artifacts,
       composeSha256: "sha256:" + p2NativeHash(compose), configurationSha256,
-      runtimeInventorySha256: p2NativeHash(inventory), sourceClosureSha256: closureSha });
+      runtimeInventorySha256: p2NativeHash(inventory), sourceClosureSha256: closureSha,
+      preparePredecessor: identity => prepareOwnedRotationPredecessor(sourceRoot, identity),
+      ...(consumeSuccessor && { apiJobSha256, courseSourceCommit: "b21e25cf900458eb6cbbd993582d7e1bbac36c4b" }) });
     writeFileSync(join(f.loaded.host.bundle, "release.candidate.json"), f.loaded.candidateBytes, { mode: 0o600, flag: "wx" });
     writeFileSync(join(configuration, "admission/state.json"), raw({ version: 1, environment: "staging", releaseId,
       candidateSha256: f.loaded.original.plan.candidateSha256, actionId: "owned-fixture", newWork: false, recovery: false }),
     { mode: 0o644, flag: "wx" });
-    predecessor.retain(f.loaded.host.results, releaseId, f.loaded.originalReleaseReceipt);
+    f.predecessor.retain(f.loaded.host.results, f.loaded.originalReleaseReceipt);
     if (fullRotation) {
       rotation.privateConfigurationSha256 = retainOwnedPhaseConfigurations(configuration, path, configurationFiles);
     }
@@ -876,7 +891,11 @@ async function rehearseManagedWire(t, checkpoint) {
     assert.equal(closed.backendAbsent && closed.migrationLockReleased && closed.nonceLockReleased, true);
     assert.deepEqual(closed.admission, finalAdmission);
     if (fullRotation) {
-      assertOwnedRotationTerminal(dispatch, hostAction, closed, result, browserEvidence, inventory, selected.hostReview);
+      const evidence = assertOwnedRotationTerminal(dispatch, hostAction, closed, result, browserEvidence, inventory, selected.hostReview);
+      if (consumer) await consumer.exerciseOwnedRotationConsumer({
+        loaded: f.loaded, dispatch, hostReview: selected.hostReview, rotation: evidence, privateInputs,
+        postgres, sourceRoot, installed, priorProbe: probe,
+      });
     } else {
       const failure = readReceipt("p2-independent-guard-outcome.json");
       assert.equal(failure.workerProcessesQuiesced, true);
@@ -900,3 +919,6 @@ test("owned Linux managed wire retains overlap signer scopes and fences a real c
 test("owned Linux managed wire commits a mixed successor after the full overlap drain", {
   skip: ownedWireOptions.skip || process.env.P2_ROTATION_OWNED_TERMINAL !== "true", timeout: 720_000,
 }, t => rehearseManagedWire(t, "terminal"));
+test("owned Linux certification consumes the actual mixed successor at closed epoch 7", {
+  skip: ownedWireOptions.skip || process.env.P2_ROTATION_OWNED_CONSUMER !== "true", timeout: 900_000,
+}, t => rehearseManagedWire(t, "consumer"));

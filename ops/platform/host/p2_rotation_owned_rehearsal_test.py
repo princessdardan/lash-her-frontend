@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline Linux child for the managed rotation ARM/disconnect rehearsal."""
+"""Offline Linux child for managed rotation and successor-consumer rehearsals."""
 from contextlib import ExitStack
 import base64
 import hashlib
@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 ROOT = Path('/var/lib/lash-her/releases/staging')
 CREDENTIAL = 'FRONTEND_STAGING_MIGRATION_DATABASE_URL'
 OBSERVER = 'ops/platform/p2-certification-current-probe.mjs'
+CONTAINMENT_ENTRY = 'ops/platform/p2-frontend-live-probe.mjs'
 CORE = 'ops/platform/p2-recovery-current-probe.mjs'
 FLAGS = {'--profiled-replacement', '--profiled-replacement-rotation-writer-scope',
          '--profiled-replacement-rotation-guard-fence'}
@@ -92,20 +93,26 @@ class InitialReplay:
 
 
 class OwnedPlatform:
-    def __init__(self, initial, source, runtime, prior, observer_source):
+    def __init__(self, initial, source, runtime, prior, observer_source, *, consumer):
         self.initial, self.source, self.runtime, self.prior = initial, source, runtime, prior
         self.observer_source = observer_source
         self.selected = initial['candidate']
-        self.custody = initial['frontendCustody']
+        self.consumer = consumer
+        self.custody = initial if consumer else initial['frontendCustody']
         self.plan = self.custody['certificationPlan']
         self.configuration = Path(initial['configuration'])
-        self.action_directory = Path(initial['results']) / ('p2-identity-key-rotation-' + initial['rotationActionId'])
+        rotation_action = self.plan['rotationSuccessor']['actionId'] if consumer else initial['rotationActionId']
+        demand(re.fullmatch(r'p2-key-rotation-[a-z0-9-]{1,40}', rotation_action))
+        self.action_directory = Path(initial['results']) / ('p2-identity-key-rotation-' + rotation_action)
         self.credential = initial['credentials'][CREDENTIAL]
         self.node = shutil.which('node')
         self.ca = Path(os.environ['NODE_EXTRA_CA_CERTS'])
         demand(self.node and self.ca.is_absolute() and self.ca.is_file())
         self.external_state = Path(initial['results']) / 'owned-rotation-platform-state.json'
-        self.write_state({'runtime': 'baseline', 'frontend': 'baseline', 'stopped': False}, initial=True)
+        if consumer:
+            demand(self.read_state() == {'runtime': 'current-only', 'frontend': 'current-only', 'stopped': False})
+        else:
+            self.write_state({'runtime': 'baseline', 'frontend': 'baseline', 'stopped': False}, initial=True)
 
     def write_state(self, state, *, initial=False):
         # Docker and Vercel are external to the broker in production. The
@@ -144,15 +151,21 @@ class OwnedPlatform:
 
     def deployment(self):
         phase = self.read_state()['frontend']
-        native = self.initial['nativePlan']
+        native = self.plan['nativePlan']
         if phase == 'baseline':
             deployment_id, url, workload = (native[key] for key in ('deploymentId', 'deploymentUrl', 'configurationRecordSha256'))
         else:
             deployment_id, url = DEPLOYMENTS[phase]
             workload = digest((self.action_directory / f'frontend-{phase}' / 'frontend-workload-outcome.json').read_bytes())
+        if self.consumer:
+            demand(phase == 'current-only')
+            successor = json.loads(base64.b64decode(self.initial['rotationSuccessorReceipt'], validate=True))
+            configuration_sha = successor['configurationSha256']
+        else:
+            configuration_sha = self.initial['rotationPlan']['configuration'][phase]['sha256']
         return {'phase': phase, 'deploymentId': deployment_id, 'deploymentUrl': url,
                 'sourceCommit': self.initial['sourceCommit'], 'workloadReceiptSha256': workload,
-                'configurationSha256': self.initial['rotationPlan']['configuration'][phase]['sha256']}
+                'configurationSha256': configuration_sha}
 
     def write_frontend_ready(self, phase, previous):
         import migrate
@@ -161,7 +174,7 @@ class OwnedPlatform:
         deployment_id, url = DEPLOYMENTS[phase]
         attempt = self.action_directory / f'frontend-{phase}'
         attempt.mkdir(mode=0o700)
-        native = self.initial['nativePlan']
+        native = self.plan['nativePlan']
         base = {'version': 2, 'qualificationTargetProfile': self.initial['qualificationTargetProfile'],
                 'environment': 'staging', 'projectId': native['projectId'], 'sourceCommit': native['sourceCommit'],
                 'releaseId': self.selected['releaseId'], 'previousDeploymentId': previous['deploymentId']}
@@ -191,19 +204,33 @@ class OwnedPlatform:
         demand(bundle == Path(self.initial['bundle']) and expected_profile == self.initial['qualificationTargetProfile'])
         candidate = (bundle / 'release.candidate.json').read_bytes()
         demand(digest(candidate) == self.initial['candidateSha256'] and json.loads(candidate) == self.selected)
-        jobs = {service: {'service': service} for service in ('course', 'community')}
+        jobs = {}
+        for name in ('course', 'community'):
+            path = bundle / 'jobs' / f'{name}.json'
+            if path.is_file():
+                raw = path.read_bytes()
+                schema = (bundle / 'schema' / f'{name}.json').read_bytes()
+                job = json.loads(raw)
+                demand(digest(raw) == self.custody['apiJobSha256'][name] and digest(schema) == job['schemaBaselineSha256'])
+                jobs[name] = {'service': job['target']['service'], 'job': job, 'schema': schema,
+                              'image': self.selected['artifacts'][name + 'Migration']['image']}
+            else:
+                demand(not self.consumer)
+                jobs[name] = {'service': name}
         jobs['frontend'] = {'job': self.custody['frontendJob'], 'schema': json.dumps(self.custody['frontendBaseline']).encode(),
                             'frontend': True}
         return self.selected, jobs
 
     def api_job_hashes(self, bundle):
         demand(bundle == Path(self.initial['bundle']))
+        if self.consumer:
+            return {name: digest((bundle / 'jobs' / f'{name}.json').read_bytes()) for name in ('course', 'community')}
         return self.custody['apiJobSha256']
 
     def runtime_bundle(self, bundle, configuration, compose_file, *, expected_profile):
         demand(configuration == self.configuration and compose_file == self.source / 'ops/platform/compose.yaml')
         selected, jobs = self.migration_bundle(bundle, expected_profile=expected_profile)
-        return selected, jobs, {'publicHost': self.initial['gatewayHost'], 'hostMachineId': self.initial['hostMachineId']}, compose_file.read_bytes()
+        return selected, jobs, {'publicHost': self.initial.get('gatewayHost'), 'hostMachineId': self.initial['hostMachineId']}, compose_file.read_bytes()
 
     def predecessor_review(self, review, source):
         demand(review == self.custody and source == self.source and
@@ -215,11 +242,40 @@ class OwnedPlatform:
                 'successorRuntime': self.plan.get('successorRuntime'),
                 **dict.fromkeys(('executionEligible', 'providerTouched', 'admissionChanged', 'releaseAccepted'), False)}
 
+    def predecessor_terminal(self, initial, plan, selected, results, expected, *, source):
+        # The fixture starts after a projected original rollout. The caller
+        # has already checked both READY sets and remapped to the predecessor.
+        # Pin the retained raw predecessor files without inventing its SQL log.
+        from p2_frontend_replacement_parent import private_record
+        from p2_replacement_terminal import TERMINAL, exact_receipt
+
+        demand(self.consumer and source == self.source and selected == self.selected and
+               str(results) == self.initial['results'] and expected == self.initial['qualificationTargetProfile'] and
+               initial['configuration'] == self.initial['configuration'])
+        directory = results / ('p2-profiled-replacement-write-' + selected['releaseId'])
+        raw = private_record(directory, TERMINAL)
+        reviewed = private_record(directory, 'reviewed-plan.json')
+        predecessor = exact_receipt(raw)
+        hashes, native = plan['readyReceiptSha256'], plan['nativePlan']
+        demand(base64.b64encode(raw).decode() == initial['originalReleaseReceipt'] and
+               digest(raw) == plan['originalReleaseReceiptSha256'] and
+               digest(reviewed) == plan['originalReleasePlanSha256'] == predecessor['reviewedPlanSha256'] and
+               native['deploymentId'] == predecessor['deploymentId'] and
+               hashes['frontend-workload-outcome.json'] == predecessor['frontendWorkloadReceiptSha256'] and
+               hashes['frontend-promotion-outcome.json'] == predecessor['frontendPromotionReceiptSha256'])
+        return digest(raw), True
+
     def runtime_flags(self, raw, environment, service, _jobs, *, expected_profile):
         from p2_certification_profile import RUNTIME_FLAGS
 
         demand(raw == (self.configuration / (service + '.env')).read_bytes() and environment == 'staging' and
                expected_profile == self.initial['qualificationTargetProfile'])
+        if self.consumer and service == 'course-api':
+            from p2_identity_key_rotation_adapter import _env
+
+            values = _env(raw)
+            demand(values.get('MUX_ENVIRONMENT_ID') == self.plan['scopedAction']['environmentId'])
+            return values
         return RUNTIME_FLAGS[service]
 
     def gateway_reference(self, initial, selected, configuration, identity, *, expected_profile):
@@ -231,16 +287,19 @@ class OwnedPlatform:
     def _observer(self, args, **kwargs):
         mount_prefix = 'type=bind,src='
         mounted = [args[i + 1] for i, option in enumerate(args[:-1]) if option == '--mount']
+        flag = args[-1]
+        containment = self.consumer and flag == '--profiled-replacement-guard-fence'
+        entry = CONTAINMENT_ENTRY if containment else OBSERVER
         demand(len(mounted) == 2 and args[-4:] == ['node', self.selected['artifacts']['frontendMigration']['image'],
-                                                  OBSERVER, args[-1]] and args[-1] in FLAGS and
+                                                  entry, flag] and (flag in FLAGS or containment) and
                kwargs.get('env', {}).get(CREDENTIAL) == self.credential and isinstance(kwargs.get('input'), str),
                'P2_OWNED_REHEARSAL_OBSERVER_SCOPE_REFUSED')
-        for mount, filename in zip(mounted, (OBSERVER, CORE)):
-            suffix = f',dst=/app/{filename},readonly'
+        for mount, filename, destination in zip(mounted, (OBSERVER, CORE), (entry, CORE), strict=True):
+            suffix = f',dst=/app/{destination},readonly'
             demand(mount.startswith(mount_prefix) and mount.endswith(suffix) and
                    Path(mount[len(mount_prefix):-len(suffix)]).read_bytes() == (self.source / filename).read_bytes(),
                    'P2_OWNED_REHEARSAL_OBSERVER_BYTES_REFUSED')
-        return REAL_RUN([self.node, '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', str(self.observer_source / OBSERVER), args[-1]],
+        return REAL_RUN([self.node, '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', str(self.observer_source / OBSERVER), flag],
                         **{**kwargs, 'env': {'PATH': os.environ['PATH'], 'NODE_EXTRA_CA_CERTS': str(self.ca),
                                              CREDENTIAL: self.credential}})
 
@@ -279,6 +338,9 @@ class OwnedPlatform:
             return json.dumps(self.mounted_files(service))
         if fields == '{{.HostConfig.ReadonlyRootfs}}|{{json .Mounts}}':
             return 'true|' + json.dumps(self.mounted_files(service))
+        if fields == '{{.State.Pid}}|{{.State.StartedAt}}|{{.HostConfig.ReadonlyRootfs}}|{{json .Mounts}}':
+            pid = 4200 + self.runtime.SERVICES.index(service)
+            return f'{pid}|2026-01-01T00:00:00.000000000Z|true|' + json.dumps(self.mounted_files(service))
         demand(fields == ('{{.Config.Image}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|'
                           '{{index .Config.Labels "com.docker.compose.project.config_files"}}'))
         root = self.mounted_root(service)
@@ -298,11 +360,58 @@ class OwnedPlatform:
                            'admissionDirectory': {'device': str(directory.st_dev), 'inode': str(directory.st_ino)},
                            'admission': {**admission, 'valid': True}})
 
+    def api_current(self, args, payload):
+        import migrate
+
+        prefix, suffix = 'type=bind,src=', ',dst=/check/input,readonly'
+        mount = args[args.index('--mount') + 1]
+        demand(self.consumer and mount.startswith(prefix) and mount.endswith(suffix))
+        directory = Path(mount[len(prefix):-len(suffix)])
+        service = directory.name.removesuffix('-input')
+        demand(service in ('course', 'community') and directory.name == service + '-input' and
+               directory == directory.resolve() and ROOT in directory.parents and
+               args[-5:] == [self.selected['artifacts'][service + 'Migration']['image'], '/check/input/current.mjs',
+                             '--profiled-current', '/check/input/job.json', '/check/input/schema.json'] and
+               json.loads(payload) == {'connectionUrl': self.initial['credentials'][service.upper() + '_STAGING_DATABASE_URL']})
+        job_raw = (directory / 'job.json').read_bytes()
+        job = json.loads(job_raw)
+        target = job['target']
+        checker = digest((directory / 'current.mjs').read_bytes())
+        schema = digest((directory / 'schema.json').read_bytes())
+        demand(checker == self.initial['sourceSha256']['ops/platform/host/database_current.mjs'] and
+               schema == job['schemaBaselineSha256'] and digest(job_raw) == self.plan['apiJobSha256'][service])
+        return {'version': 2, 'qualificationTargetProfile': self.initial['qualificationTargetProfile'],
+                **migrate.contract_identity(self.selected), 'status': 'CURRENT_API_DATABASE_READ_ONLY_PASS',
+                'environment': 'staging', 'migrationsExecuted': False, 'pendingTags': [], 'appliedCount': 1,
+                'service': target['service'], 'checks': ['selected-image-operator-role-policy'],
+                'transportVerifier': 'selected-image/hasVerifiedMigrationTransport', 'checkerSha256': checker,
+                'manifestSha256': digest(job_raw), 'schemaBaselineSha256': schema, 'artifactSha256': target['artifactSha256'],
+                'target': {key: target[key] for key in ('host', 'port', 'database', 'user', 'serverMajor')}}
+
+    def mux_query(self, args, payload):
+        from p2_scoped_mux_readiness import _READY_QUERY, readiness_parameters
+
+        action = self.plan['scopedAction']
+        job = json.loads((Path(self.initial['bundle']) / 'jobs/course.json').read_bytes())
+        target = job['target']
+        demand(self.consumer and args[-4:] == [self.selected['artifacts']['courseMigration']['image'],
+               '--input-type=module', '--eval', _READY_QUERY] and json.loads(payload) == {
+                   'parameters': readiness_parameters(action), 'connectionUrl': self.initial['credentials']['COURSE_STAGING_DATABASE_URL'],
+                   'target': target})
+        return {'identity': {'user': target['user'], 'database': target['database'], 'server_version_num': target['serverMajor'] * 10000,
+                             'read_only': 'on', 'search_path': 'pg_catalog'},
+                'rows': [{**action, 'status': 'ready', 'isCurrent': True, 'managedByCourse': True}]}
+
     def run(self, args, **kwargs):
         demand(type(args) is list and args and args[0] == 'docker', 'P2_OWNED_REHEARSAL_DOCKER_COMMAND_REFUSED')
         if args[1] == 'run':
-            return self._observer(args, **kwargs)
-        if args[:4] == ['docker', 'context', 'inspect', 'default']:
+            if self.consumer and args[-4] == '/check/input/current.mjs':
+                output = json.dumps(self.api_current(args, kwargs.get('input'))) + '\n'
+            elif self.consumer and args[-3:-1] == ['--input-type=module', '--eval']:
+                output = json.dumps(self.mux_query(args, kwargs.get('input'))) + '\n'
+            else:
+                return self._observer(args, **kwargs)
+        elif args[:4] == ['docker', 'context', 'inspect', 'default']:
             output = 'unix:///var/run/docker.sock\n'
         elif args[1:3] == ['version', '--format']:
             output = 'linux/amd64\n'
@@ -338,6 +447,16 @@ class OwnedPlatform:
             output = ''
         return subprocess.CompletedProcess(args, 0, output, '')
 
+    def certification_scope_run(self, scope, args, *, timeout, check=False, capture_output=False, text=False, input=None, **options):
+        # The fixture supplies responses instead of creating Docker children.
+        # Keep both physical-session checks around the same command boundary.
+        scope.verify()
+        result = self.run(args, timeout=timeout, check=check, capture_output=capture_output, text=text, input=input, **options)
+        scope.verify()
+        if not text:
+            result.stdout, result.stderr = result.stdout.encode(), result.stderr.encode()
+        return result
+
     def gateway_admission(self, configuration, binding, verify, _command, _assert_host):
         verify()
         demand(configuration == self.configuration and not self.runtime_stopped)
@@ -346,7 +465,7 @@ class OwnedPlatform:
         demand(all(state[key] == binding[key] for key in ('releaseId', 'candidateSha256')) and
                state['newWork'] is False and state['recovery'] is False)
         zero = {'newWork': 0, 'recovery': 0}
-        return {'admission': {'sha256': digest(raw), 'newWork': False, 'recovery': False,
+        return {'admission': {'version': 1, 'sha256': digest(raw), 'newWork': False, 'recovery': False,
                               'active': zero, 'uncertain': zero}}
 
     def prearm_docker(self, initial, source, selected, expected, configuration, verify):
@@ -362,14 +481,15 @@ class OwnedPlatform:
         import vercel
 
         demand(method == 'GET' and body is None, 'P2_OWNED_REHEARSAL_VERCEL_COMMAND_REFUSED')
-        project = self.initial['nativePlan']['projectId']
+        native = self.plan['nativePlan']
+        project = native['projectId']
         deployment = self.deployment()
         deployment_id, url = deployment['deploymentId'], deployment['deploymentUrl'].removeprefix('https://')
         if path in (f'/v9/projects/{project}', f'/v9/projects/{project}?rollbackInfo=true'):
             return {'id': project, 'accountId': vercel.TEAM, 'link': {'type': 'github', 'repoId': vercel.REPOSITORY_ID},
                     'targets': {'production': {'id': deployment_id}},
                     'crons': {'disabledAt': 1, 'deploymentId': deployment_id,
-                              'definitions': [{**self.initial['nativePlan']['schedule'], 'host': url}]},
+                              'definitions': [{**native['schedule'], 'host': url}]},
                     'protectionBypass': {'owned-fixture-bypass': {'scope': 'automation-bypass'}}}
         if path == f'/v13/deployments/{deployment_id}?withGitRepoInfo=true':
             return {'id': deployment_id, 'projectId': project, 'target': 'production', 'url': url, 'readyState': 'READY',
@@ -383,16 +503,19 @@ class OwnedPlatform:
         import p2_canonical_browser_origin as canonical
         from qualification_target_profile import resolve_qualification_target_profile
 
-        demand(canonical_origin is True and origin == canonical.ORIGIN and bearer == self.initial['scopedCronSecret'] and
+        deployment_url = self.deployment()['deploymentUrl']
+        demand(type(canonical_origin) is bool and (canonical_origin or self.consumer) and
+               origin == (canonical.ORIGIN if canonical_origin else deployment_url) and bearer == self.initial['scopedCronSecret'] and
                bypass == 'owned-fixture-bypass' and re.fullmatch(r'[a-f0-9]{64}', challenge))
-        native = self.initial['nativePlan']
+        native = self.plan['nativePlan']
         profile = resolve_qualification_target_profile(self.initial['qualificationTargetProfile'])
-        return {'version': 1, 'status': 'FRONTEND_WORKLOAD_PROBE_PASS', 'challenge': challenge, 'environment': 'staging',
-                'projectId': native['projectId'], 'sourceCommit': native['sourceCommit'], 'gatewayOrigin': profile['gateway']['publicOrigin'],
-                'checks': ['gateway-course-catalog-p2'], 'durationMs': 0, 'contractPhase': 'p2',
-                'featureControls': native['featureControls'], 'writerAdmissionBinding': native['writerAdmissionBinding'],
-                'authenticationOrigins': canonical.AUTHENTICATION_ORIGINS,
-                'deploymentUrl': self.deployment()['deploymentUrl'].removeprefix('https://')}
+        result = {'version': 1, 'status': 'FRONTEND_WORKLOAD_PROBE_PASS', 'challenge': challenge, 'environment': 'staging',
+                  'projectId': native['projectId'], 'sourceCommit': native['sourceCommit'], 'gatewayOrigin': profile['gateway']['publicOrigin'],
+                  'checks': ['gateway-course-catalog-p2'], 'durationMs': 0, 'contractPhase': 'p2',
+                  'featureControls': native['featureControls'], 'writerAdmissionBinding': native['writerAdmissionBinding']}
+        if canonical_origin:
+            result.update(authenticationOrigins=canonical.AUTHENTICATION_ORIGINS, deploymentUrl=deployment_url.removeprefix('https://'))
+        return result
 
     def rotation_adapter(self, scope, selected, jobs, rotation_configuration, configuration, output, compose,
                          client, _gateway_host, source, _program_sha256):
@@ -524,7 +647,8 @@ class OwnedPlatform:
 
 def main():
     demand(sys.platform == 'linux' and os.geteuid() == 0 and Path('/.dockerenv').is_file() and
-           len(sys.argv) == 3 and sys.argv[1] == '--supervisor', 'P2_OWNED_REHEARSAL_ISOLATION_REQUIRED')
+           len(sys.argv) == 3 and sys.argv[1] in ('--supervisor', '--consumer'), 'P2_OWNED_REHEARSAL_ISOLATION_REQUIRED')
+    consumer = sys.argv[1] == '--consumer'
     interfaces = {name for _, name in socket.if_nameindex()}
     demand('lo' in interfaces and all(not int((Path('/sys/class/net') / name / 'flags').read_text(), 16) & 1
                                        for name in interfaces - {'lo'}) and
@@ -547,7 +671,14 @@ def main():
     demand(0 < len(raw) <= INITIAL_MAXIMUM and raw.endswith(b'\n'))
     initial = decode_qualification_target_json(raw, 'private-packet')
     demand(type(initial) is dict and initial.get('sourceCommit') == source.name and initial.get('version') == 2)
-    for key in ('configuration', 'results', 'bundle', 'rotationConfiguration'):
+    if consumer:
+        plan = initial['certificationPlan']
+        demand(initial.get('mode') == certification.PROFILED_CERTIFICATION_MODE and plan.get('mode') == 'mux-readiness' and
+               plan.get('initialEpoch') == '7' and 'rotationSuccessor' in plan and
+               plan['scopedAction']['environmentId'] == 'owned-mux-environment')
+    else:
+        demand(initial.get('mode') == 'p2-identity-key-rotation')
+    for key in ('configuration', 'results', 'bundle') + (() if consumer else ('rotationConfiguration',)):
         path = Path(initial[key])
         demand(ROOT in path.parents and path == path.resolve())
     credential = urlsplit(initial['credentials'][CREDENTIAL])
@@ -555,14 +686,11 @@ def main():
     observer_source = Path(os.environ.get('P2_ROTATION_OWNED_NODE_SOURCE', str(source))).resolve()
     for filename in (OBSERVER, CORE):
         demand((observer_source / filename).read_bytes() == (source / filename).read_bytes())
-    platform = OwnedPlatform(initial, source, runtime, prior, observer_source)
+    platform = OwnedPlatform(initial, source, runtime, prior, observer_source, consumer=consumer)
     with ExitStack() as patches:
-        patches.enter_context(patch.object(rotation, 'MANAGED_LIVE_ELIGIBLE', True))
-        patches.enter_context(patch.object(rotation, 'P2IdentityRotationHostAdapter', platform.rotation_adapter))
         patches.enter_context(patch.object(rotation.vercel, 'Client', lambda _token: SimpleNamespace(request=platform.vercel_request)))
         patches.enter_context(patch.object(rotation.day_two_workload, '_WorkloadProbe',
                                            lambda: SimpleNamespace(request=platform.workload_probe)))
-        patches.enter_context(patch.object(replacement, '_observe', platform.prearm_docker))
         patches.enter_context(patch.object(prior.frontend_gateway_observation, 'observe', platform.gateway_admission))
         patches.enter_context(patch.object(prior, '_reference', platform.gateway_reference))
         patches.enter_context(patch.object(migrate, 'make_plan', platform.migration_bundle))
@@ -571,21 +699,42 @@ def main():
         patches.enter_context(patch.object(runtime, 'environment_values', platform.runtime_flags))
         # Only the projected staging runtime's architecture is fixed to amd64.
         patches.enter_context(patch.object(runtime, 'platform', SimpleNamespace(machine=lambda: 'x86_64')))
-        patches.enter_context(patch.object(certification, 'prepare_profiled_current_certification_input', platform.predecessor_review))
+        if consumer:
+            def run_scoped(scope, *args, **kwargs):
+                return platform.certification_scope_run(scope, *args, **kwargs)
+
+            patches.enter_context(patch.object(certification, 'ROTATION_SUCCESSOR_LIVE_ELIGIBLE', True))
+            patches.enter_context(patch.object(certification, '_profiled_replacement_original_terminal', platform.predecessor_terminal))
+            patches.enter_context(patch.object(certification.P2CertificationScope, 'run', run_scoped))
+        else:
+            patches.enter_context(patch.object(rotation, 'MANAGED_LIVE_ELIGIBLE', True))
+            patches.enter_context(patch.object(rotation, 'P2IdentityRotationHostAdapter', platform.rotation_adapter))
+            patches.enter_context(patch.object(replacement, '_observe', platform.prearm_docker))
+            patches.enter_context(patch.object(certification, 'prepare_profiled_current_certification_input', platform.predecessor_review))
         patches.enter_context(patch.object(subprocess, 'run', platform.run))
         patches.enter_context(patch.object(sys, 'stdin', SimpleNamespace(buffer=InitialReplay(raw, sys.stdin.buffer))))
-        patches.enter_context(patch.object(sys, 'argv', [sys.argv[0], '--supervisor']))
+        patches.enter_context(patch.object(sys, 'argv', [sys.argv[0], '--supervisor-profiled-current' if consumer else '--supervisor']))
+        observed_exceptions = set()
+
         def trace_error(frame, event, value):
-            if event == 'exception' and frame.f_code.co_filename.startswith(str(source)):
-                code = str(value[1])
+            filename = frame.f_code.co_filename
+            if event == 'exception' and (filename.startswith(str(source)) or consumer and filename == __file__):
+                kind, error, _ = value
+                code = str(error)
                 if re.fullmatch(r'[A-Z][A-Z0-9_]{4,100}', code):
-                    print(code, Path(frame.f_code.co_filename).name, frame.f_lineno, file=sys.stderr)
+                    print(code, Path(filename).name, frame.f_lineno, file=sys.stderr)
+                elif consumer and kind in (AssertionError, AttributeError, subprocess.CalledProcessError, FileNotFoundError,
+                                           IndexError, KeyError, NameError, StopIteration, TypeError, ValueError):
+                    location = kind, Path(filename).name, frame.f_lineno
+                    if location not in observed_exceptions and len(observed_exceptions) < 12:
+                        observed_exceptions.add(location)
+                        print('P2_OWNED_REHEARSAL_EXCEPTION_' + kind.__name__.upper(), *location[1:], file=sys.stderr)
             return trace_error
 
         threading.settrace(trace_error)
         sys.settrace(trace_error)
         try:
-            rotation.main()
+            (certification if consumer else rotation).main()
         finally:
             sys.settrace(None)
             threading.settrace(None)
