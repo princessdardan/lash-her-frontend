@@ -155,6 +155,36 @@ class BrokerBindingTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 broker._restore({"phase": "overlap", "configuration": {"sha256": "b" * 64}})
 
+    def test_capture_rpc_requires_the_verified_split_and_emits_metadata_only(self):
+        broker = parent.P2IdentityRotationBroker.__new__(parent.P2IdentityRotationBroker)
+        rotation = {"subjects": {}, "courseId": "fixture-course", "bindingSha256": "a" * 64}
+        broker.initial = {"rotationPlan": rotation}
+        broker.runtime_phase, broker.frontend_phase = "overlap", "current-only"
+        broker.window, broker.mutation_unresolved = None, False
+        broker.qualified_signers = {"overlap", "current-only"}
+        broker.output_lock = threading.Lock()
+        capture_calls, wire, checks = [], [], []
+        broker.check = lambda: checks.append(True)
+        broker.emit = wire.append
+        metadata = [{"status": "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", "profile": profile,
+                     "tokenIssuedAt": "2027-01-15T07:02:30.000Z", "tokenExpiresAt": "2027-01-15T07:07:30.000Z"}
+                    for profile in ("community-admin", "community-member", "course-admin", "course-learner")]
+        broker.adapter = types.SimpleNamespace(capture_tokens=lambda *args: capture_calls.append(args) or metadata)
+        request = {"id": 2, "operation": "rotation-capture"}
+        broker.command(request)
+        self.assertEqual(capture_calls, [(rotation["subjects"], rotation["courseId"], rotation["bindingSha256"])])
+        self.assertEqual(wire, [{"id": 2, "status": "ROTATION_CAPTURED", "receipt": metadata}])
+        self.assertEqual(len(checks), 2)
+        for field, invalid in (("runtime_phase", "current-only"), ("frontend_phase", "overlap"),
+                               ("window", {}), ("mutation_unresolved", True), ("qualified_signers", {"overlap"})):
+            with self.subTest(field=field), patch.object(broker, field, invalid):
+                with self.assertRaisesRegex(ValueError, "P2_ROTATION_CAPTURE_SPLIT_STATE_REQUIRED"):
+                    broker.command(request)
+        with self.assertRaisesRegex(ValueError, "P2_ROTATION_CAPTURE_SPLIT_STATE_REQUIRED"):
+            broker.command({**request, "profile": "course-admin"})
+        self.assertEqual(len(capture_calls), 1)
+        self.assertEqual(len(wire), 1)
+
     def test_containment_cannot_clear_a_host_recorded_unknown_mutation(self):
         broker = parent.P2IdentityRotationBroker.__new__(parent.P2IdentityRotationBroker)
         broker.mutation_unresolved = True

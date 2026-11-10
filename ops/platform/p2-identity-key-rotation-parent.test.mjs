@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { isP2IdentityRotationParentAuthority, prepareP2IdentityRotationParent,
   runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
+import { requireP2IdentityRotationCaptureMetadata } from "./p2-identity-key-rotation-transport.mjs";
 import { observeIdentityRotationBoundary, P2_IDENTITY_ROTATION_SERVICES } from "./p2-identity-key-rotation-observer.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
@@ -110,4 +111,16 @@ test("public runtime boundary projects exact three-field container rows while re
       "private-community-peer-denied", "private-course-tls-catalog", "public-metrics-hidden",
       "public-tls-missing-workload-denied"] });
   await assert.rejects(() => observeIdentityRotationBoundary(context, dependencies), /P2_IDENTITY_ROTATION_BOUNDARY_REFUSED/u);
+});
+
+test("fixed capture transport accepts only the four ordered timing-only records", () => {
+  const rows = ["community-admin", "community-member", "course-admin", "course-learner"].map(profile =>
+    ({ status: "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", profile,
+      tokenIssuedAt: "2027-01-15T07:02:30.000Z", tokenExpiresAt: "2027-01-15T07:07:30.000Z" }));
+  assert.equal(requireP2IdentityRotationCaptureMetadata(rows), rows);
+  for (const changed of [
+    { oldToken: "synthetic.old.token" }, { newToken: "synthetic.new.token" }, { privateCredentialBytes: true },
+    { profile: "course-admin" }, { tokenExpiresAt: "2027-01-15T07:07:31.000Z" }, { tokenIssuedAt: "2027-02-31T07:02:30.000Z" },
+  ]) assert.throws(() => requireP2IdentityRotationCaptureMetadata([{ ...rows[0], ...changed }, ...rows.slice(1)]),
+    /P2_IDENTITY_ROTATION_TRANSPORT_REFUSED/u);
 });

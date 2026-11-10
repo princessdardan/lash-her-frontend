@@ -18,10 +18,10 @@ The package includes a source-fixed config-only parent, single-use SSH
 transport, exact source-CI/install operator, typed host broker/scope, canonical
 staging-origin observer, and normal frontend Course read recorder. The
 controller remains live-ineligible. The operator's reviewed plan still needs
-a fixed projection to the controller's private action directory and record
-bindings. The legacy capture reply also needs to return only profile and timing
-metadata while keeping the exact JWT pairs on the host. Both boundaries need
-qualification on the actual Linux/Docker/Vercel/staging path.
+a fixed projection to the controller's private record bindings, a shared
+transport authority, and a retained-state join across the local controller
+and remote Linux broker. That integration needs qualification on the actual
+Linux/Docker/Vercel/staging path.
 `keyRemovalVerified` remains false outside a successful joined run. The
 parent is designed to retain the Linux release
 flock and frontend PostgreSQL physical advisory/nonce lock throughout each
@@ -117,9 +117,11 @@ metadata inventory and remains closed for review.
    of the proof tokens’ 300-second lifetime.
 6. Record the one-use capture intent. Privately issue controlled, unexpired
    old and new tokens for all four profiles and prove both are accepted while
-   the receivers still run overlap. The controller retains only signer
-   references, profile names and issuance, expiry and observation times.
-   An unqualified retained capture intent requires review.
+   the receivers still run overlap. The exact pairs stay in the host's
+   mode-0600 action record and are read directly by both receiver observers.
+   The capture RPC returns only status, profile, issuance and expiry. The
+   controller retains signer references and the profile timing evidence. An
+   unqualified retained capture intent requires review.
 7. Recreate Course and Community on the same images with `currentOnly`.
    Prove that each exact, still-unexpired old token is rejected and its paired
    new token is accepted. A lost receiver mutation acknowledgement is

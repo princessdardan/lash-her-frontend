@@ -550,9 +550,14 @@ class P2IdentityRotationBroker(Broker):
                     self.guard_in_progress = False
             self.send(identity, "ROTATION_MUTATION", receipt=receipt)
         elif operation == "rotation-capture":
+            require(set(value) == {"id", "operation"} and self.runtime_phase == "overlap"
+                    and self.frontend_phase == "current-only" and self.window is None and not self.mutation_unresolved
+                    and {"overlap", "current-only"}.issubset(self.qualified_signers),
+                    "P2_ROTATION_CAPTURE_SPLIT_STATE_REQUIRED")
             rotation = self.initial["rotationPlan"]
-            self.send(identity, "ROTATION_CAPTURED", receipt=self.adapter.capture_tokens(
-                rotation["subjects"], rotation["courseId"], rotation["bindingSha256"]))
+            metadata = self.adapter.capture_tokens(rotation["subjects"], rotation["courseId"], rotation["bindingSha256"])
+            self.check()
+            self.send(identity, "ROTATION_CAPTURED", receipt=metadata)
         elif operation == "rotation-observe-profiles":
             rotation, phase = self.initial["rotationPlan"], value.get("phase")
             receipt = self.adapter.observe_profiles(phase, rotation["subjects"], rotation["courseId"])
