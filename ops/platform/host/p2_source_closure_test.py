@@ -365,3 +365,20 @@ class SourceClosureTests(unittest.TestCase):
         self.initial['_guardObserverProgram'] = b'changed observer'
         with self.assertRaisesRegex(ValueError, 'OBSERVER_SOURCE_CHANGED'):
             private_observer_program(self.initial, private / 'changed')
+
+    def test_managed_rotation_guard_binds_fixed_profiled_observer(self):
+        from p2_release_supervisor import ROTATION_LAYOUT
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+
+        raw = b'owned rotation observer'
+        selected = {**self.initial, 'mode': ROTATION_MODE, 'version': 2,
+                    'qualificationTargetProfile': STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE,
+                    '_guardLayout': ROTATION_LAYOUT, '_guardObserverSource': CERTIFICATION_OBSERVER,
+                    '_guardObserverProgram': raw,
+                    'sourceSha256': {CERTIFICATION_OBSERVER: hashlib.sha256(raw).hexdigest()}}
+        private = self.root / 'rotation-private'
+        self.assertEqual(private_observer_program(selected, private).read_bytes(), raw)
+        for mismatch in ({'version': 1}, {'version': True}, {'_guardLayout': {}},
+                         {'_guardObserverSource': 'ops/platform/p2-recovery-current-probe.mjs'}):
+            with self.assertRaisesRegex(ValueError, 'FIXED_CERTIFICATION_OBSERVER_REQUIRED'):
+                private_observer_program({**selected, **mismatch}, private)

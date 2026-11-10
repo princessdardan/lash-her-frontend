@@ -232,12 +232,19 @@ def private_observer_program(initial, directory):
     if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs',
                            CERTIFICATION_OBSERVER, 'ops/platform/p2-profiled-current-probe.mjs'}:
         raise ValueError('P2_FIXED_OBSERVER_SOURCE_REQUIRED')
-    if initial.get('mode') in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE) and source_name != CERTIFICATION_OBSERVER:
+    mode = initial.get('mode')
+    profiled = mode in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE)
+    if mode == ROTATION_MODE and type(initial.get('version')) is int and initial['version'] == 2:
+        from p2_release_supervisor import ROTATION_LAYOUT
+        if initial.get('_guardLayout') != ROTATION_LAYOUT:
+            raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
+        profiled = True
+    if profiled and source_name != CERTIFICATION_OBSERVER:
         raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
     if source_name == CERTIFICATION_OBSERVER:
-        if initial.get('mode') not in ('p2-bounded-certification', PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
+        if mode != 'p2-bounded-certification' and not profiled:
             raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
-        if initial['mode'] in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
+        if profiled:
             import migrate
             from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
             if type(initial.get('version')) is not int or initial['version'] != 2:
