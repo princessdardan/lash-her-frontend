@@ -27,6 +27,7 @@ function createHarness(overrides: {
   const notified: string[] = [];
 
   const deps: ChargeSquareTrainingOrderDependencies = {
+    observePayment: async () => ({ state: "ready" }),
     async authorizePayment(request) {
       authorizeKeys.push(request.idempotency_key);
       return {
@@ -44,6 +45,7 @@ function createHarness(overrides: {
     },
     async capturePayment(paymentId) {
       captures.push(paymentId);
+      return completedPayment(paymentId);
     },
     async voidPayment(paymentId) {
       voids.push(paymentId);
@@ -52,6 +54,7 @@ function createHarness(overrides: {
     async finalize() {
       return { transition: overrides.finalize ?? "applied" };
     },
+    onCaptured: async () => true,
     async sendNotifications(orderReference) {
       notified.push(orderReference);
     },
@@ -67,6 +70,15 @@ const baseInput = {
   currency: "CAD" as const,
   sourceId: "cnon:card-nonce",
 };
+
+function completedPayment(id: string): SquareCreatePaymentResponse["payment"] {
+  return {
+    id,
+    status: "COMPLETED",
+    reference_id: baseInput.orderReference,
+    amount_money: { amount: baseInput.amountCents, currency: baseInput.currency },
+  };
+}
 
 test("uses a training-namespaced idempotency key and notifies on success", async () => {
   const harness = createHarness({});
@@ -89,6 +101,10 @@ test("uses a training-namespaced idempotency key and notifies on success", async
 
 test("does not re-capture on an already-applied replay but still notifies", async () => {
   const harness = createHarness({ finalize: "already_applied" });
+  let observations = 0;
+  harness.deps.observePayment = async () => ++observations === 1
+    ? { state: "ready" }
+    : { state: "captured", squarePaymentId: "sq-train-1" };
 
   const result = await chargeSquareTrainingOrder(baseInput, harness.deps);
 
@@ -123,7 +139,9 @@ test("a lost success response recovers the recorded payment without authorizing 
       },
     });
     let recorded: { squarePaymentId: string } | null = null;
-    harness.deps.findRecordedPayment = async () => recorded;
+    harness.deps.observePayment = async () => recorded
+      ? { state: "captured", ...recorded }
+      : { state: "ready" };
     harness.deps.finalize = async ({ squarePaymentId }) => {
       recorded = { squarePaymentId };
       return { transition: "applied" };
@@ -187,8 +205,8 @@ test("a failed authorization cancellation keeps the reservation for reconciliati
 test("a concurrent paid result takes precedence over an idempotency conflict", async () => {
   const harness = createHarness({});
   let reads = 0;
-  harness.deps.findRecordedPayment = async () =>
-    ++reads === 1 ? null : { squarePaymentId: "sq-concurrent" };
+  harness.deps.observePayment = async () =>
+    ++reads === 1 ? { state: "ready" } : { state: "captured", squarePaymentId: "sq-concurrent" };
   harness.deps.authorizePayment = async () => {
     throw new Error("IDEMPOTENCY_KEY_REUSED");
   };
@@ -202,4 +220,63 @@ test("a concurrent paid result takes precedence over an idempotency conflict", a
     transition: "already_applied",
   });
   assert.deepEqual(harness.captures, []);
+});
+
+
+test("ambiguous and terminal retained payments preserve the reservation", async () => {
+  for (const state of ["unknown", "review", "retry"] as const) {
+    const harness = createHarness({});
+    harness.deps.observePayment = async () => ({ state });
+    const result = await chargeSquareTrainingOrder(baseInput, harness.deps);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.retryWithNewReservation, state === "retry");
+    assert.deepEqual(harness.authorizeKeys, []);
+    assert.deepEqual(harness.captures, []);
+    assert.deepEqual(harness.voids, []);
+    assert.deepEqual(harness.notified, []);
+  }
+});
+
+test("ambiguous, crossed, or mismatched capture cannot publish training success", async () => {
+  for (const response of [
+    null,
+    { ...completedPayment("sq-train-1"), status: "APPROVED" },
+    completedPayment("sq-other"),
+    { ...completedPayment("sq-train-1"), reference_id: "other" },
+    { ...completedPayment("sq-train-1"), amount_money: { amount: 1, currency: "CAD" } },
+    { ...completedPayment("sq-train-1"), amount_money: { amount: baseInput.amountCents, currency: "USD" } },
+  ]) {
+    const harness = createHarness({});
+    harness.deps.capturePayment = async () => {
+      if (!response) throw new Error("Capture response lost");
+      return response;
+    };
+    assert.deepEqual(await chargeSquareTrainingOrder(baseInput, harness.deps), {
+      ok: false,
+      reason: "payment_unconfirmed",
+      retryWithNewReservation: false,
+    });
+    assert.equal(harness.authorizeKeys.length, 1);
+    assert.deepEqual(harness.voids, []);
+    assert.deepEqual(harness.notified, []);
+  }
+});
+
+
+test("a lost or rejected capture receipt cannot notify or report payment success", async () => {
+  for (const retained of [false, true]) {
+    const harness = createHarness({});
+    if (retained) {
+      harness.deps.observePayment = async () => ({ state: "captured", squarePaymentId: "sq-train-1" });
+    }
+    harness.deps.onCaptured = async () => false;
+
+    assert.deepEqual(await chargeSquareTrainingOrder(baseInput, harness.deps), {
+      ok: false,
+      reason: "payment_unconfirmed",
+      retryWithNewReservation: false,
+    });
+    assert.deepEqual(harness.notified, []);
+  }
 });

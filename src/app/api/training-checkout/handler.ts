@@ -251,16 +251,18 @@ export function createTrainingCheckoutPostHandler({
               markWriterOperationUncertain,
             );
           }
+          const requiresReview =
+            charge.reason === "training_payment_requires_review";
           return NextResponse.json<TrainingCheckoutErrorBody>(
             {
               error: retryWithNewReservation
                 ? "Payment could not be completed. Please try again or use another payment method."
-                : charge.reason === "split_payment_requires_review"
+                : requiresReview || charge.reason === "split_payment_requires_review"
                   ? "Your payment needs review. Please contact Lash Her before making another payment."
                   : "Payment status could not be confirmed. Please retry to check your existing payment.",
               retryWithNewReservation,
             },
-            { status: retryWithNewReservation ? 402 : 503 },
+            { status: retryWithNewReservation ? 402 : requiresReview ? 409 : 503 },
           );
         }
 

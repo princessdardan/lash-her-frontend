@@ -1640,6 +1640,27 @@ export async function markSquareCommerceOrderCaptured(
   );
 }
 
+/** Record verified training-card capture without clearing a concurrent terminal hold. */
+export async function markSquareTrainingCardOrderCaptured(
+  orderReference: string,
+  squarePaymentId: string,
+): Promise<boolean> {
+  const rows = await getPrivateDb()
+    .update(checkoutOrders)
+    .set({ providerStatus: SQUARE_CAPTURED_PROVIDER_STATUS, updatedAt: new Date() })
+    .where(and(
+      eq(checkoutOrders.orderId, orderReference),
+      eq(checkoutOrders.paymentProvider, "square"),
+      eq(checkoutOrders.purpose, "training"),
+      eq(checkoutOrders.providerPaymentId, squarePaymentId),
+      eq(checkoutOrders.status, "paid"),
+      sql`${checkoutOrders.providerMetadata}->>'flow' = 'training_square_card'`,
+      sql`${checkoutOrders.providerStatus} is distinct from ${SQUARE_UNCOLLECTED_PROVIDER_STATUS}`,
+    ))
+    .returning({ id: checkoutOrders.id });
+  return rows.length === 1;
+}
+
 /**
  * Mark a paid Square commerce order as uncollected (its authorization was lost
  * before capture). Terminal: drops the order out of the capture sweep so it is

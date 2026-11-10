@@ -200,10 +200,10 @@ test("recorded training payments never reauthorize when caught notification reco
   const f = admission(); let authorized = 0;
   const handler = async () => {
     const result = await chargeSquareTrainingOrder({ orderReference: "owned-order", amountCents: 500, currency: "CAD", sourceId: "owned-nonce" }, {
-      findRecordedPayment: async () => ({ squarePaymentId: "owned-payment" }),
+      observePayment: async () => ({ state: "captured", squarePaymentId: "owned-payment" }),
       authorizePayment: async () => { authorized++; throw new Error(); },
       capturePayment: async () => { throw new Error(); }, voidPayment: async () => {}, voidPaymentByIdempotencyKey: async () => {},
-      finalize: async () => { throw new Error(); }, sendNotifications: async () => { throw new Error("owned-private-marker"); }, logError: () => {},
+      finalize: async () => { throw new Error(); }, onCaptured: async () => true, sendNotifications: async () => { throw new Error("owned-private-marker"); }, logError: () => {},
     });
     assert.equal(result.ok, true); return Response.json(result);
   };

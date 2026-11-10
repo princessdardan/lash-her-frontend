@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac, randomBytes } from "node:crypto";
 
-import { and, eq, gt, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
@@ -90,6 +90,7 @@ export interface TrainingEnrollmentRepository {
     schedulingTokenHash: string,
     tokenExpiresAt: Date,
     now: Date,
+    capturedCardPaymentId?: string,
   ): Promise<boolean>;
   createTrainingEnrollment(
     values: TrainingEnrollmentInsert,
@@ -146,6 +147,7 @@ export interface TrainingEnrollmentStore {
   getOrIssueSchedulingTokenForPaidOrder(
     orderId: string,
     now?: Date,
+    capturedCardPaymentId?: string,
   ): Promise<IssuedTrainingSchedulingTokenRecord | null>;
   issueSchedulingTokenForPaidOrder(
     orderId: string,
@@ -221,11 +223,17 @@ export function createTrainingEnrollmentStore(
       return found === null ? null : toPendingTrainingEnrollmentRecord(found);
     },
 
-    async getOrIssueSchedulingTokenForPaidOrder(orderId, now = new Date()) {
+    async getOrIssueSchedulingTokenForPaidOrder(orderId, now = new Date(), capturedCardPaymentId) {
       const found =
         await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
 
       if (!found) {
+        return null;
+      }
+
+      if (capturedCardPaymentId &&
+        (found.checkoutOrder.providerPaymentId !== capturedCardPaymentId ||
+          found.checkoutOrder.providerStatus === "UNCOLLECTED")) {
         return null;
       }
 
@@ -241,6 +249,7 @@ export function createTrainingEnrollmentStore(
 
       return issueSchedulingToken(found, repository, now, {
         requireMissingToken: true,
+        capturedCardPaymentId,
       });
     },
 
@@ -349,10 +358,12 @@ export async function claimTrainingPaymentEmails(
 export async function getOrIssueTrainingSchedulingTokenForPaidOrder(
   orderId: string,
   now?: Date,
+  capturedCardPaymentId?: string,
 ): Promise<IssuedTrainingSchedulingTokenRecord | null> {
   return defaultTrainingEnrollmentStore.getOrIssueSchedulingTokenForPaidOrder(
     orderId,
     now,
+    capturedCardPaymentId,
   );
 }
 
@@ -418,28 +429,55 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
       schedulingTokenHash,
       tokenExpiresAt,
       now,
+      capturedCardPaymentId,
     ) {
-      const updated = await getPrivateDb()
-        .update(trainingEnrollments)
-        .set({
-          scheduledAt: null,
-          schedulingStatus: "pending",
-          schedulingTokenHash,
-          tokenExpiresAt,
-          tokenUsedAt: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(trainingEnrollments.id, enrollmentId),
-            eq(trainingEnrollments.schedulingStatus, "pending"),
-            isNull(trainingEnrollments.schedulingTokenHash),
-            isNull(trainingEnrollments.tokenUsedAt),
-          ),
-        )
-        .returning({ id: trainingEnrollments.id });
+      const db = getPrivateDb();
+      const assign = async (connection: Pick<typeof db, "update">) => {
+        const updated = await connection
+          .update(trainingEnrollments)
+          .set({
+            scheduledAt: null,
+            schedulingStatus: "pending",
+            schedulingTokenHash,
+            tokenExpiresAt,
+            tokenUsedAt: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(trainingEnrollments.id, enrollmentId),
+              eq(trainingEnrollments.schedulingStatus, "pending"),
+              isNull(trainingEnrollments.schedulingTokenHash),
+              isNull(trainingEnrollments.tokenUsedAt),
+            ),
+          )
+          .returning({ id: trainingEnrollments.id });
 
-      return updated.length === 1;
+        return updated.length === 1;
+      };
+
+      if (!capturedCardPaymentId) return assign(db);
+
+      // Serialize issuance with the capture sweep's terminal order transition.
+      return db.transaction(async (tx) => {
+        const [order] = await tx
+          .select({ id: checkoutOrders.id })
+          .from(checkoutOrders)
+          .innerJoin(trainingEnrollments, eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id))
+          .where(and(
+            eq(trainingEnrollments.id, enrollmentId),
+            eq(checkoutOrders.status, "paid"),
+            eq(checkoutOrders.purpose, "training"),
+            eq(checkoutOrders.paymentProvider, "square"),
+            eq(checkoutOrders.providerPaymentId, capturedCardPaymentId),
+            sql`${checkoutOrders.providerMetadata}->>'flow' = 'training_square_card'`,
+            sql`${checkoutOrders.providerStatus} is distinct from 'UNCOLLECTED'`,
+          ))
+          .for("update", { of: checkoutOrders })
+          .limit(1);
+
+        return order ? assign(tx) : false;
+      });
     },
 
     async createTrainingEnrollment(values) {
@@ -564,6 +602,10 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
             isNull(trainingEnrollments.tokenUsedAt),
             gt(trainingEnrollments.tokenExpiresAt, now),
             eq(checkoutOrders.status, "paid"),
+            or(
+              sql`${checkoutOrders.providerMetadata}->>'flow' is distinct from 'training_square_card'`,
+              sql`${checkoutOrders.providerStatus} is distinct from 'UNCOLLECTED'`,
+            ),
           ),
         )
         .limit(1);
@@ -683,7 +725,7 @@ async function issueSchedulingToken(
   found: TrainingEnrollmentWithCheckoutOrder,
   repository: Pick<TrainingEnrollmentRepository, "assignSchedulingToken">,
   now: Date,
-  options: { requireMissingToken: boolean },
+  options: { requireMissingToken: boolean; capturedCardPaymentId?: string },
 ): Promise<IssuedTrainingSchedulingTokenRecord | null> {
   if (
     options.requireMissingToken &&
@@ -704,6 +746,7 @@ async function issueSchedulingToken(
     schedulingTokenHash,
     tokenExpiresAt,
     now,
+    options.capturedCardPaymentId,
   );
 
   if (!assigned) {

@@ -68,6 +68,32 @@ test("training confirmation rejects mismatched order, slug, or missing order", (
   `);
 });
 
+test("Square card confirmation requires capture for the exact order", () => {
+  runTrainingConfirmationScenario(`
+    const checkoutOrder = {
+      ...enrollment.checkoutOrder,
+      paymentProvider: "square",
+      providerPaymentId: "owned-square-payment",
+      providerMetadata: { flow: "training_square_card" },
+    };
+    for (const captured of [false, true]) {
+      const found = await getVerifiedTrainingConfirmation({
+        findEnrollmentByPublicOrderId: async () => ({ ...enrollment, checkoutOrder }),
+        verifyCardCapture: async (order) => {
+          assert.equal(order, checkoutOrder);
+          return captured;
+        },
+        orderId: checkoutOrder.orderId,
+        programSlug: "lash-training",
+      });
+      assert.deepEqual(found, captured ? {
+        orderId: checkoutOrder.orderId,
+        capturedCardPaymentId: checkoutOrder.providerPaymentId,
+      } : null);
+    }
+  `);
+});
+
 function runTrainingConfirmationScenario(assertions: string): void {
   const scenario = `${helperScript}
 void (async () => {
