@@ -69,12 +69,12 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
-LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
+LEGACY_FIXTURE_OFFLINE_ONLY = frozenset(
     'ops/platform/evidence/2026-11-06-p2-identity-negative-probes/' + name for name in (
         'owned-operator-source-closure.json', 'owned-verifiers-current-only.json',
         'owned-verifiers.json', 'validation.json',
     )
-)
+) | {'ops/platform/harness/owned-p2-lifecycle-receivers.mjs'}
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
@@ -97,7 +97,7 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
 
 def legacy_source_fixture(source, destination):
     """Install the v1 fixture with all production and required source files."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY,
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_OFFLINE_ONLY,
                                    include_tests=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')

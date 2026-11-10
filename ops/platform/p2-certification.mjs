@@ -1369,8 +1369,9 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
         if(candidate.sources[service]?.commit!==manifest.phase2ContractRevisions[service])return false;
         const document=JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${service}-api.json`,import.meta.url)));
         const schema=document.paths['/v1/internal/accounts/commands']?.post?.requestBody?.content?.['application/json']?.schema;
-        return schema?.anyOf?.some(variant=>variant.additionalProperties===false&&variant.properties?.version?.const===2&&
-          variant.properties.command?.properties?.version?.const===1&&
+        return schema?.anyOf?.some(variant=>variant.additionalProperties===false&&
+          exactKeys(variant.properties,['version','command','expectedHead'])&&isDeepStrictEqual(variant.properties.version?.enum,[2])&&
+          isDeepStrictEqual(variant.properties.command?.properties?.version?.enum,[1])&&
           exactKeys(variant.properties.expectedHead?.properties,['accountVersion','commandId','canonicalSha256']));
       });
       if(!profile||candidate.phase2ContractManifestSha256!==manifest.phase2ContractManifestSha256||!supported){
