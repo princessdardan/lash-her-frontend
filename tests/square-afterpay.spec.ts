@@ -478,7 +478,12 @@ test("training recovers a lost paid response with one order and one capture", as
     },
     chargeSquareTrainingOrder: (input) =>
       chargeSquareTrainingOrder(input, {
-        findRecordedPayment: async (orderId) => orders.get(orderId) ?? null,
+        observePayment: async (orderId) => {
+          const recorded = orders.get(orderId);
+          return recorded
+            ? { state: "captured", ...recorded }
+            : { state: "ready" };
+        },
         authorizePayment: async (request) => {
           const previousSource = authorized.get(request.idempotency_key);
           if (previousSource && previousSource !== request.source_id) {
@@ -498,8 +503,14 @@ test("training recovers a lost paid response with one order and one capture", as
           orders.set(orderReference, { squarePaymentId });
           return { transition: "applied" };
         },
-        capturePayment: async () => {
+        capturePayment: async (paymentId) => {
           captures++;
+          return {
+            id: paymentId,
+            status: "COMPLETED",
+            reference_id: input.orderReference,
+            amount_money: { amount: input.amountCents, currency: input.currency },
+          };
         },
         voidPayment: async () => {
           throw new Error("Cannot void a captured payment");
@@ -507,6 +518,8 @@ test("training recovers a lost paid response with one order and one capture", as
         voidPaymentByIdempotencyKey: async () => {
           throw new Error("Cannot void a captured payment");
         },
+        onCaptured: async (orderId, paymentId) =>
+          orders.get(orderId)?.squarePaymentId === paymentId,
         sendNotifications: async () => {},
         logError: () => {},
       }),

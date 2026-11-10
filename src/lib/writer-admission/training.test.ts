@@ -63,7 +63,12 @@ function checkout(overrides: Partial<Parameters<typeof createTrainingCheckoutPos
   });
 }
 
-function invoice(failAt?: string, failure = new Error("owned-private-marker"), onEffect: (stage: string) => void = () => {}) {
+function invoice(
+  failAt?: string,
+  failure = new Error("owned-private-marker"),
+  onEffect: (stage: string) => void = () => {},
+  publishedInvoiceId = "owned-invoice",
+) {
   const effects: string[] = [];
   const effect = (stage: string) => { effects.push(stage); onEffect(stage); if (stage === failAt) throw failure; };
   const handler = createTrainingSquareInvoicePostHandler({
@@ -74,7 +79,7 @@ function invoice(failAt?: string, failure = new Error("owned-private-marker"), o
       createCustomer: async () => { effect("customer"); return "owned-customer"; },
       createOrder: async () => { effect("order"); return "owned-square-order"; },
       createInvoice: async () => { effect("invoice"); return { id: "owned-invoice", version: 1 }; },
-      publishInvoice: async () => { effect("publish"); return { id: "owned-invoice", version: 2, publicUrl: "https://owned.invalid/invoice" }; },
+      publishInvoice: async () => { effect("publish"); return { id: publishedInvoiceId, version: 2, publicUrl: "https://owned.invalid/invoice" }; },
       getOrder: async () => ({ id: "owned-square-order" }), getInvoice: async () => ({ id: "owned-invoice" }),
     },
   });
@@ -171,6 +176,16 @@ test("invoice success retains its response and records every effect after admiss
   assert.equal(f.state.uncertain, false);
 });
 
+test("a crossed invoice publication acknowledgement stays uncertain without a local write", async () => {
+  const f = admission();
+  const s = invoice(undefined, undefined, undefined, "owned-other-invoice");
+  const response = await withWriterAdmission("new-work", s.handler, f.run)(request());
+  assert.equal(response.status, 503);
+  assert.deepEqual(s.effects, ["customer", "order", "invoice", "persist", "publish"]);
+  assert.equal(f.state.uncertain, true);
+  assert.equal((await response.text()).includes("owned-other-invoice"), false);
+});
+
 test("invoice BNPL and publication error branches preserve off-mode responses and retain enforced uncertainty", async () => {
   for (const [name, status] of [["SquareInvoiceBNPLUnavailableError", 422], ["SquareInvoicePublishError", 502], ["SquareInvoiceVersionConflictError", 502]] as const) {
     const f = admission(), error = new Error("owned-private-marker"); error.name = name;
@@ -185,10 +200,10 @@ test("recorded training payments never reauthorize when caught notification reco
   const f = admission(); let authorized = 0;
   const handler = async () => {
     const result = await chargeSquareTrainingOrder({ orderReference: "owned-order", amountCents: 500, currency: "CAD", sourceId: "owned-nonce" }, {
-      findRecordedPayment: async () => ({ squarePaymentId: "owned-payment" }),
+      observePayment: async () => ({ state: "captured", squarePaymentId: "owned-payment" }),
       authorizePayment: async () => { authorized++; throw new Error(); },
       capturePayment: async () => { throw new Error(); }, voidPayment: async () => {}, voidPaymentByIdempotencyKey: async () => {},
-      finalize: async () => { throw new Error(); }, sendNotifications: async () => { throw new Error("owned-private-marker"); }, logError: () => {},
+      finalize: async () => { throw new Error(); }, onCaptured: async () => true, sendNotifications: async () => { throw new Error("owned-private-marker"); }, logError: () => {},
     });
     assert.equal(result.ok, true); return Response.json(result);
   };

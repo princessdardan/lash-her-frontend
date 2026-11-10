@@ -49,8 +49,15 @@ export async function notifyPaidTrainingOrder(
     return;
   }
 
-  const issued =
-    await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(orderReference);
+  const order = enrollment.checkoutOrder;
+  const capturedCardPaymentId = order?.providerMetadata?.flow === "training_square_card"
+    ? order.providerPaymentId ?? undefined
+    : undefined;
+  const issued = await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(
+    orderReference,
+    undefined,
+    capturedCardPaymentId,
+  );
   if (issued === null) {
     throw new Error("Training scheduling token could not be issued");
   }

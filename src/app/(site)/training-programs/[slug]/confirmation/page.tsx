@@ -6,6 +6,8 @@ import { loaders } from "@/data/loaders";
 import { getVerifiedTrainingConfirmation } from "@/lib/training-confirmation";
 import { getOrIssueTrainingSchedulingTokenForPaidOrder } from "@/lib/commerce/training-enrollment-store";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
+import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -59,7 +61,16 @@ export default async function TrainingConfirmationPage({
 
   const issuedSchedulingToken = schedulingToken
     ? null
-    : await getOrIssueTrainingSchedulingTokenForPaidOrder(confirmation.orderId);
+    : await runWriterAdmission("recovery", () =>
+        getOrIssueTrainingSchedulingTokenForPaidOrder(
+          confirmation.orderId,
+          undefined,
+          confirmation.capturedCardPaymentId,
+        ),
+      ).catch((error: unknown) => {
+        if (error instanceof WriterAdmissionError) notFound();
+        throw error;
+      });
   const scheduleToken = schedulingToken ?? issuedSchedulingToken?.schedulingToken;
 
   if (!scheduleToken) {

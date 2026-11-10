@@ -16,12 +16,15 @@ const scenario = String.raw`
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
   import { checkoutOrders, trainingEnrollments } from "./src/lib/private-db/schema.ts";
   import { finalizeSquareTrainingCardPayment } from "./src/lib/commerce/square-training-card-finalizer.ts";
+  import { markSquareTrainingCardOrderCaptured } from "./src/lib/commerce/order-store.ts";
   import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
+  import { getOrIssueTrainingSchedulingTokenForPaidOrder, findPendingTrainingEnrollmentByToken } from "./src/lib/commerce/training-enrollment-store.ts";
   import { notifyPaidTrainingOrder } from "./src/lib/commerce/training-paid-notification.ts";
 
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL.includes("?")
     ? process.env.TEST_DATABASE_URL
     : process.env.TEST_DATABASE_URL + "?sslmode=disable";
+  process.env.CHECKOUT_SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
   const db = getPrivateDb();
   const fixture = crypto.randomUUID();
   const prefix = "lh-square-training-finalizer-" + fixture;
@@ -135,6 +138,32 @@ const scenario = String.raw`
       currency: "CAD", providerType: "BUY_NOW_PAY_LATER", providerStatus: "COMPLETED",
     });
     assert.equal(splitResult.transition, "state_conflict");
+
+    const authorizedPaymentId = "sq-authorized-" + fixture;
+    const authorized = await seed("authorized", {
+      status: "paid",
+      providerPaymentId: authorizedPaymentId,
+      providerStatus: "APPROVED",
+      providerMetadata: { flow: "training_square_card" },
+    });
+    assert.equal(await markSquareTrainingCardOrderCaptured(authorized.orderId, appliedPaymentId), false);
+    assert.equal(await markSquareTrainingCardOrderCaptured(authorized.orderId, authorizedPaymentId), true);
+    assert.equal(await markSquareTrainingCardOrderCaptured(authorized.orderId, authorizedPaymentId), true);
+    await db.insert(trainingEnrollments).values({
+      checkoutOrderId: authorized.id, checkoutEmail: "owned@example.invalid",
+      productSnapshot: { id: "owned-training", title: "Owned Training", sku: "OWNED", priceCents: 30000, currency: "CAD" },
+      programSnapshot: { id: "owned-training", slug: "owned-training", title: "Owned Training" },
+    });
+    assert.equal(await getOrIssueTrainingSchedulingTokenForPaidOrder(authorized.orderId, undefined, appliedPaymentId), null);
+    const issued = await getOrIssueTrainingSchedulingTokenForPaidOrder(authorized.orderId, undefined, authorizedPaymentId);
+    assert.ok(issued?.schedulingToken);
+    assert.ok(await findPendingTrainingEnrollmentByToken({ schedulingToken: issued.schedulingToken }));
+    await db.update(checkoutOrders).set({ providerStatus: "UNCOLLECTED" }).where(eq(checkoutOrders.id, authorized.id));
+    assert.equal(await markSquareTrainingCardOrderCaptured(authorized.orderId, authorizedPaymentId), false);
+    const [uncollected] = await db.select().from(checkoutOrders).where(eq(checkoutOrders.id, authorized.id));
+    assert.equal(uncollected.providerStatus, "UNCOLLECTED");
+    assert.equal(await getOrIssueTrainingSchedulingTokenForPaidOrder(authorized.orderId, undefined, authorizedPaymentId), null);
+    assert.equal(await findPendingTrainingEnrollmentByToken({ schedulingToken: issued.schedulingToken }), null);
 
     // ---- not_found: an unknown order reference ----
     const notFound = await finalizeSquareTrainingCardPayment({

@@ -151,20 +151,25 @@ export function getSquareCommerceWebhookEnv(): SquareCommerceWebhookEnv | null {
   };
 }
 
+/** A payment lookup remains available when new commerce checkout is disabled. */
+export function getSquarePaymentReadEnv(): Pick<SquareCommerceEnv, "environment" | "accessToken"> {
+  return {
+    environment: assertSquareEnvironment(),
+    accessToken: assertValue(
+      process.env.SQUARE_ACCESS_TOKEN,
+      "Missing env var: SQUARE_ACCESS_TOKEN",
+    ),
+  };
+}
+
 /**
  * Server-only Square credentials for product and primary-training checkout.
  */
 export function getSquareCommerceEnv(): SquareCommerceEnv | null {
   if (!isSquareCommerceCheckoutEnabled()) return null;
 
-  const environment = assertSquareEnvironment();
-
   return {
-    environment,
-    accessToken: assertValue(
-      process.env.SQUARE_ACCESS_TOKEN,
-      "Missing env var: SQUARE_ACCESS_TOKEN",
-    ),
+    ...getSquarePaymentReadEnv(),
     locationId: assertValue(
       process.env.SQUARE_LOCATION_ID,
       "Missing env var: SQUARE_LOCATION_ID",
