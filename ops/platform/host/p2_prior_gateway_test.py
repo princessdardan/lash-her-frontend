@@ -28,6 +28,50 @@ const send=()=>new Promise(resolve=>{const r=request({hostname:'127.0.0.1',port:
 for await(const line of createInterface({input:process.stdin})){const command=JSON.parse(line);if(command.mode){mode=command.mode;if(mode==='hold'){void send();while(!pending)await new Promise(r=>setTimeout(r,1));}else await send();}if(command.release&&pending){pending.end('{}');pending=null;await new Promise(r=>setTimeout(r,5));}console.log(JSON.stringify(actual.admissionState()));}
 '''
 
+
+class AcceptedC07ReceiptTests(unittest.TestCase):
+    def setUp(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        self.profile = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        fixture = Path(__file__).resolve().parents[3] / 'tests/fixtures/platform/p1-c07-runtime-outcome.json'
+        self.raw = fixture.read_bytes()
+        self.receipt = json.loads(self.raw)
+        self.initial = {'hostMachineId': gate.ACCEPTED_C07_HOST}
+        self.ref = {'candidateSha256': gate.ACCEPTED_C07_CANDIDATE_SHA256,
+                    'runtimeReceiptSha256': gate.ACCEPTED_C07_RUNTIME_SHA256}
+
+    def ready(self, raw=None, receipt=None, initial=None, ref=None, prior_profile=None, expected_profile=True):
+        return gate._retained_runtime_ready(
+            self.receipt if receipt is None else receipt, self.raw if raw is None else raw,
+            self.initial if initial is None else initial, self.ref if ref is None else ref,
+            prior_profile, self.profile if expected_profile is True else expected_profile)
+
+    def test_original_accepted_receipt_bytes_are_supported_without_rewriting(self):
+        self.assertEqual(migrate.file_hash(self.raw), gate.ACCEPTED_C07_RUNTIME_SHA256)
+        self.assertNotIn('environment', self.receipt)
+        self.assertTrue(self.ready())
+        self.assertEqual(self.raw, (Path(__file__).resolve().parents[3] /
+                         'tests/fixtures/platform/p1-c07-runtime-outcome.json').read_bytes())
+
+    def test_same_status_or_semantics_cannot_replace_the_original_receipt(self):
+        for raw in (self.raw.rstrip(b'\n'), json.dumps(self.receipt, indent=2).encode(),
+                    self.raw.replace(b'"preservedRows": 39', b'"preservedRows": 38')):
+            with self.subTest(digest=migrate.file_hash(raw)):
+                self.assertFalse(self.ready(raw=raw, ref={**self.ref, 'runtimeReceiptSha256': migrate.file_hash(raw)}))
+
+    def test_c07_reuse_cannot_cross_host_candidate_or_source_profile(self):
+        self.assertFalse(self.ready(initial={'hostMachineId': '1' * 32}))
+        self.assertFalse(self.ready(ref={**self.ref, 'candidateSha256': '2' * 64}))
+        self.assertFalse(self.ready(prior_profile=self.profile))
+        self.assertFalse(self.ready(expected_profile=None))
+        self.assertFalse(self.ready(receipt={**self.receipt, 'status': 'OTHER_READY'}))
+
+    def test_normal_runtime_receipts_still_require_their_staging_environment(self):
+        for status in ('API_RUNTIME_READY', 'API_RUNTIME_RESTORED_FOR_QUALIFICATION'):
+            self.assertTrue(self.ready(receipt={'status': status, 'environment': 'staging'}, expected_profile=None))
+            self.assertFalse(self.ready(receipt={'status': status, 'environment': 'production'}))
+            self.assertFalse(self.ready(receipt={'status': status}))
+
 class PriorGatewayTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='owned-prior-gateway-');self.root=Path(self.tmp.name).resolve();self.root.chmod(0o700)
