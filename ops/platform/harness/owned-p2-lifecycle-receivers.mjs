@@ -22,26 +22,28 @@ function sign(service, secret) {
   return body + "." + createHmac("sha256", secret).update(body).digest("base64url");
 }
 
-function profiledChildProgram() {
+function profiledChildProgram(guardedFutureGap = false) {
   const source = fileURLToPath(new URL("../../../", import.meta.url));
   const compose = "import sys;from pathlib import Path;root=Path(sys.argv[1]);sys.path.insert(0,str(root/'ops/platform/host'));"
     + "import p2_lifecycle_receiver_negative as receiver;from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile;"
-    + "sys.stdout.buffer.write(receiver.private_program(root,profile))";
-  return execFileSync("python3", ["-I", "-B", "-c", compose, source], { encoding: "utf8", env: { PATH: process.env.PATH },
+    + "sys.stdout.buffer.write(receiver.private_program(root,profile,guarded_future_gap=sys.argv[2]=='true'))";
+  return execFileSync("python3", ["-I", "-B", "-c", compose, source, String(guardedFutureGap)], { encoding: "utf8", env: { PATH: process.env.PATH },
     stdio: ["ignore", "pipe", "pipe"], maxBuffer: 131071, timeout: 10_000 });
 }
 
-function runProfiledChild(program, payload, gateway, ca, ports) {
+function runProfiledChild(program, payload, gateway, ca, ports, expectedGuardedWireSha256 = null) {
   // Only this owned process supplies the preload. The actual composed child
   // still checks fixed paths, TLS names, SNI and trust before sending.
   const preload = `
     import assert from "node:assert/strict";
+    import { createHash } from "node:crypto";
     import fs from "node:fs";
     import https from "node:https";
     import { syncBuiltinESMExports } from "node:module";
     const gateway = Buffer.from(${JSON.stringify(gateway.toString("base64"))}, "base64");
     const ca = Buffer.from(${JSON.stringify(Buffer.from(ca).toString("base64"))}, "base64");
     const ports = ${JSON.stringify(ports)};
+    const expectedGuardedWireSha256 = ${JSON.stringify(expectedGuardedWireSha256)};
     const readFile = fs.readFileSync, request = https.request;
     fs.readFileSync = (path, ...args) => {
       if (path === "/config/gateway.json") return gateway;
@@ -58,7 +60,17 @@ function runProfiledChild(program, payload, gateway, ca, ports) {
       assert.equal(options.rejectUnauthorized, true);
       assert.equal(options.minVersion, "TLSv1.2");
       assert.deepEqual(options.ca, ca);
-      return request({ ...options, hostname: "127.0.0.1", port: ports[options.hostname] }, response);
+      const outbound = request({ ...options, hostname: "127.0.0.1", port: ports[options.hostname] }, response);
+      if (expectedGuardedWireSha256 !== null) {
+        const end = outbound.end;
+        outbound.end = function (body, ...args) {
+          assert.ok(Buffer.isBuffer(body));
+          assert.equal(createHash("sha256").update(body).digest("hex"), expectedGuardedWireSha256);
+          assert.equal(options.headers["x-idempotency-key"], JSON.parse(body).command.commandId);
+          return end.call(this, body, ...args);
+        };
+      }
+      return outbound;
     };
     syncBuiltinESMExports();
   `;
@@ -76,12 +88,14 @@ function runProfiledChild(program, payload, gateway, ca, ports) {
   });
 }
 
-async function rehearseProfiledReceivers(input, gateway, observe, apis, servers, posts) {
+async function rehearseProfiledReceivers(input, gateway, observe, apis, servers, posts, guardedMode) {
   const program = profiledChildProgram();
+  const guardedProgram = guardedMode ? profiledChildProgram(true) : null;
   const ports = Object.fromEntries(services.map(service => [service + "-tls", apis[service].port]));
   const ca = Buffer.from(input.ca);
   const runCase = async (service, caseName, casePorts, responseLost = false) => {
-    const before = await observe(), freshCommandId = caseName === "stale-restore" ? randomUUID() : null;
+    const guarded = caseName === "future-gap";
+    const before = await observe(), freshCommandId = guarded || caseName === "stale-restore" ? randomUUID() : null;
     const requireAbsent = state => {
       if (freshCommandId) assert.ok(Object.values(state.observations).every(row => row.commands.every(command => command.command_id !== freshCommandId)));
     };
@@ -90,7 +104,17 @@ async function rehearseProfiledReceivers(input, gateway, observe, apis, servers,
     const payload = { version: 2, qualificationTargetProfile: profile, environment: "staging", mode: "post", service, case: caseName,
       bindingSha256: hash("owned-profiled-receiver-wire"), witness: before.witness, freshCommandId, secret: input.keys[service],
       gatewayConfigurationSha256: hash(gateway), gatewayCaSha256: hash(ca) };
-    const result = await runProfiledChild(program, payload, gateway, ca, casePorts);
+    let expectedGuardedWireSha256 = null;
+    if (guarded) {
+      assert.ok(guardedProgram);
+      const { commandId, accountVersion, canonicalSha256, issuedAt } = before.witness.command;
+      const wire = { version: 2, command: { version: 1, commandId: freshCommandId, userId: before.witness.userId,
+        accountVersion: accountVersion + 2, action: "suspend", issuedAt }, expectedHead: { commandId, accountVersion, canonicalSha256 } };
+      const canonicalWire = JSON.stringify(wire, (_key, value) => value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+      expectedGuardedWireSha256 = hash(canonicalWire);
+    }
+    const result = await runProfiledChild(guarded ? guardedProgram : program, payload, gateway, ca, casePorts, expectedGuardedWireSha256);
     assert.deepEqual(posts, { ...prior, [service]: prior[service] + 1 });
     const after = await observe();
     verifyReceiverNegativeReadback(before.witness, after.witness, service, caseName, freshCommandId);
@@ -104,8 +128,9 @@ async function rehearseProfiledReceivers(input, gateway, observe, apis, servers,
     const expected = responseLost ? { ...identity, status: "P2_LIFECYCLE_RECEIVER_CASE_FAILED", check: "private-https-failed", ...disposition }
       : { ...identity, status: "P2_LIFECYCLE_RECEIVER_CASE_PASS", service, case: caseName, bindingSha256: payload.bindingSha256,
         witnessSha256, httpStatus, result: outcome, domainStatePreservationRequiresReadback: true, ...disposition };
-    assert.deepEqual(result, { exitCode: responseLost ? 1 : 0, receipt: expected });
+    assert.deepEqual(result, { exitCode: responseLost ? 1 : 0, receipt: expected }, `${service} ${caseName} child receipt mismatch`);
     return { service, case: caseName, actualPostCount: 1, accountAndDomainStateUnchanged: true,
+      ...(guarded && { expectedHeadBound: true, accountVersionOffset: 2, refusedCommandAbsent: true }),
       ...(responseLost ? { childStatus: expected.status, check: expected.check, refusedCommandAbsent: true } : { httpStatus, result: outcome }) };
   };
   const cases = [];
@@ -140,12 +165,19 @@ async function rehearseProfiledReceivers(input, gateway, observe, apis, servers,
   assert.equal(forwarded.response.status, 409);
   assert.match(forwarded.response.cache, /private, no-store/iu);
   assert.equal(JSON.parse(forwarded.response.body).error.code, "ACCOUNT_VERSION_CONFLICT");
+  const guardedFutureGap = guardedProgram === null ? null : { programSha256: hash(guardedProgram), cases: [] };
+  if (guardedFutureGap) {
+    assert.notEqual(guardedFutureGap.programSha256, hash(program));
+    for (const service of services) guardedFutureGap.cases.push(await runCase(service, "future-gap", ports));
+  }
   return { qualificationTargetProfile: profile, programSha256: hash(program), cases,
-    responseLoss: { ...responseLoss, receiverHttpStatus: forwarded.response.status, responseForwarded: false } };
+    responseLoss: { ...responseLoss, receiverHttpStatus: forwarded.response.status, responseForwarded: false },
+    ...(guardedFutureGap && { guardedFutureGap }) };
 }
 
 async function run(input) {
   const clients = [], pools = [], apps = [], servers = [];
+  const guardedMode = process.env.P2_LIFECYCLE_RECEIVER_GUARDED_OWNED_TEST === "true";
   const userId = randomUUID(), commandId = randomUUID(), issuedAt = new Date().toISOString();
   const command = { version: 1, commandId, userId, accountVersion: 1, action: "suspend", issuedAt };
   const admin = {}, readers = {}, apis = {}, checks = [], httpReceipts = [], posts = { course: 0, community: 0 };
@@ -163,7 +195,8 @@ async function run(input) {
       const { drizzle } = require("drizzle-orm/node-postgres"), schema = await load("src/db/schema.ts"), db = drizzle(pool, { schema });
       const repository = (await load("src/accounts/lifecycle-repository.ts")).createAccountLifecycleRepository(db);
       const verifier = (await load("src/accounts/lifecycle-auth.ts")).createAccountLifecycleVerifier({ currentSecret: input.keys[service] });
-      const options = { accountLifecycle: { repository, authVerifier: verifier } };
+      const options = { accountLifecycle: { repository, authVerifier: verifier,
+        ...(guardedMode && { allowSequenceGapVerification: true }) } };
       if (service === "course") options.accountLifecycle.rateLimit = { maxPerMinute: 1000, burst: 1000, scope: "owned-account-lifecycle",
         store: new (await load("src/rate-limit/drizzle-rate-limit-store.ts")).DrizzleRateLimitStore(db) };
       else options.accountLifecycle.rateLimitStore = (await load("src/http/shared-rate-limit.ts")).createSharedRateLimitStore(db);
@@ -227,7 +260,7 @@ async function run(input) {
     }
     checks.push("actual-unauthorized-responses-cannot-qualify-negative-case");
     const profiledWire = process.env.P2_LIFECYCLE_RECEIVER_PROFILED_OWNED_TEST === "true"
-      ? await rehearseProfiledReceivers(input, gateway, observe, apis, servers, posts) : undefined;
+      ? await rehearseProfiledReceivers(input, gateway, observe, apis, servers, posts, guardedMode) : undefined;
     const beforeDelete = await observe();
     const deletion = { ...command, commandId: randomUUID(), accountVersion: 2, action: "delete" };
     for (const service of ["course", "community"]) {

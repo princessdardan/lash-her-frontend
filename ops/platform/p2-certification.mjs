@@ -1369,10 +1369,13 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
         if(candidate.sources[service]?.commit!==manifest.phase2ContractRevisions[service])return false;
         const document=JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${service}-api.json`,import.meta.url)));
         const schema=document.paths['/v1/internal/accounts/commands']?.post?.requestBody?.content?.['application/json']?.schema;
-        return schema?.anyOf?.some(variant=>variant.additionalProperties===false&&
-          exactKeys(variant.properties,['version','command','expectedHead'])&&isDeepStrictEqual(variant.properties.version?.enum,[2])&&
-          isDeepStrictEqual(variant.properties.command?.properties?.version?.enum,[1])&&
-          exactKeys(variant.properties.expectedHead?.properties,['accountVersion','commandId','canonicalSha256']));
+        return schema?.anyOf?.some(variant=>{
+          if(variant.additionalProperties!==false||!exactKeys(variant.properties,['version','command','expectedHead']))return false;
+          const {version,command,expectedHead}=variant.properties;
+          return isDeepStrictEqual(version?.enum,[2])&&command?.additionalProperties===false&&expectedHead?.additionalProperties===false&&
+            isDeepStrictEqual(command.properties?.version?.enum,[1])&&isDeepStrictEqual(command.properties?.action?.enum,['suspend'])&&
+            exactKeys(expectedHead.properties,['accountVersion','commandId','canonicalSha256']);
+        });
       });
       if(!profile||candidate.phase2ContractManifestSha256!==manifest.phase2ContractManifestSha256||!supported){
         throw new Error('P2_CERTIFICATION_GUARDED_RECEIVER_CONTRACT_REQUIRED');
