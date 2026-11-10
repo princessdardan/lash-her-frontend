@@ -42,6 +42,12 @@ test("fixed child initializes from the module directory and binds post-removal t
   assert.equal(plan.phase, "post-removal");
   assert.equal(plan.configurationSha256, current.configurationSha256);
   assert.throws(() => prepareP2IdentityRotationBrowserReadPlan(rotation, "post-removal", deployment, canonical));
+  if (process.env.P2_ROTATION_OWNED_REHEARSAL !== "true") {
+    let launched = false;
+    assert.throws(() => launchP2IdentityRotationBrowserReadRecorder(plan, () => { launched = true; }),
+      /P2_IDENTITY_ROTATION_BROWSER_REFUSED/u);
+    assert.equal(launched, false);
+  }
   const controller = launchP2IdentityRotationBrowserReadRecorder(plan);
   try {
     assert.equal(await controller.initialized(), true);

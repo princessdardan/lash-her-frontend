@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
@@ -18,6 +18,8 @@ import { bindP2ManagedIdentityRotationPlan, p2IdentityRotationOperator, prepareP
 import { prepareP2IdentityRotationReplacementLease, readP2IdentityRotationReplacementCustody,
   readP2IdentityRotationReplacementHostReview, withP2IdentityRotationReplacementLease } from "./p2-identity-key-rotation-replacement.mjs";
 import { runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
+import { recordP2IdentityRotationBrowserReads } from "./p2-identity-key-rotation-browser-recorder.mjs";
+import { runIdentityKeyRotationController } from "./p2-identity-key-rotation-controller.mjs";
 import { P2_IDENTITY_ROTATION_SERVICES } from "./p2-identity-key-rotation-observer.mjs";
 import { readProfiledCurrentOperatorSourceFiles } from "./recreation_source.mjs";
 
@@ -489,9 +491,63 @@ test("managed source dispatch joins the actual controller, fixed wire, reviewed 
     { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
 });
 
-test("owned Linux managed wire arms a real frontend lease and fences after controller loss", {
-  skip: process.env.P2_ROTATION_OWNED_REHEARSAL !== "true", timeout: 300_000,
-}, async t => {
+function ownedOverlapBrowser(postgres, browserProgramSha256, evidence, command, args, options) {
+  assert.equal(command, process.execPath);
+  assert.deepEqual(args.slice(0, 2), ["--input-type=module", "--eval"]);
+  assert.equal(p2NativeHash(args[2]), browserProgramSha256);
+  assert.deepEqual(options.stdio, ["ignore", "ignore", "ignore", "ipc"]);
+  const child = new EventEmitter();
+  let source, ended = false;
+  const exit = (code, signal = null) => {
+    if (ended) return;
+    ended = true;
+    setImmediate(() => child.emit("exit", code, signal));
+  };
+  child.kill = signal => exit(null, signal);
+  child.send = ({ type, input }, callback) => {
+    callback(null);
+    void Promise.resolve().then(async () => {
+      if (type === "initialize") {
+        assert.equal(source, undefined);
+        assert.equal(input.phase, "overlap");
+        assert.equal(input.deploymentId, "dpl_OwnedOverlap");
+        source = input;
+        child.emit("message", { type: "initialized", challenge: source.challenge });
+        return;
+      }
+      assert.equal(input.challenge, source.challenge);
+      if (type === "authenticate") {
+        assert.equal(input.permit.stage, "identity");
+        assert.equal(input.permit.epoch, "2");
+        assert.ok(typeof input.permit.customerCookie === "string" && typeof input.permit.adminCookie === "string" &&
+          input.permit.customerCookie !== input.permit.adminCookie);
+        assert.equal(evidence.operationIds, undefined);
+        evidence.operationIds = await postgres.exerciseAuthentication(input.permit.epoch);
+        child.emit("message", { type: "authenticated", challenge: source.challenge, value: {
+          customerAuthenticated: true, adminFresh: true, observedAt: new Date().toISOString(),
+        } });
+        return;
+      }
+      assert.equal(type, "arm");
+      assert.equal(input.permit.stage, "rotation-admin");
+      assert.equal(input.permit.epoch, "3");
+      assert.ok(!Object.hasOwn(input.permit, "customerCookie"));
+      const page = path => ({ request: { async get(url) {
+        assert.equal(url, `${source.browserOrigin}/api/${path}/courses/${source.courseId}`);
+        evidence.reads.push(path);
+        return { status: () => 200, allHeaders: async () => ({ "cache-control": "private, no-store", "x-request-id": randomUUID() }),
+          body: async () => raw({ course: { id: source.courseId } }) };
+      } } });
+      evidence.sourceRecord = await recordP2IdentityRotationBrowserReads(source, { customer: page("academy"), admin: page("admin") });
+      child.emit("message", { type: "complete", challenge: source.challenge, value: evidence.sourceRecord });
+      exit(0);
+    }).catch(error => { evidence.error = error; child.emit("error", error); exit(1); });
+    return true;
+  };
+  return child;
+}
+
+async function rehearseManagedWire(t, afterOverlap) {
   assert.equal(process.platform, "linux");
   assert.equal(process.getuid(), 0);
   assert.ok(existsSync("/.dockerenv") && Object.values(networkInterfaces()).flat().every(address => address.internal));
@@ -535,7 +591,7 @@ test("owned Linux managed wire arms a real frontend lease and fences after contr
   const compose = readFileSync(join(installed, "ops/platform/compose.yaml"));
   writeFileSync(join(configuration, "compose.yaml"), compose, { mode: 0o600, flag: "wx" });
   const artifacts = Object.fromEntries(["gateway", "courseRuntime", "communityRuntime"].map((name, index) => [name, {
-    image: `ghcr.io/princessdardan/owned-rotation-${name.toLowerCase()}@sha256:${pin("abc"[index])}`,
+    image: `ghcr.io/princessdardan/lash-her-platform-owned-rotation-${name.toLowerCase()}@sha256:${pin("abc"[index])}`,
   }]));
   const services = ["community-api", "course-api", "community-tls", "course-tls", "course-snapshot", "community-worker",
     "course-media", "course-export-cleanup", "course-publisher", "gateway"];
@@ -565,7 +621,8 @@ test("owned Linux managed wire arms a real frontend lease and fences after contr
       vercelToken: "owned-vercel-projection", scopedCronSecret: "owned-cron-projection".repeat(2),
       gatewayHost: new URL(resolveQualificationTargetProfile(profile).gateway.publicOrigin).hostname, operatorProgramSha256,
       rotationBrowserProgramSha256: p2NativeHash(Buffer.concat([browser, Buffer.from("\nawait runP2IdentityRotationBrowserChild();\n")])) };
-    let exited, probe;
+    let exited, probe, overlapSigner;
+    const browserEvidence = { reads: [] };
     const diagnostics = [];
     const dispatch = prepareP2ManagedIdentityRotationDispatch(selected, privateInputs, { verifyEnvironment: postgres.verifyEnvironment },
       { fixture: true, openOwnedChannel: () => {
@@ -584,7 +641,10 @@ test("owned Linux managed wire arms a real frontend lease and fences after contr
     const readReceipt = name => JSON.parse(readFileSync(join(hostAction, name), "utf8"));
     await assert.rejects(runP2IdentityRotationParent(dispatch.plan,
       { confirmation: `staging/${dispatch.plan.actionId}`, transport: dispatch.transport }, {
-        fixture: true, runController: async (_plan, parent, dependencies) => {
+        fixture: true,
+        ...(afterOverlap ? { openOwnedBrowserChild: (...args) =>
+          ownedOverlapBrowser(postgres, privateInputs.rotationBrowserProgramSha256, browserEvidence, ...args) } : {}),
+        runController: async (controllerPlan, parent, dependencies, options) => {
           assert.equal(parent.hostLockHeld, true);
           assert.equal(parent.frontendPhysicalLockHeld, true);
           const current = await dependencies.frontendSession.observeCurrent();
@@ -593,10 +653,51 @@ test("owned Linux managed wire arms a real frontend lease and fences after contr
           assert.equal(readReceipt("p2-identity-rotation-guard-ready.json").status, "P2_MANAGED_ROTATION_GUARD_ARM_READY");
           assert.throws(() => execFileSync("/usr/bin/flock", ["-n", "/run/lock/lash-her-release.lock", "/usr/bin/true"]), { status: 1 });
           probe = dependencies.frontendSession.probe;
-          throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_ARM");
+          if (!afterOverlap) throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_ARM");
+          return runIdentityKeyRotationController(controllerPlan, parent, {
+            ...dependencies,
+            observeFrontendSigner: async phase => {
+              assert.equal(phase, "overlap");
+              const signer = await dependencies.observeFrontendSigner(phase);
+              assert.equal(signer.status, "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED");
+              assert.equal(signer.receiptSha256, p2NativeHash(browserEvidence.sourceRecord));
+              assert.deepEqual((await dependencies.frontendSession.observeCurrent()).admission,
+                { epoch: "3", newWork: false, recovery: false, active: 0, uncertain: 0 });
+              overlapSigner = signer;
+              throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_OVERLAP_SIGNER");
+            },
+          }, options);
         },
       }), { message: "P2_IDENTITY_ROTATION_FAILED_REQUIRES_REVIEW" });
     assert.ok(probe, `Owned broker did not reach ARM (${diagnostics.join(", ")})`);
+    if (afterOverlap) {
+      assert.ifError(browserEvidence.error);
+      assert.ok(overlapSigner, `Owned broker did not retain the overlap signer (${diagnostics.join(", ")})`);
+      assert.deepEqual(browserEvidence.reads, ["academy", "admin"]);
+      const authentication = readReceipt("browser-overlap-authentication-writer-scope.json");
+      const signer = readReceipt("browser-overlap-signer-read-writer-scope.json");
+      for (const scope of [authentication, signer]) {
+        assert.equal(scope.status, "P2_ROTATION_BROWSER_WRITER_SCOPE_CLOSED");
+        assert.equal(scope.closedEpoch, "3");
+        assert.equal(scope.challengeSha256, p2NativeHash(browserEvidence.sourceRecord.challenge));
+        assert.deepEqual(Object.fromEntries(["newWork", "recovery", "active", "uncertain"].map(key => [key, scope[key]])),
+          { newWork: false, recovery: false, active: 0, uncertain: 0 });
+        const receipt = readReceipt(`browser-overlap-${scope.kind}-closed.json`);
+        assert.equal(receipt.writerScopeSha256, p2NativeHash(readFileSync(join(hostAction,
+          `browser-overlap-${scope.kind}-writer-scope.json`))));
+      }
+      assert.equal(authentication.permitEpoch, "2");
+      assert.deepEqual(authentication.operationCounts, { "new-work": 5, recovery: 2 });
+      assert.equal(signer.permitEpoch, "3");
+      assert.deepEqual(signer.operationCounts, { "new-work": 0, recovery: 0 });
+      const { rows } = await postgres.admin.query(`SELECT id::text, epoch::text, kind, state, source_sha,
+        database_role::text AS role_oid, reconciliation_sha256 FROM frontend_admission.operations ORDER BY started_at,id`);
+      assert.deepEqual(rows.map(row => row.id), browserEvidence.operationIds);
+      assert.equal(rows.length, 7);
+      assert.ok(rows.every(row => row.epoch === "2" && row.state === "completed" && row.source_sha === sourceCommit &&
+        row.role_oid === postgres.selected.prepared.plan.producers[0].role.oid && row.reconciliation_sha256 === null));
+      assert.equal(existsSync(join(hostAction, "host-current-only-frontend-attempted.json")), false);
+    }
     assert.equal(exited, 1);
     const failure = readReceipt("p2-independent-guard-outcome.json");
     assert.equal(failure.workerProcessesQuiesced, true);
@@ -606,10 +707,17 @@ test("owned Linux managed wire arms a real frontend lease and fences after contr
     assert.equal(failure.runtimeStopped, true);
     assert.deepEqual(Object.fromEntries(["epoch", "newWork", "recovery", "active", "uncertain", "admissionChanged"]
       .map(key => [key, failure.frontendFence[key]])),
-    { epoch: "1", newWork: false, recovery: false, active: 0, uncertain: 0, admissionChanged: false });
+    { epoch: afterOverlap ? "3" : "1", newWork: false, recovery: false, active: 0, uncertain: 0, admissionChanged: false });
     assert.equal(existsSync(join(hostAction, "p2-identity-key-rotation-outcome.json")), false);
     execFileSync("/usr/bin/flock", ["-n", "/run/lock/lash-her-release.lock", "/usr/bin/true"]);
     const closed = await postgres.observeClosed(probe);
     assert.equal(closed.backendAbsent && closed.migrationLockReleased && closed.nonceLockReleased, true);
+    assert.deepEqual(closed.admission, { epoch: afterOverlap ? "3" : "1", newWork: false, recovery: false, active: 0, uncertain: 0 });
   });
-});
+}
+
+const ownedWireOptions = { skip: process.env.P2_ROTATION_OWNED_REHEARSAL !== "true", timeout: 300_000 };
+test("owned Linux managed wire arms a real frontend lease and fences after controller loss",
+  ownedWireOptions, t => rehearseManagedWire(t, false));
+test("owned Linux managed wire retains overlap signer scopes and fences a real closed epoch",
+  ownedWireOptions, t => rehearseManagedWire(t, true));

@@ -301,7 +301,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         const deployment = await host.frontendDeployment(phase);
         const canonicalObservation = await host.observeCanonicalOrigin(phase);
         const browserPlan = prepareP2IdentityRotationBrowserReadPlan(plan, phase, deployment, canonicalObservation);
-        const controller = launchP2IdentityRotationBrowserReadRecorder(browserPlan);
+        const controller = launchP2IdentityRotationBrowserReadRecorder(browserPlan, fixture ? options.openOwnedBrowserChild : undefined);
         try {
           await controller.initialized();
           await withBrowserWindow(browserPlan, controller, "authentication", 300,

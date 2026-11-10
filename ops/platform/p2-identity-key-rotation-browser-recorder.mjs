@@ -2,7 +2,8 @@
 // isolated browser contexts and accepts no page, storage, token or callback.
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { P2_CANONICAL_BROWSER_ORIGIN, validateP2CanonicalBrowserObservation } from "./p2-canonical-browser-origin.mjs";
@@ -161,8 +162,14 @@ async function childMain() {
   await new Promise((done, fail) => process.send({ type: "complete", challenge: input.challenge, value: record }, error => error ? fail(error) : done())); process.disconnect();
 }
 
-export function launchP2IdentityRotationBrowserReadRecorder(plan) {
+export function launchP2IdentityRotationBrowserReadRecorder(plan, openOwnedBrowserChild) {
   const subjects = plans.get(plan); demand(subjects && process.versions.node.split(".")[0] === "24");
+  // The offline rehearsal supplies only the child. Its IPC, challenge, and artifact validation stay here.
+  if (openOwnedBrowserChild !== undefined) {
+    demand(typeof openOwnedBrowserChild === "function" && process.env.P2_ROTATION_OWNED_REHEARSAL === "true"
+      && process.platform === "linux" && process.getuid() === 0 && existsSync("/.dockerenv")
+      && Object.values(networkInterfaces()).flat().every(address => address.internal));
+  }
   const program = Buffer.concat([readFileSync(sourceFile), Buffer.from(launcher)]); demand(hash(program) === plan.browserProgramSha256);
   const challenge = randomBytes(32).toString("hex"), input = { version: 1, environment: "staging", actionId: plan.actionId, challenge,
     bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256, phase: plan.phase,
@@ -171,7 +178,7 @@ export function launchP2IdentityRotationBrowserReadRecorder(plan) {
     canonicalProtectedWorkloadSha256: plan.canonicalProtectedWorkloadSha256,
     workloadReceiptSha256: plan.workloadReceiptSha256, browserProgramSha256: plan.browserProgramSha256,
     courseId: plan.courseId, customerId: subjects.customerId, adminId: subjects.adminId };
-  const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: dirname(sourceFile), stdio: ["ignore", "ignore", "ignore", "ipc"],
+  const child = (openOwnedBrowserChild ?? spawn)(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: dirname(sourceFile), stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
   let failed = false, ended = false, authenticationStarted = false, readArmed = false, initialized, authenticated, complete;
   const initializedPromise = new Promise((done, fail) => { initialized = { done, fail }; }), authenticatedPromise = new Promise((done, fail) => { authenticated = { done, fail }; }),
