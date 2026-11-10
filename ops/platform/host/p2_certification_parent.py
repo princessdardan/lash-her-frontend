@@ -90,7 +90,7 @@ PROFILED_PLAN_FIELDS = frozenset((
 BROWSER_MODES = frozenset(('auth-preparation', 'browser-pending'))
 SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
 PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
-SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'interactive-browser'}
+SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'mux-readiness', 'interactive-browser'}
 DAY_TWO_WORKLOAD_MODES = SCOPED_MODES | SUSPENSION_MODES
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
@@ -379,6 +379,10 @@ def _require_profiled_scoped_action(mode, plan):
         require(type(value) is dict and set(value) == {'stage', 'subjectBindingSha256'} and
                 type(value['stage']) is str and value['stage'] in ('capture-export-ready', 'capture-delete-baseline', 'verify-delete') and
                 _profiled_digest(value['subjectBindingSha256']), 'P2_PROFILED_SCOPED_PERSISTENCE_SELECTION_REQUIRED')
+        return
+    if mode == 'mux-readiness':
+        from p2_scoped_mux_readiness import validate_selection
+        validate_selection(value)
         return
     provider_pattern = r'[A-Za-z0-9_-]{1,255}'
     asset_events = {'video.asset.created', 'video.asset.ready', 'video.asset.errored', 'video.asset.deleted'}
@@ -2081,7 +2085,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             self.source / 'ops/platform/compose.yaml', **self.profile_arguments())
         course_source = self.selected['sources']['course']['commit']
         from p2_interactive_window import media_upload_selected
-        require((mode != 'mux-callback-recovery' and not media_upload_selected(plan)) or
+        require((mode not in ('mux-callback-recovery', 'mux-readiness') and not media_upload_selected(plan)) or
                 course_source == SCOPED_MUX_COURSE_SOURCE or course_source in PAID_REVOKE_COURSE_SOURCES,
                 'P2_SCOPED_MUX_MANAGED_COURSE_SOURCE_REQUIRED')
         require(mode != 'interactive-browser' or plan['scopedAction']['stage'] != 'paid-revoke' or
@@ -2177,6 +2181,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
 
     def _verify_gateway_boundary(self):
         mode = self.initial['certificationPlan']['mode']
+        if mode == 'mux-readiness':
+            return self.scoped_stage.closed_fence()
         if mode not in ('interactive-browser', 'mux-callback-recovery'):
             return super()._verify_gateway_boundary()
         with self.scoped_gate_lock:
@@ -2275,6 +2281,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         if mode == 'mux-callback-recovery':
             from p2_scoped_mux import P2ScopedMuxStage
             self.scoped_stage = P2ScopedMuxStage(self)
+        if mode == 'mux-readiness':
+            from p2_scoped_mux_readiness import P2ScopedMuxReadinessStage
+            self.scoped_stage = P2ScopedMuxReadinessStage(self)
         if mode == 'lifecycle-persistence':
             from p2_lifecycle_persistence_probe import P2ScopedLifecyclePersistenceStage
             self.scoped_stage = P2ScopedLifecyclePersistenceStage(self)
@@ -2397,6 +2406,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 require(operation == 'scoped-mux-close', 'P2_CERTIFICATION_FIXED_MUX_OPERATION_REQUIRED')
                 result = stage.close()
                 self.scoped_mux_sha256 = None
+        elif mode == 'mux-readiness':
+            require(operation == 'scoped-mux-readiness-observe', 'P2_CERTIFICATION_FIXED_MUX_READINESS_OPERATION_REQUIRED')
+            result = stage.observe()
         else:
             require(mode == 'lifecycle-persistence' and operation == 'scoped-persistence-observe',
                     'P2_CERTIFICATION_FIXED_PERSISTENCE_OPERATION_REQUIRED')

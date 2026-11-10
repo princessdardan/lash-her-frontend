@@ -208,6 +208,29 @@ class SourceClosureTests(unittest.TestCase):
         plan = {**selected, **self.make(manifest)}
         self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
 
+    def test_profiled_mux_readiness_requires_fixed_query_and_transport_sources(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+
+        scoped = {'ops/platform/host/p2_scoped_mux_readiness.py', 'ops/platform/host/p2_scoped_mux.py',
+                  'ops/platform/p2-certification-transport.mjs', 'ops/platform/host/p2_day_two_workload.py'}
+        manifest = dict(self.manifest)
+        for name in (PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | scoped) - set(manifest):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned readiness source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {
+            'mode': PROFILED_CERTIFICATION_MODE,
+            'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+            'certificationPlan': {'mode': 'mux-readiness'},
+        }
+        for missing in scoped:
+            incomplete = {key: value for key, value in manifest.items() if key != missing}
+            with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                verify_profiled_current_source_closure({**selected, **self.make(incomplete)}, self.root)
+        plan = {**selected, **self.make(manifest)}
+        self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
+
     def test_stalled_renewal_source_closure_requires_ingress_workload_and_fence_transport(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)

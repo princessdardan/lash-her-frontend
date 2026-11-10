@@ -69,12 +69,13 @@ try{
 }finally{await client.end().catch(()=>{});}
 '''
 
-_ONE_SHOT_COURSE_QUERY = r'''import { Client } from "/app/node_modules/pg/esm/index.mjs";
+def profiled_course_query(select):
+    return r'''import { Client } from "/app/node_modules/pg/esm/index.mjs";
 import { directMigrationConnection, hasVerifiedMigrationTransport } from "/app/dist-migration/src/db/migration-lineage.js";
 try {
  const chunks=[];let length=0;
  for await(const chunk of process.stdin){length+=chunk.length;if(length>16384)throw Error();chunks.push(chunk);}
- const {attemptId,connectionUrl,target}=JSON.parse(Buffer.concat(chunks));
+ const {parameters,connectionUrl,target}=JSON.parse(Buffer.concat(chunks));
  if(new URL(connectionUrl).search!=="?sslmode=verify-full")throw Error();
  const client=new Client({...directMigrationConnection(connectionUrl,target),enableChannelBinding:true,
     options:"-c default_transaction_read_only=on -c search_path=pg_catalog -c statement_timeout=10000 -c lock_timeout=2000"});
@@ -88,7 +89,17 @@ try {
         current_setting('server_version_num')::int AS server_version_num,
         current_setting('transaction_read_only') AS read_only,current_setting('search_path') AS search_path`)).rows;
     if(identity?.read_only!=="on"||identity.search_path!=="pg_catalog")throw Error();
-    ({rows}=await client.query(`SELECT a.id::text AS "attemptId",l.id::text AS "lessonId",c.id::text AS "courseId",
+    ({rows}=await client.query(`''' + select + r'''`,parameters));
+    await client.query("ROLLBACK");
+    if(!hasVerifiedMigrationTransport(client,target.host))throw Error();
+ }finally{await client.end();}
+ if(disconnected)throw Error();
+ process.stdout.write(JSON.stringify({identity,rows})+"\n");
+}catch{process.stderr.write("P2_SCOPED_MUX_COURSE_QUERY_REFUSED\n");process.exitCode=1;}
+'''
+
+
+_ONE_SHOT_COURSE_QUERY = profiled_course_query('''SELECT a.id::text AS "attemptId",l.id::text AS "lessonId",c.id::text AS "courseId",
         c.revision AS "courseRevision",a.generation,a.managed_by_course AS "managedByCourse",
         a.provider_environment_id AS "environmentId",a.mux_upload_id AS "uploadId",a.mux_asset_id AS "assetId",
         a.status,a.is_current AS "isCurrent",a.deleted_at::text AS "deletedAt",a.superseded_at::text AS "supersededAt",
@@ -97,14 +108,7 @@ try {
       FROM public.video_assets a JOIN public.lessons l ON l.id=a.lesson_id
       JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
       WHERE a.id=$1::uuid AND c.status='draft' AND l.archived_at IS NULL AND m.archived_at IS NULL
-        AND NOT EXISTS(SELECT 1 FROM public.video_assets later WHERE later.lesson_id=l.id AND later.generation>a.generation)`,[attemptId]));
-    await client.query("ROLLBACK");
-    if(!hasVerifiedMigrationTransport(client,target.host))throw Error();
- }finally{await client.end();}
- if(disconnected)throw Error();
- process.stdout.write(JSON.stringify({identity,rows})+"\n");
-}catch{process.stderr.write("P2_SCOPED_MUX_COURSE_QUERY_REFUSED\n");process.exitCode=1;}
-'''
+        AND NOT EXISTS(SELECT 1 FROM public.video_assets later WHERE later.lesson_id=l.id AND later.generation>a.generation)''')
 
 
 def _require(condition, code):
@@ -139,6 +143,53 @@ def _write_all(descriptor, raw):
         _require(written > 0, "P2_SCOPED_MUX_ADMISSION_WRITE_REQUIRED")
         view = view[written:]
     os.fsync(descriptor)
+
+
+def _run_course_query(scope, container, args, environment, inputs):
+    payload = json.dumps(inputs)
+    _require(len(payload.encode()) <= _MAX_OBSERVATION_BYTES, "P2_SCOPED_MUX_COURSE_QUERY_INPUT_REQUIRED")
+    try:
+        result = scope.run(args, env=environment, input=payload, text=True,
+                           timeout=30, check=True, capture_output=True)
+        _require(not result.stderr and 0 < len(result.stdout.encode()) <= _MAX_OBSERVATION_BYTES,
+                 "P2_SCOPED_MUX_COURSE_QUERY_REQUIRED")
+        return result.stdout
+    finally:
+        scope.run(["docker", "rm", "--force", container], env=runtime.SAFE_ENV, timeout=30,
+                  check=False, capture_output=True, text=True)
+        remaining = scope.run(["docker", "container", "ls", "--all", "--filter", "name=^/" + container + "$",
+                               "--format", "{{.ID}}"], env=runtime.SAFE_ENV, timeout=15,
+                              check=True, capture_output=True, text=True)
+        _require(not remaining.stdout, "P2_SCOPED_MUX_COURSE_QUERY_CONTAINER_REMAINS")
+
+
+def run_profiled_course_query(scope, image, target, credential, script, parameters):
+    from qualification_target_profile import decode_qualification_target_json
+
+    container = "lash-p2-certification-api-check-course-" + uuid.uuid4().hex
+    args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
+            "--interactive", "--network", "bridge", "--read-only", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
+            "--cpus", "0.5", "--pids-limit", "64", "--entrypoint", "node", image, "--input-type=module",
+            "--eval", script]
+    raw = _run_course_query(scope, container, args, runtime.SAFE_ENV,
+                            {"parameters": parameters, "connectionUrl": credential, "target": target})
+    value = decode_qualification_target_json(raw, "carrier")
+    _require(type(value) is dict and set(value) == {"identity", "rows"}, "P2_SCOPED_MUX_COURSE_QUERY_REQUIRED")
+    return value
+
+
+def course_query_row(value, target, *, profiled):
+    identity, rows = value.get("identity"), value.get("rows")
+    identity_keys = {"user", "database", "server_version_num"}
+    if profiled:
+        identity_keys |= {"read_only", "search_path"}
+    _require(type(identity) is dict and set(identity) == identity_keys and
+             identity["user"] == target["user"] and identity["database"] == target["database"] and
+             type(identity["server_version_num"]) is int and identity["server_version_num"] // 10000 == target["serverMajor"] and
+             (not profiled or identity["read_only"] == "on" and identity["search_path"] == "pg_catalog") and
+             type(rows) is list and len(rows) == 1, "P2_SCOPED_MUX_COURSE_DATABASE_REQUIRED")
+    return identity, rows[0]
 
 
 class P2ScopedMuxStage:
@@ -332,77 +383,38 @@ class P2ScopedMuxStage:
     def _managed_attempt(self, phase="current", *, asset_id=None, prior=None):
         _require(phase in ("before", "after", "current"), "P2_SCOPED_MUX_MANAGED_PHASE_REQUIRED")
         info = self.broker.jobs["course"]
-        job = info["job"]
+        target = info["job"]["target"]
         credential = self.broker.initial["credentials"]["COURSE_STAGING_DATABASE_URL"]
         _require(type(credential) is str and credential and info["image"] == self.broker.selected["artifacts"]["courseMigration"]["image"],
                  "P2_SCOPED_MUX_COURSE_IMAGE_REQUIRED")
-        payload = {"attemptId": self.action["attemptId"]}
         if self._one_shot:
-            container = "lash-p2-certification-api-check-course-" + uuid.uuid4().hex
-            args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
-                    "--interactive", "--network", "bridge", "--read-only", "--cap-drop", "ALL",
-                    "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
-                    "--cpus", "0.5", "--pids-limit", "64", "--entrypoint", "node", info["image"], "--input-type=module",
-                    "--eval", _ONE_SHOT_COURSE_QUERY]
-            environment = runtime.SAFE_ENV
-            payload.update(connectionUrl=credential, target=job["target"])
+            value = run_profiled_course_query(self.scope, info["image"], target, credential,
+                                              _ONE_SHOT_COURSE_QUERY, [self.action["attemptId"]])
         else:
             container = "lash-p2-scoped-mux-course-" + uuid.uuid4().hex
             args = ["docker", "run", "--rm", "--name", container, "--interactive", "--network", "host", "--read-only",
-                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--pids-limit", "64",
+                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--memory", "256m", "--pids-limit", "64",
                     "--env", "STAGING_DATABASE_URL", "--entrypoint", "node", info["image"], "--input-type=module", "--eval", _COURSE_QUERY]
             environment = {**runtime.SAFE_ENV, "STAGING_DATABASE_URL": credential}
-        payload = json.dumps(payload)
-        _require(len(payload.encode()) <= _MAX_OBSERVATION_BYTES, "P2_SCOPED_MUX_COURSE_QUERY_INPUT_REQUIRED")
-        try:
-            result = self.scope.run(args, env=environment, input=payload, text=True,
-                                    timeout=30, check=True, capture_output=True)
-            _require(not result.stderr and 0 < len(result.stdout.encode()) <= _MAX_OBSERVATION_BYTES,
-                     "P2_SCOPED_MUX_COURSE_QUERY_REQUIRED")
-            if self._one_shot:
-                from qualification_target_profile import decode_qualification_target_json
-
-                value = decode_qualification_target_json(result.stdout, "carrier")
-                _require(type(value) is dict and set(value) == {"identity", "rows"},
-                         "P2_SCOPED_MUX_COURSE_QUERY_REQUIRED")
-            else:
-                value = json.loads(result.stdout)
-            target = job["target"]
-            identity = value.get("identity")
-            rows = value.get("rows")
-            identity_keys = {"user", "database", "server_version_num"}
-            if self._one_shot:
-                identity_keys |= {"read_only", "search_path"}
-            _require(type(identity) is dict and set(identity) == identity_keys and
-                     identity["user"] == target["user"] and identity["database"] == target["database"] and
-                     type(identity["server_version_num"]) is int and identity["server_version_num"] // 10000 == target["serverMajor"] and
-                     (not self._one_shot or identity["read_only"] == "on" and identity["search_path"] == "pg_catalog") and
-                     type(rows) is list and len(rows) == 1, "P2_SCOPED_MUX_COURSE_DATABASE_REQUIRED")
-            row = rows[0]
-            keys = {"attemptId", "generation", "managedByCourse", "environmentId", "uploadId", "assetId", "status", "isCurrent", "deletedAt"}
-            if self._one_shot:
-                keys |= {"courseId", "lessonId", "courseRevision", "supersededAt", "recoveryAttempts", "recoveryLeasePresent", "wakeAt", "lastErrorCode"}
-            _require(type(row) is dict and set(row) == keys and row["attemptId"] == self.action["attemptId"] and
-                     type(row["generation"]) is int and row["generation"] == self.action["generation"] and row["managedByCourse"] is True and
-                     row["environmentId"] == self.action["environmentId"] and row["uploadId"] == self.action["uploadId"] and
-                     row["status"] in _STATUSES and type(row["isCurrent"]) is bool and row["deletedAt"] is None,
-                     "P2_SCOPED_MUX_MANAGED_ATTEMPT_REQUIRED")
-            if self._one_shot:
-                self._one_shot_managed_attempt(row, phase, asset_id, prior)
-            else:
-                asset_matches = row["assetId"] == self.action["assetId"]
-                if self.action["eventType"] == _UPLOAD_EVENT and phase == "after" and self.action["assetId"] is None:
-                    asset_matches = _provider(row["assetId"])
-                _require(asset_matches, "P2_SCOPED_MUX_MANAGED_ATTEMPT_REQUIRED")
-            return {"row": row, "rowSha256": _hash(_canonical(row)),
-                    "databaseIdentitySha256": _hash(_canonical(identity))}
-        finally:
-            self.scope.run(["docker", "rm", "--force", container], env=runtime.SAFE_ENV, timeout=30,
-                           check=False, capture_output=True, text=True)
-            remaining = self.scope.run(["docker", "container", "ls", "--all", "--filter", "name=^/" + container + "$",
-                                        "--format", "{{.ID}}"], env=runtime.SAFE_ENV, timeout=15,
-                                       check=True, capture_output=True, text=True)
-            _require(not remaining.stdout, "P2_SCOPED_MUX_COURSE_QUERY_CONTAINER_REMAINS")
+            value = json.loads(_run_course_query(self.scope, container, args, environment, {"attemptId": self.action["attemptId"]}))
+        identity, row = course_query_row(value, target, profiled=self._one_shot)
+        keys = {"attemptId", "generation", "managedByCourse", "environmentId", "uploadId", "assetId", "status", "isCurrent", "deletedAt"}
+        if self._one_shot:
+            keys |= {"courseId", "lessonId", "courseRevision", "supersededAt", "recoveryAttempts", "recoveryLeasePresent", "wakeAt", "lastErrorCode"}
+        _require(type(row) is dict and set(row) == keys and row["attemptId"] == self.action["attemptId"] and
+                 type(row["generation"]) is int and row["generation"] == self.action["generation"] and row["managedByCourse"] is True and
+                 row["environmentId"] == self.action["environmentId"] and row["uploadId"] == self.action["uploadId"] and
+                 row["status"] in _STATUSES and type(row["isCurrent"]) is bool and row["deletedAt"] is None,
+                 "P2_SCOPED_MUX_MANAGED_ATTEMPT_REQUIRED")
+        if self._one_shot:
+            self._one_shot_managed_attempt(row, phase, asset_id, prior)
+        else:
+            asset_matches = row["assetId"] == self.action["assetId"]
+            if self.action["eventType"] == _UPLOAD_EVENT and phase == "after" and self.action["assetId"] is None:
+                asset_matches = _provider(row["assetId"])
+            _require(asset_matches, "P2_SCOPED_MUX_MANAGED_ATTEMPT_REQUIRED")
+        return {"row": row, "rowSha256": _hash(_canonical(row)),
+                "databaseIdentitySha256": _hash(_canonical(identity))}
 
     def _one_shot_managed_attempt(self, row, phase, asset_id, prior):
         reservation = self._reservation

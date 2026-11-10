@@ -160,7 +160,7 @@ function admissionPolicy(plan,value,initial,interrupted){
       'current-interrupted-closed');
     return;
   }
-  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native','export-cleanup','mux-callback-recovery','lifecycle-persistence',interactiveMode].includes(plan.mode)&&
+  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native','export-cleanup','mux-callback-recovery','mux-readiness','lifecycle-persistence',interactiveMode].includes(plan.mode)&&
     ['qualified-ready','already-closed'].includes(plan.startState)&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&/^[1-9][0-9]{0,17}$/u.test(value.epoch)&&
     typeof value.newWork==='boolean'&&typeof value.recovery==='boolean'&&
     Number.isInteger(value.active)&&value.active>=0&&Number.isInteger(value.uncertain)&&value.uncertain>=0);
@@ -171,7 +171,7 @@ function admissionPolicy(plan,value,initial,interrupted){
       (!initial||delta===0n)&&(delta!==0n||value.active===0&&value.uncertain===0));
     return;
   }
-  if(['export-cleanup','mux-callback-recovery','lifecycle-persistence'].includes(plan.mode)){
+  if(['export-cleanup','mux-callback-recovery','mux-readiness','lifecycle-persistence'].includes(plan.mode)){
     const cleanup=plan.mode==='export-cleanup';
     demand(plan.version===2&&plan.startState==='already-closed'&&plan.nativePlan.purpose==='scoped-certification-control-only'&&
       plan.nativePlan.initialEpoch===plan.initialEpoch&&delta>=0n&&delta<=(cleanup?2n:0n)&&value.newWork===false&&

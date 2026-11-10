@@ -225,7 +225,7 @@ async function child(){
       assert.match(JSON.parse(JSON.stringify(joined)).witness.operations[0].completed_at,/^\d{4}-\d{2}-\d{2}T/u);
       await verify();
     },profile);
-    for(const mode of ['mux-callback-recovery','lifecycle-persistence']){
+    for(const mode of ['mux-callback-recovery','mux-readiness','lifecycle-persistence']){
       const closed={...scoped,mode,initialEpoch:'7',nativePlan:{...scoped.nativePlan,initialEpoch:'7'}};
       await withP2CertificationFrontendSession(profiled,closed,deps,async({client,verify})=>{
         const read=()=>readP2CertificationCurrent(client,profiled,closed,verify,false,profile);

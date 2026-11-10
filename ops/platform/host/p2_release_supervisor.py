@@ -1322,6 +1322,7 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
     scoped_status = {
         'export-cleanup': 'P2_SCOPED_EXPORT_CLEANUP_JOINED',
         'mux-callback-recovery': 'P2_SCOPED_MUX_CLOSED',
+        'mux-readiness': 'P2_SCOPED_MUX_READY_OBSERVED',
         'lifecycle-persistence': {
             'capture-export-ready': 'P2_LIFECYCLE_EXPORT_READY_CAPTURED',
             'capture-delete-baseline': 'P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED',
@@ -1346,6 +1347,11 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
                 gateway.get('valid') is True and gateway.get('version') == 1 and
                 frontend['epoch'] == str(epoch),
                 'P2_PROFILED_CERTIFICATION_GUARD_SCOPED_CASE_REFUSED')
+        if plan['mode'] == 'mux-readiness':
+            from p2_scoped_mux_readiness import require_receipt
+            require_receipt(plan, case, gateway)
+            require(case['courseMigrationImage'] == initial['candidate']['artifacts']['courseMigration']['image'],
+                    'P2_PROFILED_CERTIFICATION_GUARD_MUX_READINESS_IMAGE_REFUSED')
         if plan['mode'] == 'interactive-browser':
             program_sha = verify_browser_controller(initial, source or Path(__file__).resolve().parents[3])
             evidence = decode_qualification_target_json(

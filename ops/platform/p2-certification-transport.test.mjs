@@ -28,6 +28,10 @@ for raw in sys.stdin:
   assert json.loads(base64.b64decode(p['receipt']))['status']=='P2_CERTIFICATION_DATABASE_CURRENT'
   if sys.argv[2]=='death':os._exit(31)
   value.update(status='CERTIFICATION_ARMED',receipt={'status':'P2_CERTIFICATION_CURRENT_READY'})
+ elif op=='scoped-mux-readiness-observe':
+  assert initial['certificationPlan']['mode']=='mux-readiness' and set(p)=={'id','operation'}
+  value.update(status='CERTIFICATION_SCOPED_OBSERVED',receipt={'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile'],
+    'status':'P2_SCOPED_MUX_READY_OBSERVED'})
  elif op=='certification-gateway-stage':value.update(status='CERTIFICATION_GATEWAY_OBSERVED',receipt={'gateway':{'newWork':p['stage']=='browser','recovery':False}})
  elif op=='worker-ready':
   assert certification_mode=='direct-worker';value.update(status='CERTIFICATION_WORKER_READY',receipt={'bindingSha256':initial['certificationPlan']['workerPlanSha256']})
@@ -58,7 +62,7 @@ function fixture(mode='ready',profiled=false,certificationMode='contain-native')
  if(profiled)Object.assign(initial,{mode:'p2-bounded-certification-profiled-current',version:2,qualificationTargetProfile:profile,
   certificationPlan:{mode:certificationMode,version:2,qualificationTargetProfile:profile,certificationActionId:initial.certificationActionId,
     nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},planSha256}});
- if(profiled&&usesP2ProfiledDayTwoAuthority(certificationMode))initial.scopedCronSecret='fixture-authority-stdin-only';
+ if(profiled&&(usesP2ProfiledDayTwoAuthority(certificationMode)||certificationMode==='mux-readiness'))initial.scopedCronSecret='fixture-authority-stdin-only';
  if(profiled&&['native-window','fault-before-upstream'].includes(certificationMode))initial.privateProbe={fixture:'retained'};
  const lock=join(directory,'actual.lock');let captured;
  const bind=(packet=initial)=>p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},packet,directory,{expectedProfile:profiled?profile:undefined,launch(executable,args,options){captured={executable,args,options};return spawn('python3',['-I','-u','-c',program,lock,mode],options);}});
@@ -172,6 +176,22 @@ test('actual child pipe/flock joins only exact certification terminal and keeps 
   assert.equal(actual,'joined');assert.deepEqual(JSON.parse(readFileSync(join(f.directory,'p2-host-certification-outcome.json'))),f.outcome);
   assert.equal(JSON.stringify(f.getCaptured()).includes('fixture-private-stdin-only'),false);
   assert.equal(f.getCaptured().executable,'/usr/bin/ssh');assert.ok(f.getCaptured().args.some(value=>value.includes('p2_certification_parent.py')));
+ }finally{f.cleanup();}
+});
+
+test('profiled Mux readiness transport permits only its single scoped read command',async()=>{
+ const f=fixture('mux-readiness',true,'mux-readiness');try{
+  await f.factory(async(_verify,_signal,host)=>{
+   await assert.rejects(host.scopedStage('scoped-mux-readiness-observe'));
+   await host.arm({receipt:f.receipt,probe:{}});
+   await assert.rejects(host.scopedStage('scoped-mux-open'));
+   await assert.rejects(host.scopedStage('scoped-mux-observe'));
+   const receipt=await host.scopedStage('scoped-mux-readiness-observe');
+   assert.equal(receipt.status,'P2_SCOPED_MUX_READY_OBSERVED');
+   await host.prepareClose(receipt);
+   await assert.rejects(host.scopedStage('scoped-mux-readiness-observe'));
+   await host.finish(f.outcome);
+  });
  }finally{f.cleanup();}
 });
 

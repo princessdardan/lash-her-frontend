@@ -131,6 +131,8 @@ def verify_profiled_current_source_closure(initial, root):
             'mux-callback-recovery': {'ops/platform/host/p2_scoped_mux.py', 'ops/gateway/admission.mjs',
                                       'ops/gateway/assessment-attempt.mjs', 'ops/gateway/lesson-resume-position.mjs',
                                       'ops/gateway/private-tls.mjs'},
+            'mux-readiness': {'ops/platform/host/p2_scoped_mux_readiness.py', 'ops/platform/host/p2_scoped_mux.py',
+                              'ops/platform/p2-certification-transport.mjs'},
             'lifecycle-persistence': {'ops/platform/host/p2_lifecycle_persistence_probe.py'},
             'interactive-browser': {'ops/platform/host/p2_interactive_window.py', 'ops/platform/host/p2_interactive_ingress.py',
                                     'ops/gateway/admission.mjs', 'ops/gateway/assessment-attempt.mjs',
