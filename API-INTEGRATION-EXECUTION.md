@@ -565,3 +565,9 @@ Replacement CI run 42337886155 passed all ten jobs at `44dd0f53`. The [terminal 
 ## Frontend binding preflight source qualification
 
 Exact source `f78cf3af` passed all ten CI jobs, with 582 browser passes, 159 skips and zero retries. The new release parent verifies the required staging environment variable names before arming. Its evidence is limited to metadata. The [qualification record](docs/api-integration/baselines/2026-11-07-p2q-f78-ci/README.md) links the original artifact digests and distinguishes owned PostgreSQL and process fixtures from actual staging evidence.
+
+## Replacement target inventory and lifecycle source validation — November 9, 2026
+
+The read-only Vercel Marketplace inventory returned five Neon resources in the staging team. It identified the existing frontend, Course and Community staging stores. Replacement selection still requires the exact Neon project, branch and direct endpoint, the reviewed PostgreSQL identity and the supervised empty-target receipt. The Marketplace inventory did not establish those facts. [Inventory evidence](docs/api-integration/baselines/2026-11-09-p2-replacement-neon-inventory.json).
+
+Source `debe6b9f` aligns the S13 held suspension reader with the profiled source manifest encoding and preserves legacy verification. All 38 focused suspension, timing and worker tests passed. S13 still requires actual outstanding-token and playback timing evidence and the stalled-renewal witness. S06 still requires a replacement-aware private negative-probe and rotation path. Both cases remain open. [Deployed evidence matrix](docs/api-integration/p2-staging-certification.md#execution-order-and-evidence-matrix).
