@@ -1,0 +1,59 @@
+✔ private probe rejects unknown fields, production, malformed subjects/resources and missing current keys (2.278667ms)
+✔ fixed HTTP plan starts and ends with real positive baselines and includes completed-attempt isolation (3.477666ms)
+✖ actual Node HTTP plans match the independent host protocol for current-only and overlapping keys (49.119333ms)
+✔ deployed HTTP selection is a fixed source check, not an arbitrary path or proxy (1.939375ms)
+✔ fixed TLS client rejects all unreviewed paths before issuing a request (0.344209ms)
+✔ actual verifier observation rejects foreign runtime targets and mismatched private configuration before importing modules (0.401666ms)
+✔ private CLI payload failures print only bounded JSON and never raw error, token or input bytes (111.188375ms)
+﹣ owned actual API module/TLS fixture: verifiers (0.099917ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: verifiers-current-only (0.13125ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: https (0.1555ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: https-current-only (0.107916ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: single-check (0.087459ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: all-401 (0.048208ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: all-404 (0.034625ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: redirect (0.022084ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: oversized (0.027209ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: untrusted-ca (0.024459ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: missing-attempt (0.025792ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+﹣ owned actual API module/TLS fixture: leak-attempt (0.01725ms) # explicit qualified Course/Community runtime directories required; no deployed evidence inferred
+ℹ tests 19
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 12
+ℹ todo 0
+ℹ duration_ms 231.511833
+
+✖ failing tests:
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:39:1
+✖ actual Node HTTP plans match the independent host protocol for current-only and overlapping keys (49.119333ms)
+  AssertionError [ERR_ASSERTION]: Traceback (most recent call last):
+    File "<string>", line 1, in <module>
+      import sys,json; sys.path.insert(0,sys.argv[1]); import p2_identity_negative_probe as p; v=json.load(sys.stdin); p._validate_receipt(v['receipt'],v['binding'],v['mode'],v['check'],v['previous'],v['serviceKeyCount']); print('HOST_PROTOCOL_VERIFIED')
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/host/p2_identity_negative_probe.py", line 30
+      "release.py", "staging_state.py", "docker_inspect.py")))))
+                                                               ^
+  SyntaxError: unmatched ')'
+
+
+  1 !== 0
+
+      at validateHostReceipt (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:17:40)
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:43:5)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

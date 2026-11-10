@@ -1,0 +1,493 @@
+Owned authoring evidence: /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/test-results/course-authoring-browser/run-Iy8l4i
+frontend.log:
+l failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.5ms, application-code: 1.4ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.module.css:2:88
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.module.css
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.module.css:2:83
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.6ms, application-code: 1.4ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.module.css:2:88
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.module.css
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.module.css:2:83
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.6ms, application-code: 1.3ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.module.css:2:88
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.module.css
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.module.css:2:83
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.4ms, application-code: 1.4ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.module.css:2:88
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.module.css
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.module.css:2:83
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 6ms (next.js: 3ms, proxy.ts: 1.7ms, application-code: 1.6ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.module.css:2:88
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.module.css
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.module.css:2:83
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.4ms, application-code: 1.4ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.module.css:2:88
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.module.css
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.module.css:2:83
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'
+  [90m1 |[0m ...
+[31m[1m>[0m [90m2 |[0m ...t-style: normal; font-weight: [35m100[0m [35m900[0m; src: url(@vercel/turbopack-next/internal/font/goo...
+  [90m  |[0m                                                [31m[1m^[0m
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+  [90m5 |[0m ...
+
+request should be cloneable
+
+Debug info:
+- Execution of *<ModuleAssetContext as AssetContext>::process_resolve_result failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+Error while looking up import map: request should be cloneable
+
+Debug info:
+- Execution of <NextFontGoogleFontFileReplacer as ImportMappingReplacement>::result failed
+- Execution of FetchClientConfig::fetch failed
+- Execution of FetchClientConfig::fetch_inner failed
+- request should be cloneable
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.module.css
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2.0ms, proxy.ts: 1.7ms, application-code: 1.3ms)
+[?25h
+
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:482
+      throw new Error("Owned server exited before readiness");
+            ^
+
+Error: Owned server exited before readiness
+    at ready (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:482:13)
+    at async file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:303:3
+
+Node.js v24.18.0

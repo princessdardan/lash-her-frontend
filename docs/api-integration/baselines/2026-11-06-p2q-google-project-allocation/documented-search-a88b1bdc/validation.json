@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "status": "GOOGLE_SDK_INPUT_ISOLATION_SOURCE_AND_MODEL_VERIFIED",
+  "sourceCommit": "a88b1bdc8edfa8aee3d8a7291fd471491e82cf7c",
+  "previousReviewedSourceCommit": "c3a5d09d3eecfe80faa874829a06453fc283d4fa",
+  "originalEvidenceCommit": "2b74722260558ae87181ca391e889743b08d3ab8",
+  "sourceFiles": {
+    "ops/platform/p2q-google-project-allocation.mjs": {
+      "sha256": "f62cfe9f90a6d38a9b5d3ceb8db46d60d77a458e6a43e1db88a496f6b6315000",
+      "bytes": 34771
+    },
+    "ops/platform/p2q-first-install.test.mjs": {
+      "sha256": "7ec4e3c5e99a8bb05764c60476f16e1cfe63dcd98b717db57c58446949884b2b",
+      "bytes": 41644
+    }
+  },
+  "combinedSourceBytes": 76415,
+  "sourceBudget": 98304,
+  "trackedOpsFiles": 512,
+  "trackedOpsBytes": 40930237,
+  "sourceCaps": {
+    "files": 512,
+    "bytes": 41000000
+  },
+  "verification": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "groupsPassed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "existingFirstInstallGroups": 4,
+    "googleSourceModelGroups": 26,
+    "testCommand": "node --test ops/platform/p2q-first-install.test.mjs",
+    "lintCommand": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-google-project-allocation.mjs ops/platform/p2q-first-install.test.mjs",
+    "lintExit": 0,
+    "diffCheck": true,
+    "realPrivateFilesystem": true,
+    "realStdlibNetrcCommentParse": true,
+    "actualSdkAuthOrProvider": false,
+    "sdkCliHttpsModeled": true,
+    "sourceRootUidProjected": true,
+    "independentReview": {
+      "status": "CLEAR",
+      "sourceCommit": "a88b1bdc8edfa8aee3d8a7291fd471491e82cf7c",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "report": "independent-review.json",
+      "sha256": "516ed217c8eb4556903df0e234912f3805f1d158ffa6ca5efa10d8430d00e4f3"
+    },
+    "actualSourceCliDispatchWithModeledSpawn": true,
+    "trustedInputDriftBeforeModeledSpawn": true
+  },
+  "inputIsolation": {
+    "netrc": "fixed source-owned comment0600 under case; original physical identity retained",
+    "sslCertDirectory": "empty source-owned0700 under case; original physical identity retained",
+    "opensslConfig": "/dev/null fixed character-device baseline",
+    "opensslModules": "fixed empty <pinnedPythonRoot>/lib/openssl/ossl-modules; full tool closure includes directory records",
+    "trustedCa": "fixed SDK lib/third_party/certifi/cacert.pem; full pinned tree plus root-owned regular/nofollow checks",
+    "caConsumers": [
+      "SSL_CERT_FILE",
+      "REQUESTS_CA_BUNDLE",
+      "HTTPLIB2_CA_CERTS",
+      "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE"
+    ],
+    "sslValidationDisable": "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION=false",
+    "homeOrCodexHomeOverride": false,
+    "ambientCryptoNetrcCaOverrides": "refused before effects; never forwarded",
+    "fileCredentialContentsOrHashesInCommonOutput": false
+  },
+  "qualification": {
+    "casesRegistered": 0,
+    "allocationAuthorityIssued": false,
+    "firstUseAuthorized": false,
+    "administrativeBoundaryComplete": false,
+    "recoveryBoundaryComplete": false,
+    "profileRegistered": false,
+    "oauthClientCreated": false,
+    "actualUid0Stage": false,
+    "realGoogleSdkAuthentication": false,
+    "actualProjectIamProviderOperations": false,
+    "postCrashHolderRecovery": "OPEN"
+  },
+  "productionSourceCommit": "a88b1bdc8edfa8aee3d8a7291fd471491e82cf7c",
+  "protocol": {
+    "firstResourceHttpRequest": "GET /v3/projects:search?query=projectId:<exact-source-id>&pageSize=100",
+    "mandatory404Prerequisite": false,
+    "projectGets": "numeric returned projects/INT64 names only",
+    "successSequence": [
+      "SEARCH_GET",
+      "ONE_CREATE_POST",
+      "RETURNED_OPERATION_GET",
+      "NUMERIC_PROJECT_GET",
+      "IAM_READ_POST",
+      "FINAL_NUMERIC_PROJECT_GET"
+    ],
+    "visibleMatchOrPaginationAmbiguity": "review/zero CREATE",
+    "collision409": "review/no adopt/no polling/no retry",
+    "emptySearchIsGlobalAbsenceProof": false,
+    "createIntentAndBurnFsyncRequired": true,
+    "unknownAckOrLostResponse": "unchanged review/retained claim, GET-only discovery, never another CREATE",
+    "textIdProjectGetPermittedByThisSource": false
+  },
+  "primaryContractDocs": [
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/search"
+  ]
+}

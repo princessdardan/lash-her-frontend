@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "scope": "Owned local qualification and source review; no deployment or staging provider operations",
+  "integrationFrontendCommit": "bda2f0e69d0c49a2598d616ee521c41e79cca6b8",
+  "courseRuntimeReview": {
+    "url": "https://github.com/princessdardan/lash-her-course-api/pull/11",
+    "commit": "4880cfedd10dab3e7bcac9b17fcd737ee882e077",
+    "reviewBase": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+    "matchesOwnedRuntimeExceptImplementationPlan": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "unitTests": 716,
+    "databaseTests": 88,
+    "migrationRoundTrip": 22,
+    "postgresMajor": 16,
+    "ciRun": "https://github.com/princessdardan/lash-her-course-api/actions/runs/42401365759",
+    "isDraft": true,
+    "ciJobs": {
+      "quality": "success",
+      "postgres": "success",
+      "containers": "success"
+    }
+  },
+  "communityPolicyVerification": {
+    "url": "https://github.com/princessdardan/lash-her-community-api/pull/9",
+    "commit": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+    "reviewBase": "52492aa7d68ca6fefb444b2046976f79fd0091b4",
+    "tests": 383
+  },
+  "pinPreview": {
+    "kind": "owned-api-pin-rehearsal",
+    "beforeManifestSha256": "41be13b4727d453ee1fb059ee8071c9483c079d4cdd57971bb38a00885acb431",
+    "afterManifestSha256": "6eb822f7a25306cb337c841b6dcb1efdf818eb57c1acf7c2894ad117109d869c",
+    "changes": {
+      "course": {
+        "beforeRevision": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "afterRevision": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "sha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+        "wireBytesUnchanged": true
+      },
+      "community": {
+        "beforeRevision": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+        "afterRevision": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+        "sha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+        "wireBytesUnchanged": true
+      },
+      "enrollmentEvent": {
+        "beforeRevision": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+        "afterRevision": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+        "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "wireBytesUnchanged": true
+      }
+    },
+    "published": false
+  },
+  "compatibilityBaseline": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+  "contractCheckCommit": "56356f00a471a762d8874917a93cec7cb6142181",
+  "frontendTargetedTests": {
+    "commit": "18862e8b93d78a25f933e463efc6ffebc8d12bc1",
+    "passed": 59,
+    "failed": 0,
+    "fixtureFixRerun": {
+      "commit": "714114b8a1d5ea11ad79d5a795d78cfa1d723ca7",
+      "passed": 60,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "persistence": {
+    "historical-pg16.json": {
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS",
+      "sources": {
+        "frontend": "8c97604254ecd3307562205389b6ac642e8ea4d6",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "sourceManifestSha256": null,
+      "sourceMode": "clean-git-checkouts",
+      "checks": 60,
+      "migrations": [
+        83,
+        22,
+        11
+      ],
+      "skipped": 0,
+      "expiryWitness": "course-paid-revoke-refuses-missing-outbox-with-pinned-foreign-expiry-predicate-defect"
+    },
+    "rehearsal-pg16.json": {
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS",
+      "sources": {
+        "frontend": "6d86dec2ec73fdd81b8c0a4b1ff786fb1c357945",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "sourceManifestSha256": null,
+      "sourceMode": "clean-git-checkouts",
+      "checks": 60,
+      "migrations": [
+        83,
+        22,
+        11
+      ],
+      "skipped": 0,
+      "expiryWitness": "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry"
+    },
+    "rehearsal-pg18.json": {
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS",
+      "sources": {
+        "frontend": "6d86dec2ec73fdd81b8c0a4b1ff786fb1c357945",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "sourceManifestSha256": null,
+      "sourceMode": "clean-git-checkouts",
+      "checks": 60,
+      "migrations": [
+        83,
+        22,
+        11
+      ],
+      "skipped": 0,
+      "expiryWitness": "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry"
+    },
+    "rehearsal-pg18-final.json": {
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS",
+      "sources": {
+        "frontend": "75224b4ee285caad477d6113d26a92f148236889",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "sourceManifestSha256": null,
+      "sourceMode": "clean-git-checkouts",
+      "checks": 60,
+      "migrations": [
+        83,
+        22,
+        11
+      ],
+      "skipped": 0,
+      "expiryWitness": "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry"
+    }
+  },
+  "companions": {
+    "companion-known-ack-18862e8b.json": {
+      "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+      "postgresMajor": 18,
+      "sources": {
+        "frontend": "18862e8b93d78a25f933e463efc6ffebc8d12bc1",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "httpStatuses": [
+        503,
+        200
+      ],
+      "canonicalFaultRefusals": 2,
+      "immutableReceiptRewriteRefusals": 2,
+      "allThreeJournalsUnchanged": true,
+      "remainingFrontendUncertainty": 0,
+      "remainingGatewayUncertainty": 1
+    },
+    "companion-known-ack-6d86dec2.json": {
+      "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+      "postgresMajor": 18,
+      "sources": {
+        "frontend": "6d86dec2ec73fdd81b8c0a4b1ff786fb1c357945",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "httpStatuses": [
+        503,
+        200
+      ],
+      "canonicalFaultRefusals": 2,
+      "immutableReceiptRewriteRefusals": 2,
+      "allThreeJournalsUnchanged": true,
+      "remainingFrontendUncertainty": 0,
+      "remainingGatewayUncertainty": 1
+    },
+    "companion-receivers-18862e8b.json": {
+      "status": "P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES16_PASS",
+      "postgresMajor": 16,
+      "sources": {
+        "frontend": "18862e8b93d78a25f933e463efc6ffebc8d12bc1",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "checks": 12,
+      "skipped": 0,
+      "httpCases": 8
+    },
+    "companion-receivers-6d86dec2.json": {
+      "status": "P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES16_PASS",
+      "postgresMajor": 16,
+      "sources": {
+        "frontend": "6d86dec2ec73fdd81b8c0a4b1ff786fb1c357945",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "checks": 12,
+      "skipped": 0,
+      "httpCases": 8
+    },
+    "companion-worker-18862e8b.json": {
+      "status": "P2_LIFECYCLE_WORKER_OWNED_PASS",
+      "postgresMajor": 18,
+      "sources": {
+        "frontend": "18862e8b93d78a25f933e463efc6ffebc8d12bc1",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "checks": 8,
+      "skipped": 0
+    },
+    "companion-worker-6d86dec2.json": {
+      "status": "P2_LIFECYCLE_WORKER_OWNED_PASS",
+      "postgresMajor": 18,
+      "sources": {
+        "frontend": "6d86dec2ec73fdd81b8c0a4b1ff786fb1c357945",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "checks": 8,
+      "skipped": 0
+    }
+  },
+  "interruptionSetupRefusal": {
+    "frontendCommit": "79473e502e764beb8cba32f68404516988eb64a0",
+    "postgresMajor": 18,
+    "phase": "c-original-configuration",
+    "cause": "The archived executable imported a removed fixture helper",
+    "positiveOrNegativeCasesRan": 0
+  },
+  "rawArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/owned-api-pin-rehearsal/2026-11-07",
+  "rawSha256": {
+    "pin-refresh-preview.json": "a14fb6c109522ce6ecaacaf0473a8fb3bf94743a7b525844fc1c32445b706afe",
+    "course.log": "26a523f04ad02681384a065f61f981ed74248632530747d7a11242d7b4a3e7ba",
+    "community.log": "f9159c1ca99340d78cd0b38437bf01a641beb5cf9ff1ca089f928687398b435d",
+    "community-verify.log": "b87831bebaac46b209440ff5f6bd41f0ddb0f1e2b6c626e9c1b02517dde7ab00",
+    "frontend-tests-final.log": "1173c6ddd7a29412d77aa948c2f5070b16bd34bc41e1c58abc3a8e96342af413",
+    "rehearsal-contracts-final.log": "05afd26b3151cb3dc32f10bf50c5024a0488ddceb831b0e21cf478b4618dca81",
+    "companion-interrupted-positive-79473e50.stderr": "e6d1ee4959a263c53e0201c92e920265b9a1c168f2308a7ee52241a1057d7e03",
+    "companion-interrupted-negatives-79473e50.stderr": "e6d1ee4959a263c53e0201c92e920265b9a1c168f2308a7ee52241a1057d7e03",
+    "companion-known-ack-18862e8b.json": "0e20a7e5300cb7b95f45f03812ef23be6a3c891b2e3c79e302672a70370affdb",
+    "companion-known-ack-6d86dec2.json": "87d654eb32f3cada71eeceba113b3b23d729340b49a3327c4cfaf040762b25ea",
+    "companion-receivers-18862e8b.json": "3ec96144b4b4938465c079cb3e3f82b52873c945886ab99f360b06622c2b41fc",
+    "companion-receivers-6d86dec2.json": "8a44a607401c005eeb60e06e5376267cba1d743c2b4d0b3edc5a0e7fb1f105b8",
+    "companion-worker-18862e8b.json": "0e83c45d21b32e210ac11f15aeff4c8f5193cb50d6b63448bd481680f7d17b51",
+    "companion-worker-6d86dec2.json": "5880612f678971f2e590ee1343ade801871eb6c3840ce07a148579f50cf7adfe",
+    "course-4880cfe-verify-escalated.log": "72a618cbcacb184be32ea82f72db8aa6181d25b5544647e4ffd01684c9d079c0",
+    "course-4880cfe-db-migrate.log": "a54c65b1b686566750b9eff207cf338e37c7be8a6adb21718098fc22e1e917e5",
+    "course-4880cfe-test-database.log": "0b8c8b1c48f2e868af1f629d569373bcc45dd9ea13f4b747ff907e9df7f1260b",
+    "course-4880cfe-migration-roundtrip.log": "83c7f3970b8ff1fb1247a6c3ce5cfbc7be604a283749cc856ba0c3e628f17bdc",
+    "course-4880cfe-pg16-audit.log": "f14b4987904bcb5814e4459a057ed4d20f58a633152288a761214dcd28780b56",
+    "course-4880cfe-pg16-cleanup.log": "3961fe9093584ede66838f7817bccaa8a81c46bb159c36ed248f4b40a7181f0d",
+    "historical-pg16.json": "ccae1c9562b22e4b0ddca8a55b2cb9bde2d8e222593d2add9524a449b7b9fae4",
+    "rehearsal-pg16.json": "f4c449a55197d1558a35ce802b51ecd7d2deb227bbcb282def627f28c5800b72",
+    "rehearsal-pg18.json": "a18378b62e916bb4cb1c41055822da1725fa958684c07c66468804094e6094c9",
+    "rehearsal-pg18-final.json": "3f4fb79a2b6fc566f04e538fbe8b3b936c6bf099121a096a13ccedae8ad42d23",
+    "course-pr11-ci-watch.log": "d798a20004a90d1106e5df3e7de1b8fd106ec3d8a51a86eb43690b61cd256acc",
+    "frontend-targeted-714114b8.log": "6bca85434bd8cb2c88e76efb093072121b21e1fdd981679a13c6fa70583bc9d4",
+    "frontend-tests-714114b8.log": "a884ab0f7d6d62120a3d7f94434a63e2e1476e280bcec77ecd7da647d19ffc52",
+    "companion-interrupted-positive-56356f00.json": "a0e0ec30714f32a5c8592ad0d13f9c92d96b332791303f3b2582477276e1ae83",
+    "companion-interrupted-negatives-56356f00.json": "a5bf6981ef459a3a9c62627bfede39f1b01ab2eef50de52331df7b0ffcc8d29a"
+  },
+  "releasedPinsChanged": false,
+  "candidatePublished": false,
+  "stagingCertification": false,
+  "interruptionFixtureFix": {
+    "commit": "714114b8a1d5ea11ad79d5a795d78cfa1d723ca7",
+    "ownedPinRehearsalCommit": "56356f00a471a762d8874917a93cec7cb6142181",
+    "projectionRegressionTests": 14,
+    "postFix": {
+      "sources": {
+        "frontend": "56356f00a471a762d8874917a93cec7cb6142181",
+        "course": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+        "community": "929fdeb13e0e5f5e25454a457961d6ed965dedff"
+      },
+      "postgresMajor": 18,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "positiveStatus": "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS",
+      "fencedTerminalReceiptSha256": "ecfb7cc1844d74bba65e4ca91700045debae6e1bac6cf3bbb2f0a6e45f104ea0",
+      "actualSourceStages": 10,
+      "actualHostProcessAndBackendTurnover": true,
+      "actualDocker": false,
+      "runtimeTransportProjected": true,
+      "negativeStatus": "P2_INTERRUPTED_NEGATIVES_OWNED_PASS",
+      "negativeCases": [
+        "original-bytes",
+        "original-config-drift",
+        "missing-lineage",
+        "pending-lineage",
+        "backend-effect",
+        "active-backend-loss",
+        "active-guard-loss"
+      ],
+      "allThreeJournalsUnchanged": true,
+      "trafficAuthorized": false,
+      "providerTouched": false
+    }
+  },
+  "compiledOwnedApiProductionBuilds": true
+}

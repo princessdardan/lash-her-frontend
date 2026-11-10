@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { runManualWriterAdmission } from "../src/lib/writer-admission/manual";
 
 import { createClient } from "@sanity/client";
 
@@ -67,7 +68,7 @@ const QUERY = `{
   }
 }`;
 
-async function main(): Promise<void> {
+async function mainWork(): Promise<void> {
   const execute = process.argv.includes("--execute");
   const providerName = readArgument("--provider-name") ?? "Nataliea";
   const providerSlug = readArgument("--provider-slug") ?? "nataliea";
@@ -219,6 +220,14 @@ function formatCad(cents: number): string {
     currency: "CAD",
     style: "currency",
   }).format(cents / 100);
+}
+
+async function main(): Promise<void> {
+  return runManualWriterAdmission(
+    process.argv.includes("--execute"),
+    "new-work",
+    mainWork,
+  );
 }
 
 main()

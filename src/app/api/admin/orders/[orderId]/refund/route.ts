@@ -1,3 +1,5 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
@@ -7,7 +9,7 @@ import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owne
 
 export const runtime = "nodejs";
 
-export async function POST(
+async function handlePost(
   req: NextRequest,
   { params }: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
@@ -94,9 +96,12 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
+    markWriterOperationUncertain();
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Refund failed" },
       { status: 409 },
     );
   }
 }
+
+export const POST = withWriterAdmission("new-work", handlePost);

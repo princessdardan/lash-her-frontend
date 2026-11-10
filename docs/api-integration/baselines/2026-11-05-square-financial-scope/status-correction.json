@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "status": "OWNED_SQUARE_STATUS_CORRECTION_PASS",
+  "liveMutations": false,
+  "tests": {
+    "command": "FRONTEND_SQUARE_FINANCIAL_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin python3 -m unittest frontend_square_financial_scope_test",
+    "total": 28,
+    "failures": 0,
+    "skipped": 0,
+    "ownedHttps": true,
+    "isolatedPostgresql": 16,
+    "repositoryMigrations": 83
+  },
+  "cases": [
+    "Paid SQL invoice cannot match provider DRAFT, UNPAID, SCHEDULED, PAYMENT_PENDING, or PARTIALLY_PAID",
+    "Paid SQL order cannot match provider OPEN, DRAFT, or CANCELED",
+    "Cancelled SQL invoice cannot match provider PAID",
+    "Stored legacy hold and no-show invoice provider statuses must match actual provider readback",
+    "Known paid invoice and completed order with exact matching receipts still reconcile"
+  ],
+  "sourceSha256": {
+    "ops/platform/host/frontend_square_financial_scope.py": "1ca773df954f0634b0fd78cd0e4a8e534e70565e3780ae59eb38d7e710787ad0",
+    "ops/platform/host/frontend_square_financial_scope_test.py": "5af730f62ae0445cddb992870d7f363e0557815726cf58e8d7183a88c2b01558"
+  },
+  "limits": [
+    "Source/configuration and accepted-request completeness requirements still require independently verified per-surface evidence",
+    "No live provider, historical configuration, or deployment certification is claimed"
+  ]
+}

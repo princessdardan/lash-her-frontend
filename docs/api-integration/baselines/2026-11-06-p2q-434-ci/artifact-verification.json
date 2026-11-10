@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "repository": "princessdardan/lash-her-frontend",
+  "runId": 42298515803,
+  "attempt": 1,
+  "sourceCommit": "434ff029b354cf6574df64906c9f1ec068777995",
+  "overallConclusion": "success",
+  "allTenJobsSucceeded": true,
+  "jobs": [
+    {"id": 128169919469, "name": "build", "conclusion": "success"},
+    {"id": 128169919724, "name": "database", "conclusion": "success"},
+    {"id": 128169919755, "name": "browser (webkit)", "conclusion": "success"},
+    {"id": 128169919831, "name": "gateway-and-platform", "conclusion": "success"},
+    {"id": 128169919848, "name": "browser (chromium)", "conclusion": "success"},
+    {"id": 128169919889, "name": "audit", "conclusion": "success"},
+    {"id": 128169919922, "name": "frontend-operator-migrations", "conclusion": "success"},
+    {"id": 128169920009, "name": "quality-and-unit", "conclusion": "success"},
+    {"id": 128169920070, "name": "browser (firefox)", "conclusion": "success"},
+    {"id": 128175340791, "name": "browser", "conclusion": "success"}
+  ],
+  "correctedGatewayBoundary": {
+    "linuxHostPythonStep": "success",
+    "priorEa4FailurePointCrossed": true,
+    "gatewayJob": "success",
+    "gatewayRuntimeArtifactAvailable": true
+  },
+  "operatorEvidence": {
+    "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+    "sourceCommit": "434ff029b354cf6574df64906c9f1ec068777995",
+    "postgresMajor": 18,
+    "migrations": 83,
+    "profiledCurrentReadOnlyVerified": true,
+    "profiledPendingSqlRefusedBeforeIntent": true,
+    "profiledOriginalJournalAndSchemaUnchanged": true,
+    "platformStatus": "P2_PLATFORM_OWNED_PASS",
+    "fixtureChecks": {"roles": 29, "release": 18, "native": 9, "certification": 10},
+    "identityRecoveryLifecycleStatus": "P2_IDENTITY_RECOVERY_AND_LIFECYCLE_FIXTURES_PASS",
+    "nodeTests": {"pass": 19, "fail": 0, "skipped": 0},
+    "courseRevision": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "communityRevision": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+    "interruptedRestorationNegativeCases": 7,
+    "allInterruptedRestorationNegativeJournalsUnchanged": true,
+    "providerTouched": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "nativeRuntimeEvidence": {
+    "frontend": {
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "imageId": "sha256:9e9bd608ca273563ead348a76cec18cd419c6dcc895b7edfdada35748e95782f",
+      "rawHighCriticalCount": 2,
+      "qualifiedHighCriticalCount": 0
+    },
+    "gateway": {
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "imageId": "sha256:d0895b2a6876d96e5924e36aaa0c200d0b22a8f4476863c71201db80c8f60de1",
+      "rawHighCriticalCount": 2,
+      "qualifiedHighCriticalCount": 0
+    }
+  },
+  "browserEvidence": {
+    "aggregateJob": "success",
+    "unexpected": 0,
+    "errors": [],
+    "projects": {
+      "chromium": {"expected": 194, "skipped": 53, "flaky": 0},
+      "firefox": {"expected": 194, "skipped": 53, "flaky": 0},
+      "webkit": {"expected": 193, "skipped": 53, "flaky": 1}
+    },
+    "residualFlake": {
+      "file": "tests/product-detail.spec.ts",
+      "line": 399,
+      "firstAttempt": "failed after 5s waiting for /checkout?buyNow=1; remained on /products/commerce-e2e-manual",
+      "retry": "passed in 3.871s",
+      "scope": "existing product-detail checkout navigation race; not the corrected gateway source-closure fixture"
+    }
+  },
+  "artifacts": [
+    {"id": 13543926365, "name": "frontend-operator-schema-summary", "zipSha256": "ad81f27d90a5cbf3675f948d2e55ffa9509510ea518cf13aeb7e60b826d93a4f", "digestMatchedGitHub": true},
+    {"id": 13542834642, "name": "frontend-runtime-qualification", "zipSha256": "4e4965fc8a880f04f8765948a8f1eab25defff7abfc96c32c8ea3ab782460e07", "digestMatchedGitHub": true},
+    {"id": 13542868999, "name": "gateway-runtime-qualification", "zipSha256": "a0223076c78e76d72d833fe7cf11f87f4665346987dead4b6c1413013aa10da3", "digestMatchedGitHub": true},
+    {"id": 13543152979, "name": "playwright-report", "zipSha256": "9447fd1ed2563e2fb8cd293f79fd12f3644021886e9bfb1a8abca52aee755dd1", "digestMatchedGitHub": true},
+    {"id": 13543326858, "name": "playwright-blob-chromium", "zipSha256": "c8c7172e622b1e4f9815bfc3b4f46050607edfc5a386bd9b5dd07273c6ad6847", "digestMatchedGitHub": true},
+    {"id": 13543237108, "name": "playwright-blob-firefox", "zipSha256": "8fd26cddf6ec836ef7676500cc87ffec831c29a32ba467d818e1e9d1d2ba90fe", "digestMatchedGitHub": true},
+    {"id": 13542809436, "name": "playwright-blob-webkit", "zipSha256": "05bd0de7481f94c569686668ec94be5dfa6d8b6e2d7741a1848d640a0e52e823", "digestMatchedGitHub": true}
+  ],
+  "artifactExtraction": {
+    "root": "/private/tmp/p2q-ci-434-20261106/artifacts",
+    "checks": ["no absolute paths", "no path traversal", "no backslash paths", "no symlinks", "entry cap 10000", "uncompressed cap 100000000"],
+    "allSevenArchivesPassed": true,
+    "originalZipsPreserved": true
+  },
+  "limitations": [
+    "All ten jobs succeeded, but the merged Playwright artifact contains one disclosed WebKit retry-pass flake.",
+    "No workflow rerun, provider call, deployment, publication, registry mutation, credential use, or database mutation was performed by this observer."
+  ]
+}

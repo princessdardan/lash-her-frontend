@@ -1,4 +1,5 @@
 import "server-only";
+import { assertWriterOperationCertain, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { getChitChatsConfig, type ChitChatsConfig } from "./config";
 import type {
@@ -104,6 +105,18 @@ export function createChitChatsClient(
       const result = await request<
         ChitChatsShipment[] | { shipments: ChitChatsShipment[] }
       >(`/shipments?limit=100&page=1&q=${encodeURIComponent(query)}`);
+      const rows = Array.isArray(result) ? result : result.shipments;
+      if (!Array.isArray(rows) || rows.length >= 100 || rows.some((row) =>
+        !row || typeof row !== "object" || typeof row.id !== "string" || !row.id.trim() ||
+        typeof row.status !== "string" || !row.status.trim() || typeof row.order_id !== "string" || !row.order_id.trim())) {
+        markWriterOperationUncertain();
+        try { assertWriterOperationCertain(); }
+        catch {
+          const error = new Error("Provider search observation requires reconciliation");
+          error.name = "AmbiguousShipmentOperationError";
+          throw error;
+        }
+      }
       return Array.isArray(result) ? result : (result.shipments ?? []);
     },
     async refreshShipment(id, input) {

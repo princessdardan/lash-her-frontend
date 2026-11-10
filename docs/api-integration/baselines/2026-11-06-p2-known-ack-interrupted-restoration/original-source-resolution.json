@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "claim": "archival-source-resolution-only",
+  "productionCommit": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7",
+  "originalValidation": {
+    "file": "validation.json",
+    "sha256": "7f6306506766bbccd2f41b871eaaf563495d9cba7561888cc753d4e2d83cedb6"
+  },
+  "originalSource": {
+    "file": "run-owned.mjs",
+    "repositoryPath": "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs",
+    "sha256": "2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c"
+  },
+  "retainedSource": {
+    "file": "source-d5-final-seven-case/run-owned.mjs",
+    "sha256": "2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c"
+  }
+}

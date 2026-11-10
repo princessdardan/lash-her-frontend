@@ -1,0 +1,30 @@
+{
+  "grants": [
+    {
+      "grant_reason": "free",
+      "status": "active",
+      "count": 6
+    },
+    {
+      "grant_reason": "free",
+      "status": "revoked",
+      "count": 2
+    }
+  ],
+  "progress": {
+    "rows": 10,
+    "completed": 6
+  },
+  "attempts": [
+    {
+      "mode": "graded",
+      "attempts": 4,
+      "completed": 2
+    },
+    {
+      "mode": "practice",
+      "attempts": 4,
+      "completed": 4
+    }
+  ]
+}

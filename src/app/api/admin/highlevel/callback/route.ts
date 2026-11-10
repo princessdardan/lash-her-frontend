@@ -1,3 +1,5 @@
+import { withWriterAdmission } from "@/lib/writer-admission/route";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAudit } from "@/lib/admin/audit-log";
@@ -7,7 +9,7 @@ import { HighLevelError } from "@/lib/highlevel/contract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function GET(request: Request): Promise<Response> {
+async function handleGet(request: Request): Promise<Response> {
   const actor = await requirePermission("settings:manage");
   const url = new URL(request.url);
   try {
@@ -23,6 +25,7 @@ export async function GET(request: Request): Promise<Response> {
       outcome: "success",
     });
   } catch (error) {
+    markWriterOperationUncertain();
     return Response.json(
       {
         error:
@@ -49,3 +52,5 @@ export async function GET(request: Request): Promise<Response> {
     },
   );
 }
+
+export const GET = withWriterAdmission("recovery", handleGet);

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "status": "INDEPENDENT_PLANNING_REVIEW_CLEAR",
+  "manifestSha256": "619663de2b346cec88ca203f6de16fc53dae2c08d3721ea77811063fae214dcd",
+  "checks": [
+    "Nine pinned inputs and six manifested artifacts match hashes and byte counts.",
+    "All22 allocated resource IDs are null.",
+    "Published-price partial fixed costs recompute to USD47.10/month, with separate USD15/year domain payment; USD62.10 known first-month components.",
+    "Provider reach is bounded counterfactual analysis, not observed effective authorization.",
+    "Unsupported creation/control/custody/first-use factories remain open.",
+    "No allocation, spending, credential, provider or live authorization."
+  ],
+  "ownerReply": {
+    "independentScopes": "UNKNOWN",
+    "meaningExplained": "Old credentials must lack new-resource/data/deployment/DNS/credential-issuance/inherited/recovery access; the same human may administer both through separate credentials.",
+    "permissionGranted": false,
+    "source": "Owner said they were unsure whether independent scopes exist and requested the definition; no scope creation or spending was approved."
+  },
+  "qualification": "Planning only, not allocation or installation evidence."
+}

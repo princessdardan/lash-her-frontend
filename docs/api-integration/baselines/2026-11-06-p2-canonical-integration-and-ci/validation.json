@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "status": "CANONICAL_SOURCE_INTEGRATED_REQUIRED_FORWARD_CI_FAILED",
+  "integrationSource": "13c9c29d",
+  "rootChecks": {
+    "node": 17,
+    "actualOwnedHttps": 8,
+    "hostParent": 9,
+    "lintPassed": true,
+    "skips": 0
+  },
+  "fileSha256": {
+    "ops/platform/p2-canonical-browser-origin.mjs": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
+    "ops/platform/p2-canonical-browser-origin.test.mjs": "0aaf692c6b61c4f10ed6c13585b169342c0c7decb77df6747991c380b6dc1ffe",
+    "ops/platform/host/p2_canonical_browser_origin.py": "e78c6dea99bf5a43beef91cb4dd15c6f6889ce0dd4e67e366804653e3b09413f",
+    "ops/platform/host/p2_canonical_browser_origin_test.py": "64602b748d269a51e5fd4ed040a4a8eae9cf7029b5723dc86c1c8f4a746f65fe",
+    "ops/platform/p2-certification.mjs": "f5189cb5256d9e7f5fa63068ed286e5993658140a2fc6e58467f7942dacb7335",
+    "ops/platform/p2-certification-transport.mjs": "9c8f5771fe586703c03b8bba9a0ae34e9afd4da1e431dc0a99163632695882c1",
+    "ops/platform/host/p2_certification_parent.py": "37175654f442bff18a652ead1943cb0d49d6c3c8f383fe0aa9087662320b30ac",
+    "ops/platform/host/p2_certification_parent_test.py": "994b6312da49aaa1e377ec5c63a86983e835f689541b0ae37126037f047e4a2c"
+  },
+  "ci": {
+    "source": "8f3112d7ee12adedb36ca63c1e61af7742bd34b0",
+    "runId": 42204767907,
+    "operatorJobId": 127848526156,
+    "operatorConclusion": "failure",
+    "gatewayAndPlatformConclusion": "success",
+    "diagnosticArtifactId": 13495164442,
+    "diagnosticArtifactBytes": 1071,
+    "diagnosticArtifactSha256": "eb4c6dbf204e54cf449e9ff7dc126895e08495c4a7ed290eb00d643c25313327",
+    "phase": "forward-new-build-probe-promote",
+    "errorKind": "Error",
+    "errorCode": "unknown",
+    "sourceFrames": [],
+    "innerStderrBytes": 1545,
+    "innerStdoutBytes": 0,
+    "rawInnerOutputRetained": false,
+    "underlyingFailureResolved": false,
+    "otherEightJobsPassed": true,
+    "aggregateGate": "failed on operator dependency"
+  },
+  "privateRetention": {
+    "files": 10,
+    "bytes": 242600,
+    "manifestSha256": "1e5d6d358a0f7abe406e7bedf079cade815f6870f12dfc77a415bae621a6233b",
+    "originalsPreserved": true
+  },
+  "independentReview": {
+    "canonicalOrigin": "e8c87474018e4923691182e3db66488bde7da7f98ce9ed53b0c630714a51c2fb",
+    "canonicalParent": "1090f55d1027dedb486aa426482f6b94995d5cd4ded0eaa5e0856fe1bc29ec4c"
+  },
+  "sourceSelection": {
+    "files": 475,
+    "decodedBytes": 39757835,
+    "fileCountBound": 480,
+    "decodedByteBound": 40000000,
+    "futureCombinedSourceQualified": false
+  },
+  "open": [
+    "normal API runtime-stop proof transition",
+    "rotation real operator/parent receipt map and shared dispatch",
+    "direct-worker parent final independent review",
+    "formal known-ACK authorization and deliberate typed consumer",
+    "complete source count/bytes and final required CI",
+    "historical original configuration/provider effects and five missing source identities",
+    "immutable candidate and Dardan-started deployed certification",
+    "actual Google/Resend/Mux/customer/authoring/lifecycle/accessibility/regressions",
+    "real 24-hour export cleanup and G2"
+  ],
+  "providerTouched": false,
+  "stagingTouched": false,
+  "g1Preserved": true,
+  "g2Accepted": false
+}

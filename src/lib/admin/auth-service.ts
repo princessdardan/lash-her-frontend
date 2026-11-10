@@ -1,3 +1,6 @@
+import { currentWriterAuthoringActorId, currentWriterFirstOwner, currentWriterPaidAccessActorId,
+  markWriterOperationUncertain, matchesWriterFirstOwner } from "@/lib/writer-admission/context";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import type { AdminUserStore } from "./admin-user-store";
 import { canAdmin, type AdminPermissionAction } from "./permissions";
 import {
@@ -44,8 +47,11 @@ export function createAdminAuth(
     if (!emailNormalized || !identity.providerUserId) {
       throw new AdminAuthError("unauthenticated");
     }
+    const firstOwner = currentWriterFirstOwner();
+    if (firstOwner && (!dependencies.getOwnerEmails().has(emailNormalized) ||
+      !matchesWriterFirstOwner(firstOwner, emailNormalized, identity.providerUserId))) throw new AdminAuthError("forbidden");
 
-    const [providerUser, emailUser] = await Promise.all([
+    const [providerUser, emailUser] = await settleWriterEffects([
       dependencies.userStore.findByProviderUserId(identity.providerUserId),
       dependencies.userStore.findByEmailNormalized(emailNormalized),
     ]);
@@ -54,9 +60,24 @@ export function createAdminAuth(
       throw new AdminAuthError("identity_conflict");
     }
 
+    const scopedOwnerId = currentWriterAuthoringActorId() ?? currentWriterPaidAccessActorId();
+    if (scopedOwnerId && (providerUser?.id !== scopedOwnerId || providerUser.role !== "owner" || emailUser?.id !== scopedOwnerId)) {
+      throw new AdminAuthError("forbidden");
+    }
+
     let user: AdminUserRecord;
 
-    if (providerUser) {
+    if (firstOwner) {
+      if (providerUser || emailUser) {
+        if (!providerUser || emailUser?.id !== providerUser.id || providerUser.status !== "active" || providerUser.role !== "owner") {
+          throw new AdminAuthError("forbidden");
+        }
+        // A second read of the same scoped response never refreshes or rebinds the owner.
+        user = providerUser;
+      } else {
+        user = await dependencies.userStore.createBootstrapOwner(identity, { requireEmpty: true });
+      }
+    } else if (providerUser) {
       assertActiveUser(providerUser);
       user = await dependencies.userStore.recordSignIn({
         ...identity,
@@ -80,10 +101,11 @@ export function createAdminAuth(
 
     assertActiveUser(user);
 
-    const [bookingProviderResourceIds, bookingResourceIds] = await Promise.all([
-      dependencies.userStore.listBookingProviderResourceIds(user.id),
-      dependencies.userStore.listBookingResourceIds(user.id),
-    ]);
+    const [bookingProviderResourceIds, bookingResourceIds] =
+      await settleWriterEffects([
+        dependencies.userStore.listBookingProviderResourceIds(user.id),
+        dependencies.userStore.listBookingResourceIds(user.id),
+      ]);
 
     return {
       bookingProviderResourceIds,
@@ -127,6 +149,7 @@ async function createBootstrapOwnerAfterRace(
   try {
     return await userStore.createBootstrapOwner(identity);
   } catch (error) {
+    markWriterOperationUncertain();
     const existing = await userStore.findByEmailNormalized(
       normalizeEmail(identity.email),
     );

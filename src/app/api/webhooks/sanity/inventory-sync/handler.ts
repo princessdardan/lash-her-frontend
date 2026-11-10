@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { log } from "@/lib/logging/logger";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 
 interface InventorySyncWebhookDependencies {
   getWebhookSecret: () => string;
@@ -74,6 +75,11 @@ export function createInventorySyncPostHandler(
       // Seeds/resets from the set-point when present, untracks when gone.
       await dependencies.syncProductStock(id);
     } catch (error) {
+      if (error instanceof WriterAdmissionError)
+        return new Response(null, {
+          status: 503,
+          headers: { "cache-control": "no-store", "retry-after": "30" },
+        });
       log("error", "[inventory-sync] Stock sync failed", {
         error: error instanceof Error ? error.message : "unknown",
       });

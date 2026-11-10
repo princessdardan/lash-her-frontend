@@ -1,0 +1,14 @@
+# Implementation briefs
+
+These briefs refine accepted scope before affected implementation. They do not claim implementation, choose missing business/legal policy, change immutable v1 bytes or authorize live actions. The [tracker](../../../API-INTEGRATION-EXECUTION.md) owns order and closure. Isolated development and actual deployed certification have different prerequisites.
+
+| Brief                                                       | Tasks                            | Decisions to complete before affected implementation/use                                                                                       |
+| ----------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Release coordination](release-coordination.md)             | P1-09, P2-00, P6-00/P6-06        | Exact writer/producer inventory, admission/drain mechanism and bounded stop/recovery behavior; production orchestration remains unimplemented. |
+| [Identity and lifecycle](identity-and-lifecycle.md)         | P2-01–P2-04/P2-11/P2-12, P5-07   | Account denial/in-flight behavior, export expiry and approved record-specific retention.                                                       |
+| [Learning and migration](learning-and-migration.md)         | P2-05–P2-10, P3-01–P3-05/POST-02 | Versioned content/progress/media mappings, publication/archive behavior and actual cutover dates.                                              |
+| [Commerce and entitlements](commerce-and-entitlements.md)   | P4-00–P4-08                      | Business tax/market inputs, initial Afterpay feasibility, quote/concurrency/financial transition and command identity rules.                   |
+| [Community media](community-media.md)                       | P5-03/P5-07/P6-03                | Measured decoded-image/worker/admission limits, orphan retention and signed URL lifetime.                                                      |
+| [Recovery and certification](recovery-and-certification.md) | P4-07/P5-07/P6-03/P6-04          | Replay/version/tombstone recovery strategy, retained horizons and exact latency/load measurement definitions.                                  |
+
+Before starting affected work, record concrete source/API/schema changes, configuration values or approved decisions, negative/failure tests and owner in the task evidence. A listed unresolved decision blocks only its affected behavior; it does not halt unrelated isolated work. Shared wire changes use the existing reviewed version process. Each brief's checks become that task's acceptance, not new global P1 gates. Keep monitoring rollout, billing evidence and external signing/executor ceremonies excluded/deferred.

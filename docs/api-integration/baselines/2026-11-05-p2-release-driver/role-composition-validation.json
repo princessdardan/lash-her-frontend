@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "status": "SAME_ACTION_ROLE_COMPOSITION_OWNED_CHECKS_PASS",
+  "sourceParent": "91eb517c",
+  "criticalGuardReviewedCommit": "05c20e5b",
+  "roleComponentCommit": "6417e8715cabe0f9f8563a70f09be3e99369a023",
+  "liveOperationsPerformed": false,
+  "releaseAccepted": false,
+  "g2Accepted": false,
+  "checks": {
+    "node": 21,
+    "selectedHost": 54,
+    "guardCorrectionHost": 59,
+    "ownedPostgres16Groups": 16,
+    "frontendMigrations": 83,
+    "actualTls": true,
+    "generatedCredentialAuthentication": true,
+    "samePhysicalSessionAndAdvisoryLock": true,
+    "actualApiDocker": false,
+    "providerTouched": false
+  },
+  "files": {
+    "role-composition-owned-postgres16.log": "c2826d0e0d7ccdc1a29e153c3f7109368df6047c5fe9cd133ec3e1eeb911f3af",
+    "role-composition-node-21.log": "4379935a913180d7804fbb1dbc816d0b8cd395101b5a3e50a03fd607fbe74eac",
+    "role-composition-host-54.log": "efb681c5bc703c89e6ec7961b4e7acdff35e814c3197df934ade7b349e24aa31",
+    "guard-corrections-host-59.log": "e7b9e555903d035eec287dd9d5e5bb25064b6b5f8116671a55714839412ef3f8",
+    "role-composition-initial-refusal.log": "f47e090d4116df44c8ad2ebecc3ef93baab2af592215c73f721a838ecdbef5b5"
+  },
+  "sourceFiles": {
+    "ops/platform/p2-release.mjs": "51782a57d4938d8ee8fcafdd6132867980c6e08be1f078b892785b413b1f08ce",
+    "ops/platform/p2-release-transport.mjs": "a71388804805daca4ed4ad183790bd4e71b75efb7013764ef28ac4f895876224",
+    "ops/platform/frontend-release-inventory.mjs": "c917c97435bfd44fc6816231a1eab35cb1fbb0399ab4ae879175dd5483fd489e",
+    "ops/platform/frontend-release-coordinator.mjs": "a649275400d52dd03c9c4d2634b24f22b167968e39897a068d9ac94ceac2036c",
+    "ops/platform/host/p2_release_broker.py": "79b49ea8d71a8f53699bf2e44666dc739a6605f0e2b78dd5ebe6d142a1c1d2da",
+    "ops/platform/host/p2_role_protocol_test.py": "2df6cdefcfefbfb59e62d1f2eb7bcdaa814c5c85a5e0bd604f7e03af83242f56",
+    "ops/platform/test-frontend-release-local.mjs": "6fea24e0fdf2a5c5c80d2e9e4ab04b46d85d192c5235c91e59b8acd3f461bb5e"
+  },
+  "open": [
+    "Independent review of same-action role composition",
+    "Source-owned deliberate post-SQL recovery executable integration",
+    "Later native lifecycle qualification and read-only identity probe actions",
+    "Exact integrated-source Linux/required CI and immutable artifacts",
+    "Actual Dardan-started staging release and deployed certification"
+  ]
+}

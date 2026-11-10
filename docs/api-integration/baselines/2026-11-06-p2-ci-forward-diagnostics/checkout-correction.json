@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "failedSource": "ce1bc6fbdd54f1bdef66145abb4cff9995447e24",
+  "runId": 42190862525,
+  "operatorJobId": 127802245266,
+  "failurePhase": "exact-source-proof",
+  "failureStage": "frontend",
+  "observedCheckoutRemote": "https://github.com/princessdardan/lash-her-frontend",
+  "requiredRemoteBeforeCorrection": "https://github.com/princessdardan/lash-her-frontend.git",
+  "ownedRecoveryExecutionAttempted": false,
+  "originalLog": {
+    "retainedPrivate": true,
+    "bytes": 222788,
+    "sha256": "46f04f4d0f2b7d181edfdcb97248e2acd2082adef107cacdc09b2a0231b5bd8f"
+  },
+  "correction": {
+    "source": "67fcd576a784a034542eb9b77e2c254a685f2828",
+    "integrated": "a89e3550b51b4b9fce140706e752f0f43e75d552",
+    "acceptedRemoteSpellings": [
+      "https://github.com/princessdardan/lash-her-frontend.git",
+      "https://github.com/princessdardan/lash-her-frontend"
+    ],
+    "apiRemoteChecksUnchanged": true,
+    "fullCommitTreeCleanlinessRequired": true,
+    "actualGitRegressionPassed": true
+  },
+  "receiverPg18": {
+    "reviewedSource": "01d5e6bf1c9c624f8a65b608a8fbc3ad6a24781e",
+    "integrated": "391e42e7",
+    "independentFocusedChecks": 30,
+    "rootFocusedChecks": 40,
+    "actualOwnedPg16": {
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "checks": 12,
+      "httpCases": 8
+    },
+    "actualPg18LinuxExecutionClaimed": false
+  },
+  "earlier630ForwardFailureResolved": false,
+  "otherCiJobs": "eight passed; aggregate gate failed because required operator job failed",
+  "liveMutations": false
+}

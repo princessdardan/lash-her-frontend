@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "status": "PLANNING_ONLY_UNALLOCATED",
+  "proposedProfileId": "p2q-20261106",
+  "qualificationTargetProfile": null,
+  "resourceAllocationAuthorized": false,
+  "spendingAuthorized": false,
+  "providerMutationsPerformed": false,
+  "firstUseAuthorityIssued": false,
+  "sourceFactoryImplemented": false,
+  "allAllocatedIdentitiesUnknown": true,
+  "proposedOrigins": {
+    "frontend": "https://app.lashher-p2q-20261106.com",
+    "gateway": "https://api.lashher-p2q-20261106.com"
+  },
+  "resources": [
+    {
+      "id": "aws-control",
+      "provider": "aws",
+      "type": "account",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-20261106",
+      "proposedRegion": null,
+      "proposedTier": "standalone",
+      "allocatedId": null,
+      "controlAndScope": "No inherited old management/SSO/resource-policy trust; principal/recovery and grants unknown."
+    },
+    {
+      "id": "host",
+      "provider": "aws-lightsail",
+      "type": "instance",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-20261106-host",
+      "proposedRegion": "us-east-1a",
+      "proposedTier": "medium_3_0",
+      "allocatedId": null,
+      "controlAndScope": "4 GB/2 vCPU capacity candidate only; no old disk/snapshot."
+    },
+    {
+      "id": "gateway-ip",
+      "provider": "aws-lightsail",
+      "type": "static-ip",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-20261106-gateway",
+      "proposedRegion": "us-east-1",
+      "proposedTier": null,
+      "allocatedId": null,
+      "controlAndScope": "One newly allocated attached IPv4; no old address."
+    },
+    {
+      "id": "ssh-key",
+      "provider": "aws-lightsail",
+      "type": "imported-public-key",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-20261106-operator",
+      "proposedRegion": "us-east-1",
+      "proposedTier": null,
+      "allocatedId": null,
+      "controlAndScope": "New public import; private key held by source controller; authenticated host-key capture remains missing."
+    },
+    {
+      "id": "custody-key",
+      "provider": "aws-kms",
+      "type": "symmetric-key",
+      "quantity": 1,
+      "proposedLabel": "alias/lash-her-p2q-20261106",
+      "proposedRegion": "us-east-1",
+      "proposedTier": null,
+      "allocatedId": null,
+      "controlAndScope": "Operator-only new-account policy; not old CMK/grants."
+    },
+    {
+      "id": "custody-records",
+      "provider": "aws-secrets-manager",
+      "type": "secret-groups",
+      "quantity": 4,
+      "proposedLabel": "p2q-20261106/{frontend-release,course-release,community-release,operator-control}",
+      "proposedRegion": "us-east-1",
+      "proposedTier": null,
+      "allocatedId": null,
+      "controlAndScope": "Storage grouping only; deliver selected per-service fields, never whole control group to applications."
+    },
+    {
+      "id": "domain",
+      "provider": "aws-route53-domains",
+      "type": "domain",
+      "quantity": 1,
+      "proposedLabel": "lashher-p2q-20261106.com",
+      "proposedRegion": "global",
+      "proposedTier": "standard .com",
+      "allocatedId": null,
+      "controlAndScope": "Availability/registrant eligibility/quote unknown; new independently controlled recovery/admin authority."
+    },
+    {
+      "id": "dns",
+      "provider": "aws-route53",
+      "type": "public-zone",
+      "quantity": 1,
+      "proposedLabel": "lashher-p2q-20261106.com",
+      "proposedRegion": "global",
+      "proposedTier": "standard",
+      "allocatedId": null,
+      "controlAndScope": "No old zone delegation dependency or shared credentials."
+    },
+    {
+      "id": "neon-control",
+      "provider": "neon",
+      "type": "account-or-organization",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q",
+      "proposedRegion": "global",
+      "proposedTier": "Free",
+      "allocatedId": null,
+      "controlAndScope": "New controlled principal/org with no old personal/org API-key reach."
+    },
+    {
+      "id": "frontend-db",
+      "provider": "neon",
+      "type": "root-project",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-frontend-db",
+      "proposedRegion": "aws-us-east-1",
+      "proposedTier": "Free / PG18",
+      "allocatedId": null,
+      "controlAndScope": "Database p2q_frontend; root branch/direct endpoint and least-privileged roles/OIDs allocated later."
+    },
+    {
+      "id": "course-db",
+      "provider": "neon",
+      "type": "root-project",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-course-db",
+      "proposedRegion": "aws-us-east-1",
+      "proposedTier": "Free / PG18",
+      "allocatedId": null,
+      "controlAndScope": "Database p2q_course; no branch/clone/restore/import."
+    },
+    {
+      "id": "community-db",
+      "provider": "neon",
+      "type": "root-project",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-community-db",
+      "proposedRegion": "aws-us-east-1",
+      "proposedTier": "Free / PG18",
+      "allocatedId": null,
+      "controlAndScope": "Database p2q_community; no branch/clone/restore/import."
+    },
+    {
+      "id": "vercel-control",
+      "provider": "vercel",
+      "type": "team",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q",
+      "proposedRegion": "global",
+      "proposedTier": "Pro / one paid seat",
+      "allocatedId": null,
+      "controlAndScope": "New controlled principal, no old broad token membership/integration reach."
+    },
+    {
+      "id": "frontend",
+      "provider": "vercel",
+      "type": "project",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-frontend",
+      "proposedRegion": "iad1 (proposed)",
+      "proposedTier": "Pro",
+      "allocatedId": null,
+      "controlAndScope": "Production target / APP_ENV=staging; no Git/app credentials/deployments during allocation."
+    },
+    {
+      "id": "google-identity",
+      "provider": "google",
+      "type": "project",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-identity",
+      "proposedRegion": "global",
+      "proposedTier": "normal OAuth/OIDC",
+      "allocatedId": null,
+      "controlAndScope": "Independent project/principal with inherited controls observed; no additional paid GCP product selected."
+    },
+    {
+      "id": "google-clients",
+      "provider": "google",
+      "type": "web-oauth-client",
+      "quantity": 2,
+      "proposedLabel": "lash-her-p2q-{admin,customer}",
+      "proposedRegion": "global",
+      "proposedTier": null,
+      "allocatedId": null,
+      "controlAndScope": "Distinct clients/secrets; exact app origin and two source callback paths; no Calendar/old grants."
+    },
+    {
+      "id": "mail-control",
+      "provider": "resend",
+      "type": "account",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-mail",
+      "proposedRegion": "global",
+      "proposedTier": "Free",
+      "allocatedId": null,
+      "controlAndScope": "No old full-access account key/team/integration."
+    },
+    {
+      "id": "mail-domain",
+      "provider": "resend",
+      "type": "sender-domain",
+      "quantity": 1,
+      "proposedLabel": "mail.lashher-p2q-20261106.com",
+      "proposedRegion": "us-east-1",
+      "proposedTier": "Free",
+      "allocatedId": null,
+      "controlAndScope": "DNS verification only before use; no sends/contacts/campaigns imported."
+    },
+    {
+      "id": "mail-keys",
+      "provider": "resend",
+      "type": "sending-api-key",
+      "quantity": 2,
+      "proposedLabel": "p2q-{customer-auth,site-forms}-send",
+      "proposedRegion": "us-east-1",
+      "proposedTier": "sending-only / selected domain",
+      "allocatedId": null,
+      "controlAndScope": "One-time response private custody; operator control key withheld from runtime."
+    },
+    {
+      "id": "editorial",
+      "provider": "sanity",
+      "type": "project",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-editorial",
+      "proposedRegion": "provider-managed",
+      "proposedTier": "Free",
+      "allocatedId": null,
+      "controlAndScope": "New principal/org excludes old personal/organization token reach; one public dataset p2q-2026-11-06."
+    },
+    {
+      "id": "course-media-control",
+      "provider": "mux",
+      "type": "organization",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q",
+      "proposedRegion": "provider-managed",
+      "proposedTier": "Free candidate",
+      "allocatedId": null,
+      "controlAndScope": "New controlled admin boundary; old org owner not admitted automatically."
+    },
+    {
+      "id": "course-media",
+      "provider": "mux",
+      "type": "environment",
+      "quantity": 1,
+      "proposedLabel": "lash-her-p2q-course",
+      "proposedRegion": "provider-managed",
+      "proposedTier": "Free candidate",
+      "allocatedId": null,
+      "controlAndScope": "Course-only environment; original token/signing-key/hook custody required. No public Studio/Mux retirement."
+    }
+  ],
+  "inertCounts": {
+    "applicationDeployments": 0,
+    "applicationCredentialDeliveries": 0,
+    "providerCallbacks": 0,
+    "muxAssets": 0,
+    "importedApplicationRows": 0,
+    "enabledNativeSchedules": 0
+  },
+  "inertCountsAreRequestedPlanNotObservedFacts": true,
+  "laterSelectedQuantities": {
+    "googleWebClients": 2,
+    "distinctActorIdentitiesApproximately": 6,
+    "muxPrivateAssetsProposedMaximum": 6,
+    "muxStoredFreePlanQuota": 10,
+    "muxRuntimeVideoTokens": 1,
+    "muxOperatorSystemTokens": 1,
+    "muxInitialSigningKeys": 1,
+    "resendWebhooksDuringInertAllocation": 0,
+    "sanityWebhooksDuringInertAllocation": 0,
+    "optionalKvStores": 0,
+    "optionalCommerceCrmShippingCalendarScopes": 0
+  },
+  "conditionalResources": [
+    {
+      "type": "kv",
+      "decision": "Only if exact selected S17/legacy signup source path requires KV; absence is not functional compatibility."
+    },
+    {
+      "type": "provider-webhooks",
+      "decision": "Enable exact selected source paths only after qualified destination/capture/admission; create may activate ingress immediately."
+    },
+    {
+      "type": "larger-host",
+      "decision": "8 GB large_3_0 at USD44/month only after separate capacity/cost choice; no automatic escalation."
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+✔ plan requires exact qualified P2/staging/ten-control lifecycle-only profile and explicit closed final disposition (45.241708ms)
+✔ finite native request witnesses join exact admitted recovery operations, ordered effects, and actual source closure without a cancellation claim (289.582791ms)
+✔ extra/changed cron, runtime flags or immutable writer binding refuse before enable (949.383458ms)
+✔ caller complete booleans, manual request classification and unrelated source/epoch/UUID cannot replace provider request-scoped trace evidence (1649.747666ms)
+✔ unmatched recovery operations or reordered receiver effects remain OPEN even after a clean close (559.442666ms)
+✔ active and uncertain outcomes are retained rather than settled/replayed by the qualifier (550.676209ms)
+✔ lost enable/disable acknowledgments are not retried and never produce qualification (562.409667ms)
+✔ a delayed native request after admission closure can be observed without inventing an admitted operation or queue zero (286.921375ms)
+✔ later receipt loss still attempts mandatory disable/admission closure and cannot return a success receipt (280.712042ms)
+✔ original intent with missing outcome after process death refuses automatic replay (292.731792ms)
+✔ actual SIGKILL after enable preserves intent; fresh explicit containment disables/closes without replay or qualification (521.099042ms)
+✖ a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot (274.882709ms)
+✖ delivery acknowledgements interleaved with the epoch barrier cannot count as native window effects (287.779666ms)
+✖ receiver attempts must advance from the retained post-barrier snapshot, not the earlier start (281.723041ms)
+✖ a final native enable or source drift invalidates the main qualifier disabled claim (287.588167ms)
+✖ containment rechecks exact disabled metadata after draining and never reports a stale source fence (424.146542ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 11
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7584.534125
+
+✖ failing tests:
+
+test at ops/platform/p2-lifecycle-native.test.mjs:117:1
+✖ a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot (274.882709ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  false !== null
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-native-lifecycle/ops/platform/p2-lifecycle-native.test.mjs:120:213)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-lifecycle-native.test.mjs:124:1
+✖ delivery acknowledgements interleaved with the epoch barrier cannot count as native window effects (287.779666ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED'
+  - 'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW'
+                         ^
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-native-lifecycle/ops/platform/p2-lifecycle-native.test.mjs:134:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED',
+    expected: 'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-lifecycle-native.test.mjs:141:1
+✖ receiver attempts must advance from the retained post-barrier snapshot, not the earlier start (281.723041ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED'
+  - 'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW'
+                         ^
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-native-lifecycle/ops/platform/p2-lifecycle-native.test.mjs:151:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED',
+    expected: 'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-lifecycle-native.test.mjs:155:1
+✖ a final native enable or source drift invalidates the main qualifier disabled claim (287.588167ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  false !== null
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-native-lifecycle/ops/platform/p2-lifecycle-native.test.mjs:163:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-lifecycle-native.test.mjs:168:1
+✖ containment rechecks exact disabled metadata after draining and never reports a stale source fence (424.146542ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(metadataReads>=3)
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-native-lifecycle/ops/platform/p2-lifecycle-native.test.mjs:187:40)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

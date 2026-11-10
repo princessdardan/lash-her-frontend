@@ -1,0 +1,223 @@
+Owned authoring evidence: /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/test-results/course-authoring-browser/run-Yh5BFa
+Authoring browser source frontend=d75abc14681cf3810234d43283efb979678d9933 course=2847d953771adc8e8be287f9512b3003af94f190
+
+Running 4 tests using 1 worker
+
+  ✘  1 [chromium] › tests/course-authoring-browser/authoring.spec.ts:40:5 › owner authors, grades publication readiness and publishes with actual Course persistence (9.1s)
+  ✓  2 [chromium] › tests/course-authoring-browser/authoring.spec.ts:201:5 › customer-facing authoring routes isolate unauthenticated and non-editor staff (951ms)
+  ✘  3 [chromium] › tests/course-authoring-browser/authoring.spec.ts:222:5 › keyboard ordering, archival identity and dirty-editor cancellation remain consistent (4.4s)
+  ✘  4 [chromium] › tests/course-authoring-browser/authoring.spec.ts:389:5 › paid CAD catalog publication warns before archive and requires validated restoration (1.5m)
+
+
+  1) [chromium] › tests/course-authoring-browser/authoring.spec.ts:40:5 › owner authors, grades publication readiness and publishes with actual Course persistence 
+
+    Error: Browser must not request external providers
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  - 1[39m
+    [31m+ Received  + 3[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   "https://va.vercel-scripts.com",[39m
+    [31m+ ][39m
+
+      33 |       [...externalOrigins],
+      34 |       "Browser must not request external providers",
+    > 35 |     ).toEqual([]);
+         |       ^
+      36 |   } finally {
+      37 |     externalOrigins.clear();
+      38 |   }
+        at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/course-authoring-browser/authoring.spec.ts:35:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-owner-authors-gr-b9946-h-actual-Course-persistence-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-owner-authors-gr-b9946-h-actual-Course-persistence-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-owner-authors-gr-b9946-h-actual-Course-persistence-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-owner-authors-gr-b9946-h-actual-Course-persistence-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/course-authoring-browser/authoring.spec.ts:222:5 › keyboard ordering, archival identity and dirty-editor cancellation remain consistent 
+
+    Error: Browser must not request external providers
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  - 1[39m
+    [31m+ Received  + 3[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   "https://va.vercel-scripts.com",[39m
+    [31m+ ][39m
+
+      33 |       [...externalOrigins],
+      34 |       "Browser must not request external providers",
+    > 35 |     ).toEqual([]);
+         |       ^
+      36 |   } finally {
+      37 |     externalOrigins.clear();
+      38 |   }
+        at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/course-authoring-browser/authoring.spec.ts:35:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-keyboard-orderin-db163-cellation-remain-consistent-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-keyboard-orderin-db163-cellation-remain-consistent-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-keyboard-orderin-db163-cellation-remain-consistent-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-keyboard-orderin-db163-cellation-remain-consistent-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › tests/course-authoring-browser/authoring.spec.ts:389:5 › paid CAD catalog publication warns before archive and requires validated restoration 
+
+    [31mTest timeout of 90000ms exceeded.[39m
+
+    Error: Browser must not request external providers
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  - 1[39m
+    [31m+ Received  + 3[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   "https://va.vercel-scripts.com",[39m
+    [31m+ ][39m
+
+      33 |       [...externalOrigins],
+      34 |       "Browser must not request external providers",
+    > 35 |     ).toEqual([]);
+         |       ^
+      36 |   } finally {
+      37 |     externalOrigins.clear();
+      38 |   }
+        at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/course-authoring-browser/authoring.spec.ts:35:7
+
+    Error: locator.selectOption: Test ended.
+    Call log:
+    [2m  - waiting for getByLabel('Access', { exact: true })[22m
+
+
+      405 |       .getByRole("textbox", { name: /^URL name/ })
+      406 |       .fill("paid-browser-catalog-fixture");
+    > 407 |     await page.getByLabel("Access", { exact: true }).selectOption("paid");
+          |                                                      ^
+      408 |     await page.getByLabel("Price (CAD)", { exact: false }).fill("10.00");
+      409 |     await page
+      410 |       .getByLabel("Approved tax classification")
+        at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/course-authoring-browser/authoring.spec.ts:407:54
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/course-authoring-browser/run-Yh5BFa/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › tests/course-authoring-browser/authoring.spec.ts:40:5 › owner authors, grades publication readiness and publishes with actual Course persistence 
+    [chromium] › tests/course-authoring-browser/authoring.spec.ts:222:5 › keyboard ordering, archival identity and dirty-editor cancellation remain consistent 
+    [chromium] › tests/course-authoring-browser/authoring.spec.ts:389:5 › paid CAD catalog publication warns before archive and requires validated restoration 
+  1 passed (1.8m)
+frontend.log:
+▲ Next.js 16.4.3 (Turbopack)
+- Local:         http://127.0.0.1:63067
+- Network:       http://127.0.0.1:63067
+✓ Ready in 202ms
+⚠ React 18 support is deprecated in Next.js 16 and will be removed in Next.js 17. Please upgrade to React 19. Learn more: https://nextjs.org/docs/messages/react-version
+✓ Running next.config.ts took 23ms
+⚠ Turbopack's filesystem cache has been deleted because we previously detected an internal error in Turbopack. Builds or page loads may be slower as a result.
+
+ GET /admin/sign-in 200 in 1260ms (next.js: 1108ms, proxy.ts: 6ms, application-code: 146ms)
+ GET /admin/courses 200 in 780ms (next.js: 580ms, proxy.ts: 7ms, application-code: 194ms)
+ POST /api/admin/courses 200 in 187ms (next.js: 58ms, application-code: 129ms)
+ GET /admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 910ms (next.js: 815ms, proxy.ts: 4ms, application-code: 91ms)
+ GET /admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 103ms (next.js: 36ms, proxy.ts: 7ms, application-code: 60ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2/publication-readiness 200 in 489ms (next.js: 471ms, application-code: 19ms)
+ POST /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2/modules 200 in 504ms (next.js: 470ms, application-code: 34ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 497ms (next.js: 472ms, application-code: 25ms)
+ POST /api/admin/modules/6381cef7-b4e1-4afb-bda8-93befdc9cf8d/lessons 200 in 515ms (next.js: 475ms, application-code: 40ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 21ms (next.js: 1.4ms, application-code: 19ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 404 in 481ms (next.js: 463ms, application-code: 18ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 404 in 506ms (next.js: 481ms, application-code: 25ms)
+ PUT /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 200 in 28ms (next.js: 2ms, application-code: 26ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 15ms (next.js: 1.4ms, application-code: 14ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 200 in 21ms (next.js: 0.4ms, application-code: 21ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 200 in 21ms (next.js: 0.3ms, application-code: 21ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2/publication-readiness 200 in 15ms (next.js: 1.4ms, application-code: 14ms)
+ PATCH /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 46ms (next.js: 0.4ms, application-code: 46ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 12ms (next.js: 0.4ms, application-code: 12ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 15ms (next.js: 3ms, application-code: 13ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 200 in 13ms (next.js: 1.6ms, application-code: 11ms)
+ PATCH /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 15ms (next.js: 0.4ms, application-code: 15ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 13ms (next.js: 0.4ms, application-code: 12ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 200 in 13ms (next.js: 0.5ms, application-code: 13ms)
+ GET /api/admin/lessons/88b09356-d0a9-4b81-8c42-24d551c3582e/quiz 200 in 15ms (next.js: 0.3ms, application-code: 15ms)
+ GET /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 11ms (next.js: 0.4ms, application-code: 10ms)
+ PATCH /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 200 in 11ms (next.js: 0.4ms, application-code: 11ms)
+ PATCH /api/admin/courses/c6b27cb0-8c18-4937-a9e5-ec2b880983f2 409 in 14ms (next.js: 0.5ms, application-code: 13ms)
+ POST /api/admin/courses 403 in 2ms (next.js: 0.6ms, application-code: 1.7ms)
+ GET /api/admin/courses 401 in 13ms (next.js: 1.8ms, application-code: 12ms)
+ GET /api/admin/courses 403 in 16ms (next.js: 0.5ms, application-code: 15ms)
+ GET /admin/courses 307 in 72ms (next.js: 13ms, proxy.ts: 3ms, application-code: 56ms)
+ GET /admin/not-authorized 200 in 258ms (next.js: 235ms, proxy.ts: 3ms, application-code: 20ms)
+ POST /api/admin/courses 200 in 12ms (next.js: 0.4ms, application-code: 12ms)
+ POST /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac/modules 200 in 13ms (next.js: 1.6ms, application-code: 12ms)
+ POST /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac/modules 200 in 12ms (next.js: 0.3ms, application-code: 12ms)
+ POST /api/admin/modules/73565c6a-31a2-49c6-8fac-d748f16f49c4/lessons 200 in 14ms (next.js: 1.4ms, application-code: 13ms)
+ POST /api/admin/modules/73565c6a-31a2-49c6-8fac-d748f16f49c4/lessons 200 in 13ms (next.js: 0.4ms, application-code: 12ms)
+ GET /admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 89ms (next.js: 5ms, proxy.ts: 3ms, application-code: 81ms)
+ POST /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac/modules/reorder 200 in 525ms (next.js: 482ms, application-code: 43ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 12ms (next.js: 1.3ms, application-code: 11ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 11ms (next.js: 0.4ms, application-code: 11ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 12ms (next.js: 0.5ms, application-code: 12ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 12ms (next.js: 0.3ms, application-code: 12ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 20ms (next.js: 3ms, application-code: 17ms)
+ POST /api/admin/modules/73565c6a-31a2-49c6-8fac-d748f16f49c4/lessons/reorder 200 in 500ms (next.js: 465ms, application-code: 36ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 12ms (next.js: 0.3ms, application-code: 11ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 14ms (next.js: 1.5ms, application-code: 12ms)
+ PATCH /api/admin/lessons/804b65ca-a3f7-4ba1-8e31-d2ec8fa4b703 200 in 484ms (next.js: 447ms, application-code: 37ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 12ms (next.js: 1.2ms, application-code: 11ms)
+ PATCH /api/admin/lessons/804b65ca-a3f7-4ba1-8e31-d2ec8fa4b703 200 in 15ms (next.js: 1.7ms, application-code: 13ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 12ms (next.js: 0.4ms, application-code: 12ms)
+ GET /api/admin/courses/25ca3d70-92ed-4ea0-9f4d-629c3a179dac 200 in 13ms (next.js: 1.3ms, application-code: 11ms)
+ GET /api/admin/lessons/804b65ca-a3f7-4ba1-8e31-d2ec8fa4b703/video 404 in 454ms (next.js: 439ms, application-code: 16ms)
+ GET /api/admin/lessons/804b65ca-a3f7-4ba1-8e31-d2ec8fa4b703/video 404 in 473ms (next.js: 456ms, application-code: 16ms)
+ GET /admin/courses 200 in 61ms (next.js: 3ms, proxy.ts: 3ms, application-code: 55ms)
+
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:504
+            new Error(
+            ^
+
+Error: Owned browser command failed (1): /Users/dardan/.nvm/versions/node/v24.18.0/bin/node
+    at ChildProcess.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:504:13)
+    at Object.onceWrapper (node:events:631:26)
+    at ChildProcess.emit (node:events:509:28)
+    at maybeClose (node:internal/child_process:1124:16)
+    at Socket.<anonymous> (node:internal/child_process:481:11)
+    at Socket.emit (node:events:509:28)
+    at Pipe.<anonymous> (node:net:351:12)
+
+Node.js v24.18.0

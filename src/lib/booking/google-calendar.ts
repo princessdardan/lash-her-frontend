@@ -1,3 +1,5 @@
+import { runAdminReadOperation } from "@/lib/admin/read-operation";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
 import { google } from "googleapis";
@@ -66,14 +68,18 @@ export function getCalendarConnectionOAuthConsentUrl(state: string): string {
   });
 }
 
-export async function revokeGoogleTokenBestEffort(token: string): Promise<void> {
+export async function revokeGoogleTokenBestEffort(
+  token: string,
+): Promise<void> {
   try {
-    await fetch("https://oauth2.googleapis.com/revoke", {
+    const response = await fetch("https://oauth2.googleapis.com/revoke", {
       body: new URLSearchParams({ token }),
       headers: { "content-type": "application/x-www-form-urlencoded" },
       method: "POST",
     });
+    if (!response.ok) markWriterOperationUncertain();
   } catch {
+    markWriterOperationUncertain();
     // Local credential deletion remains authoritative when Google is unavailable.
   }
 }
@@ -145,6 +151,14 @@ export async function insertConnectionBookingEvent(input: {
  * The contextual alias `primary` is never returned as a durable assignment.
  */
 export async function listConnectionGoogleCalendars(
+  connectionId: string,
+): Promise<GoogleCalendarOption[]> {
+  return runAdminReadOperation("calendar-discovery", () =>
+    listConnectionGoogleCalendarsWork(connectionId),
+  );
+}
+
+async function listConnectionGoogleCalendarsWork(
   connectionId: string,
 ): Promise<GoogleCalendarOption[]> {
   const { createDrizzleCalendarConnectionRepository } =

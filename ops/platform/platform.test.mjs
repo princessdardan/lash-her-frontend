@@ -8,6 +8,24 @@ import { privateTlsPolicies, databaseConnectionBudgets } from "./configuration.m
 
 const model = parse(readFileSync(new URL("./compose.yaml", import.meta.url), "utf8"), { merge: true });
 
+test("isolated Mux override declares only the fixed gateway spool without changing the default layout", () => {
+  const override = parse(readFileSync(new URL("./compose.p2q-mux.yaml", import.meta.url), "utf8"));
+  assert.deepEqual(Object.keys(override), ["services"]);
+  assert.deepEqual(Object.keys(override.services), ["gateway"]);
+  assert.deepEqual(Object.keys(override.services.gateway), ["volumes"]);
+  assert.deepEqual(override.services.gateway.volumes, [{
+    type: "bind", source: "/run/lash-her-p2q-mux-private/capture-root", target: "/mux-capture",
+    read_only: false, bind: { create_host_path: false, propagation: "rprivate" },
+  }]);
+  assert.equal(model.services.gateway.read_only, true);
+  assert.deepEqual(model.services.gateway.volumes, [
+    "${RELEASE_DIR:?select protected release directory}/gateway.json:/config/gateway.json:ro",
+    "${RELEASE_DIR}/admission:/admission:ro", "${RELEASE_DIR}/tls/gateway:/tls:ro",
+  ]);
+  // This source-model check does not prove Compose merge semantics, actual
+  // mount/UID/fsync behavior or an authorized launcher. Those remain gates.
+});
+
 for (const templateName of ["lightsail-host", "lightsail-access-recovery"]) {
 test(`${templateName}: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines`, () => {
   const template = JSON.parse(readFileSync(new URL(`../aws/${templateName}.cfn.json`, import.meta.url), "utf8"));
@@ -77,8 +95,12 @@ test("private policies isolate workload, publisher, authority and operational pe
   const { course, community } = privateTlsPolicies();
   const workload = course.peers.find((peer) => peer.address === "172.29.10.10");
   assert.ok(!workload.routes.some((route) => route.path.startsWith("/v1/internal/community/") || route.path === "/metrics"));
-  assert.equal(community.peers.length, 2);
+  assert.equal(community.peers.length, 3);
   assert.deepEqual(community.peers[0].routes, [{ method: "POST", path: "/v1/internal/course/enrollment-events" }]);
+  assert.deepEqual(community.peers.find(peer => peer.address === "172.29.10.10").routes, [
+    { method: "POST", path: "/v1/internal/accounts/commands" },
+    { method: "GET", path: "/v1/internal/accounts/exports/{commandId}" },
+  ]);
   assert.equal(course.peers.find((peer) => peer.address === "172.29.10.31").routes.length, 1);
   for (const budget of Object.values(databaseConnectionBudgets)) {
     assert.equal(budget.runtimeMaximum, budget.runtimeProcesses * 11);
@@ -168,6 +190,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   const workflow = parse(readFileSync(new URL("../../.github/workflows/platform-artifacts.yml", import.meta.url), "utf8"));
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   const job = workflow.jobs.candidate;
+  assert.equal(job["runs-on"], "ubuntu-24.04");
   assert.equal(job.environment, undefined);
   assert.ok(job.if.includes("github.actor_id == '8996309'"));
   assert.deepEqual(job.permissions, { contents: "read", actions: "read", packages: "write", "id-token": "write", attestations: "write" });
@@ -183,6 +206,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   const crossContractIndex = steps.findIndex((step) => step.run?.includes("check-vendored-course-contract.mjs"));
   assert.ok(crossContractIndex > verifyIndex && crossContractIndex < steps.indexOf(builds[0]));
   assert.match(steps[crossContractIndex].run, /--release/u);
+  const phase2Index = steps.findIndex(step => step.run?.includes("source-checkout.mjs --phase2"));
+  assert.ok(phase2Index > crossContractIndex && phase2Index < steps.indexOf(builds[0]));
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 6);
   for (const build of builds) {
@@ -197,17 +222,23 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(scans.length, 6);
   for (const scan of scans) {
     assert.ok(scan.with["image-ref"].includes("@${{"));
-    if (scan.with.output.endsWith("-raw-scan.json")) {
-      assert.equal(scan.with["exit-code"], "0");
-      assert.equal(scan.env.TRIVY_LIST_ALL_PKGS, "true");
-      const next = steps[steps.indexOf(scan) + 1];
-      assert.match(next.run, /ops\/gateway\/runtime\/verify\.mjs/u);
-      assert.ok(next.run.includes(scan.with["image-ref"]));
-      assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);
-    } else {
-      assert.equal(scan.with["exit-code"], "1");
-      assert.equal(scan.with.severity, "CRITICAL,HIGH");
-    }
+    assert.ok(scan.with.output.endsWith("-raw-scan.json"));
+    assert.equal(scan.with["exit-code"], "0");
+    assert.equal(scan.with.severity, undefined);
+    assert.equal(scan.env.TRIVY_LIST_ALL_PKGS, "true");
+    const index = steps.indexOf(scan), next = steps[index + 1], retain = steps[index + 2];
+    const prefix = scan.with.output.split("/").at(-1).replace("-raw-scan.json", "");
+    const source = prefix.startsWith("course-") ? "course-api/ops" : prefix.startsWith("community-") ? "community-api/ops" : "frontend/ops/gateway";
+    assert.ok(next.run.startsWith(`node sources/lash-her-${source}/runtime/verify.mjs `));
+    assert.ok(next.run.includes(scan.with["image-ref"]));
+    assert.ok(next.run.includes(`"$RUNNER_TEMP/platform-evidence/${prefix}-raw-scan.json"`));
+    assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);
+    assert.equal(next["continue-on-error"], undefined);
+    assert.equal(retain.if, "${{ !cancelled() }}");
+    assert.ok(retain.uses.startsWith("actions/upload-artifact@"));
+    assert.ok(retain.with.path.includes(`${prefix}-raw-scan.json`));
+    assert.ok(retain.with.path.includes(`${prefix}-runtime/`));
+    assert.equal(retain.with["if-no-files-found"], "error");
     assert.equal(scan.with.version, "v0.76.1");
   }
   assert.ok(steps.some((step) => step.run?.includes("artifact-candidate.mjs --harness")));
@@ -215,9 +246,19 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(collectors.length, 2);
   for (const step of collectors) assert.match(step.run, /^node sources\/lash-her-frontend\/ops\/platform\/artifact-candidate\.mjs/u);
   const harnessIndex = steps.findIndex((step) => step.run?.includes("local-harness.mjs"));
+  assert.ok(steps[harnessIndex].run.includes("local-harness.mjs --phase p2"));
+  assert.ok(steps.some(step => step.run?.includes("contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly")));
   const finalCheckIndex = steps.findIndex((step) => step.run?.includes("source-checks.final.json"));
   const qualificationIndex = steps.findIndex((step) => step.run?.includes("artifact-candidate.mjs --harness"));
   assert.ok(harnessIndex > verifyIndex && finalCheckIndex > harnessIndex && qualificationIndex > finalCheckIndex);
   assert.equal(workflow.on.workflow_dispatch.inputs.source_branch.default, "main");
   assert.ok(!JSON.stringify(workflow).includes("aws-actions/"));
+});
+
+test("native qualification uses the explicit supported Ubuntu baseline without altering its verifier", () => {
+  const workflow = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"));
+  for (const key of ["frontend-operator-migrations", "gateway-and-platform", "browser-tests"]) assert.equal(workflow.jobs[key]["runs-on"], "ubuntu-24.04");
+  for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
+    if (step.run?.includes("ops/gateway/runtime/verify.mjs")) assert.equal(step["continue-on-error"], undefined);
+  }
 });

@@ -1,0 +1,214 @@
+test_403_missing_preretirement_or_stillusable_never_proves_retirement (frontend_crm_shipping_retirement_test.RetirementTests.test_403_missing_preretirement_or_stillusable_never_proves_retirement) ... ERROR
+test_complete_shipping_pagination_reads_exact_multiple_and_bound_limits (frontend_crm_shipping_retirement_test.RetirementTests.test_complete_shipping_pagination_reads_exact_multiple_and_bound_limits) ... ERROR
+test_dashboard_retirement_requires_real_denial_and_immutable_original_receipts (frontend_crm_shipping_retirement_test.RetirementTests.test_dashboard_retirement_requires_real_denial_and_immutable_original_receipts) ... ERROR
+test_database_snapshot_binding_and_full_shape_cannot_be_replaced_by_completion_flags (frontend_crm_shipping_retirement_test.RetirementTests.test_database_snapshot_binding_and_full_shape_cannot_be_replaced_by_completion_flags) ... ERROR
+test_full_nonempty_terminal_shipping_scope_has_concrete_zero_without_global_authorization (frontend_crm_shipping_retirement_test.RetirementTests.test_full_nonempty_terminal_shipping_scope_has_concrete_zero_without_global_authorization) ... ERROR
+test_highlevel_known_records_reconcile_without_inventing_workflow_or_ingress_zero (frontend_crm_shipping_retirement_test.RetirementTests.test_highlevel_known_records_reconcile_without_inventing_workflow_or_ingress_zero) ... ERROR
+test_highlevel_wrong_tenant_pending_journey_outbox_and_accepted_delivery_remain_unresolved (frontend_crm_shipping_retirement_test.RetirementTests.test_highlevel_wrong_tenant_pending_journey_outbox_and_accepted_delivery_remain_unresolved) ... ERROR
+test_oauth_refresh_denial_is_actual_one_shot_and_invalid_client_or_success_never_qualifies (frontend_crm_shipping_retirement_test.RetirementTests.test_oauth_refresh_denial_is_actual_one_shot_and_invalid_client_or_success_never_qualifies) ... ERROR
+test_pagination_count_duplicates_scope_drift_and_changed_immutable_readback_refuse (frontend_crm_shipping_retirement_test.RetirementTests.test_pagination_count_duplicates_scope_drift_and_changed_immutable_readback_refuse) ... ERROR
+test_pending_refund_tracking_unknown_database_job_and_orphans_remain_unresolved (frontend_crm_shipping_retirement_test.RetirementTests.test_pending_refund_tracking_unknown_database_job_and_orphans_remain_unresolved) ... ERROR
+test_transport_forbids_other_accounts_mutations_revoke_token_introspection_and_production (frontend_crm_shipping_retirement_test.RetirementTests.test_transport_forbids_other_accounts_mutations_revoke_token_introspection_and_production) ... ERROR
+
+======================================================================
+ERROR: test_403_missing_preretirement_or_stillusable_never_proves_retirement (frontend_crm_shipping_retirement_test.RetirementTests.test_403_missing_preretirement_or_stillusable_never_proves_retirement)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_complete_shipping_pagination_reads_exact_multiple_and_bound_limits (frontend_crm_shipping_retirement_test.RetirementTests.test_complete_shipping_pagination_reads_exact_multiple_and_bound_limits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_dashboard_retirement_requires_real_denial_and_immutable_original_receipts (frontend_crm_shipping_retirement_test.RetirementTests.test_dashboard_retirement_requires_real_denial_and_immutable_original_receipts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_database_snapshot_binding_and_full_shape_cannot_be_replaced_by_completion_flags (frontend_crm_shipping_retirement_test.RetirementTests.test_database_snapshot_binding_and_full_shape_cannot_be_replaced_by_completion_flags)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_full_nonempty_terminal_shipping_scope_has_concrete_zero_without_global_authorization (frontend_crm_shipping_retirement_test.RetirementTests.test_full_nonempty_terminal_shipping_scope_has_concrete_zero_without_global_authorization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_highlevel_known_records_reconcile_without_inventing_workflow_or_ingress_zero (frontend_crm_shipping_retirement_test.RetirementTests.test_highlevel_known_records_reconcile_without_inventing_workflow_or_ingress_zero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_highlevel_wrong_tenant_pending_journey_outbox_and_accepted_delivery_remain_unresolved (frontend_crm_shipping_retirement_test.RetirementTests.test_highlevel_wrong_tenant_pending_journey_outbox_and_accepted_delivery_remain_unresolved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_oauth_refresh_denial_is_actual_one_shot_and_invalid_client_or_success_never_qualifies (frontend_crm_shipping_retirement_test.RetirementTests.test_oauth_refresh_denial_is_actual_one_shot_and_invalid_client_or_success_never_qualifies)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_pagination_count_duplicates_scope_drift_and_changed_immutable_readback_refuse (frontend_crm_shipping_retirement_test.RetirementTests.test_pagination_count_duplicates_scope_drift_and_changed_immutable_readback_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_pending_refund_tracking_unknown_database_job_and_orphans_remain_unresolved (frontend_crm_shipping_retirement_test.RetirementTests.test_pending_refund_tracking_unknown_database_job_and_orphans_remain_unresolved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_transport_forbids_other_accounts_mutations_revoke_token_introspection_and_production (frontend_crm_shipping_retirement_test.RetirementTests.test_transport_forbids_other_accounts_mutations_revoke_token_introspection_and_production)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-crm-shipping-retirement/ops/platform/host/frontend_crm_shipping_retirement_test.py", line 121, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.021s
+
+FAILED (errors=11)

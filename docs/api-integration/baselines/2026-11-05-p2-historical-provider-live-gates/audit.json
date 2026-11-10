@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "status": "READ_ONLY_SOURCE_AND_PRIMARY_DOCUMENTATION_REGISTERED",
+  "implementationCommit": "b7419df32f0d9fcf9217003c3ca1883342ffa9e1",
+  "historicalSourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+  "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+  "registeredC07Families": 36,
+  "globalSqlRequirements": [
+    "sql-credentials.BACKUP_RESTORE_DATABASE_URL",
+    "sql-credentials.DATABASE_URL",
+    "sql-credentials.STAGING_DATABASE_URL",
+    "sql-credentials.TEST_DATABASE_URL"
+  ],
+  "currentConfiguredPathsReleaseQualified": false,
+  "providerAccountObserved": false,
+  "originalConfigurationObserved": false,
+  "credentialsFetched": false,
+  "mutationsPerformed": false,
+  "testsClaimedForDocumentationChange": false,
+  "sourceGetterExecuted": true,
+  "primaryReferences": [
+    {
+      "id": "highlevel-workflow-logs",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow-logs/index.html",
+      "supportedObservation": "Selected-subaccount v3 step logs; explicit cursor; 30-day request spans within 60 retained days; provider execution ID does not itself supply the application journey key."
+    },
+    {
+      "id": "highlevel-console-execution",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000003992-workflows-improved-execution-logs-enrollment-history",
+      "supportedObservation": "Execution Logs/Enrollment History and message-details Workflow deep link; no general export API inferred."
+    },
+    {
+      "id": "highlevel-webhook-logs",
+      "url": "https://marketplace.gohighlevel.com/docs/webhook/WebhookLogsDashboard/",
+      "supportedObservation": "Actual app event IDs and attempts; filters/pages; 30-day retained window."
+    },
+    {
+      "id": "resend-api-logs",
+      "url": "https://resend.com/docs/api-reference/logs/list-logs",
+      "supportedObservation": "Documented paginated GET /logs returns API request metadata."
+    },
+    {
+      "id": "resend-log-detail",
+      "url": "https://resend.com/docs/api-reference/logs/retrieve-log",
+      "supportedObservation": "Documented GET /logs/{id}; request and response bodies must remain private."
+    },
+    {
+      "id": "resend-runs",
+      "url": "https://resend.com/docs/api-reference/automations/list-automation-runs",
+      "supportedObservation": "Documented GET /automations/{automation_id}/runs; must enumerate all statuses, not terminal-only examples."
+    },
+    {
+      "id": "resend-run-detail",
+      "url": "https://resend.com/docs/api-reference/automations/get-automation-run",
+      "supportedObservation": "Documented exact run read with steps; completed run is not inferred email delivery."
+    },
+    {
+      "id": "resend-events",
+      "url": "https://resend.com/docs/api-reference/events/list-events",
+      "supportedObservation": "List returns event definitions/name/schema, not sent-occurrence history."
+    },
+    {
+      "id": "resend-openapi",
+      "url": "https://github.com/resend/resend-openapi/blob/main/resend.yaml",
+      "supportedObservation": "Observed OpenAPI version1.5.1 defines logs/run cursor parameters and run statuses; no retrospective completeness or retention guarantee inferred."
+    },
+    {
+      "id": "resend-exports",
+      "url": "https://resend.com/changelog/exports-general-availability",
+      "supportedObservation": "CSV exports for emails, broadcasts, contacts, domains, logs and keys; original filters and provenance still required."
+    },
+    {
+      "id": "resend-retention",
+      "url": "https://resend.com/security/gdpr/",
+      "supportedObservation": "Provider states email/log retention30days on listed standard plans; actual selected account coverage remains unobserved. This is not a new billing condition."
+    },
+    {
+      "id": "square-payments",
+      "url": "https://developer.squareup.com/reference/square/payments-api/list-payments",
+      "supportedObservation": "Eventually consistent results; default begin_time one year; explicit actual lifetime required."
+    },
+    {
+      "id": "square-api-logs",
+      "url": "https://developer.squareup.com/docs/devtools/api-logs",
+      "supportedObservation": "Console request/response logs;28day retention;50k entry cap/truncation; no invented public log API or guaranteed export."
+    },
+    {
+      "id": "chitchats-shipments",
+      "url": "https://github.com/chitchats/chitchats-api-doc/blob/master/sections/shipments.md",
+      "supportedObservation": "Shipment count/list/detail and pending deletion; no complete deleted-object/request archive established."
+    },
+    {
+      "id": "chitchats-credentials",
+      "url": "https://assets.chitchats.com/docs/api/v1",
+      "supportedObservation": "Documented staging host and token deletion immediately revokes access; accepted request cancellation not inferred."
+    },
+    {
+      "id": "google-events",
+      "url": "https://developers.google.com/workspace/calendar/api/v3/reference/events/list",
+      "supportedObservation": "Complete event read follows nextPageToken; provider event identity/etag must join actual original effects."
+    },
+    {
+      "id": "google-revocation",
+      "url": "https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke",
+      "supportedObservation": "Grant revocation is distinct from proof that accepted source effects and callbacks completed."
+    },
+    {
+      "id": "sanity-messages",
+      "url": "https://www.sanity.io/docs/content-lake/webhooks",
+      "supportedObservation": "Message log is described as outstanding delivery/queue observation; disable alone does not prove drain."
+    },
+    {
+      "id": "sanity-http",
+      "url": "https://www.sanity.io/docs/http-reference/webhooks",
+      "supportedObservation": "Fixed message/attempt pagination and IDs; current top-level document-message hookId assumption needs actual schema qualification."
+    }
+  ],
+  "implementationGaps": {
+    "highlevel": "Configured observer emits requiredObservations but hard-returns null aggregate counts; no Console receipt consumer.",
+    "resend": "Reachable untracked requirements remain missing; logs/run/callback and remaining family request-completeness reducer absent.",
+    "square": "Durable object joins do not cover capability/accepted-request requirements; hosted-link and callback scope remain independent.",
+    "chitchats": "Untracked transient create/delete/cache history remains missing; original row disappearance cannot settle.",
+    "google": "Selected grant/store observer not mapped to configured historical family requirement-ID completion; client-only proof cannot substitute.",
+    "sanity": "Existing outstanding delivery observer has no per-source configured callback reducer; documented document-message shape needs qualification."
+  },
+  "sourceSha256": {
+    "ops/platform/frontend-historical-source.mjs": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+    "ops/platform/frontend-provider-fence-join.mjs": "db97536d711b0286306c30b780eb2ae9dde5936b34e4051243284a6545f20719",
+    "ops/platform/host/frontend_highlevel_history.py": "b8ff82d9d8683da4b2c80775c2f23edff8657ba5e19bf2cd9fd42878e463f77c",
+    "ops/platform/host/frontend_resend_marketing_scope.py": "e399ce9ecd0583ee916e04e38baffbb289142eec720dcf94c137806e8051e30b",
+    "ops/platform/host/frontend_square_financial_scope.py": "03c3b579029d037796bf3baf4bc2f6564059a14b61be030731cab4c99205c049",
+    "ops/platform/host/frontend_chitchats_transient_effects.py": "11728ef6b945d700b93e4cec08a02098721a8742d3afcc892329c3a81e5a0b88",
+    "ops/platform/host/frontend_sanity_fencing.py": "c71a227d0b3f4b1511c6fdc21cda942fadfc28750c507133f6f16d0c0473f951",
+    "docs/api-integration/p2-historical-provider-live-gates.md": "b277468b3d95f77c44d677cdf929e7299d689f4b78ad793800b2afb377fe8874",
+    "docs/api-integration/baselines/2026-11-05-p2-historical-provider-live-gates/source-requirements.json": "778391af29e8ca2a4f2f5dab5229bbbda7c81fa60717737f2224823e4cd20569"
+  }
+}

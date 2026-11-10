@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { erasedIdentityKey } from "./crypto";
 import { highlevel } from "./client";
 import { HighLevelError } from "./contract";
@@ -73,8 +74,10 @@ export async function deleteReviewedCrmCopy(id: string): Promise<void> {
     );
     // Keep a keyed, irreversible suppression tombstone after CRM deletion; otherwise
     // queued source events could recreate the erased CRM contact on the next run.
-    await tx.execute(
-      sql`update highlevel_contacts set email_normalized = ${erasedIdentityKey(contact.email_normalized, locationId())}, deleted_at = now(), phone = null, provider_email_blocked = true, provider_sms_blocked = true, updated_at = now() where id = ${id}::uuid`,
+    const receipt = await tx.execute<{ id: string }>(
+      sql`update highlevel_contacts set email_normalized = ${erasedIdentityKey(contact.email_normalized, locationId())}, deleted_at = now(), phone = null, provider_email_blocked = true, provider_sms_blocked = true, updated_at = now() where id = ${id}::uuid returning id`,
     );
+    if (receipt.rows.length !== 1 || receipt.rows[0].id !== id)
+      markWriterOperationUncertain();
   });
 }

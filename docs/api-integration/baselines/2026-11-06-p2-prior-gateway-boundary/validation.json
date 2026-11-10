@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "status": "OWNED_PRIOR_GATEWAY_BOUNDARY_PASS",
+  "baseCommit": "693f984b77717c30abcdb5fbe869aae564dcd390",
+  "rootNodeSeamCommit": "cdc2881bd41d9dc50b7a59ddcc7d348a063b4ee6",
+  "localConsumedNodeCommit": "17d8418f946df8f44b9013d18cf62e160fa75dc3",
+  "sourceSha256": {
+    "ops/platform/host/p2_prior_gateway.py": "954e6d8002f58d6baf401a6c92ac5c2f343dcb4d965a7f952a2631058759aafb",
+    "ops/platform/host/p2_prior_gateway_test.py": "840c5082b9a39e61703f081b9e58fa8a06b4c1b7955674c38b07cca48d6f39e2",
+    "ops/platform/host/p2_recovery_broker.py": "09b34a2601942261b6be05bfcbbe80fa80bc2ff1f21a40e0b09201d3bc1373bb",
+    "ops/platform/host/p2_recovery_runtime.py": "c5967015713301cc9dd282d54f4b5d39e159a38f1def7037c29edfff3b43d55d",
+    "ops/platform/host/p2_recovery_scope.py": "85e8a6c55bc24899ee2c93cb6431bdd11b2c827348a80cc8e40a56906c7f1ad8",
+    "ops/platform/host/p2_recovery_test.py": "2832c89ac2acc7c9c328d23e41bc98dc8176fade235ad267333d4f60b3ba8a19",
+    "ops/platform/host/p2_release_broker.py": "ca0a3cf01beb811f3cd614c3a9db1714b923b3d25f5d6e386869129b9ba76d82",
+    "ops/platform/host/p2_release_scope.py": "ad6fe6f3285184b59718ec4331b5bb49e4ca1244eaa2a82ca7dabf65b2ec621c",
+    "ops/platform/host/p2_release_supervisor.py": "646d4183e708afafc92e9068edbcde0846e98a1729f57981a8e882bbf1a1f366",
+    "ops/platform/host/release.py": "44cbb5436cd57799836608f0abcd92c909a2557abfce6722c67aecee076a2527"
+  },
+  "newOpsFiles": 2,
+  "tests": {
+    "python": {
+      "count": 96,
+      "exitCode": 0,
+      "elapsedSeconds": 23.239,
+      "command": "python3 -m unittest p2_prior_gateway_test p2_release_guard_test p2_release_scope_test p2_recovery_test p2_supervisor_dispatch_test release_test",
+      "workingDirectory": "ops/platform/host"
+    },
+    "nodeTransport": {
+      "count": 13,
+      "exitCode": 0,
+      "nodeMajor": 24,
+      "command": "node --test ops/platform/p2-release-transport.test.mjs ops/platform/p2-recovery-transport.test.mjs"
+    }
+  },
+  "logSha256": {
+    "host-tests.log": "dc0cf77f48ee2185281324895308f9d4aa33639bdc9706c51490c433d61c2da2",
+    "node-transport-tests.log": "e9b459f60be3e4129516bfcbe5aafe7deb3788c1a0b3ab64442a73b03438fb28"
+  },
+  "actualOwnedExecutions": [
+    "gateway HTTPS route and operations server",
+    "sticky lost-ACK process uncertainty",
+    "inflight request drain",
+    "process termination and gateway-last new process",
+    "physical local flock descriptors",
+    "source-selected independent guard containment"
+  ],
+  "fixtureProjections": [
+    "Docker engine/inventory/image/mount/process metadata transport",
+    "API database-current proof results",
+    "Compose service startup transport",
+    "frontend guard observer transport"
+  ],
+  "liveActionsPerformed": false,
+  "liveDockerOrStagingDatabaseClaim": false,
+  "knownAckExceptionImplemented": false,
+  "independentReviewPending": true,
+  "requirements": [
+    "read-only prior preflight before LOCKED",
+    "field-free prepare before reviewed SQL and runtime restoration",
+    "source-bound same-process closed active0 and uncertain0",
+    "source ordered-stop receipt and latest lineage required for absence",
+    "known or unknown uncertainty preserved across containment",
+    "retained eight-service P1 gateway proof supported",
+    "no SQL/role/login replay"
+  ]
+}

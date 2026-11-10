@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "qualifiedSource": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+  "qualifiedCiRun": 42320214307,
+  "sourceResult": "All ten jobs passed; original artifacts verified",
+  "browser": {
+    "expected": 581,
+    "skipped": 159,
+    "unexpected": 0,
+    "flaky": 1,
+    "disclosure": "Firefox product-detail417 retry-pass; original historical timing not proven"
+  },
+  "subsequentTestCorrection": {
+    "original": "5533e25eb13a62a621d26f78fa09d3aa70aebce2",
+    "integrated": "0b9eeff0b0d2f855dc57c313c38616035dd5a251",
+    "file": "tests/product-detail.spec.ts",
+    "scope": "Wait for exact checkout POST response200 before existing payload/cart assertions; no application changes/retries/timeouts",
+    "independentReview": "CLEAR",
+    "ownerAndIndependentChecks": "Focused lint/strict file TypeScript/diff and real controlled Firefox loopback ordering proof pass",
+    "rootFocusedLintExit": 0,
+    "rootFocusedTypeExit": 0,
+    "fullApplicationCaseRunLocally": false,
+    "freshExactHeadCi": "REQUIRED"
+  },
+  "durableCiArchive": {
+    "manifest": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-resource-reuse-ci-qualified/MANIFEST.json",
+    "sha256": "75fa630f9e24651e9a848511e3617cb02a636f80cd1cf68fef315c4af9bedf6f",
+    "files": 33,
+    "bytes": 8123909
+  },
+  "candidateGate": {
+    "currentApiMainsAtAudit": {
+      "course": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+      "community": "52492aa7d68ca6fefb444b2046976f79fd0091b4"
+    },
+    "currentManifestBaselines": {
+      "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+      "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+    },
+    "requiredNext": "Approve/complete policy PR merges; freeze final main heads and CI; synchronize frontend P2 manifest/current source selectors before candidate publication",
+    "apiPolicyPrsMerged": false,
+    "sourcePublicationBranch": "staging",
+    "automaticGitDeploymentSourceGuard": "vercel.mjs deploymentEnabled:false; both actual Vercel project roots confirmed empty/repository-root"
+  },
+  "ownerInputsPending": [
+    "API policy PR10/PR9 merge approval after automatic approval review rejected current merge attempts",
+    "Google-required2-step verification in existing retained staging account; prior project-ID question resolved"
+  ],
+  "actualProviderOrStagingCertification": false,
+  "providerActivity": "Read-only metadata and existing-account selection only; no resource/configuration/security/key/credential changes by agent",
+  "stoppedGuardianWipIntegrated": false,
+  "supplementalArchive": {
+    "manifest": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-reuse-supplemental-proof/MANIFEST.json",
+    "sha256": "b18d2e42ec8423410e5c1f620b166d6d2276089dbc499087ca51c6fdc7b6f0a4",
+    "files": 11,
+    "bytes": 69243
+  }
+}

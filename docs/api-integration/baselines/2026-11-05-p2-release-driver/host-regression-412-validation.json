@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "sourceCommit": "0373fe95",
+  "status": "FULL_HOST_REGRESSION_PASS",
+  "command": "PYTHONPATH=ops/platform/host python3 -m unittest discover -s ops/platform/host -p '*_test.py'",
+  "testsRun": 412,
+  "failed": 0,
+  "skipped": 1,
+  "skip": "optional separately enabled owned PostgreSQL fixture; real PG16 role/coordinator suite passed separately",
+  "platform": "macOS owned local sockets and POSIX processes",
+  "liveProviderOrStagingTouched": false,
+  "linuxDockerExecution": false,
+  "releaseAccepted": false,
+  "files": {
+    "host-regression-412-pass.log": "f63446580e707b33b10b8c3bb8a566adcd1e660bed361c8124f1bbb6d19edf16"
+  }
+}

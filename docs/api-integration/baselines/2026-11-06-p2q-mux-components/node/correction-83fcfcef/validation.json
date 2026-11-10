@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "status": "P2Q_MUX_NODE_COMPONENT_CORRECTIONS_VERIFIED",
+  "sourceCommit": "83fcfcef9da54acdf0b6626c708fe6c2a629a3c7",
+  "sourceCorrectionCommits": [
+    "c488aa1a2ab8ef16fd9b44ab08a81dd8b5fd019b",
+    "83fcfcef9da54acdf0b6626c708fe6c2a629a3c7"
+  ],
+  "originalSourceCommit": "dcea40053ed51e7ffe59649279097a0701d672e7",
+  "originalEvidenceCommit": "5cd9817d4c6244cf614f05e1aa44d4fe81afe45e",
+  "jointSchemaSha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+  "sourceFiles": {
+    "ops/platform/p2q-mux-capture.mjs": {
+      "sha256": "4d8b7ebd1b6bcbe87bb69b8ddedb6830e46b01b1378936b19f8f9d1fda1680bc",
+      "bytes": 16677
+    },
+    "ops/platform/p2q-mux-capture.test.mjs": {
+      "sha256": "faf0b079d024ce7b03e146ac9ca20333d93a7582140658e7b62aebc3603c3409",
+      "bytes": 18154
+    }
+  },
+  "sourceBytes": 34831,
+  "sourceByteLimit": 36864,
+  "runtime": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "verification": {
+    "tests": {
+      "command": "node --test ops/platform/p2q-mux-capture.test.mjs",
+      "exitCode": 0,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "log": "tests.log"
+    },
+    "lint": {
+      "command": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-mux-capture.mjs ops/platform/p2q-mux-capture.test.mjs",
+      "exitCode": 0,
+      "log": "lint.log",
+      "dependencyLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+      "dependencySource": "existing phase2-integration node_modules; matching package-lock bytes"
+    },
+    "freshProcessFilesystemControl": {
+      "actualNodeSubprocess": true,
+      "explicitReadsBeforeTargetDispatch": 0,
+      "oldDependencyRefusedBySameGuard": true,
+      "excludedReads": "fixed two JavaScript source files for Node module loader only; corresponding source-file FDs tracked",
+      "sourceParentOrHost": false
+    }
+  },
+  "findings": {
+    "nonEnumerableDescriptors": "fixed; root, nested profile/selection and array-index validation/encode/hash regressions",
+    "captureBudgetBinding": "fixed; same lease SHA and otherwise valid 15s budget refuse wrong slot/type/environment/asset/attempt/lesson/generation",
+    "registryImportIo": "fixed; no profile-registry dependency; bounded local JSON parse, fatal UTF8 and exact canonical+LF comparison refuse duplicated/noncanonical bytes"
+  },
+  "qualification": {
+    "componentOnly": true,
+    "projectedInputs": true,
+    "productionArm": false,
+    "productionDispatch": false,
+    "sourceParentFactoryAvailable": false,
+    "allocatedProfileRegistered": false,
+    "newModePhysicalObserverAvailable": false,
+    "actualHost": false,
+    "actualPostgres": false,
+    "actualDocker": false,
+    "providerTouched": false,
+    "actualHttpResponseJoin": false,
+    "actualDrainQualified": false,
+    "providerQueueQualified": false,
+    "S05Live": "OPEN"
+  }
+}

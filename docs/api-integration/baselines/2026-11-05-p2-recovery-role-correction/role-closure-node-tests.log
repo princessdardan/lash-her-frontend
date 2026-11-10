@@ -1,0 +1,13 @@
+✔ post-SQL recovery preserves original candidate and pending chain without fabricating absent terminal (15.038666ms)
+✔ candidate bytes, source, original action, inventory, config and deployment retry mode are bounded (24.055583ms)
+✔ actual retained receipt hashes and actual missing terminal cannot be stale or overwritten (5.019375ms)
+✔ retained READY recovery uses actual inherited pipe/flock without needing or creating old terminal (68.429916ms)
+✔ remote process death aborts recovery before frontend/promotion/admission work (21.390084ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 425.274

@@ -9,8 +9,12 @@ import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperati
 
 export async function exerciseFrontendWriterRoutes(connect, makeClient, password, major) {
   const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const runtimeUrl = pathToFileURL(join(root, "src/lib/writer-admission/runtime.ts")).href;
   const hooks = registerHooks({ resolve(specifier, context, nextResolve) {
     if (specifier === "server-only") return nextResolve(pathToFileURL(join(root, "node_modules/server-only/empty.js")).href, context);
+    if (specifier === "./interactive-proof" && context.parentURL === runtimeUrl) {
+      return nextResolve(new URL("./interactive-proof.ts", runtimeUrl).href, context);
+    }
     if (specifier.startsWith("@/")) {
       const path = join(root, "src", specifier.slice(2));
       for (const candidate of [path, `${path}.ts`, `${path}.mjs`]) if (existsSync(candidate)) return nextResolve(pathToFileURL(candidate).href, context);
@@ -19,7 +23,7 @@ export async function exerciseFrontendWriterRoutes(connect, makeClient, password
   } });
   let createWriterAdmissionRunner, withWriterAdmission, markWriterOperationUncertain;
   try {
-    ({ createWriterAdmissionRunner } = await import(pathToFileURL(join(root, "src/lib/writer-admission/runtime.ts")).href));
+    ({ createWriterAdmissionRunner } = await import(runtimeUrl));
     ({ withWriterAdmission } = await import(pathToFileURL(join(root, "src/lib/writer-admission/route.ts")).href));
     ({ markWriterOperationUncertain } = await import(pathToFileURL(join(root, "src/lib/writer-admission/context.ts")).href));
   } finally { hooks.deregister(); }

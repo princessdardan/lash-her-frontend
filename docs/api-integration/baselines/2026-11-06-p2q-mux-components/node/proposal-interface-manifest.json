@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "status": "READ_ONLY_CORRECTED_SOURCE_SEAM_PROPOSAL",
+  "date": "2026-11-06",
+  "originalManifestSha256": "6527f3dc7148c8d39cdff73612ad6c652392d9d1200f95246bd7ad2e96aaa535",
+  "files": [
+    {
+      "name": "compose.p2q-mux.proposed.yaml",
+      "bytes": 308,
+      "sha256": "6893c8ce982255d5d05113422148b017df64b08d8b5c93c4fc04df713142a949"
+    },
+    {
+      "name": "corrections.json",
+      "bytes": 1353,
+      "sha256": "75f735d7924cc5348537e36624b93261c41c7dbaf0b12e7ef8fc8562b52854a1"
+    },
+    {
+      "name": "filesystem-proof.json",
+      "bytes": 513,
+      "sha256": "56f8bf94db1e9e0a9f460bdc60ef349bd26ac7b315301b2abbaa8f241fa4f4ba"
+    },
+    {
+      "name": "filesystem-proof.mjs",
+      "bytes": 2781,
+      "sha256": "925bc4bd1634a43e71d6be5ad1272c30d2bdd24b2f6e22b4e4a383aa90e513f8"
+    },
+    {
+      "name": "interfaces.json",
+      "bytes": 6972,
+      "sha256": "3aa0907d6db13e459117668c49923f30c04bd0bd026d562cf6037eaceabc1a30"
+    },
+    {
+      "name": "original-v1/interfaces.json",
+      "bytes": 4479,
+      "sha256": "afa5171038597af00c54ffd7098ede681b04e32d55505dc183f1ea1880cc92a3"
+    },
+    {
+      "name": "original-v1/manifest.json",
+      "bytes": 990,
+      "sha256": "6527f3dc7148c8d39cdff73612ad6c652392d9d1200f95246bd7ad2e96aaa535"
+    },
+    {
+      "name": "original-v1/proposal.md",
+      "bytes": 21179,
+      "sha256": "da8b7dcbdca0c404f82f0be5097dbc63b234b19a1b1ed61fe18f6998ecc1472e"
+    },
+    {
+      "name": "original-v1/sources.json",
+      "bytes": 4023,
+      "sha256": "84305c4087765111ba6949b2b08f4ba0c052b573d1a534ebd1281fd7f1ea5fe8"
+    },
+    {
+      "name": "proposal.md",
+      "bytes": 21831,
+      "sha256": "0f7ad0bdeaf077b85fe864b0aea0a310bcb2bf815353aa617fcae4171015389c"
+    },
+    {
+      "name": "sources.json",
+      "bytes": 5716,
+      "sha256": "c7788871ca0072d6aeb376fec4766294792bdc322978ec30dbebf1b70d58c476"
+    }
+  ],
+  "repositoryEdits": false,
+  "providerActions": false,
+  "credentialReads": false,
+  "resourceAllocation": false,
+  "liveAuthorityIssued": false,
+  "ownedFilesystemProbeExecuted": true,
+  "actualDockerOrLinux65532ProbeExecuted": false,
+  "newPGOrProviderTestsExecuted": false
+}

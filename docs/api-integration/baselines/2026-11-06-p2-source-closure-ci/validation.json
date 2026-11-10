@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "sourceCommit": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d",
+  "run": {
+    "id": 42176331951,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42176331951"
+  },
+  "jobs": [
+    {
+      "id": 127755530645,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755530828,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755530860,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755530976,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755530985,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755531039,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755531085,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755531088,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127755531473,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127758944318,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13483886352,
+      "name": "playwright-blob-firefox",
+      "bytes": 213105,
+      "digest": "sha256:6e70d0af6b932a35fc1ada7a2824d6f8539fb96a6ee842b6a3bb16486e25dffe",
+      "expiresAt": "2026-11-13T06:54:27Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13483742243,
+      "name": "playwright-blob-webkit",
+      "bytes": 211973,
+      "digest": "sha256:f04362a154c5fa4546b7835441c31f61464cc7a871a7f071706db376e7f7bae3",
+      "expiresAt": "2026-11-13T06:54:04Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13483666628,
+      "name": "princessdardan~lash-her-frontend~P88DF5.dockerbuild",
+      "bytes": 73111,
+      "digest": "sha256:1098ab3ad316447baee1e80d54912d293fb89f7e6898da1f59ff3dba216457e0",
+      "expiresAt": "2027-02-04T06:44:14Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13483626683,
+      "name": "frontend-runtime-qualification",
+      "bytes": 60601,
+      "digest": "sha256:e84b641ac09520fc6bb4255e444bdcacf3d902d4c92099df8e4c122c6eb5016d",
+      "expiresAt": "2026-11-16T06:48:43Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13483467467,
+      "name": "frontend-operator-schema-summary",
+      "bytes": 13427,
+      "digest": "sha256:a0eea83198142c878e9d4bb23c888ec6ee9da509d8c8e29a8170620bc2ba4de8",
+      "expiresAt": "2026-11-16T06:48:04Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13483328896,
+      "name": "playwright-report",
+      "bytes": 660480,
+      "digest": "sha256:21493c501e7e5ad819d08b5f6397ff8d566b3b6c1beb9c340eda561654512dca",
+      "expiresAt": "2026-11-13T06:55:12Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13482948924,
+      "name": "princessdardan~lash-her-frontend~TU2Z9S.dockerbuild",
+      "bytes": 67921,
+      "digest": "sha256:da975dda725779221a707c2b76ce6e5c47a2f82477fc91cd69149a333ccc5899",
+      "expiresAt": "2027-02-04T06:44:14Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13482918629,
+      "name": "gateway-runtime-qualification",
+      "bytes": 58964,
+      "digest": "sha256:5de706c95c8ebacda97f7cd0f17986b9e54c2ae8d1080fa0e42760828787d3be",
+      "expiresAt": "2026-11-16T06:49:53Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    },
+    {
+      "id": 13482649377,
+      "name": "playwright-blob-chromium",
+      "bytes": 210788,
+      "digest": "sha256:34e678cbeb65b7fc2321dbd1704de6be8094907149f4751fa73842de20d4ca44",
+      "expiresAt": "2026-11-13T06:51:45Z",
+      "head": "3f0fcdb76a5dea526b4cfaa5e1bd953b07049c2d"
+    }
+  ],
+  "evidenceClass": "authenticated-github-metadata",
+  "artifactArchivesDownloaded": false,
+  "registryCandidateQualified": false,
+  "stagingChanged": false,
+  "scope": "Exact alias/source-count head; later gateway fault source is excluded."
+}

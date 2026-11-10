@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "status": "P2Q_MUX_NODE_COMPONENTS_VERIFIED",
+  "sourceCommit": "dcea40053ed51e7ffe59649279097a0701d672e7",
+  "sourceBase": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "jointSchemaSha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+  "jointManifestSha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f",
+  "proposalManifestSha256": "58aa846dd76f3a457d69a12bdd3e6c9a4b0473033c4bb35f312547015483200c",
+  "sourceFiles": {
+    "ops/platform/p2q-mux-capture.mjs": {
+      "sha256": "2241a8af4b777256dbef81d264837cf3bc05637037e072a05d62aa104ee09eeb",
+      "bytes": 16917
+    },
+    "ops/platform/p2q-mux-capture.test.mjs": {
+      "sha256": "c87dbad6189a782eeb6c80a3fd1c4a0d10eb978c2451b0098daa40ebcea5b66d",
+      "bytes": 15739
+    }
+  },
+  "sourceBytes": 32656,
+  "sourceByteLimit": 32768,
+  "dependencies": {
+    "ops/platform/qualification-target-profile.mjs": "3ac2394a914e44ecbfa3ee84adc00fcb9afa23e968a102e2be30e1141174d8c4",
+    "ops/platform/qualification-target-profiles.json": "002f4421c9b577c4f25157ba2036e37c7f837107aba12eddfa71d2dbff377956"
+  },
+  "runtime": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "verification": {
+    "tests": {
+      "command": "node --test ops/platform/p2q-mux-capture.test.mjs",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "log": "tests.log"
+    },
+    "lint": {
+      "command": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-mux-capture.mjs ops/platform/p2q-mux-capture.test.mjs",
+      "exitCode": 0,
+      "log": "lint.log",
+      "dependencyLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+      "dependencySource": "existing phase2-integration node_modules; matching package-lock bytes"
+    },
+    "initialDraft": {
+      "qualified": false,
+      "sourceRetained": false,
+      "tests": 16,
+      "passed": 15,
+      "failed": 1,
+      "failure": "combined source byte budget exceeded; corrected before source freeze",
+      "log": "initial-draft-budget-failure.log"
+    }
+  },
+  "qualification": {
+    "componentOnly": true,
+    "projectedInputs": true,
+    "actualOwnedNodeSubprocess": true,
+    "productionArm": false,
+    "productionDispatch": false,
+    "sourceParentFactoryAvailable": false,
+    "allocatedProfileRegistered": false,
+    "newModePhysicalObserverAvailable": false,
+    "actualHost": false,
+    "actualPostgres": false,
+    "actualDocker": false,
+    "providerTouched": false,
+    "actualHttpResponseJoin": false,
+    "actualDrainQualified": false,
+    "providerQueueQualified": false,
+    "S05Live": "OPEN"
+  }
+}

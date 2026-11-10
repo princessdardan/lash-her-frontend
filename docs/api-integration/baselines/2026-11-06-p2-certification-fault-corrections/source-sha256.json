@@ -1,0 +1,8 @@
+{
+  "ops/platform/p2-lifecycle-transport-fault.mjs": "dfeb293c9c1f57a55816e3ef7b9670514932fb91ffbf4b45ff7345f14b7558cf",
+  "ops/platform/p2-lifecycle-transport-fault.test.mjs": "45fd5d451a9798c57ed829eec1494ab695c7fe7017ab5dac08c4c8c744db99af",
+  "ops/platform/host/p2_certification_fault.py": "f47099c5b039ed1d0b76b9c302ada23a50b3c74470b4fff13646a6a8e5f2bbf6",
+  "ops/platform/host/p2_certification_fault_test.py": "cb78484c031891604d950db49765f8a32e1a3a1989d1856f034100cc1e19bee7",
+  "ops/platform/p2-certification-fault.md": "6ebb92ed049460fa54e6b51940901dc9c043b4b76fd2e27a75c9d2b96972e0f3",
+  "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52"
+}

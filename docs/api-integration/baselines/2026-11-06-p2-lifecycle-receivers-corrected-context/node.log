@@ -1,0 +1,17 @@
+✔ source-derived fixed cases do not accept a caller command, action, version or URL (8.346042ms)
+✔ pending, changed, mismatched or non-head state refuses before issuing a POST (0.737834ms)
+✔ only exact duplicate/409 conflict schemas with private no-store count (3.993083ms)
+✔ every account/domain snapshot must remain identical; quota tables are outside the witness (0.701917ms)
+✔ plan leaves the live future gap OPEN and exposes no command or credential (1.317167ms)
+✔ even the private POST entry refuses a future gap without making a network request (0.19475ms)
+✔ corrected reader context requires host identity, recomputed targets, immutable images and the same full source map (0.967792ms)
+✔ runtime binding requires actual staging configuration and dedicated service key (0.157292ms)
+✔ actual composed private program sanitizes malformed/oversized packets (175.944583ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 242.695833

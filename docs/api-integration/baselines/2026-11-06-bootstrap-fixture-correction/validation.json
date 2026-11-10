@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-06T01:05:14.152Z",
+  "status": "OWNED_BOOTSTRAP_RUNTIME_VALIDATED_IMAGE_CORRECTION_PENDING_FRESH_CI",
+  "baseCommit": "ab34cf9bedde69cf2ddce54b717c9dc1a181c5d6",
+  "initialCorrection": "71f6020ba7915c9256e0f2e8b4c939a120c210e9",
+  "rootInitialCorrection": "646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+  "finalCorrection": "7072148ed2793ad1c542b550a800818e37dd1309",
+  "rootReadonlyMounts": "f07430bbfb7985bafe024eb43daa7f78c6116da3",
+  "failedAttempts": [
+    {
+      "runId": 42139490765,
+      "jobId": 127635940949,
+      "sourceCommit": "ab34cf9bedde69cf2ddce54b717c9dc1a181c5d6",
+      "jobConclusion": "failure",
+      "failure": "frontend-bootstrap-owned-probe/configuration",
+      "originalUnderlyingExceptionHidden": true,
+      "immutableMigrationImageBuilt": true,
+      "offlineImageBoundariesPassed": true,
+      "ownedPostgres18ImageBuilt": true
+    },
+    {
+      "runId": 42140767192,
+      "jobId": 127640247273,
+      "sourceCommit": "646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+      "jobConclusion": "failure",
+      "failure": "owned PostgreSQL18 fixture COPY input outside ops/platform build context",
+      "rootCaughtContextAssumption": true,
+      "actualDockerFailureConfirmed": true
+    }
+  ],
+  "moduleReproduction": {
+    "actualProtectedRouteGraph": true,
+    "missingOnlyGatewayPolicyExit": 1,
+    "completePolicyExit": 0,
+    "databaseCalls": false,
+    "networkCalls": false
+  },
+  "focusedTests": {
+    "command": "node --test ops/platform/frontend-bootstrap-probe.test.mjs ops/platform/frontend-source-copy.test.mjs",
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "lintPassed": true,
+    "buildContextsDerivedFromActualWorkflows": true,
+    "formerBadCopyRefused": true
+  },
+  "ownedDatabase": {
+    "command": "FRONTEND_MIGRATION_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node ops/platform/test-frontend-migration-local.mjs",
+    "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+    "node": "24.18.0",
+    "postgresMajor": 16,
+    "migrations": 83,
+    "bootstrap": {
+      "status": "FRONTEND_BOOTSTRAP_PROBE_OWNED_PASS",
+      "postgresMajor": 16,
+      "checks": [
+        "actual-http-export-sdk-current-policy-runtime-tls-and-schema-hash-without-journal-access-or-ledger-writes",
+        "invalid-authentication-mode-and-challenge-refuse-before-sdk-or-database",
+        "each-new-feature-control-must-be-explicitly-disabled",
+        "open-admission-recovery-or-unregistered-source-refuse"
+      ],
+      "actualRouteExport": true,
+      "loopbackHttp": true,
+      "verifiedPostgresTls": true,
+      "realBusinessDatabase": true,
+      "syntheticWorkloadIdentity": true,
+      "gatewayIntercepted": true,
+      "providerTouched": false,
+      "migrationAuthorized": false,
+      "historicalWritersFenced": false
+    },
+    "identityDatabase": {
+      "status": "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS",
+      "tests": 17,
+      "passed": 17,
+      "failures": 0,
+      "skipped": 0
+    },
+    "lifecycleDatabase": {
+      "status": "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS",
+      "tests": 19,
+      "passed": 19,
+      "failures": 0,
+      "skipped": 0
+    },
+    "identityRouteChecks": 43,
+    "identityRouteSkipped": 0,
+    "contractPhase": "p2",
+    "phase2ContractManifestSha256": "sha256:da7f29e2134973afd17d7f2012922dff8e76d8922ad6552cedd9f13f0d612845",
+    "packagedCliVerified": false,
+    "syntheticMigrationFixtureSource": true,
+    "runtimeEquivalentToCommit": "71f6020ba7915c9256e0f2e8b4c939a120c210e9",
+    "runtimeFiles": {
+      "ops/platform/harness/owned-frontend-bootstrap-probe.mjs": "9c3531beb2bb55ae625f62bd5942b2ea8a3cb58625f459719fe92e15b4d11a82",
+      "ops/platform/harness/owned-frontend-probe-diagnostics.mjs": "e7e7fe11ee44c2cb5d678bb0f10d046ef9e039d56ef33ccd8ab1f120ea759f7a",
+      "ops/platform/test-frontend-migration-local.mjs": "2ece276e87b5cb7755e39e14b1533449e5742e9d44814300c3fef7d2d9f2381b"
+    }
+  },
+  "unchangedFiles": {
+    "ops/platform/Dockerfile.frontend-migration": "18c45d1c549ccc543b77d8cc2f2d9d3abe2aba7a62b84fa160f936178a92675e",
+    "ops/platform/Dockerfile.frontend-migration.dockerignore": "1e1d13f47a6f7f7a3e35ca1ac3d5aa28d1ea774ddb606c97af5ef31a184c5905",
+    "ops/platform/Dockerfile.frontend-migration-test": "be1e451233dd9e2395aacf12fcd430bf33a879a15e070fd02e1d7c945530c570",
+    "ops/gateway/routes.json": "7be3d28a74f6b2e823fde1f9ceee9af703c4acb275f37d71fec296e0e31f3898"
+  },
+  "acceptedPr91RuntimeUnchanged": true,
+  "scope": {
+    "localDockerBuildPerformed": false,
+    "correctedPostgres18ImageQualified": false,
+    "freshCIRequired": true,
+    "providerTouched": false,
+    "liveDatabaseTouched": false,
+    "workflowsDispatched": false,
+    "productionSqlPayloadChanged": false,
+    "bootstrapChildEmitsRawExceptionDiagnostics": false
+  },
+  "files": {
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/README.md": {
+      "sha256": "213367433ca433986275e96be8e3a6ae6940e3203df8884c9d7a9ba578cbda0b",
+      "bytes": 3259
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/ci-42139490765-job.log": {
+      "sha256": "8136a6628f68309ada71e114f71b88bd75dc2c57588ec52055d6d474806a1fcf",
+      "bytes": 210382
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/ci-42139490765-steps.json": {
+      "sha256": "85e02c2455ec6512c957dfbf3c752e4832610342c9cfa88a8821d97a991b9677",
+      "bytes": 3751
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/ci-42140767192-job.log": {
+      "sha256": "7b890d141daa717ad69f7d81578bc86d2f54d68030902d830f9c5700ac090fc2",
+      "bytes": 183618
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/ci-42140767192-steps.json": {
+      "sha256": "a988351bb79f115bf74b6e7e1966b48dfb93fefaf124a1c2d020783407be3ad7",
+      "bytes": 3643
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/complete-policy-import.json": {
+      "sha256": "0abafbcc1e3988607dae0c1dd2c24c49e845803760834660bddfb28861867d56",
+      "bytes": 177
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/final-lint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/final-nine-guards.log": {
+      "sha256": "693e7fb9866a9cd3424b42eca099025ac30185fb8c45b78864ba1fcc9a19c465",
+      "bytes": 1641
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/initial-seven-guards.log": {
+      "sha256": "c25229b22ab3da8f9bc3f5f8a42c6277be3a6a7fde0fdb8ac7f7d344ce667c63",
+      "bytes": 1472
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/missing-policy-import.json": {
+      "sha256": "535622e76d9cef7dc06d97a4d948ce8d84fedd5d3d04ab4d6574ec982b3cc645",
+      "bytes": 2348
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/owned-postgres16.json": {
+      "sha256": "7fe96f07565535b060f3251cf70c264ea504be1409bddd3158f84080fa01b83a",
+      "bytes": 29851
+    },
+    "docs/api-integration/baselines/2026-11-06-bootstrap-fixture-correction/owned-postgres16.stderr.log": {
+      "sha256": "82cdb56f48e6810a7087c3a523c77cfa45983fd378c2fbf7dbdc24bc89814f31",
+      "bytes": 550
+    },
+    "ops/platform/harness/owned-frontend-bootstrap-probe.mjs": {
+      "sha256": "9c3531beb2bb55ae625f62bd5942b2ea8a3cb58625f459719fe92e15b4d11a82",
+      "bytes": 8876
+    },
+    "ops/platform/harness/owned-frontend-probe-diagnostics.mjs": {
+      "sha256": "e7e7fe11ee44c2cb5d678bb0f10d046ef9e039d56ef33ccd8ab1f120ea759f7a",
+      "bytes": 2310
+    },
+    "ops/platform/test-frontend-migration-local.mjs": {
+      "sha256": "2ece276e87b5cb7755e39e14b1533449e5742e9d44814300c3fef7d2d9f2381b",
+      "bytes": 31315
+    },
+    "ops/platform/frontend-bootstrap-probe.test.mjs": {
+      "sha256": "6cf3ba4921d84aa02242c24228707aaec21e9556cf8c84e67991d3524c2febc5",
+      "bytes": 3027
+    },
+    "ops/platform/frontend-source-copy.test.mjs": {
+      "sha256": "a675f7a20abb9d33b272aa9d4c13870ed678902a62e033715018acc73c809604",
+      "bytes": 9207
+    }
+  },
+  "workflowInputs": {
+    ".github/workflows/ci.yml": "105afaf9200e8e45cc36498ffbe19916c981ba431d761c0029c6367d856820c5",
+    ".github/workflows/platform-artifacts.yml": "06cdfecc7f7de471f4b075aa496ca9319f04c3d41968886a9f1ea6cebe384c60"
+  }
+}

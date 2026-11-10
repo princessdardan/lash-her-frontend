@@ -1,0 +1,287 @@
+{
+  "version": 1,
+  "scope": "Owned S07 exact-key replay through the selected guarded learner action and real local Next/Course integration",
+  "operatorSourceCommit": "1876346ba085f951d4ae4ee6d134820680e48066",
+  "ownedPostgres16": {
+    "original": {
+      "version": 1,
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS",
+      "postgresMajor": 16,
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "sourceCommits": {
+        "frontend": "1876346ba085f951d4ae4ee6d134820680e48066",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "checks": [
+        "actual-three-domain-export-ready-observed",
+        "actual-24-hour-schema-bound-export-scrub-observed",
+        "actual-delete-field-removal-and-retention-observed",
+        "wrong-original-email-refused",
+        "missing-receiver-ack-refused",
+        "identified-attempt-refused",
+        "retained-community-export-refused",
+        "common-output-private-values-absent",
+        "requested-command-version-refused",
+        "unlisted-account-attempt-refused",
+        "expired-ready-export-refused",
+        "missing-export-history-refused",
+        "cross-bound-prior-refused",
+        "course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields",
+        "course-draft-wrong-row-field-role-or-unheld-session-refused",
+        "course-draft-edit-held-winning-fields-single-revision-and-stale-unchanged",
+        "course-draft-edit-wrong-baseline-winner-stale-and-replay-refused",
+        "course-module-and-lesson-full-reorder-archived-siblings-and-stale-zero-writes",
+        "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift",
+        "course-curriculum-create-normal-module-and-lesson-fields-with-single-revision-and-preserved-siblings",
+        "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift",
+        "course-rich-lesson-pinned-post-structure-safe-links-and-exact-stored-portable-text",
+        "course-publication-held-status-revision-metadata-and-public-catalog-predicate",
+        "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift",
+        "course-quiz-save-initial-and-revised-exact-document-editor-and-preserved-private-history",
+        "course-quiz-save-refuses-private-shape-scope-and-database-history-drift",
+        "course-free-enrollment-orderless-grant-joins-settled-activation-to-actual-community-inbox",
+        "course-free-enrollment-refuses-ineligible-occupied-and-persisted-outcome-drift",
+        "course-free-enrollment-exact-key-replay-preserves-original-course-and-community-history",
+        "course-paid-grant-orderless-audited-effect-joins-settled-activation-to-actual-community-inbox",
+        "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
+        "course-paid-second-grant-preserves-reviewed-existing-enrollment-history-and-community-activation",
+        "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
+        "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift",
+        "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
+        "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history",
+        "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
+        "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
+        "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
+        "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
+        "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
+        "course-paid-revoke-refuses-missing-outbox-with-pinned-foreign-expiry-predicate-defect"
+      ],
+      "skipped": 0,
+      "readOnly": true,
+      "fixtureOnly": true,
+      "providerTouched": false,
+      "liveCertification": false,
+      "sourceMode": "clean-git-checkouts",
+      "sourceManifestSha256": null,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "62d9ef32c5d24d304ada61400924ade6f885fe02483e8e7c51278a2b6617c5fa",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "4c503321fa300e446ab9cb190082b7e26520f34171a3533bd82808d0b817518b"
+      }
+    },
+    "corrected": {
+      "version": 1,
+      "status": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS",
+      "postgresMajor": 16,
+      "frontendMigrations": 83,
+      "courseMigrations": 22,
+      "communityMigrations": 11,
+      "sourceCommits": {
+        "frontend": "1876346ba085f951d4ae4ee6d134820680e48066",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "checks": [
+        "actual-three-domain-export-ready-observed",
+        "actual-24-hour-schema-bound-export-scrub-observed",
+        "actual-delete-field-removal-and-retention-observed",
+        "wrong-original-email-refused",
+        "missing-receiver-ack-refused",
+        "identified-attempt-refused",
+        "retained-community-export-refused",
+        "common-output-private-values-absent",
+        "requested-command-version-refused",
+        "unlisted-account-attempt-refused",
+        "expired-ready-export-refused",
+        "missing-export-history-refused",
+        "cross-bound-prior-refused",
+        "course-draft-exact-browser-bytes-held-absent-to-created-draft-and-private-fields",
+        "course-draft-wrong-row-field-role-or-unheld-session-refused",
+        "course-draft-edit-held-winning-fields-single-revision-and-stale-unchanged",
+        "course-draft-edit-wrong-baseline-winner-stale-and-replay-refused",
+        "course-module-and-lesson-full-reorder-archived-siblings-and-stale-zero-writes",
+        "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift",
+        "course-curriculum-create-normal-module-and-lesson-fields-with-single-revision-and-preserved-siblings",
+        "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift",
+        "course-rich-lesson-pinned-post-structure-safe-links-and-exact-stored-portable-text",
+        "course-publication-held-status-revision-metadata-and-public-catalog-predicate",
+        "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift",
+        "course-quiz-save-initial-and-revised-exact-document-editor-and-preserved-private-history",
+        "course-quiz-save-refuses-private-shape-scope-and-database-history-drift",
+        "course-free-enrollment-orderless-grant-joins-settled-activation-to-actual-community-inbox",
+        "course-free-enrollment-refuses-ineligible-occupied-and-persisted-outcome-drift",
+        "course-free-enrollment-exact-key-replay-preserves-original-course-and-community-history",
+        "course-paid-grant-orderless-audited-effect-joins-settled-activation-to-actual-community-inbox",
+        "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
+        "course-paid-second-grant-preserves-reviewed-existing-enrollment-history-and-community-activation",
+        "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
+        "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift",
+        "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
+        "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history",
+        "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
+        "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
+        "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
+        "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
+        "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
+        "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry"
+      ],
+      "skipped": 0,
+      "readOnly": true,
+      "fixtureOnly": true,
+      "providerTouched": false,
+      "liveCertification": false,
+      "sourceMode": "clean-git-checkouts",
+      "courseRevokeSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "sourceManifestSha256": null,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "62d9ef32c5d24d304ada61400924ade6f885fe02483e8e7c51278a2b6617c5fa",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "4c503321fa300e446ab9cb190082b7e26520f34171a3533bd82808d0b817518b"
+      }
+    }
+  },
+  "platformNode24": {
+    "passed": 144,
+    "failed": 0,
+    "logSha256": "26538419d7c86282b9adf5010b16ea30ab1df923758f31cae28c1b5432a269d4"
+  },
+  "hostPython": {
+    "passed": 57,
+    "failed": 0,
+    "logSha256": "832ed8b3b242d5050bee87426aed99e51754e7839006fd883605d7bfd9ad6739"
+  },
+  "actualLearnerBrowser": {
+    "passed": 6,
+    "failed": 0,
+    "desktop": 3,
+    "mobile": 3,
+    "courseCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "logSha256": "deca9dfe2e1b298d4819669d82f4faac3e6a71d9328d22af1b85f4f6a9bdb54c",
+    "fixtureGatewayAndProviders": true,
+    "retainedInitialRefusal": {
+      "sourceCommit": "0bd287a3c3af19441bafec03470806fa529537b6",
+      "reason": "The real same-origin handler refused a scripted replay without its required CSRF header.",
+      "logSha256": "beb848c8bb14a49eedd0955ad59b65d46e21064bfeeded26628039b9fb571141",
+      "stderrSha256": "1a49bc2cc58fffe598d35120bbb69aa5451c539126587ecd45f9f96dc772deb1"
+    }
+  },
+  "candidatePublished": false,
+  "stagingCertificationComplete": false,
+  "guardedChromium": {
+    "sourceCommit": "76770a3b51759aaf632ba75986f79daac504b8b8",
+    "passed": 52,
+    "failed": 0,
+    "skipped": 0,
+    "logSha256": "b0a2e476f69874693b4f38f1386405a73351196cbf46c68ed19efabf6982c06a"
+  },
+  "realCourseAndCommunity": {
+    "checksPassed": 12,
+    "receipt": {
+      "version": 1,
+      "status": "PHASE2_LIFECYCLE_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "tlsVerified": true,
+      "runtimeAuthentication": "SCRAM-SHA-256",
+      "harnessFiles": {
+        "test-phase2-lifecycle-local.mjs": "fc2889686ae8b78bbf38b39183650c3e4029a7c71dbed07ffbe7fbf23d8544f0",
+        "harness/owned-phase2-lifecycle-frontend.mjs": "558bd64ad6c51c110a2ef54ef753a7a9e22d17a767fa9a5dbf9761da2d6f3124",
+        "harness/owned-phase2-lifecycle-receiver.mjs": "56ac944607e4730bf4fb71aa2c48c115aad58bb06431efa8341b0030e6a505e9"
+      },
+      "sourcePins": {
+        "frontend": {
+          "commit": "2bdf7978da6c1720dafa42b3dc5465f478b42362",
+          "archiveSha256": "22ab7d9d8908b5c2b96a31e644f5d2182ee11faef155f1513b2b4a8eb3f2f206",
+          "lockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886"
+        },
+        "course": {
+          "commit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+          "archiveSha256": "e2693e1346a61fbc3f378aaf047c0d68cdfa6cd643d8f52172211987b91c71e4",
+          "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+        },
+        "community": {
+          "commit": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+          "archiveSha256": "3591ef1f8cf1336fa364d3e396d66ca85cc750e6c9838ae5f0e9047074c3d7fd",
+          "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+        }
+      },
+      "apiArtifacts": {
+        "course": {
+          "sourceSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+          "frontendCandidateSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+          "lifecycleOperationsSha256": "e66953bdd46b5ca5c5e1cdab9fb9a421687d621ac1780d62ff204e20be5ecb5e"
+        },
+        "community": {
+          "sourceSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+          "frontendCandidateSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+          "lifecycleOperationsSha256": "7df30b91e17da53ce70d6fa02cc6a6e3ab58161baf201be57d4cf95994e744d5"
+        }
+      },
+      "contractQualification": "Actual typed lifecycle command/export operations match source artifacts; learning prerequisites use actual API routes",
+      "migrations": {
+        "frontend": {
+          "count": 83,
+          "appliedSha256": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+          "journalSha256": "466a9e19076eb90bbf680f879393d73e35393576c76cab2baa8164bfd2423c70"
+        },
+        "course": {
+          "count": 22,
+          "appliedSha256": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+          "journalSha256": "733047196af8a592ecbbbc8069075eeca32274e2b13fe8daae8df3d9f88b610f"
+        },
+        "community": {
+          "count": 11,
+          "appliedSha256": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a",
+          "journalSha256": "d28dd40d3196b9a317ae5a2317bf03339cb86400433d5e8bbb4c3b6eedebcf8a"
+        }
+      },
+      "admission": [
+        {
+          "state": "completed",
+          "count": 24
+        },
+        {
+          "state": "uncertain",
+          "count": 3
+        }
+      ],
+      "checks": [
+        "runtime-wrong-password-and-plaintext-refused-before-business-work",
+        "real-admin-authoring-free-ledger-grant-progress-quiz-and-Course-publisher-to-Community-receiver",
+        "real-exact-key-free-replay-retains-Course-and-Community-state-and-refuses-a-different-actor",
+        "audited-orderless-paid-grants-preserve-independent-access-and-publish-exact-last-revocation-to-Community",
+        "real-dedicated-JWTs-and-runtime-validated-export-aggregation-after-lost-committed-receipt",
+        "private-UUID-owner-export-and-cross-profile-service-credential-isolation",
+        "exact-24-hour-expiry-physical-cleanup-and-export-replay-never-renews-private-data",
+        "suspension-revokes-sessions-and-existing-protected-operation-authority",
+        "receiver-outage-keeps-frontend-suspended-until-both-ordered-predecessor-and-restore-acknowledgments",
+        "customer-fresh-session-deletion-removes-progress-profile-links-preferences-and-private-artifacts",
+        "quiz-results-deidentified-once-with-immutable-grant-audit-history-retained",
+        "terminal-tombstones-deny-delayed-grants-assessment-and-member-access-while-exact-replay-cannot-restore"
+      ],
+      "findings": [],
+      "providerTouched": false,
+      "liveCertification": false,
+      "productionActivation": false
+    },
+    "logSha256": "50076da9cf6de30a6c12f4d5b47292e640bed84fbef4ba710e2cb7768e4a6b50"
+  },
+  "static": {
+    "sourceCommit": "2bdf7978da6c1720dafa42b3dc5465f478b42362",
+    "typeCheckPassed": true,
+    "p2ContractCheckPassed": true,
+    "logSha256": "6a1ab1acc66ec681d17735932cf47321cf271b6e83f01950d7c5f3b2376f601c",
+    "lint": {
+      "sourceCommit": "76770a3b51759aaf632ba75986f79daac504b8b8",
+      "errors": 0,
+      "warnings": 23,
+      "logSha256": "488ba673eea3ff01d76dc34017ec7b57aa215fd0ad18acb5b6bb8cdebcf72db7"
+    }
+  }
+}

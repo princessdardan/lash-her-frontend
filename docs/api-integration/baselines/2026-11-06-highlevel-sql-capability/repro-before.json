@@ -1,0 +1,37 @@
+{
+  "status": "PRE_FIX_SQL_SCOPE_DEFECT_REPRODUCED",
+  "baseCommit": "7ac1f859abe75561cf538d63d867517f20a8b9b7",
+  "sourceModuleSha256": "ae4d9df9dd908fc7b53c4a433f08a7f5e729df2ea90b52a927797e9cadab372b",
+  "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+  "catalog": [
+    "AUTH_SECRET",
+    "DATABASE_URL"
+  ],
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "selectedValueKeys": [
+    "DATABASE_URL"
+  ],
+  "actualObserverExecuted": true,
+  "sqlTransport": "owned synthetic protocol fixture; no actual SQL connection",
+  "highlevelClosedFamilies": [
+    "highlevel.contacts",
+    "highlevel.workflows",
+    "highlevel.tasks",
+    "highlevel.opportunities",
+    "highlevel.conversations",
+    "highlevel.messages",
+    "highlevel.webhooks",
+    "highlevel.oauth"
+  ],
+  "highlevelFrontendSqlResiduals": [],
+  "actualHighlevelHelper": {
+    "status": "STAGING_HIGHLEVEL_SOURCE_CAPABILITY_ABSENCE_OBSERVED",
+    "activeExecutions": 0,
+    "uncertainEffects": 0,
+    "inboundWebhooksQualified": true,
+    "workflowExecutionInventoryComplete": true
+  },
+  "wholeBarrierBypassDemonstrated": false,
+  "independentSqlIngressAndLedgerGatesUnchanged": true,
+  "providerCalls": 0
+}

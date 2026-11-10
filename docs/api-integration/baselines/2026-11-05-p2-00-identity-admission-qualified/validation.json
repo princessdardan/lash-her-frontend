@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_IDENTITY_ACCOUNT_ADMIN_LIFECYCLE_ENTRYPOINTS_QUALIFIED",
+  "applicationSourceCommit": "191173f90c0827161c54da8e7469ecb09096c926",
+  "qualificationSourceCommit": "702624b8f10289b132de009586761d3fa1897fab",
+  "applicationSourceManifestSha256": "8990d827d4dd55cd4806fbe3cb7db814953040adb2c8d98dc2406e24ee3b1126",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "migrations": 83,
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "dependency": {
+    "packageJsonSha256": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+    "packageLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+    "nextAuth": "5.0.0-beta.32",
+    "authCore": "0.41.3-lash-her.1",
+    "installedAuthCorePackageSha256": "681f29f4b8404600f64026ac96dc7f318eef772f254a173772405b8cf420e10c",
+    "installedAuthCoreAssertSha256": "1311304fef49c222c2c266843d4e39da218be7dae5c0902f7d25f6fb2af721e4"
+  },
+  "ownedRun": {
+    "command": "FRONTEND_IDENTITY_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node --import tsx ops/platform/test-frontend-identity-local.mjs",
+    "exitCode": 0,
+    "admissionChecks": 14,
+    "identityAccountAdminLifecycleChecks": 43,
+    "findings": 0,
+    "existingDatabaseRegressions": {
+      "files": [
+        "src/lib/customer-auth/store.db.test.ts",
+        "src/lib/customer-auth/receipts.db.test.ts",
+        "src/lib/customer-auth/session-issuance.db.test.ts",
+        "src/lib/customer-lifecycle/store.db.test.ts",
+        "src/lib/customer-lifecycle/faults.db.test.ts"
+      ],
+      "tests": 33,
+      "failures": 0,
+      "skipped": 0
+    },
+    "clusterStoppedAndRemoved": true
+  },
+  "metadataRegression": {
+    "command": "node --test --test-reporter=tap ops/platform/auth-profile-isolation.test.mjs",
+    "exitCode": 0,
+    "parentTests": 1,
+    "realValidatorOrderCases": 2,
+    "failures": 0,
+    "skipped": 0,
+    "metadataOnly": true,
+    "databaseAccessed": false,
+    "providerCalled": false
+  },
+  "securityForks": {
+    "command": "node scripts/verify-security-forks.mjs",
+    "exitCode": 0,
+    "sourceArchiveAndInstalledLocationsVerified": true,
+    "forks": 3
+  },
+  "scope": {
+    "sameProcessRealAuthJs": true,
+    "actualCustomerAuthRouteExports": true,
+    "actualAccountRouteExports": true,
+    "actualAdminLifecycleRouteExport": true,
+    "actualLifecycleCronExport": true,
+    "actualPersistentAdminOwnerGuard": true,
+    "realBusinessDatabase": true,
+    "verifiedTlsScram": true,
+    "loopbackHttp": true,
+    "constructedNextRequestStorage": true,
+    "projectedSyntheticHttpsOrigin": true,
+    "providersIntercepted": true,
+    "syntheticAdminGoogleJwt": true,
+    "nativeNextServer": false,
+    "liveProviderTouched": false,
+    "liveDatabaseTouched": false,
+    "productionOrStagingChanged": false
+  },
+  "outcomeChecks": {
+    "knownAdminDenialsComplete": true,
+    "lostAdminSqlCommitAcknowledgementRetainsAllParentsUncertain": true,
+    "originalCommittedEffectsPreserved": true,
+    "automaticReplayPerformed": false,
+    "deliberateOwnerReconciliationRequired": true
+  },
+  "artifacts": {
+    "postgres16.json": {
+      "path": "postgres16.json",
+      "sha256": "83654be978dba749712ac9cd6c48f748e2cf217ec2dba2a04280d565e5d74dd5"
+    },
+    "profile-isolation-pass.tap": {
+      "path": "profile-isolation-pass.tap",
+      "sha256": "148b71b2bc8b3208f69dd6094d2f2db1b5b11a5c7ded3a30ea59dd563321d36c"
+    },
+    "security-forks-pass.txt": {
+      "path": "security-forks-pass.txt",
+      "sha256": "d26ef712099c7171e09b83e6238e944629282a2a64b9d39e7dd90c15b92ab1c0"
+    },
+    "candidate-source-inventory.json": {
+      "path": "candidate-source-inventory.json",
+      "sha256": "5caf8414221b090fc646935691cf2a0c7cc21646723ce256e98d94af36ed0467"
+    },
+    "source-bindings.json": {
+      "path": "source-bindings.json",
+      "sha256": "66ed5e81e8ee3b74c4befd7d2419f9174edad2d06df6d92eb3c8681c2084e9b3"
+    }
+  },
+  "preservedFailedEvidence": [
+    "../2026-11-05-p2-00-identity-admission-frozen-findings/validation.json",
+    "../2026-11-05-p2-00-identity-admission-adjacent-findings/validation.json",
+    "../2026-11-05-p2-00-auth-profile-isolation-failure/validation.json"
+  ],
+  "limitations": [
+    "Synthetic Google/Resend and receiver responses do not certify live identity providers, email delivery or real downstream receiver enforcement.",
+    "Direct request storage and the HTTP bridge do not certify native Next.js middleware/proxy processing, browser cookie acceptance or cross-tab behavior.",
+    "The administrator JWT is synthetic, signed and decoded by real Auth.js; this does not certify an external Google administrator login.",
+    "Only PostgreSQL 16 was run locally; exact-candidate PostgreSQL 18 CI remains required.",
+    "Synthetic admission producer/source identities do not establish deployed historical writer fencing, migration authority or staging/provider release certification."
+  ],
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false
+}

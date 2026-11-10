@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "collection": "Two fixed team-scoped connected getDeployment calls; projection only",
+  "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+  "withGitRepoInfo": "true",
+  "rawOwnerResponsePersisted": false,
+  "environmentValuesPersisted": false,
+  "observations": [
+    {
+      "requestedDeploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+      "isError": false,
+      "jsonReadable": true,
+      "observations": [
+        {
+          "at": "content[0].json",
+          "objects": [
+            {
+              "path": "$",
+              "type": "object",
+              "fieldNames": [
+                "result"
+              ]
+            },
+            {
+              "path": "$.result",
+              "type": "object",
+              "fieldNames": [
+                "deployment"
+              ]
+            },
+            {
+              "path": "$.result.deployment",
+              "type": "object",
+              "fieldNames": [
+                "alias",
+                "aliasError",
+                "buildingAt",
+                "createdAt",
+                "creator",
+                "id",
+                "meta",
+                "name",
+                "project",
+                "ready",
+                "readyState",
+                "regions",
+                "state",
+                "target",
+                "type",
+                "url"
+              ]
+            },
+            {
+              "path": "$.result.deployment.project",
+              "type": "object",
+              "fieldNames": [
+                "framework",
+                "id",
+                "name"
+              ]
+            },
+            {
+              "path": "$.result.deployment.meta",
+              "type": "object",
+              "fieldNames": [
+                "githubCommitMessage",
+                "githubCommitRef",
+                "githubCommitSha",
+                "githubOrg",
+                "githubRepo"
+              ]
+            },
+            {
+              "path": "$.result.deployment.alias",
+              "type": "array",
+              "count": 1
+            },
+            {
+              "path": "$.result.deployment.regions",
+              "type": "array",
+              "count": 1
+            }
+          ],
+          "referenceIds": [
+            {
+              "path": "$.result.deployment.id",
+              "value": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH"
+            },
+            {
+              "path": "$.result.deployment.project.id",
+              "value": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM"
+            },
+            {
+              "path": "$.result.deployment.meta.githubCommitSha",
+              "value": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "requestedDeploymentId": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL",
+      "isError": false,
+      "jsonReadable": true,
+      "observations": [
+        {
+          "at": "content[0].json",
+          "objects": [
+            {
+              "path": "$",
+              "type": "object",
+              "fieldNames": [
+                "result"
+              ]
+            },
+            {
+              "path": "$.result",
+              "type": "object",
+              "fieldNames": [
+                "deployment"
+              ]
+            },
+            {
+              "path": "$.result.deployment",
+              "type": "object",
+              "fieldNames": [
+                "alias",
+                "aliasError",
+                "buildingAt",
+                "createdAt",
+                "creator",
+                "id",
+                "meta",
+                "name",
+                "project",
+                "ready",
+                "readyState",
+                "regions",
+                "source",
+                "state",
+                "target",
+                "type",
+                "url"
+              ]
+            },
+            {
+              "path": "$.result.deployment.project",
+              "type": "object",
+              "fieldNames": [
+                "framework",
+                "id",
+                "name"
+              ]
+            },
+            {
+              "path": "$.result.deployment.meta",
+              "type": "object",
+              "fieldNames": []
+            },
+            {
+              "path": "$.result.deployment.alias",
+              "type": "array",
+              "count": 1
+            },
+            {
+              "path": "$.result.deployment.regions",
+              "type": "array",
+              "count": 1
+            }
+          ],
+          "referenceIds": [
+            {
+              "path": "$.result.deployment.id",
+              "value": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL"
+            },
+            {
+              "path": "$.result.deployment.project.id",
+              "value": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

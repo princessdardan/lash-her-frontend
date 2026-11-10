@@ -1,3 +1,4 @@
+import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
@@ -15,7 +16,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+async function handleGet(request: NextRequest): Promise<NextResponse> {
   const actor = await requireAdminActor();
   const authenticatedAt = await requireFreshAdminGoogleAuthentication(60_000);
   const pendingToken = request.cookies.get(ADMIN_STEP_UP_PENDING_COOKIE)?.value;
@@ -60,3 +61,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   response.headers.set("cache-control", "no-store");
   return response;
 }
+
+export const GET = withWriterAdmission("recovery", handleGet);

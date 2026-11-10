@@ -1,0 +1,701 @@
+{
+  "version": 1,
+  "observedAt": "2026-11-06 00:39:07 UTC",
+  "scope": "retained-repository-linked-metadata-only",
+  "repository": "princessdardan/lash-her-frontend",
+  "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+  "projects": [
+    {
+      "id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "name": "lash-her-frontend-staging",
+      "updatedAt": 1793754870362,
+      "repositoryId": null
+    },
+    {
+      "id": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "name": "lash-her-frontend",
+      "updatedAt": 1793636611087,
+      "repositoryId": null
+    }
+  ],
+  "projectPagination": {
+    "count": 2,
+    "prev": 1793754870362
+  },
+  "selectedStaging": {
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "pagination": {
+      "count": 25,
+      "prev": 1793754546485
+    },
+    "deployments": [
+      {
+        "deploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+        "state": "READY",
+        "target": "production",
+        "created": 1793754546485,
+        "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+        "url": "lash-her-frontend-staging-mjsbvxkic-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_FZuGK5tHzqgd37Hr96fGo9wdT2u9",
+        "state": "READY",
+        "target": "production",
+        "created": 1793746211846,
+        "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+        "url": "lash-her-frontend-staging-fpnf4zhsb-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_CdhFqwVANweysVe9cCTNpmHfduiy",
+        "state": "READY",
+        "target": "production",
+        "created": 1793672000549,
+        "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+        "url": "lash-her-frontend-staging-6jynrkup5-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_NQiyux1pG6WxihCetBfDDZycVRQ4",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793663857784,
+        "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+        "url": "lash-her-frontend-staging-mieefzqlf-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_AcWL59ofwPRKHifBujyQAfXEVzRs",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793663789495,
+        "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+        "url": "lash-her-frontend-staging-i2l6r0dp4-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_HnN7FbtaRP2mBsQPg9QeZiSuupP8",
+        "state": "READY",
+        "target": "production",
+        "created": 1793662659064,
+        "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+        "url": "lash-her-frontend-staging-6mgjgfjxj-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_DpTDFE5PVaHkEEXvgvavRUyujhTu",
+        "state": "ERROR",
+        "target": "production",
+        "created": 1793651327208,
+        "sourceCommit": "a05f38d4d9452be6ee80c9b51d1b2f9188c54242",
+        "url": "lash-her-frontend-staging-1e2iwtpfa-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_BUkM718SMVrDBF4texFyEty1hnCw",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793650357624,
+        "sourceCommit": "0ed09401726ff5f6f5057018ba7125a498d7180c",
+        "url": "lash-her-frontend-staging-c12itekmi-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_6Ey7Fhh8E5eHjmpeGUhKpRnFs5hP",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793649292585,
+        "sourceCommit": "d632773365867a979084876426d74f6a584e6f2c",
+        "url": "lash-her-frontend-staging-cxsxxmpfz-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_6wjquDpwk4gWPNdUFDVCn9bwBFYY",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793649130822,
+        "sourceCommit": "03d850c0512eddc0ef11cbac779e255a7b73bd3b",
+        "url": "lash-her-frontend-staging-oyi5bb77l-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_Hu8wAeUH81Wb3nNJLw5LsfvaXv2r",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793647580338,
+        "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+        "url": "lash-her-frontend-staging-ags3gd1ec-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_Ac7vFtRJLxoDm3juS2RYarWremaW",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793636398698,
+        "sourceCommit": "85dea97b0deae17cff19e345268bddafeba9fe28",
+        "url": "lash-her-frontend-staging-gvtemb5t0-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_2AfeVbsNmsY67jrBkcbwiGLUCgJe",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793635888377,
+        "sourceCommit": "13142937adf542e41d0a12807d2503389933f74e",
+        "url": "lash-her-frontend-staging-j2v3khtod-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_7UNHRwCHteRdBSqApPmaMqQ9qDDJ",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793301545897,
+        "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+        "url": "lash-her-frontend-staging-1o7ozci2x-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_AC3rMPTnwfc27bCQyAERrE1fZmdF",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793222374199,
+        "sourceCommit": "e82645b6c045ce88dbaacf3c32cff8606a8592a8",
+        "url": "lash-her-frontend-staging-kfbw7folq-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_51EWpVb1iyVqKYW4gyc6MR2PoYns",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793221462997,
+        "sourceCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+        "url": "lash-her-frontend-staging-lqzao826t-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_BhcXzshZsXQ6nzqAkbKsn1BPDsZX",
+        "state": "READY",
+        "target": "production",
+        "created": 1792878220586,
+        "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+        "url": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_B6kUx3d3viPek6UkKGHEpH9ZU6Ry",
+        "state": "ERROR",
+        "target": "production",
+        "created": 1792878027351,
+        "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+        "url": "lash-her-frontend-staging-qtbai01eg-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_2kbYXvgZ6JYa71ZfN8cHgmwaRfn9",
+        "state": "READY",
+        "target": "production",
+        "created": 1792875790487,
+        "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+        "url": "lash-her-frontend-staging-lf2rk3v7d-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_6YZsoqCqh1dy42kzzBn4vjvTmu2G",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792874916693,
+        "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+        "url": "lash-her-frontend-staging-eo6brpuer-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_EdrWmJP8vXxEekbmAMWyAAbAxHzL",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792874277857,
+        "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+        "url": "lash-her-frontend-staging-hnevnqq08-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_FAVez4Lwq3AydKquvaE37SqGQUSR",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792726108911,
+        "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+        "url": "lash-her-frontend-staging-e6xqqn5gr-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+        "state": "READY",
+        "target": "production",
+        "created": 1792723287340,
+        "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+        "url": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_2EYaBUHPhH7VpfMjewPwahjhYHbP",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792715713970,
+        "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+        "url": "lash-her-frontend-staging-aodjdbaem-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_7VUnHWAAVqcZYd4xfd2VJokj3SHS",
+        "state": "ERROR",
+        "target": "production",
+        "created": 1792715185361,
+        "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+        "url": "lash-her-frontend-staging-7uifho63d-dardan-demiris-projects.vercel.app"
+      }
+    ]
+  },
+  "productionProject": {
+    "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+    "pagination": {
+      "count": 56,
+      "prev": 1793663857852
+    },
+    "deployments": [
+      {
+        "deploymentId": "dpl_2N7bbNfCUDriHji4YSiYR9aHeCxx",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793663857852,
+        "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+        "url": "lash-her-frontend-bmlp6m1ch-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_5Gswwd1jhi5vusSZHCL2DewL5z8W",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793663789639,
+        "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+        "url": "lash-her-frontend-qkejef8b9-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_J4RAChR5eiCjz6FQyHEnKvrE8aX8",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793651327241,
+        "sourceCommit": "a05f38d4d9452be6ee80c9b51d1b2f9188c54242",
+        "url": "lash-her-frontend-2tesie59e-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GJKS6XMr7Gk6xB1x9YYHwjUtJEwM",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793650357645,
+        "sourceCommit": "0ed09401726ff5f6f5057018ba7125a498d7180c",
+        "url": "lash-her-frontend-ag9cv1rcf-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_DGpuXvfy8obYDMRnJEUumobvEbq8",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793649292992,
+        "sourceCommit": "d632773365867a979084876426d74f6a584e6f2c",
+        "url": "lash-her-frontend-4upwfx40b-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_BtPXJsEUXR6xziGjuHafptgyYXaj",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793649130935,
+        "sourceCommit": "03d850c0512eddc0ef11cbac779e255a7b73bd3b",
+        "url": "lash-her-frontend-igao04ps5-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_AWsUwWGxE2mTXQaHgo1fnvz23KSz",
+        "state": "ERROR",
+        "target": null,
+        "created": 1793647580065,
+        "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+        "url": "lash-her-frontend-luu1c4rp0-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GnfkX8oKqLqS2ZhUcaVZP1EdzseY",
+        "state": "READY",
+        "target": "production",
+        "created": 1793636398930,
+        "sourceCommit": "85dea97b0deae17cff19e345268bddafeba9fe28",
+        "url": "lash-her-frontend-5xwwshim8-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_7hkpYdaNvLJ6So9pgvUj2rTmVXpM",
+        "state": "READY",
+        "target": null,
+        "created": 1793635888619,
+        "sourceCommit": "13142937adf542e41d0a12807d2503389933f74e",
+        "url": "lash-her-frontend-n2r45m8gi-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_BYQiXkALFy2hjG2KVKUG7XEgYpyE",
+        "state": "READY",
+        "target": "production",
+        "created": 1793301564076,
+        "sourceCommit": null,
+        "url": "lash-her-frontend-3vtgpql8f-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_6EmKDuUEQ81ZBQPSRouHZMuPhANs",
+        "state": "READY",
+        "target": null,
+        "created": 1793301545861,
+        "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+        "url": "lash-her-frontend-opaxdlan6-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL",
+        "state": "READY",
+        "target": "production",
+        "created": 1793300650975,
+        "sourceCommit": null,
+        "url": "lash-her-frontend-4nbp5555l-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_rzM1LuvDQzn4N1hKouWRymhPqf7j",
+        "state": "READY",
+        "target": "production",
+        "created": 1793300354952,
+        "sourceCommit": null,
+        "url": "lash-her-frontend-h9c59v9y3-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_7mG5ncqdKCBhpxNJ281Amqw9upe4",
+        "state": "READY",
+        "target": "production",
+        "created": 1793298300270,
+        "sourceCommit": null,
+        "url": "lash-her-frontend-p3cq21ivv-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_7odqGL3divDTEMqdBbkZWu2FzqX4",
+        "state": "READY",
+        "target": "production",
+        "created": 1793294469166,
+        "sourceCommit": null,
+        "url": "lash-her-frontend-i974wnhcb-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_4sU57HSrLtGS87yzjztxfdjTfGo6",
+        "state": "READY",
+        "target": "production",
+        "created": 1793222374256,
+        "sourceCommit": "e82645b6c045ce88dbaacf3c32cff8606a8592a8",
+        "url": "lash-her-frontend-c763y95qb-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_76798xJEJ56toJzhZnF1SjokvHko",
+        "state": "READY",
+        "target": null,
+        "created": 1793221463039,
+        "sourceCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+        "url": "lash-her-frontend-ie2szjgox-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_5WEkq9nP659MTYKdPvukvjWKUbPG",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792875791118,
+        "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+        "url": "lash-her-frontend-p1yzzmlk7-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_DcgB842LqovU4j72iPhPkj7irK4H",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792874916958,
+        "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+        "url": "lash-her-frontend-1vb3qu1ds-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_44VFAYJoV9EsS2JbdZ7GyLdiaz3z",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792874278066,
+        "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+        "url": "lash-her-frontend-5ktloqf19-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_ExkXSvSvhromRua1vjYJCS5fKLzq",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792726109186,
+        "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+        "url": "lash-her-frontend-7it35blkc-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_DUhpTHCGjzMup1h6H4X5xXkvcjth",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792723287521,
+        "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+        "url": "lash-her-frontend-pnntpd78o-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_4MXvcWZKjuq5VM7NjotrKtqyzsJs",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792715714019,
+        "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+        "url": "lash-her-frontend-u3447nwby-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_cnqbTnuFxWfT3DuzQya42CYf8Qhp",
+        "state": "ERROR",
+        "target": null,
+        "created": 1792715185504,
+        "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+        "url": "lash-her-frontend-ba59mpoi2-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_9W7YyhTTm5V3mZ1EVgeoLTrgR9E3",
+        "state": "READY",
+        "target": "production",
+        "created": 1792556283197,
+        "sourceCommit": "f9558242893a4054df5c5ca5d39981977a929e1d",
+        "url": "lash-her-frontend-596baoewt-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_5oseGqYoQEakQd62ndrZ8FWQEkak",
+        "state": "READY",
+        "target": "production",
+        "created": 1792553186351,
+        "sourceCommit": "0678e16109425247047865e4aef0b7393d73dc15",
+        "url": "lash-her-frontend-557xjurze-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_DhEgV2UndyEYy7pf2DvTKQVYkuW1",
+        "state": "READY",
+        "target": null,
+        "created": 1792552586621,
+        "sourceCommit": "6d5845a8b6d5ff8f27ac7512d72075328233d0ec",
+        "url": "lash-her-frontend-3feviys62-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_EUTzmJQQ7Pe5TgYJ656YN6mc5vEP",
+        "state": "READY",
+        "target": "production",
+        "created": 1792552273292,
+        "sourceCommit": "3e105d4d54d77a7ca0f28607bfc9202107e3259e",
+        "url": "lash-her-frontend-mdu9z1oqs-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_8jBfXPADayE6fJBcKZSUbJV8Fnz4",
+        "state": "READY",
+        "target": null,
+        "created": 1792548113501,
+        "sourceCommit": "18feb565b4b1bd8bc3e9658d2eb3de7523594488",
+        "url": "lash-her-frontend-g8en927j0-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_AVcP3zfvSrL7sPQhxrr18BoFhHsQ",
+        "state": "READY",
+        "target": null,
+        "created": 1792546604019,
+        "sourceCommit": "b2ce650791fca81674f10bd4f9dd768d53efd185",
+        "url": "lash-her-frontend-n46chz45t-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_95r5G1LdWLzG3vhTSMNdFmez9bYL",
+        "state": "READY",
+        "target": "production",
+        "created": 1792542432890,
+        "sourceCommit": "122ea515aba5042ac3f4b7fa63090963bade899d",
+        "url": "lash-her-frontend-q9x6728kp-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GJXVZixoDKsCHLbShpBgRwBAeSRE",
+        "state": "READY",
+        "target": null,
+        "created": 1792541205426,
+        "sourceCommit": "b1f46feadab04e5e0934f5c63b9333837b48f56c",
+        "url": "lash-her-frontend-ka4tz6fbj-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_3yFShd4Lig2peoqrciLAwBQHTCgg",
+        "state": "READY",
+        "target": null,
+        "created": 1792539839825,
+        "sourceCommit": "c5e61fcd8ef0ac1e055c5f98ffb98bc6857d44e2",
+        "url": "lash-her-frontend-oxw90gdpa-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_5xhnLnvAVcs8ZN8kZnA1Fizmu6dA",
+        "state": "READY",
+        "target": null,
+        "created": 1792539599935,
+        "sourceCommit": "e6ee380122131505583a106437542591badf2172",
+        "url": "lash-her-frontend-19byqezxi-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_2agvehbJAbLL4tKc2DU3nACPvyQf",
+        "state": "READY",
+        "target": null,
+        "created": 1792536912456,
+        "sourceCommit": "24a3fd334209177797a128bd67d07fe805d539f5",
+        "url": "lash-her-frontend-qvy7gv5tl-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GJFyG5skz97vFa7hQUKoabiMzUyV",
+        "state": "READY",
+        "target": "production",
+        "created": 1791224058736,
+        "sourceCommit": "8745a463e310371a5c8a6b98dd12f5643feb289f",
+        "url": "lash-her-frontend-fvq978i3w-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_8AuKTVE4Gb5keSURS5VJffVdfTcu",
+        "state": "READY",
+        "target": "production",
+        "created": 1791129036683,
+        "sourceCommit": "5e5c46c42332671945e3a240513194453c477b78",
+        "url": "lash-her-frontend-l07e0j95b-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_ELbyXLu1vCJ47CasiKavjSP5Jqk7",
+        "state": "READY",
+        "target": null,
+        "created": 1791128478420,
+        "sourceCommit": "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+        "url": "lash-her-frontend-lzwtvkpqk-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_A6KNRNRr4MUUnjZ8haVKVAxZkn17",
+        "state": "READY",
+        "target": "production",
+        "created": 1790953300668,
+        "sourceCommit": "89d2aba195741c62c56c3de8d8a7d90cdaf2da19",
+        "url": "lash-her-frontend-2b5mxy4t2-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_4jbyGUtJJtDbEtM39j7y3uMgLQjZ",
+        "state": "READY",
+        "target": null,
+        "created": 1790882674302,
+        "sourceCommit": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+        "url": "lash-her-frontend-bk0yg3lt2-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_EpJRpoHMPEnvK6wEHSoPPCJKr7qW",
+        "state": "READY",
+        "target": "production",
+        "created": 1790697489129,
+        "sourceCommit": "4084a4b83259967661ef2013f1e8c49407df770c",
+        "url": "lash-her-frontend-3f7morbbq-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_4CeGejXDVfRWUvf4yBKvLMKkigh5",
+        "state": "READY",
+        "target": "production",
+        "created": 1790390276681,
+        "sourceCommit": "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab",
+        "url": "lash-her-frontend-no7v8az76-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_8hy8iShdnkhWByKq3yZpsS8w7QpM",
+        "state": "READY",
+        "target": "production",
+        "created": 1790371151082,
+        "sourceCommit": "038864503a835b916d430b3626efecdab04a0ecf",
+        "url": "lash-her-frontend-7vr5rsl1n-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_JE5fGnb6WtrkLHRDdfR5do9xod3Q",
+        "state": "READY",
+        "target": "production",
+        "created": 1790265763945,
+        "sourceCommit": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4",
+        "url": "lash-her-frontend-f1sxkibpb-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_D2YUBwd9iCYtzosasXZq6LQmkeDL",
+        "state": "READY",
+        "target": "production",
+        "created": 1790264669177,
+        "sourceCommit": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4",
+        "url": "lash-her-frontend-ogsd6l6d8-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_7p7h7NPvwH3WR5HqX6mVpb2mTCbD",
+        "state": "READY",
+        "target": "production",
+        "created": 1790206744100,
+        "sourceCommit": "188af7d78123be519a19bfe8505fc4d6060dda41",
+        "url": "lash-her-frontend-r7nneoga5-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_EtiE5qSDa9d9bgc8PPHzcBzZPoGw",
+        "state": "READY",
+        "target": null,
+        "created": 1790205905168,
+        "sourceCommit": "188af7d78123be519a19bfe8505fc4d6060dda41",
+        "url": "lash-her-frontend-d5t0k64ot-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_8Ux4PoWCYEpCyFh8nDeCBmNgNpg7",
+        "state": "READY",
+        "target": null,
+        "created": 1790199109243,
+        "sourceCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+        "url": "lash-her-frontend-cpnwrbd3x-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_2gueTVBa5hxGaSU4RazpuZWYZWH5",
+        "state": "READY",
+        "target": null,
+        "created": 1790199091574,
+        "sourceCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+        "url": "lash-her-frontend-eu55xblse-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GFxXf7XgZVbRvvwHxXb8BwqprEcY",
+        "state": "READY",
+        "target": null,
+        "created": 1790108020781,
+        "sourceCommit": "9b899e4e02afe787f25315a5ef1912d4d32d6080",
+        "url": "lash-her-frontend-nquga0z9w-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GsChbmjrANuzDtn1xGsyr8EMGsxr",
+        "state": "READY",
+        "target": "production",
+        "created": 1788231495618,
+        "sourceCommit": "5893173368941a7e0f35c932ba0b1798fc48873d",
+        "url": "lash-her-frontend-6b3knf5v9-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_CaHt5o99Kaz6mfVh3aibp5GQPULT",
+        "state": "READY",
+        "target": null,
+        "created": 1788205696610,
+        "sourceCommit": "e01ad6b6e6e319d63440f84b836f22594897b1d4",
+        "url": "lash-her-frontend-bri2421wr-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_EvGmgV4szqE8aZTic6mS3rYMthUw",
+        "state": "READY",
+        "target": null,
+        "created": 1787936084480,
+        "sourceCommit": "73beea0db10099c3b45cff6fac5dcd9a31f12762",
+        "url": "lash-her-frontend-ilhw09pb5-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_9qg9xEinTeNWe3LZtGRt8cFWdoc3",
+        "state": "READY",
+        "target": null,
+        "created": 1787936038039,
+        "sourceCommit": "e4040282b708d632bb4d45a45180905525b4da8a",
+        "url": "lash-her-frontend-dfk12kmhz-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_HFTjByznKUNaPNrWkfEbjVBEaYZq",
+        "state": "READY",
+        "target": null,
+        "created": 1787899253895,
+        "sourceCommit": "669f2978722a431c3f11cd8f68f59dfde9fe3d76",
+        "url": "lash-her-frontend-gu28umhms-dardan-demiris-projects.vercel.app"
+      },
+      {
+        "deploymentId": "dpl_GMdKekjKVcWN3hhh95T3xLHnVYsG",
+        "state": "READY",
+        "target": null,
+        "created": 1787897356771,
+        "sourceCommit": "fd08fe169b529f7d9edde3197873136a991ce863",
+        "url": "lash-her-frontend-e58ueecfx-dardan-demiris-projects.vercel.app"
+      }
+    ],
+    "readOnly": true,
+    "bindingsVerified": false
+  },
+  "limitations": [
+    "Retained metadata is not exhaustive discovery of deleted projects, deployments or direct callers",
+    "Database/provider bindings and physical target applicability remain unverified for every row",
+    "Project name, target:null and current environment settings cannot establish historical exclusion",
+    "Production-target deployments and production project schedules must not be mutated by this staging goal",
+    "Only positively classified affected previews may enter a reviewed staging retirement plan"
+  ],
+  "mutationsPerformed": false
+}

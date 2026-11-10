@@ -1,0 +1,366 @@
+test_broadcast_source_closure_needs_bound_source_proof_not_false_flags (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_broadcast_source_closure_needs_bound_source_proof_not_false_flags) ... skipped 'explicit owned disposable PG fixture only'
+test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name) ... skipped 'explicit owned disposable PG fixture only'
+test_callback_redaction_preserves_unknown_send_and_retained_consent_history (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_callback_redaction_preserves_unknown_send_and_retained_consent_history) ... skipped 'explicit owned disposable PG fixture only'
+test_complete_pagination_including_second_page_contacts_segments_and_topics (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_complete_pagination_including_second_page_contacts_segments_and_topics) ... skipped 'explicit owned disposable PG fixture only'
+test_empty_actual_inventory_and_zero_intents_settles_supported_scope (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_empty_actual_inventory_and_zero_intents_settles_supported_scope) ... skipped 'explicit owned disposable PG fixture only'
+test_fixed_sql_against_actual_schema_normalizes_hashes_and_joins_provider_state (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_fixed_sql_against_actual_schema_normalizes_hashes_and_joins_provider_state) ... skipped 'explicit owned disposable PG fixture only'
+test_http_denial_redirect_oversized_and_malformed_never_settle (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_http_denial_redirect_oversized_and_malformed_never_settle) ... skipped 'explicit owned disposable PG fixture only'
+test_marketing_offer_needs_actual_matching_terminal_email_outcome (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_marketing_offer_needs_actual_matching_terminal_email_outcome) ... skipped 'explicit owned disposable PG fixture only'
+test_normal_job_completion_uses_same_original_prestate_without_reapproval (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_normal_job_completion_uses_same_original_prestate_without_reapproval) ... skipped 'explicit owned disposable PG fixture only'
+test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows) ... skipped 'explicit owned disposable PG fixture only'
+test_original_snapshot_required_and_new_campaign_or_intent_not_accepted (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_original_snapshot_required_and_new_campaign_or_intent_not_accepted) ... skipped 'explicit owned disposable PG fixture only'
+test_pending_deadletter_lost_ack_and_any_lease_stay_unknown (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_pending_deadletter_lost_ack_and_any_lease_stay_unknown) ... skipped 'explicit owned disposable PG fixture only'
+test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses) ... skipped 'explicit owned disposable PG fixture only'
+test_repeated_cursor_and_drift_are_refused (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_repeated_cursor_and_drift_are_refused) ... skipped 'explicit owned disposable PG fixture only'
+test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin) ... skipped 'explicit owned disposable PG fixture only'
+test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown) ... skipped 'explicit owned disposable PG fixture only'
+test_unmatched_contact_is_unknown_and_never_deleted (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_unmatched_contact_is_unknown_and_never_deleted) ... skipped 'explicit owned disposable PG fixture only'
+test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt) ... skipped 'explicit owned disposable PG fixture only'
+test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list) ... skipped 'explicit owned disposable PG fixture only'
+test_broadcast_source_closure_needs_bound_source_proof_not_false_flags (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_source_closure_needs_bound_source_proof_not_false_flags) ... ERROR
+test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name) ... ERROR
+test_callback_redaction_preserves_unknown_send_and_retained_consent_history (frontend_resend_marketing_scope_test.MarketingScopeTests.test_callback_redaction_preserves_unknown_send_and_retained_consent_history) ... ERROR
+test_complete_pagination_including_second_page_contacts_segments_and_topics (frontend_resend_marketing_scope_test.MarketingScopeTests.test_complete_pagination_including_second_page_contacts_segments_and_topics) ... ERROR
+test_empty_actual_inventory_and_zero_intents_settles_supported_scope (frontend_resend_marketing_scope_test.MarketingScopeTests.test_empty_actual_inventory_and_zero_intents_settles_supported_scope) ... ERROR
+test_http_denial_redirect_oversized_and_malformed_never_settle (frontend_resend_marketing_scope_test.MarketingScopeTests.test_http_denial_redirect_oversized_and_malformed_never_settle) ... ERROR
+test_marketing_offer_needs_actual_matching_terminal_email_outcome (frontend_resend_marketing_scope_test.MarketingScopeTests.test_marketing_offer_needs_actual_matching_terminal_email_outcome) ... ERROR
+test_normal_job_completion_uses_same_original_prestate_without_reapproval (frontend_resend_marketing_scope_test.MarketingScopeTests.test_normal_job_completion_uses_same_original_prestate_without_reapproval) ... ERROR
+test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows (frontend_resend_marketing_scope_test.MarketingScopeTests.test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows) ... ERROR
+test_original_snapshot_required_and_new_campaign_or_intent_not_accepted (frontend_resend_marketing_scope_test.MarketingScopeTests.test_original_snapshot_required_and_new_campaign_or_intent_not_accepted) ... ERROR
+test_pending_deadletter_lost_ack_and_any_lease_stay_unknown (frontend_resend_marketing_scope_test.MarketingScopeTests.test_pending_deadletter_lost_ack_and_any_lease_stay_unknown) ... ERROR
+test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses (frontend_resend_marketing_scope_test.MarketingScopeTests.test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses) ... ERROR
+test_repeated_cursor_and_drift_are_refused (frontend_resend_marketing_scope_test.MarketingScopeTests.test_repeated_cursor_and_drift_are_refused) ... ERROR
+test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin (frontend_resend_marketing_scope_test.MarketingScopeTests.test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin) ... ERROR
+test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown (frontend_resend_marketing_scope_test.MarketingScopeTests.test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown) ... ERROR
+test_unmatched_contact_is_unknown_and_never_deleted (frontend_resend_marketing_scope_test.MarketingScopeTests.test_unmatched_contact_is_unknown_and_never_deleted) ... ERROR
+test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt (frontend_resend_marketing_scope_test.MarketingScopeTests.test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt) ... ERROR
+test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list (frontend_resend_marketing_scope_test.MarketingScopeTests.test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list) ... ERROR
+
+======================================================================
+ERROR: test_broadcast_source_closure_needs_bound_source_proof_not_false_flags (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_source_closure_needs_bound_source_proof_not_false_flags)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_callback_redaction_preserves_unknown_send_and_retained_consent_history (frontend_resend_marketing_scope_test.MarketingScopeTests.test_callback_redaction_preserves_unknown_send_and_retained_consent_history)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_complete_pagination_including_second_page_contacts_segments_and_topics (frontend_resend_marketing_scope_test.MarketingScopeTests.test_complete_pagination_including_second_page_contacts_segments_and_topics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_empty_actual_inventory_and_zero_intents_settles_supported_scope (frontend_resend_marketing_scope_test.MarketingScopeTests.test_empty_actual_inventory_and_zero_intents_settles_supported_scope)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_http_denial_redirect_oversized_and_malformed_never_settle (frontend_resend_marketing_scope_test.MarketingScopeTests.test_http_denial_redirect_oversized_and_malformed_never_settle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_marketing_offer_needs_actual_matching_terminal_email_outcome (frontend_resend_marketing_scope_test.MarketingScopeTests.test_marketing_offer_needs_actual_matching_terminal_email_outcome)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_normal_job_completion_uses_same_original_prestate_without_reapproval (frontend_resend_marketing_scope_test.MarketingScopeTests.test_normal_job_completion_uses_same_original_prestate_without_reapproval)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows (frontend_resend_marketing_scope_test.MarketingScopeTests.test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_original_snapshot_required_and_new_campaign_or_intent_not_accepted (frontend_resend_marketing_scope_test.MarketingScopeTests.test_original_snapshot_required_and_new_campaign_or_intent_not_accepted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_pending_deadletter_lost_ack_and_any_lease_stay_unknown (frontend_resend_marketing_scope_test.MarketingScopeTests.test_pending_deadletter_lost_ack_and_any_lease_stay_unknown)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses (frontend_resend_marketing_scope_test.MarketingScopeTests.test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_repeated_cursor_and_drift_are_refused (frontend_resend_marketing_scope_test.MarketingScopeTests.test_repeated_cursor_and_drift_are_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin (frontend_resend_marketing_scope_test.MarketingScopeTests.test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown (frontend_resend_marketing_scope_test.MarketingScopeTests.test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_unmatched_contact_is_unknown_and_never_deleted (frontend_resend_marketing_scope_test.MarketingScopeTests.test_unmatched_contact_is_unknown_and_never_deleted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt (frontend_resend_marketing_scope_test.MarketingScopeTests.test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list (frontend_resend_marketing_scope_test.MarketingScopeTests.test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 160, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+----------------------------------------------------------------------
+Ran 37 tests in 0.029s
+
+FAILED (errors=18, skipped=19)

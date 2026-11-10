@@ -1,0 +1,1 @@
+{"status": "OWNED_CONSERVATIVE_LAST_RECORD_ENVELOPE_BOUND", "maximumBytes": 6581, "limit": 8192, "conservativeCounters": 1000000, "recordCount": 1, "sourceFrameCount": 12, "sourceFramePathBytes": 256, "nodeFrameCount": 12, "byteBudgetCanRetainFinalRecord": true, "manualConservativeModel": true, "fixtureOnly": true}

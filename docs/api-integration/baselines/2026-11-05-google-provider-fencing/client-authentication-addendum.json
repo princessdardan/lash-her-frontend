@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "environment": "owned-local-fixtures",
+  "status": "SOURCE_COMPONENT_VALIDATED",
+  "googleHttpsTests": 14,
+  "nodeBridgeAndAdapterTests": 16,
+  "clientAuthentication": "One synthetic wrong-secret invalid_client calibration per selected client; same-client, same-unissued-grant actual prestate invalid_grant and poststate old invalid_client/replacement invalid_grant, or actual refresh plus UserInfo",
+  "identityOfflineGrantRequired": false,
+  "negativeProbeEstablishesGrantOwnerOrEffects": false,
+  "liveProviderMutations": false,
+  "wholeFenceCertified": false
+}

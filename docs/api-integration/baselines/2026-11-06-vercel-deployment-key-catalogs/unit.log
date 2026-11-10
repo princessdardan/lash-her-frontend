@@ -1,0 +1,16 @@
+✔ owner catalogs retain separate exact key names, sorted union and only nonsecret provenance (1.981042ms)
+✔ fixed request accepts only the two known projects/team and immutable IDs, with no URL or method override (0.273291ms)
+✔ deployment owner/project/creation identities must match the fresh selected surface exactly (0.186375ms)
+✔ all present authoritative Git hashes and repository identities agree; missing source is unknown (0.772666ms)
+✔ both catalogs are mandatory owner arrays; missing/redacted/public variants cannot become empty evidence (0.284334ms)
+✔ assignments, objects, duplicates, Unicode, whitespace and oversized key names refuse without disclosing input (0.550084ms)
+✔ scope timestamps/source and closed input cannot invent missing original identity (0.160166ms)
+✔ production target metadata remains a catalog observation with no controls or inferred value recovery (0.0705ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 43.50625

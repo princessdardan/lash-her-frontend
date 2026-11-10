@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "kind": "profile-source-union-checkpoint",
+  "sourceThrough": "c3d82d6eab66c9760972849f0fbb3bfb39112177",
+  "sourcePackages": {
+    "historical": {
+      "source": "eaeb43b98579373b79ccba732a22d4fc7d8e83e9",
+      "evidence": "e9e14017f1b1f6605970b55ed45a9dc67911c8e7",
+      "independentReview": "CLEAR;25Node24focused tests/lint and evidence hashes verified"
+    },
+    "host": {
+      "source": "4ba7428c140d6b783c613279d6e5ed6e7318abd9",
+      "evidence": "7f0c3c098654b2c2ae6be7423f1f35513cc07547",
+      "independentReview": "CLEAR;59Python/11Node24 plus lint/diff, fixed actual-image module branch still requires real image qualification"
+    },
+    "frontendDatabase": {
+      "originalSource": "663c182fb9c79ae788bf694c8886ca6265d38594",
+      "corrections": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+      "evidence": "330c9218589dd3d1aad1e72a1e5e3761b9f72857",
+      "independentReview": "CLEAR source+actual corrected PG records;8Node24 targeted cases. Original pendingSQL authority and private/public pair findings closed.",
+      "correctedOwnedPostgres": {
+        "majors": [
+          16,
+          18
+        ],
+        "rolesChecksEach": 29,
+        "migrationChecksEach": 18,
+        "frontendMigrationsEach": 83,
+        "roleStderrBytesEach": 0,
+        "migrationStderr": "Existing552byteNode module-type warning only",
+        "pendingSqlRefusedBeforeIntent": true,
+        "profiledReadOnlyVerified": true,
+        "privateRecordSwapRefusedBeforeHooksQueriesIntent": true
+      },
+      "restorationEvidence": "Twelve checks per PG16/18 at original663 source; called bootstrap/restoration helpers unchanged by df correction. Not relabeled as an exact final-union run."
+    },
+    "legacyProviderGate": {
+      "source": "aa8309b10cd265e38e6957df670e7717b62065c9",
+      "independentReview": "CLEAR;19Node24tests,26exports checked before private I/O/effects; no new profiled positive adapter path"
+    },
+    "fixtureClosure": {
+      "source": "ccc4f8fc96dc8c4b3cc425d8f765798e1442c610",
+      "independentReview": "CLEAR;complete current-source helper+registry closures; originalD5 source untouched"
+    },
+    "currentFixturePins": {
+      "source": "f755b205",
+      "independentReview": "CLEAR;43Node24tests/lint;fivecurrent selectors matchactual candidate pins. Originalretainedliterals/rawhashes unchanged; oldsource receipt refused by current reader."
+    },
+    "frontendJobHandoff": {
+      "source": "c3d82d6e",
+      "independentReview": "CLEAR;9Node24preparation cases including actuallegacy/profiled CLI; sourceexpectedfifthargument joined, pendingexecution staysrefused"
+    }
+  },
+  "rootChecks": {
+    "nodeGatewayPlatform": {
+      "total": 690,
+      "passed": 673,
+      "failed": 0,
+      "skipped": 17,
+      "scope": "ConditionalownedDBcases skipped by thisunitcommand; separate ownedfixtures/CI remain required"
+    },
+    "host": {
+      "total": 862,
+      "failed": 0,
+      "skipped": 8,
+      "scope": "Fullhostsource suite afterhostpackage integration, before finalNode-onlyconsumer corrections",
+      "passed": 854
+    },
+    "lint": {
+      "exitCode": 0,
+      "errors": 0,
+      "warnings": 13
+    },
+    "fixturePinsFocused": {
+      "passed": 43,
+      "skipped": 0
+    },
+    "fullApplicationUnit": "Prior5e checkpoint2563passed/0skip; currentexactCI must qualifyfinalsource"
+  },
+  "logs": {
+    "platform": {
+      "originalPath": "/private/tmp/p2q-root-frozen-union-node-platform.log",
+      "bytes": 88250,
+      "sha256": "3e8756b3a984e7b8ea801596520f9f97d19356357073bb88ab2c9cca52219620"
+    },
+    "host": {
+      "originalPath": "/private/tmp/p2q-root-host-profile-integrated-full.log",
+      "bytes": 2345,
+      "sha256": "10816e3e0170f6494f58ff0e952cee7e2bd8d2c3a80a32791ae3146a4800ba98"
+    },
+    "lint": {
+      "originalPath": "/private/tmp/p2q-root-frozen-union-lint.log",
+      "bytes": 2544,
+      "sha256": "64403dc5d7561cbf794b9bd75858fb4744c56d60ca0304f88bd2745b68e1a8a6"
+    },
+    "fixturePins": {
+      "originalPath": "/private/tmp/p2q-root-current-api-fixture-pins-node.log",
+      "bytes": 4571,
+      "sha256": "7044fb3538a0435a00675a13a2d37b31300278ac0dbd5343f49edec77dbc122d"
+    },
+    "fixturePinsLint": {
+      "originalPath": "/private/tmp/p2q-root-current-api-fixture-pins-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "legacyAdapters": {
+      "originalPath": "/private/tmp/p2q-root-legacy-adapter-profile-refusal-node.log",
+      "bytes": 2847,
+      "sha256": "3351f998c67fe9afa0a0799a6a5aefbc687148759b194fa6063f076742ea788a"
+    },
+    "frontendJobHandoff": {
+      "originalPath": "/private/tmp/p2q-root-frontend-job-profile-handoff-node.log",
+      "bytes": 5593,
+      "sha256": "af3bab9cfde38929386d6e686d184b4c7300e37087ad40b0f167ac48ab151d5d"
+    }
+  },
+  "priorCi82": {
+    "sourceCommit": "82ac48366ac8a39701b483819c5773b409d7877a",
+    "runId": 42276766340,
+    "passJobs": 7,
+    "failedJobs": [
+      "gateway-and-platform",
+      "frontend-operator-migrations",
+      "aggregate browser dependency gate"
+    ],
+    "gatewayCause": "Five ERR_MODULE_NOT_FOUND failures: copied release module omitted new helper dependency. ccc4f8 corrects executable copies and current source maps.",
+    "operatorCause": "Distinct deterministic mismatch: manifest/fetched API0bb+859 vsfixed lifecycleAPIa447+939 at buildP2LifecyclePersistencePostgres18Input. Stale forward/receipt-invalid diagnostics followed a successful parsed forward receipt. f755 reconciles current selectors and clears only completed-qualification diagnostic fields.",
+    "allThreeActualBrowserSuitesPassed": true,
+    "originalFailureEvidence": "/private/tmp/p2q-ci-82ac-20261106/",
+    "lastAllTenJobPass": "e7ab752e604ba43bc5b6443a9197a56e2a6e0cad"
+  },
+  "open": {
+    "isolatedProfileRegistered": false,
+    "wholeFirstInstallQualified": false,
+    "fullProfiledCoordinatorExecutionAvailable": false,
+    "profiledPendingSqlAvailable": false,
+    "allocatedResources": false,
+    "independentControlScopes": "UNKNOWN;owner requesteddefinition,no creation orspend permission",
+    "sourceCandidatePublished": false,
+    "liveReleaseApproved": false,
+    "oldP2_00": "SeparatelyOPEN outsideamendedclaim",
+    "G2_Q": "OPEN"
+  }
+}

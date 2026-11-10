@@ -1,0 +1,9 @@
+# Existing-staging preflight and current setup evidence
+
+The first policy audit missed the legacy staging script's `separateAccountVerified` requirement. Reviewed source b70b1084 is integrated separately from that earlier audit and removes this obsolete gate while retaining verified sender-domain, exact staging resource, OAuth-purpose, runtime-role/TLS, sandbox, recipient, source and migration checks. It accepts both false and absent account-separation metadata. Original worker records remain unchanged; their pending review field is superseded only by this integration record. Independent checks pass 10 focused/17 staging-release tests, zero skips, with lint/diff clean. Root's integrated 17 staging-release tests pass.
+
+The refreshed writer inventory keeps the same entry paths/counts; only the read-only preflight manual-entry hash changes. Source inventory is not a deployed fence or drain. The certification runbook now uses the selected qualified Course 0bb054d5/Community 8594d953 artifact pins rather than older role-only heads; contract artifacts themselves do not change.
+
+Current Google Console inspection found the recorded project unavailable in the owner-selected existing staging account. Four projects were visible in its All selector; no project was chosen or changed. The intended existing project/account is pending owner clarification. No new administrative account is required, no permission request was sent and no client/credential setting was opened or changed. Private account labels and troubleshooting URL tokens are excluded from this record.
+
+API policy PRs 10/9 pass required CI and review. Automatic approval review rejected both merge actions because explicit approval for those new default-branch merges was not recorded; neither main branch changed. Approval is pending. Source/preflight work continues independently. No resource allocation, candidate publication, SQL, provider configuration or live release occurred.

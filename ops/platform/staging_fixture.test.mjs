@@ -82,3 +82,32 @@ test("private TLS caller refuses caller-selected routes or destinations", async 
     await assert.rejects(call(method, path, "private", {}), /ROUTE_REFUSED/u);
   }
 });
+
+function phase2Fixture() {
+  const input = fixture();
+  input.version = 2;
+  const claims = { version: 1, iss: "lash-her-frontend", aud: "lash-her-course-api:admin", sub: input.actorUserId,
+    capabilities: ["course-editor", "course-support"], iat: now / 1000, exp: now / 1000 + 300, jti: randomUUID() };
+  input.applicationToken = `owned.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.private`;
+  return input;
+}
+
+test("P2 fixture uses the closed v1 administrator profile for both independent capabilities", async () => {
+  const input = phase2Fixture(), calls = [];
+  const result = await prepareFixture(input, { call: caller(input, calls), now: () => now });
+  assert.equal(result.status, "STAGING_FIXTURE_TWO_GRANTS_CREATED");
+  assert.equal(calls.length, 3);
+  const legacy = fixture(); legacy.version = 2;
+  assert.throws(() => validateInput(legacy, now), /BOUNDED_ADMIN_TOKEN/u);
+});
+
+test("P2 fixture rejects profile confusion, absent capabilities, aliases and added claims before HTTP", () => {
+  for (const changes of [{ version: 2 }, { iss: "other" }, { aud: ["lash-her-course-api:admin"] },
+    { aud: "lash-her-course-api:learner" }, { capabilities: ["course-editor"] }, { capabilities: ["course-support"] },
+    { capabilities: ["course-editor", "course-editor"] }, { capabilities: ["course-editor", "course-support", "community-moderator"] },
+    { role: "courseAdmin" }, { sub: "frontend" }, { jti: undefined }, { jti: "not-a-uuid" }, { email: "private" }]) {
+    const input = phase2Fixture(), claims = JSON.parse(Buffer.from(input.applicationToken.split(".")[1], "base64url"));
+    input.applicationToken = `owned.${Buffer.from(JSON.stringify({ ...claims, ...changes })).toString("base64url")}.private`;
+    assert.throws(() => validateInput(input, now), /BOUNDED_ADMIN_TOKEN/u);
+  }
+});

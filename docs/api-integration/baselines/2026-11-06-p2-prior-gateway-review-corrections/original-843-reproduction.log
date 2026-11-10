@@ -1,0 +1,68 @@
+FFFFFFF
+======================================================================
+FAIL: test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage (p2_prior_gateway_test.PriorGatewayTests.test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage) (state='replacement-in-progress')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 191, in test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage
+    with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage (p2_prior_gateway_test.PriorGatewayTests.test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage) (state='preparation-refused')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 191, in test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage
+    with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage (p2_prior_gateway_test.PriorGatewayTests.test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage) (state='running-observed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 191, in test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage
+    with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage (p2_prior_gateway_test.PriorGatewayTests.test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage) (field='binding')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 199, in test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage
+    with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage (p2_prior_gateway_test.PriorGatewayTests.test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage) (field='stopReceiptDirectory')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 199, in test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage
+    with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage (p2_prior_gateway_test.PriorGatewayTests.test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage) (field='stopReceiptSha256')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 199, in test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage
+    with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_noop_gateway_stage_cannot_mark_old_process_as_completed_replacement (p2_prior_gateway_test.PriorGatewayTests.test_noop_gateway_stage_cannot_mark_old_process_as_completed_replacement)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/ops/platform/host/p2_prior_gateway_test.py", line 213, in test_noop_gateway_stage_cannot_mark_old_process_as_completed_replacement
+    with self.assertRaisesRegex(ValueError,'REPLACEMENT_NEW_CONTAINER'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.248s
+
+FAILED (failures=7)

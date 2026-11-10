@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "status": "SOURCE_COMPONENT_PREPARED_INDEPENDENT_REVIEW_AND_SHARED_INTEGRATION_PENDING",
+  "baseFrontendSource": "3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+  "testedFrontendSource": "58752d10331bb6525963d04e7d47637393e66f79",
+  "courseSource": "a447bfde20299e12afab68a3331b3792ddd07598",
+  "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+  "node": "24.18.0",
+  "checks": {
+    "selectedSourceTests": 28,
+    "ownedBrowserCases": 5,
+    "browserRetries": 0,
+    "sourceSkips": 0,
+    "ownedAdmissionPostgres16Checks": 5,
+    "ownedAdmissionPostgres18Checks": 5,
+    "focusedEslint": "passed",
+    "frontendTypecheck": "passed",
+    "diffCheck": "passed"
+  },
+  "browser": {
+    "actualNextAuthAndRoute": true,
+    "actualCanonicalCourseJwtAndPostgres": true,
+    "migrationsApplied": {
+      "frontend": 83,
+      "course": 22
+    },
+    "normalOwnerUi": true,
+    "doubleSubmitOnePost": true,
+    "lostResponseThenExplicitGetNoPost": true,
+    "actualOrderlessManualGrantAndImmutableAudit": true,
+    "actualCanonicalCommunityOutbox": "pending, attempts0; receiver delivery not run",
+    "gatewayWorkloadOidc": "modeled network edge",
+    "frontendAdmission": "off in browser-only owned fixture; real TLS ledger qualified separately",
+    "providerIdentitySessions": "synthetic owned Auth.js cookies; no real Google",
+    "evidencePath": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-owner-manual-grant/test-results/course-authoring-browser/run-0Iq0mi/evidence.json",
+    "evidenceSha256": "230c36b13499f2c9c693aa649606342cd4200f3fb3b8a9ab6eebbeeb7cb420b0"
+  },
+  "admission": {
+    "actualVerifiedTlsScram": [
+      16,
+      18
+    ],
+    "wholeOperationParent": "one completed operation for auth/preflight/grant/readback",
+    "closedBeforeAuthOrProvider": true,
+    "lostAckUncertainPersists": true,
+    "getReconciliationDoesNotReplayOrClearLedger": true,
+    "courseReplies": "modeled; complemented by real Course browser fixture"
+  },
+  "sharedIntegrationRequired": [
+    "SERVER_ONLY_TEST_FILES registration for src/lib/course-support/manual-grant-handler.test.ts",
+    "whole operation source inventory/admission entries for POST and GET /api/admin/courses/[courseId]/manual-grants and the new server page",
+    "final candidate/source CI and affected profile propagation"
+  ],
+  "unchangedScopes": [
+    "shared course-client and permissions helpers",
+    "schema journals and contracts/generated artifacts",
+    "lockfiles/workflows",
+    "shared profile/host/provider/coordinator modules"
+  ],
+  "earlierFailure": {
+    "frontendSource": "b7ff6749a6030459337d07b51d9162d21823790b",
+    "cause": "New browser status locator also matched the test-site banner; actual grant confirmation rendered. Corrected scoped selector, then all five cases passed at 5fedb53e and final58752d10. Original log retained."
+  },
+  "sourceFiles": [
+    {
+      "path": "scripts/test-course-authoring-browser.mjs",
+      "sha256": "142b16409f41fa1901a9c0d844700ab4eb373f010deb39a45bd791e3f695c5ef",
+      "bytes": 17041
+    },
+    {
+      "path": "src/app/admin/(protected)/courses/[courseId]/manual-grants/page.tsx",
+      "sha256": "f85116e8ef21315b12db479f2e9749ce4686f9ea3611d4db7190db68e9c63591",
+      "bytes": 1809
+    },
+    {
+      "path": "src/app/admin/(protected)/courses/[courseId]/page.tsx",
+      "sha256": "0857b31b2dffdf6bb7ac8460d1736dcd2a3738ba5273194ae799bbe7e48360fd",
+      "bytes": 1615
+    },
+    {
+      "path": "src/app/api/admin/courses/[courseId]/manual-grants/route.ts",
+      "sha256": "afb05ec80e5346e94bd56cff7a12a92a679cc753d5aae9014ca0b73d37f28018",
+      "bytes": 650
+    },
+    {
+      "path": "src/components/admin/course-authoring/manual-grant-form.tsx",
+      "sha256": "ce3479c83cd875f58998b9c4f03eef6622d6cdebdcfce1a8b7b5cda79b3caf33",
+      "bytes": 5687
+    },
+    {
+      "path": "src/lib/course-support/manual-grant-handler.test.ts",
+      "sha256": "7acb973bb93bb63b25ab5ba0fe3bc2100c53bd8b1aacf623c171d63fb78bfd93",
+      "bytes": 4356
+    },
+    {
+      "path": "src/lib/course-support/manual-grant-handler.ts",
+      "sha256": "52a073a50f7d1f04bbd50cb2c21f643b78cd37c54a1a3565a1a744b444d0dc20",
+      "bytes": 10098
+    },
+    {
+      "path": "tests/course-authoring-browser/authoring.spec.ts",
+      "sha256": "dafa0e4a6903ebd9ff51f2e2edf475167a4910142483e2eda78d3d45c21892ef",
+      "bytes": 29515
+    },
+    {
+      "path": "tests/course-support/manual-grant-admission-owned.mts",
+      "sha256": "283976b28129439848e1595067911c858c67a6bc7877b3ea20ff77df1650adcc",
+      "bytes": 6806
+    },
+    {
+      "path": "tests/course-support/manual-grant-fixture.ts",
+      "sha256": "5b8ca4fb0743b5677997f41625c46eb28832d37832f4cbb68b6f5bfc92c523d7",
+      "bytes": 5681
+    }
+  ],
+  "privateRecords": [
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-evidence-20261106/browser-b7ff6749.log",
+      "sha256": "2e1e4f852f9e4781d7a5d63023cddadc6670d8cc778d4550c71fd67c8b9bab1f",
+      "bytes": 17237
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-evidence-20261106/browser-5fedb53e.log",
+      "sha256": "d94051b6753f5ae7edc5fd03390f59a5fd32e0fc6cf6052446f7bb7747913ee2",
+      "bytes": 1346
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-evidence-20261106/browser-58752d10.log",
+      "sha256": "77f9bb9f0c2f86e7db123125238d719651fc2658d306b7becd020b1135884ded",
+      "bytes": 1344
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-evidence-20261106/admission-16-58752d10.json",
+      "sha256": "686e230f3f80fc6d5993a2837a47cdb7b88c3899beaec5b59ecee6a1b4a2bdbc",
+      "bytes": 294
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-evidence-20261106/admission-18-58752d10.json",
+      "sha256": "6d7a69ae4a1a68a9cd7fd87959031fc050122fc5e596dc266655345fef1913e3",
+      "bytes": 294
+    }
+  ],
+  "liveProviderCalls": false,
+  "newIsolatedProfileRegistered": false,
+  "resourceActions": false,
+  "s10LiveQualified": false,
+  "g2Accepted": false
+}

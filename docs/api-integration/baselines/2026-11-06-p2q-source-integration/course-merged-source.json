@@ -1,0 +1,56 @@
+{
+  "repository": "https://github.com/princessdardan/lash-her-course-api.git",
+  "pullRequest": 8,
+  "reviewedHead": "2ecb7894d4c4c31890723b1a4352fea3b230b74b",
+  "mergeCommit": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+  "tree": "668fadeb2c8b589a202aac67824340eebefbc021",
+  "reviewedHeadTreeEqualsMergeTree": true,
+  "priorMain": "a447bfde20299e12afab68a3331b3792ddd07598",
+  "mergedMainCi": {
+    "runId": 42270559920,
+    "conclusion": "success",
+    "jobs": {
+      "containers": 128073691087,
+      "quality": 128073691544,
+      "postgres": 128073691737
+    }
+  },
+  "artifacts": [
+    {
+      "id": 13529880423,
+      "name": "princessdardan~lash-her-course-api~KZTWZH.dockerbuild",
+      "sha256": "1a8b5d849f8b8a27bb0715a0105b626c5645dd485822a8d8ebae26940df46a39"
+    },
+    {
+      "id": 13529705601,
+      "name": "princessdardan~lash-her-course-api~RL3HPJ.dockerbuild",
+      "sha256": "cfe5ae5dd376ea0cd60ab787317b040979bac3c3561b2eb5ed7b4d28fbb28da5"
+    },
+    {
+      "id": 13529137871,
+      "name": "course-native-runtime-qualification",
+      "sha256": "10464411e890f330a43ebaa90ecbd9227d82d0603139bb578ab001d95409fe78"
+    },
+    {
+      "id": 13529107585,
+      "name": "operator-schema-postgres18",
+      "sha256": "86c120625c067376c195cfe303be85b69f3a33b52b70937492094d45a7f402d6"
+    }
+  ],
+  "qualificationTargetProfileModuleSha256": "e757c4d942d739920c61f7fe3b429dcc2158723a826f8c247b10282b378e4111",
+  "qualificationTargetProfileTestSha256": "32b01c3f8c3071d3ba9b1cc6d71996c42faf3801a75390d8f97e38ea1529d195",
+  "wireArtifacts": {
+    "unchangedFromPriorMain": true,
+    "openapiCourseApiSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "communityContractPinSha256": "aca5296e5b2b9ed6903cf9041ce45b85c43f8b705dd570c3774de3c7b7e1b18a",
+    "packageJsonAndLockUnchanged": true
+  },
+  "boundaries": {
+    "sourcePublicationOnly": true,
+    "providerTouched": false,
+    "candidateCreated": false,
+    "resourceCreated": false,
+    "liveAction": false,
+    "wholeEnvironmentFirstInstallQualified": false
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "sourceCommit": "06f42ac159c321916568cb2b02b5ba51b127e70f",
+  "rootHandlerContractCommit": "2a33ae800a7fec49f7e3cf2b2676055dfcc29917",
+  "localDependencyCommit": "ab87c9e1",
+  "sourceSha256": {
+    "ops/platform/host/p2_canonical_browser_origin.py": "e78c6dea99bf5a43beef91cb4dd15c6f6889ce0dd4e67e366804653e3b09413f",
+    "ops/platform/host/p2_canonical_browser_origin_test.py": "64602b748d269a51e5fd4ed040a4a8eae9cf7029b5723dc86c1c8f4a746f65fe",
+    "ops/platform/p2-canonical-browser-origin.mjs": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
+    "src/app/api/internal/release-probe/handler.ts": "e2ee81c21bc158a19eeb0fb5ca14f4f35b7828919fc02f4272341bbefd3835c9",
+    "src/lib/customer-auth/policy.ts": "dd7f587416cbe09e823ccfb6ad2a3b512f11dcf3ad9e23e98448e621a76fba2e",
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/env/application-environment.mjs": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+    "src/lib/api-integration/release-feature-controls.ts": "6e825f4f3969f2153e0aa5ac17483b1f7b027b78989d7d1d469631e67411ef44"
+  },
+  "evidenceSha256": {
+    "followup-06f42-node.log": "71eb81beca27c9383788e24aaa38075400440b8c3397bc5d63e0515ecfe3edc1",
+    "followup-06f42-owned-https.log": "acbca543b297077209e77201f74fbe56cdb91057c2b6380c6f8b382f253ae522"
+  },
+  "actualSourceHandlerQualified": true,
+  "aliasMetadataFixtureOnly": true,
+  "catalogFixtureOnly": true,
+  "actualProviderQualified": false,
+  "releaseAccepted": false
+}

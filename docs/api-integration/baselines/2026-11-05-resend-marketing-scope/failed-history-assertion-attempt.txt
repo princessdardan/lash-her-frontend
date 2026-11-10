@@ -1,0 +1,33 @@
+test_fixed_sql_against_actual_schema_normalizes_hashes_and_joins_provider_state (frontend_resend_marketing_scope_test.MarketingDatabaseTests.test_fixed_sql_against_actual_schema_normalizes_hashes_and_joins_provider_state) ... skipped 'explicit owned disposable PG fixture only'
+test_broadcast_source_closure_needs_bound_source_proof_not_false_flags (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_source_closure_needs_bound_source_proof_not_false_flags) ... FAIL
+test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_terminal_dispatch_requires_durable_provider_binding_and_name) ... ok
+test_callback_redaction_preserves_unknown_send_and_retained_consent_history (frontend_resend_marketing_scope_test.MarketingScopeTests.test_callback_redaction_preserves_unknown_send_and_retained_consent_history) ... ok
+test_complete_pagination_including_second_page_contacts_segments_and_topics (frontend_resend_marketing_scope_test.MarketingScopeTests.test_complete_pagination_including_second_page_contacts_segments_and_topics) ... ok
+test_empty_actual_inventory_and_zero_intents_settles_supported_scope (frontend_resend_marketing_scope_test.MarketingScopeTests.test_empty_actual_inventory_and_zero_intents_settles_supported_scope) ... ok
+test_http_denial_redirect_oversized_and_malformed_never_settle (frontend_resend_marketing_scope_test.MarketingScopeTests.test_http_denial_redirect_oversized_and_malformed_never_settle) ... ok
+test_marketing_offer_needs_actual_matching_terminal_email_outcome (frontend_resend_marketing_scope_test.MarketingScopeTests.test_marketing_offer_needs_actual_matching_terminal_email_outcome) ... ok
+test_normal_job_completion_uses_same_original_prestate_without_reapproval (frontend_resend_marketing_scope_test.MarketingScopeTests.test_normal_job_completion_uses_same_original_prestate_without_reapproval) ... ok
+test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows (frontend_resend_marketing_scope_test.MarketingScopeTests.test_normalizer_rejects_pii_columns_duplicate_ids_and_unbounded_rows) ... ok
+test_original_snapshot_required_and_new_campaign_or_intent_not_accepted (frontend_resend_marketing_scope_test.MarketingScopeTests.test_original_snapshot_required_and_new_campaign_or_intent_not_accepted) ... ok
+test_pending_deadletter_lost_ack_and_any_lease_stay_unknown (frontend_resend_marketing_scope_test.MarketingScopeTests.test_pending_deadletter_lost_ack_and_any_lease_stay_unknown) ... ok
+test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses (frontend_resend_marketing_scope_test.MarketingScopeTests.test_read_scope_rejects_mutations_unreviewed_ids_queries_and_email_addresses) ... ok
+test_repeated_cursor_and_drift_are_refused (frontend_resend_marketing_scope_test.MarketingScopeTests.test_repeated_cursor_and_drift_are_refused) ... ok
+test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin (frontend_resend_marketing_scope_test.MarketingScopeTests.test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin) ... ok
+test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown (frontend_resend_marketing_scope_test.MarketingScopeTests.test_subscribed_contact_needs_exact_membership_and_topics_and_event_is_still_unknown) ... ok
+test_unmatched_contact_is_unknown_and_never_deleted (frontend_resend_marketing_scope_test.MarketingScopeTests.test_unmatched_contact_is_unknown_and_never_deleted) ... ok
+test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt (frontend_resend_marketing_scope_test.MarketingScopeTests.test_unsubscribe_success_privately_matches_normalized_email_and_sanitizes_receipt) ... ok
+test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list (frontend_resend_marketing_scope_test.MarketingScopeTests.test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list) ... ok
+
+======================================================================
+FAIL: test_broadcast_source_closure_needs_bound_source_proof_not_false_flags (frontend_resend_marketing_scope_test.MarketingScopeTests.test_broadcast_source_closure_needs_bound_source_proof_not_false_flags)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 254, in test_broadcast_source_closure_needs_bound_source_proof_not_false_flags
+    self.assertFalse(any(path.startswith("/broadcasts") for _method, path in self.calls[-4:]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 19 tests in 11.159s
+
+FAILED (failures=1, skipped=1)

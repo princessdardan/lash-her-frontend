@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "fixtureOnly": true,
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false,
+  "attempts": [
+    {
+      "scope": "owned-https",
+      "result": "sandbox denied 7 listener sockets before any provider request; no live endpoint used"
+    },
+    {
+      "scope": "owned-https-approved-loopback",
+      "tests": 7,
+      "failures": 0
+    },
+    {
+      "scope": "protocol-source-guards",
+      "tests": 12,
+      "failures": 0,
+      "skipped": 0,
+      "includesRealSigkillWithModelBackend": true
+    },
+    {
+      "scope": "owned-postgres16-actual-app-stage",
+      "checks": 8,
+      "migrations": 83,
+      "failures": 0,
+      "skipped": 0,
+      "classification": "owned scheduler model; actual app cron/admission/trace/store and HTTPS receiver transport"
+    }
+  ]
+}

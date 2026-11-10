@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "scope": "Finite read-only historical binding feasibility; no historical gate closed. Markdown links adapted for repository portability; originals retained.",
+  "files": [
+    {
+      "file": "feasibility-addendum.md",
+      "bytes": 7180,
+      "sha256": "335f4d5d27305e9b45808fc10b49fe6e04ba4ce25e03576e72a853898343d5cf",
+      "originalSha256": "99cdc49b30fa73c669776fcf6397acc1cdb5226ecf10dad5b1503943ee6f5d8e"
+    },
+    {
+      "file": "provenance.json",
+      "bytes": 2891,
+      "sha256": "4f2ac870d48b3f1e65e58b9a587b21d09c4bbc69511dbd4b136525881e2fe833",
+      "originalSha256": "4f2ac870d48b3f1e65e58b9a587b21d09c4bbc69511dbd4b136525881e2fe833"
+    },
+    {
+      "file": "owner-metadata-projection.json",
+      "bytes": 4889,
+      "sha256": "6c1248324b65a741ea12095cbe8e89465ecc991d54c02930ee0f02151d4f1b6d",
+      "originalSha256": "6c1248324b65a741ea12095cbe8e89465ecc991d54c02930ee0f02151d4f1b6d"
+    },
+    {
+      "file": "schema-inspection.json",
+      "bytes": 18395,
+      "sha256": "615211b40da78033dd9839e9006ae2c1a8f961d143b2807e5ba07cdf55eef76c",
+      "originalSha256": "615211b40da78033dd9839e9006ae2c1a8f961d143b2807e5ba07cdf55eef76c"
+    }
+  ]
+}

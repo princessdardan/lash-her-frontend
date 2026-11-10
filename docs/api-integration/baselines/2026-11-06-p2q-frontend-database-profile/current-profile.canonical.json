@@ -1,0 +1,1 @@
+{"environment":"staging","frontend":{"canonicalOrigin":"https://staging.lashher.com","projectId":"prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM","teamId":"team_2Hrn5eMZyZxfAWdmYvyKi9t3","workloadEnvironment":"production"},"gateway":{"publicOrigin":"https://api-staging.lashher.com"},"id":"staging-current","kind":"existing-staging","selectionPolicy":"existing-staging-v1","version":1}

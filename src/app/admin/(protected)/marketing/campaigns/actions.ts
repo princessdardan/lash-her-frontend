@@ -1,5 +1,8 @@
 "use server";
 
+import { runActionWriterAdmission } from "@/lib/writer-admission/action";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { ADMIN_WRITER_UNAVAILABLE } from "@/lib/admin/action-admission";
 import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 import { revalidatePath } from "next/cache";
 
@@ -51,7 +54,7 @@ export interface SendCampaignResult {
   error?: string;
 }
 
-export async function saveCampaignDraftAction(
+async function saveCampaignDraftActionImpl(
   input: SaveCampaignDraftInput,
 ): Promise<SaveCampaignDraftResult> {
   let actorId: string;
@@ -60,6 +63,7 @@ export async function saveCampaignDraftAction(
     const actor = await requirePermission("marketing:send");
     actorId = actor.user.id;
   } catch (error) {
+    markWriterOperationUncertain();
     return { ok: false, error: permissionError(error) };
   }
 
@@ -133,11 +137,12 @@ export async function saveCampaignDraftAction(
     revalidatePath(MARKETING_PATH);
     return { ok: true, campaignId: created.id };
   } catch (error) {
+    markWriterOperationUncertain();
     return { ok: false, error: friendlyError(error) };
   }
 }
 
-export async function sendCampaignTestAction(
+async function sendCampaignTestActionImpl(
   campaignId: string,
 ): Promise<SendCampaignTestResult> {
   let actorEmail: string;
@@ -146,6 +151,7 @@ export async function sendCampaignTestAction(
     const actor = await requirePermission("marketing:send");
     actorEmail = actor.user.email;
   } catch (error) {
+    markWriterOperationUncertain();
     return { ok: false, error: permissionError(error) };
   }
 
@@ -159,6 +165,7 @@ export async function sendCampaignTestAction(
     await sendCampaignTestEmail({ campaign, to: actorEmail });
     return { ok: true, sentTo: actorEmail };
   } catch {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: "Could not send the test email. Please try again.",
@@ -166,13 +173,14 @@ export async function sendCampaignTestAction(
   }
 }
 
-export async function sendCampaignAction(input: {
+async function sendCampaignActionImpl(input: {
   campaignId: string;
   scheduledAt?: string;
 }): Promise<SendCampaignResult> {
   try {
     await requirePermission("marketing:send");
   } catch (error) {
+    markWriterOperationUncertain();
     return { ok: false, error: permissionError(error) };
   }
 
@@ -203,6 +211,7 @@ export async function sendCampaignAction(input: {
       recipientCountEstimate: result.recipientCountEstimate,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     if (error instanceof CampaignSendError) {
       return { ok: false, error: error.message };
     }
@@ -248,4 +257,33 @@ function friendlyError(error: unknown): string {
   }
 
   return "The campaign could not be saved.";
+}
+
+export async function saveCampaignDraftAction(
+  input: SaveCampaignDraftInput,
+): Promise<SaveCampaignDraftResult> {
+  return runActionWriterAdmission(
+    "new-work",
+    () => saveCampaignDraftActionImpl(input),
+    () => ({ ok: false, error: ADMIN_WRITER_UNAVAILABLE }),
+  );
+}
+export async function sendCampaignTestAction(
+  campaignId: string,
+): Promise<SendCampaignTestResult> {
+  return runActionWriterAdmission(
+    "new-work",
+    () => sendCampaignTestActionImpl(campaignId),
+    () => ({ ok: false, error: ADMIN_WRITER_UNAVAILABLE }),
+  );
+}
+export async function sendCampaignAction(input: {
+  campaignId: string;
+  scheduledAt?: string;
+}): Promise<SendCampaignResult> {
+  return runActionWriterAdmission(
+    "new-work",
+    () => sendCampaignActionImpl(input),
+    () => ({ ok: false, error: ADMIN_WRITER_UNAVAILABLE }),
+  );
 }

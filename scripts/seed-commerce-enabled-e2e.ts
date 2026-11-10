@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 
 import { closePrivateDbPool, getPrivateDb } from "@/lib/private-db/client";
+import { assertIsolatedCommerceFixtureDatabase } from "@/lib/private-db/isolated-commerce-fixture";
 import {
   adminUsers,
   bookingCalendarConnections,
@@ -36,7 +37,7 @@ const BOOKING_E2E_IDS = {
 } as const;
 
 async function main(): Promise<void> {
-  assertIsolatedFixtureDatabase();
+  assertIsolatedCommerceFixtureDatabase(process.env);
   const now = new Date();
   const attestedAt = new Date(now.getTime() - 60_000);
   const coverageStartsOn = now.toISOString().slice(0, 10);
@@ -226,29 +227,6 @@ function buildClosureDates(
       kind: "ontario_holiday",
       label: `Ontario statutory/observed closure ${date}`,
     }));
-}
-
-function assertIsolatedFixtureDatabase(): void {
-  const databaseUrl = process.env.DATABASE_URL;
-  const testDatabaseUrl = process.env.TEST_DATABASE_URL;
-  if (
-    process.env.COMMERCE_E2E_ENABLED_MODE !== "1" ||
-    process.env.COMMERCE_E2E_ISOLATED_TEST_DATABASE !== "1" ||
-    process.env.VERCEL_ENV === "production" ||
-    process.env.NEXT_PUBLIC_SANITY_DATASET === "production" ||
-    !databaseUrl ||
-    !testDatabaseUrl ||
-    databaseIdentity(databaseUrl) !== databaseIdentity(testDatabaseUrl)
-  ) {
-    throw new Error(
-      "Commerce enabled E2E seed requires the explicit isolated non-production test database",
-    );
-  }
-}
-
-function databaseIdentity(value: string): string {
-  const url = new URL(value);
-  return `${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`;
 }
 
 void main().catch(async (error) => {

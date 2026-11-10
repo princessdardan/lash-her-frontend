@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "status": "OWNED_NORMAL_API_SUSPENSION_BOUNDARY_PASS",
+  "baseCommit": "f1aebc11f9a1cc4c84e8599fa4db1fca14c84d1c",
+  "sourceSha256": {
+    "ops/platform/host/migrate.py": "8fa04057d124f310d4c17020336a0e072f49bb102d3e0d1ad938cbb2f3314569",
+    "ops/platform/host/p2_prior_gateway.py": "6194be98bbfd8d52465b77d0c8119dd21b7535d717387be165caefeffb4f04c5",
+    "ops/platform/host/p2_release_scope.py": "a79f68f4dad764e1a6bd66b3dd74a0dbac5347aae1115436da8aaabf524de182",
+    "ops/platform/host/p2_prior_gateway_test.py": "46061aeea87977de2b9c2c5df56ff3764386d794ff0aa50d10e18c97134b41c5",
+    "ops/platform/host/p2_release_scope_test.py": "d90251cca3de203e6ae8437f56affa4ea20f9f4702d6b876e1a4bedd97f2ae38"
+  },
+  "newOpsFiles": 0,
+  "originalReproduction": {
+    "status": "EXACT_F1_NORMAL_API_STOP_BLOCKER_REPRODUCED",
+    "priorGatewayReleaseId": "prior-p1",
+    "failureCode": "PRIOR_GATEWAY_STOPPED_PROOF_REQUIRED",
+    "actualGatewayProcessStopped": true,
+    "apiApplies": 0,
+    "originalFrontendReceiptUnchanged": true,
+    "frontendTerminalCreated": false
+  },
+  "qualification": {
+    "tests": 128,
+    "exitCode": 0,
+    "elapsedSeconds": 25.404,
+    "workingDirectory": "ops/platform/host",
+    "command": "python3 -m unittest p2_prior_gateway_test p2_release_scope_test migrate_test release_test p2_recovery_test p2_release_guard_test p2_supervisor_dispatch_test"
+  },
+  "sourceOnlyHooks": [
+    "before_api_suspension",
+    "after_api_suspension"
+  ],
+  "explicitReferenceRequiredForOrdinaryAdmission": true,
+  "containmentLatestSourceReadOnly": true,
+  "originalFrontendSqlReceiptPreserved": true,
+  "frontendSqlReplayed": false,
+  "frontendTerminalRecreated": false,
+  "knownAckAuthorizationAdded": false,
+  "actualOwnedExecutions": [
+    "real gateway HTTPS and operation counters",
+    "actual old process termination and new gateway process",
+    "local flock descriptors",
+    "actual migrate.execute and suspend_runtime source orchestration"
+  ],
+  "fixtureTransports": [
+    "Docker metadata/stop transport",
+    "API image validation and migration execution",
+    "Compose startup transport",
+    "frontend independent observer"
+  ],
+  "supervisorOrDispatchEdited": false,
+  "liveActionsPerformed": false,
+  "independentReviewPending": true,
+  "artifactSha256": {
+    "original-f1-valid-context.json": "14696610f6c7a2a9cb5e2a62586c3ec48715e7b55b2c282d74442e2722b4e5cb",
+    "containment-original-reference-reproduction.log": "111ebf28debdcf1852f2c0fd65240fd941b8998301602719c816d90fbc006d3a",
+    "reproduce-original.py": "72ce64e30c09387c720cd30d1ea74ca030e115cb52e109319dd1389d99c9e3da",
+    "original-f1-reproduction.log": "a9f9cb87b560523840eea6d32eb75848de72aeca24fce684338815d457aca223",
+    "README.md": "24d379967670572510a15bed037996c362603fa4da06e3543dca8719ed158453",
+    "host-tests.log": "26c6a0338ab413c8e0105ca4e66ec95085edea4dc9d60ea22873200e8a227672",
+    "original-f1-observation.json": "c9639addae48b130187cff43cff79bc5964855067fafd80da3dc5abaaf4c3c54"
+  }
+}

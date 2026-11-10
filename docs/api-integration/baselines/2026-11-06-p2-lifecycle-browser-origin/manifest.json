@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "sourceCommit": "4f8061becb30194041a5681b4b387dd0d1a370e8",
+  "sourceSha256": {
+    "p2-canonical-browser-origin.mjs": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
+    "p2-canonical-browser-origin.test.mjs": "0aaf692c6b61c4f10ed6c13585b169342c0c7decb77df6747991c380b6dc1ffe",
+    "host/p2_canonical_browser_origin.py": "65090e94e0d31295a9730b736bd8bf1f6d871491eaeacc554f3844e9fa130e5e",
+    "host/p2_canonical_browser_origin_test.py": "8f4ece5a547b0bfff0cc4e127b011761c393412035d1dcd7d654a6ae76d368dd",
+    "p2-lifecycle-browser-recorder.mjs": "f9948727948a21aa385fff009d5ee0987f955a27afee6d7dc18e18b36d951b25",
+    "p2-lifecycle-pending-probe.mjs": "83e6f4c51b261fc4d897fc8bdb9ffa022337999421e2cca89fef4bc68dfbdc6b",
+    "p2-lifecycle-suspension-evidence.mjs": "78bb13d36c080bba0c577a6e582ae0a90e8f758bcd57382f4d0dbc457819d736",
+    "p2-lifecycle-suspension-evidence.test.mjs": "833465e82d69b853db2513e461729f9f150ec05428446e2fbecb2275cae41196",
+    "host/p2_lifecycle_suspension_evidence.py": "e82dd4f9adf3a88f6903b26ed3bf97dc1f711b188b5e9013cf5accf9796bdaf3",
+    "host/p2_lifecycle_suspension_evidence_test.py": "5ef242841a3961cde23878ec26714ef5cc54973fc6ed43a5dfe67064694ea88f",
+    "test-p2-lifecycle-pending-local.mjs": "cfa21b9e5a18f795ca5adeb565e0914d73a2f6594feaf92149656652d55a09ef"
+  },
+  "evidenceSha256": {
+    "alias-owned-https.log": "df0823423c17c05afa56f11fdb02ea772e0f0ba3fdeca3cded5b67ff0f6ebe94",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "node.log": "39d8e46dc001750ecfae28ae9e455e584686e3c65374422b8a97b52d487b7c37",
+    "pending-owned-pg16.json": "56645b14f236287bcfdc7df3f2aeadecff27ca62fc3c1d3873704cda4c0f30a1",
+    "pending-owned-pg16.stderr": "7c01f1b01ac8fa40154a46f2af597a6a3da78ee2b77261807c46ba94ad40db31",
+    "suspension-host.log": "366a3c1eb123cb4bbdb45ccbd8dd368f7286ca9e2e347b3583def710c49728fd"
+  },
+  "fixtureOnly": true,
+  "actualBrowserQualified": false,
+  "actualAliasQualified": false,
+  "releaseAccepted": false
+}

@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "16c7306219d9b76ac6497a6b18de1842bead08f1",
+  "exitCode": 1,
+  "identityCasesExecuted": 0,
+  "cause": "Fixture guard compared an inet value including /32 to a host-only address",
+  "result": {
+    "status": "OWNED_FRONTEND_MIGRATION_FAILED",
+    "phase": "frontend-identity-admin-lifecycle-owned-routes",
+    "providerTouched": false,
+    "fixtureDetail": "Owned child failed (ops/platform/harness/owned-frontend-identity-admission.mjs): {\"status\":\"FRONTEND_IDENTITY_OWNED_FAILED\",\"phase\":\"configuration\",\"completedChecks\":[],\"code\":\"ERR_ASSERTION\",\"assertion\":\"Expected values to be strictly deep-equal:\\n+ actual - expected\\n\\n  [\\n    {\\n      database: 'frontend_admission_owned',\\n+     host: '127.0.0.1/32',\\n-     host: '127.0.0.1',\\n      major: 16,\\n      ssl: true,\\n      username: 'frontend_test_admin'\\n    }\\n  ]\\n\",\"frames\":[\"    at main (/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-qualification/ops/platform/harness/owned-frontend-identity-admission.mjs:81:12)\"]}\n\n\n1 !== 0\n",
+    "fixtureFrames": []
+  }
+}

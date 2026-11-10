@@ -1,0 +1,300 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-06",
+  "status": "MERGED_API_ROLE_SOURCE_QUALIFICATION_RECORDED",
+  "runs": [
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "workflow": "CI",
+      "workflowPath": ".github/workflows/ci.yml",
+      "runId": 42162176192,
+      "runNumber": 28,
+      "runAttempt": 1,
+      "event": "push",
+      "branch": "main",
+      "sourceSha": "a447bfde20299e12afab68a3331b3792ddd07598",
+      "sourceTree": "282d693d5d8166254a97a33a7b9b202b3dcb0dd7",
+      "startedAt": "2026-11-06T04:23:03Z",
+      "completedAt": "2026-11-06T04:27:36Z",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/42162176192",
+      "jobs": [
+        {
+          "jobId": 127710183971,
+          "name": "containers",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Verify runtime image excludes migration and test artifacts",
+            "Verify migration artifact boundary and source manifest offline",
+            "Exercise packaged operator migration on isolated PostgreSQL 18",
+            "Preserve private operator schema baseline",
+            "Verify installed api backport and enforce HIGH/CRITICAL scan",
+            "Verify installed migration backport and enforce HIGH/CRITICAL scan",
+            "Retain image-bound native runtime evidence even on refusal"
+          ]
+        },
+        {
+          "jobId": 127710184241,
+          "name": "postgres",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Apply full Drizzle migration chain",
+            "Run guarded PostgreSQL integration tests",
+            "Verify migration down/up round trip"
+          ]
+        },
+        {
+          "jobId": 127710184295,
+          "name": "quality",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Audit dependencies",
+            "Run npm run verify",
+            "Verify native runtime qualification guards",
+            "Validate Prometheus alert rules",
+            "Unit-test Prometheus alert thresholds",
+            "Unit-test Course-Community alert thresholds"
+          ]
+        }
+      ]
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "workflow": "CI",
+      "workflowPath": ".github/workflows/ci.yml",
+      "runId": 42162186353,
+      "runNumber": 19,
+      "runAttempt": 1,
+      "event": "push",
+      "branch": "main",
+      "sourceSha": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+      "sourceTree": "3b2b865949ee0864d47c0e1d04591d0402088eaa",
+      "startedAt": "2026-11-06T04:23:09Z",
+      "completedAt": "2026-11-06T04:28:31Z",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42162186353",
+      "jobs": [
+        {
+          "jobId": 127710216844,
+          "name": "containers",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Verify runtime image excludes migration and test artifacts",
+            "Verify migration artifact boundary and source manifest offline",
+            "Exercise packaged operator migration on isolated PostgreSQL 18",
+            "Preserve private operator schema baseline",
+            "Verify installed api backport and enforce HIGH/CRITICAL scan",
+            "Verify installed worker backport and enforce HIGH/CRITICAL scan",
+            "Verify installed migration backport and enforce HIGH/CRITICAL scan",
+            "Retain image-bound native runtime evidence even on refusal"
+          ]
+        },
+        {
+          "jobId": 127710217247,
+          "name": "postgres",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Apply migrations",
+            "Database integration tests",
+            "Migration down/up round trip"
+          ]
+        },
+        {
+          "jobId": 127710217421,
+          "name": "quality",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Run npm run audit:ci",
+            "Run npm run verify",
+            "Verify native runtime qualification guards",
+            "Validate Prometheus alert rules",
+            "Test Prometheus alert behavior"
+          ]
+        }
+      ]
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "workflow": "Course contract compatibility",
+      "workflowPath": ".github/workflows/course-contract-compatibility.yml",
+      "runId": 42162186016,
+      "runNumber": 21,
+      "runAttempt": 1,
+      "event": "push",
+      "branch": "main",
+      "sourceSha": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+      "sourceTree": "3b2b865949ee0864d47c0e1d04591d0402088eaa",
+      "startedAt": "2026-11-06T04:23:09Z",
+      "completedAt": "2026-11-06T04:23:21Z",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42162186016",
+      "jobs": [
+        {
+          "jobId": 127710214850,
+          "name": "compatibility",
+          "status": "completed",
+          "conclusion": "success",
+          "materialSuccessfulSteps": [
+            "Run node community/scripts/check-vendored-course-contract.mjs course"
+          ]
+        }
+      ],
+      "artifacts": []
+    }
+  ],
+  "artifacts": [
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "runId": 42162176192,
+      "artifactId": 13477287834,
+      "name": "operator-schema-postgres18",
+      "sizeBytes": 14528,
+      "createdAt": "2026-11-06T04:25:48Z",
+      "expiresAt": "2026-11-16T04:25:47Z",
+      "githubDigest": "sha256:d0c5a7ede4ad21330008186ab4dd3f0258f2436c5b52828c008d3150ffccaba3",
+      "downloadedSha256": "d0c5a7ede4ad21330008186ab4dd3f0258f2436c5b52828c008d3150ffccaba3",
+      "downloadedMode": "0600",
+      "digestMatched": true,
+      "retained": false,
+      "schemaOrDdlRetained": false,
+      "receipt": {
+        "postgresMajor": 18,
+        "service": "lash-her-course-api",
+        "migrations": 22,
+        "providerTouched": false,
+        "statuses": [
+          "ROLE_CONFIGURATION_AND_NAMESPACE_REVIEW_PASS",
+          "OPERATOR_ROLE_ACL_REFUSALS_PASS",
+          "SOURCE_BOUND_CREATOR_MEMBERSHIP_AND_READONLY_GATE_PASS",
+          "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS"
+        ],
+        "roleAndNamespaceFaultCases": 8,
+        "aclRefusalCases": 18,
+        "approvedMembershipRows": 3,
+        "migrationChecks": [
+          "verified-client-tls-backend-plaintext",
+          "wrong-peer-hostname-refused",
+          "forward-apply",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "already-current",
+          "wrong-ca",
+          "wrong-role",
+          "phase2-contract-binding",
+          "historical-v1-contract-binding",
+          "changed-lineage",
+          "schema-drift",
+          "runtime-ddl-journal-isolation",
+          "production-artifact-promotion"
+        ]
+      }
+    },
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "runId": 42162176192,
+      "artifactId": 13476649536,
+      "name": "course-native-runtime-qualification",
+      "sizeBytes": 167871,
+      "createdAt": "2026-11-06T04:27:19Z",
+      "expiresAt": "2026-11-16T04:27:18Z",
+      "githubDigest": "sha256:04ef430b8c955fa4b3883b52912ca4d345d47a2534c679b7b8d4f44c4aa78966",
+      "downloadedSha256": "04ef430b8c955fa4b3883b52912ca4d345d47a2534c679b7b8d4f44c4aa78966",
+      "downloadedMode": "0600",
+      "digestMatched": true,
+      "archiveRetained": false,
+      "sanitizedEvidence": {
+        "path": "native-runtime-summary.json",
+        "sha256": "a022aa3082e4c32a12da948cbb8c85ec4832b678116b5e60a00f963714afa507"
+      }
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "runId": 42162186353,
+      "artifactId": 13477133722,
+      "name": "operator-schema-postgres18",
+      "sizeBytes": 6474,
+      "createdAt": "2026-11-06T04:26:13Z",
+      "expiresAt": "2026-11-16T04:26:12Z",
+      "githubDigest": "sha256:592b881521561ec0c6a4f5eceb78c5c0469f16ac5057ee8b300b4847c254df7a",
+      "downloadedSha256": "592b881521561ec0c6a4f5eceb78c5c0469f16ac5057ee8b300b4847c254df7a",
+      "downloadedMode": "0600",
+      "digestMatched": true,
+      "retained": false,
+      "schemaOrDdlRetained": false,
+      "receipt": {
+        "postgresMajor": 18,
+        "service": "lash-her-community-api",
+        "migrations": 11,
+        "providerTouched": false,
+        "statuses": [
+          "ROLE_CONFIGURATION_AND_NAMESPACE_REVIEW_PASS",
+          "OPERATOR_ROLE_ACL_REFUSALS_PASS",
+          "SOURCE_BOUND_CREATOR_MEMBERSHIP_AND_READONLY_GATE_PASS",
+          "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS"
+        ],
+        "roleAndNamespaceFaultCases": 8,
+        "aclRefusalCases": 18,
+        "approvedMembershipRows": 1,
+        "migrationChecks": [
+          "verified-client-tls-backend-plaintext",
+          "wrong-peer-hostname-refused",
+          "forward-apply",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "already-current",
+          "wrong-ca",
+          "wrong-role",
+          "phase2-contract-binding",
+          "historical-v1-contract-binding",
+          "changed-lineage",
+          "schema-drift",
+          "runtime-ddl-journal-isolation",
+          "production-artifact-promotion"
+        ]
+      }
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "runId": 42162186353,
+      "artifactId": 13477089295,
+      "name": "community-native-runtime-qualification",
+      "sizeBytes": 242203,
+      "createdAt": "2026-11-06T04:28:13Z",
+      "expiresAt": "2026-11-16T04:28:12Z",
+      "githubDigest": "sha256:c54165e1bbe19606c24fa81785eae0ac069ba469e78c07f08eec4a5a98311ddc",
+      "downloadedSha256": "c54165e1bbe19606c24fa81785eae0ac069ba469e78c07f08eec4a5a98311ddc",
+      "downloadedMode": "0600",
+      "digestMatched": true,
+      "archiveRetained": false,
+      "sanitizedEvidence": {
+        "path": "native-runtime-summary.json",
+        "sha256": "a022aa3082e4c32a12da948cbb8c85ec4832b678116b5e60a00f963714afa507"
+      }
+    }
+  ],
+  "claims": {
+    "sourceOnly": true,
+    "mergedMainBound": true,
+    "actualIsolatedPostgres18": true,
+    "actualImageBoundNativeRuntime": true,
+    "compatibilityWorkflowPassed": true,
+    "providerTouched": false,
+    "schemaOrDdlRetained": false,
+    "signedArtifactUrlRetained": false,
+    "credentialRetained": false,
+    "stagingTouched": false,
+    "liveProviderQualified": false,
+    "productionActivated": false,
+    "frontendIntegrated": false,
+    "g2Accepted": false
+  }
+}

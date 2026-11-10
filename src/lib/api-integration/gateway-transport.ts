@@ -4,9 +4,11 @@ import { randomUUID } from "node:crypto";
 import { getVercelOidcToken } from "@vercel/oidc";
 import routes from "../../../ops/gateway/routes.json";
 import { getApplicationEnvironment } from "@/lib/env/application-environment.server";
+import { INTERACTIVE_GATEWAY_PROOF_HEADER, interactiveCourseGatewayProof } from "@/lib/writer-admission/interactive-proof";
 
-type GatewayRequest = {
-  method: "GET" | "POST" | "PATCH";
+export type GatewayRequest = {
+  service?: "course" | "community";
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   path: string;
   applicationToken?: string;
   idempotencyKey?: string;
@@ -35,15 +37,17 @@ export function createGatewayTransport(config: {
   const fetch = config.fetch ?? globalThis.fetch;
 
   return async (input: GatewayRequest): Promise<Response> => {
+    const service = input.service ?? "course";
+    if (service !== "course" && service !== "community") throw new GatewayTransportError("route");
     if (!/^\/v1\/[A-Za-z0-9/_-]+(?:\?[^#\s\\]*)?$/u.test(input.path) ||
         input.path.length > 4089 || input.path.split("?", 1)[0].includes("//")) throw new GatewayTransportError("route");
     const pathname = input.path.split("?", 1)[0];
-    const route = routes.find((route) => route.auth !== "webhook" && route.method === input.method &&
+    const route = routes.find((route) => ("service" in route ? route.service : "course") === service && route.auth !== "webhook" && route.method === input.method &&
       new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(pathname));
     if (!route) throw new GatewayTransportError("route");
     if (route.auth === "application" && !input.applicationToken) throw new GatewayTransportError("authorization");
-    if (input.applicationToken && !/^[A-Za-z0-9._~-]+$/u.test(input.applicationToken)) throw new GatewayTransportError("authorization");
-    if (input.idempotencyKey && !/^[A-Za-z0-9_-]{1,128}$/u.test(input.idempotencyKey)) throw new GatewayTransportError("authorization");
+    if (input.applicationToken && (input.applicationToken.length > 8192 || !/^[A-Za-z0-9._~-]+$/u.test(input.applicationToken))) throw new GatewayTransportError("authorization");
+    if (input.idempotencyKey && !/^[A-Za-z0-9._:-]{1,255}$/u.test(input.idempotencyKey)) throw new GatewayTransportError("authorization");
     if (input.body !== undefined && (input.method === "GET" || Buffer.byteLength(input.body) > 1024 * 1024)) throw new GatewayTransportError("route");
     const deadline = AbortSignal.timeout(10_000);
     const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
@@ -53,13 +57,21 @@ export function createGatewayTransport(config: {
       const token = await abortableToken(getToken, signal);
       signal.throwIfAborted();
       if (!token || token.length > 16_384 || !/^[A-Za-z0-9._-]+$/u.test(token)) throw new Error("Missing workload proof");
+      const requestId = randomUUID();
+      const url = new URL(`/${service}${input.path}`, origin);
       const headers: Record<string, string> = {
-        accept: "application/json", "x-lash-workload-token": token, "x-request-id": randomUUID(),
+        accept: "application/json", "x-lash-workload-token": token, "x-request-id": requestId,
       };
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;
       if (input.body !== undefined) headers["content-type"] = "application/json";
-      const response = await fetch(new URL(`/course${input.path}`, origin), {
+      if (service === "course" && !pathname.startsWith("/v1/internal/")) {
+        const proof = await interactiveCourseGatewayProof({ url, requestId, method: input.method, body: input.body,
+          applicationToken: input.applicationToken, idempotencyKey: input.idempotencyKey });
+        if (proof) headers[INTERACTIVE_GATEWAY_PROOF_HEADER] = proof;
+      }
+      signal.throwIfAborted();
+      const response = await fetch(url, {
         method: input.method, headers, body: input.body, signal,
         redirect: "manual", cache: "no-store",
       });
@@ -85,7 +97,8 @@ export function createGatewayTransport(config: {
       const resultHeaders = new Headers({ "cache-control": "no-store" });
       for (const name of ["content-type", "retry-after", "x-request-id"]) {
         const value = response.headers.get(name);
-        if (value !== null) resultHeaders.set(name, value);
+        if (value !== null && (name !== "x-request-id" || /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value)) &&
+          (name !== "retry-after" || /^[0-9]{1,5}$/u.test(value))) resultHeaders.set(name, value);
       }
       return new Response(response.status === 204 ? null : Buffer.concat(chunks), {
         status: response.status, headers: resultHeaders,

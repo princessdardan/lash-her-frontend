@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 
@@ -173,6 +174,7 @@ export async function processContactPopupSubmission(
   const [delivery] = await Promise.all([immediateDelivery, adminEmailPromise]);
 
   if (!recordResult.offerEmailJobId) {
+    markWriterOperationUncertain();
     dependencies.logError(
       "[contact-popup] Offer email was enqueued without a returned job id; delivery is deferred",
     );
@@ -197,6 +199,7 @@ async function attemptImmediateOfferDelivery(
     if (result.sent > 0) return "sent";
 
     if (result.failed > 0) {
+      markWriterOperationUncertain();
       dependencies.logError(
         "[contact-popup] Immediate offer email delivery failed; the durable outbox will retry",
         { jobId },
@@ -210,6 +213,7 @@ async function attemptImmediateOfferDelivery(
     );
     return "deferred";
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError(
       "[contact-popup] Immediate offer email processing failed; the durable outbox will retry",
       { error: getErrorMessage(error), jobId },
@@ -225,6 +229,7 @@ async function sendAdminEmailNonBlocking(
   try {
     await dependencies.sendAdminEmail("contact-popup", data);
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError(
       "[contact-popup] Admin notification delivery failed",
       getErrorMessage(error),

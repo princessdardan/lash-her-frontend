@@ -1,3 +1,5 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { eq, inArray, isNotNull } from "drizzle-orm";
@@ -75,7 +77,7 @@ export function createCurrentSquareTeamMemberSelectionOption(input: {
   );
 }
 
-export async function refreshSquareTeamMappings(): Promise<{
+async function refreshSquareTeamMappingsWork(): Promise<{
   members: SquareTeamMemberSelectionOption[];
   verifiedMappings: number;
 }> {
@@ -121,7 +123,7 @@ export async function refreshSquareTeamMappings(): Promise<{
   };
 }
 
-export async function setProviderSquareTeamMember(input: {
+async function setProviderSquareTeamMemberWork(input: {
   providerId: string;
   squareTeamMemberSelectionHandle: string | null;
 }): Promise<void> {
@@ -199,7 +201,7 @@ export async function setProviderSquareTeamMember(input: {
   }
 }
 
-export async function setSquareAttributionRequirement(
+async function setSquareAttributionRequirementWork(
   required: boolean,
 ): Promise<void> {
   const actor = await requirePermission("staff:manage");
@@ -251,7 +253,7 @@ export async function getSquareAttributionReadiness(): Promise<{
 }> {
   await requirePermission("staff:view");
   const db = getPrivateDb();
-  const [[settings], providers] = await Promise.all([
+  const [[settings], providers] = await settleWriterEffects([
     db
       .select({
         required: bookingBusinessSettings.requireSquareTeamAttribution,
@@ -322,7 +324,7 @@ async function buildSquareTeamVerificationSnapshot(input: {
       ),
     ),
   ];
-  const absentVerifications = await Promise.all(
+  const absentVerifications = await settleWriterEffects(
     absentMemberIds.map((memberId) =>
       input.client.retrieveLocationMember(memberId),
     ),
@@ -385,4 +387,28 @@ function getPostgresErrorCode(error: unknown): string | undefined {
   }
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
+}
+
+export async function refreshSquareTeamMappings(
+  ...args: Parameters<typeof refreshSquareTeamMappingsWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    refreshSquareTeamMappingsWork(...args),
+  );
+}
+
+export async function setProviderSquareTeamMember(
+  ...args: Parameters<typeof setProviderSquareTeamMemberWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setProviderSquareTeamMemberWork(...args),
+  );
+}
+
+export async function setSquareAttributionRequirement(
+  ...args: Parameters<typeof setSquareAttributionRequirementWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setSquareAttributionRequirementWork(...args),
+  );
 }

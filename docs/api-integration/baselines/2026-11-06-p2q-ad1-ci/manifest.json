@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2057,
+      "sha256": "c114917b99960175f59baf0d62dbd58ab6dea3811f2c88111c245cb80362e8ef"
+    },
+    {
+      "path": "artifact-verification.json",
+      "bytes": 5874,
+      "sha256": "a08aff8ea11b346efdff993c29cd5040c5c35ad1bf6d78dc6271e7ba9cfd3c9e"
+    },
+    {
+      "path": "google-source-retention.json",
+      "bytes": 918,
+      "sha256": "c0aa5cce823205e9bdd15389e5cab279bccdaa9ccf978cd1d95511ca9e5881dd"
+    },
+    {
+      "path": "original-terminal-jobs.json",
+      "bytes": 32754,
+      "sha256": "5d47c582514499e33a79cb081a98b72e7bc883dff6c2807e12a189cfe9dd3835"
+    },
+    {
+      "path": "source-and-contracts.json",
+      "bytes": 463,
+      "sha256": "7cf1fa9a3a4e66f52582e540a72ae42c6711cf68475ba6bc9473a9be921d2f0c"
+    },
+    {
+      "path": "validation.json",
+      "bytes": 1295,
+      "sha256": "fa96cf1fbb38f7d829ced4028a1e1eaecb32d9a941907f22d0c60c1bffc3620d"
+    }
+  ]
+}

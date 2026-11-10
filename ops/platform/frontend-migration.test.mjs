@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { frontendMigrationArtifact, prepareFrontendMigration, prepareFrontendMigrationJob, frontendConnectionOptions, runFrontendMigration, writeFrontendReceipt } from "./frontend-migration.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 function fixture() {
   const artifact = frontendMigrationArtifact();
@@ -25,10 +26,19 @@ function fixture() {
       allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(({ tag }) => tag) } };
   candidate.frontendMigration = { sourceCommit: job.sourceCommit, sqlArtifactSha256: artifact.sqlArtifactSha256,
     contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: job.schemaBaselineSha256 } };
+  const phase2 = { contractPhase: artifact.contractPhase, phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
+  for (const value of [candidate, candidate.frontendMigration, job]) Object.assign(value, phase2);
   return { artifact, candidate, job, baseline };
 }
 
-function runner(f, overrides = {}) {
+function profiledFixture() {
+  const f = fixture();
+  f.candidate.version = 3; f.job.version = 2;
+  for (const value of [f.candidate, f.candidate.frontendMigration, f.job, f.job.target]) value.qualificationTargetProfile = current;
+  return f;
+}
+
+function runner(f, overrides = {}, expectedProfile = undefined) {
   const records = [], calls = [], state = { locked: false, ended: false, created: false };
   const client = Object.assign(new EventEmitter(), { connection: { stream: { encrypted: true, authorized: true } },
     connect: async () => {}, end: async () => { state.ended = true; },
@@ -54,8 +64,108 @@ function runner(f, overrides = {}) {
       if (name === "job-outcome.json") assert.equal((!state.created || state.ended) && !state.locked, true);
       records.push({ name, value });
     }, ...overrides };
-  return { dependencies, client, calls, records, state, run: () => runFrontendMigration(prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact), dependencies) };
+  return { dependencies, client, calls, records, state, run: () => runFrontendMigration(prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, expectedProfile), dependencies, expectedProfile) };
 }
+
+test("profiled FE job preparation preserves immutable SQL identity and requires independently selected context on every target carrier", () => {
+  const f = profiledFixture();
+  const prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, current);
+  assert.deepEqual(prepared.qualificationTargetProfile, current); assert.deepEqual(prepared.artifact, fixture().artifact);
+  const exported = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", providerTouched: false, postgresMajor: 18, schemaBaseline: f.baseline,
+    contractPhase: f.job.contractPhase, phase2ContractManifestSha256: f.job.phase2ContractManifestSha256 };
+  const settings = { ...f.job.target, recoveryRef: f.job.recoveryRef };
+  const generated = prepareFrontendMigrationJob(f.candidate, settings, exported, undefined, current);
+  assert.deepEqual(generated.job, f.job); assert.deepEqual(generated.baseline, f.baseline);
+  for (const stamped of ["artifact", "baseline"]) {
+    const invalid = profiledFixture(); invalid[stamped].qualificationTargetProfile = current;
+    assert.throws(() => prepareFrontendMigration(invalid.candidate, invalid.job, invalid.baseline, invalid.artifact, current), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  }
+  assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  assert.throws(() => prepareFrontendMigrationJob(f.candidate, settings, exported), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  for (const mutate of [x => { delete x.candidate.qualificationTargetProfile; }, x => { delete x.candidate.frontendMigration.qualificationTargetProfile; },
+    x => { delete x.job.target.qualificationTargetProfile; }, x => { x.job.version = 1; }, x => { x.job.qualificationTargetProfile = { ...current, sha256: "f".repeat(64) }; }]) {
+    const value = profiledFixture(); mutate(value);
+    assert.throws(() => prepareFrontendMigration(value.candidate, value.job, value.baseline, value.artifact, current));
+  }
+  const poisoned = { get frontendMigration() { throw new Error("carrier-read-before-context"); } };
+  for (const expected of [null, {}, { ...current, id: "p2q-20261106" }]) {
+    assert.throws(() => prepareFrontendMigration(poisoned, undefined, undefined, undefined, expected), /QUALIFICATION_TARGET_PROFILE_/u);
+    assert.throws(() => prepareFrontendMigrationJob(poisoned, undefined, undefined, undefined, expected), /QUALIFICATION_TARGET_PROFILE_/u);
+  }
+});
+
+test("profiled read-only continuation and all versioned outcomes retain the same source profile and physical lock", async () => {
+  const f = profiledFixture(); f.job.target.approvedPendingTags = []; f.job.target.allowEmptyBootstrap = false;
+  let before = 0, after = 0;
+  const r = runner(f, { beforeDatabasePreflight: async context => {
+    before++; assert.deepEqual(context.qualificationTargetProfile, current); assert.equal(context.client, r.client); await context.verifySession();
+  }, afterDatabaseVerified: async (receipt, verify) => {
+    after++; assert.equal(r.state.locked, true); assert.equal(receipt.version, 2); assert.deepEqual(receipt.qualificationTargetProfile, current); await verify();
+  } }, current);
+  const query = r.client.query;
+  r.client.query = async (sql, values) => {
+    if (sql.startsWith("select to_regclass")) return { rows: [{ present: true }] };
+    const result = await query(sql, values);
+    if (sql.startsWith("select pg_backend_pid")) result.rows[0].default_read_only = "on";
+    assert.ok(!/^\s*(create|alter|drop|insert|update|delete|truncate)\b/iu.test(sql));
+    return result;
+  };
+  await r.run(); assert.equal(before, 1); assert.equal(after, 1);
+  assert.ok(r.records.length >= 4);
+  for (const row of r.records) { assert.equal(row.value.version, 2); assert.deepEqual(row.value.qualificationTargetProfile, current); }
+  assert.equal(r.records.at(-1).value.trafficAuthorized, false);
+});
+
+test("profiled pending SQL and stripped or missing expected contexts refuse before source, credential, client or receipt hooks", async () => {
+  const f = profiledFixture(), prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, current);
+  let hooks = 0; const dependencies = { get confirmation() { hooks++; throw new Error("hook-before-refusal"); },
+    assertSource() { hooks++; }, getUrl() { hooks++; }, createClient() { hooks++; }, record() { hooks++; } };
+  await assert.rejects(runFrontendMigration(prepared, dependencies, current), /QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED/u);
+  for (const callbacks of [{ beforeDatabasePreflight: async () => {}, afterDatabaseVerified: async () => {} },
+    { beforeDatabasePreflight: () => { hooks++; }, afterDatabaseVerified: () => { hooks++; }, afterContinuationVerified: () => { hooks++; } }]) {
+    await assert.rejects(runFrontendMigration(prepared, { ...callbacks, get confirmation() { hooks++; throw new Error("callback-shaped-authority"); },
+      assertSource() { hooks++; }, getUrl() { hooks++; }, createClient() { hooks++; }, record() { hooks++; } }, current), /QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED/u);
+  }
+  await assert.rejects(runFrontendMigration(prepared, dependencies), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  await assert.rejects(runFrontendMigration(prepared, dependencies, null), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  const legacy = fixture();
+  await assert.rejects(runFrontendMigration(prepareFrontendMigration(legacy.candidate, legacy.job, legacy.baseline, legacy.artifact), dependencies, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+  assert.equal(hooks, 0);
+});
+
+test("actual fixed profiled FE check refuses stripped carriers, legacy action and raw duplicate fields", () => {
+  const folder = mkdtempSync(join(tmpdir(), "frontend-profile-cli-"));
+  try {
+    const f = profiledFixture(), files = ["candidate", "job", "baseline"].map(key => {
+      const path = join(folder, key + ".json"); writeFileSync(path, JSON.stringify(f[key])); return path;
+    });
+    const run = mode => spawnSync(process.execPath, ["--import", "tsx", "ops/platform/frontend-migration.mjs", mode, ...files], { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000 });
+    const good = run("--check-profiled-current"); assert.equal(good.status, 0, good.stderr);
+    assert.deepEqual(JSON.parse(good.stdout).qualificationTargetProfile, current);
+    assert.equal(run("--check").status, 1);
+    const legacy = fixture(); for (const [i, key] of ["candidate", "job", "baseline"].entries()) writeFileSync(files[i], JSON.stringify(legacy[key]));
+    assert.equal(run("--check-profiled-current").status, 1);
+    for (const [i, key] of ["candidate", "job", "baseline"].entries()) writeFileSync(files[i], JSON.stringify(f[key]));
+    writeFileSync(files[1], JSON.stringify(f.job).replace('"qualificationTargetProfile":', '"qualificationTargetProfile":null,"qualificationTargetProfile":'));
+    assert.equal(run("--check-profiled-current").status, 1);
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
+
+test("actual profiled leaf execute cannot apply pending SQL or create a migration intent", () => {
+  const folder = mkdtempSync(join(tmpdir(), "frontend-profile-pending-"));
+  try {
+    const f = profiledFixture(), files = ["candidate", "job", "baseline"].map(key => {
+      const path = join(folder, key + ".json"); writeFileSync(path, JSON.stringify(f[key])); return path;
+    });
+    const output = mkdtempSync(join(tmpdir(), "frontend-profile-intent-"));
+    try {
+      const result = spawnSync(process.execPath, ["--import", "tsx", "ops/platform/frontend-migration.mjs", "--execute-profiled-current", ...files,
+        "--confirm", "staging/" + f.job.releaseId, output], { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000 });
+      assert.equal(result.status, 1); assert.deepEqual(JSON.parse(result.stderr).qualificationTargetProfile, current);
+      assert.deepEqual(readdirSync(output), []);
+    } finally { rmSync(output, { recursive: true, force: true }); }
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
 
 test("frontend preparation binds exact source, target and reviewed SQL/schema without credentials", () => {
   const f = fixture(), prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact);
@@ -72,6 +182,9 @@ test("frontend preparation binds exact source, target and reviewed SQL/schema wi
 test("frontend credential parsing requires exact identity and explicit verified TLS", () => {
   const f = fixture(), valid = "postgresql://frontend_migration:owned-private-marker@127.0.0.1:5432/frontend_owned?sslmode=verify-full";
   assert.equal(frontendConnectionOptions(valid, f.job.target).ssl.rejectUnauthorized, true);
+  assert.equal(frontendConnectionOptions(valid, f.job.target).options, "-c search_path=public");
+  assert.equal(frontendConnectionOptions(valid, { ...f.job.target, approvedPendingTags: [] }).options,
+    "-c search_path=public -c default_transaction_read_only=on");
   for (const value of [valid.replace("verify-full", "require"), valid.replace("frontend_migration", "frontend_runtime"), valid.replace("frontend_owned?", "other?"), valid + "&sslmode=disable", undefined]) {
     assert.throws(() => frontendConnectionOptions(value, f.job.target), (error) => !error.message.includes("owned-private-marker"));
   }
@@ -79,11 +192,41 @@ test("frontend credential parsing requires exact identity and explicit verified 
 
 test("frontend job assembly derives reviewed bindings without copying credentials", () => {
   const f = fixture();
-  const exported = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", providerTouched: false, postgresMajor: 18, schemaBaseline: f.baseline };
+  const exported = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", providerTouched: false, postgresMajor: 18, schemaBaseline: f.baseline, contractPhase: f.job.contractPhase, phase2ContractManifestSha256: f.job.phase2ContractManifestSha256 };
   const prepared = prepareFrontendMigrationJob(f.candidate, { ...f.job.target, recoveryRef: f.job.recoveryRef, password: "must-not-copy" }, exported);
   assert.equal(prepared.job.sqlArtifactSha256, f.artifact.sqlArtifactSha256);
   assert.equal(prepared.job.schemaBaselineSha256, f.job.schemaBaselineSha256);
   assert.ok(!JSON.stringify(prepared).includes("must-not-copy"));
+  assert.equal(prepared.job.phase2ContractManifestSha256, f.artifact.phase2ContractManifestSha256);
+  for (const value of [undefined, `sha256:${"b".repeat(64)}`]) {
+    exported.phase2ContractManifestSha256 = value;
+    assert.throws(() => prepareFrontendMigrationJob(f.candidate, { ...f.job.target, recoveryRef: f.job.recoveryRef }, exported));
+  }
+});
+
+test("new frontend migration artifacts require P2 candidate, SQL image and job identity without changing v1", () => {
+  for (const target of ["artifact", "candidate", "job", "frontendMigration"]) for (const mode of ["missing", "wrong"]) {
+    const f = fixture(), value = target === "frontendMigration" ? f.candidate.frontendMigration : f[target];
+    assert.doesNotThrow(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
+    if (mode === "missing") delete value.phase2ContractManifestSha256;
+    else value.phase2ContractManifestSha256 = `sha256:${"b".repeat(64)}`;
+    assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact), /PHASE2/u);
+  }
+  const f = fixture(), v1 = f.artifact.contractManifestSha256;
+  for (const value of [f.artifact, f.candidate, f.job, f.candidate.frontendMigration]) {
+    delete value.contractPhase; delete value.phase2ContractManifestSha256;
+  }
+  assert.doesNotThrow(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
+  assert.equal(f.job.contractManifestSha256, v1);
+});
+
+test("frontend database and terminal receipts retain the separate P2 binding", async () => {
+  const f = fixture(), r = runner(f); await r.run();
+  for (const record of r.records.filter(row => ["database-receipt.json", "job-outcome.json"].includes(row.name))) {
+    assert.equal(record.value.contractPhase, "p2");
+    assert.equal(record.value.phase2ContractManifestSha256, f.artifact.phase2ContractManifestSha256);
+    assert.equal(record.value.contractManifestSha256, f.artifact.contractManifestSha256);
+  }
 });
 
 test("frontend confirmation and source qualification precede credential acquisition", async () => {
@@ -101,7 +244,24 @@ test("frontend apply uses one locked session, records before unlock and separate
   assert.equal(r.records[0].value.schemaVerified, true);
   assert.equal(r.records[0].value.applied.length, f.artifact.migrations.length);
   assert.ok(!JSON.stringify(r.records).includes("owned-private-marker"));
-  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
+  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length + 1);
+});
+
+test("failed migration journal creation rolls back initialization before applying any migration", async () => {
+  const r = runner(fixture());
+  const query = r.client.query;
+  r.client.query = async (sql) => {
+    const result = await query(sql);
+    if (sql.startsWith("create table if not exists drizzle.")) throw new Error("owned journal creation failure");
+    return result;
+  };
+  await assert.rejects(r.run(), /FRONTEND_MIGRATION_FAILED_REVIEW_REQUIRED/u);
+  const start = r.calls.indexOf("begin");
+  assert.deepEqual(r.calls.slice(start, start + 4).map(sql => sql.split(" ").slice(0, 2).join(" ")),
+    ["begin", "create schema", "create table", "rollback"]);
+  assert.equal(r.calls.includes("commit"), false);
+  assert.deepEqual(r.records.map(record => [record.name, record.value.status]), [["job-outcome.json", "FAILED_REQUIRES_REVIEW"]]);
+  assert.equal(r.records[0].value.phase, "journal-initialization");
 });
 
 test("compatible frontend continuation retains the physical lock after the durable database receipt", async () => {
@@ -127,7 +287,7 @@ test("failed or uncertain frontend continuation preserves successful SQL and nev
   r.dependencies.afterDatabaseVerified = async () => { called++; throw new Error("lost-promotion-response owned-private-marker"); };
   await assert.rejects(r.run(), (error) => !error.message.includes("owned-private-marker"));
   assert.equal(called, 1);
-  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
+  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length + 1);
   assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
   assert.equal(r.records[0].value.applied.length, f.artifact.migrations.length);
   assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
@@ -151,6 +311,37 @@ test("idle connection errors during continuation are retained as sanitized failu
   assert.equal(r.records.some(({ name }) => name === "frontend-continuation-completed.json"), false);
   assert.equal(JSON.stringify(r.records).includes("owned-private-marker"), false);
   assert.equal(r.state.ended, true);
+});
+
+test("parent preflight receives the original locked physical client before lineage or application SQL", async () => {
+  const f = fixture(), r = runner(f); let called = false;
+  r.dependencies.beforeDatabasePreflight = async ({ client, verifySession }) => {
+    assert.equal(client, r.client); assert.equal(r.state.locked, true); assert.equal(r.state.ended, false);
+    assert.equal(r.calls.some(sql => /to_regclass|create schema|insert into drizzle/u.test(sql)), false);
+    await verifySession(); called = true;
+  };
+  await r.run(); assert.equal(called, true); assert.equal(r.state.ended, true);
+});
+
+test("failed, disconnected or unlocked parent preflight refuses before lineage or application SQL", async () => {
+  for (const mode of ["throw", "socket", "unlock"]) {
+    const f = fixture(), r = runner(f);
+    r.dependencies.beforeDatabasePreflight = async () => {
+      if (mode === "throw") throw new Error("private-marker");
+      if (mode === "socket") r.client.emit("error", new Error("private-marker"));
+      if (mode === "unlock") r.state.locked = false;
+    };
+    await assert.rejects(r.run(), /FRONTEND_MIGRATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(r.calls.some(sql => /to_regclass|create schema|insert into drizzle/u.test(sql)), false);
+    assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(JSON.stringify(r.records).includes("private-marker"), false);
+  }
+});
+
+test("a serialized preflight callback is refused before credentials or database access", async () => {
+  const f = fixture(), r = runner(f, { beforeDatabasePreflight: { status: "FENCED" } });
+  await assert.rejects(r.run(), /IN_PROCESS_FRONTEND_PREFLIGHT_REQUIRED/u);
+  assert.equal(r.state.created, false); assert.equal(r.calls.length, 0);
 });
 
 test("lost database session, missing lock and post-deployment drift cannot qualify the continuation", async () => {
@@ -203,7 +394,7 @@ test("current frontend uses a server-enforced read-only session and issues no sc
     return result;
   };
   const result = await r.run();
-  assert.equal(selectedOptions.options, "-c default_transaction_read_only=on");
+  assert.equal(selectedOptions.options, "-c search_path=public -c default_transaction_read_only=on");
   assert.equal(result.migrationMode, "verify-current-only"); assert.equal(result.readOnlyVerified, true);
   assert.deepEqual(r.records[0].value.applied, []); assert.equal(r.records[0].value.schemaVerified, true);
   assert.equal(r.records[0].value.runtimeRoleVerified, true);
@@ -262,7 +453,7 @@ test("frontend production refuses missing or failed staging migration evidence",
   const f = fixture(); f.candidate.environment = f.job.environment = "production";
   assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
   const binding = { version: 1, service: "frontend", environment: "staging", releaseId: "prior-staging", sourceCommit: f.job.sourceCommit,
-    migrationImageDigest: f.job.migrationImageDigest,
+    migrationImageDigest: f.job.migrationImageDigest, contractPhase: f.job.contractPhase, phase2ContractManifestSha256: f.job.phase2ContractManifestSha256,
     target: { host: "staging.example.invalid", database: "staging" }, sqlArtifactSha256: f.job.sqlArtifactSha256,
     contractManifestSha256: f.job.contractManifestSha256, schemaBaselineSha256: f.job.schemaBaselineSha256 };
   f.job.stagingVerification = { database: { ...binding, status: "DATABASE_VERIFIED", schemaVerified: true, runtimeRoleVerified: true },
@@ -294,5 +485,53 @@ test("legacy frontend migration writes refuse release targets and remote local-l
     assert.equal(result.status, 1);
     assert.match(result.stderr, target === "local" ? /Local migrations require an isolated loopback database/u : /Release targets require the reviewed operator/u);
     assert.ok(!result.stderr.includes("owned-private-marker"));
+  }
+});
+
+test("finalization runs after durable core continuation verification with the original physical lock held", async () => {
+  const r = runner(fixture()); let finalized = false;
+  r.dependencies.afterDatabaseVerified = async (_database, verifySession) => { await verifySession(); };
+  r.dependencies.afterContinuationVerified = async ({ database, verifySession }) => {
+    assert.equal(r.records.at(-2).name, "frontend-continuation-completed.json");
+    assert.equal(r.records.at(-1).name, "frontend-finalization-started.json");
+    assert.equal(r.state.locked, true); assert.equal(r.state.ended, false); assert.equal(database.status, "DATABASE_VERIFIED");
+    assert.throws(() => database.after.pop(), TypeError); await verifySession(); finalized = true;
+  };
+  assert.equal((await r.run()).status, "DATABASE_VERIFIED"); assert.equal(finalized, true);
+  assert.ok(r.records.some(row => row.name === "frontend-finalization-completed.json"));
+});
+
+test("failed post-continuation verification or missing durable completion never enters finalization", async () => {
+  for (const mode of ["schema", "receipt", "idle-loss"]) {
+    const r = runner(fixture()); let after = false, finalized = false; const query = r.client.query, record = r.dependencies.record;
+    r.dependencies.afterDatabaseVerified = async () => { after = true; };
+    r.client.query = async sql => {
+      if (after && mode === "schema" && sql.includes("FROM pg_class c WHERE")) return { rows: [{ unreviewed: true }] };
+      return query(sql);
+    };
+    r.dependencies.record = (name, value) => {
+      if (name === "frontend-continuation-completed.json" && mode === "receipt") throw new Error("owned-storage-failure");
+      record(name, value); if (name === "frontend-continuation-completed.json" && mode === "idle-loss") r.client.emit("error", new Error("owned-socket-loss"));
+    };
+    r.dependencies.afterContinuationVerified = async () => { finalized = true; };
+    await assert.rejects(r.run()); assert.equal(finalized, false);
+    assert.equal(r.records.some(row => row.name === "frontend-finalization-started.json"), false);
+  }
+});
+
+test("uncertain finalization preserves successful SQL and refuses final success without repeating its callback", async () => {
+  const r = runner(fixture()); let calls = 0;
+  r.dependencies.afterDatabaseVerified = async () => {};
+  r.dependencies.afterContinuationVerified = async ({ verifySession }) => { await verifySession(); calls++; throw new Error("owned-lost-commit"); };
+  await assert.rejects(r.run()); assert.equal(calls, 1);
+  assert.equal(r.records.at(-1).value.phase, "post-continuation-finalization");
+  assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
+  assert.equal(r.records.some(row => row.name === "frontend-finalization-completed.json"), false);
+});
+
+test("serialized finalization or finalization without a compatible continuation refuses before credentials", async () => {
+  for (const hooks of [{ afterContinuationVerified: { approved: true } }, { afterContinuationVerified: async () => {} }]) {
+    let acquired = false; const r = runner(fixture(), { ...hooks, getUrl: () => { acquired = true; } });
+    await assert.rejects(r.run(), /IN_PROCESS_FRONTEND_FINALIZATION_REQUIRED/u); assert.equal(acquired, false);
   }
 });

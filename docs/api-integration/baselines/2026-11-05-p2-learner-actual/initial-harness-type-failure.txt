@@ -1,0 +1,2 @@
+tests/course-learning-browser/learning.spec.ts(233,19): error TS2349: This expression is not callable.
+  Type 'Boolean' has no call signatures.

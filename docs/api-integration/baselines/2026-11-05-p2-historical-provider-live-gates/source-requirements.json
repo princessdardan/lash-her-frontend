@@ -1,0 +1,1259 @@
+{
+  "version": 1,
+  "status": "READ_ONLY_C07_SOURCE_REQUIREMENTS_RECORDED",
+  "implementationCommit": "b7419df3",
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "treeOid": "dee14e1844868d2692c013daec66bee229dda7e7",
+  "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+  "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+  "sourceModuleSha256": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+  "sqlCredentialRequirements": [
+    {
+      "key": "BACKUP_RESTORE_DATABASE_URL",
+      "requirementId": "sql-credentials.BACKUP_RESTORE_DATABASE_URL"
+    },
+    {
+      "key": "DATABASE_URL",
+      "requirementId": "sql-credentials.DATABASE_URL"
+    },
+    {
+      "key": "STAGING_DATABASE_URL",
+      "requirementId": "sql-credentials.STAGING_DATABASE_URL"
+    },
+    {
+      "key": "TEST_DATABASE_URL",
+      "requirementId": "sql-credentials.TEST_DATABASE_URL"
+    }
+  ],
+  "families": [
+    {
+      "familyId": "square.payments",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.payments.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.payments.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.payments.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/webhooks/square/handler.ts",
+            "src/lib/booking/payments/service-card-on-file.ts",
+            "src/lib/booking/payments/service-charge-and-store.ts",
+            "src/lib/booking/payments/service-no-show-invoice.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.refunds",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.refunds.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.refunds.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.refunds.accepted-request-completeness",
+          "sourceFiles": [
+            "src/lib/payments/square/product-refund.ts",
+            "src/lib/private-db/square-refund-event-repository.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.orders",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.orders.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.orders.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.orders.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/training-checkout/square-invoice/handler.ts",
+            "src/lib/booking/payments/service-no-show-invoice.ts",
+            "src/lib/booking/square-payment-finalizer.ts",
+            "src/lib/commerce/square-training-split-live.ts",
+            "src/lib/commerce/square-training-split.ts",
+            "src/lib/payments/square/invoice-client.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.customers",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.customers.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.customers.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.customers.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/training-checkout/square-invoice/handler.ts",
+            "src/lib/booking/payments/service-card-on-file.ts",
+            "src/lib/booking/payments/service-charge-and-store.ts",
+            "src/lib/payments/square/customers-client.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.cards",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.cards.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.cards.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.cards.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/admin/appointments/[id]/no-show/handler.ts",
+            "src/app/api/webhooks/square/handler.ts",
+            "src/lib/booking/payments/service-card-on-file.ts",
+            "src/lib/booking/payments/service-charge-and-store.ts",
+            "src/lib/commerce/square-training-split-live.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.invoices",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.invoices.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.invoices.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.invoices.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/training-checkout/square-invoice/handler.ts",
+            "src/lib/booking/payments/service-no-show-invoice.ts",
+            "src/lib/payments/square/invoice-client.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.checkout",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.checkout.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.checkout.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.checkout.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/(site)/checkout/checkout-page-client.tsx",
+            "src/app/(site)/training-programs/[slug]/checkout/checkout-form.tsx",
+            "src/app/api/training-checkout/square-invoice/handler.ts",
+            "src/lib/booking/square-service-checkout.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "square.webhooks",
+      "provider": "square",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "square.webhooks.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "square.webhooks.durable-intents",
+          "tables": [
+            "checkout_orders",
+            "order_payment_obligations",
+            "order_payment_transactions",
+            "product_order_refunds",
+            "appointment_holds",
+            "booking_payment_attempts",
+            "booking_square_customers",
+            "booking_saved_payment_methods",
+            "booking_no_show_charge_records",
+            "booking_no_show_charge_attempts",
+            "checkout_payment_events",
+            "square_payment_refund_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "square.webhooks.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/webhooks/square/handler.ts",
+            "src/lib/booking/square-webhook.ts"
+          ]
+        },
+        {
+          "requirementId": "square.webhooks.callback-persistence",
+          "sourceFiles": [
+            "src/app/api/webhooks/square/handler.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.contacts",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.contacts.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.contacts.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.contacts.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/actions/form.ts",
+            "src/app/api/cron/highlevel-sync/route.ts",
+            "src/lib/contact-popup/contact-popup-submission.ts",
+            "src/lib/email.ts",
+            "src/lib/highlevel/retention.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.workflows",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.workflows.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.workflows.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.workflows.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/highlevel-config-check.ts",
+            "src/lib/highlevel/retention.ts",
+            "src/lib/highlevel/sync.ts",
+            "src/lib/highlevel/worker.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.tasks",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.tasks.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.tasks.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.tasks.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/highlevel-config-check.ts",
+            "scripts/highlevel-tracking-probe.mjs",
+            "src/lib/highlevel/retention.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.opportunities",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.opportunities.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.opportunities.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.opportunities.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/highlevel-config-check.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.conversations",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.conversations.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.conversations.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.conversations.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/highlevel-config-check.ts",
+            "scripts/highlevel-tracking-probe.mjs",
+            "src/lib/highlevel/retention.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.messages",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.messages.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.messages.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.messages.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/highlevel-config-check.ts",
+            "scripts/highlevel-tracking-probe.mjs",
+            "src/lib/highlevel/retention.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.webhooks",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.webhooks.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.webhooks.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.webhooks.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/webhooks/highlevel/route.ts"
+          ]
+        },
+        {
+          "requirementId": "highlevel.webhooks.callback-persistence",
+          "sourceFiles": [
+            "src/app/api/webhooks/highlevel/route.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "highlevel.oauth",
+      "provider": "highlevel",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "highlevel.oauth.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "highlevel.oauth.durable-intents",
+          "tables": [
+            "highlevel_contacts",
+            "highlevel_effects",
+            "highlevel_outbox",
+            "highlevel_webhook_receipts",
+            "highlevel_connections",
+            "customer_email_outbox"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "highlevel.oauth.accepted-request-completeness",
+          "sourceFiles": [
+            "src/lib/commerce/order-store.ts",
+            "src/lib/courses/signup.ts",
+            "src/lib/highlevel/oauth.ts",
+            "src/lib/private-db/retention.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "chitchats.drafts",
+      "provider": "chitchats",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "chitchats.drafts.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "chitchats.drafts.durable-intents",
+          "tables": [
+            "product_shipments",
+            "product_shipment_jobs",
+            "shipping_rate_cache",
+            "product_shipment_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "chitchats.drafts.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/seed-commerce-enabled-e2e.ts",
+            "src/app/(site)/checkout/checkout-page-client.tsx",
+            "src/app/api/admin/orders/[orderId]/shipping/label/handler.ts",
+            "src/lib/shipping/flat-rate-refresh.ts",
+            "src/lib/shipping/operation-worker.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "chitchats.postage",
+      "provider": "chitchats",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "chitchats.postage.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "chitchats.postage.durable-intents",
+          "tables": [
+            "product_shipments",
+            "product_shipment_jobs",
+            "shipping_rate_cache",
+            "product_shipment_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "chitchats.postage.accepted-request-completeness",
+          "sourceFiles": [
+            "src/components/admin/order-shipping-controls.tsx",
+            "src/lib/shipping/chitchats-client.ts",
+            "src/lib/shipping/operation-worker.ts",
+            "src/lib/shipping/shipment-store.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "chitchats.refunds",
+      "provider": "chitchats",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "chitchats.refunds.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "chitchats.refunds.durable-intents",
+          "tables": [
+            "product_shipments",
+            "product_shipment_jobs",
+            "shipping_rate_cache",
+            "product_shipment_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "chitchats.refunds.accepted-request-completeness",
+          "sourceFiles": [
+            "src/components/admin/order-shipping-controls.tsx",
+            "src/lib/commerce/product-shipped-refund-policy.ts",
+            "src/lib/shipping/chitchats-client.ts",
+            "src/lib/shipping/customer-refunds.ts",
+            "src/lib/shipping/operation-worker.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "chitchats.tracking",
+      "provider": "chitchats",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "chitchats.tracking.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "chitchats.tracking.durable-intents",
+          "tables": [
+            "product_shipments",
+            "product_shipment_jobs",
+            "shipping_rate_cache",
+            "product_shipment_events"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "chitchats.tracking.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/cron/shipping-rate-cache-refresh/route.ts",
+            "src/lib/shipping/chitchats-client.ts",
+            "src/lib/shipping/flat-rate-refresh.ts",
+            "src/lib/shipping/operation-worker.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.emails",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.emails.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.emails.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.emails.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/update-contact-popup-resend-template.ts",
+            "src/app/api/admin/email-retries/handler.ts",
+            "src/app/api/webhooks/resend/handler.ts",
+            "src/lib/booking/email.ts",
+            "src/lib/resend-platform.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.contacts",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.contacts.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.contacts.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.contacts.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/backfill-marketing-contact-submissions.ts",
+            "scripts/update-contact-popup-resend-template.ts",
+            "src/app/api/admin/marketing-contact-sync/handler.ts",
+            "src/lib/marketing-contact/contact-popup-offer-dedupe.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.segments",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.segments.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.segments.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.segments.accepted-request-completeness",
+          "sourceFiles": [
+            "src/lib/resend-platform.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.topics",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.topics.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.topics.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.topics.accepted-request-completeness",
+          "sourceFiles": [
+            "src/lib/resend-platform.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.events",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.events.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.events.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.events.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/update-contact-popup-resend-template.ts",
+            "src/app/api/webhooks/resend/handler.ts",
+            "src/lib/booking/email.ts",
+            "src/lib/resend-platform.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.broadcasts",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.broadcasts.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.broadcasts.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.broadcasts.accepted-request-completeness",
+          "sourceFiles": [
+            "src/lib/marketing-campaign/marketing-campaign-store.ts",
+            "src/lib/marketing-campaign/send-campaign.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.templates",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.templates.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.templates.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.templates.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/update-contact-popup-resend-template.ts",
+            "src/lib/resend-platform.ts",
+            "src/lib/resend-template-seeding.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.automations",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.automations.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.automations.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.automations.accepted-request-completeness",
+          "sourceFiles": [
+            "src/lib/resend-platform.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "resend.webhooks",
+      "provider": "resend",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "resend.webhooks.original-configuration"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "resend.webhooks.durable-intents",
+          "tables": [
+            "marketing_contact_sync_jobs",
+            "marketing_contacts",
+            "marketing_campaigns",
+            "customer_email_outbox",
+            "marketing_consent_events",
+            "marketing_contact_submissions"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "resend.webhooks.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/webhooks/resend/handler.ts"
+          ]
+        },
+        {
+          "requirementId": "resend.webhooks.callback-persistence",
+          "sourceFiles": [
+            "src/app/api/webhooks/resend/handler.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "google.identity",
+      "provider": "google",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "google.identity.original-configuration",
+          "privateSqlPredicate": "google-auth-signing-absence-v1"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "google.identity.durable-intents",
+          "tables": [
+            "booking_calendar_connections",
+            "booking_resource_calendar_assignments",
+            "appointment_calendar_events",
+            "appointment_holds",
+            "appointments",
+            "checkout_orders"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "google.identity.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/(site)/training-programs/[slug]/schedule/google-appointment-schedule-popup-button.tsx",
+            "src/app/api/admin/calendar-connections/[id]/oauth/start/route.ts",
+            "src/app/api/booking/oauth/callback/route.ts",
+            "src/lib/admin/auth.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "google.oauth",
+      "provider": "google",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "google.oauth.original-configuration",
+          "privateSqlPredicate": "google-oauth-all-alternate-paths-v1"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "google.oauth.durable-intents",
+          "tables": [
+            "booking_calendar_connections",
+            "booking_resource_calendar_assignments",
+            "appointment_calendar_events",
+            "appointment_holds",
+            "appointments",
+            "checkout_orders"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "google.oauth.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/admin/calendar-connections/[id]/oauth/start/route.ts",
+            "src/app/api/booking/oauth/callback/route.ts",
+            "src/auth.ts",
+            "src/lib/booking/google-calendar.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "google.calendar",
+      "provider": "google",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "google.calendar.original-configuration",
+          "privateSqlPredicate": "google-calendar-all-alternate-paths-v1"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "google.calendar.durable-intents",
+          "tables": [
+            "booking_calendar_connections",
+            "booking_resource_calendar_assignments",
+            "appointment_calendar_events",
+            "appointment_holds",
+            "appointments",
+            "checkout_orders"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "google.calendar.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/admin/calendar-connections/[id]/oauth/start/route.ts",
+            "src/lib/admin/employee-calendar.ts",
+            "src/lib/admin/google-calendar-credential-resolution.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "sanity.editorial",
+      "provider": "sanity",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "sanity.editorial.original-configuration",
+          "privateSqlPredicate": "sanity-editorial-private-sql-scope-v1"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "sanity.editorial.durable-intents",
+          "tables": [
+            "product_stock",
+            "product_stock_movements"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "sanity.editorial.accepted-request-completeness",
+          "sourceFiles": [
+            "scripts/backfill-home-training-programs-block.mjs",
+            "scripts/bootstrap-booking-operations.ts",
+            "scripts/import-booking-operational-cutover.ts",
+            "scripts/migrate-strapi-to-sanity.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "sanity.callbacks",
+      "provider": "sanity",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "sanity.callbacks.original-configuration",
+          "privateSqlPredicate": "sanity-signed-private-sql-ingress-v1"
+        }
+      ],
+      "sqlIntentRequirements": [
+        {
+          "requirementId": "sanity.callbacks.durable-intents",
+          "tables": [
+            "product_stock",
+            "product_stock_movements"
+          ]
+        }
+      ],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "sanity.callbacks.accepted-request-completeness",
+          "sourceFiles": [
+            "src/app/api/webhooks/sanity/inventory-sync/handler.ts",
+            "src/auth.ts",
+            "src/lib/admin/auth-service.ts",
+            "src/lib/admin/auth.ts",
+            "src/lib/admin/calendar-credential-revocation.ts",
+            "src/lib/admin/developer-mode-config.ts",
+            "src/lib/admin/developer-mode.ts",
+            "src/lib/private-db/calendar-connection-repository.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "mux.studio",
+      "provider": "mux",
+      "sourceDisposition": "reachable",
+      "configurationConditions": [
+        {
+          "requirementId": "mux.studio.original-configuration",
+          "privateSqlPredicate": "mux-public-editorial-private-sql-scope-v1"
+        }
+      ],
+      "sqlIntentRequirements": [],
+      "untrackedPotentialRequests": [
+        {
+          "requirementId": "mux.studio.accepted-request-completeness",
+          "sourceFiles": [
+            "src/auth.ts",
+            "src/components/courses/course-video.tsx",
+            "src/lib/admin/auth-service.ts",
+            "src/lib/admin/auth.ts",
+            "src/lib/admin/calendar-credential-revocation.ts",
+            "src/lib/admin/developer-mode-config.ts",
+            "src/lib/admin/developer-mode.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "familyId": "mux.course-media",
+      "provider": "mux",
+      "sourceDisposition": "absent-from-verified-source",
+      "configurationConditions": [],
+      "sqlIntentRequirements": [],
+      "untrackedPotentialRequests": []
+    }
+  ],
+  "originalConfigurationObserved": false,
+  "providerAccountObserved": false,
+  "releaseQualified": false
+}

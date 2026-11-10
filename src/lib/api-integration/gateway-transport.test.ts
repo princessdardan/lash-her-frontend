@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash, createHmac } from "node:crypto";
 import test from "node:test";
+import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
+import { INTERACTIVE_COOKIE, INTERACTIVE_GATEWAY_PROOF_HEADER, INTERACTIVE_HEADER, INTERACTIVE_ORIGIN } from "@/lib/writer-admission/interactive-proof";
 import { createGatewayTransport, GatewayTransportError } from "./gateway-transport";
 
 test("transport obtains workload proof per call, preserves application JWT and safe 429 envelope", async () => {
@@ -50,4 +54,349 @@ test("transport refuses redirects, cancels oversized responses and sanitizes SDK
   }
   const transport = createGatewayTransport({ origin: "https://gateway.example.test", getWorkloadToken: async () => { throw new Error("private-credential"); } });
   await assert.rejects(transport({ method: "GET", path: "/v1/courses" }), { message: "Gateway transport unavailable" });
+});
+
+test("transport selects only declared service aliases and sanitizes correlation headers", async () => {
+  const transport = createGatewayTransport({ origin: "https://gateway.example.test", getWorkloadToken: async () => "proof", fetch: async (url) => {
+    assert.equal(String(url), "https://gateway.example.test/community/v1/internal/accounts/commands");
+    return Response.json({}, { headers: { "x-request-id": "private-token-like-value", "retry-after": "private-provider-message" } });
+  } });
+  const response = await transport({ service: "community", method: "POST", path: "/v1/internal/accounts/commands", applicationToken: "dedicated.lifecycle.jwt", body: "{}" });
+  assert.equal(response.headers.get("x-request-id"), null); assert.equal(response.headers.get("retry-after"), null);
+  await assert.rejects(transport({ service: "community", method: "GET", path: "/v1/courses" }), { code: "route" });
+  await assert.rejects(transport({ service: "community", method: "POST", path: "/v1/internal/course/enrollment-events", applicationToken: "wrong" }), { code: "route" });
+});
+
+test("the ordinary transport signs exact staging Course bytes only with a verified browser permit and proxy proof", async (t) => {
+  Object.assign(globalThis, { AsyncLocalStorage });
+  const { NextRequest } = await import("next/server");
+  const { createRequestStoreForAPI } = await import("next/dist/server/async-storage/request-store.js");
+  const { createWorkStore } = await import("next/dist/server/async-storage/work-store.js");
+  const { workAsyncStorage } = await import("next/dist/server/app-render/work-async-storage.external.js");
+  const { workUnitAsyncStorage } = await import("next/dist/server/app-render/work-unit-async-storage.external.js");
+  const issued = 1790000000;
+  t.mock.timers.enable({ apis: ["Date"], now: issued * 1000 });
+  const gatewayOrigin = "https://api-staging.lashher.com";
+  const deployment = "owned-staging-build.vercel.app";
+  const source = "a".repeat(40), frontendTarget = "b".repeat(64), nonce = "c".repeat(32), epoch = "42";
+  const secret = "owned-test-cron-key-no-live-credentials";
+  const environment = {
+    APP_ENV: "staging", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
+    APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    VERCEL_URL: deployment, VERCEL_GIT_COMMIT_SHA: source, FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ targetSha256: frontendTarget }), CRON_SECRET: secret,
+    API_GATEWAY_STAGING_ORIGIN: gatewayOrigin, ADMIN_DEVELOPER_MODE: "false",
+  };
+  const previous = Object.fromEntries(Object.keys(environment).map(name => [name, process.env[name]]));
+  Object.assign(process.env, environment);
+  t.after(() => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  function evidence(stage: string, route: string, timestamp = issued, selected?: string) {
+    const selector = selected ?? (stage === "identity" ? "7032712d637573746f6d65722d7631008d680a9280714fd09da2c4d350aa729d"
+      : stage === "authoring" ? "7032712d617574686f72696e672d76318e2280dc03894248b21cf87427f9e85c" : undefined);
+    const body = [selector ? "v2" : "v1", epoch, stage, issued - 90, issued + 90, nonce, ...(selector ? [selector] : [])].join(".");
+    const browserMac = createHmac("sha256", secret)
+      .update(["lash-her:p2q:interactive:browser:v1", deployment, source, frontendTarget, body].join("\n")).digest("hex");
+    const cookie = `${body}.${browserMac}`;
+    const routeValue = `${timestamp}.${Buffer.from(route).toString("base64url")}`;
+    const requestMac = createHmac("sha256", secret)
+      .update(["lash-her:p2q:interactive:request:v1", deployment, source, frontendTarget, cookie, routeValue].join("\n")).digest("hex");
+    return { cookie, proxyProof: `${routeValue}.${requestMac}` };
+  }
+
+  function inBrowser<T>(cookies: string, proxyProof: string | undefined, run: () => Promise<T>,
+    route = "GET /api/academy/courses"): Promise<T> {
+    const [method, path] = route.split(" ");
+    const request = new NextRequest(INTERACTIVE_ORIGIN + path, { method, headers: {
+      cookie: `${INTERACTIVE_COOKIE}=${cookies}`, ...(proxyProof ? { [INTERACTIVE_HEADER]: proxyProof } : {}),
+    } });
+    const store = createRequestStoreForAPI(request, new URL(request.url), { tags: [], expirationsByCacheKind: new Map() },
+      undefined, undefined, undefined);
+    const work = createWorkStore({
+      page: request.nextUrl.pathname + "/route", deploymentId: "owned", buildId: "owned", previouslyRevalidatedTags: [],
+      renderOpts: {
+        cacheLifeProfiles: { default: { stale: 0, revalidate: 0, expire: 1 } }, staticPageGenerationTimeout: 60,
+        cacheComponents: false, validationLevel: "warning",
+        experimental: { isRoutePPREnabled: false, authInterrupts: false, useCacheTimeout: 60, durableUseCacheEntries: false },
+        waitUntil: undefined, onClose() {}, onAfterTaskError: undefined,
+      },
+    });
+    return workAsyncStorage.run(work, () => workUnitAsyncStorage.run(store, run));
+  }
+
+  const captured: { url: string; headers: Headers }[] = [];
+  const transport = (origin = gatewayOrigin) => createGatewayTransport({
+    origin, getWorkloadToken: async () => "owned-workload-proof", fetch: async (url, options) => {
+      assert.equal(options?.cache, "no-store");
+      assert.equal(options?.redirect, "manual");
+      captured.push({ url: String(url), headers: new Headers(options?.headers) });
+      return Response.json({}, { headers: { [INTERACTIVE_GATEWAY_PROOF_HEADER]: "unexpected-echo" } });
+    },
+  });
+  const send = transport();
+  const learnerCourse = "12345678-1234-4123-8123-123456789abc";
+  const learningRoute = `GET /academy/courses/${learnerCourse}`;
+  const learningSelector = "8d680a9280714fd09da2c4d350aa729d8284af5b324d45d9b460f97dc59b6d9b";
+  const learning = evidence("learning", learningRoute, issued, learningSelector);
+  const query = "/v1/student/courses?cursor=café&kind='";
+  const applicationToken = "owned.learner.jwt";
+  const response = await inBrowser(learning.cookie, learning.proxyProof, () => send({ method: "GET", path: query, applicationToken }), learningRoute);
+  assert.equal(response.headers.get(INTERACTIVE_GATEWAY_PROOF_HEADER), null);
+  const enrollmentPath = `/v1/student/courses/${learnerCourse}/enrollments`;
+  const enrollmentRoute = `POST /api/academy/courses/${learnerCourse}/enrollments`;
+  const enrollment = evidence("learning", enrollmentRoute, issued, learningSelector);
+  const enrollmentKey = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const enrollmentBody = JSON.stringify({ idempotencyKey: enrollmentKey });
+  await inBrowser(enrollment.cookie, enrollment.proxyProof, () => send({ method: "POST", path: enrollmentPath, applicationToken,
+    body: enrollmentBody, idempotencyKey: enrollmentKey }), enrollmentRoute);
+  const grantRoute = "POST /api/admin/courses/12345678-1234-4123-8123-123456789abc/manual-grants";
+  const grant = evidence("paid-grant", grantRoute, issued, "8e2280dc03894248b21cf87427f9e85c8284af5b324d45d9b460f97dc59b6d9b");
+  const idempotencyKey = `owner-paid:${enrollmentKey}`;
+  const body = JSON.stringify({ userId: learnerCourse, courseId: learnerCourse, reason: "[paid-course revision 3] Owner café", idempotencyKey });
+  await inBrowser(grant.cookie, grant.proxyProof, () => send({
+    method: "POST", path: "/v1/admin/entitlements/grants", body, idempotencyKey, applicationToken: "owned.admin.jwt",
+  }), grantRoute);
+  const draftRoute = "POST /api/admin/courses";
+  const authoring = evidence("authoring", draftRoute);
+  const draftBody = '{"slug":"owned-draft","status":"draft"}';
+  await inBrowser(authoring.cookie, authoring.proxyProof, () => send({
+    method: "POST", path: "/v1/admin/courses", body: draftBody, applicationToken: "owned.admin.jwt",
+  }), draftRoute);
+  const editPath = "/v1/admin/courses/12345678-1234-4123-8123-123456789abc";
+  const editRoute = "PATCH /api/admin/courses/12345678-1234-4123-8123-123456789abc";
+  const edit = evidence("authoring", editRoute, issued, "7032712d617574682d656469742d76318e2280dc03894248b21cf87427f9e85c");
+  const editBody = '{"title":"Updated draft","expectedRevision":1}';
+  await inBrowser(edit.cookie, edit.proxyProof, () => send({
+    method: "PATCH", path: editPath, body: editBody, applicationToken: "owned.admin.jwt",
+  }), editRoute);
+  const reorderPath = editPath + "/modules/reorder";
+  const reorderRoute = `POST /api/admin/courses/12345678-1234-4123-8123-123456789abc/modules/reorder`;
+  const reorder = evidence("authoring", reorderRoute, issued, "7032712d617574682d736f72742d76318e2280dc03894248b21cf87427f9e85c");
+  const reorderBody = '{"expectedCourseRevision":2,"ids":["8e2280dc-0389-4248-b21c-f87427f9e85c","12345678-1234-4123-8123-123456789abc"]}';
+  await inBrowser(reorder.cookie, reorder.proxyProof, () => send({
+    method: "POST", path: reorderPath, body: reorderBody, applicationToken: "owned.admin.jwt",
+  }), reorderRoute);
+  const curriculumPath = "/v1/admin/modules/12345678-1234-4123-8123-123456789abc/lessons";
+  const curriculumRoute = "POST /api/admin/modules/12345678-1234-4123-8123-123456789abc/lessons";
+  const curriculum = evidence("authoring", curriculumRoute, issued, "7032712d617574682d6e65772d7631008e2280dc03894248b21cf87427f9e85c");
+  const curriculumBody = '{"expectedCourseRevision":3,"title":"Lesson","slug":"lesson","position":1,"contentDocument":{"version":1,"blocks":[]},"transcript":null,"isPreview":false,"captions":[]}';
+  await inBrowser(curriculum.cookie, curriculum.proxyProof, () => send({
+    method: "POST", path: curriculumPath, body: curriculumBody, applicationToken: "owned.admin.jwt",
+  }), curriculumRoute);
+  const publish = evidence("authoring", editRoute, issued, "7032712d617574682d7075622d7631008e2280dc03894248b21cf87427f9e85c");
+  const publishBody = '{"expectedRevision":3,"status":"published"}';
+  await inBrowser(publish.cookie, publish.proxyProof, () => send({
+    method: "PATCH", path: editPath, body: publishBody, applicationToken: "owned.admin.jwt",
+  }), editRoute);
+  const readinessPath = editPath + "/publication-readiness";
+  const readinessRoute = "GET /api/admin/courses/12345678-1234-4123-8123-123456789abc/publication-readiness";
+  const readiness = evidence("authoring", readinessRoute, issued, "7032712d617574682d7264792d7631008e2280dc03894248b21cf87427f9e85c");
+  await inBrowser(readiness.cookie, readiness.proxyProof, () => send({
+    method: "GET", path: readinessPath, applicationToken: "owned.admin.jwt",
+  }), readinessRoute);
+  const lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const lessonSelector = ["8d680a92-8071-4fd0-9da2-c4d350aa729d", learnerCourse, lessonId].map(id => id.replaceAll("-", "")).join("");
+  const lessonEntryRoute = `${learningRoute}/lessons/${lessonId}`;
+  const lessonEntry = evidence("lesson-entry", lessonEntryRoute, issued, lessonSelector);
+  const selectedLesson = `/v1/student/lessons/${lessonId}`;
+  const lessonProgress = `${selectedLesson}/progress`;
+  const startRoute = `POST /api/academy/lessons/${lessonId}/progress`;
+  const start = evidence("lesson-entry", startRoute, issued, lessonSelector);
+  const startBody = '{"event":"lesson_started","expectedProgressRevision":0}';
+  await inBrowser(lessonEntry.cookie, lessonEntry.proxyProof, () => send({ method: "GET", path: selectedLesson, applicationToken }), lessonEntryRoute);
+  await inBrowser(start.cookie, start.proxyProof, () => send({ method: "POST", path: lessonProgress, body: startBody, applicationToken }), startRoute);
+  const denialProgress = `/v1/student/progress?lessonId=${lessonId}`;
+  const denialRoute = `GET /api/academy/progress?lessonId=${lessonId}`;
+  const lessonDenial = evidence("lesson-denial", denialRoute, issued, lessonSelector);
+  await inBrowser(lessonDenial.cookie, lessonDenial.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
+  const attemptTarget = `${selectedLesson}/quiz/attempts`, attemptRoute = `POST /api/academy/lessons/${lessonId}/quiz/attempts`;
+  const assessment = evidence("lesson-assessment", attemptRoute, issued, lessonSelector);
+  const assessmentPage = evidence("lesson-assessment", lessonEntryRoute, issued, lessonSelector);
+  const assessmentRead = evidence("lesson-assessment", denialRoute, issued, lessonSelector);
+  const attemptBody = '{"quizRevision":2,"requestId":"8284af5b-324d-45d9-b460-f97dc59b6d9b","answers":[{"questionId":"q","optionId":"a"}]}';
+  await inBrowser(assessment.cookie, assessment.proxyProof,
+    () => send({ method: "POST", path: attemptTarget, body: attemptBody, applicationToken }), attemptRoute);
+  await inBrowser(assessmentPage.cookie, assessmentPage.proxyProof,
+    () => send({ method: "GET", path: attemptTarget, applicationToken }), lessonEntryRoute);
+  await inBrowser(assessmentRead.cookie, assessmentRead.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
+  const resumePage = evidence("lesson-resume", lessonEntryRoute, issued, lessonSelector);
+  const resumeWrite = evidence("lesson-resume", startRoute, issued, lessonSelector);
+  const positionBody = '{"resumePositionSeconds":10,"maxPositionSeconds":10,"expectedProgressRevision":1}';
+  await inBrowser(resumePage.cookie, resumePage.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), lessonEntryRoute);
+  await inBrowser(resumeWrite.cookie, resumeWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: positionBody, applicationToken }), startRoute);
+  const restorePage = evidence("lesson-restore", lessonEntryRoute, issued, lessonSelector);
+  const restoreWrite = evidence("lesson-restore", startRoute, issued, lessonSelector);
+  const restorePosition = '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":5}';
+  await inBrowser(restorePage.cookie, restorePage.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), lessonEntryRoute);
+  await inBrowser(restoreWrite.cookie, restoreWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: restorePosition, applicationToken }), startRoute);
+  const ackLossRead = evidence("lesson-ack-loss", denialRoute, issued, lessonSelector);
+  const ackLossWrite = evidence("lesson-ack-loss", startRoute, issued, lessonSelector);
+  const ackLossPosition = '{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":8}';
+  await inBrowser(ackLossRead.cookie, ackLossRead.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
+  await inBrowser(ackLossWrite.cookie, ackLossWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: ackLossPosition, applicationToken }), startRoute);
+  const exitPage = evidence("lesson-exit-save", lessonEntryRoute, issued, lessonSelector);
+  const exitOutline = evidence("lesson-exit-save", learningRoute, issued, lessonSelector);
+  const exitWrite = evidence("lesson-exit-save", startRoute, issued, lessonSelector);
+  const outlineProgress = `/v1/student/progress?courseId=${learnerCourse}`;
+  const exitPosition = '{"resumePositionSeconds":7,"maxPositionSeconds":14,"expectedProgressRevision":8}';
+  await inBrowser(exitOutline.cookie, exitOutline.proxyProof,
+    () => send({ method: "GET", path: outlineProgress, applicationToken }), learningRoute);
+  await inBrowser(exitOutline.cookie, exitOutline.proxyProof,
+    () => send({ method: "GET", path: `/v1/student/courses/${learnerCourse}`, applicationToken }), learningRoute);
+  await inBrowser(exitWrite.cookie, exitWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: exitPosition, applicationToken }), startRoute);
+  const visibilityPage = evidence("lesson-visibility-save", lessonEntryRoute, issued, lessonSelector);
+  const visibilityWrite = evidence("lesson-visibility-save", startRoute, issued, lessonSelector);
+  await inBrowser(visibilityPage.cookie, visibilityPage.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), lessonEntryRoute);
+  await inBrowser(visibilityWrite.cookie, visibilityWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: exitPosition, applicationToken }), startRoute);
+  const staleProgressRead = evidence("lesson-stale-revision", denialRoute, issued, lessonSelector);
+  const staleProgressWrite = evidence("lesson-stale-revision", startRoute, issued, lessonSelector);
+  const staleProgressBody = '{"resumePositionSeconds":0,"maxPositionSeconds":14,"expectedProgressRevision":8}';
+  await inBrowser(staleProgressRead.cookie, staleProgressRead.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
+  await inBrowser(staleProgressWrite.cookie, staleProgressWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: staleProgressBody, applicationToken }), startRoute);
+  const expected = [
+    { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
+    { stage: "learning", method: "POST", target: "/course" + enrollmentPath, bytes: [enrollmentBody, applicationToken, enrollmentKey] },
+    { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
+    { stage: "authoring", method: "POST", target: "/course/v1/admin/courses", bytes: [draftBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [editBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "POST", target: "/course" + reorderPath, bytes: [reorderBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "POST", target: "/course" + curriculumPath, bytes: [curriculumBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [publishBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "GET", target: "/course" + readinessPath, bytes: ["", "owned.admin.jwt", ""] },
+    { stage: "lesson-entry", method: "GET", target: "/course" + selectedLesson, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-entry", method: "POST", target: "/course" + lessonProgress, bytes: [startBody, applicationToken, ""] },
+    { stage: "lesson-denial", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-assessment", method: "POST", target: "/course" + attemptTarget, bytes: [attemptBody, applicationToken, ""] },
+    { stage: "lesson-assessment", method: "GET", target: "/course" + attemptTarget, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-assessment", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-resume", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-resume", method: "POST", target: "/course" + lessonProgress, bytes: [positionBody, applicationToken, ""] },
+    { stage: "lesson-restore", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-restore", method: "POST", target: "/course" + lessonProgress, bytes: [restorePosition, applicationToken, ""] },
+    { stage: "lesson-ack-loss", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-ack-loss", method: "POST", target: "/course" + lessonProgress, bytes: [ackLossPosition, applicationToken, ""] },
+    { stage: "lesson-exit-save", method: "GET", target: "/course" + outlineProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-exit-save", method: "GET", target: `/course/v1/student/courses/${learnerCourse}`, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-exit-save", method: "POST", target: "/course" + lessonProgress, bytes: [exitPosition, applicationToken, ""] },
+    { stage: "lesson-visibility-save", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-visibility-save", method: "POST", target: "/course" + lessonProgress, bytes: [exitPosition, applicationToken, ""] },
+    { stage: "lesson-stale-revision", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-stale-revision", method: "POST", target: "/course" + lessonProgress, bytes: [staleProgressBody, applicationToken, ""] },
+  ];
+  for (const [index, { stage, method, target, bytes }] of expected.entries()) {
+    const { url, headers } = captured[index];
+    assert.equal(url, gatewayOrigin + target);
+    const requestId = headers.get("x-request-id");
+    assert.match(requestId ?? "", /^[0-9a-f-]{36}$/u);
+    assert.equal(headers.get("cookie"), null);
+    assert.equal(headers.get(INTERACTIVE_HEADER), null);
+    const windowKey = createHmac("sha256", secret)
+      .update(["lash-her:p2q:interactive:gateway-key:v1", deployment, source, frontendTarget, epoch, stage, nonce].join("\n"))
+      .digest();
+    const digests = bytes.map(value => createHash("sha256").update(Buffer.from(value, "utf8")).digest("hex"));
+    const mac = createHmac("sha256", windowKey)
+      .update(["lash-her:p2q:interactive:gateway-request:v1", issued, requestId, method, target, ...digests].join("\n")).digest("hex");
+    assert.equal(headers.get(INTERACTIVE_GATEWAY_PROOF_HEADER), `v1.${issued}.${requestId}.${mac}`);
+  }
+  assert.notEqual(captured[0].headers.get("x-request-id"), captured[1].headers.get("x-request-id"));
+
+  const request = () => send({ method: "GET", path: "/v1/courses" });
+  const identity = evidence("identity", "GET /api/customer-auth/session");
+  const stale = evidence("learning", learningRoute, issued - 30, learningSelector);
+  const legacy = evidence("learning", learningRoute);
+  await inBrowser(lessonEntry.cookie, lessonEntry.proxyProof, () => send({ method: "GET", path: `${selectedLesson}?limit=2`, applicationToken }), lessonEntryRoute);
+  await inBrowser(start.cookie, start.proxyProof, () => send({ method: "POST", path: lessonProgress,
+    body: '{"event":"lesson_started","expectedProgressRevision":1}', applicationToken }), startRoute);
+  await inBrowser(lessonDenial.cookie, lessonDenial.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: startBody, applicationToken }), denialRoute);
+  await inBrowser(lessonDenial.cookie, lessonDenial.proxyProof,
+    () => send({ method: "GET", path: `/v1/student/progress?courseId=${learnerCourse}`, applicationToken }), denialRoute);
+  const deniedQuery = evidence("lesson-denial", denialRoute.replace(lessonId, learnerCourse), issued, lessonSelector);
+  await inBrowser(deniedQuery.cookie, deniedQuery.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute.replace(lessonId, learnerCourse));
+  await inBrowser(assessment.cookie, assessment.proxyProof,
+    () => send({ method: "POST", path: attemptTarget, body: attemptBody.replace('"quizRevision":2', '"quizRevision":1,"quizRevision":2'), applicationToken }), attemptRoute);
+  await inBrowser(assessment.cookie, assessment.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: startBody, applicationToken }), attemptRoute);
+  await inBrowser(assessmentPage.cookie, assessmentPage.proxyProof,
+    () => send({ method: "GET", path: `${selectedLesson}/playback`, applicationToken }), lessonEntryRoute);
+  await inBrowser(assessmentRead.cookie, assessmentRead.proxyProof,
+    () => send({ method: "GET", path: attemptTarget, applicationToken }), denialRoute);
+  await inBrowser(resumePage.cookie, resumePage.proxyProof,
+    () => send({ method: "GET", path: `${selectedLesson}/playback`, applicationToken }), lessonEntryRoute);
+  await inBrowser(resumeWrite.cookie, resumeWrite.proxyProof,
+    () => send({ method: "POST", path: attemptTarget, body: attemptBody, applicationToken }), startRoute);
+  await inBrowser(resumeWrite.cookie, resumeWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: positionBody.replace("10", "9"), applicationToken }), startRoute);
+  await inBrowser(restorePage.cookie, restorePage.proxyProof,
+    () => send({ method: "GET", path: `${selectedLesson}/playback`, applicationToken }), lessonEntryRoute);
+  await inBrowser(restoreWrite.cookie, restoreWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: positionBody, applicationToken }), startRoute);
+  await inBrowser(restoreWrite.cookie, restoreWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: restorePosition.replace('"maxPositionSeconds":14', '"maxPositionSeconds":13'), applicationToken }), startRoute);
+  await inBrowser(ackLossRead.cookie, ackLossRead.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: ackLossPosition, applicationToken }), denialRoute);
+  await inBrowser(ackLossRead.cookie, ackLossRead.proxyProof,
+    () => send({ method: "GET", path: selectedLesson, applicationToken }), denialRoute);
+  await inBrowser(ackLossWrite.cookie, ackLossWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: restorePosition, applicationToken }), startRoute);
+  await inBrowser(exitOutline.cookie, exitOutline.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), learningRoute);
+  await inBrowser(exitOutline.cookie, exitOutline.proxyProof,
+    () => send({ method: "GET", path: `${selectedLesson}/quiz`, applicationToken }), learningRoute);
+  await inBrowser(exitPage.cookie, exitPage.proxyProof,
+    () => send({ method: "GET", path: outlineProgress, applicationToken }), lessonEntryRoute);
+  await inBrowser(exitWrite.cookie, exitWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: exitPosition.replace('"resumePositionSeconds":7', '"resumePositionSeconds":10'), applicationToken }),
+    startRoute);
+  await inBrowser(visibilityPage.cookie, visibilityPage.proxyProof,
+    () => send({ method: "GET", path: outlineProgress, applicationToken }), lessonEntryRoute);
+  await inBrowser(visibilityPage.cookie, visibilityPage.proxyProof,
+    () => send({ method: "GET", path: `${selectedLesson}/playback`, applicationToken }), lessonEntryRoute);
+  await inBrowser(visibilityWrite.cookie, visibilityWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: exitPosition.replace('"expectedProgressRevision":8', '"expectedProgressRevision":9'), applicationToken }),
+    startRoute);
+  await inBrowser(staleProgressRead.cookie, staleProgressRead.proxyProof,
+    () => send({ method: "GET", path: selectedLesson, applicationToken }), denialRoute);
+  await inBrowser(staleProgressWrite.cookie, staleProgressWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: staleProgressBody.replace(":0", ":1"), applicationToken }), startRoute);
+  await request();
+  await inBrowser(learning.cookie, undefined, request);
+  await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
+  await inBrowser(stale.cookie, stale.proxyProof, request);
+  await inBrowser(legacy.cookie, legacy.proxyProof, request, learningRoute);
+  const legacyGrant = evidence("paid-grant", grantRoute);
+  await inBrowser(legacyGrant.cookie, legacyGrant.proxyProof, request, grantRoute);
+  await inBrowser(learning.cookie, identity.proxyProof, request);
+  await inBrowser(identity.cookie, identity.proxyProof, request);
+  await inBrowser(learning.cookie, learning.proxyProof, () => transport("https://foreign.example.test")({ method: "GET", path: "/v1/courses" }));
+  await inBrowser(learning.cookie, learning.proxyProof, () => send({ service: "community", method: "POST",
+    path: "/v1/internal/accounts/commands", applicationToken: "owned.lifecycle.jwt", body: "{}" }));
+  await inBrowser(learning.cookie, learning.proxyProof, () => send({ method: "POST",
+    path: "/v1/internal/entitlements/grants", applicationToken: "owned.service.jwt", body: "{}" }));
+  process.env.VERCEL_URL = "different-staging-build.vercel.app";
+  await inBrowser(learning.cookie, learning.proxyProof, request);
+  process.env.VERCEL_URL = deployment;
+  process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
+  await inBrowser(learning.cookie, learning.proxyProof, request);
+  assert.equal(captured.length, expected.length + 40);
+  assert.ok(captured.slice(expected.length).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

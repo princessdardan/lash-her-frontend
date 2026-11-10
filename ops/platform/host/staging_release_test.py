@@ -23,6 +23,7 @@ class StagingReleaseTests(unittest.TestCase):
         frontend_probe_test.FrontendProbeTests.tearDownClass()
 
     def setUp(self):
+        self.legacy_runtime = release_test.historical_runtime_fixture()
         self.runtime = release_test.RuntimeReleaseTests(methodName="runTest")
         self.runtime.setUp()
         self.runtime.fixture.add_frontend()
@@ -37,7 +38,7 @@ class StagingReleaseTests(unittest.TestCase):
 
     def tearDown(self):
         self.probe.tearDown()
-        self.runtime.tearDown()
+        self.runtime.tearDown(); self.legacy_runtime.close()
 
     def execute(self, apply=True, confirmation="staging/test-release"):
         r = self.runtime

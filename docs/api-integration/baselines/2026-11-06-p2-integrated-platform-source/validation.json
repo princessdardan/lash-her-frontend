@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "status": "REGRESSION_PASS_WITH_OPEN_REVIEW_FINDINGS",
+  "testedCodeCommit": "20b4fc40bf1036f2afc14e6229b48eb285ee9e5a",
+  "lintCorrectionCommit": "826076e228ab5c857edd04cb8a5480a25b638769",
+  "tests": {
+    "platform": {
+      "total": 459,
+      "passed": 442,
+      "skipped": 17,
+      "failures": 0
+    },
+    "host": {
+      "total": 590,
+      "skipped": 8,
+      "failures": 0,
+      "seconds": 188.954
+    },
+    "typecheck": "passed",
+    "contracts": "passed",
+    "lint": {
+      "initialErrors": 2,
+      "finalErrors": 0,
+      "finalWarnings": 14
+    }
+  },
+  "limits": [
+    "17 platform skips include 12 API-runtime identity cases; separate fixed exact-API runner must pass without skips in required CI.",
+    "Eight host skips are not qualified by this default run. Actual PostgreSQL16/18 and selected Linux/Docker checks remain separately recorded.",
+    "Recovery review subsequently identified untested inbound-membership/ACL escalation and ambient Node injection; corrective actual PostgreSQL faults and source fixes remain required.",
+    "No provider, staging database, deployment, scheduler, admission or credential operation occurred.",
+    "Corrected lint configuration changes only the Next bundler module-name rule for two hash-bound standalone Node evidence snapshots; original bytes are preserved."
+  ],
+  "files": {
+    "platform-node.log.gz": {
+      "sha256": "2e743e5d6b16c3608db02f2fe136add0c20e833fb5cd7f74aa5812ad9b4d2c50",
+      "originalBytes": 55861,
+      "originalSha256": "df55b7b0a7ebda281dfe35892573d274178a61c96eca4a4fc535655176bb2c1f"
+    },
+    "platform-host.log.gz": {
+      "sha256": "2b97f1e0d44cc23754752737198c0998a58d6960262a976a3bf19ba4162d0de0",
+      "originalBytes": 1304,
+      "originalSha256": "467fcb433765af07126def90a9f7ee168bc7275109a7c4ea130c566c0ca119da"
+    },
+    "lint-original-failure.log.gz": {
+      "sha256": "074eb07cda4935a2bb1f893db1062cedc965e7016cd67e50c00a5d87cad8feb2",
+      "originalBytes": 3278,
+      "originalSha256": "48c6863400c38738c4577a57e55b607b21a6db075fd4dc73e2afa6a0b0b306d9"
+    },
+    "lint-corrected.log.gz": {
+      "sha256": "fe99e6d0693321d41faa519c98d65c6416a91ce4e28768e27d5ab0778e1ab8f7",
+      "originalBytes": 2618,
+      "originalSha256": "038338eb463b3e5615fa38e90fa80831af74dbbd9126555d4345b1bcfce78c2f"
+    },
+    "contracts.log.gz": {
+      "sha256": "a830c07ed54f0b873ac7fc703cd1c502f8b96002f22bbbe0ac19888ca0cbf7a5",
+      "originalBytes": 587,
+      "originalSha256": "1a57e19a8584d4a11594ed06b106d9ecf9bb749e71f48182abdf4b84deb487cc"
+    },
+    "types.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "originalBytes": 0,
+      "originalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}

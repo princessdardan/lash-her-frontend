@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "status": "P2_CANONICAL_CERTIFICATION_PARENT_SOURCE_HOOKS_PASS",
+  "node": {
+    "passed": 20,
+    "skipped": 0
+  },
+  "host": {
+    "passed": 15,
+    "skipped": 0
+  },
+  "lint": "PASS",
+  "syntax": "PASS",
+  "fixtureOnly": true,
+  "liveOperations": false,
+  "independentReview": "OPEN",
+  "dependencies": [
+    "9f49d5e3",
+    "b7d19088",
+    "2a33ae80",
+    "aed96e0c",
+    "4f8061be",
+    "06f42ac1",
+    "f1aebc11"
+  ],
+  "files": {
+    "ops/platform/host/p2_certification_parent.py": "37175654f442bff18a652ead1943cb0d49d6c3c8f383fe0aa9087662320b30ac",
+    "ops/platform/host/p2_certification_parent_test.py": "994b6312da49aaa1e377ec5c63a86983e835f689541b0ae37126037f047e4a2c",
+    "ops/platform/p2-certification.mjs": "f5189cb5256d9e7f5fa63068ed286e5993658140a2fc6e58467f7942dacb7335",
+    "ops/platform/p2-certification-transport.mjs": "9c8f5771fe586703c03b8bba9a0ae34e9afd4da1e431dc0a99163632695882c1",
+    "ops/platform/p2-certification.md": "b679acd4f94ff2d4d02933168f9aba2058639174638d766f37a5b1d39f64dd02",
+    "docs/api-integration/baselines/2026-11-06-p2-canonical-parent-hooks/README.md": "82a1bf4025139765fe817e893ea9e0a6bcd32cd9afce75b653db01fe33df8c6f"
+  }
+}

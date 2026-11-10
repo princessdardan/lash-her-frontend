@@ -1,4 +1,5 @@
 import { getPrivateDataRetentionCronSecret } from "@/lib/env/private-checkout";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import {
   PRIVATE_DATA_RETENTION_TABLE_WINDOWS,
   runPrivateDataRetentionCleanup,
@@ -29,16 +30,22 @@ export const GET = createPrivateDataRetentionGetHandler(defaultDependencies);
 export function createPrivateDataRetentionGetHandler(
   dependencies: PrivateDataRetentionDependencies,
 ): (req: Request) => Promise<Response> {
-  return async function privateDataRetentionGetHandler(req: Request): Promise<Response> {
+  return async function privateDataRetentionGetHandler(
+    req: Request,
+  ): Promise<Response> {
     const cronSecret = dependencies.getCronSecret();
 
     if (cronSecret === null) {
-      dependencies.logWarn("[private-data-retention] Cron secret is not configured");
+      dependencies.logWarn(
+        "[private-data-retention] Cron secret is not configured",
+      );
       return new Response(null, { status: 404 });
     }
 
     if (!isAuthorizedCronRequest(req, cronSecret)) {
-      dependencies.logWarn("[private-data-retention] Unauthorized cleanup request");
+      dependencies.logWarn(
+        "[private-data-retention] Unauthorized cleanup request",
+      );
       return new Response(null, { status: 401 });
     }
 
@@ -47,8 +54,19 @@ export function createPrivateDataRetentionGetHandler(
     try {
       summary = await dependencies.runCleanup({ now: dependencies.getNow() });
     } catch (error) {
+      if (error instanceof WriterAdmissionError)
+        return Response.json(
+          { error: "Private data retention cleanup failed" },
+          {
+            status: 503,
+            headers: { "cache-control": "no-store", "retry-after": "30" },
+          },
+        );
       dependencies.logError("[private-data-retention] Cleanup failed", {
-        error: error instanceof Error ? error.message : "Unknown retention cleanup error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown retention cleanup error",
       });
 
       return Response.json(

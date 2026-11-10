@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "attempts": [
+    {
+      "scope": "unit-protocol-fixture",
+      "result": "3 initial fixture assertions failed because mocked marker query was incorrectly classified as identity query; fixture corrected, final12/12 executed pass",
+      "productionObserved": false
+    },
+    {
+      "scope": "owned-local-postgres16",
+      "result": "sandbox EPERM before loopback listener; no SQL or provider call executed",
+      "productionObserved": false
+    },
+    {
+      "scope": "owned-local-postgres16-approved-loopback-rerun",
+      "result": "10/10 checks passed with4actualTLS/SCRAM credential peers and17actualparentcheckpoints; fixture-only",
+      "productionObserved": false
+    }
+  ]
+}

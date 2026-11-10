@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "status": "SOURCE_ONLY_SAME_SCOPE_REACH_COUNTEREXAMPLES",
+  "actualCredentialProbes": 0,
+  "authenticatedProviderCalls": 0,
+  "liveEffectiveIamDecision": null,
+  "allActualOldCredentialScopes": "UNKNOWN",
+  "sameAccountAllocationPass": false,
+  "offlineAwsStatementSelection": {
+    "sourcePolicy": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/aws/deployment-role.cfn.json",
+    "sourcePolicySha256": "c6b9f7525241df512b55bd513d0d103ee11278d72c067ecad6cc3380a708b22e",
+    "sourceHostTemplateSha256": "fd26139efb1d5d648a0f8539315bc3b607bee16e6dc3d0fb2b822bd7581289f9",
+    "tests": {
+      "allow": true,
+      "fourHostControlActionsIncluded": true,
+      "instanceResourceWildcard": true,
+      "projectTagMatches": true,
+      "environmentTagMatches": true
+    },
+    "result": "CONDITIONAL_SOURCE_ALLOW_SELECTION_MATCH",
+    "limitation": "Actual assumed-role session, current policy, identity policies, boundaries, SCPs and other effective conditions unobserved; this is not an IAM simulator or live account authorization result."
+  },
+  "independentPrincipalSetupKnown": false,
+  "providerFactoryImplemented": false,
+  "historicalUnknownTokensRevoked": false,
+  "unsafeAssumptionsRejected": [
+    "new name means new authority boundary",
+    "new credential removes old principal access",
+    "new team/org created by same broad user excludes personal credentials",
+    "environment-scoped API token equals organization admin identity",
+    "project IAM policy includes all ancestor grants",
+    "delegated child DNS excludes old parent-zone authority",
+    "owner statement proves technical isolation"
+  ]
+}

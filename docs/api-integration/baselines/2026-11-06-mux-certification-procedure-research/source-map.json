@@ -1,0 +1,363 @@
+{
+  "version": 1,
+  "status": "EXACT_GIT_SOURCE_READ_ONLY_INSPECTED",
+  "profiles": [
+    {
+      "repository": "frontend",
+      "revision": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d",
+      "files": [
+        {
+          "path": "src/components/admin/course-authoring/media-editor.tsx",
+          "blobOid": "499fc84c15d098146e57b172f14ccca08a4d9735",
+          "sha256": "d69373988aafee76c228abbf082707d10baaf1d3ca8c1a7873857c2abfcf6ae0",
+          "anchors": [
+            {
+              "symbolOrLiteral": "async function upload",
+              "lines": [
+                92
+              ]
+            },
+            {
+              "symbolOrLiteral": "Refresh video status",
+              "lines": [
+                187
+              ]
+            },
+            {
+              "symbolOrLiteral": "Add caption track",
+              "lines": [
+                279
+              ]
+            },
+            {
+              "symbolOrLiteral": "Remove captions",
+              "lines": [
+                250
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/components/learning/authorized-video.tsx",
+          "blobOid": "c82e28c10c34498768d076b5b4f3cf802f4b8c86",
+          "sha256": "099382c7f8f682acb38e8622a75a54f23d8cc3bd4f7757c2945bdabc71962288",
+          "anchors": [
+            {
+              "symbolOrLiteral": "/api/academy/lessons/",
+              "lines": [
+                92
+              ]
+            },
+            {
+              "symbolOrLiteral": "tokens={{",
+              "lines": [
+                234
+              ]
+            }
+          ]
+        },
+        {
+          "path": "ops/gateway/routes.json",
+          "blobOid": "829b74872bb5e5ff3815d123b217ab0793ffe130",
+          "sha256": "7be3d28a74f6b2e823fde1f9ceee9af703c4acb275f37d71fec296e0e31f3898",
+          "anchors": [
+            {
+              "symbolOrLiteral": "/v1/webhooks/mux",
+              "lines": [
+                139
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "repository": "course",
+      "revision": "a447bfde20299e12afab68a3331b3792ddd07598",
+      "files": [
+        {
+          "path": "src/video/mux.client.ts",
+          "blobOid": "c9ee9f31ba17a9ec7262228722e29661b568da67",
+          "sha256": "14a55b1cc6623959b41c0c67d7640e3121e029c1029b31777d9acbaaa7230a56",
+          "anchors": [
+            {
+              "symbolOrLiteral": "MUX_PLAYBACK_TTL_SECONDS",
+              "lines": [
+                3,
+                107
+              ]
+            },
+            {
+              "symbolOrLiteral": "MUX_UPLOAD_TIMEOUT_SECONDS",
+              "lines": [
+                4,
+                84
+              ]
+            },
+            {
+              "symbolOrLiteral": "maxRetries: 0",
+              "lines": [
+                90
+              ]
+            },
+            {
+              "symbolOrLiteral": "createMuxRecoveryClient",
+              "lines": [
+                77
+              ]
+            },
+            {
+              "symbolOrLiteral": "createMuxWebhookVerifier",
+              "lines": [
+                137
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/video/media-lifecycle.ts",
+          "blobOid": "c19fe6dd0700b5844770b34742ade65383035799",
+          "sha256": "eb992a4babf13583df44b58c1805387cf14c9d61b4e86183e7faa3822e1f8b2a",
+          "anchors": [
+            {
+              "symbolOrLiteral": "async function observeProvider",
+              "lines": [
+                60
+              ]
+            },
+            {
+              "symbolOrLiteral": "async function reconcile",
+              "lines": [
+                90
+              ]
+            },
+            {
+              "symbolOrLiteral": "async processWebhook",
+              "lines": [
+                172
+              ]
+            },
+            {
+              "symbolOrLiteral": "createCaption: input",
+              "lines": [
+                176
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/video/media-lifecycle.repository.ts",
+          "blobOid": "9aac636e7587ab154a035d2a1bf89b5a719710f5",
+          "sha256": "d61ee29959f2634200eb177be516fb088741e94429724335cd0c68e736c0acb3",
+          "anchors": [
+            {
+              "symbolOrLiteral": "async reserve",
+              "lines": [
+                40,
+                157
+              ]
+            },
+            {
+              "symbolOrLiteral": "async observe",
+              "lines": [
+                103
+              ]
+            },
+            {
+              "symbolOrLiteral": "async wakeWebhook",
+              "lines": [
+                136
+              ]
+            },
+            {
+              "symbolOrLiteral": "async withCleanupFence",
+              "lines": [
+                179
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/video/video.repository.ts",
+          "blobOid": "16a96a51480a885608ea0290a8dca7dad9db3d40",
+          "sha256": "bf9633bef701b5f7a770899af494a8a422b2547087c1471a68e92a6e435642a4",
+          "anchors": [
+            {
+              "symbolOrLiteral": "async updateFromWebhookEvent",
+              "lines": [
+                110
+              ]
+            },
+            {
+              "symbolOrLiteral": "eq(videoAssets.managedByCourse, false)",
+              "lines": [
+                120
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/video/video.routes.ts",
+          "blobOid": "bc57c4362f54fd418f03e8ed69708665bbc76e2a",
+          "sha256": "4e1a7705ef6b9c4a01cb64def1d8fa45e693576b8311895b761858b8d57eeef3",
+          "anchors": [
+            {
+              "symbolOrLiteral": "\"/v1/webhooks/mux\"",
+              "lines": [
+                133
+              ]
+            },
+            {
+              "symbolOrLiteral": "const managed =",
+              "lines": [
+                167
+              ]
+            },
+            {
+              "symbolOrLiteral": "function toVideoAssetResponse",
+              "lines": [
+                344
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/mux-media-worker.ts",
+          "blobOid": "10ca4c89cad6d2e81d1b6fa8a0c72d1563de4657",
+          "sha256": "717f6a0e952f618bc7eb0e404fe81dec292bdd10e11fa1b3584947eeaec191c8",
+          "anchors": [
+            {
+              "symbolOrLiteral": "runMediaRecoveryWorkerLoop",
+              "lines": [
+                17,
+                20
+              ]
+            },
+            {
+              "symbolOrLiteral": "course_media_recovery_enabled",
+              "lines": [
+                56
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/config/mux-media-process-env.ts",
+          "blobOid": "e674a8e088e88414a8e7f1eb24b1f20973cee2d0",
+          "sha256": "bea745f3f086a60076609dc0239fe2e5d9b2c87ab24c678dcdb2888d0c60dcec",
+          "anchors": [
+            {
+              "symbolOrLiteral": "MUX_MEDIA_RECOVERY_ENABLED",
+              "lines": [
+                11,
+                28,
+                30,
+                34
+              ]
+            },
+            {
+              "symbolOrLiteral": "MUX_MEDIA_CLEANUP_ENABLED",
+              "lines": [
+                11,
+                28,
+                35
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/db/schema.ts",
+          "blobOid": "1b1b82f16e1ab2c0c73fb428cd621305525ceaed",
+          "sha256": "18c6df7238a8a532d4e9b0a057b1875e5578bc953cef86e0c9d9410f5b564b0f",
+          "anchors": [
+            {
+              "symbolOrLiteral": "export const videoAssets",
+              "lines": [
+                115
+              ]
+            }
+          ]
+        },
+        {
+          "path": "docs/course-media-lifecycle-v1.md",
+          "blobOid": "608dfa7ebdc86199955cd2db9e8be2259ac72cfc",
+          "sha256": "d4e14061a90c4d4740b8b613258558c05fbf79bf7b48196955887bec59ab86bb",
+          "anchors": [
+            {
+              "symbolOrLiteral": "## Authoring contract",
+              "lines": [
+                5
+              ]
+            },
+            {
+              "symbolOrLiteral": "## Playback and access",
+              "lines": [
+                23
+              ]
+            },
+            {
+              "symbolOrLiteral": "## Recovery process",
+              "lines": [
+                29
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/server.ts",
+          "blobOid": "8a726cb2781033d686fc7729bbfb62050d1a6385",
+          "sha256": "06b8382189efab9100ec2da52f8f83eb36c00fde56854d2689a848352e2536c4",
+          "anchors": [
+            {
+              "symbolOrLiteral": "const muxClient = createMuxClient",
+              "lines": [
+                69
+              ]
+            },
+            {
+              "symbolOrLiteral": "appOptions.muxWebhookVerifier",
+              "lines": [
+                79
+              ]
+            }
+          ]
+        },
+        {
+          "path": "src/config/mux.ts",
+          "blobOid": "705870261b2facae9ede6a41e1ecbf2dbccefdf0",
+          "sha256": "8b060609dfca241fdb6d2966dcec9b206bb987e4b3ed56c0367b71d0d4c93569",
+          "anchors": [
+            {
+              "symbolOrLiteral": "getMuxRuntimeConfig",
+              "lines": [
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "path": "package-lock.json",
+          "blobOid": "8e1978af5a4f6aebdccfb10f64f481d49b4e6f1f",
+          "sha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa",
+          "anchors": [
+            {
+              "symbolOrLiteral": "node_modules/@mux/mux-node",
+              "lines": [
+                1533
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excludedFromCertification": [
+    "Studio",
+    "Sanity/imported unmanaged media",
+    "src/components/courses/course-video.tsx",
+    "public-media workflows",
+    "Phase 3",
+    "Mux Robots"
+  ],
+  "sdkFixtureTestsUsedAsProviderCapabilityEvidence": false
+}

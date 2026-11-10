@@ -1,0 +1,442 @@
+test_accepted_marketing_workflow_is_unknown_even_with_sent_timestamp (frontend_highlevel_history_test.HistoryTests.test_accepted_marketing_workflow_is_unknown_even_with_sent_timestamp) ... ERROR
+test_actual_contact_note_task_and_terminal_opportunity_receipts (frontend_highlevel_history_test.HistoryTests.test_actual_contact_note_task_and_terminal_opportunity_receipts) ... ERROR
+test_cancelled_or_redacted_enrollment_is_not_provider_execution_exit (frontend_highlevel_history_test.HistoryTests.test_cancelled_or_redacted_enrollment_is_not_provider_execution_exit) ... ERROR
+test_checked_complete_original_no_capability_closure_has_source_specific_zero (frontend_highlevel_history_test.HistoryTests.test_checked_complete_original_no_capability_closure_has_source_specific_zero) ... ERROR
+test_closed_allowlist_denies_mutations_unknown_filters_absolute_urls_and_duplicate_queries (frontend_highlevel_history_test.HistoryTests.test_closed_allowlist_denies_mutations_unknown_filters_absolute_urls_and_duplicate_queries) ... ERROR
+test_conversation_truncation_is_unknown_and_message_cursor_cannot_loop (frontend_highlevel_history_test.HistoryTests.test_conversation_truncation_is_unknown_and_message_cursor_cannot_loop) ... ERROR
+test_draft_paused_and_retry_are_active_while_success_is_not_an_exit (frontend_highlevel_history_test.HistoryTests.test_draft_paused_and_retry_are_active_while_success_is_not_an_exit) ... ERROR
+test_empty_retained_window_and_current_flags_never_prove_zero (frontend_highlevel_history_test.HistoryTests.test_empty_retained_window_and_current_flags_never_prove_zero) ... ERROR
+test_exact_database_digest_missing_query_extra_private_column_and_duplicate_row_refuse (frontend_highlevel_history_test.HistoryTests.test_exact_database_digest_missing_query_extra_private_column_and_duplicate_row_refuse) ... ERROR
+test_extra_missing_or_forged_closure_requirement_or_evidence_is_refused (frontend_highlevel_history_test.HistoryTests.test_extra_missing_or_forged_closure_requirement_or_evidence_is_refused) ... ERROR
+test_finished_provider_execution_does_not_invent_source_journey_or_downstream_join (frontend_highlevel_history_test.HistoryTests.test_finished_provider_execution_does_not_invent_source_journey_or_downstream_join) ... ERROR
+test_message_readback_change_and_wrong_tenant_are_refused (frontend_highlevel_history_test.HistoryTests.test_message_readback_change_and_wrong_tenant_are_refused) ... ERROR
+test_missing_family_closure_cannot_relabel_all_scopes_absent (frontend_highlevel_history_test.HistoryTests.test_missing_family_closure_cannot_relabel_all_scopes_absent) ... ERROR
+test_no_capability_closure_contradicted_by_actual_global_sql_does_not_close (frontend_highlevel_history_test.HistoryTests.test_no_capability_closure_contradicted_by_actual_global_sql_does_not_close) ... ERROR
+test_output_contains_no_credentials_recipient_message_note_body_or_provider_errors (frontend_highlevel_history_test.HistoryTests.test_output_contains_no_credentials_recipient_message_note_body_or_provider_errors) ... ERROR
+test_pending_workflow_and_scheduled_message_counts_are_actual (frontend_highlevel_history_test.HistoryTests.test_pending_workflow_and_scheduled_message_counts_are_actual) ... ERROR
+test_provider_permission_unavailable_and_rate_limit_are_unknown (frontend_highlevel_history_test.HistoryTests.test_provider_permission_unavailable_and_rate_limit_are_unknown) ... ERROR
+test_retention_window_limits_and_production_location_are_refused (frontend_highlevel_history_test.HistoryTests.test_retention_window_limits_and_production_location_are_refused) ... ERROR
+test_source_absent_families_still_require_global_sql_credential_closure (frontend_highlevel_history_test.HistoryTests.test_source_absent_families_still_require_global_sql_credential_closure) ... ERROR
+test_unknown_workflow_status_is_counted_without_exposing_provider_text (frontend_highlevel_history_test.HistoryTests.test_unknown_workflow_status_is_counted_without_exposing_provider_text) ... ERROR
+test_workflow_wrong_tenant_duplicate_id_count_and_repeated_cursor_refuse (frontend_highlevel_history_test.HistoryTests.test_workflow_wrong_tenant_duplicate_id_count_and_repeated_cursor_refuse) ... ERROR
+test_wrong_provider_location_or_company_refuses (frontend_highlevel_history_test.HistoryTests.test_wrong_provider_location_or_company_refuses) ... ERROR
+test_wrong_source_missing_family_and_duplicate_closure_refuse (frontend_highlevel_history_test.HistoryTests.test_wrong_source_missing_family_and_duplicate_closure_refuse) ... ERROR
+
+======================================================================
+ERROR: test_accepted_marketing_workflow_is_unknown_even_with_sent_timestamp (frontend_highlevel_history_test.HistoryTests.test_accepted_marketing_workflow_is_unknown_even_with_sent_timestamp)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_actual_contact_note_task_and_terminal_opportunity_receipts (frontend_highlevel_history_test.HistoryTests.test_actual_contact_note_task_and_terminal_opportunity_receipts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancelled_or_redacted_enrollment_is_not_provider_execution_exit (frontend_highlevel_history_test.HistoryTests.test_cancelled_or_redacted_enrollment_is_not_provider_execution_exit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_checked_complete_original_no_capability_closure_has_source_specific_zero (frontend_highlevel_history_test.HistoryTests.test_checked_complete_original_no_capability_closure_has_source_specific_zero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_closed_allowlist_denies_mutations_unknown_filters_absolute_urls_and_duplicate_queries (frontend_highlevel_history_test.HistoryTests.test_closed_allowlist_denies_mutations_unknown_filters_absolute_urls_and_duplicate_queries)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_conversation_truncation_is_unknown_and_message_cursor_cannot_loop (frontend_highlevel_history_test.HistoryTests.test_conversation_truncation_is_unknown_and_message_cursor_cannot_loop)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_draft_paused_and_retry_are_active_while_success_is_not_an_exit (frontend_highlevel_history_test.HistoryTests.test_draft_paused_and_retry_are_active_while_success_is_not_an_exit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_empty_retained_window_and_current_flags_never_prove_zero (frontend_highlevel_history_test.HistoryTests.test_empty_retained_window_and_current_flags_never_prove_zero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_exact_database_digest_missing_query_extra_private_column_and_duplicate_row_refuse (frontend_highlevel_history_test.HistoryTests.test_exact_database_digest_missing_query_extra_private_column_and_duplicate_row_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_extra_missing_or_forged_closure_requirement_or_evidence_is_refused (frontend_highlevel_history_test.HistoryTests.test_extra_missing_or_forged_closure_requirement_or_evidence_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_finished_provider_execution_does_not_invent_source_journey_or_downstream_join (frontend_highlevel_history_test.HistoryTests.test_finished_provider_execution_does_not_invent_source_journey_or_downstream_join)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_message_readback_change_and_wrong_tenant_are_refused (frontend_highlevel_history_test.HistoryTests.test_message_readback_change_and_wrong_tenant_are_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_missing_family_closure_cannot_relabel_all_scopes_absent (frontend_highlevel_history_test.HistoryTests.test_missing_family_closure_cannot_relabel_all_scopes_absent)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_no_capability_closure_contradicted_by_actual_global_sql_does_not_close (frontend_highlevel_history_test.HistoryTests.test_no_capability_closure_contradicted_by_actual_global_sql_does_not_close)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_output_contains_no_credentials_recipient_message_note_body_or_provider_errors (frontend_highlevel_history_test.HistoryTests.test_output_contains_no_credentials_recipient_message_note_body_or_provider_errors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_pending_workflow_and_scheduled_message_counts_are_actual (frontend_highlevel_history_test.HistoryTests.test_pending_workflow_and_scheduled_message_counts_are_actual)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_provider_permission_unavailable_and_rate_limit_are_unknown (frontend_highlevel_history_test.HistoryTests.test_provider_permission_unavailable_and_rate_limit_are_unknown)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_retention_window_limits_and_production_location_are_refused (frontend_highlevel_history_test.HistoryTests.test_retention_window_limits_and_production_location_are_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_source_absent_families_still_require_global_sql_credential_closure (frontend_highlevel_history_test.HistoryTests.test_source_absent_families_still_require_global_sql_credential_closure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_unknown_workflow_status_is_counted_without_exposing_provider_text (frontend_highlevel_history_test.HistoryTests.test_unknown_workflow_status_is_counted_without_exposing_provider_text)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_workflow_wrong_tenant_duplicate_id_count_and_repeated_cursor_refuse (frontend_highlevel_history_test.HistoryTests.test_workflow_wrong_tenant_duplicate_id_count_and_repeated_cursor_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_wrong_provider_location_or_company_refuses (frontend_highlevel_history_test.HistoryTests.test_wrong_provider_location_or_company_refuses)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_wrong_source_missing_family_and_duplicate_closure_refuse (frontend_highlevel_history_test.HistoryTests.test_wrong_source_missing_family_and_duplicate_closure_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-highlevel-history/ops/platform/host/frontend_highlevel_history_test.py", line 118, in setUp
+    self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.064s
+
+FAILED (errors=23)

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "status": "LOCAL_INTEGRATED_COMPONENTS_PASS_LIVE_UNQUALIFIED",
+  "date": "2026-11-05",
+  "executedFrontendSource": "847f0b049731b6983c67747a633dca1f76d76399",
+  "applicationSourceManifestSha256": "c0167cad6add50635da6297280a71438d0f164304fefb4b5b809cceb376d63af",
+  "postgresMajor": 16,
+  "migrations": 83,
+  "identityTests": {
+    "status": "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS",
+    "tests": 10,
+    "passed": 10,
+    "failures": 0,
+    "skipped": 0
+  },
+  "lifecycleTests": {
+    "status": "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS",
+    "tests": 16,
+    "passed": 16,
+    "failures": 0,
+    "skipped": 0
+  },
+  "reconciliationChecks": 75,
+  "bootstrapChecks": 4,
+  "receipt": {
+    "path": "postgres16.json",
+    "sha256": "91aec1db3997e15762b093d3730e463d6bcd72ef645e3637d27f15de4b162876"
+  },
+  "limitations": [
+    "The receipt sourceCommit/image digest/producer identities are synthetic fixture inputs; executedFrontendSource and the actual application manifest identify the tested source.",
+    "Packaged PostgreSQL18 candidate verification remains required.",
+    "Providers were intercepted; no live mutation, historical/provider fence or migration authorization is established."
+  ]
+}

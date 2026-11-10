@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "sourceCommit": "0c0cefab66109725483c3392b1b3afc3be62d804",
+  "sdkAuditSource": "33163d784c27adf865465fd6598f52a44cbe77f9",
+  "exactUnchangedSections": {
+    "verifySdkInputs": {
+      "unchangedFromOriginal33163d78": true,
+      "sha256": "aefc70ae7eb7a348822f603f9023d08ab6c473a059b9430024d1ea0d872c8ac8"
+    },
+    "childEnvironment": {
+      "unchangedFromOriginal33163d78": true,
+      "sha256": "cad888cdee9700d9a809be7a62ad56611b3c717903a66844ce124b95c8e06716"
+    },
+    "cliArgs": {
+      "unchangedFromOriginal33163d78": true,
+      "sha256": "05d62614ce845c4c6fc9a662144e49a3b574ba43baa5791148b7a65f995fcaed"
+    },
+    "cli": {
+      "unchangedFromOriginal33163d78": true,
+      "sha256": "a9643bdd11131676ace533aa966e51bb1e4f5879bd08aa163a0bceb0fc164e01"
+    },
+    "UMASK_WRAPPER": {
+      "unchangedFromOriginal33163d78": true,
+      "sha256": "c082cf87325e12e7dae8202f46b90f3cf2c2775a973d70aab8a24e253f9d2f28"
+    }
+  },
+  "scope": "Offline version and four auth-help forms only; no real auth, token, revocation, TLS or provider operation. Offline-only credential-disable/pager controls are disclosed in original report. Current UID501 prefixes do not qualify UID0 registered runtime.",
+  "sdkVersion": "592.0.0",
+  "pythonVersion": "3.14.10",
+  "sdkFinalManifestSha256": "066b28fec5cc8b61f6afc86226e05cdf91787dfae73ecf37216cd137e744e477",
+  "cpythonManifestSha256": "8d6963c633a81853ba8f4be07b8dd3cd7eab017f428869238d867a1a6b05e53f"
+}

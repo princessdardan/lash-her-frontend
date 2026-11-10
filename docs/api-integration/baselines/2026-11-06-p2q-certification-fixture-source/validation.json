@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "status": "INTEGRATED_FIXTURE_CORRECTION_INDEPENDENT_REVIEW_CLEAR_FRESH_CI_PENDING",
+  "originalSourceCommit": "5533e9cc99c79a0abb460a688e18972a193f0a62",
+  "integratedSourceCommit": "790cac3727310d9e4efbd4c3a7e79a28cbbd70e2",
+  "failedCiSource": "ea4d9cd1f78a63063bd94f087565e4962a579b2b",
+  "failedCiRun": 42295968068,
+  "ciPassedJobs": 8,
+  "ciFailedJobs": [
+    "gateway-and-platform",
+    "browser"
+  ],
+  "originalGatewayLog": {
+    "path": "/private/tmp/p2q-ci-ea4-20261106/logs/gateway-and-platform-128161155968.log",
+    "sha256": "57e1d68b00d1b098e97188e53838ef4fc42acd34a51e70a7f3dedab445939c66"
+  },
+  "diagnosis": "Tracked operator source has511files; two npm-installed untracked JSON files made the old filesystem-based test fixture513. Production512cap correctly refused before broker. Test now copies exact gittracked public ops source into a private installed fixture; production complete-installed-tree guard remains unchanged.",
+  "rootVerification": {
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "actualRootNpmMetadataFilesPresent": true,
+    "log": "root-tests.log"
+  },
+  "fileManifest": {
+    "connected-vercel-scope.json": {
+      "bytes": 936,
+      "sha256": "23a32e8ab5fa1fede33c4e084dc579d11893e7800b39fd43cd8eaa0d9fec8f1a"
+    },
+    "ea4-terminal-jobs.json": {
+      "bytes": 1535,
+      "sha256": "cc33beb88b6973423ab4094d1a0470286db6707d0e3be0eb9062ccfd9a8f4779"
+    },
+    "independent-review.json": {
+      "bytes": 1587,
+      "sha256": "3113afa2f823199bb286ac7a2c89d083c691a7098847105dcfa7e4fb2a9c76ae"
+    },
+    "owner-before.log": {
+      "bytes": 9397,
+      "sha256": "7a5d8908b2ca0d35ed4e96ce0e13f3b47ecaf45f5ccbc73ebdef67b2b8afc1f5"
+    },
+    "owner-closure-tests.log": {
+      "bytes": 1449,
+      "sha256": "5bb5aa78b8b1b3af390ca8b47064d55536cb93018bc31bbdcc50510e2e8166b5"
+    },
+    "owner-manifest.json": {
+      "bytes": 578,
+      "sha256": "29f2ab9a362558560f95f2311f84eb03fed121eff1e22607e1d5616280f36c99"
+    },
+    "owner-parent-tests.log": {
+      "bytes": 3723,
+      "sha256": "ce46777361c5738ed0c1bcac2d57023d59b64d33c4d906003b70b58ee45e3a94"
+    },
+    "owner-validation.json": {
+      "bytes": 2095,
+      "sha256": "9d59f806ce3fee4d0002cfc52b72de62d537b66507cdc6821ed38e235dced4b7"
+    },
+    "root-tests.log": {
+      "bytes": 122,
+      "sha256": "440131beed94d8852f437de3ef4457ce3b46174ac87638a7554fa2ee3dfd154f"
+    },
+    "source-and-contracts.json": {
+      "bytes": 530,
+      "sha256": "3527c45f1f7aaef60492109ae04e0bbcc3eea310f4f4b504a59e7a3edbeace0e"
+    }
+  },
+  "scope": {
+    "productionGuardsChanged": false,
+    "sourceCapsChanged": false,
+    "pr91RuntimeChanged": false,
+    "historicalProfilesChanged": false,
+    "liveProviderOrStagingChanges": false,
+    "firstUseAuthorityAvailable": false
+  },
+  "latestAllTenCiSource": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c"
+}

@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "status": "OWNED_C_POSITIVE_QUALIFIED",
+  "frontendSourceCommit": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "apiSourceCommits": {
+    "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+  },
+  "postgresMajor": 18,
+  "migrations": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "exitCode": 0,
+  "stderrBytes": 0,
+  "fixtureElapsedSeconds": 141.3,
+  "observedCompletedAt": "2026-11-06T19:57:26.516Z",
+  "sourceReadbackVerified": true,
+  "frozenCurrentParserVerified": true,
+  "lifetime": {
+    "actualThreeDatabases": true,
+    "actualTlsScram": true,
+    "oldProcessExited": true,
+    "oldBackendEnded": true,
+    "newFrontendBackend": true,
+    "newHostProcess": true,
+    "actualHostFlock": true,
+    "newSourceCapability": true,
+    "oldOneRetained": true
+  },
+  "causal": {
+    "independentOriginalPrefixCount": 6,
+    "independentPrefixEqualsTerminal": true,
+    "originalCausalReceiptSha256": {
+      "recovery-intent.json": "1d4052642d011cb8927b0e76fac362401d15649ea4826ca88021923190b1f164",
+      "baseline.json": "18cf73fd94e441515c1fb3be9511d702b9aaabde62468b19df65a3cb0fb3f40c",
+      "request-details.json": "4bfd564c4f26ab7023d4454f6c3ebd4b7d1960d2e000650184bf1e48abf6d46b",
+      "domain.json": "36898446879669390a82586fdd1e9ea24e779e6da9f2ff5f957e53052a7de846",
+      "settlement.json": "a7098a9c8d39dbcece8b3fd7e54d9b18b43bde42b66e96c888c788364c99cf71",
+      "replacement-authorization.json": "73d740709a23658fe24e1c79a952b71eb90b1ea9ad6cb9cb4737f4c5bb81f26a"
+    },
+    "terminalReceiptSha256": "c7e5e0a2283e4fefd1eb1f1094a27c1b5de41db3720daa232d239120724d1884",
+    "terminalStatus": "P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED"
+  },
+  "journals": {
+    "before": {
+      "frontend": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+      "course": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+      "community": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"
+    },
+    "after": {
+      "frontend": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+      "course": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+      "community": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"
+    },
+    "allThreeUnchanged": true,
+    "apiCurrentBeforeAfterEqual": true,
+    "sqlReplayed": false
+  },
+  "sourceHashes": {
+    "owned": {
+      "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+      "ops/platform/host/p2_known_ack_interrupted_restoration.py": "2be35424dfc0096a11a2b43e5902196864bd9e7007012e784b9c3b160c371912",
+      "ops/platform/host/p2_release_broker.py": "e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d",
+      "ops/platform/host/p2_release_supervisor.py": "b0c448e3e9bc65bc90477dbb1f528797a55f9b0c93171f922597cf19e74e771e",
+      "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+      "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+      "ops/gateway/package.json": "753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805",
+      "ops/gateway/package-lock.json": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "98ff1da3069c7c06cf3ecdd0615a33ae2201a0af108bfc18d646ec15a2bd0504",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"
+    },
+    "fixture": {
+      "p2-known-ack-loss-probe.mjs": "1b685b6c2ea7c40bb129f92d05fb88a3a81eceb2a90f3fec90d9239a451c7991",
+      "host/p2_known_ack_loss.py": "445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db",
+      "harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+      "harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"
+    },
+    "gatewayDependency": {
+      "package": "jose",
+      "version": "6.2.3",
+      "resolution": "ops/gateway/node_modules/jose",
+      "packageSha256": "cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"
+    }
+  },
+  "actualCommand": {
+    "workingDirectory": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration",
+    "environmentCleared": true,
+    "environment": {
+      "PATH": "/Users/dardan/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/opt/openssl@3/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+      "LANG": "C",
+      "LC_ALL": "C",
+      "TMPDIR": "/private/tmp/p2q-current-api-c-owned-20261106",
+      "PG_BIN": "/private/tmp/pg18-forward-owned-u5qd0tla/prefix/bin",
+      "OWNED_POSTGRES_MAJOR": "18",
+      "P2_INTERRUPTED_OWNED_TEST": "true",
+      "P2_KNOWN_ACK_COURSE_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-course-api/.worktrees/p2q-course",
+      "P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-community-api/.worktrees/p2q-community"
+    },
+    "argv": [
+      "/Users/dardan/.nvm/versions/node/v24.18.0/bin/node",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs"
+    ],
+    "stdin": "none"
+  },
+  "actualCommandSha256": "67fa5cfa98ea586796088e058db1915cd649514a0239209a9ab446e77ac2dfdf",
+  "artifacts": {
+    "preflight.json": {
+      "bytes": 992,
+      "sha256": "7d5a7dc96177e8d3ec60e5525e7649c3da4abd963e1b7ec903732658fac27c2b"
+    },
+    "invocation.json": {
+      "bytes": 1253,
+      "sha256": "47d270f75bdf1a0ac2bf2c29c11a2f85c0a0a632a833cf67caf9112dd70700b7"
+    },
+    "positive.stdout": {
+      "bytes": 22317,
+      "sha256": "32c8e706c02960f4e093178d49863079534728027ff1a29bf9d128e3b85d2a3b"
+    },
+    "positive.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "verify-positive.mjs": {
+      "bytes": 5506,
+      "sha256": "82323e57d3112201a8940fa287ecfaf4b28c52f3467eb75402cb3bca26761deb"
+    }
+  },
+  "limitations": {
+    "ownedLocalOnly": true,
+    "platform": "macOS",
+    "actualDocker": false,
+    "runtimeTransportProjected": true,
+    "actualVercelNativeEvidence": false,
+    "providerTouched": false,
+    "frontendReadinessVerified": false,
+    "frontendWorkloadProbePerformed": false,
+    "installedRootPathsProjected": true,
+    "linuxSubreaperQualified": false,
+    "committedOperatorSourceCallbackQualified": false,
+    "stagingTouched": false,
+    "releaseAccepted": false,
+    "isolatedFirstUseAuthorized": false
+  }
+}

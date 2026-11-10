@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "source": "5d0818a172e4027de1848a3f5855f96f1ac531e9",
+  "hostChecks": 104,
+  "skipped": 0,
+  "independentReviewSha256": "b11cd94f490af7e051b95a91910cd4cf3250435fd2ed3ad6fdb63f11fc5c796a",
+  "privateRetentionManifestSha256": "a174d9e4ba5925c048470bb1c29f7a1a80f0347a35bbadfb051d523c468c5b39",
+  "actualLinuxDockerQualified": false,
+  "stagingTouched": false,
+  "releaseAccepted": false
+}

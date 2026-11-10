@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type { BookingCalendarOAuthState } from "@/lib/booking/calendar-oauth-state";
 import { toContractorTerminology } from "@/lib/admin/presentation";
 
@@ -152,6 +153,7 @@ export async function handleAdminCalendarOAuthCallback(
             scopes: grant.scopes,
           });
     if (result.status === "owned_elsewhere") {
+      markWriterOperationUncertain();
       return oauthRedirect(
         statePayload,
         input.origin,
@@ -160,6 +162,7 @@ export async function handleAdminCalendarOAuthCallback(
       );
     }
     if (result.status === "account_mismatch") {
+      markWriterOperationUncertain();
       return oauthRedirect(
         statePayload,
         input.origin,
@@ -175,6 +178,7 @@ export async function handleAdminCalendarOAuthCallback(
       "Google Calendar account connected.",
     );
   } catch {
+    markWriterOperationUncertain();
     if (issuedRefreshToken !== undefined) {
       await cleanupRejectedGrant(
         dependencies,
@@ -198,7 +202,10 @@ async function cleanupRejectedGrant(
   refreshToken?: string,
   providerAccountId?: string,
 ): Promise<void> {
-  await Promise.allSettled([dependencies.disableProvisionalConnection(state)]);
+  const [disabled] = await Promise.allSettled([
+    dependencies.disableProvisionalConnection(state),
+  ]);
+  if (disabled.status === "rejected") markWriterOperationUncertain();
   if (refreshToken === undefined) {
     return;
   }
@@ -210,10 +217,15 @@ async function cleanupRejectedGrant(
       providerAccountId,
     );
   } catch {
+    markWriterOperationUncertain();
     // Preserve the external grant when local state cannot establish safety.
   }
+  if (!canRevoke) markWriterOperationUncertain();
   if (canRevoke) {
-    await Promise.allSettled([dependencies.revokeRefreshToken(refreshToken)]);
+    const [revoked] = await Promise.allSettled([
+      dependencies.revokeRefreshToken(refreshToken),
+    ]);
+    if (revoked.status === "rejected") markWriterOperationUncertain();
   }
 }
 

@@ -3715,3 +3715,5 @@ export const bookingNoShowChargeAttempts = pgTable(
   ],
 );
 export * from "@/lib/highlevel/schema";
+export * from "@/lib/customer-auth/schema";
+export * from "@/lib/customer-lifecycle/schema";

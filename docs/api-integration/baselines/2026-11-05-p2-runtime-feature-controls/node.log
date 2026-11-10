@@ -1,0 +1,20 @@
+✔ release probe requires a live bounded credential and the reviewed Production-target project/source (0.912375ms)
+✔ missing configuration, wrong bearer and malformed challenge cannot trigger outbound work (12.964583ms)
+✔ successful probe binds a fresh challenge and hosted source without relaying incoming tokens or private data (0.774584ms)
+✔ SDK, gateway and configuration errors return non-success without leaking diagnostics (0.366333ms)
+✔ bootstrap mode is staging-only, requires its real admission reader and rejects unknown modes before outbound work (0.255ms)
+✔ bootstrap response binds the ordinary workload proof and actual read-only admission observation to one challenge (0.195958ms)
+✔ private Resend mode retains bootstrap checks, staging scope and challenge without forwarding incoming credentials (0.365416ms)
+✔ Square mode requires staging admission plus deployed sandbox reader and retains challenge (0.286625ms)
+✔ explicit P2 mode uses only its current catalog parser and requires no bootstrap or disabled feature controls (0.209125ms)
+✔ P2 probe reports only actual runtime feature booleans and ignores caller feature claims (0.290791ms)
+✔ P2 mode authenticates before work, refuses missing/production configuration and never falls back after parser failure (0.763708ms)
+✔ Google binding requires staging bootstrap and issues transient runtime proofs for only the authenticated challenge (0.662583ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 173.66025

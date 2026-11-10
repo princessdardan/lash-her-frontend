@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { decryptCustomerEmailOutboxValue } from "@/lib/commerce/customer-email-outbox-cipher";
 import type { ContactPopupOfferEmailPayload } from "@/lib/commerce/customer-email-outbox";
 import { sanitizeAttribution } from "./attribution";
@@ -123,8 +124,12 @@ async function syncSource(
         // Commit the stable provider identity outside the network-effect transaction.
         // The row itself is currently locked, so it is saved by this transaction;
         // a crash is recovered through exact lookup before another create.
-        await tx.execute(
-          sql`update highlevel_contacts set provider_id = ${remote.id}, phone = ${phone}, updated_at = now() where id = ${local.id}::uuid`,
+        observeReceipt(
+          await tx.execute(
+            sql`update highlevel_contacts set provider_id = ${remote.id}, phone = ${phone}, updated_at = now() where id = ${local.id}::uuid returning id`,
+          ),
+          "id",
+          local.id,
         );
         local.provider_id = remote.id;
       }
@@ -163,21 +168,31 @@ async function syncSource(
         throw error;
       }
       if (phone && phone !== local.phone) {
-        await tx.execute(
-          sql`update highlevel_contacts set phone = ${phone} where id = ${local.id}::uuid`,
+        observeReceipt(
+          await tx.execute(
+            sql`update highlevel_contacts set phone = ${phone} where id = ${local.id}::uuid returning id`,
+          ),
+          "id",
+          local.id,
         );
         local.phone = phone;
       }
       const id = remote.id;
+      const entityKey = `entity:${job.entity_type}:${job.entity_id}`;
       await tx.execute(
-        sql`insert into highlevel_effects (key, contact_id, kind, state) values (${`entity:${job.entity_type}:${job.entity_id}`}, ${local.id}::uuid, 'entity', 'recorded') on conflict do nothing`,
+        sql`insert into highlevel_effects (key, contact_id, kind, state) values (${entityKey}, ${local.id}::uuid, 'entity', 'recorded') on conflict do nothing`,
+      );
+      observeReceipt(
+        await tx.execute(
+          sql`select key from highlevel_effects where key = ${entityKey} and contact_id = ${local.id}::uuid and kind = 'entity'`,
+        ),
+        "key",
+        entityKey,
       );
 
       // Recompute current eligibility, never send the consent snapshot of an old job.
-      const [emailConsent, smsConsent] = await Promise.all([
-        channelConsent(email, "email", email, tx),
-        channelConsent(email, "sms", phone, tx),
-      ]);
+      const emailConsent = await channelConsent(email, "email", email, tx);
+      const smsConsent = await channelConsent(email, "sms", phone, tx);
       const emailEligible =
         emailConsent === "opted_in" &&
         !providerBlocked(remote, "email") &&
@@ -304,8 +319,12 @@ async function syncSource(
       // Non-idempotent effects use a durable ledger on a separate connection. It must
       // survive rollback if the provider accepted a request but its reply was lost.
       // Save the contact mapping first; later effect processing runs after commit.
-      await tx.execute(
-        sql`update highlevel_contacts set last_synced_at = now(), updated_at = now() where id = ${local.id}::uuid`,
+      observeReceipt(
+        await tx.execute(
+          sql`update highlevel_contacts set last_synced_at = now(), updated_at = now() where id = ${local.id}::uuid returning id`,
+        ),
+        "id",
+        local.id,
       );
       return "succeeded" as const;
     })
@@ -326,6 +345,7 @@ async function syncSource(
           );
           await syncEffects(job, source, contact, api);
         });
+      else markWriterOperationUncertain();
       return result;
     });
 }
@@ -352,8 +372,12 @@ export async function durableEffect(
   }
   try {
     const id = await run();
-    await db.execute(
-      sql`update highlevel_effects set state = 'succeeded', provider_id = ${id ?? null}, updated_at = now() where key = ${key}`,
+    observeReceipt(
+      await db.execute(
+        sql`update highlevel_effects set state = 'succeeded', provider_id = ${id ?? null}, updated_at = now() where key = ${key} returning key`,
+      ),
+      "key",
+      key,
     );
   } catch (error) {
     if (error instanceof HighLevelError && !error.ambiguous) {
@@ -394,10 +418,8 @@ export async function syncEffects(
     if (!job.historical) await syncOpportunity(job, source, contact, api);
   }
   const email = contact.email_normalized;
-  const [emailConsent, smsConsent] = await Promise.all([
-    channelConsent(email, "email", email),
-    channelConsent(email, "sms", contact.phone),
-  ]);
+  const emailConsent = await channelConsent(email, "email", email);
+  const smsConsent = await channelConsent(email, "sms", contact.phone);
   // Historical commerce describes past activity; only current consent can stop
   // a newer journey while importing it. Live conversions retain their effects.
   const converted = /:paid:/.test(source.lifecycle ?? "");
@@ -574,8 +596,12 @@ export async function syncEffects(
     { journey, workflow },
   );
   if (job.entity_type === "delivery")
-    await getPrivateDb().execute(
-      sql`update customer_email_outbox set status = 'sent', provider_message_id = ${`workflow:${workflow}`}, sent_at = now(), updated_at = now() where id = ${job.entity_id}::uuid and delivery_provider = 'highlevel' and redacted_at is null`,
+    observeReceipt(
+      await getPrivateDb().execute(
+        sql`update customer_email_outbox set status = 'sent', provider_message_id = ${`workflow:${workflow}`}, sent_at = now(), updated_at = now() where id = ${job.entity_id}::uuid and delivery_provider = 'highlevel' and redacted_at is null returning id`,
+      ),
+      "id",
+      job.entity_id,
     );
 }
 
@@ -693,7 +719,10 @@ export async function stopJourneys(
   );
   for (const effect of effects.rows) {
     if (onlyKeys && !onlyKeys.includes(effect.key)) continue;
-    if (!effect.data.workflow || !contact.provider_id) continue;
+    if (!effect.data.workflow || !contact.provider_id) {
+      markWriterOperationUncertain();
+      continue;
+    }
     try {
       const result = await api<{ succeeded?: boolean; succeded?: boolean }>(
         `/contacts/${pathId(contact.provider_id)}/workflow/${pathId(effect.data.workflow)}`,
@@ -709,8 +738,12 @@ export async function stopJourneys(
       )
         throw error;
     }
-    await db.execute(
-      sql`update highlevel_effects set state = 'cancelled', updated_at = now() where key = ${effect.key}`,
+    observeReceipt(
+      await db.execute(
+        sql`update highlevel_effects set state = 'cancelled', updated_at = now() where key = ${effect.key} returning key`,
+      ),
+      "key",
+      effect.key,
     );
   }
 }
@@ -731,7 +764,10 @@ async function reconcileRemovedSource(
       sql`select * from highlevel_contacts where id = ${effect.contact_id}::uuid`,
     )
   ).rows[0];
-  if (!contact?.provider_id) return "skipped";
+  if (!contact?.provider_id) {
+    markWriterOperationUncertain();
+    return "skipped";
+  }
   // Remove source notes as soon as their authoritative submission is redacted.
   const note = (
     await db.execute<{ provider_id: string }>(
@@ -752,8 +788,12 @@ async function reconcileRemovedSource(
       )
         throw error;
     }
-    await db.execute(
-      sql`update highlevel_effects set state = 'cancelled', provider_id = null where key = ${`note:${job.entity_id}`}`,
+    observeReceipt(
+      await db.execute(
+        sql`update highlevel_effects set state = 'cancelled', provider_id = null where key = ${`note:${job.entity_id}`} returning key`,
+      ),
+      "key",
+      `note:${job.entity_id}`,
     );
   }
   const retained = await loadRetainedSource(contact);
@@ -788,6 +828,15 @@ async function reconcileRemovedSource(
   // Contact-wide deletion needs review: it may contain staff-owned records or
   // another retained purpose. Never erase unrelated CRM work automatically.
   throw new HighLevelError("crm_retention_review_required");
+}
+
+function observeReceipt(
+  result: { rows: Record<string, unknown>[] },
+  field: string,
+  expected: string,
+): void {
+  if (result.rows.length !== 1 || result.rows[0][field] !== expected)
+    markWriterOperationUncertain();
 }
 
 async function closeMatchingOpportunity(

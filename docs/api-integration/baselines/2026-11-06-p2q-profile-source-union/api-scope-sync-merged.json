@@ -1,0 +1,79 @@
+[
+  {
+    "repository": "lash-her-course-api",
+    "base": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "reviewedHead": "99ef67f3cbb43ea7b170b56df6fe5f4d45ca94de",
+    "mergeCommit": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+    "mergeTree": "69895a7911a7f94d3d209a7e15dc820ecb8527a9",
+    "reviewedTreeEqual": true,
+    "filesChanged": [
+      "API-INTEGRATION-PLAN.md"
+    ],
+    "prHeadCiRun": 42277204555,
+    "sourceAndArtifactPinsRemain": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "workflowTriggers": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "triggerExcerpt": "name: CI\n\non:\n  pull_request:\n  push:\n    branches:\n      - main\n      - staging\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\nconcurrency:\n  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n\njobs:\n  quality:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803\n        with:"
+      },
+      {
+        "file": ".github/workflows/community-contract-compatibility.yml",
+        "triggerExcerpt": "name: Community contract compatibility\n\non:\n  pull_request:\n    paths:\n      - contracts/community/**\n      - scripts/verify-community-contract.mjs\n      - src/integrations/community/contracts/**\n      - .github/workflows/community-contract-compatibility.yml\n  push:\n    branches: [main]\n    paths:\n      - contracts/community/**\n      - scripts/verify-community-contract.mjs\n      - src/integrations/community/contracts/**\n  workflow_dispatch:\n    inputs:\n      community_ref:\n        description: Community commit containing the canonical contract\n        required: false\n        default: main\n        type: string\n  workflow_call:\n    inputs:"
+      }
+    ],
+    "postMergeCi": [
+      {
+        "id": 42278753183,
+        "name": "CI",
+        "event": "push",
+        "head_sha": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/42278753183"
+      }
+    ]
+  },
+  {
+    "repository": "lash-her-community-api",
+    "base": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+    "reviewedHead": "79a62a720529858059f192e3b273f281b17495ea",
+    "mergeCommit": "52492aa7d68ca6fefb444b2046976f79fd0091b4",
+    "mergeTree": "11b02da18a5238d36a3bf011cdc9591e29e47948",
+    "reviewedTreeEqual": true,
+    "filesChanged": [
+      "API-INTEGRATION-PLAN.md"
+    ],
+    "prHeadCiRun": 42277202199,
+    "sourceAndArtifactPinsRemain": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+    "workflowTriggers": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "triggerExcerpt": "name: CI\n\non:\n  pull_request:\n  push:\n    branches: [main, staging]\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\nconcurrency:\n  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n\njobs:\n  quality:\n    runs-on: ubuntu-latest\n    timeout-minutes: 12\n    steps:\n      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803\n        with:\n          persist-credentials: false\n      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+      },
+      {
+        "file": ".github/workflows/course-contract-compatibility.yml",
+        "triggerExcerpt": "name: Course contract compatibility\n\n# Unfiltered by path: the check compares this repository's released contract\n# against Course's vendored copy, so a change on either side \u2014 including one that\n# touches no path listed here \u2014 can break it. Path filters meant a change to\n# Course's vendored copy alone triggered no verification in either repository.\non:\n  pull_request:\n  push:\n    branches: [main]\n  workflow_dispatch:\n    inputs:\n      course_ref:\n        description: Course API ref to verify\n        required: false\n        default: main\n\npermissions:\n  contents: read\n\njobs:\n  compatibility:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5"
+      }
+    ],
+    "postMergeCi": [
+      {
+        "id": 42278780260,
+        "name": "Course contract compatibility",
+        "event": "push",
+        "head_sha": "52492aa7d68ca6fefb444b2046976f79fd0091b4",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42278780260"
+      },
+      {
+        "id": 42278780226,
+        "name": "CI",
+        "event": "push",
+        "head_sha": "52492aa7d68ca6fefb444b2046976f79fd0091b4",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42278780226"
+      }
+    ]
+  }
+]

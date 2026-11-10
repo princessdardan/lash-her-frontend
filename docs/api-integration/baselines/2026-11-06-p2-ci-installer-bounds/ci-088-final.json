@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "source": "08849e8ea1391a99b970d47e112dd59414d4c059",
+  "runId": 42230842973,
+  "terminalSnapshot": true,
+  "jobs": [
+    {
+      "id": 127936005487,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936005866,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936005880,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "cancelled"
+    },
+    {
+      "id": 127936005892,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936005924,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936005982,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936006016,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936006400,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127936007442,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947533471,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "cancelled"
+    }
+  ],
+  "webkitSuiteStarted": false,
+  "installerCancelledBySourceFollowup": true,
+  "allTenRequiredPassed": false,
+  "originalWebkitLog": {
+    "bytes": 79957,
+    "sha256": "a0aa784047e4628ed330a8cb8a47529afb7d977d51fde91a1266b2819d2c7e10"
+  },
+  "originalOperatorLog": {
+    "bytes": 291857,
+    "sha256": "34ee75e5815d9af7d754edec298912ea9292eba82d7896af34d53d38136f4003"
+  }
+}

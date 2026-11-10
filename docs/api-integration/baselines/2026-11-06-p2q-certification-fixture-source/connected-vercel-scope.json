@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "observedAt": "2026-11-06T21:28:35.002Z",
+  "operation": "read-only connected Vercel team/project metadata",
+  "teamCount": 1,
+  "teamIds": [
+    "team_2Hrn5eMZyZxfAWdmYvyKi9t3"
+  ],
+  "teamPagination": {
+    "count": 1,
+    "prev": 1759975420715
+  },
+  "projectCount": 8,
+  "projectPagination": {
+    "count": 8,
+    "prev": 1793754870362
+  },
+  "selectedExistingProjects": [
+    {
+      "id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "name": "lash-her-frontend-staging",
+      "accountId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3"
+    },
+    {
+      "id": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "name": "lash-her-frontend",
+      "accountId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3"
+    }
+  ],
+  "p2qNamedProjects": [],
+  "scope": "Connected user/team only; does not enumerate other identities/providers or prove control grants/recovery/credential exclusion.",
+  "independentScopes": "UNKNOWN",
+  "mutationsPerformed": false
+}

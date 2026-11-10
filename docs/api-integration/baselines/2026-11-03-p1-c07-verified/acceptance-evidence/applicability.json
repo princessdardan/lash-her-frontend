@@ -1,0 +1,79 @@
+{
+  "status": "C01_C06_APPLICABILITY_REVIEW_PASSED",
+  "binding": {
+    "environment": "staging",
+    "releaseId": "p1-41748860504-1",
+    "candidateSha256": "09f2935fcac8130b6abfdfb0814e8da104106efe6ca9243de3a3e5553d16cce5",
+    "hostMachineId": "ec2146be041cf26fda0a7986db4be3b6",
+    "frontendProjectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "frontendSourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+    "frontendDeploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+    "configurationSha256": {
+      "runtime.json": "89bb5d095734b264c92228f9986ceda0a9f24fada3a74725a4567c3af6934cd6",
+      "gateway.json": "d48bad42b79a3fbcfe427464c6bbb8b4223b90d03f43ac862fabdf60e401e1b3",
+      "course-tls.json": "85fdb7f484adb052b99db1475f4c6e735bd8737322fb401aafc28803eebaca9c",
+      "community-tls.json": "62e09e6d773eb7ad1e889619471ead27b78f9925d6ba88d9913db4d641f0905a",
+      "tls/ca.pem": "029106da705ee615e2131d41945adbbd8552ebdb82381c95733fbfd20c655056",
+      "tls/gateway/ca.pem": "029106da705ee615e2131d41945adbbd8552ebdb82381c95733fbfd20c655056",
+      "tls/gateway/key.pem": "5c4b2c69feaf4d3e2ce9da281a247a01640198d96a79d23470d17aeedf8200d9",
+      "tls/gateway/cert.pem": "d184c23ec8454a2171a0775dec61a675b8029bab170f14e40e9576e035d79009",
+      "tls/course/key.pem": "0499345fd0c523538f3e9a235886a39b4941eb9e2773f53473e7e976ccd94fd3",
+      "tls/course/cert.pem": "6493f30321477ab419d012b9879447f6524d5d29170ab04adc1922e6198dedaf",
+      "tls/community/key.pem": "66f39482b379c256a4ff4c2ecda9b001dcfda507ed3b1c0d91b46288d7b483fd",
+      "tls/community/cert.pem": "9c0935089cb8c96297f492f77b58d4e948841b0d06040ac8204f5d6d9481420b",
+      "course-api.env": "440f6ab8357e9cae0251e80567f6701a953e2bb8746a9bda6b48adfcf8a0105d",
+      "course-publisher.env": "8360b2acb823ea71e415a02eb163771485644ecca7be417940b7ebe8706c81e1",
+      "course-snapshot.env": "0fc65041e9b5140369bc6fd185692ed98213a62a1e925767593bfd3918b43187",
+      "community-api.env": "e278e3cd0aac439187c22bff5d7338d7b96487890db6aebfa276abb0b08ef3db",
+      "community-worker.env": "ed945b0e5e2dbefce79068bf5d729cdf97257215f2af84838f4c5d97590db7ca"
+    },
+    "images": {
+      "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:2bdd89062050b8e975a6205c47beb707010bc4e0845dab789c0800d0ad78774d",
+      "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:387abc2261869fa5d0fc8d429ee49ca8886cd92a207b1e885bad14a5dd7b37f5",
+      "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:3ef479f85b92067b8a58148af2ae4bfc3496a2e25099daec50511a54fb0053db"
+    }
+  },
+  "operator": "Dardan via approved C07 execution",
+  "recoveryAndRollbackReuse": {
+    "originalReleaseId": "p1-41541683416-1",
+    "originalLiveC04C05Passed": true,
+    "currentApiFilesystemAndExecutionBytesEqual": true,
+    "currentApiEnvironmentAndTlsFileHashesPreserved": true,
+    "currentBusinessRowsPreserved": {
+      "course": {
+        "status": "STAGING_PRIOR_BUSINESS_ROWS_PRESERVED",
+        "service": "course",
+        "preservedRows": 39
+      },
+      "community": {
+        "status": "STAGING_PRIOR_BUSINESS_ROWS_PRESERVED",
+        "service": "community",
+        "preservedRows": 12
+      }
+    },
+    "rationale": "Course and Community image root filesystem layers, source and full execution configuration are identical across old and new digest identities. Database targets/schema/lineage/runtime roles and API environment/private TLS inputs are unchanged. New gateway admission behavior and transport were requalified in its exact image, and current non-overlap startup/preservation/read-only checks passed. Retained previous-version rounds are reused for these unchanged API/recovery assumptions; no unperformed new rollback or fixture round is claimed."
+  },
+  "externalNetworkReuse": {
+    "sameRecreatedHostAndAddresses": true,
+    "kernelIngressAndPublicationReverified": true,
+    "retainedExternalMeasurements": 48,
+    "newExternalMeasurementsClaimed": 0
+  },
+  "nativeCancellation": {
+    "initial16SecondWaitIsNotCancellationProof": true,
+    "observedPostDisableInvocation": true,
+    "measuredCompletionAfterDisableMs": 17875,
+    "quietObservedMs": 288684,
+    "interpretation": "Actual provider-classified request identity and complete refreshed inventory prove observed cancellation and an extended quiet period after the last invocation. No fixed 16-second provider queue bound is claimed."
+  },
+  "directoryModeCorrection": {
+    "publicStateOnly": true,
+    "ownerRoot": true,
+    "requiredMode0755Acknowledged": true,
+    "privateEnvKeysAndConfigFileHashesUnchanged": true
+  },
+  "newWork": false,
+  "featuresRemainOff": true,
+  "migrationsExecuted": false,
+  "currentApiEnvironmentAndTlsHashComparisonPassed": true
+}

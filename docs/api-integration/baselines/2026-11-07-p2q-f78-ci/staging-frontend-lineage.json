@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "scope": "Read-only direct staging frontend journal observation",
+  "observation": {
+    "status": "FRONTEND_LINEAGE_PENDING",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    },
+    "environment": "staging",
+    "sourceCommit": "714114b8a1d5ea11ad79d5a795d78cfa1d723ca7",
+    "observedAt": "2026-11-07T18:40:17.986Z",
+    "journalPresent": true,
+    "appliedCount": 80,
+    "expectedMigrationCount": 83,
+    "lastApplied": {
+      "tag": "0079_highlevel_marketing_ownership",
+      "folderMillis": 1792530952883,
+      "hash": "e0ac5e3dfece876f694ed6ad3a50e65e49a6c5523a872d96794ea1c898f09d73"
+    },
+    "pendingTags": [
+      "0080_customer_identity",
+      "0081_customer_auth_throttle_expiry",
+      "0082_customer_account_lifecycle"
+    ],
+    "appliedPrefixSha256": "feebfa511eb3ab0a90595d2c34dfc15409c237ec999f0522a725e6dc84eea6c9",
+    "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+    "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+    "phase2ContractManifestSha256": "sha256:41be13b4727d453ee1fb059ee8071c9483c079d4cdd57971bb38a00885acb431",
+    "verifiedTls": true,
+    "readOnlyVerified": true,
+    "migrationLockVerified": true,
+    "samePhysicalSessionVerified": true,
+    "applicationSqlApplied": false,
+    "bootstrapAuthorized": false,
+    "migrationAuthorized": false,
+    "trafficAuthorized": false
+  },
+  "exactTargetAndCredentialChecked": true,
+  "targetMatchedTwoRetainedRecords": true,
+  "session": {
+    "namedAwsProfileValid": true,
+    "additionalLoginNeeded": false,
+    "resolverTrustedSystemCa": true,
+    "defaultResolverCaRefused": true
+  },
+  "currentOnlyReleaseEligible": false,
+  "historicalFencingQualified": false,
+  "replacementTargetSelected": false,
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-frontend-replacement/2026-11-07/live-lineage-714114b8",
+  "privateArtifactSha256": {
+    "lineage-request.json": "d09c5b213c50483b640944d2b8214d9c515423c9ee6655de1ddc1e5dd2c1d724",
+    "frontend-lineage-observation.json": "6c36b2f092822568bf19a5b1208962a2fef4f87bd3b38eb8259ee9268e51e6a0",
+    "default-ca.stderr": "efcbea3c71f1bb1a0e5458a68d0e851319b0562ab2149ba038873eae8bc664f4",
+    "system-ca.stdout": "aad74eba9de599e007c1c6b4ff7bb05721ec777dff0822c49174ef8091d649f1"
+  }
+}

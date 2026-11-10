@@ -1,0 +1,76 @@
+(node:35387) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frontend CI schema evidence must match source SQL, contracts and the full owned rehearsal (1.021791ms)
+✔ builder evidence requires the exact repository and source revision (0.247125ms)
+✔ empty or unrelated attestation metadata cannot stand in for an SBOM (0.1005ms)
+✔ harness qualification requires the exact candidate bytes and never asserts real OIDC or approval (0.410166ms)
+✔ candidate collection and final qualification bind the operator dispatch, source and CI receipt (12.066541ms)
+✔ candidate validates course-runtime with its repository-owned runtime CLI (60.531709ms)
+✔ candidate validates course-migration with its repository-owned runtime CLI (60.051708ms)
+✔ candidate validates community-runtime with its repository-owned runtime CLI (62.4385ms)
+✔ candidate validates community-migration with its repository-owned runtime CLI (60.515166ms)
+✔ candidate API runtime qualification refuses unrelated raw HIGH finding with recomputed hashes (66.066375ms)
+✔ candidate API runtime qualification refuses unresolved filtered CRITICAL finding (32.926458ms)
+✔ candidate API runtime qualification refuses unsupported not-affected statement with recomputed hashes (63.699125ms)
+✔ candidate API runtime qualification refuses forged fixed package with recomputed hashes (64.921ms)
+✔ candidate API runtime qualification refuses forged VEX with recomputed hashes (62.926167ms)
+✔ candidate API runtime qualification refuses failed installed-library regression with recomputed hashes (63.4095ms)
+✔ candidate API runtime qualification refuses different published digest with recomputed hashes (64.675667ms)
+✔ candidate API runtime qualification refuses another image proof relabelled with the candidate name (63.142084ms)
+✔ candidate API runtime qualification refuses another source lock while the sibling lock still matches (61.343ms)
+✔ candidate API runtime qualification refuses tampered retained scan bytes (63.85525ms)
+✔ candidate API runtime qualification refuses missing filtered scan (33.158459ms)
+✔ candidate API runtime qualification refuses missing raw scan (61.473959ms)
+✔ candidate API runtime qualification refuses missing qualification record (61.299833ms)
+✔ candidate API runtime qualification refuses missing runtime SBOM (62.72725ms)
+✔ candidate API runtime qualification refuses missing VEX (62.71675ms)
+✔ candidate API runtime qualification refuses successful CLI without the qualification receipt (58.646ms)
+✔ P2 source guard binds the released manifest, every API revision and exact contract bytes (491.511375ms)
+✔ P2 source guard refuses wrong course revision in an otherwise clean checkout (395.155208ms)
+✔ P2 source guard refuses wrong community revision in an otherwise clean checkout (406.535834ms)
+✔ P2 source guard refuses wrong enrollmentEvent revision in an otherwise clean checkout (392.63925ms)
+✔ P2 source guard refuses changed API bytes even when both checkout and manifest pins were advanced (424.809ms)
+✔ P2 manifest integrity refuses changed course-api.json (241.3185ms)
+✔ P2 manifest integrity refuses changed community-api.json (252.776292ms)
+✔ P2 manifest integrity refuses changed enrollment-event.schema.json (251.494083ms)
+✔ P2 manifest integrity refuses changed boundary-contracts.json (248.737ms)
+✔ P2 manifest integrity refuses changed README.md (235.7ms)
+✔ new P2 source publication refuses candidate status and wrong or missing source-proof hash (1170.595334ms)
+✖ source CLI records exact published P2 approval once and fails without exposing credentials (311.590792ms)
+✔ manual dispatch accepts unprotected repositories, records actual protection and verifies exact CI (13.769084ms)
+✔ new source proofs require the P2 hash and every API contract revision before provider access (0.497333ms)
+✔ non-operator, fork, PR and substituted frontend refuse before provider access (0.189917ms)
+✔ coordinator must be public, current and dispatched by the sole operator (0.490459ms)
+✔ branch protection is optional and operator reruns recheck current CI (0.985292ms)
+✔ latest CI failure, skipped jobs, missing scans and forged repository/workflow refuse (2.396209ms)
+✔ source API failures are sanitized and newer failures cannot hide behind old success (0.570958ms)
+✔ frontend staging coordinates private API main heads without extra API branches (0.70975ms)
+ℹ tests 45
+ℹ suites 0
+ℹ pass 44
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4559.230583
+
+✖ failing tests:
+
+test at ops/platform/release-inputs-cli.test.mjs:13:1
+✖ source CLI records exact published P2 approval once and fails without exposing credentials (311.590792ms)
+  Error: ENOENT: no such file or directory, open '/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/phase2-contract-source-4q1BHX/cli-evidence/source-checks.json'
+      at readFileSync (node:fs:441:20)
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/ops/platform/release-inputs-cli.test.mjs:41:19
+      at phase2SourceFixture (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/ops/platform/phase2-contract-bindings.fixture.mjs:62:12)
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/ops/platform/release-inputs-cli.test.mjs:13:106)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/phase2-contract-source-4q1BHX/cli-evidence/source-checks.json'
+  }

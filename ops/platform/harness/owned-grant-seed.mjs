@@ -10,7 +10,7 @@ for (const fixture of fixtures) {
   const now = Math.floor(Date.now() / 1000), idempotencyKey = randomUUID();
   const token = await new SignJWT({ iat: now, exp: now + 300, jti: randomUUID() })
     .setProtectedHeader({ alg: "HS256" }).setIssuer("lash-her-frontend").setAudience("lash-her-course-api")
-    .setSubject("lash-her-frontend").sign(new TextEncoder().encode(process.env.HARNESS_FRONTEND_SECRET));
+    .setSubject(process.env.HARNESS_CONTRACT_PHASE === "p2" ? "frontend" : "lash-her-frontend").sign(new TextEncoder().encode(process.env.HARNESS_FRONTEND_SECRET));
   const reply = await fetch("https://course-tls:8443/v1/internal/entitlements/grants", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-idempotency-key": idempotencyKey },
     body: JSON.stringify({ ...fixture, orderId: `fixture-${idempotencyKey}`, idempotencyKey, grantReason: "import", grantedAt: new Date().toISOString() }),

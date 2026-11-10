@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "status": "GOOGLE_SDK_INPUT_ISOLATION_SOURCE_AND_MODEL_VERIFIED",
+  "sourceCommit": "c3a5d09d3eecfe80faa874829a06453fc283d4fa",
+  "previousReviewedSourceCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+  "originalEvidenceCommit": "2b74722260558ae87181ca391e889743b08d3ab8",
+  "sourceFiles": {
+    "ops/platform/p2q-google-project-allocation.mjs": {
+      "sha256": "9511b6d5fad5ad5c8f72e59f9824f4fd750ff1fcc0608b1211e7fa5f80f90f47",
+      "bytes": 34892
+    },
+    "ops/platform/p2q-first-install.test.mjs": {
+      "sha256": "2614dfb2a1b267ac1d983a3e9ac5ff56cf9f2ccbbf405b2428dae3f05f9344eb",
+      "bytes": 39573
+    }
+  },
+  "combinedSourceBytes": 74465,
+  "sourceBudget": 98304,
+  "trackedOpsFiles": 512,
+  "trackedOpsBytes": 40928287,
+  "sourceCaps": {
+    "files": 512,
+    "bytes": 41000000
+  },
+  "verification": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "groupsPassed": 28,
+    "failed": 0,
+    "skipped": 0,
+    "existingFirstInstallGroups": 4,
+    "googleSourceModelGroups": 24,
+    "testCommand": "node --test ops/platform/p2q-first-install.test.mjs",
+    "lintCommand": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-google-project-allocation.mjs ops/platform/p2q-first-install.test.mjs",
+    "lintExit": 0,
+    "diffCheck": true,
+    "realPrivateFilesystem": true,
+    "realStdlibNetrcCommentParse": true,
+    "actualSdkAuthOrProvider": false,
+    "sdkCliHttpsModeled": true,
+    "sourceRootUidProjected": true,
+    "independentReview": {
+      "status": "CLEAR",
+      "sourceCommits": [
+        "33163d784c27adf865465fd6598f52a44cbe77f9",
+        "c3a5d09d3eecfe80faa874829a06453fc283d4fa"
+      ],
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "report": "independent-review.json",
+      "sha256": "c9c780abfc26dc317095092007bf4800624eaa490bd728646003082bfa306509"
+    },
+    "actualSourceCliDispatchWithModeledSpawn": true,
+    "trustedInputDriftBeforeModeledSpawn": true
+  },
+  "inputIsolation": {
+    "netrc": "fixed source-owned comment0600 under case; original physical identity retained",
+    "sslCertDirectory": "empty source-owned0700 under case; original physical identity retained",
+    "opensslConfig": "/dev/null fixed character-device baseline",
+    "opensslModules": "fixed empty <pinnedPythonRoot>/lib/openssl/ossl-modules; full tool closure includes directory records",
+    "trustedCa": "fixed SDK lib/third_party/certifi/cacert.pem; full pinned tree plus root-owned regular/nofollow checks",
+    "caConsumers": [
+      "SSL_CERT_FILE",
+      "REQUESTS_CA_BUNDLE",
+      "HTTPLIB2_CA_CERTS",
+      "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE"
+    ],
+    "sslValidationDisable": "CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION=false",
+    "homeOrCodexHomeOverride": false,
+    "ambientCryptoNetrcCaOverrides": "refused before effects; never forwarded",
+    "fileCredentialContentsOrHashesInCommonOutput": false
+  },
+  "qualification": {
+    "casesRegistered": 0,
+    "allocationAuthorityIssued": false,
+    "firstUseAuthorized": false,
+    "administrativeBoundaryComplete": false,
+    "recoveryBoundaryComplete": false,
+    "profileRegistered": false,
+    "oauthClientCreated": false,
+    "actualUid0Stage": false,
+    "realGoogleSdkAuthentication": false,
+    "actualProjectIamProviderOperations": false,
+    "postCrashHolderRecovery": "OPEN"
+  },
+  "productionSourceCommit": "33163d784c27adf865465fd6598f52a44cbe77f9"
+}

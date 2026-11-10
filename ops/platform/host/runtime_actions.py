@@ -176,19 +176,25 @@ class RuntimeOperator:
         try:
             outcome["pausedProcesses"] = self.stop(("course-publisher", "community-worker"))
             values = runtime.environment_values(migrate.read_input(self.configuration, "course-api.env", 65_536), "staging", "course-api", self.jobs)
-            secret = values.get("FIRST_PARTY_AUTH_SECRET")
+            phase2 = self.selected.get("contractPhase") == "p2"
+            secret = values.get("COURSE_ADMIN_JWT_CURRENT_SECRET" if phase2 else "FIRST_PARTY_AUTH_SECRET")
             demand(isinstance(secret, str) and len(secret) >= 32, "STAGING_OPERATOR_EXISTING_APPLICATION_SECRET_REQUIRED")
             now = int(time.time())
-            claims = {"sub": actor, "role": "courseAdmin", "iat": now, "exp": now + 300, "jti": str(uuid4())}
-            for source, target in (("FIRST_PARTY_AUTH_ISSUER", "iss"), ("FIRST_PARTY_AUTH_AUDIENCE", "aud")):
-                if values.get(source):
-                    claims[target] = values[source]
+            claims = {"sub": actor, "iat": now, "exp": now + 300, "jti": str(uuid4())}
+            if phase2:
+                claims.update({"version": 1, "iss": "lash-her-frontend", "aud": "lash-her-course-api:admin",
+                               "capabilities": ["course-editor", "course-support"]})
+            else:
+                claims["role"] = "courseAdmin"
+                for source, target in (("FIRST_PARTY_AUTH_ISSUER", "iss"), ("FIRST_PARTY_AUTH_AUDIENCE", "aud")):
+                    if values.get(source):
+                        claims[target] = values[source]
             def encoded(value):
                 return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
             unsigned = encoded(b'{"alg":"HS256","typ":"JWT"}') + "." + encoded(json.dumps(claims).encode())
             token = unsigned + "." + encoded(hmac.new(secret.encode(), unsigned.encode(), hashlib.sha256).digest())
             outcome["phase"] = "private-administrator-api-fixture"
-            records = self._child("gateway", "fixture", {"version": 1, "environment": "staging", "actionId": action,
+            records = self._child("gateway", "fixture", {"version": 2 if phase2 else 1, "environment": "staging", "actionId": action,
                 "actorUserId": actor, "nonce": nonce, "userIds": users, "applicationToken": token}, lines=True)
             demand(isinstance(records, list) and len(records) == 4, "STAGING_OPERATOR_THREE_CALL_FIXTURE_REQUIRED")
             fixture = records[-1]

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "status": "DIAGNOSTIC_EXTENSION_INTEGRATED_NOT_LINUX_FIX",
+  "originalFailingSource": "3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+  "originalCiRunId": 42254906975,
+  "diagnosticSource": "36bb3bd3873b4b68f708f9e88568f000cf47f210",
+  "retentionTestSource": "13f225695ef45ae5d1430ab49719716e479c50b9",
+  "integratedHead": "c89b4da5",
+  "rootChecks": {
+    "nodePassed": 49,
+    "skipped": 0,
+    "eslintPassed": true,
+    "gatewayLockInstalled": "6.2.3",
+    "initialMissingLocalGatewayDependencies": {
+      "nodePassed": 48,
+      "nodeFailed": 1,
+      "cause": "ENOENT ops/gateway/node_modules; fixed by local npm ci --ignore-scripts --prefix ops/gateway; source unchanged",
+      "originalPrivateLog": "/private/tmp/p2-c-diagnostic-root-node.log"
+    }
+  },
+  "ownerWrapperPendingField": "Superseded by independently cleared13f225 real child-parent-wrapper0600/canary/cleanup test and root49 pass. Original owner record retained unchanged.",
+  "localPg18": {
+    "positive": true,
+    "seconds": 144.8,
+    "migrations": [
+      83,
+      22,
+      11
+    ],
+    "stderrBytes": 0,
+    "platform": "macOS",
+    "actualDocker": false,
+    "providerTouched": false,
+    "installedMetadataVersionDifferences": 0,
+    "completeNpmCiClosureClaimed": false
+  },
+  "originalSourceResolution": "../2026-11-06-p2-known-ack-interrupted-restoration/original-source-resolution.json",
+  "linuxCause": "UNKNOWN; actual rerun required",
+  "successSchemaChanged": false,
+  "productionSourceChanged": false,
+  "sourceGuardsWeakened": false,
+  "files": [
+    {
+      "file": "owner-qualification.json",
+      "bytes": 2988,
+      "sha256": "f95e21b241d834dff0df2aed57951c5692810a8e09ff82540fa0a3f0bc594a99"
+    },
+    {
+      "file": "pg18-positive.json",
+      "bytes": 22181,
+      "sha256": "b0142f82b37c97f403a844783284407dcd3e78b5541b966f3edba7b62fab00e3"
+    },
+    {
+      "file": "root-node49.log",
+      "bytes": 5770,
+      "sha256": "b7ec5252990357b7a755004982fc2e0e3466af6f8db986acba005554a79b1608"
+    }
+  ],
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

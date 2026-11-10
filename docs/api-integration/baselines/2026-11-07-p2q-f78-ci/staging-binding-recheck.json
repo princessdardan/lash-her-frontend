@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "status": "STAGING_PRODUCTION_ENV_NAMES_OBSERVED",
+  "observedAt": "2026-11-07T15:53:42.904606+00:00",
+  "project": {
+    "name": "lash-her-frontend-staging",
+    "id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "businessEnvironment": "staging",
+    "vercelTarget": "production"
+  },
+  "cliProjectBannerVerified": true,
+  "targetVariableCount": 85,
+  "valuesRead": false,
+  "deployedBindingsVerified": false,
+  "groups": {
+    "customerIdentity": {
+      "present": [],
+      "missing": [
+        "CUSTOMER_AUTH_EMAIL_FROM",
+        "CUSTOMER_AUTH_GOOGLE_ID",
+        "CUSTOMER_AUTH_GOOGLE_SECRET",
+        "CUSTOMER_AUTH_RESEND_KEY",
+        "CUSTOMER_AUTH_SECRET",
+        "CUSTOMER_AUTH_URL"
+      ]
+    },
+    "learningAndLifecycleSigning": {
+      "present": [],
+      "missing": [
+        "COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET",
+        "COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET",
+        "COURSE_ADMIN_JWT_CURRENT_SECRET",
+        "COURSE_LEARNER_JWT_CURRENT_SECRET"
+      ]
+    },
+    "adminOriginAlternatives": {
+      "present": [],
+      "missing": [
+        "AUTH_URL",
+        "NEXTAUTH_URL"
+      ]
+    }
+  }
+}

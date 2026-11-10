@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "status": "CLEAR_BOUNDED_SOURCE_PACKAGE",
+  "reviewedSourceCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+  "sourceChain": [
+    "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+    "fbb41ae95e3d6904a36084afaa43a63e74f115c7",
+    "b983f02e083b308fff3b4cd3da3378cbae862c17",
+    "0e6491446d26be75b6be7d1bcf5e18ff8f8da243"
+  ],
+  "sourceHashes": {
+    "ops/platform/p2q-google-project-allocation.mjs": "089a8ffff41959d01de9e0863ad5831dccedb38a56e415a815f85438a35cbca2",
+    "ops/platform/p2q-first-install.test.mjs": "a3f118488e0d473e93e194ce189b933e997b485ddc5848bcaca9c37b9fc2cb49",
+    "ops/platform/source-policy.mjs": "5d2fb992e1e68cd4163807bf2177f2abf2cf413cb62335ef02b61561a764f9ac"
+  },
+  "outstandingFindings": [],
+  "closedFindings": [
+    {
+      "id": "unknown-ack-claim-release",
+      "originalProjectionOutputSha256": "69eac2f3a6198d23fd50b52ad47b591579ddc61c7555ee50bacce112c9854a33",
+      "corrected": "UNKNOWN creation remains OBSERVATION_UNKNOWN/review-required; actual run claimMayClose false without original ACK"
+    },
+    {
+      "id": "source-drift-before-create",
+      "originalProjectionOutputSha256": "69eac2f3a6198d23fd50b52ad47b591579ddc61c7555ee50bacce112c9854a33",
+      "corrected": "actual verification after CLI identity/token and before HTTP/attempt marking; negative models show zero CREATE; each production SDK child and cleanup guarded"
+    },
+    {
+      "id": "valid-empty-vendor-files",
+      "disclosedBy": "producer owner after actual SDK/Python inventory",
+      "corrected": "only physicalTree regular-file read opts into empty bytes; private/source/principal/raw remain nonempty, all existing bounds unchanged"
+    }
+  ],
+  "independentVerification": {
+    "testsPassed": 24,
+    "skipped": 0,
+    "elapsedMilliseconds": 3031.04525,
+    "testLogPath": "/private/tmp/p2q-google-independent-final-union-tests.log",
+    "testLogSha256": "b8df099329c364b5913a8651939bc2f4f30848222046c06fd64ffeda6283c79e",
+    "sourceUnchangedBeforeAfterTest": true,
+    "diffCheckPassed": true,
+    "originalProbeScriptSha256": "d37e32a68cdb937b4066031ce1a5208b22b1089e7ce87b6c99cea46396736d8f",
+    "originalProbeOutputSha256": "69eac2f3a6198d23fd50b52ad47b591579ddc61c7555ee50bacce112c9854a33",
+    "correctedB983ProbeSha256": "f90adffce22e851c6e341dc3f025950df8a386799e7216f6f9e636d383410978",
+    "correctedProbeApplicability": "0e649 changes only tool empty-file reader; final24 tests include exact b983 missing-ACK/pre-HTTP-drift negatives"
+  },
+  "sourceReviewed": [
+    "empty source-literal registry rejects before filesystem/auth/child/HTTPS work",
+    "strict intended account readback with isolated minimal environment and fixed pinned Python umask wrapper",
+    "bounded physical SDK/Python file closure, exact approved relative internal symlinks, separate regular target hashes, no ops symlink exception",
+    "exclusive original intent/start and raw-before-parse capture; one CREATE; no CREATE replay after lost ACK",
+    "fixed documented Resource Manager v3 host/TLS/methods, numeric project/current/parent and IAM-owner checks",
+    "private root/case inode/nofollow parent/fsync and conservative wrong-account/partial cleanup",
+    "principal claim held through cleanup and retained on unknown original provenance; no automatic stale clearing"
+  ],
+  "primaryDocsChecked": [
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/create",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/search",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/getIamPolicy"
+  ],
+  "qualificationLimits": [
+    "Public cases remain unregistered; no real administrative/project/SDK selection or live authority",
+    "Pipeline CLI/HTTPS/guard observations are explicit private test projections; real filesystem and owned Python umask child only",
+    "Reviewer did not run real Google SDK/auth/provider/project/IAM, Linux-root pipeline or qualify a real SDK/Python prefix",
+    "Same-process GET-only loss observation remains separate from absent holder-death/post-crash recovery authority",
+    "Search is not global absence; one IAM policy is not complete administrative/recovery ancestry",
+    "All allocation/first-use/administrative/recovery/profile/OAuth authority flags remain false"
+  ],
+  "repositoryEdits": false,
+  "providerActions": false,
+  "credentialValuesRead": false
+}

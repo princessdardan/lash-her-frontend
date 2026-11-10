@@ -1,0 +1,63 @@
+{
+  "status": "CI_LOCAL_IMAGE_PATCHED_RUNTIME_VERIFIED",
+  "ciNativeStatus": "PATCHED_RUNTIME_VERIFIED",
+  "image": {
+    "Id": "sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea",
+    "RepoDigests": [
+      "lash-her-frontend-migration@sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea"
+    ],
+    "Os": "linux",
+    "Architecture": "amd64"
+  },
+  "rawScan": {
+    "artifactName": "lash-her-frontend-migration:ci",
+    "severityCounts": {
+      "CRITICAL": 0,
+      "HIGH": 1,
+      "MEDIUM": 36,
+      "LOW": 8,
+      "UNKNOWN": 0
+    },
+    "highCritical": [
+      {
+        "id": "CVE-2026-76844",
+        "package": "zlib1g",
+        "installedVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+        "severity": "HIGH"
+      }
+    ]
+  },
+  "filteredScan": {
+    "artifactName": "lash-her-frontend-migration@sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea",
+    "requestedSeverities": [
+      "HIGH",
+      "CRITICAL"
+    ],
+    "severityCounts": {
+      "CRITICAL": 0,
+      "HIGH": 0,
+      "MEDIUM": 0,
+      "LOW": 0,
+      "UNKNOWN": 0
+    },
+    "doesNotEstablishAllMediumLowFindingsFixed": true
+  },
+  "strictRecordedReferenceRecheck": {
+    "status": "REFUSED",
+    "source": "ops/gateway/runtime/verify.mjs",
+    "line": 58,
+    "actualRawArtifactName": "lash-her-frontend-migration:ci",
+    "expectedImmutableRef": "lash-her-frontend-migration@sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea",
+    "originalRawUnmodified": true,
+    "publishedCandidateQualified": false
+  },
+  "fileDigests": {
+    "rawScanSha256": "cf3c236831c710e90e20392d5dafa68c0472b9b1a1462754f295d4d11324e8b9",
+    "sbomSha256": "4cf34db5368d25edb34cfe7d69fa3e111f47939fccdd724daa69f6bca7c861d0",
+    "vexSha256": "22f3d6926569ecf06968aefd5f274827bbfee92dbccf9fc773fc43b8ff14b62e",
+    "scanSha256": "bb955764c00010120abadb6d6a2d2c75a2264ddb36540b1458072fb436370f30"
+  },
+  "providerNativeEvidence": false,
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

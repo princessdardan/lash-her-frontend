@@ -194,3 +194,15 @@ test("curated settings and subsection results use existing deep links", () => {
     "/admin/staff?tab=square",
   );
 });
+
+test("course and lifecycle navigation require their feature flags and permitted roles", () => {
+  for (const role of ["owner", "admin", "employee"] as const) {
+    const actor = createActor(role);
+    assert.equal(getVisibleAdminDestinations(actor).some(d => d.href === "/admin/courses" || d.href === "/admin/customer-accounts"), false);
+    const enabled = getVisibleAdminDestinations(actor, { courseAuthoring: true, customerLifecycle: true });
+    assert.equal(enabled.some(d => d.href === "/admin/customer-accounts"), role === "owner");
+    assert.equal(enabled.some(d => d.href === "/admin/courses"), role === "owner");
+    assert.equal(getVisibleAdminDestinations(actor, { courseAuthoring: true }).some(d => d.href === "/admin/customer-accounts"), false);
+    assert.equal(getVisibleAdminDestinations(actor, { customerLifecycle: true }).some(d => d.href === "/admin/courses"), false);
+  }
+});

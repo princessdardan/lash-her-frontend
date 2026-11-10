@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "status": "ARTIFACT_RECORDS_VERIFIED",
+  "runId": 42283615401,
+  "sourcePins": {
+    "frontend": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+    "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+  },
+  "operator": {
+    "status": "P2_IDENTITY_RECOVERY_AND_LIFECYCLE_FIXTURES_PASS",
+    "postgresMajor": 18,
+    "migrationCounts": {
+      "frontend": 83,
+      "course": 22,
+      "community": 11
+    },
+    "sourceBoundTests": {
+      "tests": 19,
+      "pass": 19,
+      "fail": 0,
+      "skipped": 0
+    },
+    "lifecyclePersistence": "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS",
+    "lifecycleReceivers": "P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES18_PASS",
+    "receiverHttpCases": 8,
+    "interruptedRestoration": "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS",
+    "knownAckWholeRoute": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+    "positiveOriginalCausalReceiptCount": 6,
+    "negativeCases": [
+      "original-bytes",
+      "original-config-drift",
+      "missing-lineage",
+      "pending-lineage",
+      "backend-effect",
+      "active-backend-loss",
+      "active-guard-loss"
+    ],
+    "allNegativeJournalsUnchanged": true,
+    "activeGuardWriterExitObserved": true,
+    "apiCurrentBeforeAfterVerified": true,
+    "sqlReplayed": false,
+    "trafficAuthorized": false,
+    "providerTouched": false,
+    "stagingTouched": false,
+    "ownedDisposableDatabase": true,
+    "releaseAccepted": false,
+    "frontendSchema": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "migrations": 83,
+      "packagedCliVerified": true,
+      "profiledCurrentReadOnlyVerified": true,
+      "pendingSqlRefusedBeforeIntent": true,
+      "originalJournalAndSchemaUnchanged": true,
+      "migrationImageDigest": "sha256:78a4ea457c72e0be9923e31cb6f389c214b279673e0b8b9864fd73db21c903e0"
+    },
+    "platformFixtures": [
+      {"id":"roles","status":"FRONTEND_ROLES_OWNED_PASS","checks":29},
+      {"id":"release","status":"FRONTEND_RELEASE_OWNED_POSTGRES_PASS","checks":18},
+      {"id":"native","status":"P2_LIFECYCLE_NATIVE_OWNED_PASS","checks":9},
+      {"id":"certification","status":"P2_CERTIFICATION_CURRENT_OWNED_PASS","checks":10}
+    ]
+  },
+  "nativeRuntimeQualifications": [
+    {
+      "name": "frontend",
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "imageId": "sha256:78a4ea457c72e0be9923e31cb6f389c214b279673e0b8b9864fd73db21c903e0",
+      "repoDigest": "lash-her-frontend-migration@sha256:78a4ea457c72e0be9923e31cb6f389c214b279673e0b8b9864fd73db21c903e0",
+      "rawHigh": 2,
+      "rawCritical": 0,
+      "rawHighIds": ["CVE-2026-76844","CVE-2026-85091"],
+      "qualifiedActiveHigh": 0,
+      "qualifiedActiveCritical": 0,
+      "vexFixedHighIds": ["CVE-2026-76844","CVE-2026-85091"],
+      "patchedRegression": "PASS",
+      "sharedRegression": "PASS",
+      "upstreamTests": "PASS",
+      "unpatchedRegression": "EXPECTED_ASSERTION_FAILURE"
+    },
+    {
+      "name": "gateway",
+      "status": "PATCHED_RUNTIME_VERIFIED",
+      "imageId": "sha256:dea3026abe4d0d92ded3fb300a28077af92ee74086124fad42dafa2447e8764e",
+      "repoDigest": "lash-her-gateway@sha256:dea3026abe4d0d92ded3fb300a28077af92ee74086124fad42dafa2447e8764e",
+      "rawHigh": 2,
+      "rawCritical": 0,
+      "rawHighIds": ["CVE-2026-76844","CVE-2026-85091"],
+      "qualifiedActiveHigh": 0,
+      "qualifiedActiveCritical": 0,
+      "vexFixedHighIds": ["CVE-2026-76844","CVE-2026-85091"],
+      "patchedRegression": "PASS",
+      "sharedRegression": "PASS",
+      "upstreamTests": "PASS",
+      "unpatchedRegression": "EXPECTED_ASSERTION_FAILURE"
+    }
+  ]
+}

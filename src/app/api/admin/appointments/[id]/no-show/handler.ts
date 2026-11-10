@@ -1,3 +1,5 @@
+import { runWriterAdmissionWithParent } from "@/lib/writer-admission/action";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
 import { timingSafeEqual } from "node:crypto";
@@ -199,6 +201,7 @@ export function createAdminNoShowPostHandler(
           dependencies.getNow(),
         )
       ) {
+        markWriterOperationUncertain();
         return Response.json(
           {
             appointmentId: appointment.appointmentId,
@@ -234,6 +237,7 @@ export function createAdminNoShowPostHandler(
         reason: parsedBody.reason,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       if (
         error instanceof NoShowInvoiceAmountError ||
         (error instanceof Error && error.name === "NoShowInvoiceAmountError")
@@ -266,6 +270,7 @@ export function createAdminNoShowPostHandler(
       };
     }
 
+    if (result.chargeStatus !== "charged") markWriterOperationUncertain();
     const responseStatus =
       result.chargeStatus === "manual_followup" ||
       result.chargeStatus === "charge_failed"
@@ -465,6 +470,7 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
       updatedAt,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     console.error("[admin:no-show] Failed to load booked appointment", {
       appointmentId,
       error: error instanceof Error ? error.message : "unknown",
@@ -473,7 +479,7 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
   }
 }
 
-export async function defaultChargeNoShowCommand(
+async function defaultChargeNoShowCommandWork(
   input: ChargeNoShowInvoiceInput,
   dependencies: ChargeNoShowCommandDependencies = {},
 ): Promise<ChargeNoShowInvoiceResult> {
@@ -578,6 +584,7 @@ export async function defaultChargeNoShowCommand(
       noShowChargeRecordId: commandResult.noShowChargeRecordId,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     logError("[admin:no-show] Default charge command failed", {
       appointmentId: input.appointmentId,
       noShowChargeRecordId: input.noShowChargeRecordId,
@@ -594,4 +601,12 @@ export async function defaultChargeNoShowCommand(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function defaultChargeNoShowCommand(
+  ...args: Parameters<typeof defaultChargeNoShowCommandWork>
+) {
+  return runWriterAdmissionWithParent("new-work", () =>
+    defaultChargeNoShowCommandWork(...args),
+  );
 }

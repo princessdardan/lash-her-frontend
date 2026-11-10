@@ -1,0 +1,23 @@
+✔ Node24 and combined source budget (0.950125ms)
+✔ canonical safe bytes/hash and unsupported private kinds (0.425416ms)
+✔ seven safe kinds round trip into independent frozen data (2.596125ms)
+✔ noncanonical bytes, duplicates and invalid UTF8 refused (0.400916ms)
+✔ closed own keys refuse private/unsafe data (0.31125ms)
+✔ profile ref syntax is not registration (0.239042ms)
+✔ case counts, identities, generation, negative zero and scalar types are bounded (1.201792ms)
+✔ calendar and nanosecond preservation (0.722125ms)
+✔ R1 strict event ordering; A1 no B proof (1.234ms)
+✔ 120s/300s wall and elapsed budgets never authorize send (0.710291ms)
+✔ global counters never qualify drain or provider queue (1.360291ms)
+✔ count and byte limits are conjunctive (11.035541ms)
+✔ fixed trace bounds and terminal intents (0.798917ms)
+✔ public dispatch always unavailable (0.366292ms)
+✔ owned Node process refuses private wire data and ARM (61.761208ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 126.54375

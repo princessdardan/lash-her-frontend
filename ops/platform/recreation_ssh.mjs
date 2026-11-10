@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {spawn} from "node:child_process";
 import {lstat, realpath, writeFile} from "node:fs/promises";
 import {isAbsolute, dirname, join} from "node:path";
+import {gzipSync} from "node:zlib";
+import { LEGACY_OPERATOR_SOURCE_BOUNDS, PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS } from "./recreation_source.mjs";
 
 const quote = value => "'" + value.replace(/'/gu, "'\"'\"'") + "'";
 const header = "import json,os,pathlib,sys\n";
@@ -22,24 +24,64 @@ new=root/'p1-recreate-access-20261103-c3'
 if any(p.exists() or p.is_symlink() for p in (old,new)) or shutil.which('docker') is not None: raise ValueError('BARE_RUNTIME_RESTORE_REQUIRED')
 print(json.dumps({'status':'BARE_RUNTIME_RESTORE_VERIFIED','hostMachineId':pathlib.Path('/etc/machine-id').read_text().strip(),'failedActionInputsPresent':False,'newActionPresent':False,'dockerInstalled':False,'readOnly':True}))
 `;
-const sourceInstall = header + `
+const PUBLIC_SOURCE_WIRE_BYTES = 56_000_000;
+const PROFILED_SOURCE_EXPANDED_BYTES = 65_000_000;
+const PROFILED_SOURCE_ENCODING = "gzip-base64-v1";
+
+const profiledSourceRead = `import zlib
+def unique_fields(items):
+ result={}
+ for key,value in items:
+  if key in result: raise ValueError('DUPLICATE_SOURCE_FIELD')
+  result[key]=value
+ return result
+wire=sys.stdin.buffer.read(${PUBLIC_SOURCE_WIRE_BYTES + 1})
+if len(wire)>${PUBLIC_SOURCE_WIRE_BYTES}: raise ValueError('PROFILED_SOURCE_WIRE_BOUND_REFUSED')
+try:
+ wrapper=json.loads(wire.decode('utf-8'),object_pairs_hook=unique_fields)
+ if type(wrapper) is not dict or set(wrapper)!={'encoding','data'} or wrapper['encoding']!='${PROFILED_SOURCE_ENCODING}' or type(wrapper['data']) is not str:
+  raise ValueError()
+ encoded=wrapper['data'].encode('ascii')
+ compressed=base64.b64decode(encoded,validate=True)
+ if not compressed or base64.b64encode(compressed)!=encoded: raise ValueError()
+except (ValueError,RecursionError): raise ValueError('PROFILED_SOURCE_WRAPPER_REFUSED') from None
+del wire,wrapper,encoded
+inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+try: expanded=inflater.decompress(compressed,${PROFILED_SOURCE_EXPANDED_BYTES + 1})
+except zlib.error: raise ValueError('PROFILED_SOURCE_GZIP_REFUSED') from None
+if len(expanded)>${PROFILED_SOURCE_EXPANDED_BYTES}: raise ValueError('PROFILED_SOURCE_EXPANDED_BOUND_REFUSED')
+if not inflater.eof or inflater.unused_data or inflater.unconsumed_tail: raise ValueError('PROFILED_SOURCE_GZIP_REFUSED')
+del compressed,inflater
+try:
+ p=json.loads(expanded.decode('utf-8'),object_pairs_hook=unique_fields)
+ if type(p) is not dict or set(p)!={'commit','files'}: raise ValueError()
+except (ValueError,RecursionError): raise ValueError('PROFILED_SOURCE_PAYLOAD_REFUSED') from None
+del expanded`;
+
+function profiledSourcePayload(payload) {
+  const expanded = Buffer.from(JSON.stringify(payload));
+  assert.ok(expanded.length <= PROFILED_SOURCE_EXPANDED_BYTES, "Bounded profiled source expansion required");
+  return {encoding: PROFILED_SOURCE_ENCODING, data: gzipSync(expanded, {level: 6}).toString("base64")};
+}
+
+const sourceInstall = (bounds, readPayload = "p=json.load(sys.stdin)") => header + `
 import base64,hashlib
 if os.geteuid()!=0: raise ValueError('ROOT_REQUIRED')
-p=json.load(sys.stdin)
+${readPayload}
 commit=p['commit']
 if len(commit)!=40 or any(c not in '0123456789abcdef' for c in commit): raise ValueError('SOURCE_COMMIT_REQUIRED')
 root=pathlib.Path('/opt/lash-her/operators')/commit
 if any(p.is_symlink() for p in (root,*root.parents)): raise ValueError('SOURCE_PARENT_SYMLINK_REFUSED')
 if any(p.exists() and (p.stat().st_uid!=0 or p.stat().st_mode & 0o022) for p in root.parents): raise ValueError('ROOT_OWNED_SOURCE_PARENTS_REQUIRED')
 files=p['files']
-if not isinstance(files,list) or not 1<=len(files)<=400: raise ValueError('SOURCE_FILES_REQUIRED')
+if not isinstance(files,list) or not 1<=len(files)<=${bounds.files}: raise ValueError('SOURCE_FILES_REQUIRED')
 seen=set(); verified=[]; total=0
 for f in files:
  name=f['path']; rel=pathlib.PurePosixPath(name)
  if not name.startswith('ops/') or rel.is_absolute() or '..' in rel.parts or name in seen: raise ValueError('SOURCE_PATH_REFUSED')
  if not name.endswith(('.py','.mjs','.json','.yaml','.yml','.service','.timer','.sh','.guard')): raise ValueError('SOURCE_TYPE_REFUSED')
  raw=base64.b64decode(f['data'],validate=True); total+=len(raw)
- if len(raw)>2000000 or total>16000000 or hashlib.sha256(raw).hexdigest()!=f['sha256']: raise ValueError('SOURCE_HASH_REFUSED')
+ if len(raw)>2000000 or total>${bounds.decodedBytes} or hashlib.sha256(raw).hexdigest()!=f['sha256']: raise ValueError('SOURCE_HASH_REFUSED')
  seen.add(name); verified.append((rel,raw))
 if root.exists():
  if not root.is_dir() or root.stat().st_uid!=0 or root.stat().st_mode & 0o022: raise ValueError('ROOT_OWNED_EXISTING_SOURCE_REQUIRED')
@@ -113,10 +155,10 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   }
   const env=Object.fromEntries(["PATH","HOME","TMPDIR","LANG"].filter(k=>environment[k]!==undefined).map(k=>[k,environment[k]]));
   let sequence=0;
-  async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false) {
+  async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false,maxInput=24_000_000) {
     assert.ok(timeout>=1000 && timeout<=3_600_000);
     const raw=payload===undefined?Buffer.alloc(0):Buffer.from(JSON.stringify(payload));
-    assert.ok(raw.length<=24_000_000,"Bounded SSH input required");
+    assert.ok(raw.length<=maxInput,"Bounded SSH input required");
     // Persist a public command identifier before an uncertain remote mutation;
     // neither the caller nor transport automatically repeats it.
     const id=String(++sequence).padStart(3,"0");
@@ -139,7 +181,11 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   return {
     machine:()=>run(["sudo","-n","/usr/bin/python3","-c",inspect]),
     bareRuntime:()=>run(["sudo","-n","/usr/bin/python3","-c",bareRuntime]),
-    installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall],payload),
+    // Fixed named source modes. Neither payload can select its own cap.
+    // Public encoded and private-action transport limits remain unchanged.
+    installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(LEGACY_OPERATOR_SOURCE_BOUNDS)],payload,120_000,4_000_000,false,56_000_000),
+    installProfiledCurrentSource:async payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS,profiledSourceRead)],
+      profiledSourcePayload(payload),120_000,4_000_000,false,PUBLIC_SOURCE_WIRE_BYTES),
     phase:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
       assert.ok(["rollback","retire","restore"].includes(payload.operation));
@@ -150,6 +196,12 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
       assert.ok(["stage","receipts"].includes(payload.operation));
       return run(["sudo","-n","/usr/bin/python3",`/opt/lash-her/operators/${commit}/ops/platform/host/recreation_files.py`],payload,
         120_000,payload.operation==="receipts"?14_000_000:4_000_000,payload.operation==="receipts");
+    },
+    replacementEvidence:(commit,payload)=> {
+      assert.match(commit,/^(?!0+$)[a-f0-9]{40}$/u);
+      return run(["sudo","-n","/usr/bin/python3","-I","-u",
+        `/opt/lash-her/operators/${commit}/ops/platform/host/p2_replacement_operator_evidence.py`],
+        payload,15_000,2_700_000,false,8192);
     },
     prepare:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);

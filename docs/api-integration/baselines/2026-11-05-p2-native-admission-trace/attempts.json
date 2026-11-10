@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "attempts": [
+    {
+      "stage": "first-type-check",
+      "result": "failed",
+      "toolSessionId": 66800,
+      "capturedFrom": "actual tool output; initial temporary log was subsequently replaced",
+      "diagnostics": [
+        "src/lib/customer-lifecycle/native-trace.test.ts(18,110): error TS2345: Argument of type 'string' is not assignable to parameter of type 'never'.",
+        "src/lib/writer-admission/runtime.ts(58,84): error TS2322: Type 'unknown' is not assignable to type 'string'."
+      ],
+      "correction": "Avoid assertion-induced empty-array narrowing; capture the already validated epoch in a const before the callback."
+    },
+    {
+      "stage": "corrected-source",
+      "result": "passed",
+      "toolSessionId": 16323
+    }
+  ]
+}

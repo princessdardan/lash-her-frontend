@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "scopeDigest": "eb180fb4beaf828ebc433ad733ec35ed766c1f7eb96cd1654832bc396e437cf6",
+  "repositories": {
+    "frontend": {
+      "repository": "princessdardan/lash-her-frontend",
+      "pullRequest": 93,
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "currentHead": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+      "runs": [
+        {
+          "id": 42318731124,
+          "number": 284,
+          "attempt": 1,
+          "headSha": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+          "event": "pull_request",
+          "conclusion": "success",
+          "jobs": 10,
+          "allJobsSucceeded": true,
+          "browser": {"expected": 582, "skipped": 159, "unexpected": 0, "flaky": 0}
+        },
+        {
+          "id": 42320214307,
+          "number": 285,
+          "attempt": 1,
+          "headSha": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+          "event": "pull_request",
+          "conclusion": "success",
+          "jobs": 10,
+          "allJobsSucceeded": true,
+          "jobIds": {
+            "frontend-operator-migrations": 128242677287,
+            "browser-chromium": 128242677482,
+            "build": 128242677487,
+            "browser-webkit": 128242677530,
+            "quality-and-unit": 128242677539,
+            "audit": 128242677560,
+            "browser-firefox": 128242677595,
+            "database": 128242677601,
+            "gateway-and-platform": 128242677800,
+            "browser": 128246926949
+          },
+          "operatorEvidence": {
+            "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+            "sourceCommit": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+            "postgresMajor": 18,
+            "migrations": 83,
+            "platformChecks": {"roles": 29, "release": 18, "native": 9, "certification": 10},
+            "identityTests": {"pass": 19, "fail": 0, "skipped": 0},
+            "interruptedRestorationNegativeCases": 7,
+            "allInterruptedRestorationNegativeJournalsUnchanged": true,
+            "providerTouched": false,
+            "stagingTouched": false,
+            "courseRuntimeRevision": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+            "communityRuntimeRevision": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+          },
+          "nativeRuntimeEvidence": {
+            "frontend": {
+              "status": "PATCHED_RUNTIME_VERIFIED",
+              "imageId": "sha256:1a3bd0ceb615357b7f79a5bb7519b4f5257ea453c22067444aa4058a0419ecb2",
+              "rawHighCritical": 2,
+              "qualifiedHighCritical": 0
+            },
+            "gateway": {
+              "status": "PATCHED_RUNTIME_VERIFIED",
+              "imageId": "sha256:745dd616cf33a5ca2227a1cb34a4879934867b122c61d33ed95ffda019cb2a24",
+              "rawHighCritical": 2,
+              "qualifiedHighCritical": 0
+            }
+          },
+          "browser": {
+            "expected": 581,
+            "skipped": 159,
+            "unexpected": 0,
+            "flaky": 1,
+            "errors": 0,
+            "projects": {
+              "chromium": {"expected": 194, "skipped": 53, "flaky": 0},
+              "firefox": {"expected": 193, "skipped": 53, "flaky": 1},
+              "webkit": {"expected": 194, "skipped": 53, "flaky": 0}
+            },
+            "flakyCase": {
+              "file": "tests/product-detail.spec.ts",
+              "line": 417,
+              "firstAttempt": "expected checkout request to be defined; received undefined",
+              "firstAttemptDurationMs": 6698,
+              "retry": "passed",
+              "retryDurationMs": 4660
+            }
+          }
+        }
+      ]
+    },
+    "course": {
+      "repository": "princessdardan/lash-her-course-api",
+      "pullRequest": 10,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "headSha": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+      "runtimePin": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+      "run": {
+        "id": 42318763350,
+        "number": 36,
+        "attempt": 1,
+        "conclusion": "success",
+        "jobs": {
+          "containers": {"id": 128237888733, "conclusion": "success"},
+          "quality": {"id": 128237888915, "conclusion": "success"},
+          "postgres": {"id": 128237888941, "conclusion": "success"}
+        }
+      },
+      "docsOnlyChange": {
+        "files": ["API-INTEGRATION-PLAN.md"],
+        "blobSha": "43afb3e5eb99a612dcbe6e237f67970e81cd69b9",
+        "contractArtifactsChanged": false
+      },
+      "operatorEvidence": {
+        "status": "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS",
+        "postgresMajor": 18,
+        "migrations": 22,
+        "schemaBaselineArtifactSha256": "9dda27357f6bf42bd8232f91c027e8d9ec67b7f8b977bd88ea58a3f1960b4749",
+        "providerTouched": false
+      },
+      "nativeRuntimeEvidence": {
+        "api": {"status": "PATCHED_RUNTIME_VERIFIED", "imageId": "sha256:b66ac066ed78ae193eda4cdfd37af505e7b944cd1d1b84ecf03c7ce5935b7040", "rawHighCritical": 2, "qualifiedHighCritical": 0},
+        "migration": {"status": "PATCHED_RUNTIME_VERIFIED", "imageId": "sha256:e4d2e7e3a43d7d601ae8c8c975179bb2cb7f1168e58a1f02a7d750ad625b56d4", "rawHighCritical": 2, "qualifiedHighCritical": 0}
+      }
+    },
+    "community": {
+      "repository": "princessdardan/lash-her-community-api",
+      "pullRequest": 9,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "headSha": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+      "runtimePin": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
+      "runs": [
+        {
+          "id": 42318757611,
+          "name": "CI",
+          "number": 25,
+          "attempt": 1,
+          "conclusion": "success",
+          "jobs": {
+            "containers": {"id": 128237870148, "conclusion": "success"},
+            "quality": {"id": 128237870289, "conclusion": "success"},
+            "postgres": {"id": 128237869848, "conclusion": "success"}
+          }
+        },
+        {
+          "id": 42318757800,
+          "name": "Course contract compatibility",
+          "number": 27,
+          "attempt": 1,
+          "conclusion": "success",
+          "jobs": {"compatibility": {"id": 128237870348, "conclusion": "success"}}
+        }
+      ],
+      "docsOnlyChange": {
+        "files": ["API-INTEGRATION-PLAN.md"],
+        "blobSha": "43afb3e5eb99a612dcbe6e237f67970e81cd69b9",
+        "contractArtifactsChanged": false
+      },
+      "operatorEvidence": {
+        "status": "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS",
+        "postgresMajor": 18,
+        "migrations": 11,
+        "schemaBaselineArtifactSha256": "58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851",
+        "providerTouched": false
+      },
+      "nativeRuntimeEvidence": {
+        "api": {"status": "PATCHED_RUNTIME_VERIFIED", "imageId": "sha256:e35935fe25f7f72385fcef7a6bf04a7b6a2f974a213d7143c14883eceb84ff60", "rawHighCritical": 2, "qualifiedHighCritical": 0},
+        "migration": {"status": "PATCHED_RUNTIME_VERIFIED", "imageId": "sha256:06dfc07d85c9c87b1141f1d9b9d7fe3a5e4f99c374133a53972266e8a11838b2", "rawHighCritical": 2, "qualifiedHighCritical": 0},
+        "worker": {"status": "PATCHED_RUNTIME_VERIFIED", "imageId": "sha256:3ab44d5d7cd2fba62e92390e7ec39ad6212924f5fe331d11d9fa5dc603b712ea", "rawHighCritical": 2, "qualifiedHighCritical": 0}
+      }
+    }
+  },
+  "retention": {
+    "root": "/private/tmp/p2q-resource-reuse-ci-20261106",
+    "originalArtifactZips": 18,
+    "relevantOriginalJobLogs": 9,
+    "artifactDigestMatchesGitHub": true,
+    "safeExtraction": {
+      "allArchivesPassed": true,
+      "checks": ["no absolute paths", "no traversal", "no backslash paths", "no symlinks", "entry cap 10000", "uncompressed cap 100000000"]
+    }
+  },
+  "limitations": [
+    "The API documentation pull requests are open and unmerged; no merge or main-branch disposition is claimed.",
+    "The latest frontend run succeeded but contains one disclosed Firefox retry-pass flake.",
+    "Existing shared resources are policy-eligible, but no provider, account, allocation, deployment, merge, rerun, or repository mutation was performed by this observer."
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "changedSources": 8,
+  "unchangedStoredSources": 25,
+  "noProfileOrGitObjectChanges": true,
+  "sources": [
+    {
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "beforeRequirementsSha256": "3677870b2ad46e7dcf01e4a2ca6fc5d381092c7361ba70d1f7785a11a78ca499",
+      "afterRequirementsSha256": "9fd8679c333a31fc7049d94c068ae14d970aa662610282c4dbcc90c6ce2d932d",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "beforeRequirementsSha256": "47b4164c551edf3d6059ca7af5116201658508d68d4ba557c2fa65222c9721c1",
+      "afterRequirementsSha256": "8f8649a085a0b03437413f76bbad7b08a7fa96f19948b0c68b09f1d7f9a977ff",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "beforeRequirementsSha256": "03570104a0f054e2682a3417011b7593eee62f84be09beffdd094e33a5a6d7d3",
+      "afterRequirementsSha256": "6e67014a870e3609b7f6fd45640fdde94936a095d262bbc692cd3017949c550a",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "beforeRequirementsSha256": "4f0a25b83582425815d180c98b52158de062cf006e2f1cd52d4258f1f9df9c73",
+      "afterRequirementsSha256": "5d0062b07abe8eb42201aaa28e89d64634d94ef37106e16b22b607fd12ebe901",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "beforeRequirementsSha256": "cb58c72a7a8c812f09b7c9e82f2507ece61c893cef3ccc032aa5d6498b1caa88",
+      "afterRequirementsSha256": "d5fa0d9b964393b04813445e7345588c258678f1e294c20ec35d17ac18281a67",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+      "beforeRequirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+      "afterRequirementsSha256": "062c6919ece53a439576df80ae5f43a28437d5ad5094c80da26d1f01decdbb64",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "beforeRequirementsSha256": "6531bf0766a27c4e7f321bb4b183c8313adc0bb3b3d25a1f6d9ddbab2881db55",
+      "afterRequirementsSha256": "042b6a7f8db670abdfc24f7c904a210d14e553a28025de2265227d77ce13e319",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    },
+    {
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "beforeRequirementsSha256": "d8d965b6dc4a0c0772356b84030d16d3f4bbe836e2ccb9f5f255ad72ee4abc86",
+      "afterRequirementsSha256": "0b0ffd94ba106a18d4d4ed04341321fafc7f67fde9040bd33a321a182eee5714",
+      "sourceInventoryUnchanged": true,
+      "profileAndGitTreeUnchanged": true,
+      "policy": "highlevel-outbound-and-private-sql-separate-v2"
+    }
+  ]
+}

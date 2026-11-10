@@ -8,16 +8,12 @@
  * This keeps heavy NodeSDK packages out of Edge/client bundles.
  */
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== "nodejs") {
-    return;
+  // Next's Edge compiler removes the positive runtime branch before resolving
+  // NodeSDK dependencies. An early return still lets Webpack traverse them.
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT) return;
+    const { startNodeTelemetry } =
+      await import("@/lib/telemetry/instrumentation");
+    startNodeTelemetry();
   }
-
-  if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
-    return;
-  }
-
-  const { startNodeTelemetry } =
-    await import("@/lib/telemetry/instrumentation");
-
-  startNodeTelemetry();
 }

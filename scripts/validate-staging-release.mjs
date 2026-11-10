@@ -34,7 +34,7 @@ export function checkStagingRelease(env, manifest) {
   requireValue("VERCEL_TARGET_ENV", manifest.target);
   requireValue("NEXT_PUBLIC_SITE_URL", manifest.origin);
   requireValue("NEXT_PUBLIC_SANITY_DATASET", manifest.sanity.dataset);
-  if (!manifest.sanity.projectId) errors.push("An isolated Sanity project must be recorded");
+  if (!manifest.sanity.projectId) errors.push("A selected staging Sanity project must be recorded");
   else requireValue("NEXT_PUBLIC_SANITY_PROJECT_ID", manifest.sanity.projectId);
   // Each staging purpose must use its own reviewed OAuth client ID and callback.
   const identityClient = manifest.providers.googleOAuth.clientId;
@@ -53,7 +53,7 @@ export function checkStagingRelease(env, manifest) {
     errors.push("ADMIN_OWNER_EMAILS must match the reviewed staging administrators");
   }
   const resend = manifest.providers.resend;
-  if (!resend.separateAccountVerified || resend.domainStatus !== "verified") errors.push("An isolated Resend account and verified sender domain are required");
+  if (resend.domainStatus !== "verified") errors.push("A verified sender domain is required");
   for (const [name, expected] of [["FROM_EMAIL", resend.fromEmail], ["ADMIN_EMAIL", resend.adminEmail], ["RESEND_SEGMENT_MARKETING_ID", resend.segmentId]]) {
     if (!expected) errors.push(`${name} must be recorded in the staging release manifest`);
     else requireValue(name, expected);
@@ -75,10 +75,10 @@ export function checkStagingRelease(env, manifest) {
     decodeURIComponent(database.username) !== manifest.frontendDatabase.runtimeRole ||
     database.searchParams.get("sslmode") !== "verify-full" ||
     [...database.searchParams.keys()].some(key => !["sslmode", "channel_binding"].includes(key)))) {
-    errors.push("DATABASE_URL must use the isolated pooled staging runtime role with TLS");
+    errors.push("DATABASE_URL must use the reviewed pooled staging runtime role with TLS");
   }
   const redis = readUrl("KV_REST_API_URL");
-  if (redis && (redis.protocol !== "https:" || redis.hostname !== manifest.redis.hostname || redis.username || redis.password)) errors.push("KV_REST_API_URL must select the isolated staging Redis resource");
+  if (redis && (redis.protocol !== "https:" || redis.hostname !== manifest.redis.hostname || redis.username || redis.password)) errors.push("KV_REST_API_URL must match the selected staging Redis resource");
   for (const name of ["DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL_NO_SSL", "PGPASSWORD", "POSTGRES_PASSWORD", "COMMUNITY_DATABASE_URL", "COURSE_DATABASE_URL"]) {
     if (env[name]) errors.push(`${name} must not be delivered to the frontend runtime`);
   }

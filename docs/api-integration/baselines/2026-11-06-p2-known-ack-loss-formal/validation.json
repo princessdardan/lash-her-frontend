@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_RECORDER_REDUCER_SOURCE_PREPARATION_PASS",
+  "sourceStage": "A-recorder-reducer-only",
+  "hostTests": {
+    "passed": 8,
+    "skipped": 0
+  },
+  "ownedPostgres": {
+    "16": {
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceDomainFaultRefusals": 10,
+      "extraCompletedSettlementOperationRefused": true,
+      "actualCanonicalApiReceivers": true,
+      "actualSpecificFrontendOperationReconciliation": true,
+      "gatewayCounterReset": false,
+      "authorityIssued": false,
+      "platform": "macOS-owned-loopback-TLS"
+    },
+    "18": {
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceDomainFaultRefusals": 10,
+      "extraCompletedSettlementOperationRefused": true,
+      "actualCanonicalApiReceivers": true,
+      "actualSpecificFrontendOperationReconciliation": true,
+      "gatewayCounterReset": false,
+      "authorityIssued": false,
+      "platform": "macOS-owned-loopback-TLS"
+    }
+  },
+  "newOperationalFiles": 2,
+  "sourceIssuerParentIntegrated": false,
+  "typedRuntimeConsumerIntegrated": false,
+  "independentReview": "OPEN",
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "liveOperations": false,
+  "linuxDockerQualified": false,
+  "sameSessionRuntimeReplacementQualified": false,
+  "dependencies": [
+    "13c9c29d3a412d27a52d6802e3d3f9386655430a",
+    "876f98b024ee2b8df6a53111edcaaa0e3c8bc4eb",
+    "fe00afd817fa502c91c25398d22709fb795c272e"
+  ],
+  "files": {
+    "ops/platform/host/p2_known_ack_loss.py": "59667d712de79764fac8ccc49bad560ef1aa943ddd6f36cbfe92e88249d708b7",
+    "ops/platform/host/p2_known_ack_loss_test.py": "37072bb427059147c209724417874d09a39d62d3301949987b3dd803f5359573",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "fb1df1f7277714e54c210f26ad7d83f8e3c2f4cf4d411b0f39112dfdaace4f97",
+    "ops/platform/test-p2-known-ack-loss-local.mjs": "050f146711a60f8812748e0677a952c0bf3e7610d86f1c48aeed33c09ea55e67",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss-formal/README.md": "0528bf8f7444bb925fb1a0f3b0ac0e9f5f7f552dfcf8d858eef87399cacdccad",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss-formal/owned-postgres16.json": "08e54f27c22a216ba3dc615d38553a416ea37a352b21d94ee277a2b000e2c058",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss-formal/owned-postgres18.json": "012151eed410f7bdf6eb79997df1f0edee670ce254c39b68ade4e73063de83fd",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss-formal/unqualified-before-upstream-exploration.json": "c3ec6c73676094180e78662b746e720f860e9b86f744b2cb25f5f0bc899f1c31",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss-formal/unqualified-before-upstream-exploration.patch": "0ba042492352d70ba9d642a1f874a1ad18ea22029dd197eab14164c555de7926"
+  },
+  "lint": "PASS",
+  "syntax": "PASS"
+}

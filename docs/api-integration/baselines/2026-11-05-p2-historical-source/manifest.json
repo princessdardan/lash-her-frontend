@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "kind": "owned-source-and-credential-observer-qualification",
+  "sourceBase": "a85ae6de",
+  "originalDeploymentConfigurationObserved": false,
+  "providerCalls": 0,
+  "migrationAuthorized": false,
+  "files": [
+    {
+      "file": "ops/platform/frontend-historical-source.mjs",
+      "sha256": "eb5e8c974d29ee60d42417d8fa84bfce68c958fce11af95b15adb7ce2dcdaa2e"
+    },
+    {
+      "file": "ops/platform/frontend-historical-source.test.mjs",
+      "sha256": "4c3af68cadff1eb081cc51173751c1ff1ea0ba99fa04e7e8aff7ba28d8f9ad4d"
+    },
+    {
+      "file": "docs/api-integration/frontend-historical-source.md",
+      "sha256": "5dccdf88ba72f97f49a06778b8b1cbf12b7101e61bc9d64e5e977a873e9cfa7e"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-source/attempts.json",
+      "sha256": "174afde3149dbb36589e1984e1917dba53361eb5b7e8901779f8a1a2b5ade82a"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-source/generate-reviewed-profiles.mjs",
+      "sha256": "3da5421883f2859733f05f6c6069907bc99b8894d1f59836852996fd43a4ec6a"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-source/postgres16.json",
+      "sha256": "d95a9dfcd6fb041df8fb9bb7df1c8ae2871c38dae1df968e143f04a730062d97"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-source/preview-source-refs.json",
+      "sha256": "f60ca295b82b7ba1e6b8cd58e1859ac9faf7e90af55d5ae9950fee5ec496e66b"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-source/run-owned.mjs",
+      "sha256": "2c3ad129f561b50896be3c2994e947ea7f91e7d46d3de1bf5458c260db908352"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-source/unit.tap",
+      "sha256": "ba2e0872ac5a117dd8e49f1c27c6914f23c0e56fe29be70fbf0026546c7fddf2"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
+import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { nanoid } from "nanoid";
-import { redirect } from "next/navigation";
 
 import { getCalendarConnectionOAuthConsentUrl } from "@/lib/booking/google-calendar";
 import { saveBookingCalendarOAuthState } from "@/lib/booking/operational-store";
@@ -8,7 +8,7 @@ import { createDrizzleCalendarConnectionRepository } from "@/lib/private-db/cale
 
 const OAUTH_STATE_TTL_SECONDS = 10 * 60;
 
-export async function GET(
+async function handleGet(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -18,7 +18,10 @@ export async function GET(
   const connections = await repository.listConnections();
 
   if (!connections.some((connection) => connection.id === id)) {
-    return Response.json({ error: "Calendar connection not found" }, { status: 404 });
+    return Response.json(
+      { error: "Calendar connection not found" },
+      { status: 404 },
+    );
   }
 
   void request;
@@ -43,5 +46,7 @@ export async function GET(
     );
   }
 
-  redirect(getCalendarConnectionOAuthConsentUrl(state));
+  return Response.redirect(getCalendarConnectionOAuthConsentUrl(state), 307);
 }
+
+export const GET = withWriterAdmission("new-work", handleGet);

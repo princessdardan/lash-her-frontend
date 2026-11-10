@@ -1,0 +1,1886 @@
+﻿2026-11-06T00:59:54.5415821Z Current runner version: '2.338.2'
+2026-11-06T00:59:54.5441336Z ##[group]Runner Image Provisioner
+2026-11-06T00:59:54.5442390Z Hosted Compute Agent
+2026-11-06T00:59:54.5443003Z Version: 20261028.624
+2026-11-06T00:59:54.5443689Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+2026-11-06T00:59:54.5444478Z Build Date: 2026-10-28T21:51:42Z
+2026-11-06T00:59:54.5445193Z Worker ID: {c71d805a-a1de-4a57-941c-b12b44715629}
+2026-11-06T00:59:54.5446016Z Region: northcentralus
+2026-11-06T00:59:54.5446618Z Cloud: Azure
+2026-11-06T00:59:54.5447189Z ##[endgroup]
+2026-11-06T00:59:54.5448847Z ##[group]Operating System
+2026-11-06T00:59:54.5449518Z Ubuntu
+2026-11-06T00:59:54.5450206Z 24.04.5
+2026-11-06T00:59:54.5451164Z LTS
+2026-11-06T00:59:54.5451719Z ##[endgroup]
+2026-11-06T00:59:54.5452385Z ##[group]Runner Image
+2026-11-06T00:59:54.5453005Z Image: ubuntu-24.04
+2026-11-06T00:59:54.5453652Z Version: 20261101.360.1
+2026-11-06T00:59:54.5454972Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-06T00:59:54.5456608Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261101.360
+2026-11-06T00:59:54.5457601Z ##[endgroup]
+2026-11-06T00:59:54.5458811Z ##[group]GITHUB_TOKEN Permissions
+2026-11-06T00:59:54.5461059Z Contents: read
+2026-11-06T00:59:54.5461778Z Metadata: read
+2026-11-06T00:59:54.5462393Z ##[endgroup]
+2026-11-06T00:59:54.5464528Z Secret source: Actions
+2026-11-06T00:59:54.5465601Z Cache mode: write
+2026-11-06T00:59:54.5466350Z Prepare workflow directory
+2026-11-06T00:59:54.5904462Z Prepare all required actions
+2026-11-06T00:59:54.5975096Z Getting action download info
+2026-11-06T00:59:54.8929965Z Download action repository 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-11-06T00:59:55.0094831Z Download action repository 'actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-11-06T00:59:55.0968510Z Download action repository 'docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5' (SHA:7ec28a010822b4626af4874f9448a4b05ac6f3e5)
+2026-11-06T00:59:55.3813007Z Download action repository 'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f' (SHA:8d2750c68a42422c14e847fe6c8ac0403b4cbd6f)
+2026-11-06T00:59:55.7694963Z Download action repository 'docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8' (SHA:10e90e3645eae34f1e60eeb005ba3a3d33f178e8)
+2026-11-06T00:59:56.1151641Z Download action repository 'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f' (SHA:b7c566a772e6b6bfb58ed0dc250532a479d7789f)
+2026-11-06T00:59:56.2178865Z Download action repository 'aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1' (SHA:57a97c7e7821a5776cebc9bb87c984fa69cba8f1)
+2026-11-06T00:59:56.6500806Z Getting action download info
+2026-11-06T00:59:56.7591382Z Download action repository 'aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1' (SHA:e6c2c5e321ed9123bda567646e2f96565e34abe1)
+2026-11-06T00:59:56.8877782Z Download action repository 'actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809' (SHA:0400d5f644dc74513175e3cd8d07132dd4860809)
+2026-11-06T00:59:57.0726977Z Getting action download info
+2026-11-06T00:59:57.2077706Z Download action repository 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' (SHA:08c6903cd8c0fde910a37f88322edcfb5dd907a8)
+2026-11-06T00:59:57.3485879Z Complete job name: frontend-operator-migrations
+2026-11-06T00:59:57.4475261Z ##[group]Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+2026-11-06T00:59:57.4476202Z with:
+2026-11-06T00:59:57.4476656Z   ref: 646bb7f62bd1139dffea605f6ed9945b5f8715ce
+2026-11-06T00:59:57.4477177Z   persist-credentials: false
+2026-11-06T00:59:57.4477669Z   repository: princessdardan/lash-her-frontend
+2026-11-06T00:59:57.4480499Z   token: ***
+2026-11-06T00:59:57.4481165Z   ssh-strict: true
+2026-11-06T00:59:57.4481570Z   ssh-user: git
+2026-11-06T00:59:57.4481966Z   clean: true
+2026-11-06T00:59:57.4482640Z   sparse-checkout-cone-mode: true
+2026-11-06T00:59:57.4483111Z   fetch-depth: 1
+2026-11-06T00:59:57.4483503Z   fetch-tags: false
+2026-11-06T00:59:57.4483908Z   show-progress: true
+2026-11-06T00:59:57.4484320Z   lfs: false
+2026-11-06T00:59:57.4484707Z   submodules: false
+2026-11-06T00:59:57.4485115Z   set-safe-directory: true
+2026-11-06T00:59:57.4485564Z   allow-unsafe-pr-checkout: false
+2026-11-06T00:59:57.4486622Z ##[endgroup]
+2026-11-06T00:59:57.7229772Z Syncing repository: princessdardan/lash-her-frontend
+2026-11-06T00:59:57.7232572Z ##[group]Getting Git version info
+2026-11-06T00:59:57.7233839Z Working directory is '/home/runner/work/lash-her-frontend/lash-her-frontend'
+2026-11-06T00:59:57.7235518Z [command]/usr/bin/git version
+2026-11-06T00:59:57.7351816Z git version 2.56.0
+2026-11-06T00:59:57.7378923Z ##[endgroup]
+2026-11-06T00:59:57.7395229Z Temporarily overriding HOME='/home/runner/work/_temp/4a8b9f43-d5d5-4efb-9e17-c37126b8f465' before making global git config changes
+2026-11-06T00:59:57.7397229Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-06T00:59:57.7400954Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/lash-her-frontend/lash-her-frontend
+2026-11-06T00:59:57.7455452Z Deleting the contents of '/home/runner/work/lash-her-frontend/lash-her-frontend'
+2026-11-06T00:59:57.7475817Z ##[group]Determining repository object format
+2026-11-06T00:59:57.7478653Z ##[endgroup]
+2026-11-06T00:59:57.7480813Z ##[group]Initializing the repository
+2026-11-06T00:59:57.7485308Z [command]/usr/bin/git init /home/runner/work/lash-her-frontend/lash-her-frontend
+2026-11-06T00:59:57.7599961Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-06T00:59:57.7602057Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-06T00:59:57.7603267Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-06T00:59:57.7604475Z hint: call:
+2026-11-06T00:59:57.7605276Z hint:
+2026-11-06T00:59:57.7606176Z hint: 	git config --global init.defaultBranch <name>
+2026-11-06T00:59:57.7607034Z hint:
+2026-11-06T00:59:57.7608094Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-06T00:59:57.7639546Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-06T00:59:57.7641431Z hint:
+2026-11-06T00:59:57.7642341Z hint: 	git branch -m <name>
+2026-11-06T00:59:57.7643444Z hint:
+2026-11-06T00:59:57.7644892Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-06T00:59:57.7646747Z Initialized empty Git repository in /home/runner/work/lash-her-frontend/lash-her-frontend/.git/
+2026-11-06T00:59:57.7650199Z [command]/usr/bin/git remote add origin https://github.com/princessdardan/lash-her-frontend
+2026-11-06T00:59:57.7686925Z ##[endgroup]
+2026-11-06T00:59:57.7688134Z ##[group]Disabling automatic garbage collection
+2026-11-06T00:59:57.7691717Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-06T00:59:57.7727055Z ##[endgroup]
+2026-11-06T00:59:57.7728682Z ##[group]Setting up auth
+2026-11-06T00:59:57.7729798Z Removing SSH command configuration
+2026-11-06T00:59:57.7734498Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-06T00:59:57.7783738Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-06T00:59:57.8190679Z Removing HTTP extra header
+2026-11-06T00:59:57.8197604Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-06T00:59:57.8249959Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-06T00:59:57.8495402Z Removing includeIf entries pointing to credentials config files
+2026-11-06T00:59:57.8503007Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-06T00:59:57.8549049Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-06T00:59:57.8795360Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-06T00:59:57.8844891Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git.path /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:57.8886217Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:57.8933113Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:57.8974595Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:57.9012530Z ##[endgroup]
+2026-11-06T00:59:57.9013691Z ##[group]Fetching the repository
+2026-11-06T00:59:57.9021106Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 646bb7f62bd1139dffea605f6ed9945b5f8715ce
+2026-11-06T00:59:59.1656282Z From https://github.com/princessdardan/lash-her-frontend
+2026-11-06T00:59:59.1657320Z  * branch            646bb7f62bd1139dffea605f6ed9945b5f8715ce -> FETCH_HEAD
+2026-11-06T00:59:59.1681979Z [command]/usr/bin/git rev-parse --verify --quiet 646bb7f62bd1139dffea605f6ed9945b5f8715ce^{object}
+2026-11-06T00:59:59.1706324Z 646bb7f62bd1139dffea605f6ed9945b5f8715ce
+2026-11-06T00:59:59.1711889Z ##[endgroup]
+2026-11-06T00:59:59.1712507Z ##[group]Determining the checkout info
+2026-11-06T00:59:59.1713523Z ##[endgroup]
+2026-11-06T00:59:59.1718010Z [command]/usr/bin/git sparse-checkout disable
+2026-11-06T00:59:59.1779236Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-06T00:59:59.1819603Z ##[group]Checking out the ref
+2026-11-06T00:59:59.1823641Z [command]/usr/bin/git checkout --progress --force 646bb7f62bd1139dffea605f6ed9945b5f8715ce
+2026-11-06T00:59:59.4197476Z Note: switching to '646bb7f62bd1139dffea605f6ed9945b5f8715ce'.
+2026-11-06T00:59:59.4198185Z 
+2026-11-06T00:59:59.4198427Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-06T00:59:59.4198954Z changes and commit them, and you can discard any commits you make in this
+2026-11-06T00:59:59.4199466Z state without impacting any branches by switching back to a branch.
+2026-11-06T00:59:59.4199750Z 
+2026-11-06T00:59:59.4199937Z If you want to create a new branch to retain commits you create, you may
+2026-11-06T00:59:59.4200392Z do so (now or later) by using -c with the switch command. Example:
+2026-11-06T00:59:59.4201037Z 
+2026-11-06T00:59:59.4201162Z   git switch -c <new-branch-name>
+2026-11-06T00:59:59.4201390Z 
+2026-11-06T00:59:59.4201553Z Or undo this operation with:
+2026-11-06T00:59:59.4201713Z 
+2026-11-06T00:59:59.4201817Z   git switch -
+2026-11-06T00:59:59.4201944Z 
+2026-11-06T00:59:59.4202395Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-06T00:59:59.4202723Z 
+2026-11-06T00:59:59.4203012Z HEAD is now at 646bb7f Complete owned bootstrap route fixture and retain bounded failure causes
+2026-11-06T00:59:59.4242606Z ##[endgroup]
+2026-11-06T00:59:59.4303460Z [command]/usr/bin/git log -1 --format=%H
+2026-11-06T00:59:59.4341639Z 646bb7f62bd1139dffea605f6ed9945b5f8715ce
+2026-11-06T00:59:59.4354157Z ##[group]Removing auth
+2026-11-06T00:59:59.4354622Z Removing SSH command configuration
+2026-11-06T00:59:59.4360468Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-06T00:59:59.4415610Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-06T00:59:59.4674304Z Removing HTTP extra header
+2026-11-06T00:59:59.4681831Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-06T00:59:59.4735471Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-06T00:59:59.4984754Z Removing includeIf entries pointing to credentials config files
+2026-11-06T00:59:59.4992381Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-06T00:59:59.5034719Z includeif.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git.path
+2026-11-06T00:59:59.5035860Z includeif.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git/worktrees/*.path
+2026-11-06T00:59:59.5036541Z includeif.gitdir:/github/workspace/.git.path
+2026-11-06T00:59:59.5037101Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-06T00:59:59.5051291Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git.path
+2026-11-06T00:59:59.5097821Z /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5113863Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git.path /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5162928Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git/worktrees/*.path
+2026-11-06T00:59:59.5196695Z /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5221371Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/lash-her-frontend/lash-her-frontend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5256534Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-06T00:59:59.5302341Z /github/runner_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5313554Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5364297Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-06T00:59:59.5397772Z /github/runner_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5405358Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config
+2026-11-06T00:59:59.5452168Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-06T00:59:59.5712367Z Removing credentials config '/home/runner/work/_temp/git-credentials-1d86b34f-d2b8-4f9d-b87b-b8f1187f3ac3.config'
+2026-11-06T00:59:59.5722441Z ##[endgroup]
+2026-11-06T00:59:59.5998371Z ##[group]Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+2026-11-06T00:59:59.5998773Z with:
+2026-11-06T00:59:59.5998969Z   node-version: 24
+2026-11-06T00:59:59.5999175Z   cache: npm
+2026-11-06T00:59:59.5999383Z   check-latest: false
+2026-11-06T00:59:59.6002184Z   token: ***
+2026-11-06T00:59:59.6002430Z   package-manager-cache: true
+2026-11-06T00:59:59.6002677Z ##[endgroup]
+2026-11-06T00:59:59.7522103Z Found in cache @ /opt/hostedtoolcache/node/24.22.2/x64
+2026-11-06T00:59:59.7523408Z ##[group]Environment details
+2026-11-06T01:00:00.2322696Z node: v24.22.2
+2026-11-06T01:00:00.2323151Z npm: 11.19.1
+2026-11-06T01:00:00.2323510Z yarn: 1.22.22
+2026-11-06T01:00:00.2324368Z ##[endgroup]
+2026-11-06T01:00:00.2351493Z [command]/opt/hostedtoolcache/node/24.22.2/x64/bin/npm config get cache
+2026-11-06T01:00:00.3627026Z /home/runner/.npm
+2026-11-06T01:00:00.5094144Z Cache hit for: node-cache-Linux-x64-npm-5e82574ea3d78cb5a44312a03db5529b28457ba71ac460661b51b555e3f1e6eb
+2026-11-06T01:00:01.6317025Z Received 134217728 of 243891261 (55.0%), 128.0 MBs/sec
+2026-11-06T01:00:02.0429995Z Received 243891261 of 243891261 (100.0%), 164.8 MBs/sec
+2026-11-06T01:00:02.0431578Z Cache Size: ~233 MB (243891261 B)
+2026-11-06T01:00:02.0464369Z [command]/usr/bin/tar -xf /home/runner/work/_temp/800e3f08-a559-4b03-96d0-1510277e5b0c/cache.tzst -P -C /home/runner/work/lash-her-frontend/lash-her-frontend --use-compress-program unzstd
+2026-11-06T01:00:02.6684916Z Cache restored successfully
+2026-11-06T01:00:02.6815874Z Cache restored from key: node-cache-Linux-x64-npm-5e82574ea3d78cb5a44312a03db5529b28457ba71ac460661b51b555e3f1e6eb
+2026-11-06T01:00:02.7214698Z ##[group]Run npm ci
+2026-11-06T01:00:02.7215007Z [36;1mnpm ci[0m
+2026-11-06T01:00:02.7245345Z shell: /usr/bin/bash -e {0}
+2026-11-06T01:00:02.7245631Z ##[endgroup]
+2026-11-06T01:00:11.1698730Z npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.is
+2026-11-06T01:00:11.2611609Z npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+2026-11-06T01:00:11.4477464Z npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-11-06T01:00:11.5163026Z npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.is
+2026-11-06T01:00:13.1212513Z npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+2026-11-06T01:00:28.4754059Z 
+2026-11-06T01:00:28.4754651Z > frontend@0.1.0 postinstall
+2026-11-06T01:00:28.4755481Z > npm ci --ignore-scripts --prefix tools/api-contract-toolchain
+2026-11-06T01:00:28.4755988Z 
+2026-11-06T01:00:29.7016707Z 
+2026-11-06T01:00:29.7017580Z added 34 packages, and audited 35 packages in 1s
+2026-11-06T01:00:29.7018050Z 
+2026-11-06T01:00:29.7018324Z 7 packages are looking for funding
+2026-11-06T01:00:29.7018850Z   run `npm fund` for details
+2026-11-06T01:00:29.7027681Z 
+2026-11-06T01:00:29.7028085Z found 0 vulnerabilities
+2026-11-06T01:00:29.7486170Z 
+2026-11-06T01:00:29.7487138Z > frontend@0.1.0 prepare
+2026-11-06T01:00:29.7487774Z > husky
+2026-11-06T01:00:29.7488081Z 
+2026-11-06T01:00:31.5181371Z 
+2026-11-06T01:00:31.5182577Z added 1601 packages, and audited 1602 packages in 29s
+2026-11-06T01:00:31.5184150Z 
+2026-11-06T01:00:31.5184817Z 319 packages are looking for funding
+2026-11-06T01:00:31.5185398Z   run `npm fund` for details
+2026-11-06T01:00:31.5205239Z 
+2026-11-06T01:00:31.5205789Z 1 low severity vulnerability
+2026-11-06T01:00:31.5206016Z 
+2026-11-06T01:00:31.5206321Z To address all issues (including breaking changes), run:
+2026-11-06T01:00:31.5206727Z   npm audit fix --force
+2026-11-06T01:00:31.5206894Z 
+2026-11-06T01:00:31.5207017Z Run `npm audit` for details.
+2026-11-06T01:00:31.7950500Z ##[group]Run docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
+2026-11-06T01:00:31.7951258Z with:
+2026-11-06T01:00:31.7951472Z   version: v29.4.0
+2026-11-06T01:00:31.7951771Z   daemon-config: {"features":{"containerd-snapshotter":true}}
+
+2026-11-06T01:00:31.7952137Z   set-host: false
+2026-11-06T01:00:31.7952354Z   rootless: false
+2026-11-06T01:00:31.7954696Z   github-token: ***
+2026-11-06T01:00:31.7954921Z ##[endgroup]
+2026-11-06T01:00:31.9812906Z ##[group]Download docker
+2026-11-06T01:00:31.9821991Z Downloading Docker v29.4.0 from stable at download.docker.com
+2026-11-06T01:00:32.0524871Z Downloading https://download.docker.com/linux/static/stable/x86_64/docker-29.4.0.tgz
+2026-11-06T01:00:32.5704523Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/6a0bb631-db0b-4a5d-aab7-be9f7e7f5b12 -f /home/runner/work/_temp/e719dbdd-6b61-4fe1-9646-eb7128b43b58
+2026-11-06T01:00:34.1093165Z Fixing perms
+2026-11-06T01:00:34.2169603Z Added Docker to PATH
+2026-11-06T01:00:34.2170850Z ##[endgroup]
+2026-11-06T01:00:34.2178560Z ##[group]Writing Docker daemon config
+2026-11-06T01:00:34.2179191Z {
+2026-11-06T01:00:34.2179578Z   "features": {
+2026-11-06T01:00:34.2180093Z     "containerd-snapshotter": true
+2026-11-06T01:00:34.2180857Z   }
+2026-11-06T01:00:34.2181224Z }
+2026-11-06T01:00:34.2181867Z ##[endgroup]
+2026-11-06T01:00:34.2183200Z ##[group]Start Docker daemon
+2026-11-06T01:00:34.2201625Z [command] /opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/dockerd --host="unix:///home/runner/setup-docker-action/run-15f72626/docker.sock" --config-file="/home/runner/setup-docker-action/run-15f72626/daemon.json" --exec-root="/home/runner/setup-docker-action/run-15f72626/execroot" --data-root="/home/runner/setup-docker-action/run-15f72626/data" --pidfile="/home/runner/setup-docker-action/run-15f72626/docker.pid"
+2026-11-06T01:00:34.2608537Z time="2026-11-06T01:00:34.260602395Z" level=info msg="Starting up"
+2026-11-06T01:00:34.2616268Z time="2026-11-06T01:00:34.261486514Z" level=info msg="OTEL tracing is not configured, using no-op tracer provider"
+2026-11-06T01:00:34.2617718Z time="2026-11-06T01:00:34.261592462Z" level=info msg="CDI directory does not exist, skipping" dir=/etc/cdi
+2026-11-06T01:00:34.2618804Z time="2026-11-06T01:00:34.261612159Z" level=info msg="CDI directory does not exist, skipping" dir=/var/run/cdi
+2026-11-06T01:00:34.2621153Z time="2026-11-06T01:00:34.261961901Z" level=info msg="detected 127.0.0.53 nameserver, assuming systemd-resolved, so using resolv.conf: /run/systemd/resolve/resolv.conf"
+2026-11-06T01:00:34.2705853Z time="2026-11-06T01:00:34.270390665Z" level=warning msg="\"containerd-snapshotter\" is now the default and no longer needed to be set"
+2026-11-06T01:00:34.2712085Z time="2026-11-06T01:00:34.271009921Z" level=info msg="Creating a containerd client" address=/run/containerd/containerd.sock timeout=1m0s
+2026-11-06T01:00:34.4369910Z time="2026-11-06T01:00:34.436807568Z" level=info msg="Loading containers: start."
+2026-11-06T01:00:34.4371065Z time="2026-11-06T01:00:34.436871387Z" level=info msg="NRI is disabled"
+2026-11-06T01:00:34.4371976Z time="2026-11-06T01:00:34.436887577Z" level=info msg="Starting daemon with containerd snapshotter integration enabled"
+2026-11-06T01:00:34.4401385Z time="2026-11-06T01:00:34.439926246Z" level=info msg="Restoring containers: start."
+2026-11-06T01:00:34.4843440Z time="2026-11-06T01:00:34.483964962Z" level=info msg="Deleting nftables IPv4 rules" error="exit status 1" output="Error: Could not process rule: No such file or directory\ndelete table ip docker-bridges"
+2026-11-06T01:00:34.4949758Z time="2026-11-06T01:00:34.494727176Z" level=info msg="Deleting nftables IPv6 rules" error="exit status 1" output="Error: Could not process rule: No such file or directory\ndelete table ip6 docker-bridges"
+2026-11-06T01:00:34.7727775Z time="2026-11-06T01:00:34.772564788Z" level=info msg="Loading containers: done."
+2026-11-06T01:00:34.7790998Z time="2026-11-06T01:00:34.778783633Z" level=info msg="Docker daemon" commit=daa0cb7f containerd-snapshotter=true storage-driver=overlayfs version=29.4.0
+2026-11-06T01:00:34.7792271Z time="2026-11-06T01:00:34.778915428Z" level=info msg="Initializing buildkit"
+2026-11-06T01:00:34.7857057Z time="2026-11-06T01:00:34.785536568Z" level=info msg="Completed buildkit initialization"
+2026-11-06T01:00:34.7912432Z time="2026-11-06T01:00:34.791009117Z" level=info msg="Daemon has completed initialization"
+2026-11-06T01:00:34.7914850Z time="2026-11-06T01:00:34.791112976Z" level=info msg="API listen on /home/runner/setup-docker-action/run-15f72626/docker.sock"
+2026-11-06T01:00:37.2552255Z Docker daemon started started successfully
+2026-11-06T01:00:37.2553124Z ##[endgroup]
+2026-11-06T01:00:37.2553702Z ##[group]Create Docker context
+2026-11-06T01:00:37.2571972Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker context create setup-docker-action --docker host=unix:///home/runner/setup-docker-action/run-15f72626/docker.sock
+2026-11-06T01:00:37.2718054Z setup-docker-action
+2026-11-06T01:00:37.2719309Z Successfully created context "setup-docker-action"
+2026-11-06T01:00:37.2742902Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker context use setup-docker-action
+2026-11-06T01:00:37.2880105Z setup-docker-action
+2026-11-06T01:00:37.2880846Z Current context is now "setup-docker-action"
+2026-11-06T01:00:37.2890508Z ##[endgroup]
+2026-11-06T01:00:37.2891172Z ##[group]Setting outputs
+2026-11-06T01:00:37.2892050Z sock=unix:///home/runner/setup-docker-action/run-15f72626/docker.sock
+2026-11-06T01:00:37.2893748Z ##[endgroup]
+2026-11-06T01:00:37.2894401Z ##[group]Docker info
+2026-11-06T01:00:37.2910391Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker version
+2026-11-06T01:00:37.3103968Z Client:
+2026-11-06T01:00:37.3104388Z  Version:           29.4.0
+2026-11-06T01:00:37.3105068Z  API version:       1.54
+2026-11-06T01:00:37.3105529Z  Go version:        go1.26.1
+2026-11-06T01:00:37.3105982Z  Git commit:        9d7ad9f
+2026-11-06T01:00:37.3106515Z  Built:             Tue Apr  7 08:34:33 2026
+2026-11-06T01:00:37.3107142Z  OS/Arch:           linux/amd64
+2026-11-06T01:00:37.3107549Z  Context:           setup-docker-action
+2026-11-06T01:00:37.3107761Z 
+2026-11-06T01:00:37.3107914Z Server: Docker Engine - Community
+2026-11-06T01:00:37.3108190Z  Engine:
+2026-11-06T01:00:37.3108411Z   Version:          29.4.0
+2026-11-06T01:00:37.3108881Z   API version:      1.54 (minimum version 1.40)
+2026-11-06T01:00:37.3109200Z   Go version:       go1.26.1
+2026-11-06T01:00:37.3109454Z   Git commit:       daa0cb7f
+2026-11-06T01:00:37.3109746Z   Built:            Tue Apr  7 08:36:58 2026
+2026-11-06T01:00:37.3110060Z   OS/Arch:          linux/amd64
+2026-11-06T01:00:37.3110319Z   Experimental:     false
+2026-11-06T01:00:37.3110825Z  containerd:
+2026-11-06T01:00:37.3111068Z   Version:          v2.4.2
+2026-11-06T01:00:37.3111416Z   GitCommit:        b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-06T01:00:37.3111741Z  runc:
+2026-11-06T01:00:37.3111948Z   Version:          1.3.5
+2026-11-06T01:00:37.3112222Z   GitCommit:        v1.3.5-0-g488fc13
+2026-11-06T01:00:37.3112499Z  docker-init:
+2026-11-06T01:00:37.3112711Z   Version:          0.19.0
+2026-11-06T01:00:37.3112967Z   GitCommit:        de40ad0
+2026-11-06T01:00:37.3142032Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker info
+2026-11-06T01:00:37.5404378Z Client:
+2026-11-06T01:00:37.5404990Z  Version:    29.4.0
+2026-11-06T01:00:37.5414547Z  Context:    setup-docker-action
+2026-11-06T01:00:37.5415231Z  Debug Mode: false
+2026-11-06T01:00:37.5415835Z  Plugins:
+2026-11-06T01:00:37.5416133Z   buildx: Docker Buildx (Docker Inc.)
+2026-11-06T01:00:37.5416442Z     Version:  v0.38.1
+2026-11-06T01:00:37.5416799Z     Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+2026-11-06T01:00:37.5417194Z   compose: Docker Compose (Docker Inc.)
+2026-11-06T01:00:37.5417514Z     Version:  v2.38.2
+2026-11-06T01:00:37.5417990Z     Path:     /usr/libexec/docker/cli-plugins/docker-compose
+2026-11-06T01:00:37.5418417Z 
+2026-11-06T01:00:37.5419297Z Server:
+2026-11-06T01:00:37.5419547Z  Containers: 0
+2026-11-06T01:00:37.5419782Z   Running: 0
+2026-11-06T01:00:37.5419989Z   Paused: 0
+2026-11-06T01:00:37.5420195Z   Stopped: 0
+2026-11-06T01:00:37.5420391Z  Images: 0
+2026-11-06T01:00:37.5420911Z  Server Version: 29.4.0
+2026-11-06T01:00:37.5421202Z  Storage Driver: overlayfs
+2026-11-06T01:00:37.5421528Z   driver-type: io.containerd.snapshotter.v1
+2026-11-06T01:00:37.5421868Z  Logging Driver: json-file
+2026-11-06T01:00:37.5422123Z  Cgroup Driver: systemd
+2026-11-06T01:00:37.5422363Z  Cgroup Version: 2
+2026-11-06T01:00:37.5422590Z  Plugins:
+2026-11-06T01:00:37.5422793Z   Volume: local
+2026-11-06T01:00:37.5423085Z   Network: bridge host ipvlan macvlan null overlay
+2026-11-06T01:00:37.5423600Z   Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+2026-11-06T01:00:37.5424225Z  CDI spec directories:
+2026-11-06T01:00:37.5424498Z   /etc/cdi
+2026-11-06T01:00:37.5424719Z   /var/run/cdi
+2026-11-06T01:00:37.5424932Z  Swarm: inactive
+2026-11-06T01:00:37.5425209Z  Runtimes: io.containerd.runc.v2 runc
+2026-11-06T01:00:37.5425534Z  Default Runtime: runc
+2026-11-06T01:00:37.5425790Z  Init Binary: docker-init
+2026-11-06T01:00:37.5426160Z  containerd version: b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-06T01:00:37.5426548Z  runc version: v1.3.5-0-g488fc13
+2026-11-06T01:00:37.5426820Z  init version: de40ad0
+2026-11-06T01:00:37.5427062Z  Security Options:
+2026-11-06T01:00:37.5427276Z   apparmor
+2026-11-06T01:00:37.5427468Z   seccomp
+2026-11-06T01:00:37.5427667Z    Profile: builtin
+2026-11-06T01:00:37.5427885Z   cgroupns
+2026-11-06T01:00:37.5428116Z  Kernel Version: 7.0.0-1017-azure
+2026-11-06T01:00:37.5428419Z  Operating System: Ubuntu 24.04.5 LTS
+2026-11-06T01:00:37.5428705Z  OSType: linux
+2026-11-06T01:00:37.5428954Z  Architecture: x86_64
+2026-11-06T01:00:37.5429201Z  CPUs: 4
+2026-11-06T01:00:37.5429410Z  Total Memory: 15.61GiB
+2026-11-06T01:00:37.5429666Z  Name: runnervm7aw5e
+2026-11-06T01:00:37.5429935Z  ID: 300fce10-e21d-4210-9d5b-37dd4b2044a7
+2026-11-06T01:00:37.5430366Z  Docker Root Dir: /home/runner/setup-docker-action/run-15f72626/data
+2026-11-06T01:00:37.5431258Z  Debug Mode: false
+2026-11-06T01:00:37.5431519Z  Username: githubactions
+2026-11-06T01:00:37.5431787Z  Experimental: false
+2026-11-06T01:00:37.5432026Z  Insecure Registries:
+2026-11-06T01:00:37.5432288Z   ::1/128
+2026-11-06T01:00:37.5432500Z   127.0.0.0/8
+2026-11-06T01:00:37.5432747Z  Live Restore Enabled: false
+2026-11-06T01:00:37.5433058Z  Product License: Community Engine
+2026-11-06T01:00:37.5433361Z  Firewall Backend: iptables
+2026-11-06T01:00:37.5433546Z 
+2026-11-06T01:00:37.5433882Z ##[endgroup]
+2026-11-06T01:00:42.5655201Z ##[group]Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+2026-11-06T01:00:42.5655660Z with:
+2026-11-06T01:00:42.5655871Z   driver: docker-container
+2026-11-06T01:00:42.5656132Z   use: true
+2026-11-06T01:00:42.5656329Z   keep-state: false
+2026-11-06T01:00:42.5656539Z   cache-binary: true
+2026-11-06T01:00:42.5656756Z   cleanup: true
+2026-11-06T01:00:42.5656957Z   install: false
+2026-11-06T01:00:42.5657157Z ##[endgroup]
+2026-11-06T01:00:42.8258531Z (node:2895) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-06T01:00:42.8260270Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-06T01:00:42.8314144Z ##[group]Docker info
+2026-11-06T01:00:42.8343383Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker version
+2026-11-06T01:00:42.8609730Z Client:
+2026-11-06T01:00:42.8610408Z  Version:           29.4.0
+2026-11-06T01:00:42.8613573Z  API version:       1.54
+2026-11-06T01:00:42.8615489Z  Go version:        go1.26.1
+2026-11-06T01:00:42.8616146Z  Git commit:        9d7ad9f
+2026-11-06T01:00:42.8616633Z  Built:             Tue Apr  7 08:34:33 2026
+2026-11-06T01:00:42.8617166Z  OS/Arch:           linux/amd64
+2026-11-06T01:00:42.8617635Z  Context:           setup-docker-action
+2026-11-06T01:00:42.8617947Z 
+2026-11-06T01:00:42.8618191Z Server: Docker Engine - Community
+2026-11-06T01:00:42.8618604Z  Engine:
+2026-11-06T01:00:42.8618911Z   Version:          29.4.0
+2026-11-06T01:00:42.8619379Z   API version:      1.54 (minimum version 1.40)
+2026-11-06T01:00:42.8619867Z   Go version:       go1.26.1
+2026-11-06T01:00:42.8620255Z   Git commit:       daa0cb7f
+2026-11-06T01:00:42.8620914Z   Built:            Tue Apr  7 08:36:58 2026
+2026-11-06T01:00:42.8621419Z   OS/Arch:          linux/amd64
+2026-11-06T01:00:42.8621819Z   Experimental:     false
+2026-11-06T01:00:42.8622188Z  containerd:
+2026-11-06T01:00:42.8622520Z   Version:          v2.4.2
+2026-11-06T01:00:42.8623055Z   GitCommit:        b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-06T01:00:42.8623576Z  runc:
+2026-11-06T01:00:42.8623876Z   Version:          1.3.5
+2026-11-06T01:00:42.8624300Z   GitCommit:        v1.3.5-0-g488fc13
+2026-11-06T01:00:42.8625077Z  docker-init:
+2026-11-06T01:00:42.8625401Z   Version:          0.19.0
+2026-11-06T01:00:42.8625781Z   GitCommit:        de40ad0
+2026-11-06T01:00:42.8663001Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker info
+2026-11-06T01:00:42.9307524Z Client:
+2026-11-06T01:00:42.9308288Z  Version:    29.4.0
+2026-11-06T01:00:42.9309026Z  Context:    setup-docker-action
+2026-11-06T01:00:42.9309375Z  Debug Mode: false
+2026-11-06T01:00:42.9309608Z  Plugins:
+2026-11-06T01:00:42.9309864Z   buildx: Docker Buildx (Docker Inc.)
+2026-11-06T01:00:42.9310143Z     Version:  v0.38.1
+2026-11-06T01:00:42.9310754Z     Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+2026-11-06T01:00:42.9311457Z   compose: Docker Compose (Docker Inc.)
+2026-11-06T01:00:42.9311896Z     Version:  v2.38.2
+2026-11-06T01:00:42.9312234Z     Path:     /usr/libexec/docker/cli-plugins/docker-compose
+2026-11-06T01:00:42.9312478Z 
+2026-11-06T01:00:42.9312568Z Server:
+2026-11-06T01:00:42.9312774Z  Containers: 0
+2026-11-06T01:00:42.9312988Z   Running: 0
+2026-11-06T01:00:42.9313180Z   Paused: 0
+2026-11-06T01:00:42.9313371Z   Stopped: 0
+2026-11-06T01:00:42.9313725Z  Images: 0
+2026-11-06T01:00:42.9314054Z  Server Version: 29.4.0
+2026-11-06T01:00:42.9314302Z  Storage Driver: overlayfs
+2026-11-06T01:00:42.9314609Z   driver-type: io.containerd.snapshotter.v1
+2026-11-06T01:00:42.9314922Z  Logging Driver: json-file
+2026-11-06T01:00:42.9315169Z  Cgroup Driver: systemd
+2026-11-06T01:00:42.9315403Z  Cgroup Version: 2
+2026-11-06T01:00:42.9315608Z  Plugins:
+2026-11-06T01:00:42.9315807Z   Volume: local
+2026-11-06T01:00:42.9316082Z   Network: bridge host ipvlan macvlan null overlay
+2026-11-06T01:00:42.9316548Z   Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+2026-11-06T01:00:42.9326068Z  CDI spec directories:
+2026-11-06T01:00:42.9326573Z   /etc/cdi
+2026-11-06T01:00:42.9326972Z   /var/run/cdi
+2026-11-06T01:00:42.9327338Z  Swarm: inactive
+2026-11-06T01:00:42.9327808Z  Runtimes: io.containerd.runc.v2 runc
+2026-11-06T01:00:42.9328427Z  Default Runtime: runc
+2026-11-06T01:00:42.9328865Z  Init Binary: docker-init
+2026-11-06T01:00:42.9329654Z  containerd version: b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-06T01:00:42.9330411Z  runc version: v1.3.5-0-g488fc13
+2026-11-06T01:00:42.9331404Z  init version: de40ad0
+2026-11-06T01:00:42.9331813Z  Security Options:
+2026-11-06T01:00:42.9332204Z   apparmor
+2026-11-06T01:00:42.9332546Z   seccomp
+2026-11-06T01:00:42.9332889Z    Profile: builtin
+2026-11-06T01:00:42.9333270Z   cgroupns
+2026-11-06T01:00:42.9333649Z  Kernel Version: 7.0.0-1017-azure
+2026-11-06T01:00:42.9334157Z  Operating System: Ubuntu 24.04.5 LTS
+2026-11-06T01:00:42.9334639Z  OSType: linux
+2026-11-06T01:00:42.9335024Z  Architecture: x86_64
+2026-11-06T01:00:42.9335467Z  CPUs: 4
+2026-11-06T01:00:42.9335849Z  Total Memory: 15.61GiB
+2026-11-06T01:00:42.9336331Z  Name: runnervm7aw5e
+2026-11-06T01:00:42.9337055Z  ID: 300fce10-e21d-4210-9d5b-37dd4b2044a7
+2026-11-06T01:00:42.9337841Z  Docker Root Dir: /home/runner/setup-docker-action/run-15f72626/data
+2026-11-06T01:00:42.9338537Z  Debug Mode: false
+2026-11-06T01:00:42.9339003Z  Username: githubactions
+2026-11-06T01:00:42.9339450Z  Experimental: false
+2026-11-06T01:00:42.9339851Z  Insecure Registries:
+2026-11-06T01:00:42.9340317Z   ::1/128
+2026-11-06T01:00:42.9341010Z   127.0.0.0/8
+2026-11-06T01:00:42.9341461Z  Live Restore Enabled: false
+2026-11-06T01:00:42.9342030Z  Product License: Community Engine
+2026-11-06T01:00:42.9342588Z  Firewall Backend: iptables
+2026-11-06T01:00:42.9342933Z 
+2026-11-06T01:00:42.9343522Z ##[endgroup]
+2026-11-06T01:00:43.0187861Z ##[group]Buildx version
+2026-11-06T01:00:43.0219472Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx version
+2026-11-06T01:00:43.0804060Z github.com/docker/buildx v0.38.1 0dbe87f36ed472fe36b6796c3f70b4210a731fc5
+2026-11-06T01:00:43.0840065Z ##[endgroup]
+2026-11-06T01:00:43.1002667Z ##[group]Creating a new builder instance
+2026-11-06T01:00:43.2342948Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx create --name builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5 --driver docker-container --buildkitd-flags --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host --use
+2026-11-06T01:00:43.2989059Z builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5
+2026-11-06T01:00:43.3023742Z ##[endgroup]
+2026-11-06T01:00:43.3024628Z ##[group]Booting builder
+2026-11-06T01:00:43.3066726Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx inspect --bootstrap --builder builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5
+2026-11-06T01:00:43.3653793Z #1 [internal] booting buildkit
+2026-11-06T01:00:43.5174022Z #1 pulling image moby/buildkit:buildx-stable-1
+2026-11-06T01:00:45.4902309Z #1 pulling image moby/buildkit:buildx-stable-1 2.1s done
+2026-11-06T01:00:46.2987559Z #1 creating container buildx_buildkit_builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50
+2026-11-06T01:00:48.3536687Z #1 creating container buildx_buildkit_builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50 2.1s done
+2026-11-06T01:00:48.3915378Z #1 DONE 5.0s
+2026-11-06T01:00:48.4248360Z Name:          builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5
+2026-11-06T01:00:48.4248812Z Driver:        docker-container
+2026-11-06T01:00:48.4249185Z Last Activity: 2026-11-06 01:00:43 +0000 UTC
+2026-11-06T01:00:48.4249393Z 
+2026-11-06T01:00:48.4249483Z Nodes:
+2026-11-06T01:00:48.4249826Z Name:                  builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50
+2026-11-06T01:00:48.4250255Z Endpoint:              setup-docker-action
+2026-11-06T01:00:48.4250892Z Status:                running
+2026-11-06T01:00:48.4252055Z BuildKit daemon flags: --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host
+2026-11-06T01:00:48.4252804Z BuildKit version:      v0.34.2
+2026-11-06T01:00:48.4253532Z Platforms:             linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/386
+2026-11-06T01:00:48.4253928Z Labels:
+2026-11-06T01:00:48.4254237Z  org.mobyproject.buildkit.worker.executor:         oci
+2026-11-06T01:00:48.4254722Z  org.mobyproject.buildkit.worker.hostname:         e02c9a2575fd
+2026-11-06T01:00:48.4255183Z  org.mobyproject.buildkit.worker.network:          host
+2026-11-06T01:00:48.4255628Z  org.mobyproject.buildkit.worker.oci.process-mode: sandbox
+2026-11-06T01:00:48.4256088Z  org.mobyproject.buildkit.worker.selinux.enabled:  false
+2026-11-06T01:00:48.4256621Z  org.mobyproject.buildkit.worker.snapshotter:      overlayfs
+2026-11-06T01:00:48.4257164Z GC Policy rule#0:
+2026-11-06T01:00:48.4257380Z  All:            false
+2026-11-06T01:00:48.4257777Z  Filters:        type==source.local type==exec.cachemount type==source.git.checkout
+2026-11-06T01:00:48.4258192Z  Keep Duration:  48h0m0s
+2026-11-06T01:00:48.4258430Z  Max Used Space: 488.3MiB
+2026-11-06T01:00:48.4258671Z GC Policy rule#1:
+2026-11-06T01:00:48.4258885Z  All:            false
+2026-11-06T01:00:48.4259111Z  Keep Duration:  1440h0m0s
+2026-11-06T01:00:48.4259346Z  Reserved Space: 9.313GiB
+2026-11-06T01:00:48.4259576Z  Max Used Space: 93.13GiB
+2026-11-06T01:00:48.4259811Z  Min Free Space: 27.01GiB
+2026-11-06T01:00:48.4260040Z GC Policy rule#2:
+2026-11-06T01:00:48.4260241Z  All:            false
+2026-11-06T01:00:48.4260459Z  Reserved Space: 9.313GiB
+2026-11-06T01:00:48.4260936Z  Max Used Space: 93.13GiB
+2026-11-06T01:00:48.4261165Z  Min Free Space: 27.01GiB
+2026-11-06T01:00:48.4261397Z GC Policy rule#3:
+2026-11-06T01:00:48.4261609Z  All:            true
+2026-11-06T01:00:48.4261828Z  Reserved Space: 9.313GiB
+2026-11-06T01:00:48.4262050Z  Max Used Space: 93.13GiB
+2026-11-06T01:00:48.4262279Z  Min Free Space: 27.01GiB
+2026-11-06T01:00:48.4305834Z ##[endgroup]
+2026-11-06T01:00:48.5342170Z ##[group]Inspect builder
+2026-11-06T01:00:48.5402046Z {
+2026-11-06T01:00:48.5402415Z   "nodes": [
+2026-11-06T01:00:48.5402762Z     {
+2026-11-06T01:00:48.5403342Z       "name": "builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50",
+2026-11-06T01:00:48.5404056Z       "endpoint": "setup-docker-action",
+2026-11-06T01:00:48.5404551Z       "status": "running",
+2026-11-06T01:00:48.5405962Z       "buildkitd-flags": "--allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host",
+2026-11-06T01:00:48.5406921Z       "buildkit": "v0.34.2",
+2026-11-06T01:00:48.5407578Z       "platforms": "linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/386",
+2026-11-06T01:00:48.5408207Z       "features": {
+2026-11-06T01:00:48.5408836Z         "Automatically load images to the Docker Engine image store": true,
+2026-11-06T01:00:48.5409495Z         "Cache export": true,
+2026-11-06T01:00:48.5409917Z         "Direct push": true,
+2026-11-06T01:00:48.5410388Z         "Docker exporter": true,
+2026-11-06T01:00:48.5411154Z         "Multi-platform build": true,
+2026-11-06T01:00:48.5411627Z         "OCI exporter": true
+2026-11-06T01:00:48.5412047Z       },
+2026-11-06T01:00:48.5412406Z       "labels": {
+2026-11-06T01:00:48.5412954Z         "org.mobyproject.buildkit.worker.executor": "oci",
+2026-11-06T01:00:48.5413788Z         "org.mobyproject.buildkit.worker.hostname": "e02c9a2575fd",
+2026-11-06T01:00:48.5414570Z         "org.mobyproject.buildkit.worker.network": "host",
+2026-11-06T01:00:48.5415173Z         "org.mobyproject.buildkit.worker.oci.process-mode": "sandbox",
+2026-11-06T01:00:48.5415706Z         "org.mobyproject.buildkit.worker.selinux.enabled": "false",
+2026-11-06T01:00:48.5416183Z         "org.mobyproject.buildkit.worker.snapshotter": "overlayfs"
+2026-11-06T01:00:48.5416524Z       },
+2026-11-06T01:00:48.5416721Z       "gcPolicy": [
+2026-11-06T01:00:48.5416924Z         {
+2026-11-06T01:00:48.5417134Z           "all": false,
+2026-11-06T01:00:48.5417382Z           "filter": [
+2026-11-06T01:00:48.5417788Z             "type==source.local type==exec.cachemount type==source.git.checkout"
+2026-11-06T01:00:48.5418189Z           ],
+2026-11-06T01:00:48.5418663Z           "keepDuration": "48h0m0s",
+2026-11-06T01:00:48.5419000Z           "maxUsedSpace": "488.3MiB"
+2026-11-06T01:00:48.5419280Z         },
+2026-11-06T01:00:48.5419481Z         {
+2026-11-06T01:00:48.5419683Z           "all": false,
+2026-11-06T01:00:48.5419968Z           "keepDuration": "1440h0m0s",
+2026-11-06T01:00:48.5420287Z           "reservedSpace": "9.313GiB",
+2026-11-06T01:00:48.5420891Z           "maxUsedSpace": "93.13GiB",
+2026-11-06T01:00:48.5421261Z           "minFreeSpace": "27.01GiB"
+2026-11-06T01:00:48.5421554Z         },
+2026-11-06T01:00:48.5421770Z         {
+2026-11-06T01:00:48.5421976Z           "all": false,
+2026-11-06T01:00:48.5422236Z           "reservedSpace": "9.313GiB",
+2026-11-06T01:00:48.5422550Z           "maxUsedSpace": "93.13GiB",
+2026-11-06T01:00:48.5422854Z           "minFreeSpace": "27.01GiB"
+2026-11-06T01:00:48.5423092Z         },
+2026-11-06T01:00:48.5423266Z         {
+2026-11-06T01:00:48.5423454Z           "all": true,
+2026-11-06T01:00:48.5423696Z           "reservedSpace": "9.313GiB",
+2026-11-06T01:00:48.5423987Z           "maxUsedSpace": "93.13GiB",
+2026-11-06T01:00:48.5424270Z           "minFreeSpace": "27.01GiB"
+2026-11-06T01:00:48.5424508Z         }
+2026-11-06T01:00:48.5424682Z       ]
+2026-11-06T01:00:48.5424869Z     }
+2026-11-06T01:00:48.5425064Z   ],
+2026-11-06T01:00:48.5425352Z   "name": "builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5",
+2026-11-06T01:00:48.5425711Z   "driver": "docker-container",
+2026-11-06T01:00:48.5426013Z   "lastActivity": "2026-11-06T01:00:43.000Z"
+2026-11-06T01:00:48.5426280Z }
+2026-11-06T01:00:48.5426637Z ##[endgroup]
+2026-11-06T01:00:48.5426980Z ##[group]BuildKit version
+2026-11-06T01:00:48.5427339Z builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50: v0.34.2
+2026-11-06T01:00:48.5427853Z ##[endgroup]
+2026-11-06T01:00:48.5684304Z ##[group]Run docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+2026-11-06T01:00:48.5684756Z with:
+2026-11-06T01:00:48.5684956Z   context: .
+2026-11-06T01:00:48.5685218Z   file: ops/platform/Dockerfile.frontend-migration
+2026-11-06T01:00:48.5685658Z   build-args: FRONTEND_SOURCE_COMMIT=646bb7f62bd1139dffea605f6ed9945b5f8715ce
+2026-11-06T01:00:48.5686051Z   push: false
+2026-11-06T01:00:48.5686245Z   load: true
+2026-11-06T01:00:48.5686652Z   tags: lash-her-frontend-migration:ci
+2026-11-06T01:00:48.5686925Z   sbom: true
+2026-11-06T01:00:48.5687123Z   provenance: mode=max
+2026-11-06T01:00:48.5687397Z   cache-from: type=gha,scope=frontend-migration
+2026-11-06T01:00:48.5687773Z   cache-to: type=gha,scope=frontend-migration,mode=max
+2026-11-06T01:00:48.5688109Z   no-cache: false
+2026-11-06T01:00:48.5688316Z   pull: false
+2026-11-06T01:00:48.5690955Z   github-token: ***
+2026-11-06T01:00:48.5691204Z ##[endgroup]
+2026-11-06T01:00:48.8223634Z (node:3369) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-06T01:00:48.8225012Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-06T01:00:48.8244258Z ##[group]GitHub Actions runtime token ACs
+2026-11-06T01:00:48.8252511Z refs/pull/93/merge: read/write
+2026-11-06T01:00:48.8253097Z refs/heads/staging: read
+2026-11-06T01:00:48.8253614Z refs/heads/main: read
+2026-11-06T01:00:48.8254345Z ##[endgroup]
+2026-11-06T01:00:48.8255047Z ##[group]Docker info
+2026-11-06T01:00:48.8316392Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker version
+2026-11-06T01:00:48.8534583Z Client:
+2026-11-06T01:00:48.8535179Z  Version:           29.4.0
+2026-11-06T01:00:48.8535908Z  API version:       1.54
+2026-11-06T01:00:48.8536786Z  Go version:        go1.26.1
+2026-11-06T01:00:48.8537484Z  Git commit:        9d7ad9f
+2026-11-06T01:00:48.8538300Z  Built:             Tue Apr  7 08:34:33 2026
+2026-11-06T01:00:48.8539059Z  OS/Arch:           linux/amd64
+2026-11-06T01:00:48.8539799Z  Context:           setup-docker-action
+2026-11-06T01:00:48.8540330Z 
+2026-11-06T01:00:48.8540987Z Server: Docker Engine - Community
+2026-11-06T01:00:48.8541725Z  Engine:
+2026-11-06T01:00:48.8542265Z   Version:          29.4.0
+2026-11-06T01:00:48.8543081Z   API version:      1.54 (minimum version 1.40)
+2026-11-06T01:00:48.8543926Z   Go version:       go1.26.1
+2026-11-06T01:00:48.8544634Z   Git commit:       daa0cb7f
+2026-11-06T01:00:48.8545342Z   Built:            Tue Apr  7 08:36:58 2026
+2026-11-06T01:00:48.8546050Z   OS/Arch:          linux/amd64
+2026-11-06T01:00:48.8546678Z   Experimental:     false
+2026-11-06T01:00:48.8547281Z  containerd:
+2026-11-06T01:00:48.8547897Z   Version:          v2.4.2
+2026-11-06T01:00:48.8548694Z   GitCommit:        b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-06T01:00:48.8549445Z  runc:
+2026-11-06T01:00:48.8549977Z   Version:          1.3.5
+2026-11-06T01:00:48.8550825Z   GitCommit:        v1.3.5-0-g488fc13
+2026-11-06T01:00:48.8551553Z  docker-init:
+2026-11-06T01:00:48.8552195Z   Version:          0.19.0
+2026-11-06T01:00:48.8552802Z   GitCommit:        de40ad0
+2026-11-06T01:00:48.8581385Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker info
+2026-11-06T01:00:48.9152026Z Client:
+2026-11-06T01:00:48.9152782Z  Version:    29.4.0
+2026-11-06T01:00:48.9153671Z  Context:    setup-docker-action
+2026-11-06T01:00:48.9154302Z  Debug Mode: false
+2026-11-06T01:00:48.9154690Z  Plugins:
+2026-11-06T01:00:48.9155135Z   buildx: Docker Buildx (Docker Inc.)
+2026-11-06T01:00:48.9155615Z     Version:  v0.38.1
+2026-11-06T01:00:48.9155983Z     Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+2026-11-06T01:00:48.9156378Z   compose: Docker Compose (Docker Inc.)
+2026-11-06T01:00:48.9156662Z     Version:  v2.38.2
+2026-11-06T01:00:48.9156999Z     Path:     /usr/libexec/docker/cli-plugins/docker-compose
+2026-11-06T01:00:48.9157239Z 
+2026-11-06T01:00:48.9157331Z Server:
+2026-11-06T01:00:48.9157528Z  Containers: 1
+2026-11-06T01:00:48.9158151Z   Running: 1
+2026-11-06T01:00:48.9158371Z   Paused: 0
+2026-11-06T01:00:48.9158566Z   Stopped: 0
+2026-11-06T01:00:48.9158766Z  Images: 1
+2026-11-06T01:00:48.9158966Z  Server Version: 29.4.0
+2026-11-06T01:00:48.9159206Z  Storage Driver: overlayfs
+2026-11-06T01:00:48.9159507Z   driver-type: io.containerd.snapshotter.v1
+2026-11-06T01:00:48.9159809Z  Logging Driver: json-file
+2026-11-06T01:00:48.9160052Z  Cgroup Driver: systemd
+2026-11-06T01:00:48.9160276Z  Cgroup Version: 2
+2026-11-06T01:00:48.9161012Z  Plugins:
+2026-11-06T01:00:48.9161227Z   Volume: local
+2026-11-06T01:00:48.9161553Z   Network: bridge host ipvlan macvlan null overlay
+2026-11-06T01:00:48.9162035Z   Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+2026-11-06T01:00:48.9162430Z  CDI spec directories:
+2026-11-06T01:00:48.9162653Z   /etc/cdi
+2026-11-06T01:00:48.9162854Z   /var/run/cdi
+2026-11-06T01:00:48.9163058Z  Swarm: inactive
+2026-11-06T01:00:48.9163324Z  Runtimes: io.containerd.runc.v2 runc
+2026-11-06T01:00:48.9163626Z  Default Runtime: runc
+2026-11-06T01:00:48.9163863Z  Init Binary: docker-init
+2026-11-06T01:00:48.9164213Z  containerd version: b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-06T01:00:48.9164597Z  runc version: v1.3.5-0-g488fc13
+2026-11-06T01:00:48.9164869Z  init version: de40ad0
+2026-11-06T01:00:48.9165095Z  Security Options:
+2026-11-06T01:00:48.9165311Z   apparmor
+2026-11-06T01:00:48.9165507Z   seccomp
+2026-11-06T01:00:48.9165701Z    Profile: builtin
+2026-11-06T01:00:48.9165914Z   cgroupns
+2026-11-06T01:00:48.9166144Z  Kernel Version: 7.0.0-1017-azure
+2026-11-06T01:00:48.9166439Z  Operating System: Ubuntu 24.04.5 LTS
+2026-11-06T01:00:48.9166706Z  OSType: linux
+2026-11-06T01:00:48.9166927Z  Architecture: x86_64
+2026-11-06T01:00:48.9167140Z  CPUs: 4
+2026-11-06T01:00:48.9167335Z  Total Memory: 15.61GiB
+2026-11-06T01:00:48.9167562Z  Name: runnervm7aw5e
+2026-11-06T01:00:48.9167835Z  ID: 300fce10-e21d-4210-9d5b-37dd4b2044a7
+2026-11-06T01:00:48.9168244Z  Docker Root Dir: /home/runner/setup-docker-action/run-15f72626/data
+2026-11-06T01:00:48.9168614Z  Debug Mode: false
+2026-11-06T01:00:48.9168841Z  Username: githubactions
+2026-11-06T01:00:48.9169081Z  Experimental: false
+2026-11-06T01:00:48.9169303Z  Insecure Registries:
+2026-11-06T01:00:48.9169550Z   ::1/128
+2026-11-06T01:00:48.9169741Z   127.0.0.0/8
+2026-11-06T01:00:48.9169955Z  Live Restore Enabled: false
+2026-11-06T01:00:48.9170239Z  Product License: Community Engine
+2026-11-06T01:00:48.9170709Z  Firewall Backend: iptables
+2026-11-06T01:00:48.9170981Z 
+2026-11-06T01:00:48.9188845Z ##[endgroup]
+2026-11-06T01:00:48.9189534Z ##[group]Proxy configuration
+2026-11-06T01:00:48.9201404Z No proxy configuration found
+2026-11-06T01:00:48.9202147Z ##[endgroup]
+2026-11-06T01:00:48.9843926Z ##[group]Buildx version
+2026-11-06T01:00:48.9871171Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx version
+2026-11-06T01:00:49.0418245Z github.com/docker/buildx v0.38.1 0dbe87f36ed472fe36b6796c3f70b4210a731fc5
+2026-11-06T01:00:49.0454588Z ##[endgroup]
+2026-11-06T01:00:49.0455312Z ##[group]Builder info
+2026-11-06T01:00:49.1479609Z {
+2026-11-06T01:00:49.1479930Z   "nodes": [
+2026-11-06T01:00:49.1480159Z     {
+2026-11-06T01:00:49.1481047Z       "name": "builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50",
+2026-11-06T01:00:49.1481813Z       "endpoint": "setup-docker-action",
+2026-11-06T01:00:49.1482387Z       "status": "running",
+2026-11-06T01:00:49.1483246Z       "buildkitd-flags": "--allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host",
+2026-11-06T01:00:49.1484171Z       "buildkit": "v0.34.2",
+2026-11-06T01:00:49.1484941Z       "platforms": "linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/386",
+2026-11-06T01:00:49.1485461Z       "features": {
+2026-11-06T01:00:49.1486104Z         "Automatically load images to the Docker Engine image store": true,
+2026-11-06T01:00:49.1486663Z         "Cache export": true,
+2026-11-06T01:00:49.1487132Z         "Direct push": true,
+2026-11-06T01:00:49.1487680Z         "Docker exporter": true,
+2026-11-06T01:00:49.1488622Z         "Multi-platform build": true,
+2026-11-06T01:00:49.1489155Z         "OCI exporter": true
+2026-11-06T01:00:49.1489476Z       },
+2026-11-06T01:00:49.1489832Z       "labels": {
+2026-11-06T01:00:49.1490184Z         "org.mobyproject.buildkit.worker.executor": "oci",
+2026-11-06T01:00:49.1490925Z         "org.mobyproject.buildkit.worker.hostname": "e02c9a2575fd",
+2026-11-06T01:00:49.1491510Z         "org.mobyproject.buildkit.worker.network": "host",
+2026-11-06T01:00:49.1492203Z         "org.mobyproject.buildkit.worker.oci.process-mode": "sandbox",
+2026-11-06T01:00:49.1492715Z         "org.mobyproject.buildkit.worker.selinux.enabled": "false",
+2026-11-06T01:00:49.1493219Z         "org.mobyproject.buildkit.worker.snapshotter": "overlayfs"
+2026-11-06T01:00:49.1493587Z       },
+2026-11-06T01:00:49.1493782Z       "gcPolicy": [
+2026-11-06T01:00:49.1493988Z         {
+2026-11-06T01:00:49.1494183Z           "all": false,
+2026-11-06T01:00:49.1494409Z           "filter": [
+2026-11-06T01:00:49.1494798Z             "type==source.local type==exec.cachemount type==source.git.checkout"
+2026-11-06T01:00:49.1495188Z           ],
+2026-11-06T01:00:49.1495429Z           "keepDuration": "48h0m0s",
+2026-11-06T01:00:49.1496153Z           "maxUsedSpace": "488.3MiB"
+2026-11-06T01:00:49.1496742Z         },
+2026-11-06T01:00:49.1497196Z         {
+2026-11-06T01:00:49.1497674Z           "all": false,
+2026-11-06T01:00:49.1498263Z           "keepDuration": "1440h0m0s",
+2026-11-06T01:00:49.1498916Z           "reservedSpace": "9.313GiB",
+2026-11-06T01:00:49.1499503Z           "maxUsedSpace": "93.13GiB",
+2026-11-06T01:00:49.1500132Z           "minFreeSpace": "27.01GiB"
+2026-11-06T01:00:49.1500955Z         },
+2026-11-06T01:00:49.1501489Z         {
+2026-11-06T01:00:49.1501991Z           "all": false,
+2026-11-06T01:00:49.1502543Z           "reservedSpace": "9.313GiB",
+2026-11-06T01:00:49.1503122Z           "maxUsedSpace": "93.13GiB",
+2026-11-06T01:00:49.1503743Z           "minFreeSpace": "27.01GiB"
+2026-11-06T01:00:49.1504269Z         },
+2026-11-06T01:00:49.1504721Z         {
+2026-11-06T01:00:49.1505180Z           "all": true,
+2026-11-06T01:00:49.1505749Z           "reservedSpace": "9.313GiB",
+2026-11-06T01:00:49.1506350Z           "maxUsedSpace": "93.13GiB",
+2026-11-06T01:00:49.1506919Z           "minFreeSpace": "27.01GiB"
+2026-11-06T01:00:49.1507427Z         }
+2026-11-06T01:00:49.1507864Z       ]
+2026-11-06T01:00:49.1508248Z     }
+2026-11-06T01:00:49.1508667Z   ],
+2026-11-06T01:00:49.1509316Z   "name": "builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5",
+2026-11-06T01:00:49.1509934Z   "driver": "docker-container",
+2026-11-06T01:00:49.1510947Z   "lastActivity": "2026-11-06T01:00:43.000Z"
+2026-11-06T01:00:49.1511592Z }
+2026-11-06T01:00:49.1512252Z ##[endgroup]
+2026-11-06T01:00:49.2233382Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx build --build-arg FRONTEND_SOURCE_COMMIT=646bb7f62bd1139dffea605f6ed9945b5f8715ce --cache-from type=gha,scope=frontend-migration --cache-to type=gha,scope=frontend-migration,mode=max --file ops/platform/Dockerfile.frontend-migration --iidfile /home/runner/work/_temp/docker-actions-toolkit-NZZ4vp/build-iidfile-e7aa0abffb.txt --attest type=provenance,mode=max,builder-id=https://github.com/princessdardan/lash-her-frontend/actions/runs/42140767192/attempts/1 --attest type=sbom,disabled=false --tag lash-her-frontend-migration:ci --load --metadata-file /home/runner/work/_temp/docker-actions-toolkit-NZZ4vp/build-metadata-e79bb76fd3.json .
+2026-11-06T01:00:49.3518956Z #0 building with "builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5" instance using docker-container driver
+2026-11-06T01:00:49.3520117Z 
+2026-11-06T01:00:49.3521310Z #1 [internal] load build definition from Dockerfile.frontend-migration
+2026-11-06T01:00:49.3522058Z #1 DONE 0.0s
+2026-11-06T01:00:49.5965751Z 
+2026-11-06T01:00:49.5966492Z #1 [internal] load build definition from Dockerfile.frontend-migration
+2026-11-06T01:00:49.5967206Z #1 transferring dockerfile: 2.64kB done
+2026-11-06T01:00:49.5967716Z #1 DONE 0.0s
+2026-11-06T01:00:49.5967875Z 
+2026-11-06T01:00:49.5968563Z #2 [auth] docker/buildkit-syft-scanner:pull token for registry-1.docker.io
+2026-11-06T01:00:49.5969118Z #2 DONE 0.0s
+2026-11-06T01:00:49.5969263Z 
+2026-11-06T01:00:49.5969734Z #3 resolve image config for docker-image://docker.io/docker/buildkit-syft-scanner:stable-1
+2026-11-06T01:00:50.7401883Z #3 DONE 1.4s
+2026-11-06T01:00:50.9598971Z 
+2026-11-06T01:00:50.9599617Z #4 [auth] library/node:pull token for registry-1.docker.io
+2026-11-06T01:00:50.9600345Z #4 DONE 0.0s
+2026-11-06T01:00:50.9600771Z 
+2026-11-06T01:00:50.9601160Z #5 [auth] library/buildpack-deps:pull token for registry-1.docker.io
+2026-11-06T01:00:50.9601611Z #5 DONE 0.0s
+2026-11-06T01:00:50.9601753Z 
+2026-11-06T01:00:50.9602498Z #6 [internal] load metadata for docker.io/library/buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b
+2026-11-06T01:00:51.0010282Z #6 ...
+2026-11-06T01:00:51.0010521Z 
+2026-11-06T01:00:51.0011998Z #7 [internal] load metadata for gcr.io/distroless/nodejs24-debian13:nonroot@sha256:a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91
+2026-11-06T01:00:51.0013238Z #7 DONE 0.3s
+2026-11-06T01:00:51.1519998Z 
+2026-11-06T01:00:51.1521306Z #8 [internal] load metadata for docker.io/library/node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+2026-11-06T01:00:51.4772230Z #8 ...
+2026-11-06T01:00:51.4773079Z 
+2026-11-06T01:00:51.4774407Z #6 [internal] load metadata for docker.io/library/buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b
+2026-11-06T01:00:51.4775365Z #6 DONE 0.7s
+2026-11-06T01:00:51.6280800Z 
+2026-11-06T01:00:51.6281984Z #8 [internal] load metadata for docker.io/library/node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+2026-11-06T01:00:51.7608913Z #8 DONE 1.0s
+2026-11-06T01:00:51.9368207Z 
+2026-11-06T01:00:51.9369002Z #9 [internal] load build context
+2026-11-06T01:00:51.9369744Z #9 DONE 0.0s
+2026-11-06T01:00:51.9370144Z 
+2026-11-06T01:00:51.9371465Z #10 [build  1/13] FROM docker.io/library/node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+2026-11-06T01:00:51.9373170Z #10 resolve docker.io/library/node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d done
+2026-11-06T01:00:51.9374293Z #10 DONE 0.0s
+2026-11-06T01:00:51.9374539Z 
+2026-11-06T01:00:51.9375616Z #11 [zlib-build 1/3] FROM docker.io/library/buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b
+2026-11-06T01:00:51.9377641Z #11 resolve docker.io/library/buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b done
+2026-11-06T01:00:51.9378525Z #11 DONE 0.0s
+2026-11-06T01:00:51.9378764Z 
+2026-11-06T01:00:51.9379397Z #12 [stage-2 1/4] FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91
+2026-11-06T01:00:51.9380759Z #12 resolve gcr.io/distroless/nodejs24-debian13:nonroot@sha256:a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91 0.0s done
+2026-11-06T01:00:51.9381593Z #12 DONE 0.0s
+2026-11-06T01:00:51.9381712Z 
+2026-11-06T01:00:51.9381953Z #13 importing cache manifest from gha:11385705714004890302
+2026-11-06T01:00:51.9382425Z #13 DONE 0.2s
+2026-11-06T01:00:51.9382558Z 
+2026-11-06T01:00:51.9382842Z #14 docker-image://docker.io/docker/buildkit-syft-scanner:stable-1
+2026-11-06T01:00:51.9383417Z #14 resolve docker.io/docker/buildkit-syft-scanner:stable-1
+2026-11-06T01:00:52.2655534Z #14 resolve docker.io/docker/buildkit-syft-scanner:stable-1 0.5s done
+2026-11-06T01:00:52.4352581Z #14 sha256:114c69ab61a7183a9760230837f905a72711cd9ad7dbbf6939e8e39830c25dbf 16.78MB / 49.59MB 0.2s
+2026-11-06T01:00:52.6768999Z #14 sha256:114c69ab61a7183a9760230837f905a72711cd9ad7dbbf6939e8e39830c25dbf 49.59MB / 49.59MB 0.2s done
+2026-11-06T01:00:52.6770416Z #14 extracting sha256:114c69ab61a7183a9760230837f905a72711cd9ad7dbbf6939e8e39830c25dbf
+2026-11-06T01:00:52.9798985Z #14 ...
+2026-11-06T01:00:52.9811177Z 
+2026-11-06T01:00:52.9811501Z #9 [internal] load build context
+2026-11-06T01:00:52.9812084Z #9 transferring context: 1.50MB 0.9s done
+2026-11-06T01:00:52.9812746Z #9 DONE 0.9s
+2026-11-06T01:00:52.9812972Z 
+2026-11-06T01:00:52.9813222Z #15 [build  2/13] WORKDIR /app
+2026-11-06T01:00:52.9813679Z #15 CACHED
+2026-11-06T01:00:52.9813861Z 
+2026-11-06T01:00:52.9814903Z #16 [build  3/13] COPY ops/platform/frontend-migration-deps/package.json ops/platform/frontend-migration-deps/package-lock.json ./
+2026-11-06T01:00:52.9816948Z #16 CACHED
+2026-11-06T01:00:52.9817162Z 
+2026-11-06T01:00:52.9818106Z #17 [build  4/13] RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
+2026-11-06T01:00:52.9818911Z #17 CACHED
+2026-11-06T01:00:53.1057600Z 
+2026-11-06T01:00:53.1059109Z #14 docker-image://docker.io/docker/buildkit-syft-scanner:stable-1
+2026-11-06T01:00:53.1060460Z #14 extracting sha256:114c69ab61a7183a9760230837f905a72711cd9ad7dbbf6939e8e39830c25dbf 0.5s done
+2026-11-06T01:00:53.1061814Z #14 DONE 1.2s
+2026-11-06T01:00:53.1062615Z 
+2026-11-06T01:00:53.1063200Z #17 [build  4/13] RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
+2026-11-06T01:00:53.1064556Z #17 sha256:364b263200a8c973e350158bd43b72355019213cf6de5a27ef185b7cd2cadfc3 2.60kB / 2.60kB 0.1s done
+2026-11-06T01:00:53.1065892Z #17 sha256:957c8924acc7c5d533e285c47ba86fb82f676b0f35f384a63625f84ea29ea2c7 93B / 93B 0.1s done
+2026-11-06T01:00:53.2209310Z #17 sha256:3f4664f9b20d6f144b2674c2c40de02509aabd87eae0a2d31a62de37444d13e8 448B / 448B 0.1s done
+2026-11-06T01:00:53.2210923Z #17 sha256:9f300821c15646588a7ab1d4f6dac9df90eb2694083f9dd785e5a51faabe63af 0B / 1.96MB 0.2s
+2026-11-06T01:00:53.2212317Z #17 sha256:af54a8f1f08bff19af42c05615745e74742a74437bb1c5e1e99bf0dcb8048257 3.31kB / 3.31kB 0.1s done
+2026-11-06T01:00:53.2213303Z #17 sha256:15f27b93c93d3aaa4df09438a96bad3709b6cbbc38659014d17cc61d8d4fabb9 0B / 1.71MB 0.2s
+2026-11-06T01:00:53.3308117Z #17 sha256:9f300821c15646588a7ab1d4f6dac9df90eb2694083f9dd785e5a51faabe63af 1.96MB / 1.96MB 0.3s done
+2026-11-06T01:00:53.3309739Z #17 sha256:15f27b93c93d3aaa4df09438a96bad3709b6cbbc38659014d17cc61d8d4fabb9 1.71MB / 1.71MB 0.3s done
+2026-11-06T01:00:53.3311895Z #17 sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920 0B / 50.33MB 0.2s
+2026-11-06T01:00:53.4943871Z #17 sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 0B / 28.23MB 0.3s
+2026-11-06T01:00:53.6445797Z #17 sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920 13.63MB / 50.33MB 0.5s
+2026-11-06T01:00:53.6447366Z #17 sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 2.10MB / 28.23MB 0.5s
+2026-11-06T01:00:53.7994185Z #17 sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920 28.31MB / 50.33MB 0.6s
+2026-11-06T01:00:53.7995520Z #17 sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 7.34MB / 28.23MB 0.6s
+2026-11-06T01:00:53.9444090Z #17 sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920 36.70MB / 50.33MB 0.8s
+2026-11-06T01:00:53.9445138Z #17 sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 14.68MB / 28.23MB 0.8s
+2026-11-06T01:00:54.0940272Z #17 sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920 50.33MB / 50.33MB 0.9s done
+2026-11-06T01:00:54.0942170Z #17 sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 25.17MB / 28.23MB 0.9s
+2026-11-06T01:00:54.2825501Z #17 sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 28.23MB / 28.23MB 0.9s done
+2026-11-06T01:00:54.2827069Z #17 extracting sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd
+2026-11-06T01:00:54.8347079Z #17 extracting sha256:597c6c618d36213af657a6a8444a5d87801f9a219682b206ad21ccb8f3e57bbd 0.7s done
+2026-11-06T01:00:54.8347794Z #17 DONE 1.9s
+2026-11-06T01:00:54.9915150Z 
+2026-11-06T01:00:54.9917885Z #17 [build  4/13] RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
+2026-11-06T01:00:54.9919652Z #17 extracting sha256:af54a8f1f08bff19af42c05615745e74742a74437bb1c5e1e99bf0dcb8048257 done
+2026-11-06T01:00:54.9921162Z #17 extracting sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920
+2026-11-06T01:00:55.7930065Z #17 extracting sha256:35e38e1826d7cdf22ea45a4223741e4cc126db5a2a07cf2072b229270180f920 1.0s done
+2026-11-06T01:00:55.7931148Z #17 DONE 2.9s
+2026-11-06T01:00:55.9880162Z 
+2026-11-06T01:00:55.9881594Z #17 [build  4/13] RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
+2026-11-06T01:00:55.9882672Z #17 extracting sha256:15f27b93c93d3aaa4df09438a96bad3709b6cbbc38659014d17cc61d8d4fabb9 0.0s done
+2026-11-06T01:00:55.9883985Z #17 extracting sha256:3f4664f9b20d6f144b2674c2c40de02509aabd87eae0a2d31a62de37444d13e8 done
+2026-11-06T01:00:55.9884849Z #17 extracting sha256:957c8924acc7c5d533e285c47ba86fb82f676b0f35f384a63625f84ea29ea2c7 done
+2026-11-06T01:00:55.9885582Z #17 extracting sha256:364b263200a8c973e350158bd43b72355019213cf6de5a27ef185b7cd2cadfc3 done
+2026-11-06T01:00:55.9886257Z #17 extracting sha256:9f300821c15646588a7ab1d4f6dac9df90eb2694083f9dd785e5a51faabe63af
+2026-11-06T01:00:56.2589113Z #17 extracting sha256:9f300821c15646588a7ab1d4f6dac9df90eb2694083f9dd785e5a51faabe63af 0.4s done
+2026-11-06T01:00:56.2590237Z #17 DONE 3.4s
+2026-11-06T01:00:56.4094981Z 
+2026-11-06T01:00:56.4097446Z #18 [build  5/13] COPY ops/platform/frontend-migration.mjs ops/platform/frontend-schema.mjs ops/platform/frontend-image.mjs ops/platform/frontend-image-source.mjs ops/platform/source-checkout.mjs ops/platform/release-inputs.mjs ops/platform/source-policy.mjs ops/platform/release.mjs ./ops/platform/
+2026-11-06T01:00:56.9783935Z #18 DONE 0.7s
+2026-11-06T01:00:57.1588537Z 
+2026-11-06T01:00:57.1590223Z #19 [build  6/13] COPY src/lib/private-db/migration-lineage.ts ./src/lib/private-db/
+2026-11-06T01:00:57.1591930Z #19 DONE 0.0s
+2026-11-06T01:00:57.1592148Z 
+2026-11-06T01:00:57.1593063Z #20 [build  7/13] COPY scripts/api-contract-tools.mjs scripts/api-contract-compatibility-review.mjs ./scripts/
+2026-11-06T01:00:57.1594034Z #20 DONE 0.0s
+2026-11-06T01:00:57.1594250Z 
+2026-11-06T01:00:57.1594937Z #21 [build  8/13] COPY contracts/api-integration/v1/manifest.json ./contracts/api-integration/v1/
+2026-11-06T01:00:57.1595745Z #21 DONE 0.0s
+2026-11-06T01:00:57.1595986Z 
+2026-11-06T01:00:57.1596677Z #22 [build  9/13] COPY contracts/api-integration/p2-candidate/ ./contracts/api-integration/p2-candidate/
+2026-11-06T01:00:57.1597523Z #22 DONE 0.0s
+2026-11-06T01:00:57.1597723Z 
+2026-11-06T01:00:57.1598032Z #23 [build 10/13] COPY drizzle/*.sql ./drizzle/
+2026-11-06T01:00:57.1598532Z #23 DONE 0.0s
+2026-11-06T01:00:57.1598764Z 
+2026-11-06T01:00:57.1599207Z #24 [build 11/13] COPY drizzle/meta/_journal.json ./drizzle/meta/
+2026-11-06T01:00:57.1599790Z #24 DONE 0.0s
+2026-11-06T01:00:57.1599994Z 
+2026-11-06T01:00:57.1601387Z #25 [build 12/13] RUN node ops/platform/frontend-image-source.mjs --write "646bb7f62bd1139dffea605f6ed9945b5f8715ce"
+2026-11-06T01:00:57.1603090Z #25 DONE 0.1s
+2026-11-06T01:00:57.3114631Z 
+2026-11-06T01:00:57.3115644Z #26 [build 13/13] RUN node ops/platform/frontend-image.mjs --manifest-only
+2026-11-06T01:00:57.3599599Z #26 0.190 {"journalSha256":"466a9e19076eb90bbf680f879393d73e35393576c76cab2baa8164bfd2423c70","entries":[{"tag":"0000_old_moonstone","hash":"c31011d49046e22438409ccf3a9993607aae00db43f1a782e131b75516f2de9e","folderMillis":1778450844121},{"tag":"0001_private_training_enrollments","hash":"391ada2d7014c0d6183f9ddd5fb022e3cb9feb29f50e5cbd9a2cf2cf1f2da6c6","folderMillis":1778784000000},{"tag":"0002_rapid_fat_cobra","hash":"c938ba2ab9a31d6b1b78c92d398f23e6b28415dd991187a6af7118a30848a30b","folderMillis":1779049037217},{"tag":"0003_tired_vertigo","hash":"b544df117671eec2817c7a92b2f06d9ce69eff49d411c8b8387e79d0105c8471","folderMillis":1779148298733},{"tag":"0004_parched_carnage","hash":"c5da298c1e32dd62a6e45e4a9a7a7335a6539ebaba4df7526b09d009a7c525bc","folderMillis":1779310411063},{"tag":"0005_yummy_captain_britain","hash":"195bc6727e89b7b5736d7639533b40eadbbd6dcda47315950487ddafeacf1e79","folderMillis":1779490120253},{"tag":"0007_product_shipping_address","hash":"b3437f7ba447b4fbba358d6f37454986fe67f8f9add5c345dfb02fe684e5f6e8","folderMillis":1779661753148},{"tag":"0008_hot_path_private_indexes","hash":"79646ade59578ae85eb2a310c2f279ebc670424d507ae13dddeaddf11be8adfb","folderMillis":1779753600000},{"tag":"0009_dashing_rocket_raccoon","hash":"1b67741b45d9ba542a33d67cb884c77b4d28cab3e634e020778a3a7807a8990b","folderMillis":1779901448734},{"tag":"0010_familiar_jazinda","hash":"0e1475032661ebbfd33f00dd0ba8ebfef03f347566df8d9c29e62bae89c6c0a0","folderMillis":1780019995593},{"tag":"0010_dry_magneto","hash":"b256f5d2b3bb0f2c3fd8d461a1023e88ca35dc01681684ca29618eb614d46a08","folderMillis":1781909205634},{"tag":"0011_opposite_vulcan","hash":"147ea5ad837cecc3aef4ded30594928bf567ace285de5a36024e5134441657ad","folderMillis":1781918939267},{"tag":"0012_secret_chimera","hash":"9c782876f2223e790bca6bafae6411a0ef75a632a40198f63e1583e61e539415","folderMillis":1781938950079},{"tag":"0013_superb_mongoose","hash":"73cd12a6481082745d570d30e63fdd75e0c11f64404fba71b4202aa01422585c","folderMillis":1782029654089},{"tag":"0014_even_madame_web","hash":"988fc00aabf523f948e44a96045be8d58b747acddb76e16eb5c2d6e7566d716a","folderMillis":1782038392974},{"tag":"0015_service_booking_payment_session","hash":"6dc565fbb257efdaa6d533dc65cb59740c6ce708c2d026b4c8dd1e3a8abd2fec","folderMillis":1782882175099},{"tag":"0016_bitter_yellow_claw","hash":"7698d4d5cedf4205a3484575be6f01db8ebc4a3f3e4dc434b1a58010d7a26d2c","folderMillis":1783023767006},{"tag":"0017_big_hulk","hash":"02127e955cb51761d6a86a0b3fccfbcda2f5f2810128c7d7ec8b288f78853ff2","folderMillis":1783115272208},{"tag":"0018_grey_xorn","hash":"2e23b9e1861d763ed31ba6b540bfefd42d6d7a7955fefaf291288f88c42bb490","folderMillis":1783723634797},{"tag":"0019_rainy_lorna_dane","hash":"fe2f4d5f38421d02ed8e0b71309ef378ae1bd3b51662102c49b95fb92ee7399d","folderMillis":1783727563549},{"tag":"0020_eager_stark_industries","hash":"5c251835bc8e7f7652178cdf24c0ba1d9b3ab1a2e930eb5dcab1a3c30e44c984","folderMillis":1783728714883},{"tag":"0021_grey_professor_monster","hash":"5b06e89f076095658a43f7f9c36b66f0e96eddb3d7e5a6e425d2ab70460c9270","folderMillis":1784075126626},{"tag":"0022_cold_mikhail_rasputin","hash":"7e50ee7e7b61214b8d9514f24e5776e6e43031591c3c4e4f34e645b3c590a62f","folderMillis":1784159435391},{"tag":"0023_striped_marvel_apes","hash":"4157449d50936e715b1e64849702f52530a391477d2655e1cb87c0e9be38ac4d","folderMillis":1785035959565},{"tag":"0024_private_db_lineage_reconciliation","hash":"c01098ee405c9d527f58607cf849cd6940672ca111e43067281d3e40a9be9ff8","folderMillis":1785262464947},{"tag":"0025_smart_praxagora","hash":"f3a18453232f7164136f9350d2670cecf059266fbb03f91781f1dbb6e539003d","folderMillis":1785361832872},{"tag":"0026_nice_mattie_franklin","hash":"92d389625305df02bae950a80968fff362d356300458d610b267c4fc70169cea","folderMillis":1785362561424},{"tag":"0027_curly_leader","hash":"9a48fcd53dde993c37420e45decbae241bf5a30b8f3d397305eb9400fa78b4ad","folderMillis":1785364009534},{"tag":"0028_lucky_lady_ursula","hash":"c82dec2759216875531f996807e270b594f80255ef6dff201a90912b7a63e1f7","folderMillis":1785366937857},{"tag":"0029_chemical_virginia_dare","hash":"05976fe90bb4b6a1ba3465fab0cf4cf1659236e1abe51376a5269e0ba0ce7d12","folderMillis":1785380919421},{"tag":"0030_implicit_staff_providers","hash":"bb2e5f3b1e6e65e4c743232bf9af6849f69fee2dd576f32722dc122965f0f9d1","folderMillis":1785531975406},{"tag":"0031_bored_loa","hash":"29ec810d68d8da0e6a3f975b856a7685eeed975a74f8a8f1f3f443cc114211f2","folderMillis":1785597956449},{"tag":"0032_fat_roulette","hash":"af324d3334bf84216e0e50982c1143b0e0ba4d39b5c979ea80d987a72234fd29","folderMillis":1786571702405},{"tag":"0033_bored_dexter_bennett","hash":"bcadce56cab5bd413238fc08e70c26dd3443d3d029a138cd3d1b6ba9f868727d","folderMillis":1786655863673},{"tag":"0034_lying_amphibian","hash":"3bb9fb07456053df16c71767b221b7753c45b512d350786ba78306a680710e4f","folderMillis":1786729604962},{"tag":"0035_tricky_photon","hash":"82977311d356c8d6527e53201fd5ea7d826d280747b726ccd19e81c81278ebcf","folderMillis":1786729648324},{"tag":"0036_chubby_captain_flint","hash":"776659694e7d363176b7f5d8416f901a07dffca5840b5f1a7c5e5668f41b8514","folderMillis":1786746690655},{"tag":"0037_noisy_bedlam","hash":"58d2a3a49018f491c9dba9dcc1a7c47c122088c37bb086939cd45f4cd18cf1cb","folderMillis":1786747147860},{"tag":"0038_dashing_blue_blade","hash":"49b8005913091f8c8da6d20eb8720501d4dec00a3c5f84ee64a207e75bfb456f","folderMillis":1786747946750},{"tag":"0039_chunky_stingray","hash":"e5252e89d2b40345b34353d17811d2ab7148595be2c7f3c7bc3d0a039306d569","folderMillis":1786748317968},{"tag":"0040_yummy_living_lightning","hash":"46cfb8975483528a0dabe8bd186545641278204c749cef346643daef7bcc3826","folderMillis":1786748337233},{"tag":"0041_illegal_pestilence","hash":"b80a6fbcba902c1bf35bdd3286f4b9612b0de142892486bb8c6d4b60985c7a90","folderMillis":1786811823415},{"tag":"0042_typical_ultimatum","hash":"fcb960ddc72e01eb546d392c14d69f8c4d41307609faa50fb49af1efa34a78db","folderMillis":1786811883587},{"tag":"0043_loose_richard_fisk","hash":"9389c26fef12e949e174d128d0a96ba7b13ce1325d1736559465e34b66d8de77","folderMillis":1786811967466},{"tag":"0044_wakeful_leper_queen","hash":"bfb62f5210284763f928a3220843cb3c7018945db224544750bc1e1b5207a985","folderMillis":1786812215923},{"tag":"0045_complete_purple_man","hash":"e42b0c624dad9b6d1b3b9a927febc996c7e1a87a30201765f2344ad3db5148e8","folderMillis":1786812257202},{"tag":"0046_equal_meltdown","hash":"092870344cd8ff47d02a4133051875e5dda3753aab27b6122e26ba7065313796","folderMillis":1786812542688},{"tag":"0047_plain_wither","hash":"dc67dab3e41c0e91f4e1ea11eeff969218cca1f9ab3c249072bc3de731c1c8f0","folderMillis":1786812853302},{"tag":"0048_immutable_chitchats_intake_attestations","hash":"f7e09fd19c140d2cd33b9e762fda44c2bba5f5b2755cd38df3008c9478eb25f4","folderMillis":1786814731710},{"tag":"0049_eminent_arachne","hash":"5db61574f608d72536b4cc7a5fcea16479bce9546f61f29cc4402b893170dd25","folderMillis":1786815019516},{"tag":"0050_long_scrambler","hash":"32b52e4ed25b59d18cc706eeea213206380e43e68b58612827698f293a5aeba7","folderMillis":1786815649061},{"tag":"0051_square_blazing_skull","hash":"65e0af586f59e11ce56fb688f3d22014912baaff1c1ef8c89021c0c68e94d34c","folderMillis":1786815890782},{"tag":"0052_bouncy_callisto","hash":"6fa82bc85a3b2571d72b7f6870bf8e39a171f3457fa052ffc43ec0b3b385af0a","folderMillis":1786816106846},{"tag":"0053_yielding_ultimo","hash":"1ee47ec0e2fdc07f8210ac638a432496a097ac0b256ad30885bd4b83086e04b1","folderMillis":1786816656184},{"tag":"0054_living_blindfold","hash":"f013e86b0fcb0fa7a8e26a92f6c86d205b44f8f81dcd2f9e76e53702825caead","folderMillis":1786817398162},{"tag":"0055_good_dormammu","hash":"8474e3f4382f92fa78dfa0fb3035a7533bc713bcf1deaf58a00fd7da5aa4563a","folderMillis":1786817601199},{"tag":"0056_remarkable_sage","hash":"4381a7a4710a8d82eca07908034c4b7060a6811edb022765cd5ec5e8a2c792ff","folderMillis":1786818110447},{"tag":"0057_daily_agent_brand","hash":"63b2eaff39b4b778bf82d070ee8e779acf0f65236f01777d706e67f79eae0cf0","folderMillis":1786820075701},{"tag":"0058_worthless_shriek","hash":"cf125fe3707d148d6acf5feaa95b1e71560d76fc0df50b9b438d583c2ae72475","folderMillis":1786822456932},{"tag":"0059_eminent_praxagora","hash":"e52b688aa09533cbbfd503e0ee9ab11ec38219a12cbb1cc767f71d1a888fb0ed","folderMillis":1786823647075},{"tag":"0060_clever_magma","hash":"564d8d79607aefc7eba7051a6be561ee0200d95757490d2f8280c3d2561e94e9","folderMillis":1786824274642},{"tag":"0061_helcim_reconciliation_retention","hash":"ded92faf1a166a1139e8fcae9e7f1723d40f8113445a65d9785b60d46a12cb33","folderMillis":1786829940203},{"tag":"0062_youthful_slayback","hash":"451ecd48fc34149115fd81ba0838f13d5bc5297b07922cb4b693e53349e52297","folderMillis":1787092826887},{"tag":"0063_good_forge","hash":"fbd2cf1478daf19854dc469d9bebc2d8ebe969b8f75a318d9237f2b9dd3380f4","folderMillis":1787092847053},{"tag":"0064_modern_old_lace","hash":"e93f8b4050ded43a786f960fb680f6f5e9735edbd04c3f7b67e0c0ce95260a47","folderMillis":1787094132224},{"tag":"0065_dark_kabuki","hash":"7593b3d2075408551968811ec9bbfd0465aa53ad340e60932d7d11a4f7ab7739","folderMillis":1787094836764},{"tag":"0066_foamy_excalibur","hash":"5eafb751f592cd5b22f4efb26c183eeb9a64a42a9226c8da25c18a6c03633d47","folderMillis":1787097681783},{"tag":"0067_tranquil_iron_patriot","hash":"30a8d5d5d0e5b9a7b9649ca32508537623a484ea949523957f66b40d9bb0f32d","folderMillis":1787160103859},{"tag":"0068_familiar_dreaming_celestial","hash":"d1c6b1e6424154c7e36a5b12ab008b6acf6d97a2872e240d8196d49e90dfb5d8","folderMillis":1787262097936},{"tag":"0069_dizzy_carnage","hash":"225c87e17cca2684355abbaa1885896d729778929e816db7f389063d2a54fe37","folderMillis":1787336787058},{"tag":"0070_giant_hitman","hash":"d3c45f0c26beba2df84f4bbe1c3075335ef3b8d2938f8c5eea2d83a5c7b0e9f8","folderMillis":1787339761512},{"tag":"0071_pink_grim_reaper","hash":"2516f094e7fd74126a17aab7d5a464620527d568f60af95361923f1df3fee653","folderMillis":1787346471464},{"tag":"0072_round_warbound","hash":"180e02ad8c7f8e7c2287315b0c7521d8704aee1ca45029ecad2e0266b7ba5f55","folderMillis":1787505810290},{"tag":"0073_panoramic_abomination","hash":"3c14639036aaf96c42a5c308fc9a5981dce34f02a3c555a2cf5d72730881723d","folderMillis":1787717618408},{"tag":"0074_amused_hydra","hash":"5bfa59bd3c3afcf19260f47adb5e7d0bb6954bbb8f0f57c4f6b71a63db96bdf9","folderMillis":1787892578091},{"tag":"0075_clammy_william_stryker","hash":"d74e52f3f1255ae893a657d4f15da99937bd0dc8b2998d3e0afd716829904923","folderMillis":1787892609388},{"tag":"0076_organic_kitty_pryde","hash":"2cd123ddeb304814f83f51e80642df392a198bef07df4a596f17721bab3e5ca7","folderMillis":1788225229633},{"tag":"0077_course_signup","hash":"b1949845f9408560606fb3ef72395496b7c55a01d59038a9cdecdc252552d651","folderMillis":1790208354053},{"tag":"0078_highlevel_crm","hash":"bfaa61e07f7227f31874016a3bf35e67877820a50a0838680659ea58e07153c3","folderMillis":1792530258475},{"tag":"0079_highlevel_marketing_ownership","hash":"e0ac5e3dfece876f694ed6ad3a50e65e49a6c5523a872d96794ea1c898f09d73","folderMillis":1792530952883},{"tag":"0080_customer_identity","hash":"c3235b3cc6a8c2dcfe261ec7a5e1192ced7e027204afc314df04773b44209798","folderMillis":1793907202941},{"tag":"0081_customer_auth_throttle_expiry","hash":"a4c8ce269351c0d92705c336ded0ce919e713895399c1794a48e26009cc034de","folderMillis":1793908371084},{"tag":"0082_customer_account_lifecycle","hash":"483eff8dab2d5212c1ca7914109259f91594c9e0eae01115ebae1830aefbb889","folderMillis":1793910009844}],"sqlArtifactSha256":"28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef","contractManifestSha256":"sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938","contractPhase":"p2","phase2ContractManifestSha256":"sha256:da7f29e2134973afd17d7f2012922dff8e76d8922ad6552cedd9f13f0d612845"}
+2026-11-06T01:00:57.5240418Z #26 DONE 0.2s
+2026-11-06T01:00:57.6539034Z 
+2026-11-06T01:00:57.6540208Z #27 [stage-2 2/4] WORKDIR /app
+2026-11-06T01:00:57.6541080Z #27 CACHED
+2026-11-06T01:00:57.6577107Z 
+2026-11-06T01:00:57.6577555Z #28 [zlib-build 2/3] COPY ops/gateway/runtime/ /runtime/
+2026-11-06T01:00:57.6577939Z #28 CACHED
+2026-11-06T01:00:57.6578096Z 
+2026-11-06T01:00:57.6578478Z #29 [zlib-build 3/3] RUN ulimit -c 0; sh /runtime/build.sh
+2026-11-06T01:00:57.6578840Z #29 CACHED
+2026-11-06T01:00:57.6578952Z 
+2026-11-06T01:00:57.6579165Z #30 [stage-2 3/4] COPY --from=zlib-build /out/rootfs/ /
+2026-11-06T01:00:57.8214877Z #30 CACHED
+2026-11-06T01:00:57.9468399Z 
+2026-11-06T01:00:57.9470617Z #30 [stage-2 3/4] COPY --from=zlib-build /out/rootfs/ /
+2026-11-06T01:00:57.9472063Z #30 sha256:a88768e36b001a605d4cd93580b6953da920092175aad9978f30f24af1c2ede8 97B / 97B 0.0s done
+2026-11-06T01:00:57.9473753Z #30 sha256:8224d91da70b7992430d3b04040ea38ecdef4a7b719bee38397c89aaa886e198 84.21kB / 84.21kB 0.0s done
+2026-11-06T01:00:57.9475284Z #30 sha256:1a4be5562d92d659f95e0b44b245ea5208bf5317481b9a351b07fad7fe5265ec 51.53kB / 51.53kB 0.1s done
+2026-11-06T01:00:58.1098657Z #30 sha256:e69069f28f0b49f4a96694c146f8b5087a539ee73bf5062e6e0c4f9e7a129608 59.44kB / 59.44kB 0.1s done
+2026-11-06T01:00:58.1100899Z #30 sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 0B / 44.78MB 0.2s
+2026-11-06T01:00:58.1102668Z #30 sha256:dd0d9bfd3bee080ad25a464362ec4f37ec5ca625695a4d7179fe69d207dc068d 158.45kB / 158.45kB 0.1s done
+2026-11-06T01:00:58.1104420Z #30 sha256:cac2ae0193cb073e7492050b05fc342a888651b4bbc966908c8793f889c299ba 96.15kB / 96.15kB 0.1s done
+2026-11-06T01:00:58.1106048Z #30 sha256:7cc70dfd88cf2327bb827123c9156f7cb95de95b2f98f3a7a931296aacec5786 901.29kB / 901.29kB 0.2s done
+2026-11-06T01:00:58.2638314Z #30 sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 3.15MB / 44.78MB 0.3s
+2026-11-06T01:00:58.2639760Z #30 sha256:bd8962e292918c50c90edebd9684c053bc386b9c5503acd8fec75d0c6f93a0b7 372.77kB / 372.77kB 0.2s done
+2026-11-06T01:00:58.2641127Z #30 sha256:810e2b405a0884835290e120ef380aa14dd1f53198a0cfa2260147e736d82cd5 0B / 3.08MB 0.2s
+2026-11-06T01:00:58.2642219Z #30 sha256:b96fe2995f90d0ef0bf14f9b4a67b5f4e77d478e6108166e0565adc9efd6e4a3 0B / 5.08MB 0.2s
+2026-11-06T01:00:58.3765252Z #30 sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 8.39MB / 44.78MB 0.5s
+2026-11-06T01:00:58.3766812Z #30 sha256:b96fe2995f90d0ef0bf14f9b4a67b5f4e77d478e6108166e0565adc9efd6e4a3 5.08MB / 5.08MB 0.3s done
+2026-11-06T01:00:58.3768190Z #30 sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0 142.00kB / 142.00kB 0.1s done
+2026-11-06T01:00:58.3769490Z #30 sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795 311B / 311B 0.0s done
+2026-11-06T01:00:58.3770897Z #30 sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a 351B / 351B 0.0s done
+2026-11-06T01:00:58.4784273Z #30 sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 18.87MB / 44.78MB 0.6s
+2026-11-06T01:00:58.4785639Z #30 sha256:810e2b405a0884835290e120ef380aa14dd1f53198a0cfa2260147e736d82cd5 3.08MB / 3.08MB 0.4s done
+2026-11-06T01:00:58.4787245Z #30 sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112 80B / 80B 0.0s done
+2026-11-06T01:00:58.4788726Z #30 sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296 162B / 162B 0.0s done
+2026-11-06T01:00:58.4790249Z #30 sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4 123B / 123B 0.1s done
+2026-11-06T01:00:58.6197972Z #30 sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 28.31MB / 44.78MB 0.8s
+2026-11-06T01:00:58.6200236Z #30 sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28 32.09kB / 32.09kB 0.1s done
+2026-11-06T01:00:58.6202334Z #30 sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212 188B / 188B 0.1s done
+2026-11-06T01:00:58.6203959Z #30 sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a 67B / 67B 0.1s done
+2026-11-06T01:00:58.6205471Z #30 sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0 12.68kB / 12.68kB 0.0s done
+2026-11-06T01:00:58.6207101Z #30 sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89 289.43kB / 289.43kB 0.1s done
+2026-11-06T01:00:58.7275667Z #30 sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 44.78MB / 44.78MB 0.9s done
+2026-11-06T01:00:58.7277208Z #30 sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12 256.69kB / 256.69kB 0.2s done
+2026-11-06T01:00:58.7278525Z #30 sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8 0B / 124.53kB 0.2s
+2026-11-06T01:00:58.8280469Z #30 sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8 124.53kB / 124.53kB 0.2s done
+2026-11-06T01:00:58.8282359Z #30 extracting sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8 0.0s done
+2026-11-06T01:00:58.8283613Z #30 extracting sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0 done
+2026-11-06T01:00:58.8285004Z #30 extracting sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89 0.1s done
+2026-11-06T01:00:58.8285720Z #30 DONE 1.2s
+2026-11-06T01:00:58.9297611Z 
+2026-11-06T01:00:58.9298155Z #30 [stage-2 3/4] COPY --from=zlib-build /out/rootfs/ /
+2026-11-06T01:00:58.9299284Z #30 extracting sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12 0.1s done
+2026-11-06T01:00:58.9300473Z #30 extracting sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28 done
+2026-11-06T01:00:58.9302009Z #30 extracting sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a done
+2026-11-06T01:00:58.9303461Z #30 extracting sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212 done
+2026-11-06T01:00:58.9304749Z #30 extracting sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4 done
+2026-11-06T01:00:58.9306166Z #30 extracting sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296 done
+2026-11-06T01:00:58.9306950Z #30 DONE 1.3s
+2026-11-06T01:00:59.0302175Z 
+2026-11-06T01:00:59.0303577Z #30 [stage-2 3/4] COPY --from=zlib-build /out/rootfs/ /
+2026-11-06T01:00:59.0304830Z #30 extracting sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112 done
+2026-11-06T01:00:59.0306250Z #30 extracting sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a done
+2026-11-06T01:00:59.0307544Z #30 extracting sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795 done
+2026-11-06T01:00:59.0308497Z #30 extracting sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0 done
+2026-11-06T01:00:59.0309368Z #30 extracting sha256:b96fe2995f90d0ef0bf14f9b4a67b5f4e77d478e6108166e0565adc9efd6e4a3 0.1s done
+2026-11-06T01:00:59.0309980Z #30 DONE 1.4s
+2026-11-06T01:00:59.2765639Z 
+2026-11-06T01:00:59.2766800Z #30 [stage-2 3/4] COPY --from=zlib-build /out/rootfs/ /
+2026-11-06T01:00:59.2769165Z #30 extracting sha256:810e2b405a0884835290e120ef380aa14dd1f53198a0cfa2260147e736d82cd5 0.0s done
+2026-11-06T01:00:59.2770983Z #30 extracting sha256:bd8962e292918c50c90edebd9684c053bc386b9c5503acd8fec75d0c6f93a0b7 done
+2026-11-06T01:00:59.2772331Z #30 extracting sha256:cac2ae0193cb073e7492050b05fc342a888651b4bbc966908c8793f889c299ba done
+2026-11-06T01:00:59.2773686Z #30 extracting sha256:dd0d9bfd3bee080ad25a464362ec4f37ec5ca625695a4d7179fe69d207dc068d done
+2026-11-06T01:00:59.2775000Z #30 extracting sha256:7cc70dfd88cf2327bb827123c9156f7cb95de95b2f98f3a7a931296aacec5786 0.0s done
+2026-11-06T01:00:59.2776570Z #30 extracting sha256:8224d91da70b7992430d3b04040ea38ecdef4a7b719bee38397c89aaa886e198 done
+2026-11-06T01:00:59.2777806Z #30 extracting sha256:1a4be5562d92d659f95e0b44b245ea5208bf5317481b9a351b07fad7fe5265ec done
+2026-11-06T01:00:59.2779207Z #30 extracting sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9
+2026-11-06T01:00:59.6524394Z #30 extracting sha256:4f3e2567c309cb39897e44b416fc909a23072a814109d0acffd24cf89f1355c9 0.5s done
+2026-11-06T01:00:59.6525588Z #30 DONE 2.0s
+2026-11-06T01:00:59.8146612Z 
+2026-11-06T01:00:59.8147481Z #30 [stage-2 3/4] COPY --from=zlib-build /out/rootfs/ /
+2026-11-06T01:00:59.8148827Z #30 extracting sha256:a88768e36b001a605d4cd93580b6953da920092175aad9978f30f24af1c2ede8 done
+2026-11-06T01:00:59.8150383Z #30 extracting sha256:e69069f28f0b49f4a96694c146f8b5087a539ee73bf5062e6e0c4f9e7a129608 done
+2026-11-06T01:00:59.8151481Z #30 DONE 2.0s
+2026-11-06T01:00:59.8151703Z 
+2026-11-06T01:00:59.8152018Z #31 [stage-2 4/4] COPY --from=build /app /app
+2026-11-06T01:01:00.1672432Z #31 DONE 0.5s
+2026-11-06T01:01:00.5285060Z 
+2026-11-06T01:01:00.5287713Z #32 [linux/amd64] generating sbom using docker.io/docker/buildkit-syft-scanner:stable-1
+2026-11-06T01:01:00.7569195Z #32 0.077 time="2026-11-06T01:01:00Z" level=info msg="starting syft scanner for buildkit v1.12.1"
+2026-11-06T01:01:05.0070489Z #32 DONE 4.5s
+2026-11-06T01:01:05.1591374Z 
+2026-11-06T01:01:05.1592139Z #33 exporting to oci image format
+2026-11-06T01:01:05.1592690Z #33 exporting layers
+2026-11-06T01:01:05.3971825Z #33 exporting layers 0.4s done
+2026-11-06T01:01:05.5550688Z #33 exporting manifest sha256:15b0daad4f68560173b479782ad36222d43f3bcfc79f41628eb63dd0631e73ac done
+2026-11-06T01:01:05.5554189Z #33 exporting config sha256:3130eedb1c66aa321a9cdc5444ca88d426616c7c4f8a574766ab5a71683cdd4f done
+2026-11-06T01:01:06.2493676Z #33 exporting attestation manifest sha256:7fc857ef07b0aa3fe2578cb61d8d8b0232b7cb2b7d34a401f52e251a17a13f2d
+2026-11-06T01:01:06.4119093Z #33 exporting attestation manifest sha256:7fc857ef07b0aa3fe2578cb61d8d8b0232b7cb2b7d34a401f52e251a17a13f2d done
+2026-11-06T01:01:06.4121605Z #33 exporting manifest list sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b done
+2026-11-06T01:01:06.4123707Z #33 sending tarball
+2026-11-06T01:01:08.3986472Z #33 sending tarball 2.0s done
+2026-11-06T01:01:08.3987074Z #33 DONE 3.2s
+2026-11-06T01:01:08.3987280Z 
+2026-11-06T01:01:08.3987462Z #34 importing to docker
+2026-11-06T01:01:08.3987842Z #34 DONE 0.0s
+2026-11-06T01:01:08.3988036Z 
+2026-11-06T01:01:08.3988285Z #35 exporting to GitHub Actions Cache
+2026-11-06T01:01:08.3988828Z #35 preparing build cache for export
+2026-11-06T01:01:08.6392866Z #35 preparing build cache for export 0.4s done
+2026-11-06T01:01:08.6393524Z #35 sending cache export
+2026-11-06T01:01:09.0076844Z #35 writing layer sha256:379dc9cce0f0bc63260cebd1ceed67cc59b8dcbbd699b4f0aab36e5d1198d039
+2026-11-06T01:01:09.3057942Z #35 writing layer sha256:379dc9cce0f0bc63260cebd1ceed67cc59b8dcbbd699b4f0aab36e5d1198d039 0.3s done
+2026-11-06T01:01:09.5195912Z #35 writing layer sha256:40424475fa00f23aed12676bc44e84165f6a65ee6eccd90b895b17b18f6832e7
+2026-11-06T01:01:09.6396361Z #35 writing layer sha256:40424475fa00f23aed12676bc44e84165f6a65ee6eccd90b895b17b18f6832e7 0.3s done
+2026-11-06T01:01:09.8556497Z #35 writing layer sha256:550eda3ebe9ae150c67e587972cbbb1ce35c304d92bd0e5835762b5358f7fc85
+2026-11-06T01:01:10.1013168Z #35 writing layer sha256:550eda3ebe9ae150c67e587972cbbb1ce35c304d92bd0e5835762b5358f7fc85 0.2s done
+2026-11-06T01:01:10.2135810Z #35 writing layer sha256:63f4695a994f6884b64839bd2abf1f8596f4aa73146c315bb86f0a472cf6475e
+2026-11-06T01:01:10.4207911Z #35 writing layer sha256:63f4695a994f6884b64839bd2abf1f8596f4aa73146c315bb86f0a472cf6475e 0.2s done
+2026-11-06T01:01:10.6469939Z #35 writing layer sha256:71e1be47deb37dddf54d0d432e7ec8e0652253d44e654d79ef9000f109ade9cb
+2026-11-06T01:01:10.8799064Z #35 writing layer sha256:71e1be47deb37dddf54d0d432e7ec8e0652253d44e654d79ef9000f109ade9cb 0.4s done
+2026-11-06T01:01:11.0620082Z #35 writing layer sha256:765b562614d1a13e8aa937e0ac00edd543708007662141179ed3970ec4c238e5
+2026-11-06T01:01:11.1613047Z #35 writing layer sha256:765b562614d1a13e8aa937e0ac00edd543708007662141179ed3970ec4c238e5 0.3s done
+2026-11-06T01:01:11.3393343Z #35 writing layer sha256:83b6b20d9daf191ba983ad16191870b24a7c3d50dd77ab3a1fa81a970f98d2a7
+2026-11-06T01:01:11.5149810Z #35 writing layer sha256:83b6b20d9daf191ba983ad16191870b24a7c3d50dd77ab3a1fa81a970f98d2a7 0.2s done
+2026-11-06T01:01:11.7810264Z #35 writing layer sha256:b0b24db0b63de7d9592092bafef6ca8573e2674ca3c9a14221349fe3412b0347
+2026-11-06T01:01:11.9077252Z #35 writing layer sha256:b0b24db0b63de7d9592092bafef6ca8573e2674ca3c9a14221349fe3412b0347 0.1s done
+2026-11-06T01:01:12.1432853Z #35 writing layer sha256:c3b795569670ecd464804e5253ae67bb2d8a688a5876c1882764e6e2731c74ac
+2026-11-06T01:01:12.2867144Z #35 writing layer sha256:c3b795569670ecd464804e5253ae67bb2d8a688a5876c1882764e6e2731c74ac 0.1s done
+2026-11-06T01:01:12.6386327Z #35 writing layer sha256:fe5807b3bd85a47e40fee7236c0736584c66a294e897235d1a2bc1856637f6de
+2026-11-06T01:01:12.7730631Z #35 writing layer sha256:fe5807b3bd85a47e40fee7236c0736584c66a294e897235d1a2bc1856637f6de 0.1s done
+2026-11-06T01:01:13.0017206Z #35 sending cache export 4.4s done
+2026-11-06T01:01:13.0018954Z #35 DONE 4.8s
+2026-11-06T01:01:13.0341286Z 
+2026-11-06T01:01:13.0341928Z #36 resolving provenance for metadata file
+2026-11-06T01:01:13.0342498Z #36 DONE 0.0s
+2026-11-06T01:01:13.0459177Z ##[group]ImageID
+2026-11-06T01:01:13.0459936Z sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b
+2026-11-06T01:01:13.0461053Z ##[endgroup]
+2026-11-06T01:01:13.0462124Z ##[group]Digest
+2026-11-06T01:01:13.0462966Z sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b
+2026-11-06T01:01:13.0464373Z ##[endgroup]
+2026-11-06T01:01:13.0464955Z ##[group]Metadata
+2026-11-06T01:01:13.0465557Z {
+2026-11-06T01:01:13.0466418Z   "buildx.build.provenance": {
+2026-11-06T01:01:13.0466972Z     "builder": {
+2026-11-06T01:01:13.0468270Z       "id": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42140767192/attempts/1"
+2026-11-06T01:01:13.0468869Z     },
+2026-11-06T01:01:13.0469453Z     "buildType": "https://mobyproject.org/buildkit@v1",
+2026-11-06T01:01:13.0470222Z     "materials": [
+2026-11-06T01:01:13.0471391Z       {
+2026-11-06T01:01:13.0472198Z         "uri": "pkg:docker/docker/buildkit-syft-scanner@stable-1?platform=linux%2Famd64",
+2026-11-06T01:01:13.0472914Z         "digest": {
+2026-11-06T01:01:13.0474270Z           "sha256": "873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315"
+2026-11-06T01:01:13.0474988Z         }
+2026-11-06T01:01:13.0475851Z       },
+2026-11-06T01:01:13.0476518Z       {
+2026-11-06T01:01:13.0477882Z         "uri": "pkg:docker/buildpack-deps@trixie?digest=sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b&platform=linux%2Famd64",
+2026-11-06T01:01:13.0478729Z         "digest": {
+2026-11-06T01:01:13.0479788Z           "sha256": "059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b"
+2026-11-06T01:01:13.0480365Z         }
+2026-11-06T01:01:13.0481005Z       },
+2026-11-06T01:01:13.0481447Z       {
+2026-11-06T01:01:13.0482513Z         "uri": "pkg:docker/node@24.18.0-bookworm-slim?digest=sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d&platform=linux%2Famd64",
+2026-11-06T01:01:13.0483523Z         "digest": {
+2026-11-06T01:01:13.0484604Z           "sha256": "6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d"
+2026-11-06T01:01:13.0485188Z         }
+2026-11-06T01:01:13.0485875Z       },
+2026-11-06T01:01:13.0486540Z       {
+2026-11-06T01:01:13.0488766Z         "uri": "pkg:docker/gcr.io/distroless/nodejs24-debian13@nonroot?digest=sha256:a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91&platform=linux%2Famd64",
+2026-11-06T01:01:13.0489704Z         "digest": {
+2026-11-06T01:01:13.0490926Z           "sha256": "a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91"
+2026-11-06T01:01:13.0491561Z         }
+2026-11-06T01:01:13.0502236Z       }
+2026-11-06T01:01:13.0503106Z     ],
+2026-11-06T01:01:13.0503768Z     "invocation": {
+2026-11-06T01:01:13.0504302Z       "configSource": {
+2026-11-06T01:01:13.0504986Z         "entryPoint": "Dockerfile.frontend-migration"
+2026-11-06T01:01:13.0505560Z       },
+2026-11-06T01:01:13.0506275Z       "parameters": {
+2026-11-06T01:01:13.0506965Z         "frontend": "dockerfile.v0",
+2026-11-06T01:01:13.0507607Z         "args": {
+2026-11-06T01:01:13.0508747Z           "build-arg:FRONTEND_SOURCE_COMMIT": "646bb7f62bd1139dffea605f6ed9945b5f8715ce"
+2026-11-06T01:01:13.0509410Z         },
+2026-11-06T01:01:13.0510213Z         "locals": [
+2026-11-06T01:01:13.0511253Z           {
+2026-11-06T01:01:13.0511851Z             "name": "context"
+2026-11-06T01:01:13.0512462Z           },
+2026-11-06T01:01:13.0513153Z           {
+2026-11-06T01:01:13.0513913Z             "name": "dockerfile"
+2026-11-06T01:01:13.0514463Z           }
+2026-11-06T01:01:13.0515059Z         ],
+2026-11-06T01:01:13.0516312Z         "root": {
+2026-11-06T01:01:13.0517337Z           "configSource": {
+2026-11-06T01:01:13.0518330Z             "path": "Dockerfile.frontend-migration"
+2026-11-06T01:01:13.0518996Z           },
+2026-11-06T01:01:13.0519855Z           "request": {
+2026-11-06T01:01:13.0520503Z             "args": {
+2026-11-06T01:01:13.0521680Z               "build-arg:FRONTEND_SOURCE_COMMIT": "646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+2026-11-06T01:01:13.0522346Z               "vcs:localdir:context": ".",
+2026-11-06T01:01:13.0523100Z               "vcs:localdir:dockerfile": "ops/platform",
+2026-11-06T01:01:13.0523946Z               "vcs:revision": "646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+2026-11-06T01:01:13.0524853Z               "vcs:source": "https://github.com/princessdardan/lash-her-frontend"
+2026-11-06T01:01:13.0525838Z             }
+2026-11-06T01:01:13.0526276Z           }
+2026-11-06T01:01:13.0526934Z         },
+2026-11-06T01:01:13.0527759Z         "compatibilityVersion": 30
+2026-11-06T01:01:13.0528281Z       },
+2026-11-06T01:01:13.0529015Z       "environment": {
+2026-11-06T01:01:13.0529817Z         "dockerfileVersion": "1.28.0",
+2026-11-06T01:01:13.0530472Z         "github_actor": "princessdardan",
+2026-11-06T01:01:13.0531466Z         "github_actor_id": "8996309",
+2026-11-06T01:01:13.0532405Z         "github_event_name": "pull_request",
+2026-11-06T01:01:13.0533106Z         "github_event_payload": {
+2026-11-06T01:01:13.0533733Z           "action": "synchronize",
+2026-11-06T01:01:13.0534495Z           "after": "646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+2026-11-06T01:01:13.0535303Z           "before": "ab34cf9bedde69cf2ddce54b717c9dc1a181c5d6",
+2026-11-06T01:01:13.0535945Z           "number": 93,
+2026-11-06T01:01:13.0536764Z           "pull_request": {
+2026-11-06T01:01:13.0537299Z             "_links": {
+2026-11-06T01:01:13.0538042Z               "comments": {
+2026-11-06T01:01:13.0539061Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/93/comments"
+2026-11-06T01:01:13.0539644Z               },
+2026-11-06T01:01:13.0540413Z               "commits": {
+2026-11-06T01:01:13.0541910Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/93/commits"
+2026-11-06T01:01:13.0542522Z               },
+2026-11-06T01:01:13.0543278Z               "html": {
+2026-11-06T01:01:13.0544328Z                 "href": "https://github.com/princessdardan/lash-her-frontend/pull/93"
+2026-11-06T01:01:13.0544905Z               },
+2026-11-06T01:01:13.0545675Z               "issue": {
+2026-11-06T01:01:13.0546734Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/93"
+2026-11-06T01:01:13.0547349Z               },
+2026-11-06T01:01:13.0548182Z               "review_comment": {
+2026-11-06T01:01:13.0549262Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/comments{/number}"
+2026-11-06T01:01:13.0549893Z               },
+2026-11-06T01:01:13.0551042Z               "review_comments": {
+2026-11-06T01:01:13.0552084Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/93/comments"
+2026-11-06T01:01:13.0552700Z               },
+2026-11-06T01:01:13.0553555Z               "self": {
+2026-11-06T01:01:13.0554748Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/93"
+2026-11-06T01:01:13.0555343Z               },
+2026-11-06T01:01:13.0556057Z               "statuses": {
+2026-11-06T01:01:13.0559570Z                 "href": "https://api.github.com/repos/princessdardan/lash-her-frontend/statuses/646bb7f62bd1139dffea605f6ed9945b5f8715ce"
+2026-11-06T01:01:13.0560489Z               }
+2026-11-06T01:01:13.0561105Z             },
+2026-11-06T01:01:13.0561578Z             "active_lock_reason": null,
+2026-11-06T01:01:13.0562030Z             "additions": 268108,
+2026-11-06T01:01:13.0562596Z             "assignee": null,
+2026-11-06T01:01:13.0563103Z             "assignees": [],
+2026-11-06T01:01:13.0563636Z             "author_association": "OWNER",
+2026-11-06T01:01:13.0564116Z             "auto_merge": null,
+2026-11-06T01:01:13.0564501Z             "base": {
+2026-11-06T01:01:13.0564945Z               "label": "princessdardan:staging",
+2026-11-06T01:01:13.0565446Z               "ref": "staging",
+2026-11-06T01:01:13.0565830Z               "repo": {
+2026-11-06T01:01:13.0566244Z                 "allow_auto_merge": false,
+2026-11-06T01:01:13.0566731Z                 "allow_forking": true,
+2026-11-06T01:01:13.0567214Z                 "allow_merge_commit": true,
+2026-11-06T01:01:13.0567716Z                 "allow_rebase_merge": true,
+2026-11-06T01:01:13.0568201Z                 "allow_squash_merge": true,
+2026-11-06T01:01:13.0568702Z                 "allow_update_branch": false,
+2026-11-06T01:01:13.0569913Z                 "archive_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/{archive_format}{/ref}",
+2026-11-06T01:01:13.0571034Z                 "archived": false,
+2026-11-06T01:01:13.0571923Z                 "assignees_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/assignees{/user}",
+2026-11-06T01:01:13.0573129Z                 "blobs_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/blobs{/sha}",
+2026-11-06T01:01:13.0574318Z                 "branches_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/branches{/branch}",
+2026-11-06T01:01:13.0575581Z                 "clone_url": "https://github.com/princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0576843Z                 "collaborators_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/collaborators{/collaborator}",
+2026-11-06T01:01:13.0578249Z                 "comments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/comments{/number}",
+2026-11-06T01:01:13.0579418Z                 "commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/commits{/sha}",
+2026-11-06T01:01:13.0580937Z                 "compare_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/compare/{base}...{head}",
+2026-11-06T01:01:13.0582180Z                 "contents_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/contents/{+path}",
+2026-11-06T01:01:13.0583443Z                 "contributors_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/contributors",
+2026-11-06T01:01:13.0584523Z                 "created_at": "2025-12-11T00:40:27Z",
+2026-11-06T01:01:13.0585130Z                 "default_branch": "main",
+2026-11-06T01:01:13.0585747Z                 "delete_branch_on_merge": false,
+2026-11-06T01:01:13.0586699Z                 "deployments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/deployments",
+2026-11-06T01:01:13.0587567Z                 "description": null,
+2026-11-06T01:01:13.0588059Z                 "disabled": false,
+2026-11-06T01:01:13.0588910Z                 "downloads_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/downloads",
+2026-11-06T01:01:13.0590068Z                 "events_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/events",
+2026-11-06T01:01:13.0591047Z                 "fork": false,
+2026-11-06T01:01:13.0591455Z                 "forks": 0,
+2026-11-06T01:01:13.0591878Z                 "forks_count": 0,
+2026-11-06T01:01:13.0592669Z                 "forks_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/forks",
+2026-11-06T01:01:13.0593556Z                 "full_name": "princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0594588Z                 "git_commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/commits{/sha}",
+2026-11-06T01:01:13.0595879Z                 "git_refs_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/refs{/sha}",
+2026-11-06T01:01:13.0597129Z                 "git_tags_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/tags{/sha}",
+2026-11-06T01:01:13.0598190Z                 "git_url": "git://github.com/princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0598871Z                 "has_discussions": false,
+2026-11-06T01:01:13.0599380Z                 "has_downloads": false,
+2026-11-06T01:01:13.0599865Z                 "has_issues": true,
+2026-11-06T01:01:13.0600325Z                 "has_pages": false,
+2026-11-06T01:01:13.0600988Z                 "has_projects": true,
+2026-11-06T01:01:13.0601475Z                 "has_pull_requests": true,
+2026-11-06T01:01:13.0601957Z                 "has_wiki": true,
+2026-11-06T01:01:13.0602550Z                 "homepage": "https://lash-her-frontend.vercel.app",
+2026-11-06T01:01:13.0603509Z                 "hooks_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/hooks",
+2026-11-06T01:01:13.0604507Z                 "html_url": "https://github.com/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0605371Z                 "id": 1114139712,
+2026-11-06T01:01:13.0605852Z                 "is_template": false,
+2026-11-06T01:01:13.0606889Z                 "issue_comment_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/comments{/number}",
+2026-11-06T01:01:13.0608334Z                 "issue_events_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/events{/number}",
+2026-11-06T01:01:13.0609661Z                 "issues_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues{/number}",
+2026-11-06T01:01:13.0611238Z                 "keys_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/keys{/key_id}",
+2026-11-06T01:01:13.0612432Z                 "labels_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/labels{/name}",
+2026-11-06T01:01:13.0613244Z                 "language": "TypeScript",
+2026-11-06T01:01:13.0614107Z                 "languages_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/languages",
+2026-11-06T01:01:13.0614901Z                 "license": null,
+2026-11-06T01:01:13.0615386Z                 "merge_commit_message": "PR_TITLE",
+2026-11-06T01:01:13.0615963Z                 "merge_commit_title": "MERGE_MESSAGE",
+2026-11-06T01:01:13.0616803Z                 "merges_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/merges",
+2026-11-06T01:01:13.0618012Z                 "milestones_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/milestones{/number}",
+2026-11-06T01:01:13.0618908Z                 "mirror_url": null,
+2026-11-06T01:01:13.0619410Z                 "name": "lash-her-frontend",
+2026-11-06T01:01:13.0619926Z                 "node_id": "R_kgDOQmhsQA",
+2026-11-06T01:01:13.0621269Z                 "notifications_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/notifications{?since,all,participating}",
+2026-11-06T01:01:13.0622321Z                 "open_issues": 4,
+2026-11-06T01:01:13.0622843Z                 "open_issues_count": 4,
+2026-11-06T01:01:13.0623292Z                 "owner": {
+2026-11-06T01:01:13.0623934Z                   "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0624939Z                   "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0625923Z                   "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0627005Z                   "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0628095Z                   "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0628798Z                   "gravatar_id": "",
+2026-11-06T01:01:13.0629364Z                   "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0629925Z                   "id": 8996309,
+2026-11-06T01:01:13.0630402Z                   "login": "princessdardan",
+2026-11-06T01:01:13.0631136Z                   "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0631940Z                   "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0633022Z                   "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0634027Z                   "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0634710Z                   "site_admin": false,
+2026-11-06T01:01:13.0635494Z                   "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0636530Z                   "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0637301Z                   "type": "User",
+2026-11-06T01:01:13.0637901Z                   "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0638527Z                   "user_view_type": "public"
+2026-11-06T01:01:13.0639189Z                 },
+2026-11-06T01:01:13.0639581Z                 "private": false,
+2026-11-06T01:01:13.0640135Z                 "pull_request_creation_policy": "all",
+2026-11-06T01:01:13.0641274Z                 "pulls_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls{/number}",
+2026-11-06T01:01:13.0642213Z                 "pushed_at": "2026-11-06T00:59:43Z",
+2026-11-06T01:01:13.0642813Z                 "releases_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/releases{/id}",
+2026-11-06T01:01:13.0643510Z                 "size": 12278,
+2026-11-06T01:01:13.0643846Z                 "squash_merge_commit_message": "COMMIT_MESSAGES",
+2026-11-06T01:01:13.0644253Z                 "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+2026-11-06T01:01:13.0644767Z                 "ssh_url": "git@github.com:princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0645167Z                 "stargazers_count": 0,
+2026-11-06T01:01:13.0645692Z                 "stargazers_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/stargazers",
+2026-11-06T01:01:13.0646418Z                 "statuses_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/statuses/{sha}",
+2026-11-06T01:01:13.0647140Z                 "subscribers_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/subscribers",
+2026-11-06T01:01:13.0647872Z                 "subscription_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/subscription",
+2026-11-06T01:01:13.0648498Z                 "svn_url": "https://github.com/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0649067Z                 "tags_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/tags",
+2026-11-06T01:01:13.0649691Z                 "teams_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/teams",
+2026-11-06T01:01:13.0650135Z                 "topics": [],
+2026-11-06T01:01:13.0650886Z                 "trees_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/trees{/sha}",
+2026-11-06T01:01:13.0651441Z                 "updated_at": "2026-11-02T20:26:39Z",
+2026-11-06T01:01:13.0651901Z                 "url": "https://api.github.com/repos/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0652368Z                 "use_squash_pr_title_as_default": false,
+2026-11-06T01:01:13.0652703Z                 "visibility": "public",
+2026-11-06T01:01:13.0652993Z                 "watchers": 0,
+2026-11-06T01:01:13.0653266Z                 "watchers_count": 0,
+2026-11-06T01:01:13.0653585Z                 "web_commit_signoff_required": false
+2026-11-06T01:01:13.0653869Z               },
+2026-11-06T01:01:13.0654158Z               "sha": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+2026-11-06T01:01:13.0654474Z               "user": {
+2026-11-06T01:01:13.0654862Z                 "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0655441Z                 "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0656020Z                 "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0656641Z                 "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0657248Z                 "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0657679Z                 "gravatar_id": "",
+2026-11-06T01:01:13.0658023Z                 "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0658372Z                 "id": 8996309,
+2026-11-06T01:01:13.0658652Z                 "login": "princessdardan",
+2026-11-06T01:01:13.0658980Z                 "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0659438Z                 "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0660054Z                 "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0661064Z                 "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0661684Z                 "site_admin": false,
+2026-11-06T01:01:13.0662172Z                 "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0662815Z                 "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0663269Z                 "type": "User",
+2026-11-06T01:01:13.0663763Z                 "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0664132Z                 "user_view_type": "public"
+2026-11-06T01:01:13.0664397Z               }
+2026-11-06T01:01:13.0664599Z             },
+2026-11-06T01:01:13.0675631Z             "body": "This draft adds the frontend Phase 2 identity, learning, authoring and account-lifecycle flows, plus whole-operation writer admission. Customer sign-in uses database sessions; explicit same-origin handlers issue audience-specific API credentials. Public catalog data is separated from private learning, access and playback responses. Approved deletion/export and paid-course archival policies are implemented.\n\nCourse PR #5/#6 and Community PR #4/#5 have merged normally. The released P2 contract bundle pins Course `3c0a0d6e` and Community `1ce696a7`; both exact API mains pass required post-merge quality, PostgreSQL/operator and native checks. The full 44-entry compatibility review preserves historical v1 files and enrollment-event bytes. Exact Git/archive/source/review verification passes at frontend `ab34cf9b`.\n\nPR #91 is consumed unchanged. PR #92 (`56d64fe`) is a real source predecessor with its execution core and original evidence preserved; this branch adds whole-cron/direct-worker admission and independent PII maintenance.\n\nRecorded validation includes 2,539 unit tests, 43 actual identity entry-point cases, 33 identity/lifecycle database cases, 19 export-lifecycle database tests, four actual authoring cases, and six actual Course-backed desktop/mobile learner cases. Local provider edges are owned fixtures and are identified in the evidence. Frontend CI at `ab34cf9b` passes quality/unit, build, audit and gateway/platform including strict native verification. Browser installation failed because locked Playwright 1.59.1 does not support the selected Ubuntu 26.04 runner; the matrix is being pinned to 24.04. The PostgreSQL 18 bootstrap fixture still fails during configuration and is under correction. Earlier failed attempts remain retained.\n\nThis draft is incomplete. Historical deployment/source/configuration classification and full provider effect reconciliation are still being integrated. The pending-SQL coordinator currently has an owned-fixture call site; the real operator release driver must still connect it to API migration/runtime and compatible frontend promotion under continuous locks. Final required frontend CI, immutable candidate qualification, actual Google/Resend/Mux and deployed authoring/learning/access/lifecycle/a11y/regression evidence remain open. P2-12 and G2 are unaccepted.\n\nNo staging SQL, provider/credential mutation, schedule activation, frontend promotion or production activation has occurred in this goal. Dardan must start the concrete reviewed staging release under the single-operator policy. Phase 3, paid-course checkout, Community member features and monitoring remain excluded.\n\nThe execution tracker, current checkpoint and `docs/api-integration/phase2-goal.md` link the source-bound evidence and remaining conditions.",
+2026-11-06T01:01:13.0685552Z             "changed_files": 1279,
+2026-11-06T01:01:13.0685844Z             "closed_at": null,
+2026-11-06T01:01:13.0686097Z             "comments": 0,
+2026-11-06T01:01:13.0686619Z             "comments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/93/comments",
+2026-11-06T01:01:13.0687116Z             "commits": 153,
+2026-11-06T01:01:13.0687621Z             "commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/93/commits",
+2026-11-06T01:01:13.0688286Z             "created_at": "2026-11-05T23:12:23Z",
+2026-11-06T01:01:13.0688621Z             "deletions": 1984,
+2026-11-06T01:01:13.0689063Z             "diff_url": "https://github.com/princessdardan/lash-her-frontend/pull/93.diff",
+2026-11-06T01:01:13.0689477Z             "draft": true,
+2026-11-06T01:01:13.0689702Z             "head": {
+2026-11-06T01:01:13.0690023Z               "label": "princessdardan:codex/phase2-integration",
+2026-11-06T01:01:13.0690717Z               "ref": "codex/phase2-integration",
+2026-11-06T01:01:13.0691057Z               "repo": {
+2026-11-06T01:01:13.0691327Z                 "allow_auto_merge": false,
+2026-11-06T01:01:13.0691632Z                 "allow_forking": true,
+2026-11-06T01:01:13.0691929Z                 "allow_merge_commit": true,
+2026-11-06T01:01:13.0692245Z                 "allow_rebase_merge": true,
+2026-11-06T01:01:13.0692541Z                 "allow_squash_merge": true,
+2026-11-06T01:01:13.0692857Z                 "allow_update_branch": false,
+2026-11-06T01:01:13.0693445Z                 "archive_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/{archive_format}{/ref}",
+2026-11-06T01:01:13.0693977Z                 "archived": false,
+2026-11-06T01:01:13.0694499Z                 "assignees_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/assignees{/user}",
+2026-11-06T01:01:13.0695230Z                 "blobs_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/blobs{/sha}",
+2026-11-06T01:01:13.0695960Z                 "branches_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/branches{/branch}",
+2026-11-06T01:01:13.0696609Z                 "clone_url": "https://github.com/princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0697352Z                 "collaborators_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/collaborators{/collaborator}",
+2026-11-06T01:01:13.0698159Z                 "comments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/comments{/number}",
+2026-11-06T01:01:13.0698886Z                 "commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/commits{/sha}",
+2026-11-06T01:01:13.0699628Z                 "compare_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/compare/{base}...{head}",
+2026-11-06T01:01:13.0700380Z                 "contents_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/contents/{+path}",
+2026-11-06T01:01:13.0701669Z                 "contributors_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/contributors",
+2026-11-06T01:01:13.0702215Z                 "created_at": "2025-12-11T00:40:27Z",
+2026-11-06T01:01:13.0702536Z                 "default_branch": "main",
+2026-11-06T01:01:13.0702859Z                 "delete_branch_on_merge": false,
+2026-11-06T01:01:13.0703405Z                 "deployments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/deployments",
+2026-11-06T01:01:13.0703913Z                 "description": null,
+2026-11-06T01:01:13.0704216Z                 "disabled": false,
+2026-11-06T01:01:13.0704711Z                 "downloads_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/downloads",
+2026-11-06T01:01:13.0705385Z                 "events_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/events",
+2026-11-06T01:01:13.0705847Z                 "fork": false,
+2026-11-06T01:01:13.0706084Z                 "forks": 0,
+2026-11-06T01:01:13.0706346Z                 "forks_count": 0,
+2026-11-06T01:01:13.0706809Z                 "forks_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/forks",
+2026-11-06T01:01:13.0707329Z                 "full_name": "princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0707931Z                 "git_commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/commits{/sha}",
+2026-11-06T01:01:13.0708887Z                 "git_refs_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/refs{/sha}",
+2026-11-06T01:01:13.0709631Z                 "git_tags_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/tags{/sha}",
+2026-11-06T01:01:13.0710254Z                 "git_url": "git://github.com/princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0710922Z                 "has_discussions": false,
+2026-11-06T01:01:13.0711235Z                 "has_downloads": false,
+2026-11-06T01:01:13.0711536Z                 "has_issues": true,
+2026-11-06T01:01:13.0711957Z                 "has_pages": false,
+2026-11-06T01:01:13.0712239Z                 "has_projects": true,
+2026-11-06T01:01:13.0712532Z                 "has_pull_requests": true,
+2026-11-06T01:01:13.0712831Z                 "has_wiki": true,
+2026-11-06T01:01:13.0713184Z                 "homepage": "https://lash-her-frontend.vercel.app",
+2026-11-06T01:01:13.0713733Z                 "hooks_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/hooks",
+2026-11-06T01:01:13.0714329Z                 "html_url": "https://github.com/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0714721Z                 "id": 1114139712,
+2026-11-06T01:01:13.0714999Z                 "is_template": false,
+2026-11-06T01:01:13.0715583Z                 "issue_comment_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/comments{/number}",
+2026-11-06T01:01:13.0716413Z                 "issue_events_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/events{/number}",
+2026-11-06T01:01:13.0717186Z                 "issues_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues{/number}",
+2026-11-06T01:01:13.0717889Z                 "keys_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/keys{/key_id}",
+2026-11-06T01:01:13.0718588Z                 "labels_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/labels{/name}",
+2026-11-06T01:01:13.0719082Z                 "language": "TypeScript",
+2026-11-06T01:01:13.0719599Z                 "languages_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/languages",
+2026-11-06T01:01:13.0720088Z                 "license": null,
+2026-11-06T01:01:13.0720398Z                 "merge_commit_message": "PR_TITLE",
+2026-11-06T01:01:13.0720978Z                 "merge_commit_title": "MERGE_MESSAGE",
+2026-11-06T01:01:13.0721495Z                 "merges_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/merges",
+2026-11-06T01:01:13.0722237Z                 "milestones_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/milestones{/number}",
+2026-11-06T01:01:13.0722764Z                 "mirror_url": null,
+2026-11-06T01:01:13.0723069Z                 "name": "lash-her-frontend",
+2026-11-06T01:01:13.0723408Z                 "node_id": "R_kgDOQmhsQA",
+2026-11-06T01:01:13.0724073Z                 "notifications_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/notifications{?since,all,participating}",
+2026-11-06T01:01:13.0724699Z                 "open_issues": 4,
+2026-11-06T01:01:13.0724992Z                 "open_issues_count": 4,
+2026-11-06T01:01:13.0725259Z                 "owner": {
+2026-11-06T01:01:13.0725653Z                   "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0726244Z                   "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0726833Z                   "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0727466Z                   "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0728094Z                   "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0728525Z                   "gravatar_id": "",
+2026-11-06T01:01:13.0728876Z                   "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0729228Z                   "id": 8996309,
+2026-11-06T01:01:13.0729639Z                   "login": "princessdardan",
+2026-11-06T01:01:13.0729986Z                   "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0730458Z                   "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0731371Z                   "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0731961Z                   "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0732520Z                   "site_admin": false,
+2026-11-06T01:01:13.0732998Z                   "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0733641Z                   "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0734105Z                   "type": "User",
+2026-11-06T01:01:13.0734459Z                   "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0734840Z                   "user_view_type": "public"
+2026-11-06T01:01:13.0735116Z                 },
+2026-11-06T01:01:13.0735350Z                 "private": false,
+2026-11-06T01:01:13.0735660Z                 "pull_request_creation_policy": "all",
+2026-11-06T01:01:13.0736211Z                 "pulls_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls{/number}",
+2026-11-06T01:01:13.0736728Z                 "pushed_at": "2026-11-06T00:59:43Z",
+2026-11-06T01:01:13.0737270Z                 "releases_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/releases{/id}",
+2026-11-06T01:01:13.0737763Z                 "size": 12278,
+2026-11-06T01:01:13.0738097Z                 "squash_merge_commit_message": "COMMIT_MESSAGES",
+2026-11-06T01:01:13.0738510Z                 "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+2026-11-06T01:01:13.0738984Z                 "ssh_url": "git@github.com:princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0739393Z                 "stargazers_count": 0,
+2026-11-06T01:01:13.0739914Z                 "stargazers_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/stargazers",
+2026-11-06T01:01:13.0740894Z                 "statuses_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/statuses/{sha}",
+2026-11-06T01:01:13.0741644Z                 "subscribers_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/subscribers",
+2026-11-06T01:01:13.0742391Z                 "subscription_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/subscription",
+2026-11-06T01:01:13.0743022Z                 "svn_url": "https://github.com/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0743590Z                 "tags_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/tags",
+2026-11-06T01:01:13.0744227Z                 "teams_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/teams",
+2026-11-06T01:01:13.0744700Z                 "topics": [],
+2026-11-06T01:01:13.0745191Z                 "trees_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/trees{/sha}",
+2026-11-06T01:01:13.0745714Z                 "updated_at": "2026-11-02T20:26:39Z",
+2026-11-06T01:01:13.0746163Z                 "url": "https://api.github.com/repos/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0746621Z                 "use_squash_pr_title_as_default": false,
+2026-11-06T01:01:13.0746955Z                 "visibility": "public",
+2026-11-06T01:01:13.0747251Z                 "watchers": 0,
+2026-11-06T01:01:13.0747519Z                 "watchers_count": 0,
+2026-11-06T01:01:13.0747866Z                 "web_commit_signoff_required": false
+2026-11-06T01:01:13.0748146Z               },
+2026-11-06T01:01:13.0748446Z               "sha": "646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+2026-11-06T01:01:13.0748766Z               "user": {
+2026-11-06T01:01:13.0749142Z                 "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0749844Z                 "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0750445Z                 "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0751375Z                 "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0751999Z                 "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0752705Z                 "gravatar_id": "",
+2026-11-06T01:01:13.0753059Z                 "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0753404Z                 "id": 8996309,
+2026-11-06T01:01:13.0753689Z                 "login": "princessdardan",
+2026-11-06T01:01:13.0754017Z                 "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0754482Z                 "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0755108Z                 "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0755688Z                 "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0756091Z                 "site_admin": false,
+2026-11-06T01:01:13.0756565Z                 "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0757199Z                 "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0757661Z                 "type": "User",
+2026-11-06T01:01:13.0758008Z                 "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0758376Z                 "user_view_type": "public"
+2026-11-06T01:01:13.0758644Z               }
+2026-11-06T01:01:13.0758844Z             },
+2026-11-06T01:01:13.0759219Z             "html_url": "https://github.com/princessdardan/lash-her-frontend/pull/93",
+2026-11-06T01:01:13.0759624Z             "id": 5180139131,
+2026-11-06T01:01:13.0760096Z             "issue_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/93",
+2026-11-06T01:01:13.0760773Z             "labels": [],
+2026-11-06T01:01:13.0761040Z             "locked": false,
+2026-11-06T01:01:13.0761336Z             "maintainer_can_modify": false,
+2026-11-06T01:01:13.0761739Z             "merge_commit_sha": "58267dc3c79804f31fee752e349e2ea03fdb2f40",
+2026-11-06T01:01:13.0762119Z             "mergeable": null,
+2026-11-06T01:01:13.0762405Z             "mergeable_state": "unknown",
+2026-11-06T01:01:13.0762686Z             "merged": false,
+2026-11-06T01:01:13.0762942Z             "merged_at": null,
+2026-11-06T01:01:13.0763199Z             "merged_by": null,
+2026-11-06T01:01:13.0763447Z             "milestone": null,
+2026-11-06T01:01:13.0763740Z             "node_id": "PR_kwDOQmhsQM8AAAABNMKmew",
+2026-11-06T01:01:13.0764045Z             "number": 93,
+2026-11-06T01:01:13.0764474Z             "patch_url": "https://github.com/princessdardan/lash-her-frontend/pull/93.patch",
+2026-11-06T01:01:13.0764918Z             "rebaseable": null,
+2026-11-06T01:01:13.0765203Z             "requested_reviewers": [],
+2026-11-06T01:01:13.0765491Z             "requested_teams": [],
+2026-11-06T01:01:13.0766060Z             "review_comment_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/comments{/number}",
+2026-11-06T01:01:13.0766610Z             "review_comments": 0,
+2026-11-06T01:01:13.0767152Z             "review_comments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/93/comments",
+2026-11-06T01:01:13.0767662Z             "state": "open",
+2026-11-06T01:01:13.0768303Z             "statuses_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/statuses/646bb7f62bd1139dffea605f6ed9945b5f8715ce",
+2026-11-06T01:01:13.0769112Z             "title": "Implement Phase 2 identity, learning, lifecycle and release coordination",
+2026-11-06T01:01:13.0769586Z             "updated_at": "2026-11-06T00:59:45Z",
+2026-11-06T01:01:13.0770203Z             "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls/93",
+2026-11-06T01:01:13.0770885Z             "user": {
+2026-11-06T01:01:13.0771281Z               "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0771865Z               "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0772443Z               "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0773199Z               "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0773806Z               "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0774229Z               "gravatar_id": "",
+2026-11-06T01:01:13.0774571Z               "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0774891Z               "id": 8996309,
+2026-11-06T01:01:13.0775162Z               "login": "princessdardan",
+2026-11-06T01:01:13.0775489Z               "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0775948Z               "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0776554Z               "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0777128Z               "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0777522Z               "site_admin": false,
+2026-11-06T01:01:13.0777980Z               "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0778613Z               "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0779044Z               "type": "User",
+2026-11-06T01:01:13.0779384Z               "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0779752Z               "user_view_type": "public"
+2026-11-06T01:01:13.0780011Z             }
+2026-11-06T01:01:13.0780207Z           },
+2026-11-06T01:01:13.0780410Z           "repository": {
+2026-11-06T01:01:13.0780939Z             "allow_forking": true,
+2026-11-06T01:01:13.0781494Z             "archive_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/{archive_format}{/ref}",
+2026-11-06T01:01:13.0782011Z             "archived": false,
+2026-11-06T01:01:13.0782527Z             "assignees_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/assignees{/user}",
+2026-11-06T01:01:13.0783254Z             "blobs_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/blobs{/sha}",
+2026-11-06T01:01:13.0783983Z             "branches_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/branches{/branch}",
+2026-11-06T01:01:13.0784636Z             "clone_url": "https://github.com/princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0785358Z             "collaborators_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/collaborators{/collaborator}",
+2026-11-06T01:01:13.0786157Z             "comments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/comments{/number}",
+2026-11-06T01:01:13.0786875Z             "commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/commits{/sha}",
+2026-11-06T01:01:13.0787613Z             "compare_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/compare/{base}...{head}",
+2026-11-06T01:01:13.0788368Z             "contents_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/contents/{+path}",
+2026-11-06T01:01:13.0789100Z             "contributors_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/contributors",
+2026-11-06T01:01:13.0789625Z             "created_at": "2025-12-11T00:40:27Z",
+2026-11-06T01:01:13.0789943Z             "default_branch": "main",
+2026-11-06T01:01:13.0790457Z             "deployments_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/deployments",
+2026-11-06T01:01:13.0791222Z             "description": null,
+2026-11-06T01:01:13.0791512Z             "disabled": false,
+2026-11-06T01:01:13.0791991Z             "downloads_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/downloads",
+2026-11-06T01:01:13.0792662Z             "events_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/events",
+2026-11-06T01:01:13.0793094Z             "fork": false,
+2026-11-06T01:01:13.0793322Z             "forks": 0,
+2026-11-06T01:01:13.0793549Z             "forks_count": 0,
+2026-11-06T01:01:13.0794098Z             "forks_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/forks",
+2026-11-06T01:01:13.0794607Z             "full_name": "princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0795203Z             "git_commits_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/commits{/sha}",
+2026-11-06T01:01:13.0795931Z             "git_refs_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/refs{/sha}",
+2026-11-06T01:01:13.0796629Z             "git_tags_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/tags{/sha}",
+2026-11-06T01:01:13.0797239Z             "git_url": "git://github.com/princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0797647Z             "has_discussions": false,
+2026-11-06T01:01:13.0797941Z             "has_downloads": false,
+2026-11-06T01:01:13.0798226Z             "has_issues": true,
+2026-11-06T01:01:13.0798493Z             "has_pages": false,
+2026-11-06T01:01:13.0798766Z             "has_projects": true,
+2026-11-06T01:01:13.0799055Z             "has_pull_requests": true,
+2026-11-06T01:01:13.0799319Z             "has_wiki": true,
+2026-11-06T01:01:13.0799651Z             "homepage": "https://lash-her-frontend.vercel.app",
+2026-11-06T01:01:13.0800194Z             "hooks_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/hooks",
+2026-11-06T01:01:13.0800928Z             "html_url": "https://github.com/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0801303Z             "id": 1114139712,
+2026-11-06T01:01:13.0801571Z             "is_template": false,
+2026-11-06T01:01:13.0802131Z             "issue_comment_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/comments{/number}",
+2026-11-06T01:01:13.0802944Z             "issue_events_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues/events{/number}",
+2026-11-06T01:01:13.0803700Z             "issues_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/issues{/number}",
+2026-11-06T01:01:13.0804413Z             "keys_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/keys{/key_id}",
+2026-11-06T01:01:13.0805120Z             "labels_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/labels{/name}",
+2026-11-06T01:01:13.0805615Z             "language": "TypeScript",
+2026-11-06T01:01:13.0806117Z             "languages_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/languages",
+2026-11-06T01:01:13.0806583Z             "license": null,
+2026-11-06T01:01:13.0807033Z             "merges_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/merges",
+2026-11-06T01:01:13.0807746Z             "milestones_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/milestones{/number}",
+2026-11-06T01:01:13.0808270Z             "mirror_url": null,
+2026-11-06T01:01:13.0808561Z             "name": "lash-her-frontend",
+2026-11-06T01:01:13.0808866Z             "node_id": "R_kgDOQmhsQA",
+2026-11-06T01:01:13.0809526Z             "notifications_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/notifications{?since,all,participating}",
+2026-11-06T01:01:13.0810120Z             "open_issues": 4,
+2026-11-06T01:01:13.0810390Z             "open_issues_count": 4,
+2026-11-06T01:01:13.0810770Z             "owner": {
+2026-11-06T01:01:13.0811156Z               "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0811853Z               "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0812454Z               "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0813068Z               "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0813675Z               "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0814101Z               "gravatar_id": "",
+2026-11-06T01:01:13.0814555Z               "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0814881Z               "id": 8996309,
+2026-11-06T01:01:13.0815162Z               "login": "princessdardan",
+2026-11-06T01:01:13.0815488Z               "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0815947Z               "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0816565Z               "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0817151Z               "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0817546Z               "site_admin": false,
+2026-11-06T01:01:13.0818013Z               "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0818649Z               "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0819080Z               "type": "User",
+2026-11-06T01:01:13.0819428Z               "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0819788Z               "user_view_type": "public"
+2026-11-06T01:01:13.0820049Z             },
+2026-11-06T01:01:13.0820265Z             "private": false,
+2026-11-06T01:01:13.0820800Z             "pull_request_creation_policy": "all",
+2026-11-06T01:01:13.0821380Z             "pulls_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/pulls{/number}",
+2026-11-06T01:01:13.0821905Z             "pushed_at": "2026-11-06T00:59:43Z",
+2026-11-06T01:01:13.0822433Z             "releases_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/releases{/id}",
+2026-11-06T01:01:13.0822903Z             "size": 12278,
+2026-11-06T01:01:13.0823284Z             "ssh_url": "git@github.com:princessdardan/lash-her-frontend.git",
+2026-11-06T01:01:13.0823682Z             "stargazers_count": 0,
+2026-11-06T01:01:13.0824194Z             "stargazers_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/stargazers",
+2026-11-06T01:01:13.0824909Z             "statuses_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/statuses/{sha}",
+2026-11-06T01:01:13.0825626Z             "subscribers_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/subscribers",
+2026-11-06T01:01:13.0826358Z             "subscription_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/subscription",
+2026-11-06T01:01:13.0826976Z             "svn_url": "https://github.com/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0827537Z             "tags_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/tags",
+2026-11-06T01:01:13.0828158Z             "teams_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/teams",
+2026-11-06T01:01:13.0828585Z             "topics": [],
+2026-11-06T01:01:13.0829062Z             "trees_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/git/trees{/sha}",
+2026-11-06T01:01:13.0829572Z             "updated_at": "2026-11-02T20:26:39Z",
+2026-11-06T01:01:13.0830021Z             "url": "https://api.github.com/repos/princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0830438Z             "visibility": "public",
+2026-11-06T01:01:13.0830834Z             "watchers": 0,
+2026-11-06T01:01:13.0831098Z             "watchers_count": 0,
+2026-11-06T01:01:13.0831399Z             "web_commit_signoff_required": false
+2026-11-06T01:01:13.0831681Z           },
+2026-11-06T01:01:13.0831881Z           "sender": {
+2026-11-06T01:01:13.0832386Z             "avatar_url": "https://avatars.githubusercontent.com/u/8996309?v=4",
+2026-11-06T01:01:13.0832976Z             "events_url": "https://api.github.com/users/princessdardan/events{/privacy}",
+2026-11-06T01:01:13.0833556Z             "followers_url": "https://api.github.com/users/princessdardan/followers",
+2026-11-06T01:01:13.0834162Z             "following_url": "https://api.github.com/users/princessdardan/following{/other_user}",
+2026-11-06T01:01:13.0834766Z             "gists_url": "https://api.github.com/users/princessdardan/gists{/gist_id}",
+2026-11-06T01:01:13.0835301Z             "gravatar_id": "",
+2026-11-06T01:01:13.0835637Z             "html_url": "https://github.com/princessdardan",
+2026-11-06T01:01:13.0835969Z             "id": 8996309,
+2026-11-06T01:01:13.0836237Z             "login": "princessdardan",
+2026-11-06T01:01:13.0836552Z             "node_id": "MDQ6VXNlcjg5OTYzMDk=",
+2026-11-06T01:01:13.0837013Z             "organizations_url": "https://api.github.com/users/princessdardan/orgs",
+2026-11-06T01:01:13.0837623Z             "received_events_url": "https://api.github.com/users/princessdardan/received_events",
+2026-11-06T01:01:13.0838194Z             "repos_url": "https://api.github.com/users/princessdardan/repos",
+2026-11-06T01:01:13.0838595Z             "site_admin": false,
+2026-11-06T01:01:13.0839056Z             "starred_url": "https://api.github.com/users/princessdardan/starred{/owner}{/repo}",
+2026-11-06T01:01:13.0839677Z             "subscriptions_url": "https://api.github.com/users/princessdardan/subscriptions",
+2026-11-06T01:01:13.0840113Z             "type": "User",
+2026-11-06T01:01:13.0840447Z             "url": "https://api.github.com/users/princessdardan",
+2026-11-06T01:01:13.0840937Z             "user_view_type": "public"
+2026-11-06T01:01:13.0841201Z           }
+2026-11-06T01:01:13.0841390Z         },
+2026-11-06T01:01:13.0841663Z         "github_job": "frontend-operator-migrations",
+2026-11-06T01:01:13.0842018Z         "github_ref": "refs/pull/93/merge",
+2026-11-06T01:01:13.0842330Z         "github_ref_name": "93/merge",
+2026-11-06T01:01:13.0842624Z         "github_ref_protected": "false",
+2026-11-06T01:01:13.0842929Z         "github_ref_type": "branch",
+2026-11-06T01:01:13.0843292Z         "github_repository": "princessdardan/lash-her-frontend",
+2026-11-06T01:01:13.0843670Z         "github_repository_id": "1114139712",
+2026-11-06T01:01:13.0844021Z         "github_repository_owner": "princessdardan",
+2026-11-06T01:01:13.0844371Z         "github_repository_owner_id": "8996309",
+2026-11-06T01:01:13.0844731Z         "github_run_attempt": "1",
+2026-11-06T01:01:13.0845023Z         "github_run_id": "42140767192",
+2026-11-06T01:01:13.0845312Z         "github_run_number": "259",
+2026-11-06T01:01:13.0845593Z         "github_runner_arch": "X64",
+2026-11-06T01:01:13.0845918Z         "github_runner_environment": "github-hosted",
+2026-11-06T01:01:13.0846266Z         "github_runner_image_os": "ubuntu24",
+2026-11-06T01:01:13.0846616Z         "github_runner_image_version": "20261101.360.1",
+2026-11-06T01:01:13.0846994Z         "github_runner_name": "GitHub Actions 1000002338",
+2026-11-06T01:01:13.0847337Z         "github_runner_os": "Linux",
+2026-11-06T01:01:13.0847756Z         "github_runner_tracking_id": "github_f11228d1-f8ff-4fd0-ac3f-503ec079f691",
+2026-11-06T01:01:13.0848211Z         "github_server_url": "https://github.com",
+2026-11-06T01:01:13.0848580Z         "github_triggering_actor": "princessdardan",
+2026-11-06T01:01:13.0848900Z         "github_workflow": "CI",
+2026-11-06T01:01:13.0849430Z         "github_workflow_ref": "princessdardan/lash-her-frontend/.github/workflows/ci.yml@refs/pull/93/merge",
+2026-11-06T01:01:13.0850057Z         "github_workflow_sha": "976f6ce1a4a385452c10ee7d9ac38ad831ad6d20",
+2026-11-06T01:01:13.0850447Z         "platform": "linux/amd64"
+2026-11-06T01:01:13.0850814Z       }
+2026-11-06T01:01:13.0851005Z     }
+2026-11-06T01:01:13.0851189Z   },
+2026-11-06T01:01:13.0851948Z   "buildx.build.ref": "builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5/builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50/6ew6dmemzgam3vslwkefnpe18",
+2026-11-06T01:01:13.0852646Z   "containerimage.descriptor": {
+2026-11-06T01:01:13.0853011Z     "mediaType": "application/vnd.oci.image.index.v1+json",
+2026-11-06T01:01:13.0853535Z     "digest": "sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b",
+2026-11-06T01:01:13.0853957Z     "size": 857,
+2026-11-06T01:01:13.0854164Z     "annotations": {
+2026-11-06T01:01:13.0854494Z       "org.opencontainers.image.created": "2026-11-06T01:01:06Z"
+2026-11-06T01:01:13.0854950Z     }
+2026-11-06T01:01:13.0855129Z   },
+2026-11-06T01:01:13.0855573Z   "containerimage.digest": "sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b",
+2026-11-06T01:01:13.0856181Z   "image.name": "docker.io/library/lash-her-frontend-migration:ci"
+2026-11-06T01:01:13.0856525Z }
+2026-11-06T01:01:13.0856901Z ##[endgroup]
+2026-11-06T01:01:13.0857238Z ##[group]Reference
+2026-11-06T01:01:13.0857863Z builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5/builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50/6ew6dmemzgam3vslwkefnpe18
+2026-11-06T01:01:13.0858551Z ##[endgroup]
+2026-11-06T01:01:13.0858893Z ##[group]Check build summary support
+2026-11-06T01:01:13.0859319Z Build summary supported!
+2026-11-06T01:01:13.0859665Z ##[endgroup]
+2026-11-06T01:01:13.0919868Z ##[group]Run docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+2026-11-06T01:01:13.0920855Z [36;1mdocker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \[0m
+2026-11-06T01:01:13.0921599Z [36;1m  --entrypoint node lash-her-frontend-migration:ci ops/platform/frontend-image.mjs --manifest-only[0m
+2026-11-06T01:01:13.0922303Z [36;1mdocker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \[0m
+2026-11-06T01:01:13.0922855Z [36;1m  --entrypoint node lash-her-frontend-migration:ci -e '[0m
+2026-11-06T01:01:13.0923320Z [36;1m    const fs=require("node:fs");if(process.getuid()===0)process.exit(1);[0m
+2026-11-06T01:01:13.0923972Z [36;1m    for(const p of ["/app/src/app","/app/tests","/app/node_modules/next","/app/node_modules/sanity","/app/.env","/bin/sh"])[0m
+2026-11-06T01:01:13.0924529Z [36;1m      if(fs.existsSync(p))process.exit(1);[0m
+2026-11-06T01:01:13.0924860Z [36;1m  '[0m
+2026-11-06T01:01:13.0944698Z shell: /usr/bin/bash -e {0}
+2026-11-06T01:01:13.0945010Z ##[endgroup]
+2026-11-06T01:01:13.5494078Z {"journalSha256":"466a9e19076eb90bbf680f879393d73e35393576c76cab2baa8164bfd2423c70","entries":[{"tag":"0000_old_moonstone","hash":"c31011d49046e22438409ccf3a9993607aae00db43f1a782e131b75516f2de9e","folderMillis":1778450844121},{"tag":"0001_private_training_enrollments","hash":"391ada2d7014c0d6183f9ddd5fb022e3cb9feb29f50e5cbd9a2cf2cf1f2da6c6","folderMillis":1778784000000},{"tag":"0002_rapid_fat_cobra","hash":"c938ba2ab9a31d6b1b78c92d398f23e6b28415dd991187a6af7118a30848a30b","folderMillis":1779049037217},{"tag":"0003_tired_vertigo","hash":"b544df117671eec2817c7a92b2f06d9ce69eff49d411c8b8387e79d0105c8471","folderMillis":1779148298733},{"tag":"0004_parched_carnage","hash":"c5da298c1e32dd62a6e45e4a9a7a7335a6539ebaba4df7526b09d009a7c525bc","folderMillis":1779310411063},{"tag":"0005_yummy_captain_britain","hash":"195bc6727e89b7b5736d7639533b40eadbbd6dcda47315950487ddafeacf1e79","folderMillis":1779490120253},{"tag":"0007_product_shipping_address","hash":"b3437f7ba447b4fbba358d6f37454986fe67f8f9add5c345dfb02fe684e5f6e8","folderMillis":1779661753148},{"tag":"0008_hot_path_private_indexes","hash":"79646ade59578ae85eb2a310c2f279ebc670424d507ae13dddeaddf11be8adfb","folderMillis":1779753600000},{"tag":"0009_dashing_rocket_raccoon","hash":"1b67741b45d9ba542a33d67cb884c77b4d28cab3e634e020778a3a7807a8990b","folderMillis":1779901448734},{"tag":"0010_familiar_jazinda","hash":"0e1475032661ebbfd33f00dd0ba8ebfef03f347566df8d9c29e62bae89c6c0a0","folderMillis":1780019995593},{"tag":"0010_dry_magneto","hash":"b256f5d2b3bb0f2c3fd8d461a1023e88ca35dc01681684ca29618eb614d46a08","folderMillis":1781909205634},{"tag":"0011_opposite_vulcan","hash":"147ea5ad837cecc3aef4ded30594928bf567ace285de5a36024e5134441657ad","folderMillis":1781918939267},{"tag":"0012_secret_chimera","hash":"9c782876f2223e790bca6bafae6411a0ef75a632a40198f63e1583e61e539415","folderMillis":1781938950079},{"tag":"0013_superb_mongoose","hash":"73cd12a6481082745d570d30e63fdd75e0c11f64404fba71b4202aa01422585c","folderMillis":1782029654089},{"tag":"0014_even_madame_web","hash":"988fc00aabf523f948e44a96045be8d58b747acddb76e16eb5c2d6e7566d716a","folderMillis":1782038392974},{"tag":"0015_service_booking_payment_session","hash":"6dc565fbb257efdaa6d533dc65cb59740c6ce708c2d026b4c8dd1e3a8abd2fec","folderMillis":1782882175099},{"tag":"0016_bitter_yellow_claw","hash":"7698d4d5cedf4205a3484575be6f01db8ebc4a3f3e4dc434b1a58010d7a26d2c","folderMillis":1783023767006},{"tag":"0017_big_hulk","hash":"02127e955cb51761d6a86a0b3fccfbcda2f5f2810128c7d7ec8b288f78853ff2","folderMillis":1783115272208},{"tag":"0018_grey_xorn","hash":"2e23b9e1861d763ed31ba6b540bfefd42d6d7a7955fefaf291288f88c42bb490","folderMillis":1783723634797},{"tag":"0019_rainy_lorna_dane","hash":"fe2f4d5f38421d02ed8e0b71309ef378ae1bd3b51662102c49b95fb92ee7399d","folderMillis":1783727563549},{"tag":"0020_eager_stark_industries","hash":"5c251835bc8e7f7652178cdf24c0ba1d9b3ab1a2e930eb5dcab1a3c30e44c984","folderMillis":1783728714883},{"tag":"0021_grey_professor_monster","hash":"5b06e89f076095658a43f7f9c36b66f0e96eddb3d7e5a6e425d2ab70460c9270","folderMillis":1784075126626},{"tag":"0022_cold_mikhail_rasputin","hash":"7e50ee7e7b61214b8d9514f24e5776e6e43031591c3c4e4f34e645b3c590a62f","folderMillis":1784159435391},{"tag":"0023_striped_marvel_apes","hash":"4157449d50936e715b1e64849702f52530a391477d2655e1cb87c0e9be38ac4d","folderMillis":1785035959565},{"tag":"0024_private_db_lineage_reconciliation","hash":"c01098ee405c9d527f58607cf849cd6940672ca111e43067281d3e40a9be9ff8","folderMillis":1785262464947},{"tag":"0025_smart_praxagora","hash":"f3a18453232f7164136f9350d2670cecf059266fbb03f91781f1dbb6e539003d","folderMillis":1785361832872},{"tag":"0026_nice_mattie_franklin","hash":"92d389625305df02bae950a80968fff362d356300458d610b267c4fc70169cea","folderMillis":1785362561424},{"tag":"0027_curly_leader","hash":"9a48fcd53dde993c37420e45decbae241bf5a30b8f3d397305eb9400fa78b4ad","folderMillis":1785364009534},{"tag":"0028_lucky_lady_ursula","hash":"c82dec2759216875531f996807e270b594f80255ef6dff201a90912b7a63e1f7","folderMillis":1785366937857},{"tag":"0029_chemical_virginia_dare","hash":"05976fe90bb4b6a1ba3465fab0cf4cf1659236e1abe51376a5269e0ba0ce7d12","folderMillis":1785380919421},{"tag":"0030_implicit_staff_providers","hash":"bb2e5f3b1e6e65e4c743232bf9af6849f69fee2dd576f32722dc122965f0f9d1","folderMillis":1785531975406},{"tag":"0031_bored_loa","hash":"29ec810d68d8da0e6a3f975b856a7685eeed975a74f8a8f1f3f443cc114211f2","folderMillis":1785597956449},{"tag":"0032_fat_roulette","hash":"af324d3334bf84216e0e50982c1143b0e0ba4d39b5c979ea80d987a72234fd29","folderMillis":1786571702405},{"tag":"0033_bored_dexter_bennett","hash":"bcadce56cab5bd413238fc08e70c26dd3443d3d029a138cd3d1b6ba9f868727d","folderMillis":1786655863673},{"tag":"0034_lying_amphibian","hash":"3bb9fb07456053df16c71767b221b7753c45b512d350786ba78306a680710e4f","folderMillis":1786729604962},{"tag":"0035_tricky_photon","hash":"82977311d356c8d6527e53201fd5ea7d826d280747b726ccd19e81c81278ebcf","folderMillis":1786729648324},{"tag":"0036_chubby_captain_flint","hash":"776659694e7d363176b7f5d8416f901a07dffca5840b5f1a7c5e5668f41b8514","folderMillis":1786746690655},{"tag":"0037_noisy_bedlam","hash":"58d2a3a49018f491c9dba9dcc1a7c47c122088c37bb086939cd45f4cd18cf1cb","folderMillis":1786747147860},{"tag":"0038_dashing_blue_blade","hash":"49b8005913091f8c8da6d20eb8720501d4dec00a3c5f84ee64a207e75bfb456f","folderMillis":1786747946750},{"tag":"0039_chunky_stingray","hash":"e5252e89d2b40345b34353d17811d2ab7148595be2c7f3c7bc3d0a039306d569","folderMillis":1786748317968},{"tag":"0040_yummy_living_lightning","hash":"46cfb8975483528a0dabe8bd186545641278204c749cef346643daef7bcc3826","folderMillis":1786748337233},{"tag":"0041_illegal_pestilence","hash":"b80a6fbcba902c1bf35bdd3286f4b9612b0de142892486bb8c6d4b60985c7a90","folderMillis":1786811823415},{"tag":"0042_typical_ultimatum","hash":"fcb960ddc72e01eb546d392c14d69f8c4d41307609faa50fb49af1efa34a78db","folderMillis":1786811883587},{"tag":"0043_loose_richard_fisk","hash":"9389c26fef12e949e174d128d0a96ba7b13ce1325d1736559465e34b66d8de77","folderMillis":1786811967466},{"tag":"0044_wakeful_leper_queen","hash":"bfb62f5210284763f928a3220843cb3c7018945db224544750bc1e1b5207a985","folderMillis":1786812215923},{"tag":"0045_complete_purple_man","hash":"e42b0c624dad9b6d1b3b9a927febc996c7e1a87a30201765f2344ad3db5148e8","folderMillis":1786812257202},{"tag":"0046_equal_meltdown","hash":"092870344cd8ff47d02a4133051875e5dda3753aab27b6122e26ba7065313796","folderMillis":1786812542688},{"tag":"0047_plain_wither","hash":"dc67dab3e41c0e91f4e1ea11eeff969218cca1f9ab3c249072bc3de731c1c8f0","folderMillis":1786812853302},{"tag":"0048_immutable_chitchats_intake_attestations","hash":"f7e09fd19c140d2cd33b9e762fda44c2bba5f5b2755cd38df3008c9478eb25f4","folderMillis":1786814731710},{"tag":"0049_eminent_arachne","hash":"5db61574f608d72536b4cc7a5fcea16479bce9546f61f29cc4402b893170dd25","folderMillis":1786815019516},{"tag":"0050_long_scrambler","hash":"32b52e4ed25b59d18cc706eeea213206380e43e68b58612827698f293a5aeba7","folderMillis":1786815649061},{"tag":"0051_square_blazing_skull","hash":"65e0af586f59e11ce56fb688f3d22014912baaff1c1ef8c89021c0c68e94d34c","folderMillis":1786815890782},{"tag":"0052_bouncy_callisto","hash":"6fa82bc85a3b2571d72b7f6870bf8e39a171f3457fa052ffc43ec0b3b385af0a","folderMillis":1786816106846},{"tag":"0053_yielding_ultimo","hash":"1ee47ec0e2fdc07f8210ac638a432496a097ac0b256ad30885bd4b83086e04b1","folderMillis":1786816656184},{"tag":"0054_living_blindfold","hash":"f013e86b0fcb0fa7a8e26a92f6c86d205b44f8f81dcd2f9e76e53702825caead","folderMillis":1786817398162},{"tag":"0055_good_dormammu","hash":"8474e3f4382f92fa78dfa0fb3035a7533bc713bcf1deaf58a00fd7da5aa4563a","folderMillis":1786817601199},{"tag":"0056_remarkable_sage","hash":"4381a7a4710a8d82eca07908034c4b7060a6811edb022765cd5ec5e8a2c792ff","folderMillis":1786818110447},{"tag":"0057_daily_agent_brand","hash":"63b2eaff39b4b778bf82d070ee8e779acf0f65236f01777d706e67f79eae0cf0","folderMillis":1786820075701},{"tag":"0058_worthless_shriek","hash":"cf125fe3707d148d6acf5feaa95b1e71560d76fc0df50b9b438d583c2ae72475","folderMillis":1786822456932},{"tag":"0059_eminent_praxagora","hash":"e52b688aa09533cbbfd503e0ee9ab11ec38219a12cbb1cc767f71d1a888fb0ed","folderMillis":1786823647075},{"tag":"0060_clever_magma","hash":"564d8d79607aefc7eba7051a6be561ee0200d95757490d2f8280c3d2561e94e9","folderMillis":1786824274642},{"tag":"0061_helcim_reconciliation_retention","hash":"ded92faf1a166a1139e8fcae9e7f1723d40f8113445a65d9785b60d46a12cb33","folderMillis":1786829940203},{"tag":"0062_youthful_slayback","hash":"451ecd48fc34149115fd81ba0838f13d5bc5297b07922cb4b693e53349e52297","folderMillis":1787092826887},{"tag":"0063_good_forge","hash":"fbd2cf1478daf19854dc469d9bebc2d8ebe969b8f75a318d9237f2b9dd3380f4","folderMillis":1787092847053},{"tag":"0064_modern_old_lace","hash":"e93f8b4050ded43a786f960fb680f6f5e9735edbd04c3f7b67e0c0ce95260a47","folderMillis":1787094132224},{"tag":"0065_dark_kabuki","hash":"7593b3d2075408551968811ec9bbfd0465aa53ad340e60932d7d11a4f7ab7739","folderMillis":1787094836764},{"tag":"0066_foamy_excalibur","hash":"5eafb751f592cd5b22f4efb26c183eeb9a64a42a9226c8da25c18a6c03633d47","folderMillis":1787097681783},{"tag":"0067_tranquil_iron_patriot","hash":"30a8d5d5d0e5b9a7b9649ca32508537623a484ea949523957f66b40d9bb0f32d","folderMillis":1787160103859},{"tag":"0068_familiar_dreaming_celestial","hash":"d1c6b1e6424154c7e36a5b12ab008b6acf6d97a2872e240d8196d49e90dfb5d8","folderMillis":1787262097936},{"tag":"0069_dizzy_carnage","hash":"225c87e17cca2684355abbaa1885896d729778929e816db7f389063d2a54fe37","folderMillis":1787336787058},{"tag":"0070_giant_hitman","hash":"d3c45f0c26beba2df84f4bbe1c3075335ef3b8d2938f8c5eea2d83a5c7b0e9f8","folderMillis":1787339761512},{"tag":"0071_pink_grim_reaper","hash":"2516f094e7fd74126a17aab7d5a464620527d568f60af95361923f1df3fee653","folderMillis":1787346471464},{"tag":"0072_round_warbound","hash":"180e02ad8c7f8e7c2287315b0c7521d8704aee1ca45029ecad2e0266b7ba5f55","folderMillis":1787505810290},{"tag":"0073_panoramic_abomination","hash":"3c14639036aaf96c42a5c308fc9a5981dce34f02a3c555a2cf5d72730881723d","folderMillis":1787717618408},{"tag":"0074_amused_hydra","hash":"5bfa59bd3c3afcf19260f47adb5e7d0bb6954bbb8f0f57c4f6b71a63db96bdf9","folderMillis":1787892578091},{"tag":"0075_clammy_william_stryker","hash":"d74e52f3f1255ae893a657d4f15da99937bd0dc8b2998d3e0afd716829904923","folderMillis":1787892609388},{"tag":"0076_organic_kitty_pryde","hash":"2cd123ddeb304814f83f51e80642df392a198bef07df4a596f17721bab3e5ca7","folderMillis":1788225229633},{"tag":"0077_course_signup","hash":"b1949845f9408560606fb3ef72395496b7c55a01d59038a9cdecdc252552d651","folderMillis":1790208354053},{"tag":"0078_highlevel_crm","hash":"bfaa61e07f7227f31874016a3bf35e67877820a50a0838680659ea58e07153c3","folderMillis":1792530258475},{"tag":"0079_highlevel_marketing_ownership","hash":"e0ac5e3dfece876f694ed6ad3a50e65e49a6c5523a872d96794ea1c898f09d73","folderMillis":1792530952883},{"tag":"0080_customer_identity","hash":"c3235b3cc6a8c2dcfe261ec7a5e1192ced7e027204afc314df04773b44209798","folderMillis":1793907202941},{"tag":"0081_customer_auth_throttle_expiry","hash":"a4c8ce269351c0d92705c336ded0ce919e713895399c1794a48e26009cc034de","folderMillis":1793908371084},{"tag":"0082_customer_account_lifecycle","hash":"483eff8dab2d5212c1ca7914109259f91594c9e0eae01115ebae1830aefbb889","folderMillis":1793910009844}],"sqlArtifactSha256":"28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef","contractManifestSha256":"sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938","contractPhase":"p2","phase2ContractManifestSha256":"sha256:da7f29e2134973afd17d7f2012922dff8e76d8922ad6552cedd9f13f0d612845"}
+2026-11-06T01:01:13.7823488Z ##[group]Run docker build --builder "$(docker context show)" -f ops/platform/Dockerfile.frontend-migration-test --build-arg MIGRATION_IMAGE=lash-her-frontend-migration:ci -t lash-her-frontend-migration:postgres18-test ops/platform
+2026-11-06T01:01:13.7825182Z [36;1mdocker build --builder "$(docker context show)" -f ops/platform/Dockerfile.frontend-migration-test --build-arg MIGRATION_IMAGE=lash-her-frontend-migration:ci -t lash-her-frontend-migration:postgres18-test ops/platform[0m
+2026-11-06T01:01:13.7846509Z shell: /usr/bin/bash -e {0}
+2026-11-06T01:01:13.7846781Z ##[endgroup]
+2026-11-06T01:01:14.1382736Z #0 building with "setup-docker-action" instance using docker driver
+2026-11-06T01:01:14.1383457Z 
+2026-11-06T01:01:14.1384149Z #1 [internal] load build definition from Dockerfile.frontend-migration-test
+2026-11-06T01:01:14.1385170Z #1 transferring dockerfile: 1.10kB done
+2026-11-06T01:01:14.1386030Z #1 DONE 0.0s
+2026-11-06T01:01:14.1386345Z 
+2026-11-06T01:01:14.1387295Z #2 [internal] load metadata for docker.io/library/lash-her-frontend-migration:ci
+2026-11-06T01:01:14.1388056Z #2 DONE 0.0s
+2026-11-06T01:01:14.1388293Z 
+2026-11-06T01:01:14.1388876Z #3 [auth] library/postgres:pull token for registry-1.docker.io
+2026-11-06T01:01:14.1389624Z #3 DONE 0.0s
+2026-11-06T01:01:14.1390118Z 
+2026-11-06T01:01:14.1391576Z #4 [internal] load metadata for docker.io/library/postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+2026-11-06T01:01:14.4269104Z #4 DONE 0.5s
+2026-11-06T01:01:14.4976754Z 
+2026-11-06T01:01:14.4977408Z #5 [internal] load .dockerignore
+2026-11-06T01:01:14.4978144Z #5 transferring context: 2B done
+2026-11-06T01:01:14.4979059Z #5 DONE 0.0s
+2026-11-06T01:01:14.4979336Z 
+2026-11-06T01:01:14.4980408Z #6 [internal] load build context
+2026-11-06T01:01:14.4981755Z #6 transferring context: 2B done
+2026-11-06T01:01:14.4982777Z #6 DONE 0.0s
+2026-11-06T01:01:14.4983010Z 
+2026-11-06T01:01:14.4983706Z #7 [stage-1 2/6] COPY --from=candidate /nodejs/bin/node /usr/local/bin/node
+2026-11-06T01:01:14.4984196Z #7 CACHED
+2026-11-06T01:01:14.4984412Z 
+2026-11-06T01:01:14.4984633Z #8 [stage-1 3/6] COPY --from=candidate /app /candidate
+2026-11-06T01:01:14.4984968Z #8 CACHED
+2026-11-06T01:01:14.4985141Z 
+2026-11-06T01:01:14.4985691Z #9 [stage-1 4/6] COPY ops/gateway/routes.json /source/ops/gateway/routes.json
+2026-11-06T01:01:14.4987225Z #9 ERROR: failed to calculate checksum of ref lp1b9z6o0uadw82l2ksrhsaxi::we978m3wezl0m9a18fsq94wpn: "/ops/gateway/routes.json": not found
+2026-11-06T01:01:14.4988154Z 
+2026-11-06T01:01:14.4989449Z #10 [candidate 1/1] FROM docker.io/library/lash-her-frontend-migration:ci@sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b
+2026-11-06T01:01:14.4992325Z #10 resolve docker.io/library/lash-her-frontend-migration:ci@sha256:53f79604b14e850a3c546ed824e49e126ab3dfc0583e2557fc70b699459e9f1b 0.0s done
+2026-11-06T01:01:14.4993920Z #10 CANCELED
+2026-11-06T01:01:14.4994162Z 
+2026-11-06T01:01:14.4994827Z #11 [stage-1 1/6] FROM docker.io/library/postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+2026-11-06T01:01:14.4996256Z #11 resolve docker.io/library/postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6 0.0s done
+2026-11-06T01:01:14.4997314Z #11 CANCELED
+2026-11-06T01:01:14.4997538Z ------
+2026-11-06T01:01:14.4997938Z  > [stage-1 4/6] COPY ops/gateway/routes.json /source/ops/gateway/routes.json:
+2026-11-06T01:01:14.4998327Z ------
+2026-11-06T01:01:14.4998893Z Dockerfile.frontend-migration-test:10
+2026-11-06T01:01:14.4999461Z --------------------
+2026-11-06T01:01:14.5000252Z    8 |     # The actual protected route imports the immutable gateway policy through its
+2026-11-06T01:01:14.5001511Z    9 |     # ordinary transport. This belongs only to the disposable source-test fixture.
+2026-11-06T01:01:14.5002380Z   10 | >>> COPY ops/gateway/routes.json /source/ops/gateway/routes.json
+2026-11-06T01:01:14.5003660Z   11 |     RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+2026-11-06T01:01:14.5004493Z   12 |     ENV FRONTEND_MIGRATION_LOCAL_TEST=true
+2026-11-06T01:01:14.5005083Z --------------------
+2026-11-06T01:01:14.5006362Z ERROR: failed to build: failed to solve: failed to compute cache key: failed to calculate checksum of ref lp1b9z6o0uadw82l2ksrhsaxi::we978m3wezl0m9a18fsq94wpn: "/ops/gateway/routes.json": not found
+2026-11-06T01:01:14.5058878Z ##[error]Process completed with exit code 1.
+2026-11-06T01:01:14.5162981Z ##[group]Run actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+2026-11-06T01:01:14.5163410Z with:
+2026-11-06T01:01:14.5163652Z   name: frontend-runtime-qualification
+2026-11-06T01:01:14.5164154Z   path: /home/runner/work/_temp/frontend-runtime-raw.json
+/home/runner/work/_temp/frontend-runtime/
+
+2026-11-06T01:01:14.5164662Z   if-no-files-found: error
+2026-11-06T01:01:14.5164906Z   retention-days: 10
+2026-11-06T01:01:14.5165128Z   compression-level: 6
+2026-11-06T01:01:14.5165355Z   overwrite: false
+2026-11-06T01:01:14.5165578Z   include-hidden-files: false
+2026-11-06T01:01:14.5165831Z ##[endgroup]
+2026-11-06T01:01:14.6839354Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-06T01:01:14.6843938Z The least common ancestor is /home/runner/work/_temp. This will be the root directory of the artifact
+2026-11-06T01:01:14.6856694Z ##[error]No files were found with the provided path: /home/runner/work/_temp/frontend-runtime-raw.json
+/home/runner/work/_temp/frontend-runtime/. No artifacts will be uploaded.
+2026-11-06T01:01:14.7103879Z Post job cleanup.
+2026-11-06T01:01:14.9621547Z ##[group]Generating build summary
+2026-11-06T01:01:14.9623059Z exporting build record to /home/runner/work/_temp/docker-actions-toolkit-SCNLqc/export
+2026-11-06T01:01:14.9635488Z (node:4288) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-06T01:01:14.9636482Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-06T01:01:15.1718497Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx history export --builder builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5 --output /home/runner/work/_temp/docker-actions-toolkit-SCNLqc/export/princessdardan~lash-her-frontend~6EW6DM.dockerbuild 6ew6dmemzgam3vslwkefnpe18 --finalize
+2026-11-06T01:01:15.4781595Z Build record written to /home/runner/work/_temp/docker-actions-toolkit-SCNLqc/export/princessdardan~lash-her-frontend~6EW6DM.dockerbuild (73.72 KB)
+2026-11-06T01:01:15.4806526Z Uploading princessdardan~lash-her-frontend~6EW6DM.dockerbuild to blob storage
+2026-11-06T01:01:15.7231598Z Beginning upload of artifact content to blob storage
+2026-11-06T01:01:15.7327230Z (node:4288) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-06T01:01:15.7336067Z Uploaded bytes 65536
+2026-11-06T01:01:15.7338621Z Uploaded bytes 75486
+2026-11-06T01:01:15.9048249Z Finished uploading artifact content to blob storage!
+2026-11-06T01:01:15.9050215Z SHA256 hash of uploaded artifact is 3d5d26cfb1541565e92a7ac530b93d3eea981ab5c70257ece2a0aa3a48cdbf1d
+2026-11-06T01:01:15.9052070Z Finalizing artifact upload
+2026-11-06T01:01:16.3892530Z Artifact successfully finalized (13467383205)
+2026-11-06T01:01:16.3894302Z Artifact download URL: https://github.com/princessdardan/lash-her-frontend/actions/runs/42140767192/artifacts/13467383205
+2026-11-06T01:01:16.3920189Z Writing summary
+2026-11-06T01:01:16.3933664Z ##[endgroup]
+2026-11-06T01:01:16.3934463Z ##[group]Removing temp folder /home/runner/work/_temp/docker-actions-toolkit-NZZ4vp
+2026-11-06T01:01:16.3938196Z ##[endgroup]
+2026-11-06T01:01:16.3938779Z ##[group]Post cache
+2026-11-06T01:01:16.3940418Z State not set
+2026-11-06T01:01:16.3941295Z ##[endgroup]
+2026-11-06T01:01:16.4125969Z Post job cleanup.
+2026-11-06T01:01:16.6771925Z ##[group]Removing builder
+2026-11-06T01:01:16.6779346Z (node:4436) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-06T01:01:16.6781083Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-06T01:01:16.8109800Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker buildx rm builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5
+2026-11-06T01:01:18.2087553Z builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e5 removed
+2026-11-06T01:01:18.2132987Z ##[endgroup]
+2026-11-06T01:01:18.2133469Z ##[group]Cleaning up certificates
+2026-11-06T01:01:18.2135425Z ##[endgroup]
+2026-11-06T01:01:18.2136062Z ##[group]Post cache
+2026-11-06T01:01:18.2138371Z State not set
+2026-11-06T01:01:18.2138909Z ##[endgroup]
+2026-11-06T01:01:18.2333724Z Post job cleanup.
+2026-11-06T01:01:18.3978761Z ##[group]Docker daemon logs
+2026-11-06T01:01:18.4036358Z [command]/usr/bin/sudo cat /home/runner/setup-docker-action/run-15f72626/dockerd.log
+2026-11-06T01:01:18.4160294Z time="2026-11-06T01:00:34.260602395Z" level=info msg="Starting up"
+2026-11-06T01:01:18.4161904Z time="2026-11-06T01:00:34.261486514Z" level=info msg="OTEL tracing is not configured, using no-op tracer provider"
+2026-11-06T01:01:18.4163322Z time="2026-11-06T01:00:34.261592462Z" level=info msg="CDI directory does not exist, skipping" dir=/etc/cdi
+2026-11-06T01:01:18.4164634Z time="2026-11-06T01:00:34.261612159Z" level=info msg="CDI directory does not exist, skipping" dir=/var/run/cdi
+2026-11-06T01:01:18.4166217Z time="2026-11-06T01:00:34.261961901Z" level=info msg="detected 127.0.0.53 nameserver, assuming systemd-resolved, so using resolv.conf: /run/systemd/resolve/resolv.conf"
+2026-11-06T01:01:18.4167890Z time="2026-11-06T01:00:34.270390665Z" level=warning msg="\"containerd-snapshotter\" is now the default and no longer needed to be set"
+2026-11-06T01:01:18.4169396Z time="2026-11-06T01:00:34.271009921Z" level=info msg="Creating a containerd client" address=/run/containerd/containerd.sock timeout=1m0s
+2026-11-06T01:01:18.4170804Z time="2026-11-06T01:00:34.436807568Z" level=info msg="Loading containers: start."
+2026-11-06T01:01:18.4172011Z time="2026-11-06T01:00:34.436871387Z" level=info msg="NRI is disabled"
+2026-11-06T01:01:18.4173423Z time="2026-11-06T01:00:34.436887577Z" level=info msg="Starting daemon with containerd snapshotter integration enabled"
+2026-11-06T01:01:18.4175188Z time="2026-11-06T01:00:34.439926246Z" level=info msg="Restoring containers: start."
+2026-11-06T01:01:18.4177054Z time="2026-11-06T01:00:34.483964962Z" level=info msg="Deleting nftables IPv4 rules" error="exit status 1" output="Error: Could not process rule: No such file or directory\ndelete table ip docker-bridges"
+2026-11-06T01:01:18.4179342Z time="2026-11-06T01:00:34.494727176Z" level=info msg="Deleting nftables IPv6 rules" error="exit status 1" output="Error: Could not process rule: No such file or directory\ndelete table ip6 docker-bridges"
+2026-11-06T01:01:18.4181170Z time="2026-11-06T01:00:34.772564788Z" level=info msg="Loading containers: done."
+2026-11-06T01:01:18.4182599Z time="2026-11-06T01:00:34.778783633Z" level=info msg="Docker daemon" commit=daa0cb7f containerd-snapshotter=true storage-driver=overlayfs version=29.4.0
+2026-11-06T01:01:18.4183698Z time="2026-11-06T01:00:34.778915428Z" level=info msg="Initializing buildkit"
+2026-11-06T01:01:18.4184791Z time="2026-11-06T01:00:34.785536568Z" level=info msg="Completed buildkit initialization"
+2026-11-06T01:01:18.4186637Z time="2026-11-06T01:00:34.791009117Z" level=info msg="Daemon has completed initialization"
+2026-11-06T01:01:18.4187964Z time="2026-11-06T01:00:34.791112976Z" level=info msg="API listen on /home/runner/setup-docker-action/run-15f72626/docker.sock"
+2026-11-06T01:01:18.4190000Z time="2026-11-06T01:00:45.477197843Z" level=info msg="image pulled" digest="sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe" remote="docker.io/moby/buildkit:buildx-stable-1" spanID=de595123133c393c traceID=9e77c051fe5f5a6b43e469db36ff001f
+2026-11-06T01:01:18.4194496Z time="2026-11-06T01:00:48.063758743Z" level=error msg="Handler for POST /containers/{name:.*}/start returned error" error-response="failed to discover GPU vendor from CDI: no known GPU vendor found" method=POST module=api request-url=/v1.54/containers/87876f04ae5982ace901c225456634f93984f73fecd06e1d891e95106523bbe5/start spanID=3ff879fded335932 status=500 traceID=ec0397a975573b215254efe029c43e5c vars="map[name:87876f04ae5982ace901c225456634f93984f73fecd06e1d891e95106523bbe5 version:1.54]"
+2026-11-06T01:01:18.4198527Z time="2026-11-06T01:00:48.240540643Z" level=info msg="sbJoin: gwep4 ''->'4efb33b7de5b', gwep6 ''->''" eid=4efb33b7de5b ep=buildx_buildkit_builder-422b6d48-a8c9-45ca-9fb7-7ff7fe88f1e50 net=bridge nid=254e9f78be47 spanID=ba85e86efeb95c28 traceID=56586fedbe5701109d3b4284b9fdbe6c
+2026-11-06T01:01:18.4202763Z time="2026-11-06T01:01:13.039514129Z" level=error msg="Error running exec 1da3540ddcee55cc3d7799c207fc552f4ffe324625a5399ad1a04f1c9aec1f13 in container: exec attach failed: error attaching stdout stream: write unix /home/runner/setup-docker-action/run-15f72626/docker.sock->@: write: broken pipe"
+2026-11-06T01:01:18.4205936Z time="2026-11-06T01:01:13.398229082Z" level=info msg="sbJoin: gwep4 ''->'', gwep6 ''->''" eid=5c5e6f7ba3ef ep=modest_payne net=none nid=70f1098997b2
+2026-11-06T01:01:18.4208157Z time="2026-11-06T01:01:13.569646042Z" level=info msg="received task-delete event from containerd" container=dec9d40246338464f32b518c1807f3de7892de1d2d0b6417c5814d50303bb9b0 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-11-06T01:01:18.4210080Z time="2026-11-06T01:01:13.708830633Z" level=info msg="sbJoin: gwep4 ''->'', gwep6 ''->''" eid=f645cfb3f486 ep=recursing_neumann net=none nid=70f1098997b2
+2026-11-06T01:01:18.4212647Z time="2026-11-06T01:01:13.753191271Z" level=info msg="received task-delete event from containerd" container=899be13ea2f77698f3b5d34d22a31789b721990ec90186cf6ea298048e47f554 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-11-06T01:01:18.4216054Z time="2026-11-06T01:01:14.495466414Z" level=error msg=/moby.buildkit.v1.Control/Solve error="rpc error: code = Unknown desc = failed to compute cache key: failed to calculate checksum of ref lp1b9z6o0uadw82l2ksrhsaxi::we978m3wezl0m9a18fsq94wpn: \"/ops/gateway/routes.json\": not found" spanID=6692764ea9801d1e traceID=e35e961d63a91bf03696031468933eb8
+2026-11-06T01:01:18.4218274Z time="2026-11-06T01:01:16.868382519Z" level=info msg="stopping restart-manager" container=e02c9a2575fd8184b7577b41a0b8638a5b4e68c9f1093d0f65688cdec429812a
+2026-11-06T01:01:18.4220260Z time="2026-11-06T01:01:16.904981611Z" level=info msg="received task-delete event from containerd" container=e02c9a2575fd8184b7577b41a0b8638a5b4e68c9f1093d0f65688cdec429812a module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-11-06T01:01:18.4222302Z ##[endgroup]
+2026-11-06T01:01:18.4222978Z ##[group]Stopping Docker daemon
+2026-11-06T01:01:18.4224361Z [command]/usr/bin/sudo kill -s SIGTERM 2653
+2026-11-06T01:01:23.4380211Z ##[endgroup]
+2026-11-06T01:01:23.4381390Z ##[group]Removing Docker context
+2026-11-06T01:01:23.4401493Z [command]/opt/hostedtoolcache/docker-archive-stable/29.4.0/x64/docker context rm -f setup-docker-action
+2026-11-06T01:01:23.4533344Z setup-docker-action
+2026-11-06T01:01:23.4546423Z ##[endgroup]
+2026-11-06T01:01:23.4546961Z ##[group]Cleaning up runDir
+2026-11-06T01:01:23.4563154Z [command]/usr/bin/sudo rm -rf /home/runner/setup-docker-action/run-15f72626
+2026-11-06T01:01:23.4732692Z ##[endgroup]
+2026-11-06T01:01:23.4733343Z ##[group]Cleaning up toolDir
+2026-11-06T01:01:23.4734046Z ##[endgroup]
+2026-11-06T01:01:23.4734717Z ##[group]Post cache
+2026-11-06T01:01:23.4735170Z State not set
+2026-11-06T01:01:23.4735793Z ##[endgroup]
+2026-11-06T01:01:23.4913128Z Post job cleanup.
+2026-11-06T01:01:23.5821477Z [command]/usr/bin/git version
+2026-11-06T01:01:23.5900675Z git version 2.56.0
+2026-11-06T01:01:23.5943453Z Temporarily overriding HOME='/home/runner/work/_temp/35efa717-45aa-47cc-ad52-1ac0778919d8' before making global git config changes
+2026-11-06T01:01:23.5945296Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-06T01:01:23.5949155Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/lash-her-frontend/lash-her-frontend
+2026-11-06T01:01:23.5985786Z Removing SSH command configuration
+2026-11-06T01:01:23.5993034Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-06T01:01:23.6034497Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-06T01:01:23.6298887Z Removing HTTP extra header
+2026-11-06T01:01:23.6306992Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-06T01:01:23.6361386Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-06T01:01:23.6621121Z Removing includeIf entries pointing to credentials config files
+2026-11-06T01:01:23.6629191Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-06T01:01:23.6679693Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-06T01:01:23.7115319Z Cleaning up orphan processes
+2026-11-06T01:01:23.7486313Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8, docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

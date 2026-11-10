@@ -1,0 +1,8 @@
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-learning-browser.mjs:79
+    throw new Error(
+          ^
+
+Error: Select a clean Course repository at the exact requested commit
+    at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-learning-browser.mjs:79:11
+
+Node.js v24.18.0

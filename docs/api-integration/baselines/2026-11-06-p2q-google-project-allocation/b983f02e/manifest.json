@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "sourceCommit": "b983f02e083b308fff3b4cd3da3378cbae862c17",
+  "files": {
+    "README.md": {
+      "sha256": "e257cbba4b902da421a47d82ba4b87c63995128ad3c20538bfb1a853f7d1cb98",
+      "bytes": 2936
+    },
+    "lint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "tests.log": {
+      "sha256": "c6d21910c601a930b683b26162735a10d39e6b8d0a31b3da6ddf95537ad89899",
+      "bytes": 3224
+    },
+    "validation.json": {
+      "sha256": "8afd1aeecec37977d57d551e0d2c5bf3aaf7d1203d12885be34ee8611595f0d9",
+      "bytes": 4976
+    }
+  }
+}

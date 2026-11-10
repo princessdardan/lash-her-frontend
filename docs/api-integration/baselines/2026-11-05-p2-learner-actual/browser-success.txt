@@ -1,0 +1,14 @@
+Owned actual learner evidence: /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/test-results/course-learning-browser/run-JpUiGd
+Actual learner browser source frontend=6ed7825c192b1652827b64ffe5f51544fc7c8f33 course=5c23b8c53f7849426cf8a71703cc6a5c84fef3d7
+
+Running 6 tests using 1 worker
+
+  ✓  1 [chromium] › tests/course-learning-browser/learning.spec.ts:275:5 › actual free enrollment, locally signed media, resume and both assessment modes persist (20.7s)
+  ✓  2 [chromium] › tests/course-learning-browser/learning.spec.ts:433:5 › actual Course CAS conflict preserves the other device position until authoritative reload (3.5s)
+  ✓  3 [chromium] › tests/course-learning-browser/learning.spec.ts:505:5 › actual Course account isolation and grant revocation plus frontend suspension deny protected access (5.5s)
+  ✓  4 [mobile] › tests/course-learning-browser/learning.spec.ts:275:5 › actual free enrollment, locally signed media, resume and both assessment modes persist (5.0s)
+  ✓  5 [mobile] › tests/course-learning-browser/learning.spec.ts:433:5 › actual Course CAS conflict preserves the other device position until authoritative reload (3.6s)
+  ✓  6 [mobile] › tests/course-learning-browser/learning.spec.ts:505:5 › actual Course account isolation and grant revocation plus frontend suspension deny protected access (6.4s)
+
+  6 passed (45.8s)
+Owned Next/Course/PostgreSQL16 actual learner browser checks passed; gateway workload verification and live providers remain outside this fixture

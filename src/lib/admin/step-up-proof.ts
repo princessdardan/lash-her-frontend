@@ -1,3 +1,4 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import "server-only";
 
 import {
@@ -179,7 +180,7 @@ export function assertStepUpReauthenticationCompleted(input: {
   }
 }
 
-export async function issueAdminStepUpProof(input: {
+async function issueAdminStepUpProofWork(input: {
   action: string;
   actorAdminUserId: string;
   authenticatedAt: Date;
@@ -212,7 +213,7 @@ export async function issueAdminStepUpProof(input: {
   return { expiresAt, token };
 }
 
-export async function consumeAdminStepUpProof(input: {
+async function consumeAdminStepUpProofWork(input: {
   action: string;
   actorAdminUserId: string;
   authenticatedAt: Date;
@@ -256,4 +257,20 @@ export async function consumeAdminStepUpProof(input: {
   if (outcome === "mismatch")
     throw new Error("Step-up proof does not match this action");
   return outcome;
+}
+
+export async function issueAdminStepUpProof(
+  ...args: Parameters<typeof issueAdminStepUpProofWork>
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    issueAdminStepUpProofWork(...args),
+  );
+}
+
+export async function consumeAdminStepUpProof(
+  ...args: Parameters<typeof consumeAdminStepUpProofWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    consumeAdminStepUpProofWork(...args),
+  );
 }

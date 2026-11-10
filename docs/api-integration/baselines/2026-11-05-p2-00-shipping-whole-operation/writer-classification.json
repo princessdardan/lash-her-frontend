@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "scope": "shipping whole-operation component only",
+  "producers": [
+    {
+      "entry": "GET /api/cron/chitchats-shipping",
+      "kind": "recovery",
+      "boundary": "Authentication through entire awaited route; independent refund/preparation and PII maintenance retained"
+    },
+    {
+      "entry": "runShippingOperationWorker",
+      "kind": "recovery",
+      "boundary": "Before default configuration and claim through every started job and sibling effect"
+    },
+    {
+      "entry": "processClaimedShipmentOperation",
+      "kind": "recovery",
+      "boundary": "Before intent/provider/database effects; only matching shipping parent can own it"
+    },
+    {
+      "entry": "redactExpiredShipmentPii",
+      "kind": "new-work",
+      "boundary": "Before selection through locked transaction and exact final persistence reads"
+    },
+    {
+      "entry": "manual callers",
+      "kind": "recovery",
+      "boundary": "No executable execution script found; exported worker self-admission and existing manual adapter qualified through synthetic bridge"
+    }
+  ],
+  "excluded": "Unrelated shipping/admin/store producers, PR91 preparation implementation/review/publication/runtime and historical/deployed provider bindings",
+  "deploymentInventoryVerified": false,
+  "historicalWritersFenced": false,
+  "realProviderDrainVerified": false
+}

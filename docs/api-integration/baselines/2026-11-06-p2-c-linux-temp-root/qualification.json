@@ -1,0 +1,52 @@
+{
+  "baseCommit": "96df28f3eedffa5607637f4f2fa3b48f9489c3f1",
+  "change": "Only the source-created canonical fixture folder is forwarded as TMPDIR to the outer child. Adapter moves the existing fixed C tmpfs from /tmp to /var/tmp with same size/options and fixed TMPDIR=/var/tmp.",
+  "changedSourceSha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "8c047cb1ecc1c68e7374c73b8be2eb077c1a62572fdc87c62031b71194134241",
+    "ops/platform/p2-known-ack-interrupted-restoration.test.mjs": "9c08d9580463f5dba5d467493b535e96ed5038901f5182c1139b8a15c34692f7"
+  },
+  "checks": {
+    "lintExitCode": 0,
+    "lintLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nodeLogSha256": "46dc41f263b55d64bbb231c8c7887ae28dd27bfa69abea82f1d09444a3efbf7c",
+    "nodePass": 8,
+    "skipped": 0
+  },
+  "independentReview": "p2_provider_review separately cleared helper070 and adapterb75; not authored as an independent report here",
+  "localPg18": {
+    "actualDocker": false,
+    "bytes": 22251,
+    "elapsedSeconds": 142.5,
+    "linuxQualification": false,
+    "migrations": {
+      "community": 11,
+      "course": 22,
+      "frontend": 83
+    },
+    "providerTouched": false,
+    "receipt": "/private/tmp/p2-c-temp-root-pg18-positive.stdout",
+    "sha256": "40a4146fe33c688d772f2acd0b1e3be3486eae76cdc16ce03c3edc03dc43573e",
+    "stderrBytes": 0
+  },
+  "originalLinuxFailurePreserved": {
+    "artifactZipSha256": "cf786b3956ae54a350e1bfcabfa98864f3d4755f9c51ba5c33c9babe93f42f14",
+    "generatedFrame": "old-b-process.mjs:45:201",
+    "receiverSourceSha256": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"
+  },
+  "pairedAdapterCommit": "b75da9f39fc507b93e5e32b2e5dfd09af166e495",
+  "receiverGuardReplay": {
+    "resultSha256": "2d9a68b23aeeb01512957058d4b0bd14e774e15ffc9d0f84290e08a55e7f4b9f",
+    "scope": "Actual source child IPC initial root guard only; no database/provider work; no complete Linux replay claim.",
+    "scriptSha256": "5a728f2b699b5bb69f24b7c3322266518a953782274b1e1b44e9e2f569b82705"
+  },
+  "sourceCommit": "070eb31ca11cb283fa2db199fe2f720289048ab4",
+  "status": "C_TEMP_ROOT_SOURCE_AND_LOCAL_QUALIFICATION_PASS",
+  "unchangedSourceSha256": {
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+    "ops/platform/harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+    "ops/platform/test-p2-known-ack-loss-local.mjs": "050f146711a60f8812748e0677a952c0bf3e7610d86f1c48aeed33c09ea55e67"
+  },
+  "version": 1
+}

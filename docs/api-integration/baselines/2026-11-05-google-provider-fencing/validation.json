@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "observedAt": "2026-11-05T23:02:55.285550+00:00",
+  "scope": "source-component-only",
+  "environment": "owned-local",
+  "providerMutations": false,
+  "stagingDatabaseTouched": false,
+  "wholeFenceCertified": false,
+  "googleProtectedProbeDependencies": [
+    "00b5b52e76b6f647159d2892cc45a0ba20a09c4b",
+    "2ec0a23cc3d858e7eb2e01ea96056cb6df918971"
+  ],
+  "checks": {
+    "googleOwnedVerifiedHttps": {
+      "passed": true,
+      "tests": 12
+    },
+    "nodeAdapterBindings": {
+      "passed": true,
+      "tests": 12
+    },
+    "eslint": {
+      "passed": true
+    },
+    "ownedTlsPostgres": {
+      "passed": true,
+      "serverMajor": 16,
+      "migrations": 83,
+      "operationalInventoryQueries": 13,
+      "googleQueries": 5,
+      "realAesGcmDecode": true,
+      "wrongKeyAndSnapshotMismatchRefuse": true
+    }
+  },
+  "files": {
+    "ops/platform/frontend-google-effects.mjs": "12e93edfddebf4fdbcc279a656f7026153ec4c9f17428a69b0850932aaa3d6a1",
+    "ops/platform/host/frontend_google_fencing.py": "02cdf72650fba5b112fd82ce2e288c6248f89a9ba252c813becf97ef829537b1",
+    "ops/platform/host/frontend_google_fencing_test.py": "994f5966568c91ee9fe3e87d976ad52e80e803d9a89088adb9b74880c9dbdc57",
+    "ops/platform/frontend-provider-bindings.mjs": "b58ae8d06425a352a8c1caeb05165d3ce1adcaf0ad4ba28ed6e4ad122253059c",
+    "ops/platform/frontend-release-adapters.mjs": "6a685de537bfdb3bd06b42d8a1f6b1910567be0927a41bae0a18651df0318d71",
+    "ops/platform/host/frontend_release_adapters.py": "a2124cdc3134f4b83e347590f7cce65e0b75b33b15d2d850e2dc15d1fe6c4178",
+    "ops/platform/test-frontend-provider-inventory-local.mjs": "92bf27111233213d605e9beed25936d01ea2d2afbb06445e05a2b307ba4bf1e8"
+  }
+}

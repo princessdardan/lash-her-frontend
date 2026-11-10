@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "implementationCommit": "008ed69744ae165d226a7cb57badab69f6535127",
+  "sourceSha256": {
+    "ops/platform/test-p2-recovery-owned.mjs": "d32b49e401e8ecf2d2f062499ffbc2c41ccbbcce202436152e1c4f15ed1e1bb3",
+    "ops/platform/test-p2-recovery-owned.py": "29f0eb4cdac454fc9df21285a59ba9613844dffd32d62f33e6255fa66200df8c",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "09a5c3ae725e7fb51bbd8933acf8ac0a2246e48d0f30f25c65d676cdffab46fd"
+  },
+  "testedFileBytesMatchCommit": true,
+  "evidenceSha256": {
+    "review-corrected-owned-pg18.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "review-corrected-owned-pg18.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "review-corrected-unit.log": "adde64845ebfe87bf9505a3524bd77182ecb1621d81cf83c485e6849c95cbf9d"
+  },
+  "reviewFindingsAddressed": 2,
+  "normalReceiptAndNineteenCasesUnchanged": true,
+  "fixtureOnly": true,
+  "linuxFailureReproduced": false,
+  "linuxCorrectionQualified": false,
+  "providerTouched": false,
+  "releaseAccepted": false
+}

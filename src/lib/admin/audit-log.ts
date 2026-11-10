@@ -1,3 +1,5 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
 import {
@@ -73,7 +75,7 @@ export interface AdminActivityHistoryResult {
   total: number;
 }
 
-export async function recordAdminAudit(
+async function recordAdminAuditWork(
   input: AdminAuditEntryInput,
 ): Promise<{ id: string }> {
   const db = getPrivateDb();
@@ -110,6 +112,7 @@ export async function recordAdminAuditBestEffort(
   try {
     await recordAdminAudit(input);
   } catch {
+    markWriterOperationUncertain();
     console.error(
       "[admin:audit] Activity history entry could not be persisted",
       {
@@ -531,4 +534,12 @@ function formatActorOptionLabel(actor: {
 function cleanOptional(value: string | null | undefined): string | undefined {
   const cleaned = value?.trim() ?? "";
   return cleaned ? cleaned : undefined;
+}
+
+export async function recordAdminAudit(
+  ...args: Parameters<typeof recordAdminAuditWork>
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    recordAdminAuditWork(...args),
+  );
 }

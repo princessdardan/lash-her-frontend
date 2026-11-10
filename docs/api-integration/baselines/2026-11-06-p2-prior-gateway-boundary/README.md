@@ -1,0 +1,7 @@
+# Owned prior-gateway boundary qualification
+
+This baseline qualifies source behavior only. Gateway request handling, HTTPS sockets, active/uncertain counters, process replacement/termination and flock descriptors are actual local executions. Docker inventory/image/mount metadata is a fixed owned projection. API-current proofs and Compose startup are fixture transports; no staging/private/cloud operation was performed.
+
+The helper cases exercise read-only initialization, actual active-request drain, sticky lost-ACK refusal, missing/changed mounts/processes, unknown operations counters retaining identity, immutable ordered-stop receipts, absent/stale/pending/newer lineage refusal, the original eight-service P1 reference, independent guard containment retaining uncertainty, and real runtime refusal before any API probe/snapshot/up. The positive runtime case retains the actual old process through all source-fixed API stages and starts a new real gateway process only at gateway-last. A subsequent restart invalidates the retained authority.
+
+`host-tests.log` contains the final selected Python suites; `node-transport-tests.log` contains the consumed root-owned transport tests. `validation.json` pins exact source/log hashes and states the coverage limits. Earlier development runs included expected fixture failures (new mandatory boundary absent), a missing fixture image, and a sandbox listener denial; those were not counted as successful qualification. No independent-review clearance is asserted by this baseline.

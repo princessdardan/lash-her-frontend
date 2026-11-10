@@ -1,0 +1,64 @@
+{
+  "actualDocker": false,
+  "checks": {
+    "actualFailingChild": true,
+    "actualFixtureCleanup": true,
+    "actualParentForwarding": true,
+    "lintExitCode": 0,
+    "maxCauseMetadata": 3,
+    "nodeTests": 7,
+    "privateWrapperIntegration": "pending CI-owner test; existing stderr transport unchanged",
+    "sensitiveCanariesOmitted": true,
+    "skipped": 0
+  },
+  "lintLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "linuxFixClaimed": false,
+  "localPg18": {
+    "bytes": 22181,
+    "elapsedSeconds": 144.8,
+    "gatewayJoseVersion": "6.2.3",
+    "migrations": {
+      "community": 11,
+      "course": 22,
+      "frontend": 83
+    },
+    "platform": "macOS; actual Linux diagnostic rerun not performed",
+    "receipt": "/private/tmp/p2-c-diagnostic-pg18-positive.stdout",
+    "rootInstalledLockMetadataVersionDifferences": 0,
+    "rootJoseVersion": "6.2.15",
+    "sha256": "b0142f82b37c97f403a844783284407dcd3e78b5541b966f3edba7b62fab00e3",
+    "stderrBytes": 0
+  },
+  "nodeLogSha256": "628a74b356f3057f43b1c3d1bf82493c7a52a61b68204804e46d3c78bd836d0e",
+  "originalLinuxFailure": {
+    "artifactZipSha256": "754e0ee2a4062f6e5d0105ec4557e339c8daa0cba813118930996c38892f402e",
+    "generatedOuterFrame": {
+      "column": 406,
+      "line": 83,
+      "operation": "generic OWNED_KNOWN_ACK_CHILD_REFUSED replacement throw"
+    },
+    "jobId": "128019408804",
+    "phase": "child-actual-source-route",
+    "runId": "42254906975",
+    "sourceCommit": "3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+    "stderrBytes": 197,
+    "stdoutBytes": 0,
+    "underlyingCause": "UNKNOWN"
+  },
+  "providerTouched": false,
+  "sourceCommit": "36bb3bd3873b4b68f708f9e88568f000cf47f210",
+  "sourceSha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "ba2cb8253fa8402685b1d935e910a326e59797fbcf817efacf197e47a6cf1b10",
+    "ops/platform/p2-known-ack-interrupted-restoration.test.mjs": "9dc3f9fd4ad385b04a4a31a9b9839b14d4f8dcab9553713948f3d3694b3c134d"
+  },
+  "status": "DIAGNOSTIC_ONLY_LOCAL_QUALIFICATION_PASS",
+  "unchangedSinceFailingCi": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+    "ops/platform/test-p2-known-ack-loss-local.mjs": "050f146711a60f8812748e0677a952c0bf3e7610d86f1c48aeed33c09ea55e67"
+  },
+  "version": 1
+}

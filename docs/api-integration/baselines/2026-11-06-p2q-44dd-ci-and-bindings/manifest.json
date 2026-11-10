@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1460,
+      "sha256": "85677c0b5a9e88d0802f26935e42b994f65cdb1568f8077c42f9288b587908f3"
+    },
+    {
+      "path": "staging-project-variable-names.json",
+      "bytes": 1744,
+      "sha256": "90a53a28104517eb6aa6075c3066dc3d6ddbf08b60f214d34b6cf4b95b781788"
+    },
+    {
+      "path": "terminal-report.json",
+      "bytes": 5788,
+      "sha256": "344488fa35dc4ac84a5f792816c628f52976b13ff3faf5479aca90f0538b4b0e"
+    }
+  ]
+}

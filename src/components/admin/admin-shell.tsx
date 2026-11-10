@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/admin-destinations";
 import type { AdminDeveloperUserOption } from "@/lib/admin/developer-mode-config";
 import { getAdminRoleLabel } from "@/lib/admin/presentation";
+import { isIntegrationFeatureEnabled } from "@/lib/api-integration/rollout-flags";
 import type { AdminActor } from "@/lib/admin/types";
 
 interface AdminShellProps {
@@ -31,7 +32,7 @@ export function AdminShell({
   developerUsers = [],
   environmentLabel,
 }: AdminShellProps) {
-  const visibleDestinations = getVisibleAdminDestinations(actor);
+  const visibleDestinations = getVisibleAdminDestinations(actor, { courseAuthoring: isIntegrationFeatureEnabled("courseReads"), customerLifecycle: process.env.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED === "true" });
   const visibleNavGroups: AdminNavigationGroup[] = ADMIN_DESTINATION_GROUPS.map(
     (group) => ({
       label: group,

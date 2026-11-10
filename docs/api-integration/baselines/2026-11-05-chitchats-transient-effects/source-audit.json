@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "sourceFiles": [
+    {
+      "path": "src/app/api/cron/shipping-rate-cache-refresh/route.ts",
+      "blobOid": "d95ccae25ddde0e48fd5c5cd6442367eda6b0d1f",
+      "sha256": "22a7f44dcfa9a52fcbfab40c4e4152bc7aa9b4f626864fd3d2c706efc587f1ed"
+    },
+    {
+      "path": "src/app/api/shipping/quotes/route.ts",
+      "blobOid": "dca0a113f78b893fa39015e0227a80ced31035b2",
+      "sha256": "8da853e115f5aed98e684a7e66ec23c880a4b3758c0bc7376f973c34cfa60a05"
+    },
+    {
+      "path": "src/lib/shipping/flat-rate-refresh.ts",
+      "blobOid": "5c9b38586bd6f69473b268ecc2984b2c92aa959a",
+      "sha256": "b2aef69e61cebe3209afd2772eb897522b93fb9603ecc98f681dfb0795114d83"
+    },
+    {
+      "path": "src/lib/shipping/flat-rate-zones.ts",
+      "blobOid": "23103be7cf1a4089b25868357ed208ed57aa13e6",
+      "sha256": "93134cc887608ee6b0c47172c2cbdd3b4500f39245adf5a2f04f622b6167ee62"
+    },
+    {
+      "path": "src/lib/shipping/flat-rate-cache-store.ts",
+      "blobOid": "66920b5cab389fe9eb2c850953bb2a51d8eb0359",
+      "sha256": "4887c1a21c923a4fcde03b94904cb68a9c784efba29bdb69210729b05b26c141"
+    },
+    {
+      "path": "src/lib/shipping/config.ts",
+      "blobOid": "f046fa6f45ccb298a74595896ece2cde09f5bea3",
+      "sha256": "275de69708236d3c91f527c1f8f2b5f28b690314021375a31e5c9f4c83217736"
+    },
+    {
+      "path": "src/lib/shipping/chitchats-client.ts",
+      "blobOid": "4214d695a1b1a2121d2c865c4dfaa1acf5f1b0ed",
+      "sha256": "0b1dbff35cb5350649757e3588833ae78104423b1e51e88e6bac2bf2ab476da1"
+    },
+    {
+      "path": "src/lib/shipping/operation-worker.ts",
+      "blobOid": "3bdef59f5a8083572f92dccf700948b82b92b7e2",
+      "sha256": "c8fe521cc09ffeba696705c9b1a4aa9ebff1ea5f0c066f5193bf519573021ab4"
+    },
+    {
+      "path": "src/lib/shipping/shipment-store.ts",
+      "blobOid": "23c60d5f94309bad19fe3961e195cc274ae0e380",
+      "sha256": "56f48e57967097a1569fce9e277b77a6be1aac70ca98112dc51b6dc55adb6bfe"
+    },
+    {
+      "path": "src/lib/private-db/schema.ts",
+      "blobOid": "8c374590017faa1a3d142d8fdcc29e5597346f5c",
+      "sha256": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9"
+    }
+  ],
+  "verifiedAbsentPaths": [
+    "vercel.json"
+  ]
+}

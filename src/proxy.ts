@@ -14,6 +14,7 @@ import {
   ADMIN_DEVELOPER_MODE_COOKIE,
   isAdminDeveloperModeEnabled,
 } from "@/lib/admin/developer-mode-config";
+import { interactiveRequestHeaders } from "@/lib/writer-admission/interactive-proof";
 
 const PUBLIC_ADMIN_PATHS = new Set(["/admin/not-authorized", "/admin/sign-in"]);
 const ADMIN_REQUEST_ID_HEADER = "x-lash-admin-request-id";
@@ -33,7 +34,7 @@ const adminProxy = auth((request, event: NextFetchEvent) => {
     return NextResponse.redirect(signInUrl);
   }
 
-  const requestHeaders = new Headers(request.headers);
+  const requestHeaders = interactiveRequestHeaders(request) ?? new Headers(request.headers);
   requestHeaders.set(ADMIN_REQUEST_ID_HEADER, crypto.randomUUID());
 
   return NextResponse.next({
@@ -58,9 +59,14 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
   ) {
     return adminProxy(request, event);
   }
-  return NextResponse.next();
+  const headers = interactiveRequestHeaders(request);
+  return headers ? NextResponse.next({ request: { headers } }) : NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/booking", "/services/:slug/booking"],
+  matcher: [
+    "/admin/:path*", "/booking", "/services/:slug/booking",
+    { source: "/:path*", has: [{ type: "cookie", key: "__Host-lash-p2q-window" }] },
+    { source: "/:path*", has: [{ type: "header", key: "x-lash-internal-interactive-admission" }] },
+  ],
 };

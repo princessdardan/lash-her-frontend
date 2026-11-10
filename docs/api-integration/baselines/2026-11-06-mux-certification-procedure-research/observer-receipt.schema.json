@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:lash-her:p2:mux-managed-webhook-observation:v1",
+  "title": "Proposed metadata-only observation after an actual matched managed Course upstream 200",
+  "description": "Documentation only. A source-owned collector must verify the runtime/source/DB/response joins. JSON schema validation or a caller-provided object cannot establish provider delivery or certification.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "MUX_MANAGED_WEBHOOK_TRANSPORT_OBSERVATION"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "const": "staging"
+        },
+        "candidateSha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "frontendSourceCommit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "courseSourceCommit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "gatewayContainerId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "courseContainerId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "gatewayImageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "courseImageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "runtimeIdentityEvidenceSha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "muxEnvironmentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "managedAttemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lessonId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "providerAssetId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerUploadId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "environment",
+        "candidateSha256",
+        "frontendSourceCommit",
+        "courseSourceCommit",
+        "gatewayContainerId",
+        "courseContainerId",
+        "gatewayImageDigest",
+        "courseImageDigest",
+        "runtimeIdentityEvidenceSha256",
+        "muxEnvironmentId",
+        "managedAttemptId",
+        "lessonId",
+        "generation",
+        "providerAssetId",
+        "providerUploadId"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "const": "POST /v1/webhooks/mux"
+        },
+        "providerEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "providerEventType": {
+          "enum": [
+            "video.asset.created",
+            "video.asset.ready",
+            "video.asset.errored",
+            "video.asset.deleted",
+            "video.asset.track.created",
+            "video.asset.track.ready",
+            "video.asset.track.errored",
+            "video.asset.track.deleted",
+            "video.upload.created",
+            "video.upload.asset_created",
+            "video.upload.cancelled",
+            "video.upload.errored"
+          ]
+        },
+        "providerCreatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "receiverMonotonicNs": {
+          "type": "string",
+          "pattern": "^[0-9]{1,24}$"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "providerTrackId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "route",
+        "providerEventId",
+        "providerEventType",
+        "providerCreatedAt",
+        "receivedAt",
+        "receiverMonotonicNs",
+        "requestId",
+        "providerTrackId"
+      ]
+    },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": 200
+        },
+        "videoAsset": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "lessonId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "uploading",
+                "processing",
+                "ready",
+                "errored"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "lessonId",
+            "status"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "videoAsset"
+      ]
+    },
+    "managedStateBeforeSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "managedStateAfterSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "transportObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "effect": {
+          "enum": [
+            "passed-through",
+            "matched-ack-dropped"
+          ]
+        },
+        "actualEffectReceiptSha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerAcknowledgment": {
+          "enum": [
+            "unknown",
+            "provider-attempt-recorded-2xx",
+            "provider-attempt-recorded-failure"
+          ]
+        }
+      },
+      "required": [
+        "effect",
+        "actualEffectReceiptSha256",
+        "providerAcknowledgment"
+      ]
+    },
+    "retryOfEventId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "kind",
+    "binding",
+    "request",
+    "upstream",
+    "managedStateBeforeSha256",
+    "managedStateAfterSha256",
+    "transportObservation",
+    "retryOfEventId"
+  ]
+}

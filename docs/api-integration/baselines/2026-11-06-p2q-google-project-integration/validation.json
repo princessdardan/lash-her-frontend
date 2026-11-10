@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "checkedCommit": "0c0cefab66109725483c3392b1b3afc3be62d804",
+  "status": "SOURCE_ONLY_LOCAL_VERIFIED_INDEPENDENTLY_REVIEWED_CI_PENDING",
+  "node": {
+    "version": "24.18.0",
+    "tests": 755,
+    "passed": 738,
+    "skipped": 17,
+    "failed": 0,
+    "durationMilliseconds": 30304.709
+  },
+  "focusedLintExit": 0,
+  "diffCheckExit": 0,
+  "pr91GatewayRuntimeUnchanged": true,
+  "immutableProfilesUnchangedFrom434": true,
+  "sourceAndContracts": "source-and-contracts.json",
+  "independentReview": "independent-review.json",
+  "requiredCi": "PENDING for new source; latest all-ten remains434ff029",
+  "priorSandboxFailure": "Original EPERM loopback-listener failure preserved privately; unchanged suite passed with permitted loopback execution.",
+  "liveOrProviderQualification": false
+}

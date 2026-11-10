@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "runId": 42141554694,
+  "sourceCommit": "7a0a2bb4e1ece9cf6fd681fdf438530427cc9997",
+  "files": [
+    {
+      "artifactId": 13468585944,
+      "sha256": "9b18469e77a2c181679e10dd8b9148e0f612667340e5241c3bcd4d3991530eba",
+      "bytes": 58967,
+      "retainedAt": "docs/api-integration/baselines/2026-11-05-p2-frontend-postgres18-ci/gateway-native-13468585944.zip",
+      "scope": "strict native proof"
+    },
+    {
+      "artifactId": 13468507070,
+      "sha256": "6b4dc331f5289a9e63d848a72e86ec2dbb3990a391c7c892d264cd4835af2134",
+      "bytes": 658894,
+      "retainedAt": "/Users/dardan/workspace/lash-her-frontend/.tmp/phase2-frontend-ci-42141554694/browser-report-13468507070.zip",
+      "scope": "browser report retained privately; no live provider claim"
+    }
+  ]
+}

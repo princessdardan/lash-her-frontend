@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+  "actualAppCron": true,
+  "actualDispatcher": true,
+  "actualTlsGateway": true,
+  "actualTlsReceivers": true,
+  "actualCanonicalApiReceivers": true,
+  "actualThreeDatabaseDomainProof": true,
+  "actualTlsPostgres": true,
+  "actualProvider": false,
+  "modeledOidc": true,
+  "firstHttpStatus": 503,
+  "firstFrontendLedgerState": "uncertain",
+  "firstFrontendUncertain": 1,
+  "firstGatewayUncertain": 1,
+  "firstDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "pending",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "replayHttpStatus": 200,
+  "finalFrontendUncertain": 1,
+  "finalGatewayUncertain": 1,
+  "finalDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "acknowledged",
+      "attempts": 2,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "sourceTraceMatchesOperation": true,
+  "settledFrontendUncertain": 0,
+  "specificFrontendOperationReconciled": true,
+  "gatewayCounterReset": false,
+  "domainProofSha256": "494fa82901ef03fbd42871a724ca4447ae043519a1d600d4f0d18151f54b089c",
+  "noSqlReplay": true,
+  "noRoleChange": true,
+  "noRuntimeRestart": true,
+  "fixtureOnly": true,
+  "postgresMajor": 16,
+  "migrations": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "apiSourceCommits": {
+    "course": "76716c537b5cd3049f0653ed3596c4f547ce3584",
+    "community": "e3bfffe295c7f0b7d029d6a7c9deb495ac418289"
+  },
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false
+}

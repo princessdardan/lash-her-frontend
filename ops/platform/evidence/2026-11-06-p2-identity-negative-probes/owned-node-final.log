@@ -1,0 +1,27 @@
+✔ private probe rejects unknown fields, production, malformed subjects/resources and missing current keys (0.891083ms)
+✔ fixed HTTP plan starts and ends with real positive baselines and includes completed-attempt isolation (1.405833ms)
+✔ actual Node HTTP plans match the independent host protocol for current-only and overlapping keys (78.083167ms)
+✔ deployed HTTP selection is a fixed source check, not an arbitrary path or proxy (0.872625ms)
+✔ fixed TLS client rejects all unreviewed paths before issuing a request (0.274875ms)
+✔ actual verifier observation rejects foreign runtime targets and mismatched private configuration before importing modules (0.299208ms)
+✔ private CLI payload failures print only bounded JSON and never raw error, token or input bytes (92.68075ms)
+✔ owned actual API module/TLS fixture: verifiers (497.374916ms)
+✔ owned actual API module/TLS fixture: verifiers-current-only (440.184375ms)
+✔ owned actual API module/TLS fixture: https (1030.31325ms)
+✔ owned actual API module/TLS fixture: https-current-only (893.449ms)
+✔ owned actual API module/TLS fixture: single-check (774.45575ms)
+✔ owned actual API module/TLS fixture: all-401 (755.153209ms)
+✔ owned actual API module/TLS fixture: all-404 (751.079667ms)
+✔ owned actual API module/TLS fixture: redirect (756.229125ms)
+✔ owned actual API module/TLS fixture: oversized (737.420041ms)
+✔ owned actual API module/TLS fixture: untrusted-ca (802.304458ms)
+✔ owned actual API module/TLS fixture: missing-attempt (895.795125ms)
+✔ owned actual API module/TLS fixture: leak-attempt (926.318667ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9477.97475

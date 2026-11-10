@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "source": "Read-only connected Vercel metadata plus current dashboard settings",
+  "connectorLimit": "get_project omits rootDirectory and Git link; absence was not interpreted as repository root",
+  "projects": [
+    {
+      "id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "name": "lash-her-frontend-staging",
+      "rootDirectory": "",
+      "repository": "princessdardan/lash-her-frontend",
+      "productionBranch": "staging",
+      "buildCommand": "node scripts/validate-staging-release.mjs && npm run build"
+    },
+    {
+      "id": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "name": "lash-her-frontend",
+      "rootDirectory": "",
+      "repository": "princessdardan/lash-her-frontend",
+      "productionBranch": "main"
+    }
+  ],
+  "sourceConfiguration": {
+    "path": "vercel.mjs",
+    "sha256": "2055569a1c950005960826d76a752af81329aa1af18d850a11421bfc3e940698",
+    "automaticGitDeployments": false,
+    "sameAsRecordedStagingRef": true
+  },
+  "officialDocumentation": [
+    "https://vercel.com/docs/project-configuration/vercel-ts",
+    "https://vercel.com/docs/project-configuration/git-configuration"
+  ],
+  "scope": "Confirms root-based source configuration applicability, not deployment/migration or pending-build cancellation",
+  "settingsChanged": false,
+  "environmentOrCredentialValuesRead": false,
+  "deploymentOrSourceMergePerformed": false
+}

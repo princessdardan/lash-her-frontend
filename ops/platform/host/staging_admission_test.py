@@ -28,6 +28,7 @@ class Clock:
 
 class AdmissionTests(unittest.TestCase):
     def setUp(self):
+        self.legacy_runtime = release_test.historical_runtime_fixture()
         self.r = release_test.RuntimeReleaseTests(methodName="runTest"); self.r.setUp()
         for name in ("root", "bundle", "configuration", "compose"):
             setattr(self.r, name, getattr(self.r, name).resolve())
@@ -73,7 +74,7 @@ class AdmissionTests(unittest.TestCase):
         self.admitted_once = False
 
     def tearDown(self):
-        self.r.tearDown()
+        self.r.tearDown(); self.legacy_runtime.close()
 
     def save(self):
         (self.evidence / "acceptance.json").write_text(json.dumps(self.value))

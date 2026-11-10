@@ -155,6 +155,7 @@ export async function sendBookingConfirmationEmailForOrder(
   try {
     await sendCustomerBookingConfirmationEmailForOrder(orderId, dependencies);
   } catch (error) {
+    markWriterOperationUncertain();
     customerError = error;
   }
 
@@ -162,6 +163,7 @@ export async function sendBookingConfirmationEmailForOrder(
   try {
     await dependencies.sendProviderBookingEmailForOrder?.(orderId);
   } catch (error) {
+    markWriterOperationUncertain();
     providerError = error;
   }
 

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "VERCEL_CLI_FILES_ENDPOINT_UNAVAILABLE",
+  "cli": {
+    "path": "/Users/dardan/.nvm/versions/node/v22.21.0/bin/vercel",
+    "version": "50.0.0",
+    "existingAuthenticationVerifiedByReadOnlyList": true,
+    "loginChanged": false,
+    "credentialFilesRead": false,
+    "credentialValuesRead": false
+  },
+  "capabilities": {
+    "genericApiCommandAvailable": false,
+    "deploymentFilesCommandAvailable": false,
+    "inspectJsonAvailable": true,
+    "inspectJsonProvidesExactV6FileTree": false,
+    "exactV6DeploymentFilesEndpointInvoked": false
+  },
+  "result": {
+    "fullTreesObtained": 0,
+    "deploymentCount": 5,
+    "connectorPartialTreesRemainOnlyEvidence": true,
+    "authoritativeSourceAttributionEstablished": false,
+    "unknownSourceIdentitiesRemainOpen": true
+  },
+  "controls": {
+    "fileContentsRead": false,
+    "environmentValuesRead": false,
+    "configurationRead": false,
+    "deploymentsMutated": false,
+    "shareLinksCreated": false
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "correction": "The selected test data did not exceed 196608 bytes. Use sufficiently large valid lease rows, then add exact196608/+1 data boundary coverage. No production cap changed.",
+  "failure": "test_ledger_slot_count_per_record_and_aggregate_caps_are_conjunctive: MuxCaptureError not raised for 256 valid safeCapture rows",
+  "failures": 1,
+  "kind": "TOOL_OUTPUT_OBSERVATION_NOT_RAW_LOG",
+  "testCommand": "python3 -m unittest ops/platform/host/p2q_mux_capture_test.py",
+  "tests": 20,
+  "version": 1
+}

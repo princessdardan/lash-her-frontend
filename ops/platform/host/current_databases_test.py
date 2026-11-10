@@ -1,8 +1,9 @@
 import hashlib
+import copy
 import json
 import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import current_databases as checks
 import migrate
@@ -21,6 +22,22 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.credentials = {name: name + "-private-fixture" for name in self.jobs}
         self.calls = []
         self.bad_frontend, self.bad_api, self.bad_cleanup = False, False, False
+
+    def profiled(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, resolve_qualification_target_profile
+        ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        definition = resolve_qualification_target_profile(ref)
+        self.selected.update(version=3, workload={"projectId": definition["frontend"]["projectId"], "environment": "production"}, approval={})
+        for carrier in (self.selected, self.selected["sourceApproval"], self.selected["integration"], self.selected["workload"],
+                        self.selected["approval"], self.selected["frontendMigration"], *self.selected["sources"].values()):
+            carrier["qualificationTargetProfile"] = copy.deepcopy(ref)
+        for name, info in self.jobs.items():
+            job = info["job"]
+            job["version" if name == "frontend" else "schemaVersion"] = 2
+            job["qualificationTargetProfile"] = copy.deepcopy(ref)
+            job["target"]["qualificationTargetProfile"] = copy.deepcopy(ref)
+            if name != "frontend": job["target"]["schemaVersion"] = 2
+        return ref
 
     def tearDown(self):
         self.fixture.tearDown()
@@ -59,6 +76,10 @@ class CurrentDatabasesTests(unittest.TestCase):
                       "schemaBaselineSha256": job["schemaBaselineSha256"], "artifactSha256": job["target"]["artifactSha256"],
                       "transportVerifier": "selected-image/hasVerifiedMigrationTransport",
                       "target": {key: job["target"][key] for key in ("host", "port", "database", "user", "serverMajor")}}
+            if "qualificationTargetProfile" in job:
+                record.update(version=2, qualificationTargetProfile=job["qualificationTargetProfile"],
+                              checks=["selected-image-operator-role-policy"])
+            record.update(migrate.contract_identity(job))
             if self.bad_api:
                 record["target"]["host"] = "other.invalid"
             return subprocess.CompletedProcess(args, 0, json.dumps(record).encode(), b"")
@@ -74,6 +95,38 @@ class CurrentDatabasesTests(unittest.TestCase):
         with patch.object(checks, "_run", side_effect=self.run_child):
             return checks.check_all(**values)
 
+    def certification_scope(self, ref):
+        from p2_certification_parent import P2CertificationScope
+        scope = object.__new__(P2CertificationScope)
+        scope.candidate_sha256 = "c" * 64
+        scope.verify = Mock()
+        scope.require_release = Mock()
+        scope.require_frontend = Mock()
+        raw = {name: (json.dumps(self.jobs[name]["job"], indent=2) + "\n").encode()
+               for name in ("course", "community")}
+        scope.certification_plan = {
+            "certificationActionId": "certification-current-api-fixture",
+            "apiJobSha256": {name: hashlib.sha256(value).hexdigest() for name, value in raw.items()},
+        }
+        scope.run = Mock(side_effect=lambda args, *, env, input=None, capture_output=True, timeout=120:
+                         self.run_child(args, env, input, timeout))
+        return scope, raw
+
+    def execute_certification(self, scope, raw, ref, **changes):
+        values = {
+            "selected": self.selected,
+            "jobs": self.jobs,
+            "output": self.output,
+            "credentials": {name: self.credentials[name] for name in ("course", "community")},
+            "checker": self.checker,
+            "checker_sha256": self.checker_hash,
+            "api_job_bytes": raw,
+            "expected_profile": ref,
+            "_certification_scope": scope,
+        }
+        values.update(changes)
+        return checks.check_certification_apis(**values)
+
     def test_three_real_entrypoint_commands_have_scoped_credentials_and_cannot_run_api_migrations(self):
         result = self.execute()
         self.assertEqual(result["status"], "CURRENT_DATABASES_READ_ONLY_VERIFIED")
@@ -86,6 +139,182 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.assertFalse(result["migrationsExecuted"])
         with self.assertRaisesRegex(ValueError, "FRESH_PRIVATE_OUTPUT"):
             self.execute()
+
+    def test_profiled_current_leaf_commands_and_actual_receipt_join_are_explicit(self):
+        ref = self.profiled()
+        result = self.execute(expected_profile=ref)
+        self.assertEqual(result["version"], 2); self.assertEqual(result["qualificationTargetProfile"], ref)
+        runs = [args for args, _, _ in self.calls if args[1] == "run"]
+        self.assertIn("--execute-profiled-current", runs[0])
+        self.assertTrue(all("--profiled-current" in args for args in runs[1:]))
+        self.assertFalse(result["migrationsExecuted"])
+
+    def test_profiled_held_frontend_proof_never_reopens_a_frontend_runner(self):
+        from p2_profiled_current_scope import P2ProfiledCurrentScope
+        from unittest.mock import Mock
+        ref = self.profiled()
+        # Own the process/Docker boundary in this fixture; the actual TLS/FE
+        # backend and child-reap behavior have separate real-process tests.
+        scope = object.__new__(P2ProfiledCurrentScope)
+        scope.candidate_sha256 = "b" * 64
+        scope.verify = Mock()
+        scope.require_release = Mock()
+        scope.require_frontend = Mock()
+        frontend_raw = b'{ "owned": "original held database proof" }\n'
+        started_raw = b'{ "owned": "original continuation-started" }\n'
+        scope.frontend_current_receipt_bytes = Mock(return_value=(frontend_raw, started_raw))
+        original_jobs = {name: (json.dumps(self.jobs[name]["job"], indent=2) + "\n").encode()
+                         for name in ("course", "community")}
+        scope.api_job_bytes = Mock(side_effect=lambda name: original_jobs[name])
+        scope.run = Mock(side_effect=lambda args, *, env, input=None, capture_output=True, timeout=120:
+                         self.run_child(args, env, input, timeout))
+        # Project Linux root's ownership decisions while running the same host
+        # producer on an unprivileged development machine.
+        changed_owners = set()
+        original_write = migrate.write_exact_bytes
+        def retain(directory, name, raw):
+            self.assertNotIn(directory, changed_owners, "host receipt directory was given to a container")
+            original_write(directory, name, raw)
+        linux_os = Mock(wraps=checks.os)
+        linux_os.getuid.return_value = 0
+        linux_os.chown.side_effect = lambda path, *_: changed_owners.add(path)
+        with patch.object(checks, "os", linux_os), \
+                patch.object(migrate, "write_exact_bytes", side_effect=retain):
+            proof = self.execute(credentials={name: self.credentials[name] for name in original_jobs},
+                                 expected_profile=ref, _profiled_current_scope=scope)
+        self.assertTrue({self.output / f"{name}-input" for name in original_jobs}.issubset(changed_owners))
+        path, result = checks.read_profiled_current_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+        self.assertEqual(path, self.output)
+        self.assertFalse(result["migrationsExecuted"])
+        self.assertEqual((path / "frontend/database-receipt.json").read_bytes(), frontend_raw)
+        self.assertEqual((path / "frontend/frontend-continuation-started.json").read_bytes(), started_raw)
+        self.assertFalse((path / "frontend/job-outcome.json").exists())
+        self.assertEqual(len([args for args, _, _ in self.calls if args[1] == "run"]), 2)
+        for name, original in original_jobs.items():
+            self.assertEqual((path / f"{name}-input/job.json").read_bytes(), original)
+        (path / "community/database-receipt.json").write_text('{}')
+        with self.assertRaisesRegex(ValueError, "PROFILED_CURRENT_DATABASE_RECEIPT_CHANGED"):
+            checks.read_profiled_current_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+
+    def test_certification_scope_runs_only_two_pinned_native_api_checks(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        proof = self.execute_certification(scope, raw, ref)
+        path, result = checks.read_certification_api_proof(
+            proof, scope, self.selected, self.jobs, expected_profile=ref)
+        self.assertEqual(path, self.output)
+        self.assertEqual(result["status"], "P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED")
+        self.assertEqual(set(result["databases"]), {"course", "community"})
+        self.assertFalse(result["migrationsExecuted"])
+        runs = [args for args, _, _ in self.calls if args[1] == "run"]
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(all("/check/input/current.mjs" in args and "--profiled-current" in args for args in runs))
+        self.assertTrue(all("ops/platform/frontend-image.mjs" not in args for args in runs))
+        self.assertTrue(all("run-operator-migration" not in " ".join(args) for args in runs))
+        self.assertGreaterEqual(scope.require_frontend.call_count, 4)
+        for name, value in raw.items():
+            self.assertEqual((path / f"{name}-input/job.json").read_bytes(), value)
+
+    def test_certification_job_bytes_and_scope_refuse_before_process_or_output(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        changed = dict(raw)
+        changed["course"] = raw["course"] + b" "
+        with self.assertRaisesRegex(ValueError, "API_JOB_BYTES_CHANGED"):
+            self.execute_certification(scope, changed, ref)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.output.exists())
+        with self.assertRaisesRegex(ValueError, "API_SCOPE_REQUIRED"):
+            self.execute_certification(object(), raw, ref)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.output.exists())
+
+    def test_certification_api_check_preserves_original_replacement_frontend_job(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        frontend = self.jobs["frontend"]
+        original = ["0000_original_forward"]
+        frontend["job"]["target"].update(approvedPendingTags=original, allowEmptyBootstrap=True)
+        with self.assertRaisesRegex(ValueError, "FRONTEND_CURRENT_ONLY_REQUIRED"):
+            self.execute_certification(scope, raw, ref)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.calls, [])
+        scope.certification_plan["replacementRelease"] = {"kind": "frontend-replacement"}
+        frontend["job"]["target"]["approvedPendingTags"] = []
+        with self.assertRaisesRegex(ValueError, "FRONTEND_REPLACEMENT_JOB_REQUIRED"):
+            self.execute_certification(scope, raw, ref)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.calls, [])
+        frontend["job"]["target"]["approvedPendingTags"] = original
+        proof = self.execute_certification(scope, raw, ref)
+        _, outcome = checks.read_certification_api_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+        self.assertFalse(outcome["frontendSqlApplied"])
+        self.assertFalse(outcome["migrationsExecuted"])
+        self.assertEqual(frontend["job"]["target"]["approvedPendingTags"], ["0000_original_forward"])
+        runs = [args for args, _, _ in self.calls if args[1] == "run"]
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(all("/check/input/current.mjs" in args for args in runs))
+
+    def test_certification_native_role_policy_is_mandatory(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        original = self.run_child
+
+        def missing_role(args, environment, payload=None, timeout=120):
+            result = original(args, environment, payload, timeout)
+            if args[1] == "run":
+                value = json.loads(result.stdout)
+                value["checks"] = []
+                return subprocess.CompletedProcess(args, 0, json.dumps(value).encode(), b"")
+            return result
+
+        scope.run.side_effect = lambda args, *, env, input=None, capture_output=True, timeout=120: missing_role(
+            args, env, input, timeout)
+        with self.assertRaisesRegex(ValueError, "NATIVE_ROLE_POLICY"):
+            self.execute_certification(scope, raw, ref)
+        self.assertEqual(migrate.read_json(self.output, "certification-current-databases-outcome.json")["status"],
+                         "P2_CERTIFICATION_API_DATABASES_REQUIRES_REVIEW")
+
+    def test_certification_proof_is_immutable_and_cleanup_is_mandatory(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        proof = self.execute_certification(scope, raw, ref)
+        (self.output / "community/database-receipt.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "API_RECEIPT_CHANGED"):
+            checks.read_certification_api_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+
+        self.tearDown(); self.setUp()
+        ref = self.profiled(); scope, raw = self.certification_scope(ref)
+        self.bad_cleanup = True
+        with self.assertRaisesRegex(ValueError, "CLEANUP_UNVERIFIED"):
+            self.execute_certification(scope, raw, ref)
+        self.assertEqual(sum(args[1] == "run" for args, _, _ in self.calls), 1)
+
+    def test_mixed_and_unknown_profile_inputs_refuse_before_checker_or_child_access(self):
+        ref = self.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("checker read")):
+            with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+                self.execute()
+            with self.assertRaisesRegex(ValueError, "UNKNOWN"):
+                self.execute(expected_profile={**ref, "id": "p2q-20261106"})
+            self.jobs["community"]["job"]["target"].pop("qualificationTargetProfile")
+            with self.assertRaisesRegex(ValueError, "REQUIRED"):
+                self.execute(expected_profile=ref)
+        self.assertEqual(self.calls, []); self.assertFalse(self.output.exists())
+
+    def test_a_legacy_current_receipt_cannot_be_adopted_by_a_profiled_action(self):
+        ref = self.profiled()
+        def changed(args, environment, payload=None, timeout=120):
+            result = self.run_child(args, environment, payload, timeout)
+            if args[1] == "run" and "/check/input/current.mjs" in args:
+                value = json.loads(result.stdout); value.pop("qualificationTargetProfile")
+                return subprocess.CompletedProcess(args, 0, json.dumps(value).encode(), b"")
+            return result
+        with patch.object(checks, "_run", side_effect=changed):
+            with self.assertRaisesRegex(ValueError, "REQUIRED"):
+                checks.check_all(self.selected, self.jobs, self.output, self.credentials, self.checker, self.checker_hash, expected_profile=ref)
+        self.assertEqual(sum(args[1] == "run" for args, _, _ in self.calls), 2)
+        self.assertEqual(migrate.read_json(self.output, "current-databases-outcome.json")["qualificationTargetProfile"], ref)
 
     def test_frontend_pending_sql_missing_credential_or_changed_checker_stops_before_process_access(self):
         self.jobs["frontend"]["job"]["target"]["approvedPendingTags"] = ["0000_test"]

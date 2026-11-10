@@ -1,0 +1,256 @@
+// Disposable owned TLS/SCRAM PostgreSQL only. No ambient database URL is read.
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, unlinkSync, realpathSync, readdirSync, existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Client } from "pg";
+import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
+import { prepareFrontendRolesPlan, applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES as names, frontendRolesHash } from "./frontend-role-preparation.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
+
+const execute = (file, args) => execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const lockName = "lash-her:private-db:migrations";
+let phase = "ownership";
+async function main() {
+  assert.equal(process.env.FRONTEND_ROLES_OWNED_TEST, "true");
+  const binaries = process.env.PG_BIN, major = Number(process.env.OWNED_POSTGRES_MAJOR ?? "16"); assert.ok(binaries?.startsWith("/") && [16, 18].includes(major));
+  assert.match(execute(join(binaries, "postgres"), ["--version"]), new RegExp(`PostgreSQL\\) ${major}\\.`, "u"));
+  const listener = createServer(); await new Promise((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
+  const port = listener.address().port; await new Promise(resolve => listener.close(resolve));
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-roles-owned-"))), data = join(directory, "data"), password = `owned-${randomUUID()}`;
+  chmodSync(directory, 0o700); const clients = [], checks = [], outcomes = []; let started = false, scenario = 0;
+  const record = name => checks.push(name);
+  try {
+    phase = "cluster";
+    execute(join(binaries, "initdb"), ["-D", data, "-A", "trust", "-U", "frontend_test_admin", "-E", "UTF8", "--locale=C"]);
+    const certificate = join(directory, "server.crt"), key = join(directory, "server.key");
+    execute("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1", "-keyout", key, "-out", certificate]); chmodSync(key, 0o600);
+    writeFileSync(join(data, "postgresql.conf"), `listen_addresses='127.0.0.1'\nport=${port}\nunix_socket_directories=''\nssl=on\nssl_cert_file='${certificate}'\nssl_key_file='${key}'\npassword_encryption='scram-sha-256'\nlog_statement='none'\n`);
+    writeFileSync(join(data, "pg_hba.conf"), "local all all trust\nhostssl all frontend_test_admin 127.0.0.1/32 trust\nhostssl all all 127.0.0.1/32 scram-sha-256\n");
+    execute(join(binaries, "pg_ctl"), ["-D", data, "-l", join(directory, "postgres.log"), "-w", "start"]); started = true;
+    const connect = async (database, user = "frontend_test_admin", suppliedPassword = password) => {
+      const client = new Client({ host: "127.0.0.1", port, database, user, password: suppliedPassword, ssl: { rejectUnauthorized: true, ca: readFileSync(certificate, "utf8") } });
+      client.on("error", () => {}); clients.push(client); await client.connect(); return client;
+    };
+    const setup = await connect("postgres");
+    await setup.query(`CREATE ROLE frontend_operator LOGIN CREATEROLE NOINHERIT PASSWORD '${password}'`);
+    await setup.query(`CREATE ROLE old_frontend_runtime LOGIN INHERIT PASSWORD '${password}'`);
+    await setup.query("CREATE DATABASE frontend_role_owned OWNER frontend_operator");
+    const administrator = await connect("frontend_role_owned"), operator = await connect("frontend_role_owned", "frontend_operator");
+    await operator.query("CREATE TABLE public.preserved_data(id serial PRIMARY KEY,value text NOT NULL)");
+    await operator.query("INSERT INTO public.preserved_data(value) VALUES('synthetic-preserved-row')");
+    await operator.query("CREATE SCHEMA drizzle"); await operator.query("CREATE TABLE drizzle.__drizzle_migrations(id int,hash text)");
+    await operator.query("INSERT INTO drizzle.__drizzle_migrations VALUES(1,'synthetic-unchanged-journal')");
+    await operator.query("GRANT USAGE ON SCHEMA public TO old_frontend_runtime"); await operator.query("GRANT SELECT ON public.preserved_data TO old_frontend_runtime");
+    const before = { data: (await operator.query("TABLE public.preserved_data")).rows, journal: (await operator.query("TABLE drizzle.__drizzle_migrations")).rows,
+      oldRole: (await operator.query("SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreaterole FROM pg_roles WHERE rolname='old_frontend_runtime'")).rows,
+      oldAcl: (await operator.query("SELECT relacl::text FROM pg_class WHERE oid='public.preserved_data'::regclass")).rows };
+    const fixture = (suffix = "case", reuse, expectedProfile = undefined) => {
+      const action = `owned-role-${++scenario}-${suffix}`, sourceCommit = "a".repeat(40), sqlArtifactSha256 = "b".repeat(64), contract = `sha256:${"c".repeat(64)}`, image = `sha256:${"d".repeat(64)}`;
+      const candidate = { version: 2, environment: "staging", releaseId: action, integration: { state: "passed" }, sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" },
+        sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: sourceCommit, requiredChecks: "passed" } },
+        contractPhase: "p2", phase2ContractManifestSha256: contract, contractManifestSha256: `sha256:${"e".repeat(64)}`,
+        frontendMigration: { sourceCommit, sqlArtifactSha256, contractPhase: "p2", phase2ContractManifestSha256: contract, contractManifestSha256: `sha256:${"e".repeat(64)}` }, artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${image}` } } };
+      const job = { version: 1, operator: "Dardan", environment: "staging", releaseId: action, sourceCommit, sqlArtifactSha256, contractPhase: "p2", phase2ContractManifestSha256: contract,
+        contractManifestSha256: candidate.contractManifestSha256, migrationImageDigest: image, recoveryRef: "owned/recovery-1",
+        target: { host: "127.0.0.1", port, database: "frontend_role_owned", user: "frontend_operator", runtimeRole: names.runtime, serverMajor: major } };
+      const receipts = join(directory, `${action}-receipts`), privatePath = join(directory, `${action}-private`); mkdirSync(receipts, { mode: 0o700 }); mkdirSync(privatePath, { mode: 0o700 });
+      const specification = { version: expectedProfile === undefined ? 1 : 2, producerSha256: ["f".repeat(64)], ...(reuse ? { reuse } : {}) };
+      if (expectedProfile !== undefined) {
+        candidate.version = 3; job.version = 2;
+        for (const value of [candidate, candidate.frontendMigration, job, job.target, specification]) value.qualificationTargetProfile = expectedProfile;
+      }
+      return { candidate, job, plan: prepareFrontendRolesPlan(candidate, job, specification, expectedProfile), directory: receipts, privateDirectory: privatePath };
+    };
+    const pid = (await operator.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const verifySession = async () => assert.equal((await operator.query("SELECT pg_backend_pid() AS pid")).rows[0].pid, pid);
+    const existingNewRoles = async () => (await operator.query("SELECT oid::text,rolname FROM pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname", [Object.values(names)])).rows;
+    const resetNewRoles = async () => {
+      for (const name of [names.runtime, names.owner]) if ((await existingNewRoles()).some(row => row.rolname === name)) {
+        await administrator.query(`DROP OWNED BY "${name}"`); await administrator.query(`DROP ROLE "${name}"`);
+      }
+    };
+    phase = "real-parent-locks";
+    await withFrontendEnvironmentLock(async verifyEnvironment => {
+      const lockPath = join(directory, "environment.lock");
+      await assert.rejects(withFrontendEnvironmentLock(async () => {}, { path: lockPath })); record("actual-environment-flock-contention-refuses-second-parent");
+      const other = await connect("frontend_role_owned", "frontend_operator");
+      assert.equal((await other.query("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [lockName])).rows[0].locked, true);
+      const blocked = fixture("contended"); await assert.rejects(applyPreparedFrontendRoles(blocked.plan, operator, { ...blocked, confirmation: `staging/${blocked.plan.actionId}`, verifyEnvironment, verifySession }));
+      assert.equal((await existingNewRoles()).length, 0); record("actual-physical-lock-contention-refuses-before-role-mutation");
+      await other.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
+      assert.equal((await operator.query("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [lockName])).rows[0].locked, true);
+      const run = (f, client = operator, extra = {}) => applyPreparedFrontendRoles(f.plan, client, { ...f, confirmation: `staging/${f.plan.actionId}`, verifyEnvironment, verifySession, ...extra });
+      phase = "wrong-target-role";
+      const wrongTarget = fixture("wrong-target"); wrongTarget.job.target.database = "wrong_database"; wrongTarget.plan = prepareFrontendRolesPlan(wrongTarget.candidate, wrongTarget.job, { version: 1, producerSha256: ["f".repeat(64)] });
+      await assert.rejects(run(wrongTarget)); record("actual-wrong-target-refused"); await assert.rejects(run(fixture("wrong-role"), administrator)); record("actual-wrong-session-role-refused");
+      await administrator.query(`CREATE ROLE "${names.owner}" NOLOGIN INHERIT`); await assert.rejects(run(fixture("collision")));
+      assert.equal((await administrator.query("SELECT rolinherit FROM pg_roles WHERE rolname=$1", [names.owner])).rows[0].rolinherit, true); await administrator.query(`DROP ROLE "${names.owner}"`); record("unrelated-existing-name-is-not-coerced");
+      phase = "rollback";
+      const rollback = fixture("rollback"), originalQuery = operator.query.bind(operator);
+      let mutations = 0;
+      const failing = { connection: operator.connection, connectionParameters: operator.connectionParameters, query: async (sql, values) => { if (sql.startsWith("CREATE ROLE")) { mutations++; if (mutations === 2) throw Error("owned-injected-before-second-role"); } return originalQuery(sql, values); } };
+      await assert.rejects(run(rollback, failing)); assert.equal((await existingNewRoles()).length, 0);
+      const rollbackOutcome = JSON.parse(readFileSync(join(rollback.directory, "roles-preparation-outcome.json"))); assert.equal(rollbackOutcome.sqlOutcome, "rolled-back"); outcomes.push(rollbackOutcome); record("actual-role-creation-rollback-retains-intent-and-private-credential");
+      await assert.rejects(run(rollback)); assert.equal(mutations, 2); record("failed-action-is-never-replayed");
+      phase = "missing-private-receipt";
+      const missing = fixture("missing-private"); let environmentChecks = 0;
+      await assert.rejects(run(missing, operator, { verifyEnvironment: async () => { await verifyEnvironment(); if (++environmentChecks === 2) unlinkSync(join(missing.privateDirectory, "frontend-role-credentials.json")); } }));
+      assert.equal((await existingNewRoles()).length, 0);
+      const missingOutcome = JSON.parse(readFileSync(join(missing.directory, "roles-preparation-outcome.json")));
+      assert.equal(missingOutcome.sqlOutcome, "not-started");
+      assert.equal(missingOutcome.roleSqlAttempted, false);
+      outcomes.push(missingOutcome); record("missing-private-credential-receipt-refuses-before-role-sql");
+      phase = "prepare-real-roles";
+      const positive = fixture("positive"); let prepared;
+      try { prepared = await run(positive); } catch {
+        const failure = JSON.parse(readFileSync(join(positive.directory, "roles-preparation-outcome.json"), "utf8"));
+        process.stderr.write(JSON.stringify({diagnostic:"owned-positive-refusal",phase:failure.phase,sqlState:failure.sqlState,checkpoint:failure.checkpoint})+"\n"); throw Error("owned-positive-refusal");
+      } outcomes.push(JSON.parse(JSON.stringify(prepared)));
+      assert.ok(prepared.owner.oid !== prepared.runtime.oid); assert.deepEqual((await existingNewRoles()).map(row => row.oid).sort(), [prepared.owner.oid, prepared.runtime.oid].sort());
+      assert.equal(statSync(prepared.private.credentialReceiptRef).mode & 0o777, 0o600); record("real-postgres-assigned-oids-and-private-credential-retained");
+      const serialized = JSON.stringify(prepared), credential = JSON.parse(readFileSync(prepared.private.credentialReceiptRef, "utf8"));
+      assert.ok(!serialized.includes(credential.password) && !serialized.includes("postgresql:") && !serialized.includes("credentialReceiptRef")); record("public-output-does-not-serialize-private-credentials");
+      const runtime = await connect("frontend_role_owned", prepared.runtime.name, credential.password);
+      await runtime.query("INSERT INTO public.preserved_data(value) VALUES('synthetic-new-runtime-row')");
+      await runtime.query("UPDATE public.preserved_data SET value='synthetic-updated-row' WHERE value='synthetic-new-runtime-row'");
+      await runtime.query("DELETE FROM public.preserved_data WHERE value='synthetic-updated-row'"); record("actual-runtime-public-crud-and-sequence-usage");
+      for (const sql of ["CREATE TABLE public.must_not_exist(id int)", "CREATE SCHEMA must_not_exist", "SELECT * FROM drizzle.__drizzle_migrations", `SET ROLE "${names.owner}"`, "SET ROLE frontend_operator"])
+        await assert.rejects(runtime.query(sql), error => error.code === "42501"); record("actual-runtime-persistent-ddl-journal-and-membership-denied");
+      await operator.query("BEGIN"); await operator.query(`SET LOCAL ROLE "${names.owner}"`); await operator.query("CREATE SCHEMA owned_admission_ability_probe"); await operator.query("ROLLBACK"); record("owner-can-create-schema-only-through-operator-set-role");
+      await operator.query("CREATE TABLE public.future_default_grant(id serial PRIMARY KEY,value text)");
+      await runtime.query("INSERT INTO public.future_default_grant(value) VALUES('synthetic-future')"); record("actual-future-table-and-sequence-default-grants");
+      const reuse = { ownerOid: prepared.owner.oid, runtimeOid: prepared.runtime.oid, proofSha256: prepared.proofSha256 };
+      const reused = fixture("reuse", reuse), reusedProof = await run(reused, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory });
+      assert.deepEqual(reusedProof.owner, prepared.owner); assert.deepEqual(reusedProof.runtime, prepared.runtime); record("exact-approved-oid-grant-and-private-credential-reuse");
+      phase = "database-scoped-selected-role-settings";
+      for (const selectedRole of [prepared.owner, prepared.runtime]) {
+        await administrator.query(`ALTER ROLE "${selectedRole.name}" IN DATABASE frontend_role_owned SET search_path=public`);
+        assert.equal((await operator.query("SELECT rolconfig FROM pg_catalog.pg_roles WHERE oid=$1::oid", [selectedRole.oid])).rows[0].rolconfig, null);
+        const settingCount = async () => (await operator.query("SELECT count(*)::int AS count FROM pg_catalog.pg_db_role_setting WHERE setrole=$1::oid", [selectedRole.oid])).rows[0].count;
+        assert.equal(await settingCount(), 1);
+        const fault = fixture(selectedRole.name === names.owner ? "owner-database-setting" : "runtime-database-setting", reuse);
+        let roleMutations = 0;
+        const readOnlyReuse = { connection: operator.connection, connectionParameters: operator.connectionParameters,
+          query: async (sql, values) => { if (/^(CREATE ROLE|ALTER ROLE|GRANT |REVOKE |ALTER DEFAULT)/u.test(sql)) roleMutations++; return originalQuery(sql, values); } };
+        await assert.rejects(run(fault, readOnlyReuse, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
+        assert.equal(roleMutations, 0); assert.equal(await settingCount(), 1);
+        assert.equal(existsSync(join(fault.directory, "roles-preparation-started.json")), false);
+        assert.equal(existsSync(join(fault.privateDirectory, "frontend-role-credentials.json")), false);
+        assert.deepEqual((await existingNewRoles()).map(row => row.oid).sort(), [prepared.owner.oid, prepared.runtime.oid].sort());
+        // Deliberate repair belongs to this disposable fixture, never the
+        // source role-preparation implementation or its refusal path.
+        await administrator.query(`ALTER ROLE "${selectedRole.name}" IN DATABASE frontend_role_owned RESET search_path`);
+        assert.equal(await settingCount(), 0);
+        const repaired = fixture(selectedRole.name === names.owner ? "owner-setting-repaired" : "runtime-setting-repaired", reuse);
+        const repairedProof = await run(repaired, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory });
+        assert.deepEqual(repairedProof.owner, prepared.owner); assert.deepEqual(repairedProof.runtime, prepared.runtime);
+      }
+      record("actual-database-scoped-settings-on-either-selected-role-refuse-reuse-without-mutation-and-pass-after-repair");
+      phase = "runtime-effective-public-schema-usage";
+      const shadowSchema = `"${names.runtime}"`;
+      await administrator.query(`CREATE SCHEMA ${shadowSchema}`);
+      await administrator.query(`GRANT USAGE ON SCHEMA ${shadowSchema} TO PUBLIC`);
+      await administrator.query(`CREATE TABLE ${shadowSchema}.preserved_data(value text NOT NULL)`);
+      await administrator.query(`INSERT INTO ${shadowSchema}.preserved_data(value) VALUES('owned-public-shadow-read')`);
+      await administrator.query(`GRANT SELECT ON ${shadowSchema}.preserved_data TO PUBLIC`);
+      assert.notEqual((await operator.query("SELECT nspowner::text AS oid FROM pg_catalog.pg_namespace WHERE nspname=$1", [names.runtime])).rows[0].oid, prepared.runtime.oid);
+      assert.equal((await operator.query("SELECT rolconfig FROM pg_catalog.pg_roles WHERE oid=$1::oid", [prepared.runtime.oid])).rows[0].rolconfig, null);
+      assert.equal((await operator.query("SELECT count(*)::int AS count FROM pg_catalog.pg_db_role_setting WHERE setrole=$1::oid", [prepared.runtime.oid])).rows[0].count, 0);
+      const publicValues = before.data.map(row => ({ value: row.value }));
+      assert.deepEqual((await runtime.query("SELECT value FROM public.preserved_data")).rows, publicValues);
+      assert.deepEqual((await runtime.query("SELECT value FROM preserved_data")).rows, [{ value: "owned-public-shadow-read" }]);
+      const shadowedReuse = fixture("public-schema-shadow", reuse); let shadowRoleMutations = 0;
+      const observedReuse = { connection: operator.connection, connectionParameters: operator.connectionParameters,
+        query: async (sql, values) => { if (/^(CREATE ROLE|ALTER ROLE|GRANT |REVOKE |ALTER DEFAULT)/u.test(sql)) shadowRoleMutations++; return originalQuery(sql, values); } };
+      await assert.rejects(run(shadowedReuse, observedReuse, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
+      assert.equal(shadowRoleMutations, 0);
+      assert.equal(existsSync(join(shadowedReuse.directory, "roles-preparation-started.json")), false);
+      assert.equal(existsSync(join(shadowedReuse.privateDirectory, "frontend-role-credentials.json")), false);
+      assert.deepEqual((await runtime.query("SELECT value FROM preserved_data")).rows, [{ value: "owned-public-shadow-read" }]);
+      // Only the disposable fixture administrator removes the injected schema.
+      await administrator.query(`DROP SCHEMA ${shadowSchema} CASCADE`);
+      assert.deepEqual((await runtime.query("SELECT value FROM preserved_data")).rows, publicValues);
+      const schemaRepaired = fixture("schema-usage-repaired", reuse);
+      const schemaProof = await run(schemaRepaired, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory });
+      assert.deepEqual(schemaProof.owner, prepared.owner); assert.deepEqual(schemaProof.runtime, prepared.runtime);
+      record("actual-public-schema-usage-shadow-read-refuses-runtime-reuse-without-mutation-and-passes-after-cleanup");
+      const wrongOid = fixture("wrong-oid", { ...reuse, runtimeOid: "1" }); await assert.rejects(run(wrongOid, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory })); record("wrong-reuse-oid-refused");
+      await operator.query(`GRANT TRUNCATE ON public.preserved_data TO "${names.runtime}"`);
+      await assert.rejects(run(fixture("wrong-grants", reuse), operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
+      await operator.query(`REVOKE TRUNCATE ON public.preserved_data FROM "${names.runtime}"`); record("existing-role-extra-grants-refused-without-coercion");
+      await runtime.end();
+      assert.deepEqual((await operator.query("TABLE public.preserved_data")).rows, before.data); assert.deepEqual((await operator.query("TABLE drizzle.__drizzle_migrations")).rows, before.journal);
+      assert.deepEqual((await operator.query("SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreaterole FROM pg_roles WHERE rolname='old_frontend_runtime'")).rows, before.oldRole);
+      const oldReader = await connect("frontend_role_owned", "old_frontend_runtime"); assert.deepEqual((await oldReader.query("TABLE public.preserved_data")).rows, before.data); record("old-role-oid-flags-access-and-actual-data-journal-preserved");
+      assert.equal((await operator.query("SELECT to_regnamespace('frontend_admission') IS NULL AS absent")).rows[0].absent, true); record("no-admission-ledger-application-migration-or-feature-activation");
+      await resetNewRoles();
+      phase = "lost-commit-acknowledgment";
+      const lost = fixture("lost-ack"); let commits = 0, roleQueries = 0;
+      const losing = { connection: operator.connection, connectionParameters: operator.connectionParameters, query: async (sql, values) => { if (sql.startsWith("CREATE ROLE")) roleQueries++; const result = await originalQuery(sql, values); if (sql === "COMMIT") { commits++; throw Error("owned-lost-commit-ack"); } return result; } };
+      await assert.rejects(run(lost, losing)); const lostOutcome = JSON.parse(readFileSync(join(lost.directory, "roles-preparation-outcome.json"), "utf8"));
+      assert.equal(lostOutcome.sqlOutcome, "commit-acknowledgment-unknown"); assert.equal((await existingNewRoles()).length, 2); assert.equal(commits, 1);
+      assert.equal(statSync(join(lost.privateDirectory, "frontend-role-credentials.json")).mode & 0o777, 0o600); outcomes.push(lostOutcome); record("actual-commit-then-lost-ack-retains-unknown-and-private-recovery-material");
+      await assert.rejects(run(lost, losing)); assert.equal(roleQueries, 2); assert.equal(commits, 1); record("lost-commit-acknowledgment-is-never-replayed");
+      phase = "profiled-current-role-creation-and-reuse";
+      await resetNewRoles();
+      const profileRun = (f, extra = {}) => applyPreparedFrontendRoles(f.plan, operator, { ...f, confirmation: `staging/${f.plan.actionId}`, verifyEnvironment, verifySession, ...extra }, current);
+      const profiled = fixture("profiled-fresh", undefined, current), profileProof = await profileRun(profiled);
+      assert.equal(profileProof.version, 2); assert.deepEqual(profileProof.qualificationTargetProfile, current);
+      assert.deepEqual(profileProof.target.qualificationTargetProfile, current);
+      assert.notEqual(profileProof.owner.oid, prepared.owner.oid); assert.notEqual(profileProof.runtime.oid, prepared.runtime.oid);
+      const profileCredential = JSON.parse(readFileSync(join(profiled.privateDirectory, "frontend-role-credentials.json")));
+      assert.equal(profileCredential.version, 2); assert.deepEqual(profileCredential.qualificationTargetProfile, current);
+      assert.equal(profileProof.runtimeCredentialVerified, true); outcomes.push(profileProof);
+      record("profiled-current-roles-fresh-actual-oids-credential-and-public-private-v2-bindings");
+      const profileReuse = { ownerOid: profileProof.owner.oid, runtimeOid: profileProof.runtime.oid, proofSha256: profileProof.proofSha256 };
+      const profiledAgain = fixture("profiled-reuse", profileReuse, current), profileReuseProof = await profileRun(profiledAgain,
+        { reuseDirectory: profiled.directory, reusePrivateDirectory: profiled.privateDirectory });
+      assert.deepEqual(profileReuseProof.owner, profileProof.owner); assert.deepEqual(profileReuseProof.runtime, profileProof.runtime);
+      assert.equal(profileReuseProof.version, 2); assert.deepEqual(profileReuseProof.qualificationTargetProfile, current);
+      record("profiled-current-roles-reuse-original-v2-receipts-and-actual-oid-readback");
+      phase = "profiled-same-target-private-record-swap";
+      const secondCredential = JSON.parse(readFileSync(join(profiledAgain.privateDirectory, "frontend-role-credentials.json")));
+      assert.ok(secondCredential.runtimeDatabaseUrl === profileCredential.runtimeDatabaseUrl);
+      assert.ok(secondCredential.planSha256 !== profileCredential.planSha256);
+      const swappedPrivate = fixture("profiled-swapped-private", profileReuse, current); let swappedQueries = 0, swappedHooks = 0;
+      await assert.rejects(applyPreparedFrontendRoles(swappedPrivate.plan,
+        { query: async () => { swappedQueries++; throw Error("owned-swapped-private-query-tripwire"); } },
+        { ...swappedPrivate, confirmation: `staging/${swappedPrivate.plan.actionId}`,
+          verifyEnvironment: async () => { swappedHooks++; throw Error("owned-swapped-private-environment-tripwire"); },
+          verifySession: async () => { swappedHooks++; throw Error("owned-swapped-private-session-tripwire"); },
+          reuseDirectory: profiled.directory, reusePrivateDirectory: profiledAgain.privateDirectory }, current));
+      assert.equal(swappedQueries, 0); assert.equal(swappedHooks, 0);
+      assert.deepEqual(readdirSync(swappedPrivate.directory), []); assert.deepEqual(readdirSync(swappedPrivate.privateDirectory), []);
+      record("profiled-current-same-profile-same-target-private-plan-swap-refused-before-hooks-sql-or-intent");
+      const oldProofAttempt = fixture("profiled-old-proof", reuse, current); let oldProofQueries = 0;
+      const noOldProofQuery = { query: async () => { oldProofQueries++; throw Error("owned-old-proof-reached-sql"); } };
+      await assert.rejects(applyPreparedFrontendRoles(oldProofAttempt.plan, noOldProofQuery,
+        { ...oldProofAttempt, confirmation: `staging/${oldProofAttempt.plan.actionId}`, verifyEnvironment, verifySession,
+          reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+      assert.equal(oldProofQueries, 0); assert.deepEqual(readdirSync(oldProofAttempt.directory), []); assert.deepEqual(readdirSync(oldProofAttempt.privateDirectory), []);
+      record("profiled-current-roles-legacy-reuse-refused-before-sql-or-new-private-intent");
+      assert.deepEqual((await operator.query("TABLE public.preserved_data")).rows, before.data);
+      assert.deepEqual((await operator.query("TABLE drizzle.__drizzle_migrations")).rows, before.journal);
+      assert.deepEqual((await oldReader.query("TABLE public.preserved_data")).rows, before.data);
+      record("profiled-role-preparation-preserves-old-role-data-and-application-journal");
+      await operator.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
+    }, { path: join(directory, "environment.lock") });
+    const serverLog = readFileSync(join(directory, "postgres.log"), "utf8");
+    for (const entry of readdirSync(directory).filter(name => name.endsWith("-private"))) {
+      const file = join(directory, entry, "frontend-role-credentials.json");
+      if (existsSync(file)) { const credential = JSON.parse(readFileSync(file, "utf8")); assert.ok(!serverLog.includes(credential.password)); assert.ok(!JSON.stringify(outcomes).includes(credential.password)); }
+    }
+    assert.ok(!serverLog.includes("SCRAM-SHA-256$")); record("owned-server-logs-and-public-receipts-contain-no-password-or-scram-verifier");
+    return { status: "FRONTEND_ROLES_OWNED_PASS", fixtureOnly: true, postgresMajor: major, actualTls: true, actualScram: true, actualFlockContention: true,
+      actualPhysicalLockContention: true, executedChecks: checks.length, skipped: 0, checks, outcomes,
+      sourceModuleSha256: frontendRolesHash(readFileSync(new URL("./frontend-role-preparation.mjs", import.meta.url))), providerTouched: false, migrationAuthorized: false };
+  } finally {
+    for (const client of clients) { try { await client.end(); } catch { /* Disposable owned peers only. */ } }
+    if (started) execute(join(binaries, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); rmSync(directory, { recursive: true, force: true });
+  }
+}
+main().then(result => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)).catch(() => { process.stderr.write(`${JSON.stringify({ status: "FRONTEND_ROLES_OWNED_FAILED", phase, providerTouched: false })}\n`); process.exitCode = 1; });

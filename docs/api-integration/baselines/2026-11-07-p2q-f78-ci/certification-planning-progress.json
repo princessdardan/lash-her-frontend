@@ -1,0 +1,2192 @@
+{
+  "version": 1,
+  "planning": {
+    "sourceCommit": "5bdd9051d8910bf35915bfcca58709db6615b826",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    },
+    "profiledPlan": 2,
+    "sourceFiles": 532,
+    "decodedBytes": 41627126,
+    "publicSourceBytes": 55580623,
+    "originalReadyReceipts": 6,
+    "hostPacketContainsCredentials": false,
+    "legacyApplyRefused": true,
+    "sourceFixtureOnly": true
+  },
+  "planningOutputSha256": "40cb19a021a05baaa6dd101d8d9c7ea9fc0a1ff605e8d0e4bf7a35fc495f850d",
+  "ownedRestoration": {
+    "status": "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS",
+    "allThreeJournalsUnchanged": true,
+    "providerTouched": false,
+    "actualDocker": false,
+    "runtimeTransportProjected": true
+  },
+  "ownedRestorationOutputSha256": "46df2d859d9323aadd31dd2a2b0410fcdbea76f5bc41ac1eab4167820adad73e",
+  "checks": {
+    "combinedNode": {
+      "sourceCommit": "b038b95fc5eb865351b8457bae0700eb6efa8273",
+      "passed": 71
+    },
+    "combinedHost": {
+      "sourceCommit": "5bdd9051d8910bf35915bfcca58709db6615b826",
+      "passed": 93
+    },
+    "disposableTlsPostgres": {
+      "majors": [
+        16,
+        18
+      ],
+      "checksEach": 11,
+      "frontendMigrations": 83,
+      "providerTouched": false
+    },
+    "parentLockContinuity": {
+      "sourceCommit": "9df89d8e",
+      "postgresMajor": 18,
+      "checksPassed": 11,
+      "actualNonceReleaseRefused": true,
+      "providerTouched": false
+    }
+  },
+  "hostExecutionEligible": false,
+  "actualStagingTouched": false,
+  "releaseAccepted": false,
+  "guardedHostIntegration": {
+    "sourceCommit": "5625269be1e53d7d66042b2ac561e015b4dc8ef7",
+    "node": {
+      "passed": 74,
+      "logSha256": "77257464cd0c6d8f9faa37a1ee781abc414ebe2e4e271127893342b250575755"
+    },
+    "host": {
+      "passed": 196,
+      "logSha256": "ba33fd808bd7c832a58d1a6d929b3b854c89a69ab1d899842bb7c754d8c707cb"
+    },
+    "crossLanguage": {
+      "sourceCommit": "5625269be1e53d7d66042b2ac561e015b4dc8ef7",
+      "sourceFiles": 532,
+      "decodedBytes": 41836705,
+      "publicSourceBytes": 55860055,
+      "modes": [
+        "contain-native",
+        "auth-preparation",
+        "browser-pending",
+        "direct-worker"
+      ],
+      "actualNodePlanCli": true,
+      "actualPythonWireVerifier": true,
+      "ownedReceipts": true,
+      "liveProviderTouched": false,
+      "executionAuthorized": false
+    },
+    "disposableGuardClosure": {
+      "serverMajor": 18,
+      "checks": 12,
+      "receiptSha256": "335779269f08438ab79d25955802c218682233487341b8854ea96df2d17f5431",
+      "heldLockRefused": true,
+      "idempotentClosure": true,
+      "frontendJournalUnchanged": true
+    },
+    "ownerControllerApplyWired": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "profiledOperatorController": {
+    "sourceCommit": "ff12c19bf4d91d5e28d21406d21ecb116799ca07",
+    "controllerCommit": "0fa1e8f1515f75a3c3c47db17dc0a5e6228ec41a",
+    "node": {
+      "passed": 59,
+      "logSha256": "ef605d8b8abdb8db88180a0c76fcff6bdf81658fb2a444275430a27068798128"
+    },
+    "host": {
+      "passed": 114,
+      "logSha256": "26881e71d22226dd0ad4ae51e3e0cb5e87eff4a22fd2c44abb2ee84a36d85158"
+    },
+    "crossLanguage": {
+      "modes": ["contain-native", "auth-preparation", "browser-pending", "direct-worker"],
+      "sourceFiles": 532,
+      "decodedBytes": 41848845,
+      "publicSourceBytes": 55876243,
+      "logSha256": "e5af6135a8b8e8aaaeabeb49a8d7a047eecfa4c4f71606694551abab786a691b"
+    },
+    "disposablePostgres18": {
+      "passed": 12,
+      "observerRefusedWhileOriginalSessionHeldBothLocks": true,
+      "observerConfirmedOriginalSessionAndBothLocksGone": true,
+      "closedZeroAdmissionVerified": true,
+      "receiptSha256": "335779269f08438ab79d25955802c218682233487341b8854ea96df2d17f5431"
+    },
+    "ownerControllerApplyWired": true,
+    "liveApplyExecuted": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "profiledReceiverOutage": {
+    "sourceCommit": "8850d95b81deebf5dfd02445e4a2aa9cb5f1b1dc",
+    "controllerCommit": "f68a7b4ec062d6e15fc7576e06eeceb349ad0cf6",
+    "integratedFaultAdapter": "43dbeb50",
+    "integratedMountIdentity": "3d692b6e",
+    "integratedKnownAckRecorder": "5ef7ed7c",
+    "historicalFrontierFixture": "34e4f135",
+    "node": {
+      "passed": 83,
+      "logSha256": "57934d9c8a91502665ed99174322823c905dcf41a6bfa06c2034877839c9c728"
+    },
+    "host": {
+      "passed": 192,
+      "logSha256": "87f50454902da7a9e4ee7ff9ae52bb9b069fcf975b9f2fc955f345f177f132aa"
+    },
+    "loopbackGateway": {
+      "passed": 18,
+      "preUpstream503Verified": true,
+      "lostAckUncertaintyPreserved": true,
+      "logSha256": "426940c1f56829d8d41a07282f6f7abe49784c5e6638b774aef3f9cd2731bcc3"
+    },
+    "disposablePostgres18": {
+      "passed": 12,
+      "receiptSha256": "335779269f08438ab79d25955802c218682233487341b8854ea96df2d17f5431"
+    },
+    "crossLanguage": {
+      "modes": ["fault-before-upstream", "contain-native", "auth-preparation", "browser-pending", "direct-worker"],
+      "sourceFiles": 532,
+      "decodedBytes": 41922843,
+      "publicSourceBytes": 55974907,
+      "logSha256": "84067c353d666cd5989903f7cc806c9ac0e13446328ab21a85a6e0968ceaa0da"
+    },
+    "admitted503JoinedToCompletedOperation": true,
+    "guardPreservedWrongMountAndForeignLease": true,
+    "knownAckReplacementEnabled": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "profiledKnownAckReplacement": {
+    "sourceCommit": "608b383dca741933cb97b2ffbbb547eb707e7150",
+    "profiledBoundsCommit": "f06d7592",
+    "compressedInstallerCommit": "cee0dc65",
+    "reviewedPlanCommit": "cb6b292e",
+    "replacementKernelCommit": "8e78ab65",
+    "stopReceiptReaderCommits": ["6c470782", "e881d802"],
+    "guardedBrokerJoinCommit": "5fea06f6",
+    "node": {
+      "passed": 69,
+      "logSha256": "2fe43325c4895feda381477b47da0919b5109edf07886b0a2141d4b3f6accd6f"
+    },
+    "host": {
+      "passed": 235,
+      "logSha256": "2dc638eccb5392680fbca48c6cecd7e7bf667f2592772ec5f0049ce64fc89c8f"
+    },
+    "crossLanguage": {
+      "modes": ["known-ack-recovery", "fault-before-upstream", "contain-native", "auth-preparation", "browser-pending", "direct-worker"],
+      "logSha256": "d28c15feff398f9cf021198b243f94cf25608459f72625f01a92e064013414b8"
+    },
+    "fullLocalInstaller": {
+      "sourceFiles": 532,
+      "historyFiles": 33,
+      "decodedBytes": 41983567,
+      "expandedBytes": 56055879,
+      "compressedBytes": 13663888,
+      "wireBytes": 18218559,
+      "wireSha256": "5fe81244962968ad6b10bc9bb3dbf95656e9cf2d49d13dd06005f2b280dcc209",
+      "logSha256": "8b2b02c1c173f04ee88649667fb6d6c9c804eee8e9c321d495b3400d4d85aa4d",
+      "exactFilesAndExistingInstallVerified": true,
+      "rootIdentityAndInstallPathProjected": true
+    },
+    "replacementProof": {
+      "oldGatewayUncertaintyRetained": true,
+      "freshGatewayClosedZeroRequired": true,
+      "originalAndJoinedRuntimeReceiptBytesRequired": true,
+      "dockerAndProviderIOProjected": true
+    },
+    "operatorApplyEligible": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "profiledInterruptedRestorationComponents": {
+    "sourceCommit": "e4e47d8d526155f79748cbc414327d19de73b9f6",
+    "planAndObserverDispatchCommit": "7d1abb9d",
+    "retainedChainCommit": "819f8e67",
+    "frontendPhysicalSessionCommit": "719c393b",
+    "runtimeTransitionCommit": "bc5c3209",
+    "retainedHostPreviewAndFixtureGateCommit": "00abf02c",
+    "node": {
+      "passed": 53,
+      "logSha256": "2612e1e6b7af0471e80a4d2b7c619bd6fd77308218760e64fc85ab5ba21bc0bd"
+    },
+    "host": {
+      "passed": 247,
+      "logSha256": "ffd07b734515520127129d24cba31cb1e0d94b90c591e3dbdc93db27fea5e11b"
+    },
+    "crossLanguage": {
+      "frontiers": ["original-stopped-one", "replacement-stopped-zero"],
+      "rawOriginalPlanBound": true,
+      "frontendOperationBound": true,
+      "logSha256": "8d2e5993b5eea36464309511a9f81d55a0bfdbac311b295799223af2985de1d4"
+    },
+    "disposablePostgres18": {
+      "passed": 13,
+      "frontendMigrations": 83,
+      "skipped": 0,
+      "exactRetainedReceiptBytesVerified": true,
+      "receiptSha256": "d7bfc872399e34c97ea35e14cafbc6329086854640c504cfd0b4ffe88effd4d4"
+    },
+    "fullLocalInstaller": {
+      "sourceFiles": 535,
+      "historyFiles": 33,
+      "decodedBytes": 42138516,
+      "expandedBytes": 56262947,
+      "wireBytes": 18286063,
+      "wireSha256": "cf7c38eed65b35865b5fa5ae45fe848126c0aad57eaa03975ea6eeceb133f852",
+      "logSha256": "d13bf38181d8d5b46d35ec1d79811e7cf8ce64c5059414ec846bd8f344f5d667"
+    },
+    "runtimeTransportProjected": true,
+    "applyBrokerAndSupervisorJoined": false,
+    "operatorApplyEligible": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "releaseAccepted": false
+  },
+  "profiledInterruptedRestorationOperatorAndBroker": {
+    "sourceCommit": "72be35dc16e1857ef2c2eee64e82f71b1c9ea326",
+    "operatorCommit": "64c31ca4daa78146f3dfbe9cfa8de0713c7c2a34",
+    "node24": {
+      "passed": 13,
+      "skipped": 0,
+      "logSha256": "480f57118dc93def87346d82bd76d22dc3fb5fb2d0f811b86c8ab212dba8a684"
+    },
+    "host": {
+      "passed": 116,
+      "skipped": 0,
+      "logSha256": "b92fcd828d2901fb37d8f80f3609f2d75fe96d93d65ec6eadc766c46ae7ccc8d"
+    },
+    "operatorTransportFixturesProjectedHostReceipts": true,
+    "brokerClosureFixtureProjectedPostgresObserver": true,
+    "independentSupervisorJoined": false,
+    "composedRestorationVerified": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "stagingChanged": false,
+    "releaseAccepted": false
+  },
+  "profiledInterruptedRestorationGuardAndOwnedHost": {
+    "sourceCommit": "7864cc91afe69a4621824288106f773d47dd79b5",
+    "hostCompositionSourceCommit": "abb491334041e8a58a53fa469451fe0070dc7863",
+    "hostCompositionEvidence": "interrupted-restoration/host-composed.json",
+    "hostCompositionSha256": "e73076730dfac82b6025efa8a934236c5ea3942d79764aeb8c98efc36e3d208f",
+    "hostNegativeEvidence": "interrupted-restoration/host-negative.json",
+    "hostNegativeSha256": "ac3b68e3efc583c40a3cf1aba61c0fd012af340c09da89f4cf3dfe310f651bff",
+    "hostFixtureActualLock": true,
+    "hostFixtureDockerProviderDatabaseAndIndependentSupervisorProjected": true,
+    "node24": {
+      "passed": 38,
+      "skipped": 0,
+      "logSha256": "ee12fb9c1dbc8a46ad5dd8275a0b82fd8d09fc4a194b0509b85c4bbabfa0007a"
+    },
+    "expiryPredicate": {
+      "sourceCommit": "e0744faaa437b0943583dcee6873146bd5814934",
+      "passed": 5,
+      "logSha256": "7dc0ff26426b3f8afcab721704eb45b35c55d8404a6bde644f20820bde4e672e"
+    },
+    "fullHostWithNode24": {
+      "sourceCommit": "e0744faaa437b0943583dcee6873146bd5814934",
+      "passed": 1029,
+      "skipped": 8,
+      "logSha256": "20ac22e010d72abe0dc279dd7b941f83a1141ae5a9e5e0cca3a1bc87e28d35e5"
+    },
+    "additionalPostgres18Controls": {
+      "sourceCommit": "abb491334041e8a58a53fa469451fe0070dc7863",
+      "frontendHostBridgeSha256": "1a9c920fa43de2be03c19cb22c159a9ab83e24052e6a095dd3e16d2e48bdefa6",
+      "apiCurrentSha256": "da62eb0c5b071f025089d2e9ca365b7cebca3ecfc3edafaa9ead24208734888c",
+      "dockerLauncherProjected": true
+    },
+    "installedLinuxSupervisorVerified": false,
+    "profiledThreeDatabaseCompositionVerified": false,
+    "operatorApplyEligible": false,
+    "stagingChanged": false,
+    "releaseAccepted": false
+  },
+  "scopedCertificationComponents": {
+    "frontendSourceCommit": "d5ce532c799bfe625e734ce5c1a0ee432ffd206b",
+    "gatewayCommit": "55390dd52bc6a8ed153f309374231d9284bd96b8",
+    "frontendScopedCleanupCommit": "628282b51a6b96d238553a83d596825bbb69a143",
+    "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+    "courseOwnedDatabaseCommit": "89753405df0b657a558ca8f4108bc899abdebe1b",
+    "gatewayNode24": {
+      "passed": 50,
+      "logSha256": "5e6cb32564050081ec3adc364613b290683c3967e81a98326cdac11faba8f22d",
+      "actualGatewayAndPrivateTlsHop": true,
+      "courseBackendProjected": true
+    },
+    "frontendCronNode24": {
+      "passed": 8,
+      "logSha256": "51e92668da9dbad9b7b5b548a1e61264733cab017a008283fc0c5c0a45be0af0"
+    },
+    "frontendStoreDisposablePostgres16": { "passed": 7 },
+    "courseNode24Verify": { "passed": 716, "openApiBytesUnchanged": true },
+    "courseDisposablePostgres16": { "passed": 17, "migrations": 22, "actualRawSignatureVerified": true },
+    "focusedHost": {
+      "passed": 128,
+      "logSha256": "4a6bd39d8e0389b79013afbd814c33d92cdb1e12ccdc76e3a29639f17dae81e5",
+      "providerReadbacksProjected": true
+    },
+    "profiledSourceInstaller": {
+      "files": 537,
+      "decodedBytes": 42289373,
+      "expandedBytes": 56464370,
+      "wireBytes": 18353303,
+      "wireSha256": "a13fa37418726ece2e31ba3a815f44d1324fb01722c2c0d4334dbbd5e0cf7b6b",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "guardedControllerJoined": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "guardedScopedCertification": {
+    "frontendSourceCommit": "85130cdc9b3064265da4b8e2131bfa8733d8befa",
+    "courseSourceRequiredForScopedMux": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+    "modes": ["export-cleanup", "mux-callback-recovery", "lifecycle-persistence"],
+    "node24": {"passed": 54, "failed": 0, "skipped": 0},
+    "frontendRouteNode24": {"passed": 18, "failed": 0, "skipped": 0},
+    "host": {"passed": 113, "failed": 0, "ownedFixtures": true},
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "passed": 14,
+      "migrations": 83,
+      "actualTls": true,
+      "scopedChecks": "One exact completed export operation across closed/recovery-only/closed epochs; Mux and persistence reject frontend admission drift"
+    },
+    "profiledSourceInstaller": {
+      "files": 543,
+      "decodedBytes": 42437784,
+      "expandedBytes": 56663103,
+      "wireBytes": 18425479,
+      "wireSha256": "f3f7187e9e069ca5b5b18ed9f3f27b67083e7ea2653c5475699cccaa61b35daf",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "composedInstalledLinuxActionVerified": false,
+    "normalInteractiveWindowImplemented": false,
+    "googleOAuthClientOwnerConfirmed": true,
+    "stagingIdentityBound": false,
+    "deployedProviderEvidence": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveBrowserComponents": {
+    "frontendSourceCommit": "6e7cd730e23d62232e75e50e13e655b79c4da838",
+    "componentCommit": "a6f98497aa73d516ae53138f6016ac29be8ed7f3",
+    "frontendSourceUnitsNode24": {
+      "passed": 2520,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "efb0197f84829748c1e618db0db01a9299ce29206353b3823b244ab0c1cb578a"
+    },
+    "certificationPlannerNode24": {"passed": 31, "failed": 0, "skipped": 0},
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "gatewayOwnedTls": {"passed": 21, "courseMethodPathPairsClassified": 34},
+    "protectedIngressHost": {"passed": 16, "fixedPaths": 8, "testedOrigins": 2, "actualOwnedTls": true},
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "passed": 15,
+      "migrations": 83,
+      "actualTls": true,
+      "interactiveChecks": "Deterministic disabled registration, exact idempotence, ordinary producer denial, scoped new and recovery admission, fencing with unresolved effects, and explicit registry restoration"
+    },
+    "nextBuild": {
+      "webpackCompiled": true,
+      "typeCheckPassed": true,
+      "fontsFixture": "tests/course-authoring-browser/font-fixture.cjs",
+      "fullBuildPassed": false,
+      "firstBlockingPhase": "page data collection",
+      "failure": "Sandbox DNS could not resolve the staging Sanity API for the policies route",
+      "logSha256": "9eb0cebfe43c903a82f38336ed23483d6a51486433b55cde28a2f81e4da14dc4"
+    },
+    "profiledSourceInstaller": {
+      "files": 543,
+      "decodedBytes": 42471392,
+      "expandedBytes": 56707919,
+      "wireBytes": 18440475,
+      "wireSha256": "d8a218735f22ac7cf2169370288bc0edc19731bf44f1bb6f529bfba688495cc8",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "interactivePermitIssuanceImplemented": false,
+    "actorAndResourceSelectionJoined": false,
+    "interactiveGatewayEnforcementImplemented": false,
+    "composedGuardedWindowVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveGatewayAdmission": {
+    "frontendSourceCommit": "56be898b41f6d4d0b08848434e993686c274680d",
+    "protocolAndPlannerCommit": "14915cf34c5c18c211e339ae73d58e1423a13206",
+    "gatewayOwnedTls": {
+      "passed": 66,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "e0c46508336c9a3e01e0c5bc4f4d4532e21ba0a07c65da3bc84b43d9b709747e",
+      "scopedChecks": ["selected actor", "exact target, body and authorization bytes", "replay and use limits", "expiry and restoration", "bodyless media refresh", "upstream socket and 502 uncertainty", "unresolved media status"]
+    },
+    "frontendSourceUnitsNode24": {
+      "passed": 2521,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "38c6bd0f4461833bdc5444c614f999e38c6e770d6500ab49be781159f623ac38"
+    },
+    "p2ContractCheckPassed": true,
+    "frontendTransportAndAdmissionNode24": {"passed": 20, "failed": 0, "skipped": 0},
+    "certificationPlannerNode24": {"passed": 31, "pythonAndNodePermitVectorMatched": true, "interactiveApplyRefused": true},
+    "host": {
+      "passed": 89,
+      "failed": 0,
+      "interactiveOwnershipAndProviderReadbacksProjected": true,
+      "interactiveStateReplacementActual": true,
+      "muxOrdinaryOperatorStateBytesRestored": true
+    },
+    "browserCookieFixture": {
+      "browser": "Chromium 147.0.7727.15",
+      "hostOnlySecure": true,
+      "contextIsolated": true,
+      "targetedExpiryPreservedUnrelatedCookie": true,
+      "navigations": 0
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42530900,
+      "expandedBytes": 56787403,
+      "wireBytes": 18469543,
+      "wireSha256": "2f4e8af6398d28cc2cbba93b6bc590cafcad87b6c931b6a2d043efba7a3f8078",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "interactivePermitIssuerImplemented": true,
+    "interactiveGatewayEnforcementImplemented": true,
+    "privateRecorderHandoffImplemented": false,
+    "frontendOnlyActorAndResourceEnforced": false,
+    "composedGuardedWindowVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "privateBrowserAndLifecycleSelection": {
+    "frontendSourceCommit": "4ebef695ad373eec8bc3d51b35f488021f0988c7",
+    "lifecyclePermit": {
+      "version": 2,
+      "selectedActorAccountOperationAndPreferenceValue": true,
+      "pythonAndNodeSelectionMacMatched": true,
+      "scopedExportDownloadSeparatelyAuthorized": true
+    },
+    "frontendActorFocused": {"passed": 28, "typeCheckPassed": true, "focusedLintPassed": true},
+    "frontendSourceUnitsNode24": {
+      "passed": 2525,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "8bfe98a539333ce1205b2f0f61d891b9cd271b932135f2acd2fe1eb81aa74b6e"
+    },
+    "certificationPlatformNode24": {
+      "passed": 44,
+      "failed": 0,
+      "ownedChromiumCasesRunSeparately": 2,
+      "logSha256": "1fbafc527fed4d1060433d5a21e313006298659df40f0b5cea9b10d7f481abeb"
+    },
+    "browserRecorderWithOwnedChromium": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "actualCookieIsolationAndPermitRotation": true,
+      "stagingNavigation": false,
+      "logSha256": "8291a96f9507168b40e7769bf0d76389718a3d469ed655dbe4730e8ebfcf831b"
+    },
+    "p2ContractCheckPassed": true,
+    "host": {"passed": 89, "failed": 0, "ownedFixtures": true},
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "certificationPhysicalChecks": 16,
+      "lifecycleEvidenceChecks": 11,
+      "lifecycleWitnessSourceSha256": "d959b92a4b9dc7927e6a3b43f82ba5cc059bcc5ae2b0c3dbe3f51e1885e6fb33"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42599462,
+      "expandedBytes": 56878815,
+      "wireBytes": 18502475,
+      "wireSha256": "d1c3a970ca7efa14db26539da9e2f5c1a7354216cbb95e529b9482b61456d09b",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "githubReadback": {
+      "coursePolicyPr": {"number": 10, "state": "open", "merged": false, "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3"},
+      "communityPolicyPr": {"number": 9, "state": "open", "merged": false, "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff"},
+      "frontendPr": {"number": 93, "state": "open", "draft": true, "head": "f78cf3af38665acca73d111fe1241e0a3d99bfe0"}
+    },
+    "browserStdinHandoffImplemented": true,
+    "frontendOnlyActorAndResourceEnforced": true,
+    "heldLifecycleWitnessImplemented": true,
+    "actualBrowserMutationResponseCaptureImplemented": false,
+    "composedGuardedWindowVerified": false,
+    "interactiveApplyEligible": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveLifecycleController": {
+    "frontendSourceCommit": "40fc039d16da27eaa7816c381239ee10334f42c9",
+    "certificationPlatformNode24": {
+      "passed": 53,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 4,
+      "actualBrowserInterception": true,
+      "actualVercelResponseTransport": false,
+      "logSha256": "3dfe9c6fda4b8c8c4b60290d012d8aae6d63dd87d23bc0023010725a0688960f"
+    },
+    "host": {
+      "passed": 115,
+      "failed": 0,
+      "ownedFixtures": true,
+      "independentTerminalReceiptAndLedgerChecked": true,
+      "installedStagingHostVerified": false,
+      "logSha256": "0921e5dddc7203cca16a0c8eacf6fa19c9f142d325b2ecfb29f9b114ce632821"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "certificationPhysicalChecks": 18,
+      "projectedBrowserAndHostBoundaries": true,
+      "preferenceEffectAfterDrain": true,
+      "lostBrowserResponseAndUncertainWriteRefused": true,
+      "logSha256": "51af62c62b3f3fd721d65e3ddeca3ab6bd9af3421b9cb026cdeae1057d18db9e"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42679054,
+      "expandedBytes": 56984939,
+      "wireBytes": 18542879,
+      "wireSha256": "164115c1130bd49ef50d023da481a7814ee1e7caa5a46775c82938e8b0927288",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "p2ContractCheckPassed": true,
+    "actualBrowserMutationResponseCaptureImplemented": true,
+    "fixedHostLifecycleTransportImplemented": true,
+    "heldLifecycleWitnessJoinedAfterFrontendClosure": true,
+    "verifiedBrowserIdentityBootstrapImplemented": false,
+    "interactiveApplyEligible": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveIdentityBootstrap": {
+    "frontendSourceCommit": "92c461cc77068159000147059e00de5e3184b2c5",
+    "frontendSourceUnitsNode24": {
+      "passed": 2525,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "01aa804ff11887797ce0cdd157222924c8ffa761afdcfa81bd769d99867e2adc"
+    },
+    "certificationPlatformNode24": {
+      "passed": 61,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 5,
+      "actualChromiumContextCookiesThroughLoopbackTls": true,
+      "pythonAndNodePermitVectorsMatched": true,
+      "logSha256": "1051060044f4ec80301c9714c4fcdd7fa413df8527131d79e8225293e3417238"
+    },
+    "host": {
+      "passed": 116,
+      "failed": 0,
+      "ownedFixtures": true,
+      "identityTerminalAndClosedLedgerChecked": true,
+      "logSha256": "4cfdf8fe67e13410311226464bb82ca3e37199c221a7feab0f6d68b1204e7b21"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "certificationPhysicalChecks": 19,
+      "lifecycleAndIdentityWitnessChecks": 13,
+      "projectedBrowserAndHostBoundaries": true,
+      "composedOwnerIdentityHeldMappingAndCleanFences": true,
+      "witnessSourceSha256": "013fe08a9c1ec81987322aaf01caf15630275e45303ceb69df8244a8233cbf79",
+      "certificationLogSha256": "fb3b276d4c46f61cd3028797760979cca1a34249d67e663497681b0529d1aa52",
+      "witnessLogSha256": "a6d097d6d3408a0c617209ab815ae6500d392ae6242b1643b1f4bbaf92137ede"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42726755,
+      "expandedBytes": 57048555,
+      "wireBytes": 18565199,
+      "wireSha256": "86bc16bac43d6e3a6fca10251a21c233c23488c93965fbb5e51ba6756ebc14e2",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "githubReadback": {
+      "coursePolicyPr": {"number": 10, "state": "open", "merged": false, "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3"},
+      "communityPolicyPr": {"number": 9, "state": "open", "merged": false, "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff"},
+      "frontendPr": {"number": 93, "state": "open", "draft": true, "head": "f78cf3af38665acca73d111fe1241e0a3d99bfe0"}
+    },
+    "ownerIdentityAndLifecycleOperatorPairImplemented": true,
+    "customerInteractiveApplyEligible": false,
+    "customerPreWriteIdentityBindingImplemented": false,
+    "actualGoogleOrResendSignInVerified": false,
+    "installedStagingHostVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveKnownCustomerIdentityBootstrap": {
+    "frontendSourceCommit": "48dfe0c28c0b0b5ec78c8843082862f392dadf74",
+    "frontendUnitNode24": {
+      "sourcePassed": 2528,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "4f387e2632cccb77f39afddbaf8ba530adeaf4d5f45b6f450692399d6902a68b"
+    },
+    "certificationPlatformNode24": {
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 5,
+      "sameBrowserContextSignInAndLifecyclePermitRotation": true,
+      "pythonAndNodePermitVectorsMatched": true,
+      "logSha256": "c5f7dc657cb3ab8b06ac731f10d419d449cb3761172656628e856bb1268a734b"
+    },
+    "host": {
+      "passed": 116,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "b7ab76a84723ff8d7409be1688a82e07936b5fd540811fa814b22d16bed98af1"
+    },
+    "disposablePostgresIdentity": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "admissionChecks": 14,
+      "identityAndLifecycleChecks": 45,
+      "databaseRegressions": 37,
+      "actualAuthJsAndNextRouteExports": true,
+      "syntheticProviderResponses": true,
+      "foreignSessionAndProofRowsPreserved": true,
+      "selectedGoogleAndResendSessionsVerified": true,
+      "closedDrainedLedgerVerified": true,
+      "applicationSourceManifestSha256": "b9e734f08ccc85646b4e7b0bb3d0c80a4f70c4b40097b7e64450f8e60a3bfc0b",
+      "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+      "logSha256": "3f06b962928bbf96f63e25ee87abd58f09debce0f6495e1744ade1aabc9242a2"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42743168,
+      "expandedBytes": 57070443,
+      "wireBytes": 18573075,
+      "wireSha256": "e8eef7e2be4cdea50828d48345384c0046374ae62a6ac06e97bc365807f7b943",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "knownCustomerIdentityAndLifecycleOperatorPairImplemented": true,
+    "nativePlanSourcePolicyPinsVerified": 22,
+    "customerPreWriteIdentityBindingImplemented": true,
+    "firstTimeCustomerIdentityCertificationPathImplemented": false,
+    "actualGoogleOrResendSignInVerified": false,
+    "installedStagingHostVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveFirstCustomerIdentityEnrollment": {
+    "frontendSourceCommit": "fd3221f3261cc57d4a91262f7a608ec13a2a0614",
+    "frontendUnitNode24": {
+      "sourcePassed": 2532,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "5f50bf355136009bdf6cbc6a044f312757fba2c0936d1da3b81fbd16bea11f53"
+    },
+    "certificationPlatformNode24": {
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 6,
+      "standaloneEnrollmentReceiptAndRotationRefusal": true,
+      "pythonAndNodePermitVectorsMatched": true,
+      "logSha256": "c62988a9f6c7351bab020b8821ef6216684c00bd7595ce33a3d442f572bb0257"
+    },
+    "host": {
+      "passed": 116,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "d3c955d2c6aca6c27a4a35d9aff53ba59e52910c313da45a2c4ba8bd0ef78518"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "admissionChecks": 14,
+      "identityAndLifecycleChecks": 47,
+      "databaseRegressions": 37,
+      "heldIdentityAndLifecycleWitnessChecks": 16,
+      "actualAuthJsAndNextRouteExports": true,
+      "syntheticProviderResponses": true,
+      "exactFirstTimeGoogleAndResendAccountSessionAndLinkCountVerified": true,
+      "foreignGoogleLinkAndPriorResendProofPreserved": true,
+      "oneSessionOnConcurrentResendProofUse": true,
+      "marketingRecordsAbsent": true,
+      "applicationSourceManifestSha256": "1f2afd33ac6351d89879ba912eb6c7ee7b11300572ea3f54ffc8ac697f96eb27",
+      "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+      "witnessSourceSha256": "82477d536f1c21d3f88ca8cb5d338240318e4c90568d37c237c1cadeecb06449",
+      "identityLogSha256": "868c9d0815bce56a3d8a56d0962b3824946e2d00bb54b2f904120778a0697f8d",
+      "witnessLogSha256": "32313d8d54a50746226f787b209cbdc8d03cbe4c6dcf85c6a00ebac3d74b6218"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42782307,
+      "expandedBytes": 57122607,
+      "wireBytes": 18591123,
+      "wireSha256": "b9bdfeb1e312aa603514967abbb59d6da42366cdfe307130bff02942a203e936",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyPinsVerified": 22,
+    "firstTimeCustomerIdentityCertificationPathImplemented": true,
+    "actualGoogleOrResendSignInVerified": false,
+    "installedStagingHostVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerDraftAuthoring": {
+    "frontendSourceCommit": "b32a1b21b6560c68fa8846ed2c738df75578040f",
+    "frontendUnitNode24": {
+      "sourcePassed": 2535,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "f8a8f562927fc73bfa1c73daf815be9e15297c08f9b3294a6da90513b2cd5970"
+    },
+    "certificationPlatformNode24": {
+      "passed": 86,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 8,
+      "exactReviewedOwnerAndRawFormDigestVerified": true,
+      "logSha256": "8ac44c5e581d182ac3ea1ec076c7109426f9b9ef667752c46acb1daf75260d31"
+    },
+    "host": {
+      "passed": 118,
+      "failed": 0,
+      "ownedFixtures": true,
+      "exactAcknowledgementJoinAndClosedGatewayVerified": true,
+      "logSha256": "3929795a31332a0ef514053f62de03bc972d46a37f39acecd3d94890ea6cf99b"
+    },
+    "loopbackGateway": {
+      "passed": 67,
+      "failed": 0,
+      "exactList200Create201AndRequestIdsVerified": true,
+      "logSha256": "ec691cb5f6d82c3844e3a330b0453cd287ea1d649212d17ddaf41d013711992d"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {"frontend": 83, "course": 22, "community": 11},
+      "sourceCommits": {"course": "0bb054d5a04db71c481a8b3d182db6df19782cdc", "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"},
+      "heldLifecycleAndDraftWitnessChecks": 15,
+      "exactDraftFieldsAndPrivateReadOnlyProjectionVerified": true,
+      "logSha256": "f197b67221cc39a587470d26e22b67b32a191b1c884bee7e5ac16b3f1d79b455"
+    },
+    "normalAuthoringBrowser": {
+      "passed": 5,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "89ed99449e7835e9f673b2d7f72e2cb77ff6f2c8d46be68ca94cdfaa9283744a",
+      "logSha256": "cf7b9c23b8d923691265cf52628c4cfbe80a968a649e6196b1e1b7b6f940ad79"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42849692,
+      "expandedBytes": 57212463,
+      "wireBytes": 18622411,
+      "wireSha256": "2489655f3e47414dc5479fe4bb6dd2d902f2c77f74f55a19703cbab6689e806d",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyPinsVerified": 24,
+    "draftCreationOperatorActionImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerDraftEditAndStale": {
+    "frontendSourceCommit": "063d7660f7514d792463e53e345ad013ad673216",
+    "normalAuthoringBrowser": {
+      "passed": 6,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "twoTabsWithSameInitialRevisionVerified": true,
+      "browserConflictReferenceAndUnsavedTitleVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "39b1b0b39daf9b820c6bb8040a81d41d207ebdbcee923788ef6b85e4aa177042",
+      "logSha256": "35143209f02f70d5ccaf397b6536c458f55a350d346bf58c682e8c4f483a41e5"
+    },
+    "frontendUnitNode24": {
+      "testedCommit": "62db4c2ea4cb3c250505214f2d33a2ab4eadf254",
+      "finalCommitChangesOnlyAuthoringBrowserTestLocator": true,
+      "sourcePassed": 2536,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "66d7c0b38188efc2f1a076c86b3dc92c1e76e5f0816f7926c1c8809357267b55"
+    },
+    "certificationPlatformNode24": {
+      "passed": 94,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 9,
+      "twoExactTabsAndVisibleStaleOutcomeWithUnreadErrorBody": true,
+      "logSha256": "f90f8b839c547b3641b5eff9ceba083d5263bd4d8496f8e614780cc5dd995475"
+    },
+    "host": {
+      "passed": 120,
+      "failed": 0,
+      "ownedFixtures": true,
+      "exactOwnerPermitFiveAcknowledgementsAndClosedGates": true,
+      "logSha256": "9dd671cde5628b80c7d63acabb29d6e64f1be3f886db2fc4d7f92bb74e7d56ed"
+    },
+    "loopbackGateway": {
+      "passed": 68,
+      "failed": 0,
+      "acknowledgementRequestIndexes": [0, 0, 1, 0, 2],
+      "upstreamStatuses": [200, 200, 200, 200, 409],
+      "logSha256": "8a6958b9edaa387c82dccc0ddea68326a20d9e9a570704aead60c538bca738ab"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {"frontend": 83, "course": 22, "community": 11},
+      "sourceCommits": {"course": "0bb054d5a04db71c481a8b3d182db6df19782cdc", "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"},
+      "heldLifecycleAndDraftWitnessChecks": 17,
+      "exactWinningFieldsAtSingleNextRevision": true,
+      "logSha256": "ceb6d33121832277ebfca145b2bd6de21937f0b94f00862e3fd42c65bb004ecd"
+    },
+    "priorNormalBrowserFailures": [
+      {"sourceCommit": "5a8f87f95e3de9306e6dda3757d20078307fddb9", "finding": "Normal UI leaves the 409 response body unread and Chromium may discard it.", "logSha256": "6e358e86c29aeb33dbb0a1fc91109e4e574bf0705cc6d851ae42ce6adf08b6a0"},
+      {"sourceCommit": "62db4c2ea4cb3c250505214f2d33a2ab4eadf254", "finding": "The regression locator also selected the framework route-announcer alert.", "logSha256": "0a8e1dfd3ec51e0bf7dcc5cc4cac00414bb309868aa49cf1450fd1361c799ed3"}
+    ],
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42899504,
+      "expandedBytes": 57278875,
+      "wireBytes": 18647403,
+      "wireSha256": "3cf86256b2fa322add539355384fa0eb5bab1499e716dc67f853915b0c4f8808",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyPinsVerified": 24,
+    "githubReadback": {
+      "coursePolicyPr": {"number": 10, "state": "open", "merged": false, "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3"},
+      "communityPolicyPr": {"number": 9, "state": "open", "merged": false, "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff"},
+      "frontendPr": {"number": 93, "state": "open", "draft": true, "head": "f78cf3af38665acca73d111fe1241e0a3d99bfe0"}
+    },
+    "draftEditAndStaleOperatorActionImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerCurriculumReorderAndStale": {
+    "frontendSourceCommit": "0c35337d7ffacb63d090577357c156185199a57d",
+    "normalAuthoringBrowser": {
+      "passed": 7,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "moduleAndLessonTwoTabKeyboardOrdersVerified": true,
+      "archiveAndStaleConflictRequestReferenceVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "1f34945ed71885f00f534be8e85d32e9877b940bdb01ea01084ea19ac214588b",
+      "logSha256": "035c7eed315fdc08845d64ad4b7fddc8afb9210c42f39aaee847f8fb9aff62c3"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2537,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "f6d019091ebbd2ba1f109a0dc6067750dcdbdc70bb33606a44208f1929d014e3"
+    },
+    "certificationPlatformNode24": {
+      "passed": 102,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "5e5474c586fc0dc0158508abd71d05742251cdcfe6801c5fb258339fcdaafca9",
+      "ownedChromiumCases": 10,
+      "keyboardMouseSyntheticAndWrongControlDistinguished": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "host": {
+      "passed": 121,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "9623bd67a57f56405767fd28dccacf32d8fdae9f8057a768ef249a89a366bb61"
+    },
+    "loopbackGateway": {
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "cd03e20b6b674510fda222ccb0c53f68505c1d70131c9793094798a4c4c9b6eb",
+      "acknowledgementRequestIndexes": [
+        0,
+        0,
+        1,
+        0,
+        2
+      ],
+      "upstreamStatuses": [
+        200,
+        200,
+        200,
+        200,
+        409
+      ]
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "0c35337d7ffacb63d090577357c156185199a57d",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndDraftWitnessChecks": 19,
+      "bothReorderKindsAndArchivedSiblingIdentityVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "501f16662ccd087f79ee8130bd5aa540d09c4074c78f26c653a02173a3be68ec",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "cc667b46e3cb2c6fd2732ef1ed225353509924e4a32a2ea01ad548d47d1b0266"
+      },
+      "logSha256": "2037b0952dc45eaa80af8f7e13e1903c8b2d39cfd8e0b73c31b0f3d11fa1619d"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42953818,
+      "expandedBytes": 57351295,
+      "wireBytes": 18673495,
+      "wireSha256": "1b41df3413e336adcf9d89216fa8165458009c49bb5ff66bd024e7af072d8e2c",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "403157c825d773fe93dc4d0f594bbcc3f57ce4ce518f319bea9be0e58bfc087c"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyAccepted": true,
+    "checksLogSha256": "c72b491ddc0c300292de0d1ba32fc1574786d4f60145471ddc2940578a955437",
+    "moduleAndLessonReorderOperatorActionsImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerCurriculumCreation": {
+    "frontendSourceCommit": "41a72cf3bfc707013841b712f9a51c7fd73ccfde",
+    "normalAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "exactModuleAndScaffoldFormBytesAndSavedReadbackVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "d8aed8ef64248a97443ace072b1428ba580f425af05fd3f3692d2b54105b97c6",
+      "logSha256": "57de9654e032f2fa10d7766d46e5dfae9bf7cf7aded60850d832a3344796c3d6"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2538,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "49efbd8eb3ed5e6591f923e8f28791ce44f14618247b7507fb9c904eb4c80dfc"
+    },
+    "certificationPlatformNode24": {
+      "passed": 111,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "b8c551ad2e774ca41c6a623a80be3c9c27de88025f931ef6bf5f397c9d340e44",
+      "ownedChromiumCases": 11,
+      "singleReceiptRequiresVisibleSavedStatusAndExactRequest": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "host": {
+      "passed": 122,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "810d85f9bfc51f2f240f0a8e367a582970caa645f15e66ce167fef5dd0f3a00f"
+    },
+    "loopbackGateway": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "3d322d551a7c4ad37973165a0e9240f9b7626cd0d2d8a3fa7c0903810b9b81ad",
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        0
+      ],
+      "upstreamStatuses": [
+        200,
+        201,
+        200
+      ]
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "41a72cf3bfc707013841b712f9a51c7fd73ccfde",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndDraftWitnessChecks": 21,
+      "oneNewRowWithExactFieldsAndPreservedSiblingsVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "de8345a211bc63d55c852bf5cc3845918a5d16534ecc16e116760d0470a56c1d",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "f5153d68c4709d36123b796d7fa7b6bc6b2d6fdeef33c4b97b9369279270734d"
+      },
+      "logSha256": "c505056550300394bf864f360c97924e01a9a897ad63402c28f2c5c9aefa208d"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43003656,
+      "expandedBytes": 57417739,
+      "wireBytes": 18691327,
+      "wireSha256": "e6f8aadb89cbc48c857387d7aefa2bc24b7b3efb0b0f301e5e58b13147b79a7d",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "2ac037edd24cb1b0567c8f81ae2176a257ffa7b80a6bf4aec40dbdb3a77f4915"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "f8b5f34451484c0a72b74233116ef6439d6a2fce64e37513db82979be035f350",
+    "moduleAndLessonScaffoldOperatorActionsImplemented": true,
+    "populatedPortableTextOperatorActionImplemented": false,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerPublication": {
+    "frontendSourceCommit": "dcc2090936e544e70ff3b66162a11bc082be68da",
+    "implementationCommit": "39040cb742e3155418491ed908ff24400632e9d5",
+    "finalCommitChangesOnlyOwnedRecorderFixtureCharset": true,
+    "normalAuthoringBrowser": {
+      "testedCommit": "39040cb742e3155418491ed908ff24400632e9d5",
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "invalidContentAfterReadyAtSameRevisionRefusedByCourse": true,
+      "successfulPublishAfterRestorationVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "b606a1af0a299130592cbba1815bdc8c1877c8a9b80be546f8ae535dd6c60639",
+      "logSha256": "2bbbc2a82356dce9c02304cbb03d840b5c5be6df1e5116feae1b9aa027e84816"
+    },
+    "frontendUnitNode24": {
+      "testedCommit": "39040cb742e3155418491ed908ff24400632e9d5",
+      "sourcePassed": 2539,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "91bc313654506e3795f6ffa36bdcc9db123d44e5b93e7b03559a8b5b9fb5f493"
+    },
+    "certificationPlatformNode24": {
+      "passed": 121,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "07d7a43ae0d07cf806a719f25e8f09ba0db851e7baee8e89a392fcd941a6baf5",
+      "ownedChromiumCases": 12,
+      "blockedAndPublishedPermitReceiptsAndVisibleOutcomesVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "priorPlatformRun": {
+      "sourceCommitAtStart": "39040cb742e3155418491ed908ff24400632e9d5",
+      "logSha256": "4775d133350b3340da5f19c3354124a2b469630183d994690051367ceeebc967",
+      "fixtureFailure": "Intercepted HTML lacked UTF-8 for the revision label.",
+      "planFailure": "The first run crossed the follow-up commit. Its suspension input required the original worktree HEAD."
+    },
+    "host": {
+      "passed": 124,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "2cd42dd5f1f3d848946475e6a4bd956717f61572f8563ea128de5b9120b9e3b3"
+    },
+    "loopbackGateway": {
+      "passed": 74,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "c7b629432e0ed81ae0408a5f23ce06434126fef6f3a9a67691027abb02b51043",
+      "publishedAcknowledgementRequestIndexes": [
+        0,
+        1,
+        2,
+        0
+      ],
+      "blockedAcknowledgementRequestIndexes": [
+        0,
+        1
+      ],
+      "allUpstreamStatuses": 200
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "dcc2090936e544e70ff3b66162a11bc082be68da",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 23,
+      "statusRevisionUnchangedMetadataAndCatalogPredicateVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "ae3e97179830eafea9fbe368a87d6d751aa2c053d7f66b9525d2376057869ee8",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "d27bb328431b61807a4f42d75bce9661439c49a6f906348d9cdd3bf67454baf6"
+      },
+      "logSha256": "582f03dfacaaa6a3c8cb7582a41063a6ae025732b46ecf9f8d016287bb79760f"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43066043,
+      "expandedBytes": 57500923,
+      "wireBytes": 18716267,
+      "wireSha256": "e10caff6f45d8dbe471add0463155def4263bfc6c743ec50411abea505d92bea",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "5d03a9b9851684d03a8fca0de15e621c412603c68d1e8b45d439d8cf7a82c40c"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "e5f12256cbc04d43d067d65e5ced672883d23f80f1d72ddf02227a97242c33c2",
+    "blockedReadinessAndSuccessfulPublicationActionsImplemented": true,
+    "deployedPostReadinessInvalidationVerified": false,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerPortableText": {
+    "frontendSourceCommit": "5350c9d19d157d1378a1df5faaea38e8327afa7f",
+    "implementationCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+    "finalCommitChangesOnlyNormalBrowserFixtureLocator": true,
+    "normalAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "initialScaffoldAndRichLessonExactBytesAndReadbackVerified": true,
+      "nestedStableKeysThroughBlockReorderVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "b467bacb4f4a3caee7c0f80e5775dd3bcd617b8e870f994817669b5f4e57c8a7",
+      "logSha256": "6c71c6b19762dd211d5843b6dd4c7a88bb156f656140d27d5fe53b5fdfc4a5b1"
+    },
+    "priorNormalBrowserRuns": [
+      {
+        "sourceCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+        "finding": "Exact Style label locator timed out on the native select.",
+        "logSha256": "4cd10411362c13662b6c2c7e9dd54b912a98d1ee99c8723a373290fbe48c655a"
+      },
+      {
+        "sourceCommit": "5350c9d19d157d1378a1df5faaea38e8327afa7f",
+        "finding": "Overlapping local run collided with the initial run’s Next.js lock.",
+        "logSha256": "e393976b07638e99b91f6ab003e0e90eba6b97a1eadaa8587901040dd2bee39b"
+      }
+    ],
+    "frontendUnitNode24": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "sourcePassed": 2539,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "9206cf84da98bc3766f223dc3d897ac878b381e7009f6a353e639d9554179976"
+    },
+    "certificationPlatformNode24": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "passed": 122,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "8ccd893435f8645b2e63eec381363fae2e6aa5e2fea83e137e35746bdead1985",
+      "ownedChromiumCases": 13,
+      "richBodyAcceptedAndTextMarkAndLinkDriftRefused": true
+    },
+    "host": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "passed": 124,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "96961cc34924764ad2ee01c2b354ca0f5c5d459553780abb4282e72671a0e21c"
+    },
+    "loopbackGateway": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "passed": 75,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "930db7a929b75ba2ec38a814db0f578b2bde9cf498e4a03223d6f318fcbb237b",
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        0
+      ],
+      "upstreamStatuses": [
+        200,
+        201,
+        200
+      ],
+      "richNestedReadbackAndTamperRefusalVerified": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 24,
+      "exactStoredPortableTextAndContractPinRefusalVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "192868d258c59cf958caa391db5188cadd2b3dda4736179f2efad26d5db868db",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "245c9d0baa2bd89ba7955e98c5c32d9413564d7acca3fe2223256726bdf87b16"
+      },
+      "logSha256": "226c196c3cc3297bffd241ea4f3f56d1641e31270e2259ff0f6fb996c40179d1"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43076910,
+      "expandedBytes": 57515415,
+      "wireBytes": 18720687,
+      "wireSha256": "8f2ddd6a16c361fc8ca2549d37a18d52bc4d7f2ff985445ccc86775fc8dbbb0a",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "f0b1fca43886b4d6d713a17f64404b45819196656e3fef1d47c64221c4294cba"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "35be989ecea34b9de2056c27b465dd4f2755d39f5547ea9e2254bcfd97e5cce6",
+    "populatedPortableTextOperatorActionImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerQuizSave": {
+    "frontendSourceCommit": "ebc6401e7316082c4145fd34c08f236583c5c8b8",
+    "normalAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "firstGradedAndRevisedPracticeQuizVerified": true,
+      "exactRequestBytesStableQuestionAndOptionIdsAndBothRevisionsVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "826338623585a7ecf510fb9ab571a7db7a015e4b875566627e1364451cdc8a41",
+      "logSha256": "a46e9be92be086a7ae08084b812aac38ab48ece52459f7bbda260fe326e41863"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2540,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "470be0ac19328cde3be4d92a38eb10a87b6e2d0830b1adef4de2a008514ed4db"
+    },
+    "certificationPlatformNode24": {
+      "passed": 132,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "03d976fc9f8a363450753233626e1bbdc1e1e865232c4612463dff10fc9101cd",
+      "ownedChromiumCases": 14,
+      "first404AndLater200ExactDigestAndReadbackVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "host": {
+      "passed": 126,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "0f5a7180fb9995377eea09b2d62168105b369b2caa1db3cf84da4db995c3ef6e"
+    },
+    "loopbackGateway": {
+      "passed": 77,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "3eac8f542a216dea703e62b3be2815a583dbf9d4bcab49d3995655c0f7c645f6",
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        2,
+        0
+      ],
+      "firstQuizUpstreamStatuses": [
+        200,
+        404,
+        200,
+        200
+      ],
+      "existingQuizUpstreamStatuses": [
+        200,
+        200,
+        200,
+        200
+      ]
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "ebc6401e7316082c4145fd34c08f236583c5c8b8",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 26,
+      "newDocumentAndAuthorAndPriorRevisionAndAttemptDigestsVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "5508be84988ff9f6179cfa96c2973c0b80cb9e7a7385b46bcade895119cc9f4c",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "9b3ecc75d28c99cb93f3a4c93ff5f1e1b5fcf4835ce148af4acc5509a2161bb4"
+      },
+      "logSha256": "654a442eb2182b7d04fc2b0621993fde1d16d55a95597d4a6f26a3f45f1ef6ca"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43141420,
+      "expandedBytes": 57601431,
+      "wireBytes": 18746327,
+      "wireSha256": "cfe7fa632df5af3eb3410c51c074ef69196948a44b63f353d64e2ce6e3760380",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "2412d5ba24d75871cf81ba3a44969c764180008caee0cc3d8f3bd5ee05f6213f"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "f98d9f1a7e9423a3f22ffd65fd9f9813dc1bba02b5e0fd188536ae1d41195f98",
+    "firstAndSubsequentQuizSaveActionsImplemented": true,
+    "deployedPostReadinessInvalidationVerified": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveLearnerFirstFreeEnrollment": {
+    "frontendSourceCommit": "8f88a81f0032898f93e926d8c6843a4ed53b5804",
+    "implementationCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+    "finalCommitChangesOnlyOperatorEarlyExecutionInputRefusal": true,
+    "normalLearnerBrowser": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "passed": 6,
+      "failed": 0,
+      "projects": [
+        "chromium",
+        "mobile"
+      ],
+      "courseSourceCommit": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "singlePublicCatalogReadAndBeforeAfterLearnerAccessVerified": true,
+      "actualEnrollmentToAcademyAndLearnerRegressionsVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "9d756466f0e7bc4090ece73757a1c68329eda39d754135ca33332fb81679fa11",
+      "persistenceSha256": "6352f3c1db5e356833ac47a305f7149095f137959e672c4897c83d70adeb17ba",
+      "logSha256": "d2347e64375a75b61a6a9c4b8d5d01c927261db007a256aef17bb7321994813e"
+    },
+    "frontendUnitNode24": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "sourcePassed": 2542,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "6560ac652aca8824409be29daf9031d6fe8f074121673ca4a2f9d9fa18cacff7"
+    },
+    "certificationPlatformNode24": {
+      "passed": 142,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "a0c2cd8b8422c9ed243f516b2ac620f5d58fdfea2c014d87d18a416279b618d4",
+      "ownedChromiumCases": 15,
+      "exactEnrollmentAndCanonicalProtectedDestinationVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "priorPlatformRun": {
+      "sourceCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "finding": "Unsupported execution input reached the configuration read before refusal.",
+      "logSha256": "d15e3695e76d41e9d2706119617f55a5980701d1f4d1aea137eb50a335eadd19"
+    },
+    "host": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "passed": 127,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "5da3b69b3addb69b009dfb09d8842e7bffd03953f8b5bc3a9b3f286e81ee662b"
+    },
+    "loopbackGateway": {
+      "testedCommit": "3c85d7d0b9d581fd13cc90abee9e23d2b1f05d48",
+      "passed": 78,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "d3c3775a69f6686ebf8e6fbee7ecfb43a0fc22b4b0a4e68488f0d2756f9a6152",
+      "acknowledgementRequestIndexPrefix": [
+        0,
+        1,
+        2
+      ],
+      "upstreamStatusPrefix": [
+        200,
+        403,
+        201
+      ],
+      "postEnrollmentReadIndexes": [
+        1,
+        3
+      ],
+      "eitherReadbackOrderAccepted": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "8f88a81f0032898f93e926d8c6843a4ed53b5804",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 28,
+      "freeOrderlessGrantIdempotencyAndPendingCanonicalCommunityActivationVerified": true,
+      "noProgressWritesVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "ea5a23c0ee516d3bbe6a9ad6ba70c33f4ddb7c4d1229055e0a663096cf3c697f",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "2413ecf507e8b9dd7d871d9b3c3fffb3b9feb2d8cabaf4c0a5ccb29e2a27f20d"
+      },
+      "logSha256": "c10376f3e47a2a8a48c0a2c00ee2d38f1775b4bc1a9361d56dd7aa456943b2f1"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43202796,
+      "expandedBytes": 57683271,
+      "wireBytes": 18770139,
+      "wireSha256": "9b8a0ff1601f410c092d75a29db417da83815d812d48a34ea7b90f815f67c914",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "b9187349b2803e21cd4057978e6d76fc161061eec6b482cd85b821e243dadb00"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "18b77644120d7dbf5ea43a86d7bdcde28d79b2afcdd5a01606a92d39084a0702",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "628d11d12c5d5406511c84319e210b8f59504d204a9a05591f49ca4b935b6d72",
+    "firstFreeEnrollmentOperatorActionImplemented": true,
+    "remainingS07GuardedActionsImplemented": false,
+    "communityDownstreamDeliveryVerified": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedLearnerVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerManualPaidGrant": {
+    "frontendSourceCommit": "2e5a828591ec286e16cf530c0fe89c6b769218fb",
+    "normalOwnerAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "manualGrantResponseAndPersistedAuditCorrelated": true,
+      "lostAcknowledgementRecoveryVerified": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "cbea8d7b63272154a374112d01607a9b34e63ad4363d9ed3beac23a31727c0fa",
+      "outcomeSha256": "e3d40d06803c8df370fcb68ad65b8bf787ce49ed364287fe0fc571a2cba0e521",
+      "logSha256": "154537a77f91b58ba81ca81d320fc012e8cb33009e98535889ea2aab1c31dfb4"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2544,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "9a45793d7d7d34429c6124231131aafce83485ab9a3cd365e079d2713b08c796"
+    },
+    "certificationPlatformNode24": {
+      "passed": 151,
+      "failed": 0,
+      "skipped": 0,
+      "pairedOwnerExactIntentAndNormalConfirmationVerified": true,
+      "logSha256": "2929b94b3f29cde23e117cef776afd6805ddb9b6dca4b06f44ea8695bae851ca"
+    },
+    "host": {
+      "passed": 129,
+      "failed": 0,
+      "browserGatewayAndHeldCourseWitnessCorrelationVerified": true,
+      "logSha256": "3a7cbfe5254c519933602bcbbcf4f949beefdbeb3c2a4600be82f68f4ce7a735"
+    },
+    "loopbackGateway": {
+      "passed": 79,
+      "failed": 0,
+      "skipped": 0,
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        0,
+        2,
+        1,
+        3,
+        0
+      ],
+      "upstreamStatuses": [
+        200,
+        200,
+        200,
+        201,
+        200,
+        200,
+        200
+      ],
+      "logSha256": "2fc2720b920a22e17306b229c131a0de3a73d22df3d446eb5363d3268b9101ae"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "2e5a828591ec286e16cf530c0fe89c6b769218fb",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 30,
+      "orderlessPaidGrantAdminEnrollmentImmutableAuditAndPendingCanonicalCommunityActivationVerified": true,
+      "noProgressWritesVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "68fa4f1635a72582bca3d2d1657fe2fde978afb9c3b29f2bfa7f99d03913e72d",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "2b5bd2a5ae0781639f5d892fc18470fcc90dada23d681806b25554c7c0de3001"
+      },
+      "logSha256": "39e2da789454d8ac5b29ba22262142ef0664bfc0e03dcf1b7927fc0301f6e341"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43268881,
+      "expandedBytes": 57771367,
+      "wireBytes": 18794567,
+      "wireSha256": "cfd58371799ca9e8ce6fe6d2cfff961f3ff4e0db8c8fa9e96b12169b03fe4b15",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "6342cfb4a7294672e753da536f2419571e8b37719f451483dc3d5c9443db7ee9"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "bf5781b31c1e62abd927823d609c2824805299c799131c629e33437685046a1c",
+    "freshOwnerManualPaidGrantActionImplemented": true,
+    "remainingS10GuardedActionsImplemented": false,
+    "deployedPaidGrantAndLearnerAccessVerified": false,
+    "communityDownstreamDeliveryVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerPaidArchive": {
+    "frontendSourceCommit": "37a614adc887d7b79a107a0824a98f761837cdbe",
+    "implementationCommit": "ded3acccc34eef2f6b10bc06b2c8250654290795",
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "existingOrderlessGrantPreservedAcrossArchiveAndRepublish": true,
+      "warningCancelAndSingleArchiveVerified": true,
+      "protectedLessonAndProgressWriteReturned410": true,
+      "invalidPublicationBlockedAndValidatedRepublishRestoredAccess": true,
+      "mobileWarningWidth": 390,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "86dca65985369090ce73ecd53e2c7ef9624d7b3cff2a406fd6859e362d0986ac",
+      "outcomeSha256": "f123e8624ab5c82f26dec4d53ff4a2438f74a016874582005b38f2f658a5fc85",
+      "logSha256": "1aa843c994e55de5dd023c585e3fd26b93ab4ea9752cc1ce67ce636bd3e95445",
+      "mobileWarningScreenshotSha256": "8ce1c84e910f0e2e5e8db13c190e945ba453e06977e28115f81c28b81b4c2051"
+    },
+    "priorBrowserFixtureFindings": [
+      {
+        "testedCommit": "ded3acccc34eef2f6b10bc06b2c8250654290795",
+        "finding": "Development reload interrupted the archive warning before confirmation.",
+        "logSha256": "c5a1e91627cd3ea6c4f0457e6cc952d29aefc0459282ccf7c680a64ed122a857"
+      },
+      {
+        "testedCommit": "82ed37529c0b0489beef1994ab54d76c52ec95f8",
+        "finding": "The functional assertions passed. Development reload interrupted the final layout evaluation after public-route compilation.",
+        "logSha256": "87bea21e16bc01556039f8b58779bbac3302e06e9d6f03410b128df99932130d"
+      }
+    ],
+    "frontendUnitNode24": {
+      "testedCommit": "05bf8509b7fc7e413540d138b445781c585f4e86",
+      "passed": 2601,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "f573aab0a834bc43c6c906ee647e6635dcea9b228074b0f864f397bfd021543c"
+    },
+    "certificationPlatformNode24": {
+      "passed": 161,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "53d4f6bae56e90e9afe9f43481a11b00349f5e4baf215a60240cd253aa8b8d3d",
+      "exactOwnerPermitAndWarningCancelConfirmVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "reviewedArchiveAcknowledgementIndexes": [
+        0,
+        1,
+        0
+      ],
+      "reviewedArchiveUpstreamStatuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "host": {
+      "passed": 144,
+      "failed": 0,
+      "logSha256": "4206e232526f3130ebd767cb9d27452cbbb9409bf56d7e1a449e28256c0ed5ac"
+    },
+    "loopbackGateway": {
+      "passed": 79,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "19b2f41fd85c75f4fac5eee6aa65d1a5e83677af52bfd05686c1395fb9bf4962"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "37a614adc887d7b79a107a0824a98f761837cdbe",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 32,
+      "courseEffectiveAccessDeniedAndIndependentCourseEligibilityPreserved": true,
+      "courseHistoryAndStoredFinancialReferencesPreserved": true,
+      "courseStreamAndCanonicalOutboxIdentityPreserved": true,
+      "maximumRowsPerDigestedResult": 1000,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "10fd46ad4713977439cbcb016e6d884f8db44ed44e3805018e6db37369b17345",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "4ec824f6fb8be557c37f657273f83f5ea2883ccb66f0fc3cd3da79f1e1af9202"
+      },
+      "logSha256": "fedbcec5664625470525b7eed260d9fd4ebaa89bb51fd41b36b9490eb75a6981"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43326301,
+      "expandedBytes": 57847939,
+      "wireBytes": 18815427,
+      "wireSha256": "5f0982c6dc8e4fe6a0cbd0d0db9b662a47e8e6a2017a72dac481543c479bbb7f",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "23712bd078dfd2539637f4d9ac9a700768aef6fd6a09bdcc182462768070c396"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "7cb5489512b93c8e5adf01e901cf706da8290d6f7121b5caba0f65c84e1c6907",
+    "guardedOwnerArchiveActionImplemented": true,
+    "guardedRepublishActionImplemented": false,
+    "actualDeployedArchiveVerified": false,
+    "actualDeployedCustomerAccessVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerPaidRepublish": {
+    "frontendSourceCommit": "cb9d10a6979ebd176d428d93f58cdecfcfa2c303",
+    "implementationCommit": "f0e26333db137156a067d92a98a594847bcf3b1b",
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "archivedToDraftToPublishedVerified": true,
+      "draftDeniedAndPublicationRestoredEligiblePaidLearner": true,
+      "blockedReadinessOmittedPublishAndDirectInvalidPublishReturned409": true,
+      "blockedDraftRevisionAndDenialPreserved": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "5297a923c264bcf17987203dc4b673a43dc2d5c3a00ef8a3624bf22dba48087a",
+      "outcomeSha256": "94e88ad20540d44563a27a451d1cef0d4642654d90b796a3cdd0bffba826a04e",
+      "logSha256": "0ec21420910282c722a487ba6f486c2c9abd4a0f32a9082a10e4a7d78a648a05"
+    },
+    "initialBrowserFixture": {
+      "sourceCommit": "f0e26333db137156a067d92a98a594847bcf3b1b",
+      "finding": "Public-route development reload interrupted owner navigation between the published and blocked scenarios.",
+      "logSha256": "d96add47be4681aa80e7b8faa346eae8d94346058947f0f2623329ce75fc049b"
+    },
+    "frontendUnitNode24": {
+      "passed": 2601,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "a9bc6ac7c5001f573f1bdce13fcac2c26be67a077e66446be86a7ba04a6e5aee"
+    },
+    "certificationPlatformNode24": {
+      "passed": 172,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "eba1604f0dd017ef0f724f1ef169300e9e13831d59a6723e18f6b256b0a964a8",
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "publishedAcknowledgementIndexes": [
+        0,
+        1,
+        0,
+        2,
+        3,
+        0
+      ],
+      "blockedAcknowledgementIndexes": [
+        0,
+        1,
+        0,
+        2
+      ],
+      "upstreamStatusesAll200": true
+    },
+    "host": {
+      "passed": 145,
+      "failed": 0,
+      "logSha256": "fb60450d593abe2ddffa69e768612534e0ede8488847be734fcdd6d81a15715d"
+    },
+    "loopbackGateway": {
+      "passed": 81,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "6c8cfb621be1831a5f7df10a5a22fe895aff98eec1d6f037b0d9094253190825",
+      "separateSamePathPatchDigestsVerified": true,
+      "blockedPublicationRefusedBeforeCourse": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "cb9d10a6979ebd176d428d93f58cdecfcfa2c303",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 34,
+      "effectiveAccessRestoredForEligiblePaidLearner": true,
+      "revokedGrantAndSuspendedAccountRemainDenied": true,
+      "blockedDraftRemainsDenied": true,
+      "courseHistoryAndIndependentEligibilityPreserved": true,
+      "maximumRowsPerDigestedResult": 1000,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "75dd947c0f0d7e517f76053317a0d815cb0d95efe6ca2b89572a4230832f1351",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "7277d6d73d08cdd936e040b4cae09dcabdd39e74f56522c973855ab39d79db49"
+      },
+      "logSha256": "96664180406c44e52c92ecd0c7085c5c59a920f2c9d52b87ed7872fdc54c304c"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43376288,
+      "expandedBytes": 57914595,
+      "wireBytes": 18832975,
+      "wireSha256": "bd0a1933ff67d3329fa687a66c4962ae26b49935013a5f81970d3de9334bf054",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "0a3b8853469c84d733b3af4b7cd773877156bd5519005667ba8e9425a444cee3"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "0fe12e49781b2593375ff1e65cb0afdcbdeec34f00e5795d11dd10be4674976b",
+    "guardedOwnerRepublishActionImplemented": true,
+    "actualDeployedRepublishVerified": false,
+    "actualDeployedCustomerAccessVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactivePaidLearnerAccess": {
+    "frontendSourceCommit": "893b76c7341322a8c35b7877003a3d5834147517",
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 9,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "normalAcademyOverviewAndSixProtectedReads": true,
+      "allowedArchivedDraftAndRestoredAccessVerified": true,
+      "localPlaybackAndThumbnailSignaturesVerified": true,
+      "deniedPlaybackLeavesExpiryAndLearningHistoryUnchanged": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "b96844fed3e317ea6096f86d376dc2171fbf424b45a3bae68e475de743c22576",
+      "outcomeSha256": "cfa76a809517d9d55edba5ec77bb908d72b20456af9ed65c344f85ec3e224902",
+      "logSha256": "896c8acf20a8d14214cbce9032fc691c14e6c66e0fb4a4935e266e699aa556dc"
+    },
+    "frontendUnitNode24": {
+      "passed": 2603,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "bee653b596a26caba3e4861a826cc23873971956edd6da3476e008d2cb79a6d0"
+    },
+    "certificationPlatformNode24": {
+      "passed": 184,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "3e847b229175e6d519938615d80e4a293b10067aa948ae4f90ee7f90cce188b2",
+      "paidLearnerAccessRecorderRefusesMismatchesAndOmitsPrivateResponseBytes": true,
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "frontendWriterCountRequired": 0,
+      "acknowledgementIndexes": [
+        [
+          0,
+          1,
+          0,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          0,
+          0,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ]
+    },
+    "initialPlatformRun": {
+      "sourceCommit": "893b76c7341322a8c35b7877003a3d5834147517",
+      "finding": "The existing two-tab draft recorder failed during the concurrent browser run. The paid learner recorder and integrated browser passed.",
+      "logSha256": "6baed665629bf343cfedffd335b7a694014e1b71d3e5a022a3b6003dfb1d0334"
+    },
+    "host": {
+      "passed": 147,
+      "failed": 0,
+      "logSha256": "58deae40f9361b91df476d8f6930ec616d42e6830ed0063dedbb3184dfda445a"
+    },
+    "loopbackGateway": {
+      "passed": 87,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "b30ba50119c26a126385a50b58607074b5e5b4223525f242966e48ed59dbd740",
+      "allowedArchivedDraftRevokedAndExpiredCases": true,
+      "foreignActorWrongResourceWritesAndReplaysRefused": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "893b76c7341322a8c35b7877003a3d5834147517",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 36,
+      "actualPinnedQuizAndPlaybackRepositories": true,
+      "effectiveAccessAndUnchangedPaidGrantAndIndependentEligibilityVerified": true,
+      "playbackExpiryMayAdvanceOnlyForAllowed": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "62c78e232dddc26d4251dd36cb8e635843b05cfa38a6678fe4e268bec80501b7",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "894a993bd4d2bb85adce07be45a5b74d38b52b675aaf9e2f4b0c8e381a8b3e0f"
+      },
+      "logSha256": "85c516fdd41ca48e3339527b11585286f4a96eb5615233f2a53c261e064eefdc"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43454947,
+      "expandedBytes": 58019463,
+      "wireBytes": 18865867,
+      "wireSha256": "33c4574c4eafeea8bfee634ced4fbfbafcb8bae62eacfa124468821a8adaac43",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "f8ebeaa2ba69f75313aa2a78d759ec9a8fea4fbf6af13ea29d7304b80c7ad357"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "82fa014d7dd6beb9dfac5dce69b0f2cba2e165afe28eab286fd87edb9b047c57",
+    "guardedPaidLearnerAccessActionImplemented": true,
+    "actualDeployedPaidLearnerAccessVerified": false,
+    "liveMuxPlaybackVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  },
+  "interactiveOwnerPaidRevocation": {
+    "frontendSourceCommit": "588c91fd4fe22921e9d4450fcdbc5af31a5ea6ca",
+    "frontendImplementationCommit": "42dcf844f051f83ebaf55aa2afb8c543086d2620",
+    "initialBrowserFinding": {
+      "finding": "Development reload cleared the visible first receipt before the fixture started the next form action.",
+      "logSha256": "3436c42ef79db4eab0f98304fd85ec74d098c831e6fdee48709993ae89b7eeef"
+    },
+    "courseExpiryPredicateCorrection": {
+      "sourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "baselineCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "verifiedPaths": [
+        "owner-grant-revoke",
+        "internal-entitlement",
+        "community-stream-projection"
+      ],
+      "node24VerifyTests": 716,
+      "verifyLogSha256": "44c182474983f670747ed2f116518bc3be4b76d2333c9ca7e5889f84b533428a",
+      "postgres16RegressionsPassed": 3,
+      "originalSourceExpectedFailures": 3,
+      "postgresRedGreenLogSha256": "18aba677dc5b448fab7e163cb794010614a85286bc709a9207aa8ab48bb81c59",
+      "exactSourceRequiredBeforeRevocation": true
+    },
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 9,
+      "failed": 0,
+      "courseSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "normalOwnerExactGrantForm": true,
+      "independentGrantPreservedAndLastEffectiveGrantDenied": true,
+      "lostAcknowledgementReconciledWithoutRetry": true,
+      "revocationCorrelatedToImmutableCourseCommand": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "5faa733d752bb6820cbe31bee823c14c49a1714c4955317279dc4cea3ea27078",
+      "outcomeSha256": "36fa7683929a02e46610ca4629f18a8f3e3ee5d0bac19c8b6f976459d35cb728",
+      "logSha256": "2097dd4d1c8bc574ec05ac0ea08b83b62819fa142411427aa47675847df48ed7"
+    },
+    "frontendUnitNode24": {
+      "passed": 2607,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "0a07bacfc420d070c4993746b47f3def6d9553419762536bc40e04f16a80be52"
+    },
+    "certificationPlatformNode24": {
+      "passed": 194,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "4291ec1a212015de3030f5ad58bbf57d79ea2963a0cb83e74bb59eb94ba2241b",
+      "ownerConfirmationAndExactGrantReceiptVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "acknowledgementIndexes": [
+        0,
+        1,
+        0,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    "host": {
+      "passed": 148,
+      "failed": 0,
+      "logSha256": "17bda6f0e3366e8f9d3f40b4710c4f661dcf0f170a0c1dc8579595408fed5629"
+    },
+    "loopbackGateway": {
+      "passed": 90,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "022370b5259632682fa2a0d9e2a8ca90f7779a027f27fc5a8e81e8b59eb99e03",
+      "exactGrantIdScopeVerified": true,
+      "broadRevocationAndForeignActorRefused": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "588c91fd4fe22921e9d4450fcdbc5af31a5ea6ca",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "courseRevokeSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "originalBaselineRefusalEvidenceSha256": "6bcf204b42ec05ae3635ff23e554331334db374ea37cb116e673bd6a330a1216",
+      "heldLifecycleAndAuthoringWitnessChecks": 39,
+      "actualPinnedCourseRevocationRepository": true,
+      "independentGrantAccessAndHistoricalRowsPreserved": true,
+      "pendingCanonicalTransitionOnlyAfterLastEffectiveGrant": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "71ca4f581bf0f5acb4b466dd50668a1325e115159fd179a3c40ed9e4bd2e9d94",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "eab906e0d55f38bdd9800b98f9f1934e27ada57a5b9c9de8d77efb98b1730655"
+      },
+      "logSha256": "93140e637f3bb02b4c5fbdb553df55b4f94e0cd608f9e9ca0c8cc1482a855704"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43537552,
+      "expandedBytes": 58129603,
+      "wireBytes": 18893579,
+      "wireSha256": "589f01a89fe6e6463ef26060491f9f1ec574fe1ed2edf715d8a9423402382dd8",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "c040ddab7a0dcef6ffcecf7699fa60e49d0680c032258157350c40c891c0027a"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "3c76ff497cdbe477dbda858435019e0cf151997b0c76344d4861d6f13444eaef",
+    "guardedOwnerPaidRevocationActionImplemented": true,
+    "actualDeployedPaidRevocationVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
+  }
+}

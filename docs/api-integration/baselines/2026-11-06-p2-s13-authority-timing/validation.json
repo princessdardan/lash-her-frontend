@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "status": "SOURCE_VALIDATION_PASS_LIVE_OPEN",
+  "baselineCommit": "0875394490011590ee2641cdbbec043c7fd4fde9",
+  "sourceFiles": {
+    "ops/platform/p2-lifecycle-authority-timing.mjs": "03619692de2e47c05bf096000bfa3e162b8c958b4e334fed6ffee3219a5733a6",
+    "ops/platform/p2-lifecycle-authority-timing.test.mjs": "a3622eadc6ef2f7d5e37e8453c5d3a05cfce10b75d95dc8c20925233198d17fa",
+    "ops/platform/host/p2_lifecycle_authority_timing.py": "05fa52e6d6d76b91693c08cb16ded7e4eb27c12adfd70f7fada72d4c84f4f229",
+    "ops/platform/host/p2_lifecycle_authority_timing_scope.py": "43f292c50657f042b99d77ffacff44337db96ea8384e7fea6de0d1a1d6c2227b",
+    "ops/platform/host/p2_lifecycle_authority_timing_test.py": "2d9ed728c7365145820a18a33db8d87b1d8d803944726662726d46b03fd7fe6c",
+    "ops/platform/p2-lifecycle-authority-timing.md": "95fd52148cfb35c9a32febc44c0543c7a0ac92bdf15d7939623318280340d577"
+  },
+  "embeddedProgram": {
+    "sha256": "a69794ed41850e50fc8684aca563de5c90a1cd966c1c81d41bdb10473f4d7ffc",
+    "bytes": 73089,
+    "importsExistingIdentityHelper": true
+  },
+  "operatorSourceClosureCount": 399,
+  "verification": {
+    "node": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "realLoopbackVerifiedTls": true
+    },
+    "python": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "realPosixFlock": true
+    },
+    "eslint": "passed",
+    "javascriptSyntax": "passed",
+    "pythonCompile": "passed"
+  },
+  "boundaries": {
+    "liveCalls": false,
+    "providerCalls": false,
+    "databaseCalls": false,
+    "browserCalls": false,
+    "newPublicEndpoint": false,
+    "sharedRuntimeEdited": false,
+    "sourceAuthoritativeArtifactAdaptersReady": false,
+    "liveFinalizeEnabled": false,
+    "frontendJwtCaptured": false,
+    "credentialBytesInEvidence": false,
+    "credentialHashesInEvidence": false,
+    "releaseAccepted": false,
+    "g2Accepted": false
+  },
+  "openGates": [
+    "corrected-and-independently-reviewed-lifecycle-witness-contract",
+    "s12-normal-ui-suspension-worker-and-browser-machine-artifacts",
+    "exact-owned-staging-free-grant-fixture",
+    "actual-selected-container-course-tls-and-mux-provider-observations",
+    "ordered-restoration-after-s13-finalization"
+  ]
+}

@@ -1,0 +1,4 @@
+Actual committedOperatorSource at 4cfad2a7, captured from the execution result before correction:
+AssertionError: The expression evaluated to a falsy value:
+
+  assert.ok(raw.length<=2_000_000&&total<=16_000_000)

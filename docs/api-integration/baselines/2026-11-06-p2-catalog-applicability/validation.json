@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "status": "OFFLINE_APPLICABILITY_REPRODUCTION_PASS",
+  "sourceBase": "16fd122d",
+  "nodeVersion": "v24.18.0",
+  "files": [
+    {
+      "file": "build-register.mjs",
+      "sha256": "0135e3c1b493cb346b6f00b1c66a9ba2faca5832c91114451bd3f8679b6fa88e"
+    },
+    {
+      "file": "register.json",
+      "sha256": "4405210789036219f955b983975ed40da0bb5a78c0d21ce49aec487408809d02"
+    },
+    {
+      "file": "README.md",
+      "sha256": "5c7b40ad91516a6c2072d603509d633418744c109ea3ba9c5022bfcab5f5515f"
+    }
+  ],
+  "sourceModuleSha256": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+  "candidateValueSelector": {
+    "commit": "4f18b80aee84f0c67b005ce749cf18506fbdedea",
+    "file": "ops/platform/frontend-historical-source.mjs",
+    "sha256": "4e66672bac41d1622d5f985725d8715971cfcfe6fb214ab4d28b522232bcd51b",
+    "status": "candidate-interface-awaiting-independent-integration-clearance"
+  },
+  "checks": {
+    "all81PriorIdentitiesAndCreationTimesMatched": true,
+    "all33ActualGitProfilesVerifiedInBothPinnedModules": true,
+    "all31PublicKeySetsAnd76ProvenanceDigestsChecked": true,
+    "all2124VerifiedSurfaceFamilyClassificationsPresent": true,
+    "unregistered14Sources17SurfacesAndMissingSource5RemainExplicit": true,
+    "all22UnqualifiedSurfaceIdsPresentInProse": true,
+    "pureCandidateKeySelectorSizingCalls": 177,
+    "deterministicExactByteRegeneration": true
+  },
+  "runs": [
+    {
+      "status": "PASS",
+      "elapsedMilliseconds": 4727,
+      "summary": {
+        "retainedSurfaces": 81,
+        "sourceBoundCatalogs": 76,
+        "verifiedSourceSurfaces": 59,
+        "unregisteredSourceSurfaces": 17,
+        "missingSourceSurfaces": 5,
+        "actualSourceCommits": 47,
+        "verifiedSourceCommits": 33,
+        "maximumCandidateSelectedValueKeysOnVerifiedSources": 17,
+        "bytes": 190583
+      },
+      "registerSha256": "4405210789036219f955b983975ed40da0bb5a78c0d21ce49aec487408809d02"
+    },
+    {
+      "status": "PASS",
+      "elapsedMilliseconds": 4590,
+      "summary": {
+        "retainedSurfaces": 81,
+        "sourceBoundCatalogs": 76,
+        "verifiedSourceSurfaces": 59,
+        "unregisteredSourceSurfaces": 17,
+        "missingSourceSurfaces": 5,
+        "actualSourceCommits": 47,
+        "verifiedSourceCommits": 33,
+        "maximumCandidateSelectedValueKeysOnVerifiedSources": 17,
+        "bytes": 190583
+      },
+      "registerSha256": "4405210789036219f955b983975ed40da0bb5a78c0d21ce49aec487408809d02"
+    }
+  ],
+  "initialBuilderAttempt": {
+    "status": "FAILED_CLOSED_BEFORE_OUTPUT",
+    "reason": "Referenced runtime/build key digests at catalog top level instead of their public provenance fields.",
+    "correction": "Use exact provenance digest fields; all public input bytes unchanged."
+  },
+  "boundaries": {
+    "providerRequests": 0,
+    "secretValuesRead": 0,
+    "sqlConnections": 0,
+    "runtimeCapabilityClosuresProduced": 0,
+    "controlsPerformed": 0,
+    "appOrOpsFilesChanged": 0,
+    "configuredProviderAccountsProved": false,
+    "originalConfigurationProvenanceSupplied": false,
+    "releaseOrAdmissionAuthorized": false
+  },
+  "independentReviewClaimed": false
+}

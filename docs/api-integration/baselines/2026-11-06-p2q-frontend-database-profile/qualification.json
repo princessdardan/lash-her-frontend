@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "status": "FRONTEND_DATABASE_PROFILE_COMPONENT_SOURCE_CHECKS_PASS_REVIEW_PENDING",
+  "baseCommit": "5e007c4447cb1070c8718fa16bb0ca73e0b69213",
+  "originalSourceCommit": "663c182fb9c79ae788bf694c8886ca6265d38594",
+  "correctedSourceCommit": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+  "dependencies": {
+    "fixtureCopyRootCommit": "ccc4f8fc96dc8c4b3cc425d8f765798e1442c610",
+    "historicalBootstrapSourceCommit": "eaeb43b98579373b79ccba732a22d4fc7d8e83e9"
+  },
+  "qualificationTargetProfile": {
+    "version": 1,
+    "id": "staging-current",
+    "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+  },
+  "nodeVersion": "24.18.0",
+  "platform": "macOS arm64",
+  "sourceSha256": {
+    "ops/platform/frontend-admission-bootstrap.mjs": {
+      "sha256": "cdaa3825e129af6214d614297d455535bbb0865889b0611960b0b879f8dd0377",
+      "bytes": 12059
+    },
+    "ops/platform/frontend-migration.mjs": {
+      "sha256": "de8c41b6951269f80a501934793d40f03107eee274170ac11e753145938b18bb",
+      "bytes": 35059
+    },
+    "ops/platform/frontend-migration.test.mjs": {
+      "sha256": "1097ff244ec94f6675a4a8356468529b98b98e27ab1132a1845c9ebae8d1b791",
+      "bytes": 36481
+    },
+    "ops/platform/frontend-release-coordination.test.mjs": {
+      "sha256": "fd7a6b06441bb3ced98e0d496ff853dfa1a93b741e88441b2a6bf7be0511a9c0",
+      "bytes": 24259
+    },
+    "ops/platform/frontend-release-coordinator.mjs": {
+      "sha256": "87ffc69874fb958f8a4895b44a5a163a7351602f8273e30b1fc61e8f16eb3b28",
+      "bytes": 31157
+    },
+    "ops/platform/frontend-release-inventory.mjs": {
+      "sha256": "29429ea2c5effe215ee709b0a1641b2b2a4eb66b6f31a1d5304ddb2ecadb4045",
+      "bytes": 15959
+    },
+    "ops/platform/frontend-release-restoration.mjs": {
+      "sha256": "245f8f75d6bc53eeca1e5d24768c8d0841bc5cf04b1a2de08c320308129c5f53",
+      "bytes": 8519
+    },
+    "ops/platform/frontend-release-restoration.test.mjs": {
+      "sha256": "ced23a100b1fbc01fd3c4542ed5ae7c75780e34e323a98bd14995e76d25851aa",
+      "bytes": 2410
+    },
+    "ops/platform/frontend-role-preparation.mjs": {
+      "sha256": "a4e8d1a82d45fc870f3b0dd32e6b0f1a39b7baf7d289a86ecd6f6518f1cdaa44",
+      "bytes": 33712
+    },
+    "ops/platform/frontend-role-preparation.test.mjs": {
+      "sha256": "44bc026916a5b6fc34df3240f0ff6dbb42f2e614e5159951459526a6edeb9e9a",
+      "bytes": 7341
+    },
+    "ops/platform/test-frontend-migration-local.mjs": {
+      "sha256": "73212f3f88a25645032caf74e00477b95792bdcba29fa637b6cc33b24d1b73cb",
+      "bytes": 35415
+    },
+    "ops/platform/test-frontend-restoration-local.mjs": {
+      "sha256": "bb9132a53ffe6303d6b68a956048d44437266377ca28ef4a9fee9d6f7938d7b0",
+      "bytes": 23323
+    },
+    "ops/platform/test-frontend-roles-local.mjs": {
+      "sha256": "795d5fb8106ffd1190c444662d70f9aa229b1d6ae5a9c9792bddb775b5e58979",
+      "bytes": 29275
+    }
+  },
+  "verification": {
+    "focusedTests": 67,
+    "skipped": 0,
+    "eslint": "PASS",
+    "newProfiledPendingSql": "UNCONDITIONALLY_REFUSED_BEFORE_EFFECT_HOOKS",
+    "newProfiledCoordinatorExecution": "UNCONDITIONALLY_REFUSED_BEFORE_STORES_CREDENTIALS_LOCKS_CLIENTS_OR_SQL"
+  },
+  "actualOwnedPostgres": {
+    "migration": {
+      "16": {
+        "testedSourceCommit": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+        "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+        "checks": [
+          "fresh-apply",
+          "operator-search-path-cannot-shadow-real-catalog-or-redirect-application-ddl",
+          "already-current",
+          "server-enforced-current-only-read-session",
+          "profiled-current-readonly-cli-v2-receipts-and-physical-lineage",
+          "profiled-current-pending-sql-refused-before-intent",
+          "physical-database-lock-retained-through-compatible-frontend-continuation",
+          "idle-session-loss-retains-sanitized-failed-outcome",
+          "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+          "current-only-refuses-real-pending-migrations-without-applying",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "pending-chain-refusal",
+          "lineage-refusal",
+          "schema-refusal",
+          "runtime-privilege-refusal",
+          "tls-certificate-refusal",
+          "exact-artifact-production-promotion"
+        ],
+        "checkCount": 18,
+        "stderrBytes": 552,
+        "migrations": 83,
+        "profiledCurrent": {
+          "schemaVersion": 2,
+          "qualificationTargetProfile": {
+            "version": 1,
+            "id": "staging-current",
+            "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+          },
+          "readOnlyVerified": true,
+          "pendingSqlRefusedBeforeIntent": true,
+          "originalJournalAndSchemaUnchanged": true,
+          "trafficAuthorized": false,
+          "virginInstallAuthorityIssued": false
+        }
+      },
+      "18": {
+        "testedSourceCommit": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+        "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+        "checks": [
+          "fresh-apply",
+          "operator-search-path-cannot-shadow-real-catalog-or-redirect-application-ddl",
+          "already-current",
+          "server-enforced-current-only-read-session",
+          "profiled-current-readonly-cli-v2-receipts-and-physical-lineage",
+          "profiled-current-pending-sql-refused-before-intent",
+          "physical-database-lock-retained-through-compatible-frontend-continuation",
+          "idle-session-loss-retains-sanitized-failed-outcome",
+          "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+          "current-only-refuses-real-pending-migrations-without-applying",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "pending-chain-refusal",
+          "lineage-refusal",
+          "schema-refusal",
+          "runtime-privilege-refusal",
+          "tls-certificate-refusal",
+          "exact-artifact-production-promotion"
+        ],
+        "checkCount": 18,
+        "stderrBytes": 552,
+        "migrations": 83,
+        "profiledCurrent": {
+          "schemaVersion": 2,
+          "qualificationTargetProfile": {
+            "version": 1,
+            "id": "staging-current",
+            "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+          },
+          "readOnlyVerified": true,
+          "pendingSqlRefusedBeforeIntent": true,
+          "originalJournalAndSchemaUnchanged": true,
+          "trafficAuthorized": false,
+          "virginInstallAuthorityIssued": false
+        }
+      }
+    },
+    "roles": {
+      "16": {
+        "testedSourceCommit": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+        "status": "FRONTEND_ROLES_OWNED_PASS",
+        "checks": [
+          "actual-environment-flock-contention-refuses-second-parent",
+          "actual-physical-lock-contention-refuses-before-role-mutation",
+          "actual-wrong-target-refused",
+          "actual-wrong-session-role-refused",
+          "unrelated-existing-name-is-not-coerced",
+          "actual-role-creation-rollback-retains-intent-and-private-credential",
+          "failed-action-is-never-replayed",
+          "missing-private-credential-receipt-refuses-before-role-sql",
+          "real-postgres-assigned-oids-and-private-credential-retained",
+          "public-output-does-not-serialize-private-credentials",
+          "actual-runtime-public-crud-and-sequence-usage",
+          "actual-runtime-persistent-ddl-journal-and-membership-denied",
+          "owner-can-create-schema-only-through-operator-set-role",
+          "actual-future-table-and-sequence-default-grants",
+          "exact-approved-oid-grant-and-private-credential-reuse",
+          "actual-database-scoped-settings-on-either-selected-role-refuse-reuse-without-mutation-and-pass-after-repair",
+          "actual-public-schema-usage-shadow-read-refuses-runtime-reuse-without-mutation-and-passes-after-cleanup",
+          "wrong-reuse-oid-refused",
+          "existing-role-extra-grants-refused-without-coercion",
+          "old-role-oid-flags-access-and-actual-data-journal-preserved",
+          "no-admission-ledger-application-migration-or-feature-activation",
+          "actual-commit-then-lost-ack-retains-unknown-and-private-recovery-material",
+          "lost-commit-acknowledgment-is-never-replayed",
+          "profiled-current-roles-fresh-actual-oids-credential-and-public-private-v2-bindings",
+          "profiled-current-roles-reuse-original-v2-receipts-and-actual-oid-readback",
+          "profiled-current-same-profile-same-target-private-plan-swap-refused-before-hooks-sql-or-intent",
+          "profiled-current-roles-legacy-reuse-refused-before-sql-or-new-private-intent",
+          "profiled-role-preparation-preserves-old-role-data-and-application-journal",
+          "owned-server-logs-and-public-receipts-contain-no-password-or-scram-verifier"
+        ],
+        "checkCount": 29,
+        "stderrBytes": 0
+      },
+      "18": {
+        "testedSourceCommit": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+        "status": "FRONTEND_ROLES_OWNED_PASS",
+        "checks": [
+          "actual-environment-flock-contention-refuses-second-parent",
+          "actual-physical-lock-contention-refuses-before-role-mutation",
+          "actual-wrong-target-refused",
+          "actual-wrong-session-role-refused",
+          "unrelated-existing-name-is-not-coerced",
+          "actual-role-creation-rollback-retains-intent-and-private-credential",
+          "failed-action-is-never-replayed",
+          "missing-private-credential-receipt-refuses-before-role-sql",
+          "real-postgres-assigned-oids-and-private-credential-retained",
+          "public-output-does-not-serialize-private-credentials",
+          "actual-runtime-public-crud-and-sequence-usage",
+          "actual-runtime-persistent-ddl-journal-and-membership-denied",
+          "owner-can-create-schema-only-through-operator-set-role",
+          "actual-future-table-and-sequence-default-grants",
+          "exact-approved-oid-grant-and-private-credential-reuse",
+          "actual-database-scoped-settings-on-either-selected-role-refuse-reuse-without-mutation-and-pass-after-repair",
+          "actual-public-schema-usage-shadow-read-refuses-runtime-reuse-without-mutation-and-passes-after-cleanup",
+          "wrong-reuse-oid-refused",
+          "existing-role-extra-grants-refused-without-coercion",
+          "old-role-oid-flags-access-and-actual-data-journal-preserved",
+          "no-admission-ledger-application-migration-or-feature-activation",
+          "actual-commit-then-lost-ack-retains-unknown-and-private-recovery-material",
+          "lost-commit-acknowledgment-is-never-replayed",
+          "profiled-current-roles-fresh-actual-oids-credential-and-public-private-v2-bindings",
+          "profiled-current-roles-reuse-original-v2-receipts-and-actual-oid-readback",
+          "profiled-current-same-profile-same-target-private-plan-swap-refused-before-hooks-sql-or-intent",
+          "profiled-current-roles-legacy-reuse-refused-before-sql-or-new-private-intent",
+          "profiled-role-preparation-preserves-old-role-data-and-application-journal",
+          "owned-server-logs-and-public-receipts-contain-no-password-or-scram-verifier"
+        ],
+        "checkCount": 29,
+        "stderrBytes": 0
+      }
+    }
+  },
+  "bootstrapRestorationOriginalSourceEvidence": {
+    "16": {
+      "testedSourceCommit": "663c182fb9c79ae788bf694c8886ca6265d38594",
+      "status": "FRONTEND_RESTORATION_OWNED_POSTGRES_PASS",
+      "checks": [
+        "real-tls-ledger-recovery-first-new-work-last-and-both-locks-held-through-every-boundary",
+        "reviewed-recovery-only-keeps-new-work-closed",
+        "actual-process-death-after-recovery-or-before-new-work-preserves-originals-and-refuses-implicit-continuation",
+        "actual-committed-recovery-with-lost-ack-is-unknown-no-repeat-or-next-opening",
+        "actual-backend-death-during-restoration-stops-new-work",
+        "unknown-provider-effects-refuse-before-opening",
+        "actual-historical-login-drift-refuses-before-opening",
+        "failed-restoration-receipt-does-not-open-next-stage",
+        "profiled-current-actual-tls-locks-ordered-restoration-v2-profiled-outcome",
+        "profiled-current-actual-closed-bootstrap-owner-oids-grants-and-v2-receipts",
+        "profiled-current-actual-lost-commit-preserves-v2-uncertain-receipt-without-reopen",
+        "actual-readonly-financial-idempotency-and-sandbox-row-readback-refuses-real-stored-intent-drift"
+      ],
+      "checkCount": 12,
+      "stderrBytes": 552,
+      "scope": "Original exact source663c; bootstrap/restoration implementations unchanged by the correction. Not a corrected whole-tree execution claim."
+    },
+    "18": {
+      "testedSourceCommit": "663c182fb9c79ae788bf694c8886ca6265d38594",
+      "status": "FRONTEND_RESTORATION_OWNED_POSTGRES_PASS",
+      "checks": [
+        "real-tls-ledger-recovery-first-new-work-last-and-both-locks-held-through-every-boundary",
+        "reviewed-recovery-only-keeps-new-work-closed",
+        "actual-process-death-after-recovery-or-before-new-work-preserves-originals-and-refuses-implicit-continuation",
+        "actual-committed-recovery-with-lost-ack-is-unknown-no-repeat-or-next-opening",
+        "actual-backend-death-during-restoration-stops-new-work",
+        "unknown-provider-effects-refuse-before-opening",
+        "actual-historical-login-drift-refuses-before-opening",
+        "failed-restoration-receipt-does-not-open-next-stage",
+        "profiled-current-actual-tls-locks-ordered-restoration-v2-profiled-outcome",
+        "profiled-current-actual-closed-bootstrap-owner-oids-grants-and-v2-receipts",
+        "profiled-current-actual-lost-commit-preserves-v2-uncertain-receipt-without-reopen",
+        "actual-readonly-financial-idempotency-and-sandbox-row-readback-refuses-real-stored-intent-drift"
+      ],
+      "checkCount": 12,
+      "stderrBytes": 552,
+      "scope": "Original exact source663c; bootstrap/restoration implementations unchanged by the correction. Not a corrected whole-tree execution claim."
+    }
+  },
+  "privatePairRedControl": {
+    "result": "EXPECTED_FAILURE_BEFORE_ROLE_CORRECTION",
+    "sourceRoleModuleCommit": "663c182fb9c79ae788bf694c8886ca6265d38594",
+    "sourceRoleModuleSha256": "0330e74ee075e85ca4c48aa1595d444efad8c49bee08369eb0112be3ef2488b0",
+    "testFixtureCommit": "df81897327086021bdf4dfa12e6a1f53e249f33a",
+    "testFixtureSha256": "795d5fb8106ffd1190c444662d70f9aa229b1d6ae5a9c9792bddb775b5e58979",
+    "genuineSameProfileSameTargetPrivateCredentialStillAuthenticates": true,
+    "publicPrivatePlanHashesDiffer": true,
+    "rawFailurePhase": "profiled-same-target-private-record-swap",
+    "stdoutBytes": 0,
+    "scope": "Mixed-source control: corrected test fixture against original role module; not a whole-commit pass."
+  },
+  "originalEvidenceArchive": {
+    "privatePath": "/private/tmp/p2q-frontend-db-profile-source-663c/manifest.json",
+    "manifestSha256": "7b809a3e2380fd80d6f98cf0733920eb300a2c90cc45e15ced3c4543d3400abf"
+  },
+  "limitations": {
+    "syntheticCandidateSourceAndImageSelectors": true,
+    "localNonPackagedCli": true,
+    "ownedBoundaryServer": true,
+    "actualDocker": false,
+    "providerTouched": false,
+    "liveResourceAllocation": false,
+    "candidatePublication": false,
+    "wholeEnvironmentVirginAuthority": false,
+    "wholeProfiledExecutionGraph": false,
+    "stagingReleaseAccepted": false,
+    "productionActivation": false
+  },
+  "notes": [
+    "Migration/restoration stderr contains the existing Node MODULE_TYPELESS_PACKAGE_JSON warning; it is retained without suppression.",
+    "The initial sandbox role attempt was refused before cluster/application work; a separate fixed loopback control observed EPERM. Escalated runs remained disposable loopback-only.",
+    "The qualified API empty-bootstrap primitive is separate from unavailable whole-environment first-install authority."
+  ],
+  "evidenceSha256": {
+    "README.md": {
+      "bytes": 4695,
+      "sha256": "463fb223224867772fc764e237a64cdeccf1a83f641743413ab1bae4dd0768a9"
+    },
+    "bootstrap-restoration-source-663c-pg16.stderr": {
+      "bytes": 552,
+      "sha256": "d0903ee50321caf50899df773aff2282ff2d15cb3dfc3175a924a253ceea9e0c"
+    },
+    "bootstrap-restoration-source-663c-pg16.stdout": {
+      "bytes": 1007,
+      "sha256": "92b7dfa984c76a7a5be91c456792e2a61c6235b66b4c4e5741893c4f843b5c66"
+    },
+    "bootstrap-restoration-source-663c-pg18.stderr": {
+      "bytes": 552,
+      "sha256": "9be6a7012ba235defb3bf70a6b8cd9c0e140694158d8458aee229da6e6723b2e"
+    },
+    "bootstrap-restoration-source-663c-pg18.stdout": {
+      "bytes": 1007,
+      "sha256": "2c51198fd906ab76aeb7599a793e84f336ef238067bb9ba92cda3a9117c51e6c"
+    },
+    "correction-lint.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "current-profile.canonical.json": {
+      "bytes": 371,
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    },
+    "focused-tests.txt": {
+      "bytes": 7600,
+      "sha256": "32eedfdd21eacc715dde480148989593ffecd099afd9eb8bb1bbbf8e334b5d42"
+    },
+    "initial-owned-lint.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "initial-sandbox-refusal.stderr": {
+      "bytes": 85,
+      "sha256": "4f8bd2fea52ea4e18cc9c84248eb08ab1590bf669488fdc3048ebbdc8019b997"
+    },
+    "migration-pg16.stderr": {
+      "bytes": 552,
+      "sha256": "3de663a7f60fe3f528da929379d4ee48ca517caf7c872dcfdfd350b5b7c31b69"
+    },
+    "migration-pg16.stdout": {
+      "bytes": 31064,
+      "sha256": "26f33967c4ff93e2d49809eeabefbb1facfa121db3fe75540e406721f79d89e6"
+    },
+    "migration-pg18.stderr": {
+      "bytes": 552,
+      "sha256": "1e6fba71bf7c5d85e0098cea032453481e79f4eda4d964b842f2c0f70dc2ccb9"
+    },
+    "migration-pg18.stdout": {
+      "bytes": 31064,
+      "sha256": "3d188cc937d5ceed5a03ff4950144c1816bc104dc13f41ad65b9febe540cf1f1"
+    },
+    "original-source-663c-tests.txt": {
+      "bytes": 7596,
+      "sha256": "9d1f668a5b9a915d2e43bdd82f176dc1bfb532a9ce6906cbc85f2b78f19cb39b"
+    },
+    "roles-pg16.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "roles-pg16.stdout": {
+      "bytes": 50886,
+      "sha256": "b6a10e5ab646f9558fd9e6303b14874a2ef55b25e0431cd38ae35674b0486c6f"
+    },
+    "roles-pg18.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "roles-pg18.stdout": {
+      "bytes": 50886,
+      "sha256": "f9fb9fa809bcc837d99fd84bdd7adc2b633b3fc79e8e37e6bb83e0df0f2d1fff"
+    },
+    "same-profile-private-swap-red.stderr": {
+      "bytes": 116,
+      "sha256": "48500a503f8d566d252c2a6f28cef41e2afe4f5fe0f7cbe15c5c7cb476e09fa3"
+    }
+  }
+}

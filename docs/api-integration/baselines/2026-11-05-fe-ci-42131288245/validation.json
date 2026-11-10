@@ -1,0 +1,459 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-06T00:07:22.107Z",
+  "status": "CI_FAILURE_RETAINED_CORRECTION_PENDING_FRESH_CI",
+  "run": {
+    "id": 42131288245,
+    "headSha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "failure",
+    "attempt": 1,
+    "htmlUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42131288245",
+    "headTree": "781e9b6f204484e32f8fbf0fffbe1af323628ef4",
+    "createdAt": "2026-11-05T23:41:19Z",
+    "updatedAt": "2026-11-05T23:49:10Z",
+    "pullRequests": [
+      {
+        "number": 93,
+        "head": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+        "base": "0d45f462c92a3de0af700e6f246bc4c57c8617b3"
+      }
+    ]
+  },
+  "phase2ContractManifestSha256": "sha256:2f22b8f19b02028781d5f763c75f58fdca5c575b6c21912a14955aeb2897882e",
+  "runner": {
+    "operatingSystem": "Ubuntu 26.04.1",
+    "image": "ubuntu-26.04",
+    "version": "20261101.186.1",
+    "runnerVersion": "2.338.2"
+  },
+  "jobs": [
+    {
+      "id": 127608254078,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "failure",
+      "failedSteps": [
+        {
+          "name": "Exercise the operator CLI without provider access",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 10
+        },
+        {
+          "name": "Retain frontend-runtime qualification",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 16
+        }
+      ],
+      "passedSteps": [
+        {
+          "number": 1,
+          "name": "Set up job"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+        },
+        {
+          "number": 3,
+          "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+        },
+        {
+          "number": 4,
+          "name": "Run npm ci"
+        },
+        {
+          "number": 5,
+          "name": "Enable the containerd image store for attested local builds"
+        },
+        {
+          "number": 6,
+          "name": "Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f"
+        },
+        {
+          "number": 7,
+          "name": "Build the immutable frontend migration image without publishing"
+        },
+        {
+          "number": 8,
+          "name": "Verify migration-only image boundaries offline"
+        },
+        {
+          "number": 9,
+          "name": "Build owned frontend PostgreSQL 18 fixture"
+        },
+        {
+          "number": 28,
+          "name": "Post Build the immutable frontend migration image without publishing"
+        },
+        {
+          "number": 29,
+          "name": "Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f"
+        },
+        {
+          "number": 30,
+          "name": "Post Enable the containerd image store for attested local builds"
+        },
+        {
+          "number": 32,
+          "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+        },
+        {
+          "number": 33,
+          "name": "Complete job"
+        }
+      ],
+      "skippedSteps": [
+        {
+          "number": 11,
+          "name": "Verify initial Course logins on owned PostgreSQL 18"
+        },
+        {
+          "number": 12,
+          "name": "Verify Community runtime credential handoff on owned PostgreSQL 18"
+        },
+        {
+          "number": 13,
+          "name": "Retain source-bound digest summary without private schema definitions"
+        },
+        {
+          "number": 14,
+          "name": "Retain raw frontend-runtime scan"
+        },
+        {
+          "number": 15,
+          "name": "Scan frontend migration image against verified backport evidence"
+        },
+        {
+          "number": 31,
+          "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+        }
+      ]
+    },
+    {
+      "id": 127608254623,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "failure",
+      "failedSteps": [
+        {
+          "name": "Scan gateway image against verified backport evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 17
+        }
+      ],
+      "passedSteps": [
+        {
+          "number": 1,
+          "name": "Set up job"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+        },
+        {
+          "number": 3,
+          "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+        },
+        {
+          "number": 4,
+          "name": "Enable the containerd image store for attested local builds"
+        },
+        {
+          "number": 5,
+          "name": "Run npm ci"
+        },
+        {
+          "number": 6,
+          "name": "Run npm ci --ignore-scripts --prefix ops/gateway"
+        },
+        {
+          "number": 7,
+          "name": "Run node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs"
+        },
+        {
+          "number": 8,
+          "name": "Run python3 -m unittest discover -s ops/platform/host -p '*_test.py'"
+        },
+        {
+          "number": 9,
+          "name": "Rehearse host forwarding rules in an isolated network namespace"
+        },
+        {
+          "number": 10,
+          "name": "Verify recreation source receiver and maintenance units offline"
+        },
+        {
+          "number": 11,
+          "name": "Verify actual Docker inspection with optional healthchecks"
+        },
+        {
+          "number": 12,
+          "name": "Run npm audit --audit-level=moderate --prefix ops/gateway"
+        },
+        {
+          "number": 13,
+          "name": "Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f"
+        },
+        {
+          "number": 14,
+          "name": "Build gateway and private TLS artifact"
+        },
+        {
+          "number": 15,
+          "name": "Refuse privileged or writable gateway image defaults"
+        },
+        {
+          "number": 16,
+          "name": "Retain raw gateway-runtime scan"
+        },
+        {
+          "number": 18,
+          "name": "Retain gateway-runtime qualification"
+        },
+        {
+          "number": 31,
+          "name": "Post Retain raw gateway-runtime scan"
+        },
+        {
+          "number": 32,
+          "name": "Post Build gateway and private TLS artifact"
+        },
+        {
+          "number": 33,
+          "name": "Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f"
+        },
+        {
+          "number": 34,
+          "name": "Post Enable the containerd image store for attested local builds"
+        },
+        {
+          "number": 36,
+          "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+        },
+        {
+          "number": 37,
+          "name": "Complete job"
+        }
+      ],
+      "skippedSteps": [
+        {
+          "number": 35,
+          "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+        }
+      ]
+    }
+  ],
+  "migration": {
+    "imageBuilt": true,
+    "imageDigest": "sha256:28359c5dae3896a16e0991d56689a7ec5fda8acc249f7eda1c0e3c949ddff2d6",
+    "offlineBoundariesPassed": true,
+    "postgres18FixtureBuilt": true,
+    "operatorRehearsalPassed": false,
+    "failurePhase": "frontend-bootstrap-owned-probe/configuration",
+    "underlyingExceptionHidden": true,
+    "independentImportDiagnostic": {
+      "revision": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+      "directory": "/private/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/fe-ci42131288245-import-pOLUWn",
+      "manifestOnly": {
+        "status": 1,
+        "diagnostic": "Error: Cannot find module '../../../contracts/api-integration/v1/course-api.json'"
+      },
+      "completeV1": {
+        "status": 0,
+        "stdout": "V1_RESPONSE_VALIDATION_IMPORT_PASS"
+      },
+      "productionFilesModified": false,
+      "databaseOrProviderCalls": false
+    }
+  },
+  "gateway": {
+    "imageBuilt": true,
+    "preNativeChecksPassed": true,
+    "nativeQualified": false,
+    "failure": "Independent reference negative-control build rejected",
+    "expectedAssertionStderrPresent": true,
+    "frontendReferenceReturncode": null,
+    "verifierResult": "PATCHED_RUNTIME_VERIFICATION_FAILED",
+    "artifact": {
+      "id": 13462594878,
+      "name": "gateway-runtime-qualification",
+      "zipSha256": "2898d0d8801c41e65a0c3ceb6309f27615a30440853ca054596977bb38bdb731",
+      "verifiedAgainstGitHubDigest": true,
+      "entries": [
+        "gateway-runtime-raw.json"
+      ],
+      "verificationRecordProduced": false,
+      "sbomProduced": false,
+      "vexProduced": false
+    },
+    "rawScan": {
+      "artifactName": "lash-her-gateway:ci",
+      "imageId": "sha256:3fd5bf0c658e7626d1b800c43b07355ac73220b046031a65f47e12af30e6b61d",
+      "repoDigests": [
+        "lash-her-gateway@sha256:3fd5bf0c658e7626d1b800c43b07355ac73220b046031a65f47e12af30e6b61d"
+      ],
+      "architecture": "amd64"
+    }
+  },
+  "artifacts": [
+    {
+      "id": 13463427050,
+      "name": "princessdardan~lash-her-frontend~ZR2ETA.dockerbuild",
+      "size_in_bytes": 72247,
+      "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13463427050",
+      "archive_download_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13463427050/zip",
+      "expired": false,
+      "created_at": "2026-11-05T23:43:44Z",
+      "expires_at": "2027-02-03T23:41:19Z",
+      "updated_at": "2026-11-05T23:43:44Z",
+      "digest": "sha256:eafa7902364a1c408a29d8a34bd0bd6e66bd77ba158c457907646c9fd2c881c6",
+      "workflow_run": {
+        "id": 42131288245,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65"
+      }
+    },
+    {
+      "id": 13462729582,
+      "name": "princessdardan~lash-her-frontend~G3L0OC.dockerbuild",
+      "size_in_bytes": 67477,
+      "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462729582",
+      "archive_download_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462729582/zip",
+      "expired": false,
+      "created_at": "2026-11-05T23:45:13Z",
+      "expires_at": "2027-02-03T23:41:19Z",
+      "updated_at": "2026-11-05T23:45:13Z",
+      "digest": "sha256:470ef891f7abd59b07a93304bb0b6fee030833516b7348c2e9e7ee53e99c1faf",
+      "workflow_run": {
+        "id": 42131288245,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65"
+      }
+    },
+    {
+      "id": 13462594878,
+      "name": "gateway-runtime-qualification",
+      "size_in_bytes": 33804,
+      "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462594878",
+      "archive_download_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462594878/zip",
+      "expired": false,
+      "created_at": "2026-11-05T23:45:12Z",
+      "expires_at": "2026-11-15T23:45:11Z",
+      "updated_at": "2026-11-05T23:45:12Z",
+      "digest": "sha256:2898d0d8801c41e65a0c3ceb6309f27615a30440853ca054596977bb38bdb731",
+      "workflow_run": {
+        "id": 42131288245,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65"
+      }
+    }
+  ],
+  "correction": {
+    "commit": "afdf0b64c2c125eb08f18fa627bdb1e8348fbbc5",
+    "files": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/platform-artifacts.yml",
+      "ops/platform/frontend-source-copy.test.mjs",
+      "ops/platform/platform.test.mjs",
+      "ops/platform/source-gate.md"
+    ],
+    "nativeFilesChanged": [],
+    "sqlDockerfileChanged": false,
+    "sqlDockerignoreChanged": false,
+    "legacyV1TreeBefore": "07e6ef587289a3a692418ad6eb51b5a39fc0e963",
+    "legacyV1TreeAfter": "07e6ef587289a3a692418ad6eb51b5a39fc0e963",
+    "qualificationRunner": "ubuntu-24.04",
+    "acceptancePredicateChanged": false,
+    "runtimeCapabilityOrSecurityOptionChanged": false,
+    "tests": {
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 1043.278458,
+      "log": "workflow-guards-pass.log"
+    },
+    "lintPassed": true,
+    "yamlPassed": true,
+    "diffCheckPassed": true,
+    "freshNativeCIRequired": true,
+    "localDockerOrFullSuiteRepeated": false
+  },
+  "scope": [
+    "Read-only GitHub job/log/artifact retrieval",
+    "Import-only diagnosis without database or provider calls",
+    "Root-approved workflow runner and readonly fixture mount correction",
+    "No source/native acceptance guard relaxation",
+    "No workflow rerun or live environment changes"
+  ],
+  "nativeSourceInventory": "native-source-inventory.json",
+  "files": {
+    "frontend-operator-migrations.log": {
+      "sha256": "203a090087af2234c0e4d9d2a157d70344cd34c13056376c9d82a6eca3b09519",
+      "bytes": 204921
+    },
+    "gateway-and-platform.log": {
+      "sha256": "ed82f2e5ab785e1d23f9a29c8f2721c1e2f1023e60c7b72b930d54ded82835b1",
+      "bytes": 302728
+    },
+    "run-and-artifacts.json": {
+      "sha256": "86fa2e6ade671774c4b573f3ba82091f74362695d702dc8486417fc2b2497f23",
+      "bytes": 12391
+    },
+    "gateway-runtime-qualification.zip": {
+      "sha256": "2898d0d8801c41e65a0c3ceb6309f27615a30440853ca054596977bb38bdb731",
+      "bytes": 33804
+    },
+    "gateway-runtime-raw.json": {
+      "sha256": "994a728be3d028f5105776e024c8fcb12a74ba9cf54d84d94e238ecc12ffe1df",
+      "bytes": 253586
+    },
+    "diagnostic.json": {
+      "sha256": "a44c10a740caad902a35e08ecd7031336560c84722b0d3d9ab01632d528b095c",
+      "bytes": 474
+    },
+    "manifest-only-import.stderr.log": {
+      "sha256": "7215e07daf6f04c8effcee54a443ef85bb1998d20c250f6cc8b07ee0f24a2437",
+      "bytes": 1675
+    },
+    "manifest-only-import.stdout.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "complete-v1-import.stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "complete-v1-import.stdout.log": {
+      "sha256": "ab05a046233ff7db0066753c600ee053e83d4dc8d996bf1508676674b8641e07",
+      "bytes": 35
+    },
+    "workflow-guards-pass.log": {
+      "sha256": "d6639181ca32498c2d04da7ae3c988f1b07dbe83018e700f73e801899caf7c33",
+      "bytes": 3492
+    },
+    "workflow-guard-syntax-failure.log": {
+      "sha256": "20781bf70244633a370404145c21ada9927eeeb311aa63f926d69a28e7d72945",
+      "bytes": 3973
+    },
+    "native-source-inventory.json": {
+      "sha256": "cfe736f32c284a4e31019812cbf7bd9f7bb3a896353d12a55d83035be7843ac0",
+      "bytes": 989
+    },
+    "README.md": {
+      "sha256": "98f0207b57191204be1bd022d3c484c3a2b69800ee765f6c19d179abd898a438",
+      "bytes": 3785
+    }
+  }
+}

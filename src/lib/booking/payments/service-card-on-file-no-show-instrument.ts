@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type { SquareInvoicesClient } from "@/lib/payments/square/invoice-client";
 
 import type { NoShowInstrumentStep } from "./service-card-on-file";
@@ -44,6 +45,7 @@ export function createCardOnFileNoShowInstrumentStep(
 
         return { status: result.status };
       } catch (error) {
+        markWriterOperationUncertain();
         const reason =
           error instanceof Error
             ? error.message
@@ -59,6 +61,7 @@ export function createCardOnFileNoShowInstrumentStep(
               status: "manual_followup",
             });
           } catch {
+            markWriterOperationUncertain();
             throw new NoShowInvoiceBlockedError(
               error instanceof Error
                 ? error.message

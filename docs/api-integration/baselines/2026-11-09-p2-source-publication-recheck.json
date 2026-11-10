@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "scope": "Read-only GitHub recheck of the Phase 2 candidate publication prerequisites",
+  "observedOn": "2026-11-09",
+  "pullRequests": [
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "number": 10,
+      "url": "https://github.com/princessdardan/lash-her-course-api/pull/10",
+      "base": "main",
+      "baseSha": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+      "head": "codex/p2q-resource-reuse",
+      "headSha": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "mergeable": true,
+      "successfulWorkflowRuns": [
+        42318763350
+      ]
+    },
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "number": 11,
+      "url": "https://github.com/princessdardan/lash-her-course-api/pull/11",
+      "base": "main",
+      "baseSha": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+      "head": "codex/p2q-course-runtime-fixes-review",
+      "headSha": "4880cfedd10dab3e7bcac9b17fcd737ee882e077",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "mergeable": true,
+      "successfulWorkflowRuns": [
+        42401365759
+      ]
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "number": 9,
+      "url": "https://github.com/princessdardan/lash-her-community-api/pull/9",
+      "base": "main",
+      "baseSha": "52492aa7d68ca6fefb444b2046976f79fd0091b4",
+      "head": "codex/p2q-resource-reuse",
+      "headSha": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "mergeable": true,
+      "successfulWorkflowRuns": [
+        42318757611,
+        42318757800
+      ]
+    },
+    {
+      "repository": "princessdardan/lash-her-frontend",
+      "number": 93,
+      "url": "https://github.com/princessdardan/lash-her-frontend/pull/93",
+      "base": "staging",
+      "baseSha": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+      "head": "codex/phase2-integration",
+      "headSha": "f78cf3af38665acca73d111fe1241e0a3d99bfe0",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "mergeable": true,
+      "successfulWorkflowRuns": [
+        42339874540
+      ]
+    }
+  ],
+  "courseReviewHeadsComparison": {
+    "base": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+    "head": "4880cfedd10dab3e7bcac9b17fcd737ee882e077",
+    "status": "diverged",
+    "aheadBy": 4,
+    "behindBy": 1,
+    "changedPaths": [
+      "src/entitlements/admin-entitlement-command.repository.ts",
+      "src/entitlements/entitlement.repository.ts",
+      "src/integrations/community/persistence/enrollment-transition.repository.ts",
+      "src/video/media-lifecycle.repository.ts",
+      "src/video/media-lifecycle.ts",
+      "src/video/video.routes.ts",
+      "tests/database.integration.test.ts",
+      "tests/free-enrollment.database.test.ts",
+      "tests/media-lifecycle.database.test.ts",
+      "tests/video.test.ts"
+    ]
+  },
+  "frontendLocalSourceAtRecheck": "baca88a0c2d59312f0e706f90bae64c134b8c124",
+  "candidatePublished": false
+}

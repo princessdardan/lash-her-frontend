@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_A_REVIEW_CORRECTIONS_SOURCE_PREPARATION_PASS",
+  "corrects": "2d905186c8a0a8d278ff657b16bd00f65e0697d3",
+  "originalReproductionSha256": "3f4d3977d7e0590ca2ee7d263a197208f75971c55245f2b36769e1f3d9b40c0c",
+  "hostTests": {
+    "passed": 11,
+    "skipped": 0
+  },
+  "concurrency": {
+    "secondConsumerRefusedBeforeVerifier": true,
+    "verificationFailurePoisonsCapability": true
+  },
+  "exactOperations": {
+    "uncertain503": 1,
+    "completed200": 1,
+    "thirdCompletedBeforeSettlementRefused": true
+  },
+  "ownedPostgres": {
+    "16": {
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceDomainFaultRefusals": 11,
+      "extraCompletedSettlementOperationRefused": true,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "platform": "macOS-owned-loopback-TLS"
+    },
+    "18": {
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceDomainFaultRefusals": 11,
+      "extraCompletedSettlementOperationRefused": true,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "platform": "macOS-owned-loopback-TLS"
+    }
+  },
+  "lint": "PASS",
+  "syntax": "PASS",
+  "newOperationalFiles": 0,
+  "sourceIssuerParentIntegrated": false,
+  "typedRuntimeConsumerIntegrated": false,
+  "independentReview": "OPEN",
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "liveOperations": false,
+  "files": {
+    "ops/platform/host/p2_known_ack_loss.py": "ddaeba2358664e1f822cd9f8324468b9955e047764a5124ffb86696cde399bf6",
+    "ops/platform/host/p2_known_ack_loss_test.py": "7d37ff20945557cf657fba88699a205b66e32af27b28daa783a87a6ebe415871",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "3d462b405784ece566048eb6b210659b0d602e24ecbd5ff4cfd8fdeb0e49a273",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-a-review-corrections/README.md": "adfa6f8461c3e3c79af6073525476ce8694c696a2a41eefb4059d6566e222a4c",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-a-review-corrections/original-2d-reproduce.py": "3f4d3977d7e0590ca2ee7d263a197208f75971c55245f2b36769e1f3d9b40c0c",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-a-review-corrections/original-2d-reproduction.json": "7a0999aec1e825dfe1e1187d54c67f9902ffd68bea681c51fb5f740b02ac79ca",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-a-review-corrections/owned-postgres16.json": "12e156843243e85565832a8deef5236615b0935c5249ac8a4886795d818417ad",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-a-review-corrections/owned-postgres18.json": "33f570ca828f6331d206fbf7f9b786477fe6508261133cd3d54980640338a3dd"
+  }
+}

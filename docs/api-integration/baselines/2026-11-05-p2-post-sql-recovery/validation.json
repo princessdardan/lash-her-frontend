@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "baseRoot": "53fc4047",
+  "implementationScope": "NEW recovery files only; authored shared dependencies consumed unchanged",
+  "checks": {
+    "nodeTests": 5,
+    "hostTests": 13,
+    "ownedDatabasePhysicalChecks": 14,
+    "frontendMigrations": 83,
+    "courseMigrations": 22,
+    "communityMigrations": 11,
+    "postgresMajorExecuted": 16,
+    "postgres18RequiredInCI": true,
+    "postgres18ExecutedLocally": false,
+    "syntaxChecksPassed": true,
+    "diffCheckPassed": true
+  },
+  "handoff": {
+    "eligibleFiles": 392,
+    "decodedBytes": 37323931,
+    "fileLimit": 400,
+    "decodedByteLimit": 40000000
+  },
+  "claims": {
+    "liveOperations": false,
+    "cloudSecretFetch": false,
+    "dockerDesktopUsed": false,
+    "sqlReplay": false,
+    "originalFrontendTerminalRecreated": false,
+    "newBuildOrPromotionImplemented": false,
+    "wholeReleaseAccepted": false
+  },
+  "openConditions": [
+    "separate failed/canceled/unknown/never-started build forward action",
+    "expired immutable private probe",
+    "required exact-source PG18 CI execution",
+    "Dardan reviewed start before any actual staging recovery"
+  ],
+  "fileSha256": {
+    "ops/platform/p2-post-sql-recovery.mjs": "3c830efd50e1e16b9459f6958d812bd5538f204ed16013439bec646fa8d0926e",
+    "ops/platform/p2-post-sql-recovery.test.mjs": "447eba64f2671a7fbcc4d5d416bbde36e0e31366d41588a6162b81b50b604ba6",
+    "ops/platform/p2-recovery-api-current-probe.mjs": "0b08d6e54af5c39ad5d44bd7b89a71587cd0fa8681369f69bfa4f9937cea08b5",
+    "ops/platform/p2-recovery-current-probe.mjs": "0120e203006fd5ecfd5d82156f3bc3881a24ea2cce41a35201283ba0579fb356",
+    "ops/platform/p2-recovery-frontend-observation.mjs": "e15deb9f1624fdaee646888854c1b2f59a6f2f36efeabf79b94f03966281d3a7",
+    "ops/platform/p2-recovery-transport.mjs": "caab3573cf1fc085d99a782fae75f6ed40dad6c79ec1f7639e5e05a2791b7c1e",
+    "ops/platform/p2-recovery-transport.test.mjs": "d6a1e8d836f2943652f863807be9733ac064ce71401b0af9dddbee687eda1819",
+    "ops/platform/p2-recovery.mjs": "944c48bbf3f656dde287f0667f4a4c668225b481c22854e69a9737990b94e4be",
+    "ops/platform/test-p2-recovery-owned.mjs": "686f11f5b51ebc94138520d2b8c246fc1e5def3e1e0b651878017478da53a909",
+    "ops/platform/test-p2-recovery-owned.py": "d2e13947ce3dd45b8eff1fe62140f5cee26b672d2f1ef3d2900d1e8f90794293",
+    "ops/platform/host/p2_recovery_broker.py": "eb01b7b38fe3b87c77575b4dd5b5af37d9fdac97a5f0debab88e34c47cf5be98",
+    "ops/platform/host/p2_recovery_frontend_observation.py": "cfbc6235cebb0c71f227afef341cb0ab1c2f0b624b581afda4c961a6c940fa94",
+    "ops/platform/host/p2_recovery_runtime.py": "e3568fc2862a9fd91b6670d685b8339019b608f1576f5c3ea507f3ca9523bfb4",
+    "ops/platform/host/p2_recovery_scope.py": "4ca8e843858ed8be0eaaf128d2d429408cf99579ee4931a81332e55327ad3c17",
+    "ops/platform/host/p2_recovery_supervisor.py": "64663e555d613664bac9f60f20e18bf74634baf5f433fc4e825ea58f7308e87f",
+    "ops/platform/host/p2_recovery_test.py": "08d4abd09f754720af737111132c698f0c1b756d92a69311200e36fe4710ab5c",
+    "docs/api-integration/operator-p2-post-sql-recovery.md": "1c77a31aad4ed35df115fc2385b0185fe15fea86bf704de45752d94cfa6298bf",
+    "docs/api-integration/baselines/2026-11-05-p2-post-sql-recovery/README.md": "51648362387bf651c56b13079ded395f1cc3a04c4b12952ce073f0bdaf38ec41",
+    "docs/api-integration/baselines/2026-11-05-p2-post-sql-recovery/host-tests.log": "33a3dd3759be9869d043e694ba15fff061c7e7897b7c9f4dfb2c395de0d5a752",
+    "docs/api-integration/baselines/2026-11-05-p2-post-sql-recovery/migration-sources.json": "678882534274f892d5b9e6054c1f41becb608bebb23bea5485ae2cc948798cb6",
+    "docs/api-integration/baselines/2026-11-05-p2-post-sql-recovery/node-tests.log": "41579a11174bcbd54afa28d9c263c1f7ddcc4a46b5c9ff159287a891c6216929",
+    "docs/api-integration/baselines/2026-11-05-p2-post-sql-recovery/owned-postgres16.log": "2b3da091e0f65cfa94100a632f9cc859c808a2ba10401ac64a0747209be0ab7a"
+  }
+}

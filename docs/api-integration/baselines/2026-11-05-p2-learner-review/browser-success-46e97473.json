@@ -1,0 +1,1085 @@
+{
+  "config": {
+    "configFile": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.playwright.config.ts",
+    "rootDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/tmp/phase2-learner-browser-46e97473",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "learning.spec.ts"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/private/tmp/phase2-learner-browser-46e97473",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "learning.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": {
+      "command": "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3111",
+      "cwd": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner",
+      "url": "http://127.0.0.1:3111/courses",
+      "reuseExistingServer": false,
+      "timeout": 120000,
+      "env": {
+        "LEARNING_E2E_FIXTURE": "1",
+        "DATABASE_URL": "postgresql://dardan@127.0.0.1:5432/lash_phase2_learner_review_20261105?sslmode=disable",
+        "FRONTEND_WRITER_ADMISSION_MODE": "off",
+        "CUSTOMER_AUTH_ENABLED": "true",
+        "INTEGRATION_CUSTOMER_ACCESS_ENABLED": "true",
+        "INTEGRATION_COURSE_READS_ENABLED": "true",
+        "INTEGRATION_LEARNING_ROUTES_ENABLED": "true",
+        "CUSTOMER_AUTH_URL": "http://127.0.0.1:3111",
+        "CUSTOMER_AUTH_SECRET": "learning-e2e-customer-auth-secret-0123456789",
+        "CUSTOMER_AUTH_GOOGLE_ID": "learning-e2e-google-client",
+        "CUSTOMER_AUTH_GOOGLE_SECRET": "learning-e2e-google-secret",
+        "CUSTOMER_AUTH_RESEND_KEY": "learning-e2e-resend-key",
+        "CUSTOMER_AUTH_EMAIL_FROM": "Learning <test@example.invalid>",
+        "AUTH_URL": "http://127.0.0.1:3111",
+        "AUTH_SECRET": "learning-e2e-admin-auth-secret-0123456789",
+        "AUTH_GOOGLE_ID": "learning-e2e-admin-google-client",
+        "AUTH_GOOGLE_SECRET": "learning-e2e-admin-google-secret",
+        "COURSE_LEARNER_JWT_CURRENT_SECRET": "learning-e2e-course-learner-secret-0123456789",
+        "COURSE_LEARNER_JWT_PREVIOUS_SECRET": "",
+        "API_GATEWAY_STAGING_ORIGIN": "https://learning-gateway.example.invalid",
+        "VERCEL_OIDC_TOKEN": "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3OTM5MjQ0OTJ9.fixture",
+        "VERCEL_OIDC_TOKEN_FILE": "",
+        "APP_ENV": "staging",
+        "VERCEL": "1",
+        "VERCEL_ENV": "production",
+        "VERCEL_TARGET_ENV": "production",
+        "APP_VERCEL_TEAM_ID": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+        "VERCEL_PROJECT_ID": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "NEXT_PUBLIC_SANITY_PROJECT_ID": "7o23yrvk",
+        "NEXT_PUBLIC_SANITY_DATASET": "staging-2026-05-10",
+        "SANITY_API_READ_TOKEN": "",
+        "SANITY_WRITE_TOKEN": "",
+        "RESEND_API_KEY": "",
+        "KV_REST_API_URL": "",
+        "KV_REST_API_TOKEN": "",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "",
+        "NODE_OPTIONS": "--require=/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/support/learning-fetch-fixture.cjs"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "learning.spec.ts",
+      "file": "learning.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "anonymous catalog/detail reveal public metadata, keep canonical URL and direct protected learning to customer sign-in",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1726,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:35.159Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-2abab31208b041013fb1",
+          "file": "learning.spec.ts",
+          "line": 94,
+          "column": 5
+        },
+        {
+          "title": "free enrollment, signed player, keyboard assessment and another-device resume use the server account",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6168,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:36.965Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-98f7bc439fc56c3071ba",
+          "file": "learning.spec.ts",
+          "line": 120,
+          "column": 5
+        },
+        {
+          "title": "stale progress reloads the other device revision and never silently overwrites its saved position",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1233,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:43.143Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-7c68efaa926f820b9d63",
+          "file": "learning.spec.ts",
+          "line": 249,
+          "column": 5
+        },
+        {
+          "title": "media processing and access denial remain usable and provide explicit recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 765,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:44.382Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-4a96f12471315650751e",
+          "file": "learning.spec.ts",
+          "line": 303,
+          "column": 5
+        },
+        {
+          "title": "scheduled playback renewal rechecks access and removes the player when access ends",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1973,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:45.158Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-97d7cf4d1c613994c117",
+          "file": "learning.spec.ts",
+          "line": 345,
+          "column": 5
+        },
+        {
+          "title": "failed completion read can be retried without another assessment or progress write",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1101,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:47.136Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-11b162e8c9768cd7154e",
+          "file": "learning.spec.ts",
+          "line": 392,
+          "column": 5
+        },
+        {
+          "title": "page-exit flush keeps its final position request keepalive behind an active heartbeat",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1467,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:48.242Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-2970acc93bf3a1bfe5a5",
+          "file": "learning.spec.ts",
+          "line": 430,
+          "column": 5
+        },
+        {
+          "title": "authorization expiry removes the player while renewal is stalled and refuses a late expired response",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4830,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:49.714Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-714ab29dba3262fbaaf3",
+          "file": "learning.spec.ts",
+          "line": 533,
+          "column": 5
+        },
+        {
+          "title": "public preview does not offer assessment outage recovery or saved completion",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 470,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:54.549Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-d2c587729f3ed13e7920",
+          "file": "learning.spec.ts",
+          "line": 584,
+          "column": 5
+        },
+        {
+          "title": "SPA navigation flushes the latest played position before its player ref is detached",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4226,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:55.024Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-d939ea5435ae23da1ae7",
+          "file": "learning.spec.ts",
+          "line": 613,
+          "column": 5
+        },
+        {
+          "title": "another account cannot reuse learning state and a suspended session cannot renew playback",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2180,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:21:59.254Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-3402cc086acf08b0156d",
+          "file": "learning.spec.ts",
+          "line": 659,
+          "column": 5
+        },
+        {
+          "title": "practice completion is authoritative even with an incorrect score and supports retries",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1190,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:01.438Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-fd015b43567e6ba393f2",
+          "file": "learning.spec.ts",
+          "line": 743,
+          "column": 5
+        },
+        {
+          "title": "explicit revised assessment refresh settles pending resume and removes old completion",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1527,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:02.633Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-0225e4a6c0a4d71c7a58",
+          "file": "learning.spec.ts",
+          "line": 789,
+          "column": 5
+        },
+        {
+          "title": "revised assessment refresh preserves an unknown progress outcome until explicit revision recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1612,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:04.164Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-c9aad07bfb5c6bf122a8",
+          "file": "learning.spec.ts",
+          "line": 885,
+          "column": 5
+        },
+        {
+          "title": "anonymous catalog/detail reveal public metadata, keep canonical URL and direct protected learning to customer sign-in",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 732,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:06.162Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-da9229018a8f4405ff34",
+          "file": "learning.spec.ts",
+          "line": 94,
+          "column": 5
+        },
+        {
+          "title": "free enrollment, signed player, keyboard assessment and another-device resume use the server account",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2744,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:06.986Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-fcda18deb532d8a34566",
+          "file": "learning.spec.ts",
+          "line": 120,
+          "column": 5
+        },
+        {
+          "title": "stale progress reloads the other device revision and never silently overwrites its saved position",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1254,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:09.735Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-c84f5ecfe641578f3237",
+          "file": "learning.spec.ts",
+          "line": 249,
+          "column": 5
+        },
+        {
+          "title": "media processing and access denial remain usable and provide explicit recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 785,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:10.994Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-a41afcf9ee371b448c17",
+          "file": "learning.spec.ts",
+          "line": 303,
+          "column": 5
+        },
+        {
+          "title": "scheduled playback renewal rechecks access and removes the player when access ends",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2057,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:11.783Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-5076a98cdda200bcd583",
+          "file": "learning.spec.ts",
+          "line": 345,
+          "column": 5
+        },
+        {
+          "title": "failed completion read can be retried without another assessment or progress write",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1075,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:13.845Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-561fbc643a155cd3acec",
+          "file": "learning.spec.ts",
+          "line": 392,
+          "column": 5
+        },
+        {
+          "title": "page-exit flush keeps its final position request keepalive behind an active heartbeat",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1244,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:14.925Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-952996bd3b9dd16238fc",
+          "file": "learning.spec.ts",
+          "line": 430,
+          "column": 5
+        },
+        {
+          "title": "authorization expiry removes the player while renewal is stalled and refuses a late expired response",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4885,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:16.173Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-e14324c1717d6b8d3b4f",
+          "file": "learning.spec.ts",
+          "line": 533,
+          "column": 5
+        },
+        {
+          "title": "public preview does not offer assessment outage recovery or saved completion",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 406,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:21.063Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-13f69534364c8481ca74",
+          "file": "learning.spec.ts",
+          "line": 584,
+          "column": 5
+        },
+        {
+          "title": "SPA navigation flushes the latest played position before its player ref is detached",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4187,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:21.477Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-4e60e506e8b5c75ea120",
+          "file": "learning.spec.ts",
+          "line": 613,
+          "column": 5
+        },
+        {
+          "title": "another account cannot reuse learning state and a suspended session cannot renew playback",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2088,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:25.668Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-2744b4ed16fecdfe7226",
+          "file": "learning.spec.ts",
+          "line": 659,
+          "column": 5
+        },
+        {
+          "title": "practice completion is authoritative even with an incorrect score and supports retries",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1221,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:27.760Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-f7f29b28c96626b506ef",
+          "file": "learning.spec.ts",
+          "line": 743,
+          "column": 5
+        },
+        {
+          "title": "explicit revised assessment refresh settles pending resume and removes old completion",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2167,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:28.986Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-323e4f947efbe0f7db60",
+          "file": "learning.spec.ts",
+          "line": 789,
+          "column": 5
+        },
+        {
+          "title": "revised assessment refresh preserves an unknown progress outcome until explicit revision recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1468,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:22:31.163Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-a151467b8b4fdc62dc05",
+          "file": "learning.spec.ts",
+          "line": 885,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-05T22:21:32.828Z",
+    "duration": 59889.733,
+    "expected": 28,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

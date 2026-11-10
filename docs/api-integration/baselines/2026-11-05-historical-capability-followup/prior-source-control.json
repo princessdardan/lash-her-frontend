@@ -1,0 +1,20 @@
+{
+  "status": "MISSING_REVIEWED_PREDICATES_REPRODUCED",
+  "fixtureOnly": true,
+  "actualHistoricalDeploymentObserved": false,
+  "priorCommit": "502b7d2fe15edf2cf62ace1bf27a358c218554ce",
+  "priorModuleSha256": "eb5e8c974d29ee60d42417d8fa84bfce68c958fce11af95b15adb7ce2dcdaa2e",
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+  "requirementsSha256": "14d1c6dbe0e53733ce9eb332f24d077d670aaa359fab2514d992d87a09e59300",
+  "closedFamilies": 30,
+  "unresolvedFamilyIds": [
+    "google.identity",
+    "google.oauth",
+    "google.calendar",
+    "sanity.editorial",
+    "sanity.callbacks",
+    "mux.studio"
+  ],
+  "liveProviderCalls": 0
+}

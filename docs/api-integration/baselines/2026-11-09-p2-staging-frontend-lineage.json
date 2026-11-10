@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "scope": "Read-only direct staging frontend journal recheck",
+  "observation": {
+    "status": "FRONTEND_LINEAGE_PENDING",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    },
+    "environment": "staging",
+    "sourceCommit": "88be852d00170b2d14c7f43bac7f8217735488c3",
+    "observedAt": "2026-11-09T22:22:57.938Z",
+    "journalPresent": true,
+    "appliedCount": 80,
+    "expectedMigrationCount": 83,
+    "lastApplied": {
+      "tag": "0079_highlevel_marketing_ownership",
+      "folderMillis": 1792530952883,
+      "hash": "e0ac5e3dfece876f694ed6ad3a50e65e49a6c5523a872d96794ea1c898f09d73"
+    },
+    "pendingTags": [
+      "0080_customer_identity",
+      "0081_customer_auth_throttle_expiry",
+      "0082_customer_account_lifecycle"
+    ],
+    "appliedPrefixSha256": "feebfa511eb3ab0a90595d2c34dfc15409c237ec999f0522a725e6dc84eea6c9",
+    "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+    "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+    "phase2ContractManifestSha256": "sha256:41be13b4727d453ee1fb059ee8071c9483c079d4cdd57971bb38a00885acb431",
+    "verifiedTls": true,
+    "readOnlyVerified": true,
+    "migrationLockVerified": true,
+    "samePhysicalSessionVerified": true,
+    "applicationSqlApplied": false,
+    "bootstrapAuthorized": false,
+    "migrationAuthorized": false,
+    "trafficAuthorized": false
+  },
+  "matchesPreviousTargetDatabaseRoleAndPrefix": true,
+  "namedAwsSessionReused": true,
+  "currentOnlyReleaseEligible": false,
+  "replacementTargetSelected": false,
+  "privateArchive": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-profiled-current-integration/test-results/p2-frontend-replacement/2026-11-09/live-lineage-88be852d",
+  "privateArtifactSha256": {
+    "frontend-lineage-observation.json": "3be62c17a2e7946f33daaf59c2a499c851dc8b7f00a6447f64e757961533f722",
+    "lineage-request.json": "61b9de0471e99b6042dac3b4dab3198f3104e4b2b7afbdff0c38f3462e51da90",
+    "final.stdout": "aad74eba9de599e007c1c6b4ff7bb05721ec777dff0822c49174ef8091d649f1"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "README.md": {
+    "sha256": "4e5899c8eab3028cea3b93eb6337dfa30f8a1f6ddba52673ba803fcbe897f351",
+    "bytes": 6129
+  },
+  "actual-source-checks.json": {
+    "sha256": "5f272e883083ca91c932fc33b0bc5ec480a2419e568d7c5cb42a0a9c07a60fb1",
+    "bytes": 1774
+  },
+  "actual-source-generation.json": {
+    "sha256": "bb0118499ceb225efbba5b3395276dad85049a9045fc5c367133fa80c20fdf69",
+    "bytes": 432
+  },
+  "compile-pass.txt": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "create-owned-source-context.mjs": {
+    "sha256": "93177ac83355e182e932b15940f0c0e94b2be5663e346e8a3de5a9327f1af838",
+    "bytes": 3296
+  },
+  "frozen-current-source-reproduction.json": {
+    "sha256": "4f158070236a53249da1d443cf1fb563ae51fd00119bf0c6b07822ff2b492ef9",
+    "bytes": 806
+  },
+  "frozen-nine-regressions.txt": {
+    "sha256": "f147324c00651a2f52aa8c5dfcb3e677c33e4001df9b79f01bea50214d3335f5",
+    "bytes": 9355
+  },
+  "frozen-reproduction.json": {
+    "sha256": "a5c8d8eb79f381fee0fa7c36696c092c8d04ecb69d8fc48d2669b378033eacf6",
+    "bytes": 806
+  },
+  "owned-domain-38-pass.txt": {
+    "sha256": "b3950da0c8e05fe51398080917898eca116e523edeafe5624dc0ddffd3aed35f",
+    "bytes": 8059
+  },
+  "reproduce-pre-fix.py": {
+    "sha256": "a4567839393813f06af1a485c0a60c2affe4da58db5cd4c530f2ae2ece28bc99",
+    "bytes": 4357
+  },
+  "validation.json": {
+    "sha256": "5e45cce723f9105b9df218ed60537d6dcee7f66be43bd7c45588347d160c9bce",
+    "bytes": 2089
+  },
+  "verify-source-context.py": {
+    "sha256": "d12c3c44b18e768f05a1cfc851c781a328e814096d0dc458f47385b43822f78c",
+    "bytes": 5314
+  }
+}

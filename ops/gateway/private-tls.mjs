@@ -5,6 +5,7 @@ import { isIP } from "node:net";
 import { pathToFileURL } from "node:url";
 import { X509Certificate } from "node:crypto";
 import { createOperationsServer } from "./operations.mjs";
+import { SCOPED_MUX_HEADER } from "./admission.mjs";
 
 // Each application is on a two-peer backend network with this TLS terminator.
 // The application trusts only this proxy's address, never the whole mesh CIDR.
@@ -13,7 +14,7 @@ export function createPrivateTlsProxy(config) {
   if (upstream.protocol !== "http:" || upstream.username || upstream.password || upstream.pathname !== "/" || upstream.search || upstream.hash) throw new Error("Invalid private backend");
   if (!Array.isArray(config.peers) || config.peers.length === 0 || config.peers.some((peer) =>
     !isIP(peer.address) || !Array.isArray(peer.routes) || peer.routes.length === 0 ||
-    peer.routes.some((route) => !["GET", "POST", "PATCH"].includes(route.method) || !/^\/[A-Za-z0-9/{}_-]+$/u.test(route.path)))) throw new Error("Invalid private peer policy");
+    peer.routes.some((route) => !["GET", "POST", "PATCH", "PUT", "DELETE"].includes(route.method) || !/^\/[A-Za-z0-9/{}_-]+$/u.test(route.path)))) throw new Error("Invalid private peer policy");
   const agent = new Agent({ keepAlive: true, maxSockets: 32, maxFreeSockets: 4 });
   const server = createServer({ key: readFileSync(config.keyFile), cert: readFileSync(config.certFile),
     minVersion: "TLSv1.2", maxHeaderSize: 24 * 1024, headersTimeout: 5000, requestTimeout: 10_000,
@@ -35,6 +36,10 @@ export function createPrivateTlsProxy(config) {
     for (const name of ["accept", "authorization", "content-type", "x-idempotency-key", "mux-signature", "x-request-id"]) {
       const value = req.headers[name];
       if (typeof value === "string") headers[name] = value;
+    }
+    const muxTarget = req.headers[SCOPED_MUX_HEADER];
+    if (req.method === "POST" && req.url === "/v1/webhooks/mux" && typeof muxTarget === "string") {
+      headers[SCOPED_MUX_HEADER] = muxTarget;
     }
     // Reframe the body locally; no untrusted hop-by-hop/framing headers survive.
     const call = request(upstream, { agent, method: req.method, path: req.url, headers, timeout: 5000 }, (reply) => {

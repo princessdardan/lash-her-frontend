@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "status": "FINITE_READ_ONLY_FEASIBILITY_CHECK_COMPLETED_NO_SUPPORTED_ORIGINAL_BINDING_PATH_ESTABLISHED",
+  "recordedAt": "2026-11-06T16:45:24.039777+00:00",
+  "scope": {
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "deploymentIds": [
+      "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+      "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL"
+    ]
+  },
+  "authenticatedMetadataCalls": 2,
+  "connectedOperations": [
+    {
+      "operation": "get_deployment",
+      "withGitRepoInfo": "true",
+      "count": 2
+    }
+  ],
+  "documentationIndexCalls": 1,
+  "publicSchema": {
+    "url": "https://openapi.vercel.sh/",
+    "fetchAuthenticated": false,
+    "paths": 349,
+    "relatedOperationsIndexed": 59,
+    "webFetchSizeFailurePreserved": true,
+    "sandboxDnsFailurePreserved": true,
+    "authorizedPublicFetchSucceeded": true
+  },
+  "projectionChecks": [
+    {
+      "deploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+      "deploymentFieldCount": 16,
+      "referenceIdCount": 3,
+      "exposesOriginalConfigurationReference": false,
+      "normalizedConnectorOmissionDoesNotProveRawRecordAbsence": true
+    },
+    {
+      "deploymentId": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL",
+      "deploymentFieldCount": 17,
+      "referenceIdCount": 2,
+      "exposesOriginalConfigurationReference": false,
+      "normalizedConnectorOmissionDoesNotProveRawRecordAbsence": true
+    }
+  ],
+  "rawOwnerResponsePersisted": false,
+  "rawOwnerResponsePrinted": false,
+  "environmentValueOrDecryptCalls": 0,
+  "projectEnvironmentCalls": 0,
+  "fileContentCalls": 0,
+  "supportMessages": 0,
+  "configurationExports": 0,
+  "cliApiCalls": 0,
+  "fileTreeCalls": 0,
+  "secretRetrievals": 0,
+  "applicationRequests": 0,
+  "mutations": 0,
+  "rootOrGitMutationsByThisTask": false,
+  "originalArchiveExists": false,
+  "oldP200Closed": false,
+  "g1AcceptanceChanged": false,
+  "newTargetApproved": false,
+  "supportRecoveryImpossibilityClaimed": false,
+  "remainingUnknowns": [
+    "original SQL/provider/runtime binding and provenance",
+    "historical credential-version association",
+    "unknown CLI source identity",
+    "accepted-effect lifetime and outstanding effects",
+    "availability of any private provider-assisted recovery capability"
+  ],
+  "artifacts": [
+    {
+      "name": "feasibility-addendum.md",
+      "bytes": 7287,
+      "sha256": "99cdc49b30fa73c669776fcf6397acc1cdb5226ecf10dad5b1503943ee6f5d8e"
+    },
+    {
+      "name": "owner-metadata-projection.json",
+      "bytes": 4889,
+      "sha256": "6c1248324b65a741ea12095cbe8e89465ecc991d54c02930ee0f02151d4f1b6d"
+    },
+    {
+      "name": "schema-inspection.json",
+      "bytes": 18395,
+      "sha256": "615211b40da78033dd9839e9006ae2c1a8f961d143b2807e5ba07cdf55eef76c"
+    },
+    {
+      "name": "vercel-public-openapi.json",
+      "bytes": 12255866,
+      "sha256": "60d727cb620a7b778318944a5ea12b619efa7ff35b3e0c47e94bdce9dfcc0b87"
+    }
+  ]
+}

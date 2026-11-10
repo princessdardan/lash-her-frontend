@@ -13,18 +13,21 @@ concurrency:
 
 jobs:
   frontend-operator-migrations:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install pinned gateway dependencies for owned HTTP fixtures
+        run: npm ci --ignore-scripts --prefix ops/gateway
       - name: Enable the containerd image store for attested local builds
         uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
         with:
@@ -69,13 +72,17 @@ jobs:
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
             --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true --env FRONTEND_MIGRATION_IMAGE_DIGEST \
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
             --mount "type=bind,src=$PWD/scripts,dst=/source/scripts,readonly" \
             --mount "type=bind,src=$PWD/tsconfig.json,dst=/source/tsconfig.json,readonly" \
             --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
-            --mount "type=bind,src=$PWD/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/frontend-schema/postgres18.json"
           node --input-type=module -e '
             import {readFileSync,writeFileSync} from "node:fs";
@@ -87,6 +94,43 @@ jobs:
           FRONTEND_MIGRATION_IMAGE_DIGEST: ${{ steps.build-frontend-migration.outputs.digest }}
           FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
           FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
+      - name: Qualify Phase 2 roles, release failure and certification scopes on owned PostgreSQL 18
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
+            --env P2_PLATFORM_OWNED_TEST=true --env OWNED_POSTGRES_MAJOR=18 \
+            --mount "type=bind,src=$PWD/.git,dst=/source/.git,readonly" \
+            --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
+            --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
+            --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
+            --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
+            --mount "type=bind,src=$PWD/scripts,dst=/source/scripts,readonly" \
+            --mount "type=bind,src=$PWD/tsconfig.json,dst=/source/tsconfig.json,readonly" \
+            --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
+            --entrypoint node lash-her-frontend-migration:postgres18-test \
+            ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
+      - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
+        env:
+          PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+        run: >-
+          node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18 --lifecycle-postgres18
+          > "$RUNNER_TEMP/p2-identity-recovery-lifecycle-postgres18.json"
+      - name: Retain private owned fixture failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: p2-owned-fixture-failure-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/p2-owned-fixture-failure/
+            ${{ runner.temp }}/p2-platform-postgres18.json
+            ${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Verify initial Course logins on owned PostgreSQL 18
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -111,7 +155,10 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: frontend-operator-schema-summary
-          path: ${{ runner.temp }}/frontend-schema-summary.json
+          path: |
+            ${{ runner.temp }}/frontend-schema-summary.json
+            ${{ runner.temp }}/p2-platform-postgres18.json
+            ${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json
           if-no-files-found: error
           retention-days: 10
       - name: Retain raw frontend-runtime scan
@@ -139,12 +186,13 @@ jobs:
           if-no-files-found: error
           retention-days: 10
   gateway-and-platform:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -169,14 +217,36 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL --cap-add NET_ADMIN \
             --security-opt no-new-privileges --tmpfs /tmp:size=32m --tmpfs /run:size=1m lash-her-firewall-test:ci
       - name: Verify recreation source receiver and maintenance units offline
-        run: >-
-          docker run --rm --network none --read-only --cap-drop ALL
-          --security-opt no-new-privileges
-          --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777
-          --tmpfs /opt/lash-her:rw,nosuid,nodev,size=32m,mode=0700
-          --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly"
-          --entrypoint python3 lash-her-firewall-test:ci
-          -B /source/ops/platform/harness/owned-recreation-controls.py
+        run: |
+          node --input-type=module > "$RUNNER_TEMP/owned-source-receivers.json" <<'NODE'
+          import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+          import { tmpdir } from "node:os";
+          import { join } from "node:path";
+          import { recreationSsh } from "./ops/platform/recreation_ssh.mjs";
+          const directory = await mkdtemp(join(await realpath(tmpdir()), "owned-source-receiver-"));
+          try {
+            const knownHosts = join(directory, "known-hosts"), keyFile = join(directory, "identity");
+            await writeFile(knownHosts, "owned fixture", { mode: 0o600 });
+            await writeFile(keyFile, "owned fixture", { mode: 0o400 });
+            const commands = [];
+            const ssh = await recreationSsh({ knownHosts, keyFile, diagnostics: directory,
+              execute: async (args) => {
+                commands.push(args.at(-1));
+                return { exitCode: 0, stdout: Buffer.from("{}"), stderr: Buffer.alloc(0) };
+              } });
+            await ssh.installSource({});
+            await ssh.installProfiledCurrentSource({});
+            process.stdout.write(JSON.stringify({ legacy: commands[0], profiled: commands[1] }));
+          } finally { await rm(directory, { recursive: true }); }
+          NODE
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777 \
+            --tmpfs /opt/lash-her:rw,nosuid,nodev,size=32m,mode=0700 \
+            --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/owned-source-receivers.json,dst=/owned-source-receivers.json,readonly" \
+            --entrypoint python3 lash-her-firewall-test:ci \
+            -B /source/ops/platform/harness/owned-recreation-controls.py
       - name: Verify actual Docker inspection with optional healthchecks
         run: >-
           python3 ops/platform/harness/owned-docker-inspection.py
@@ -228,6 +298,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -235,6 +306,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run contracts:check
+      - name: Verify the published P2 compatibility review against selected source
+        env:
+          FRONTEND_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |-
+          node --input-type=module -e '
+            import { readReviewBundle, verifyPublishedPhase2Contracts } from "./scripts/api-contract-compatibility-review.mjs";
+            const bundle = readReviewBundle("contracts/api-integration/p2-candidate");
+            if (bundle.manifest.status === "released") verifyPublishedPhase2Contracts(process.cwd(), process.env.FRONTEND_SOURCE_REVISION);
+          '
       - run: npm run test:staging-release
       - run: npx tsc --noEmit
       - run: npm run lint
@@ -261,7 +341,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lash_her_ci?sslmode=disable
       PRIVATE_DB_MIGRATION_TARGET: local
       PRIVATE_DB_MIGRATION_HOST: 127.0.0.1
-      NEXT_PUBLIC_SANITY_PROJECT_ID: 3auncj84
+      NEXT_PUBLIC_SANITY_PROJECT_ID: 7o23yrvk
       NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
       NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
     steps:
@@ -817,13 +897,14 @@ jobs:
           CHITCHATS_US_SHIPPING_ENABLED: "false"
           MANUAL_PRODUCT_CHECKOUT_ENABLED: "false"
           SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "false"
-          NEXT_PUBLIC_SANITY_PROJECT_ID: 3auncj84
+          NEXT_PUBLIC_SANITY_PROJECT_ID: 7o23yrvk
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
           SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
   browser-tests:
     name: browser (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    # The locked Playwright 1.59.1 distribution has no Ubuntu 26.04 browsers.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Each browser owns its server and database. Keep one worker per job because
     # the calendar and commerce scenarios mutate shared fixtures.
@@ -867,7 +948,26 @@ jobs:
       - run: npm run db:migrate
       - name: Seed enabled commerce readiness fixtures
         run: npm run test:e2e:seed-commerce
+      - name: Prefer official Ubuntu HTTPS archives and bound browser dependency acquisition
+        run: |
+          printf '%s\tpriority:%s\n' \
+            'https://archive.ubuntu.com/ubuntu/' 1 \
+            'https://security.ubuntu.com/ubuntu/' 2 |
+            sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          sudo tee /etc/apt/apt.conf.d/zz-retries > /dev/null <<'APT'
+          Acquire::Retries "1";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          APT
+          diff -u <(printf '%s\tpriority:%s\n' \
+            'https://archive.ubuntu.com/ubuntu/' 1 \
+            'https://security.ubuntu.com/ubuntu/' 2) \
+            /etc/apt/apt-mirrors.txt
+          grep -Fq 'mirror+file:/etc/apt/apt-mirrors.txt' /etc/apt/sources.list.d/ubuntu.sources
+          grep -Fq 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' /etc/apt/sources.list.d/ubuntu.sources
+          apt-config dump | grep -E '^Acquire::(Retries|https?::Timeout) '
       - run: npx playwright install --with-deps ${{ matrix.browser }}
+        timeout-minutes: 20
       - name: Run Playwright suite for ${{ matrix.browser }}
         run: npm test -- --project=${{ matrix.browser }} --workers=1 --reporter=line,blob
         env:
@@ -882,7 +982,7 @@ jobs:
           SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce"
           SQUARE_COMMERCE_ENABLED: "true"
           SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "true"
-          NEXT_PUBLIC_SANITY_PROJECT_ID: 3auncj84
+          NEXT_PUBLIC_SANITY_PROJECT_ID: 7o23yrvk
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
           SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}

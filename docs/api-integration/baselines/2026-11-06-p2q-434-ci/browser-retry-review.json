@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "status": "BOUNDED_READ_ONLY_DIAGNOSIS_NO_SOURCE_CHANGE_WARRANTED",
+  "sourceCommit": "434ff029b354cf6574df64906c9f1ec068777995",
+  "ciRunId": 42298515803,
+  "case": "tests/product-detail.spec.ts:305 should send only the Buy Now selection in the checkout request",
+  "failureAssertion": "tests/product-detail.spec.ts:399 toHaveURL checkout?buyNow=1 within5000ms",
+  "facts": [
+    "Attempt0 failed after8188ms overall with URL still product page; retry1 passed3871ms and exercised checkout payload/cart isolation.",
+    "ProductDetailPurchaseControls.handleBuyNow only guards canPurchase, constructs URLSearchParams and invokes router.push; no asynchronous cart/payment/provider operation precedes navigation.",
+    "Test waits networkidle and enabled SSR button, clicks once, then uses default5000ms URL assertion.",
+    "playwright.config.ts uses npm run dev and trace on-first-retry.",
+    "Failed attempt has screenshot/video/error-context but NO request/JS trace; retained trace belongs successful retry.",
+    "Failed screenshot shows product purchase controls focused on Arrange Pickup and visible Next development Compiling indicator.",
+    "Successful retry trace shows checkout RSC GET200 in312.873ms and URL assertion succeeds in about370ms."
+  ],
+  "inferences": [
+    "Slow/cold development route compilation is a supported plausible explanation; the screenshot Compiling indicator and warm retry are consistent with it.",
+    "Hydration timing or another development/browser timing failure cannot be excluded; networkidle/enabled alone does not isolate its cause.",
+    "No exact application, viewport, hydration or navigation-race root cause is established by available failed-attempt evidence."
+  ],
+  "recommendation": "Disclose1flaky WebKit case and retain original artifacts; do not change application behavior, increase timeout or re-click solely to suppress retry. If further diagnosis is required, capture first-attempt request/JS trace for this one case before choosing a correction.",
+  "localNextDocsRead": [
+    "node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-router.md",
+    "node_modules/next/dist/docs/01-app/02-guides/testing/playwright.md:148-152 (production build/start recommended; dev webServer supported)"
+  ],
+  "failedScreenshot": {
+    "path": "/private/tmp/p2q-ci-434-20261106/artifacts/playwright-report-13543152979/playwright-report/data/9b491824260f8819842c795ba546a21f8a8ec563.png",
+    "sha256": "907a6e5c6d2c4ee31483e1e46fbee08f36dd373b01562be0c5eb1c51290a759b"
+  },
+  "scope": {
+    "readOnly": true,
+    "testsRun": false,
+    "sourceModified": false,
+    "liveProviderOrSql": false,
+    "allTenCiStatusChanged": false,
+    "zeroFlakeProven": false
+  }
+}

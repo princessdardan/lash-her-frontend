@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
-import {verifyOperatorCi,verifyExactHeadWorkflow} from "./recreation_source.mjs";
+import {readFileSync,mkdtempSync,mkdirSync,writeFileSync,rmSync,symlinkSync} from "node:fs";
+import {execFileSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {verifyOperatorCi,verifyExactHeadWorkflow,readOperatorSourceFiles,readProfiledCurrentOperatorSourceFiles} from "./recreation_source.mjs";
 import {REQUIRED_SOURCE_JOBS} from "./source-policy.mjs";
 
 function fixture() {
@@ -52,4 +56,81 @@ test("real CI workflow pins every checkout to exact PR source and never persists
   assert.equal(verifyExactHeadWorkflow(raw).length,64);
   const changed=raw.toString().replaceAll("          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n","");
   assert.throws(()=>verifyExactHeadWorkflow(Buffer.from(changed)));
+});
+test("the complete committed operator source fits the profiled expanded envelope",()=> {
+  const root=fileURLToPath(new URL("../..",import.meta.url));
+  const sourceCommit=execFileSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"}).trim();
+  const files=readProfiledCurrentOperatorSourceFiles(root);
+  assert.ok(files.some(file=>file.path==="ops/gateway/assessment-attempt.mjs"));
+  assert.ok(files.every(file=>!/(?:\.test\.mjs|_test\.py)$/u.test(file.path)));
+  assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
+  assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=65_000_000);
+});
+test("only the profiled operator bundle excludes conventional test modules",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-tests-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    const paths=["ops/owned-runtime.mjs","ops/owned-runtime.test.mjs","ops/owned_runtime_test.py","ops/test-owned-command.mjs"];
+    for(const path of paths)writeFileSync(join(directory,path),"# owned source fixture\n");
+    git(["add","ops"]);
+    assert.deepEqual(readOperatorSourceFiles(directory).map(file=>file.path),[...paths].sort());
+    assert.deepEqual(readProfiledCurrentOperatorSourceFiles(directory).map(file=>file.path),["ops/owned-runtime.mjs","ops/test-owned-command.mjs"]);
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+test("actual Git source handoff accepts 512 files and refuses 513 with the per-file byte limit intact",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-count-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    for(let index=0;index<512;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),"// owned source\n");
+    git(["add","ops"]);assert.equal(readOperatorSourceFiles(directory).length,512);
+    writeFileSync(join(directory,"ops/overflow.mjs"),"// owned source\n");git(["add","ops/overflow.mjs"]);
+    assert.throws(()=>readOperatorSourceFiles(directory));
+    assert.equal(readProfiledCurrentOperatorSourceFiles(directory).length,513);
+    const additions=Array.from({length:31},(_,index)=>`ops/profiled-${index}.mjs`);
+    for(const name of additions)writeFileSync(join(directory,name),"// owned source\n");
+    git(["add","ops"]);assert.equal(readProfiledCurrentOperatorSourceFiles(directory).length,544);
+    writeFileSync(join(directory,"ops/profiled-overflow.mjs"),"// owned source\n");git(["add","ops"]);
+    assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory));
+    git(["rm","--cached","ops/overflow.mjs","ops/profiled-overflow.mjs",...additions]);
+    writeFileSync(join(directory,"ops/owned-0.mjs"),Buffer.alloc(2_000_001));
+    assert.throws(()=>readOperatorSourceFiles(directory));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+test("actual Git source handoff enforces both decoded byte limits",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-bytes-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    for(let index=0;index<20;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),Buffer.alloc(2_000_000,120));
+    const last=join(directory,"ops/owned-last.mjs");writeFileSync(last,Buffer.alloc(1_000_000,120));
+    git(["add","ops"]);
+    const files=readOperatorSourceFiles(directory);
+    assert.equal(files.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),41_000_000);
+    assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files}))<=56_000_000);
+    writeFileSync(last,Buffer.alloc(1_000_001,120));
+    assert.throws(()=>readOperatorSourceFiles(directory));
+    for(let index=20;index<23;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),Buffer.alloc(2_000_000,120));
+    writeFileSync(join(directory,"ops/owned-pad.mjs"),Buffer.alloc(1_000_000,120));
+    writeFileSync(last,Buffer.alloc(1_000_000,120));
+    git(["add","ops"]);
+    const profiled=readProfiledCurrentOperatorSourceFiles(directory);
+    assert.equal(profiled.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),48_000_000);
+    assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files:profiled}))<=65_000_000);
+    writeFileSync(last,Buffer.alloc(1_000_001,120));
+    assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test("operator source refuses a tracked symlink into a private file",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-symlink-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    writeFileSync(join(directory,"owned-private.txt"),"owned fixture only\n",{mode:0o600});
+    symlinkSync("../owned-private.txt",join(directory,"ops/link.mjs"));git(["add","ops"]);
+    assert.throws(()=>readOperatorSourceFiles(directory),/symlink refused/u);
+    assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory),/symlink refused/u);
+  } finally {rmSync(directory,{recursive:true,force:true});}
 });

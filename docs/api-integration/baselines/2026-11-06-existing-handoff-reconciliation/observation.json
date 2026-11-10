@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "status": "EXISTING_HANDOFF_RECONCILED_ORIGINAL_FRONTEND_REFERENCE_NOT_LOCATED",
+  "kind": "read-only-local-applicability-preparation",
+  "selectedSourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "selectedDeploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+  "acceptedC07HandoffRevokedOrRequalified": false,
+  "environmentHandoff": {
+    "available": true,
+    "kind": "fifo",
+    "mode": "0600",
+    "operatorOwned": true,
+    "symlink": false,
+    "openedOrRead": false
+  },
+  "acceptedTransportMaterial": {
+    "identityAvailable": true,
+    "identityMode": "0400",
+    "trustAvailable": true,
+    "trustMode": "0600",
+    "contentsRead": false,
+    "keyPathsRecorded": false
+  },
+  "earlierP1Runtime": {
+    "expectedFiles": 17,
+    "presentFiles": 17,
+    "matchesAcceptedC07ByteBinding": 15,
+    "apiEnvironmentFilesMatch": 5,
+    "retainedTlsMaterialMatches": true,
+    "earlierRuntimeAndGatewayMetadataMatch": false,
+    "exactCompleteC07Snapshot": false,
+    "privateValuesOrCredentialDerivedHashesRecorded": false
+  },
+  "authorizedLocalCoverage": {
+    "releaseJsonFiles": 349,
+    "recreationJsonFiles": 97,
+    "jsonParseFailures": 0,
+    "jsonDiscoveryTruncated": false,
+    "privateTarArchives": 3,
+    "privateArchiveFileMembers": 70,
+    "privateArchiveJsonMembers": 31,
+    "archiveMembersExtracted": 0,
+    "additionalWorkspaceArchiveHeaderFileCount": 50,
+    "originalFrontendCatalogSchemaLocated": false,
+    "legacyFrontendEnvironmentSnapshotLocated": false,
+    "providerContextLocated": false,
+    "c07TemporaryBuildAndCandidateCopiesAvailable": false,
+    "allOtherStorageLocationsSearched": false
+  },
+  "sourceAndSurfaceMetadata": {
+    "retainedDeploymentArtifactRows": 25,
+    "historicalSourceProfiles": 33,
+    "selectedC07ProfilePresent": true,
+    "perSurfaceOriginalConfigurationSuppliedByTheseInventories": false
+  },
+  "rootReportedFreshC07ConnectorGet": {
+    "ready": true,
+    "matchesSelectedSource": true,
+    "metadataOnly": true,
+    "envFieldPresent": false,
+    "buildEnvFieldPresent": false,
+    "projectSettingsFieldPresent": false,
+    "canReconstructOriginalCatalog": false
+  },
+  "rootReportedCliCapabilityCheck": {
+    "installedVersion": "50.0.0",
+    "apiHelpSupported": false,
+    "apiHelpFellBackToDeployHelp": true,
+    "helpOnly": true,
+    "actualApiOrDeployInvocation": false,
+    "upgradeOrLogin": false
+  },
+  "configuredPathGroups": {
+    "highlevel": "unknown-original-configuration-reference-not-located",
+    "resend": "unknown-original-configuration-reference-not-located",
+    "square": "unknown-original-configuration-reference-not-located",
+    "chitchats": "unknown-original-configuration-reference-not-located",
+    "google": "unknown-original-configuration-reference-not-located",
+    "sanity": "unknown-original-configuration-reference-not-located"
+  },
+  "noCapabilityClosuresProduced": true,
+  "stalePreparationNullsUsedAsAbsenceProof": false,
+  "missingReference": "immutable-original-frontend-configuration-and-complete-original-key-catalog-with-per-surface-provenance",
+  "newCredentialsOrSshHandoffRequested": false,
+  "workerProviderOrHostCalls": false,
+  "credentialStoreOrAwsSecretFetches": false,
+  "liveSqlOrMutation": false,
+  "privateConfigurationBytesRecorded": false,
+  "wholeReleaseAccepted": false
+}

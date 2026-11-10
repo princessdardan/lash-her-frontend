@@ -1,0 +1,19 @@
+✔ bootstrap failure diagnostics identify only fixed source dependencies and phases (0.695375ms)
+✔ unknown dependencies and arbitrary exception codes cannot become receipt fields (0.094583ms)
+✔ owned database, TLS, fixture file and assertion failures have bounded diagnostic classes (0.079584ms)
+✔ actual owned bootstrap child refuses ambient invocation before imports or network and emits only safe diagnostics (59.520459ms)
+(node:82918) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-bootstrap-probe/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-bootstrap-probe/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ the actual owned source-copy branch produces an executable migration CLI with its complete contract verifier closure (590.609459ms)
+✔ source CI readonly mounts and owned fixture can load the actual protected route and validators (433.393209ms)
+✔ candidate rehearsal readonly mounts and owned fixture can load the actual protected route and validators (348.533875ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1584.40975

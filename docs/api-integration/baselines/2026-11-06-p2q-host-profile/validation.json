@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "status": "SOURCE_COMPONENT_TESTED_REVIEW_PENDING",
+  "baseCommit": "5e007c4447cb1070c8718fa16bb0ca73e0b69213",
+  "sourceCommit": "4ba7428c140d6b783c613279d6e5ed6e7318abd9",
+  "designSha256": "1e051fa9ff1e904340b5ccb2f99946358030678afd7dcc33987e2e312d156f95",
+  "qualificationTargetProfile": {
+    "version": 1,
+    "id": "staging-current",
+    "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+  },
+  "sourceSha256": {
+    "ops/platform/database_current.test.mjs": "60cc4b22d8c4575074d27b1ebaf8e07fc665bd31f9d0c0fa679c0751ca8324aa",
+    "ops/platform/host/current_databases.py": "fff7dd7056ea39a452286b2600ce3ecaefdd422c850b91de660be5ecbb8a5745",
+    "ops/platform/host/current_databases_test.py": "c7aaf29e20f4f2cfbc6082f9c5917d44d09c971c0cfd937bd14b095135ab8055",
+    "ops/platform/host/database_current.mjs": "6158e3aaca994e0d8da08df45969648c2c22162709b5d696e2bb5d7e7b93056f",
+    "ops/platform/host/migrate.py": "f37b419ae64572341da14286ef8d81872068eba36bab043867112ec73536c931",
+    "ops/platform/host/migrate_test.py": "41ef8d77f8e8009e83beacb186dab63eee705330ad109fb4ad878f48683fc3c1",
+    "ops/platform/host/release.py": "7387eae749d964c42c16e70c7de708b1c219b8fcbb21989dc0bda0dda3634456",
+    "ops/platform/host/release_test.py": "75222fa6401acbe7db65f19d4e6dc60d6e112490e6bbeae06f66dc1d4fb1e298"
+  },
+  "scope": [
+    "Explicit source expected_profile; fixed profiled-current commands before carrier reads",
+    "Candidate3/API job2+target2/FEjob2 profile joins; source policy digest does not attest live targets",
+    "Host-only closed runtime.json2 wrapper; original19 configuration names and gateway config schema unchanged",
+    "Selected-image API read-only checker fixed profile module before manifest/private stdin",
+    "Actual per-service API normative/CLI receipt version distinctions",
+    "All profiled migrate/release apply paths refuse before bundle, credentials, scope callbacks, child or external work"
+  ],
+  "verification": {
+    "host": {
+      "passed": 187,
+      "failed": 0,
+      "skipped": 0,
+      "localPermissions": "owned loopback and POSIX process guards"
+    },
+    "node": {
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0
+    },
+    "eslintExitCode": 0,
+    "pythonSyntax": "passed",
+    "diffCheck": "passed",
+    "legacyMigrationRuntimePlanBytes": "equal exact5e baseline",
+    "configurationFileCount": 19,
+    "historicalProfilesByteIdentical": 33,
+    "gatewayRuntimeTreeOid": "3a430ac5718b0079846c89bbd0c73f874d2eb455",
+    "gatewayRuntimeEqualBase": true
+  },
+  "sourceBudget": {
+    "files": 502,
+    "decodedBytes": 40604631,
+    "publicBytes": 54212916,
+    "rootFinalUnionQualified": false
+  },
+  "privateEvidence": {
+    "legacy-byte-comparison.json": {
+      "bytes": 311,
+      "sha256": "256c741970465615b334e3be215633089486baccd920143e5ce10ffc880dbb11"
+    },
+    "host-first.log": {
+      "bytes": 157,
+      "sha256": "3bb5b50ce41cab8e66d67230a992f268a6db26d961b10d8ab047b83fe37fc36b"
+    },
+    "node-first.log": {
+      "bytes": 1227,
+      "sha256": "64c65f15bea8a2a8817018da18b63ac0cf3ca749bfd9719ffa166336e284619a"
+    },
+    "lint.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "node-frozen.log": {
+      "bytes": 1223,
+      "sha256": "abfead1c349945c9ebd4bfd0a081ae70f6301a0fe9b14cd17eb371ebbf2a386a"
+    },
+    "host-frozen.log": {
+      "bytes": 287,
+      "sha256": "d0bef06804e1ca0d97072f79e28c93daa27c391ad460309ae6905966c16ed4c4"
+    },
+    "host-source-final.log": {
+      "bytes": 287,
+      "sha256": "c56869ed2a57c3dbbf1c6d67564abfc0e18911050fc4481614afc2e565916305"
+    },
+    "lint-frozen.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host-regression-permitted.log": {
+      "bytes": 286,
+      "sha256": "4ad1750a1aedc513d86bd1aaf0f6d92fd7dcc74922644abfe798051e883a3b5c"
+    },
+    "host-regression.log": {
+      "bytes": 14789,
+      "sha256": "c0b80d3d156b8cc8d6bd746b14c335794020e736ce88ec35a6411c45338f83d6"
+    },
+    "host-final.log": {
+      "bytes": 287,
+      "sha256": "06db7b4fe7422fa4d8e88b504ee0712674b3b5b25843647b9da3fc9c9c64e804"
+    },
+    "node-final.log": {
+      "bytes": 1225,
+      "sha256": "ff0a0ff151ba8396c7c029c1dc4575cc7c446c56ac19caf301fff392a66bb650"
+    }
+  },
+  "preservedAttempt": {
+    "file": "host-regression.log",
+    "issues": [
+      "Sandbox denial of owned loopback listen/process inspection",
+      "Real partial legacy rotation-copy selector rejected by an overbroad new version check; corrected while full candidate2 parsing remains strict"
+    ],
+    "originalUnchanged": true
+  },
+  "limits": [
+    "No live, managed DB, provider, Docker/image, allocation, credential-store or publication action. No SQL/query-text, JWT, TTL, topology, outer supervisor/Broker/scope or PR91 runtime changes.",
+    "Node SQL clients and most runtime/provider metadata are modeled; host suite additionally exercises owned HTTPS and POSIX process guards. No actual PG qualification is claimed.",
+    "Actual selected-image import and matching profiled FE image/job2 execution still require image/CI integration. Pure checker uses the real reviewed FE codec as a local test dependency; production main imports only the fixed selected API module.",
+    "Profiled whole coordinator, provider/historical/observer/recovery/rotation/B/C graph remains unavailable until implemented and reviewed; no graph-complete flag, downcast or restamped receipt.",
+    "Policy reference and observation-only first-install collectors grant no creation/control/custody/virgin authority.",
+    "Legacy byte equality is directly measured for the two public offline plans; broader successful legacy receipts remain covered by the existing focused assertions, not a claim of exhaustive byte comparison."
+  ]
+}

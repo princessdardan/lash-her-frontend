@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "status": "CLEAR_BOUNDED_DOCUMENTED_PROTOCOL_DELTA",
+  "baselineCommit": "c3a5d09d3eecfe80faa874829a06453fc283d4fa",
+  "reviewedCommit": "a88b1bdc8edfa8aee3d8a7291fd471491e82cf7c",
+  "sourceHashes": {
+    "ops/platform/p2q-google-project-allocation.mjs": "f62cfe9f90a6d38a9b5d3ceb8db46d60d77a458e6a43e1db88a496f6b6315000",
+    "ops/platform/p2q-first-install.test.mjs": "7ec4e3c5e99a8bb05764c60476f16e1cfe63dcd98b717db57c58446949884b2b",
+    "ops/platform/source-policy.mjs": "5d2fb992e1e68cd4163807bf2177f2abf2cf413cb62335ef02b61561a764f9ac"
+  },
+  "outstandingFindings": [],
+  "verifiedChanges": [
+    "removed textual-project GET and special mandatory404 branch, no route remains for it",
+    "first provider request is documented exact projectId projects.search; empty visible result is not global absence",
+    "visible existing result, pagination ambiguity, malformed projects and non200 search refuse before intent/start/CREATE",
+    "positive sequence is searchGET,one intent/burn-backedCREATE,returned operationGET,numeric projectGET,IAM readPOST,numeric projectGET",
+    "numeric project GET/IAM only after returned projects/number validation",
+    "409 stops review-required without adopting,polling or another CREATE; lost-ACK/same-process GET/no-replay preserved",
+    "raw/ACK/fault fixtures now target actual001-create file and still assert real private-write failure/no overwrite"
+  ],
+  "independentVerification": {
+    "node": "24.18.0",
+    "testsPassed": 30,
+    "skipped": 0,
+    "elapsedMilliseconds": 4003.4465,
+    "testLogPath": "/private/tmp/p2q-google-protocol-independent-tests.log",
+    "testLogSha256": "a1ee2b1dcfe328154727e603ec3682850c39b6735a22bd7136d9dc112947a259",
+    "sourceUnchangedBeforeAfterTest": true,
+    "scopedOpsDiffCheckPassed": true,
+    "ownerScopedLintLogBytes": 0
+  },
+  "primaryContract": "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/search",
+  "preservedPriorReports": [
+    {
+      "path": "/private/tmp/p2q-google-project-independent-review.json",
+      "sha256": "204c897ff416d8a5f0c1d75c67c6cf2550a62b4b65a186ce1e9fbf220024c616",
+      "byteIdentical": true
+    },
+    {
+      "path": "/private/tmp/p2q-google-sdk-isolation-independent-review.json",
+      "sha256": "c9c780abfc26dc317095092007bf4800624eaa490bd728646003082bfa306509",
+      "byteIdentical": true
+    }
+  ],
+  "qualificationLimits": [
+    "Only this two-file protocol delta was newly reviewed; prior source/isolation snapshots remain immutable",
+    "CLI/HTTPS identity observations are test models; actual filesystem controls only",
+    "No actual SDK/auth/provider/project/IAM calls or Linux-root qualification",
+    "Compiled case registry still empty; no allocation/first-use/control/profile authority or new caller selector",
+    "Search is permission-limited/eventually consistent and not global absence; original ACK loss remains unknown, post-crash holder recovery remains absent"
+  ],
+  "repositoryEdits": false,
+  "providerActions": false,
+  "credentialValuesRead": false
+}

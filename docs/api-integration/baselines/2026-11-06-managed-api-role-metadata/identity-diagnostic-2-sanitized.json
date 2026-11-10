@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "status": "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED",
+  "observationMode": "identity-only-diagnostic",
+  "observedAt": "2026-11-06T04:54:40.864Z",
+  "managedConnectionAttempts": 2,
+  "results": [
+    {
+      "version": 1,
+      "status": "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED",
+      "context": "course",
+      "target": {
+        "context": "course",
+        "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+        "port": 5432,
+        "database": "neondb",
+        "serverMajor": 18,
+        "runtimeRole": "lash_her_course_staging_runtime",
+        "migrationRole": "lash_her_course_staging_migration"
+      },
+      "connected": true,
+      "failure": {
+        "phase": "identity-diagnostic",
+        "code": "EXACT_READONLY_IDENTITY_REQUIRED"
+      },
+      "closeAwaited": true,
+      "identityDiagnostic": {
+        "matches": {
+          "singleton": true,
+          "database": true,
+          "authenticatedRole": true,
+          "sessionRole": true,
+          "serverMajor": true,
+          "readOnly": true,
+          "searchPath": true,
+          "serverReportsTls": false,
+          "positiveBackendPid": true,
+          "clientEncrypted": true,
+          "clientAuthorized": true,
+          "selectedHost": true,
+          "selectedPort": true
+        },
+        "observed": {
+          "serverMajor": 18,
+          "transactionReadOnly": "on",
+          "clientTlsProtocol": "TLSv1.3"
+        }
+      },
+      "strictIdentityAccepted": false,
+      "sourceReadbackVerified": true,
+      "sourceBindingVerified": true,
+      "tlsAuthorized": true,
+      "rowBoundsComplete": false,
+      "readbackStable": false,
+      "metadataOnly": true,
+      "observerImposed": {
+        "searchPath": "pg_catalog,public",
+        "defaultTransactionReadOnly": "on",
+        "statementTimeoutMs": 5000,
+        "lockTimeoutMs": 1000,
+        "idleInTransactionSessionTimeoutMs": 5000
+      },
+      "caSource": "Node24.18.0-built-in-rootCertificates",
+      "pgVersion": "8.20.0",
+      "frontendQualified": false,
+      "migrationAuthorized": false,
+      "rolePreparationAuthorized": false,
+      "wholeReleaseAccepted": false,
+      "redactions": {
+        "roleNames": 0,
+        "identifiers": 0
+      }
+    },
+    {
+      "version": 1,
+      "status": "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED",
+      "context": "community",
+      "target": {
+        "context": "community",
+        "host": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+        "port": 5432,
+        "database": "neondb",
+        "serverMajor": 18,
+        "runtimeRole": "lash_her_community_staging_runtime",
+        "migrationRole": "lash_her_community_staging_migration"
+      },
+      "connected": true,
+      "failure": {
+        "phase": "identity-diagnostic",
+        "code": "EXACT_READONLY_IDENTITY_REQUIRED"
+      },
+      "closeAwaited": true,
+      "identityDiagnostic": {
+        "matches": {
+          "singleton": true,
+          "database": true,
+          "authenticatedRole": true,
+          "sessionRole": true,
+          "serverMajor": true,
+          "readOnly": true,
+          "searchPath": true,
+          "serverReportsTls": false,
+          "positiveBackendPid": true,
+          "clientEncrypted": true,
+          "clientAuthorized": true,
+          "selectedHost": true,
+          "selectedPort": true
+        },
+        "observed": {
+          "serverMajor": 18,
+          "transactionReadOnly": "on",
+          "clientTlsProtocol": "TLSv1.3"
+        }
+      },
+      "strictIdentityAccepted": false,
+      "sourceReadbackVerified": true,
+      "sourceBindingVerified": true,
+      "tlsAuthorized": true,
+      "rowBoundsComplete": false,
+      "readbackStable": false,
+      "metadataOnly": true,
+      "observerImposed": {
+        "searchPath": "pg_catalog,public",
+        "defaultTransactionReadOnly": "on",
+        "statementTimeoutMs": 5000,
+        "lockTimeoutMs": 1000,
+        "idleInTransactionSessionTimeoutMs": 5000
+      },
+      "caSource": "Node24.18.0-built-in-rootCertificates",
+      "pgVersion": "8.20.0",
+      "frontendQualified": false,
+      "migrationAuthorized": false,
+      "rolePreparationAuthorized": false,
+      "wholeReleaseAccepted": false,
+      "redactions": {
+        "roleNames": 0,
+        "identifiers": 0
+      }
+    }
+  ],
+  "readonlyPreparationOnly": true,
+  "frontendQualified": false,
+  "wholeReleaseAccepted": false,
+  "attemptId": "managed-api-identity-diagnostic-2",
+  "observerProgramSha256": "sha256:c5d129a767c783216e503f7b868a3b28317faeb2fc7a649f4696cd45e1dfac0a",
+  "interpretation": {
+    "strictGuardUnchanged": true,
+    "metadataAccepted": false,
+    "roleSchemaQueriesPerformed": 0,
+    "automaticRetryPerformed": false,
+    "managedMutationPerformed": false,
+    "providerTlsTerminationCauseVerified": false,
+    "nextManagedObservationAuthorized": false
+  }
+}

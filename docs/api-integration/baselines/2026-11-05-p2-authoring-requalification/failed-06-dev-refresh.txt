@@ -1,0 +1,146 @@
+Owned authoring evidence: /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/test-results/course-authoring-browser/run-CkyXh5
+Authoring browser source frontend=b402f1ff558eb0f80f69f9a4c95822315251edbe course=2847d953771adc8e8be287f9512b3003af94f190
+
+Running 4 tests using 1 worker
+
+  ✓  1 [chromium] › tests/course-authoring-browser/authoring.spec.ts:51:5 › owner authors, grades publication readiness and publishes with actual Course persistence (15.4s)
+  ✓  2 [chromium] › tests/course-authoring-browser/authoring.spec.ts:212:5 › customer-facing authoring routes isolate unauthenticated and non-editor staff (1.7s)
+  ✓  3 [chromium] › tests/course-authoring-browser/authoring.spec.ts:233:5 › keyboard ordering, archival identity and dirty-editor cancellation remain consistent (8.8s)
+  ✘  4 [chromium] › tests/course-authoring-browser/authoring.spec.ts:400:5 › paid CAD catalog publication warns before archive and requires validated restoration (28.3s)
+
+
+  1) [chromium] › tests/course-authoring-browser/authoring.spec.ts:400:5 › paid CAD catalog publication warns before archive and requires validated restoration 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('region', { name: 'Before archiving this paid course' })
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 20000ms[22m
+    [2m  - waiting for getByRole('region', { name: 'Before archiving this paid course' })[22m
+
+
+      542 |       name: "Before archiving this paid course",
+      543 |     });
+    > 544 |     await expect(warning).toBeVisible();
+          |                           ^
+      545 |     await expect(warning).toContainText(
+      546 |       "including access from existing purchases",
+      547 |     );
+        at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/course-authoring-browser/authoring.spec.ts:544:27
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-CkyXh5/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-CkyXh5/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/course-authoring-browser/run-CkyXh5/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/course-authoring-browser/run-CkyXh5/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/course-authoring-browser/run-CkyXh5/browser/authoring-paid-CAD-catalog-860bd-uires-validated-restoration-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/course-authoring-browser/authoring.spec.ts:400:5 › paid CAD catalog publication warns before archive and requires validated restoration 
+  3 passed (54.8s)
+frontend.log:
+▲ Next.js 16.4.3 (webpack)
+- Local:         http://127.0.0.1:49846
+- Network:       http://127.0.0.1:49846
+✓ Ready in 187ms
+⚠ React 18 support is deprecated in Next.js 16 and will be removed in Next.js 17. Please upgrade to React 19. Learn more: https://nextjs.org/docs/messages/react-version
+✓ Running next.config.ts took 26ms
+
+○ Compiling /admin/sign-in/page ...
+ GET /admin/sign-in 200 in 366ms (next.js: 68ms, proxy.ts: 142ms, application-code: 156ms)
+ GET /admin/courses 200 in 1732ms (next.js: 1303ms, proxy.ts: 7ms, application-code: 422ms)
+ POST /api/admin/courses 200 in 425ms (next.js: 91ms, application-code: 334ms)
+ GET /admin/courses 200 in 215ms (next.js: 56ms, proxy.ts: 36ms, application-code: 123ms)
+ GET /admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 1201ms (next.js: 968ms, proxy.ts: 5ms, application-code: 228ms)
+ GET /admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 85ms (next.js: 19ms, proxy.ts: 6ms, application-code: 60ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127/publication-readiness 200 in 528ms (next.js: 382ms, application-code: 145ms)
+ POST /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127/modules 200 in 565ms (next.js: 394ms, application-code: 170ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 568ms (next.js: 411ms, application-code: 157ms)
+ POST /api/admin/modules/11e69612-669d-474d-b33e-e328204b1426/lessons 200 in 556ms (next.js: 393ms, application-code: 163ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 39ms (next.js: 4ms, application-code: 35ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 404 in 557ms (next.js: 413ms, application-code: 144ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 404 in 559ms (next.js: 413ms, application-code: 146ms)
+ PUT /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 200 in 28ms (next.js: 2ms, application-code: 26ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 29ms (next.js: 4ms, application-code: 25ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 200 in 21ms (next.js: 0.5ms, application-code: 20ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 200 in 20ms (next.js: 0.3ms, application-code: 19ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127/publication-readiness 200 in 24ms (next.js: 5ms, application-code: 19ms)
+ PATCH /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 85ms (next.js: 0.7ms, application-code: 85ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 19ms (next.js: 0.6ms, application-code: 18ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 28ms (next.js: 6ms, application-code: 23ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 200 in 15ms (next.js: 1.8ms, application-code: 13ms)
+ PATCH /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 15ms (next.js: 0.4ms, application-code: 15ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 13ms (next.js: 0.4ms, application-code: 13ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 200 in 12ms (next.js: 0.4ms, application-code: 12ms)
+ GET /api/admin/lessons/6ec98003-8e02-4417-ab3f-90625b95963b/quiz 200 in 13ms (next.js: 0.4ms, application-code: 13ms)
+ GET /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 13ms (next.js: 0.8ms, application-code: 12ms)
+ PATCH /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 200 in 14ms (next.js: 0.4ms, application-code: 13ms)
+ PATCH /api/admin/courses/984cdd35-a5ad-4161-9673-cbb8aa1a5127 409 in 14ms (next.js: 0.4ms, application-code: 14ms)
+ POST /api/admin/courses 403 in 8ms (next.js: 5ms, application-code: 3ms)
+ GET /api/admin/courses 401 in 11ms (next.js: 0.4ms, application-code: 11ms)
+ GET /api/admin/courses 403 in 15ms (next.js: 0.4ms, application-code: 15ms)
+ GET /admin/courses 307 in 235ms (next.js: 46ms, proxy.ts: 5ms, application-code: 184ms)
+ GET /admin/not-authorized 200 in 721ms (next.js: 562ms, proxy.ts: 3ms, application-code: 156ms)
+ POST /api/admin/courses 200 in 106ms (next.js: 3ms, application-code: 103ms)
+ POST /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83/modules 200 in 28ms (next.js: 4ms, application-code: 23ms)
+ POST /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83/modules 200 in 12ms (next.js: 0.3ms, application-code: 12ms)
+ POST /api/admin/modules/c4f12898-354f-4704-b4a8-bd7b215902ed/lessons 200 in 28ms (next.js: 4ms, application-code: 24ms)
+ POST /api/admin/modules/c4f12898-354f-4704-b4a8-bd7b215902ed/lessons 200 in 14ms (next.js: 0.3ms, application-code: 13ms)
+ GET /admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 118ms (next.js: 13ms, proxy.ts: 4ms, application-code: 101ms)
+ POST /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83/modules/reorder 200 in 566ms (next.js: 384ms, application-code: 182ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 27ms (next.js: 4ms, application-code: 23ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 22ms (next.js: 3ms, application-code: 19ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 204ms (next.js: 32ms, application-code: 172ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 14ms (next.js: 0.4ms, application-code: 13ms)
+ POST /api/admin/modules/c4f12898-354f-4704-b4a8-bd7b215902ed/lessons/reorder 200 in 454ms (next.js: 412ms, application-code: 42ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 14ms (next.js: 1.5ms, application-code: 13ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 13ms (next.js: 0.4ms, application-code: 13ms)
+ PATCH /api/admin/lessons/ddf7496a-446f-4b99-83e3-bddaeca782d8 200 in 559ms (next.js: 387ms, application-code: 172ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 27ms (next.js: 4ms, application-code: 23ms)
+ PATCH /api/admin/lessons/ddf7496a-446f-4b99-83e3-bddaeca782d8 200 in 18ms (next.js: 2ms, application-code: 16ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 14ms (next.js: 1.6ms, application-code: 12ms)
+ GET /api/admin/courses/f2e3f324-f00c-4caa-b958-2e5980559c83 200 in 14ms (next.js: 0.4ms, application-code: 13ms)
+ GET /api/admin/lessons/ddf7496a-446f-4b99-83e3-bddaeca782d8/video 404 in 551ms (next.js: 404ms, application-code: 148ms)
+ GET /api/admin/lessons/ddf7496a-446f-4b99-83e3-bddaeca782d8/video 404 in 553ms (next.js: 404ms, application-code: 149ms)
+ GET /admin/courses 200 in 186ms (next.js: 36ms, proxy.ts: 3ms, application-code: 148ms)
+ POST /api/admin/courses 200 in 30ms (next.js: 3ms, application-code: 27ms)
+ GET /admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 80ms (next.js: 15ms, proxy.ts: 3ms, application-code: 62ms)
+ GET /admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 65ms (next.js: 16ms, proxy.ts: 7ms, application-code: 42ms)
+ GET /api/admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 15ms (next.js: 4ms, application-code: 11ms)
+ POST /api/admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619/modules 200 in 28ms (next.js: 4ms, application-code: 24ms)
+ POST /api/admin/modules/4cfd41da-c878-462b-99c3-b9085ab646b7/lessons 200 in 35ms (next.js: 4ms, application-code: 31ms)
+ GET /admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 72ms (next.js: 1.3ms, proxy.ts: 6ms, application-code: 65ms)
+ GET /api/admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619/publication-readiness 200 in 20ms (next.js: 5ms, application-code: 15ms)
+ PATCH /api/admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 33ms (next.js: 1.5ms, application-code: 31ms)
+ GET /api/admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 12ms (next.js: 0.5ms, application-code: 12ms)
+ GET /api/academy/catalog/paid-browser-catalog-fixture 200 in 522ms (next.js: 400ms, application-code: 122ms)
+ GET /courses/paid-browser-catalog-fixture 200 in 1607ms (next.js: 685ms, application-code: 922ms)
+ GET /admin/courses/d25c5bbe-e65d-4c85-a030-903dbf16e619 200 in 145ms (next.js: 16ms, proxy.ts: 4ms, application-code: 125ms)
+
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:460
+            new Error(
+            ^
+
+Error: Owned browser command failed (1): /Users/dardan/.nvm/versions/node/v24.18.0/bin/node
+    at ChildProcess.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:460:13)
+    at Object.onceWrapper (node:events:631:26)
+    at ChildProcess.emit (node:events:509:28)
+    at maybeClose (node:internal/child_process:1124:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:306:5)
+
+Node.js v24.18.0

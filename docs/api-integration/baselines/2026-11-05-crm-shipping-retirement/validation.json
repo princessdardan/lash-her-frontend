@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "OWNED_SOURCE_COMPONENT_VALIDATED_LIVE_PROVIDER_UNQUALIFIED",
+  "baseCommit": "fcc88f3221ccff94f056fd75cfb7cddec864e9e7",
+  "runtime": "Python 3.14.3",
+  "postgres": "16.13",
+  "files": {
+    "ops/platform/host/frontend_crm_shipping_retirement.py": "a36658b9be282126178519558ac0723fb43775b3486883b30e726ff6bb946c34",
+    "ops/platform/host/frontend_crm_shipping_retirement_test.py": "d775585f72272f149ea0a7336f48171622fc45177541d53c358f99bc01e9fdbe",
+    "docs/api-integration/frontend-crm-shipping-retirement.md": "7db0d10864d75e76a8929107565a0d26c241ea994b4baf5862920d427cd198cc"
+  },
+  "checks": [
+    {
+      "command": "python3 -m py_compile ops/platform/host/frontend_crm_shipping_retirement.py ops/platform/host/frontend_crm_shipping_retirement_test.py",
+      "result": "PASS"
+    },
+    {
+      "command": "python3 -m unittest frontend_crm_shipping_retirement_test.RetirementTests -v",
+      "result": "SANDBOX_LOOPBACK_REFUSED",
+      "setupErrors": 11,
+      "reason": "Sandbox prohibited the owned loopback socket bind; no provider requests or business assertions executed. Escalated owned-fixture runs below passed.",
+      "artifact": "sandbox-loopback-refusal.log"
+    },
+    {
+      "command": "FRONTEND_CRM_SHIPPING_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin python3 -m unittest frontend_crm_shipping_retirement_test -v",
+      "result": "PASS",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "migrations": 83,
+      "artifact": "owned-final-19-tests.log"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "artifacts": {
+    "sandbox-loopback-refusal.log": {
+      "sha256": "3c80acd58bbd7f15d4ff009cdd481b26284ed67f7ed752ababf66557cbb9f14e"
+    },
+    "owned-initial-12-tests.log": {
+      "sha256": "9b7528530a5a7133aa8b652ec01b34a2f252ee8f58276debf83b43e4a1e2dd1d"
+    },
+    "owned-before-declared-transition-18-tests.log": {
+      "sha256": "6dd7dd4fa2b46b5a0add384a6dd54b14cf10faa47db107e11788aeb4e240f58b"
+    },
+    "owned-final-19-tests.log": {
+      "sha256": "0b9f7b5e3cdd7bd0cb9285ad4be7e16bc26dedbc1e3cf46f6d6d9e44e1483315"
+    }
+  },
+  "observations": {
+    "ownedHttpsWithVerifiedFixtureCa": true,
+    "ownedLoopbackPostgresTlsScram": true,
+    "all83RepositoryMigrationsApplied": true,
+    "actualFixedSqlAgainstMigratedSchema": true,
+    "actualDatabaseIdempotencyDigestChecked": true,
+    "nonemptyTerminalChitchatsScopeHasConcreteZero": true,
+    "incompleteInventoriesAndUnknownPendingEffectsRefused": true,
+    "actualOld401AndReplacementReadRequired": true,
+    "403NeverAcceptedAsCredentialRetirement": true,
+    "oauthRefreshProbeNonReplayable": true,
+    "invalidClientAndUsableRefreshNeverAccepted": true,
+    "lostRefreshAcknowledgementRetainsUncertainty": true,
+    "acceptedUninstallReceiptsPreservedWithoutRewritingBeforeEvidence": true,
+    "rawProviderPayloadsCredentialsAndPiiExcludedFromReceipts": true,
+    "highlevelWorkflowExecutionAndWebhookUnknownsRemainNull": true,
+    "unexpectedOriginsMethodsScopesAndRedirectsRefused": true,
+    "disposableClusterStoppedAndRemoved": true,
+    "expectedUninstallTransitionUnderUnchangedInitialReviewedArtifact": true,
+    "exactRevokedSentinelAndSameTransactionCallbackReceiptRequired": true,
+    "unrelatedPrincipalEffectsAndReceiptChangesRefused": true,
+    "actualMigratedDatabaseUninstallTransaction": true,
+    "readOnlyRecoveryNeverReplaysRefreshOrRewritesOriginalEvidence": true
+  },
+  "primaryDocumentation": [
+    "https://chitchats.com/docs/api/v1",
+    "https://github.com/chitchats/chitchats-api-doc/blob/master/sections/shipments.md",
+    "https://help.gohighlevel.com/support/solutions/articles/155000003054-private-integrations-everything-you-need-to-know",
+    "https://marketplace.gohighlevel.com/docs/ghl/contacts/search-contacts-advanced/",
+    "https://marketplace.gohighlevel.com/docs/ghl/workflows/search-workflows/",
+    "https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow-logs/",
+    "https://marketplace.gohighlevel.com/docs/ghl/marketplace/uninstall-application/",
+    "https://marketplace.gohighlevel.com/docs/2021-07-28/ghl/oauth/get-access-token/index.html",
+    "https://marketplace.gohighlevel.com/docs/ghl/locations/get-location/",
+    "https://marketplace.gohighlevel.com/docs/ghl/contacts/get-contact/",
+    "https://marketplace.gohighlevel.com/docs/ghl/contacts/get-note/",
+    "https://marketplace.gohighlevel.com/docs/ghl/contacts/get-task/",
+    "https://marketplace.gohighlevel.com/docs/ghl/opportunities/get-opportunity/"
+  ],
+  "limitations": [
+    "This standalone module is not yet a complete locked host/coordinator/runtime qualification; integration belongs to the provider-fencing component.",
+    "The coordinator must actually execute every fixed query before and after provider reads and bind the snapshot to the selected private database, source, action, lease and controls. Only the declared exact AppUninstall persistence reducer may advance the initial reviewed PREstate.",
+    "Credential provenance hashes bind nonsecret records only. Actual scope reads and selected old credential denial do not enumerate every historical principal or prove an agency/shared credential is dedicated to staging.",
+    "ChitChats numeric zero is scoped to the fully enumerated selected client and current source database snapshot, not unrecorded historical in-flight requests, financial obligations or unrelated provider accounts.",
+    "HighLevel workflow logs are limited in availability and retention; historical execution, inbound webhook and downstream message completeness remain unresolved.",
+    "An OAuth invalid_grant observes the privately selected refresh credential only; completeness of all historical refresh chains remains separate.",
+    "No live provider/API, configured database, scheduler, credential retrieval/retirement, deployment, admission-control or business-data change occurred."
+  ],
+  "providerTouched": false,
+  "liveDatabaseTouched": false,
+  "deploymentPerformed": false,
+  "credentialsRetrieved": false,
+  "liveAdmissionEnabled": false,
+  "historicalWritersFenced": false,
+  "trafficAuthorized": false,
+  "p200Complete": false,
+  "g2Complete": false
+}

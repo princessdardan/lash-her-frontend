@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_B_GATEWAY_FRONTIER_SOURCE_PREPARED",
+  "baseCommit": "4a917669a32d3cb719ac43816c1f9cb50f1b58d8",
+  "helperSha256": "445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db",
+  "markerFilename": "known-ack-gateway-replacement-started.json",
+  "outcomeField": "gatewayReplacementStartedSha256",
+  "checks": {
+    "host": 67,
+    "node": 23,
+    "skipped": 0,
+    "ownedPostgresMajor": 18,
+    "migrations": {
+      "frontend": 83,
+      "course": 22,
+      "community": 11
+    },
+    "backendFaultRefusals": 21,
+    "domainFaultRefusals": 11,
+    "allThreeJournalsUnchanged": true
+  },
+  "actualFilesystemPendingAndExclusiveMarker": true,
+  "actualOwnedRawGatewayOneAndStoppedReaderRefusal": true,
+  "actualHostDocker": false,
+  "actualNative": false,
+  "providerTouched": false,
+  "fixtureOnly": true,
+  "sourceAuthorityIssuedByStandaloneFixture": false,
+  "newOpsFiles": 0,
+  "changedOpsFiles": 3,
+  "sourceDeltaBytes": 13730,
+  "unchangedSharedFiles": [
+    "ops/platform/host/p2_prior_gateway.py",
+    "ops/platform/host/p2_recovery_runtime.py",
+    "ops/platform/host/p2_recovery_scope.py",
+    "ops/platform/host/p2_release_scope.py",
+    "ops/platform/host/p2_release_supervisor.py"
+  ],
+  "open": [
+    "independent-exact-frontier-review",
+    "C-later-fresh-action-restoration",
+    "real-backend-idle-prerequisites",
+    "actual-host-provider-staging-qualification",
+    "G2-S14"
+  ],
+  "sha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-frontier/README.md": "8c9a9a2afd7395c9cda8e5d13cabf7d9d41a147150d51ba9485c001d7089849a",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-frontier/host-tests.log": "d170a1f36279cf6cba053d5ea3ff70291b24c2b92ee40f3978a7d9a43910025a",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-frontier/node-tests.log": "f44768818b27f384a107b2d6060740018d112669af6c91d16068b883636477b1",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-frontier/owned-postgres18.json": "774416a8b618e7a72d01df2fa2aac966ae9f9e5caa7ce57f852485fadfbf6ae4",
+    "ops/platform/host/p2_known_ack_loss.py": "445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db",
+    "ops/platform/host/p2_known_ack_loss_test.py": "623c0a3b574e99d799c65b2f43b0934614e68f62907ad1c3627eff248d5ecceb",
+    "ops/platform/p2-certification.md": "325f0146e3505b470dc386351c5d333ec9592eca8b2dd2dfc5a9f8594c83a409"
+  }
+}

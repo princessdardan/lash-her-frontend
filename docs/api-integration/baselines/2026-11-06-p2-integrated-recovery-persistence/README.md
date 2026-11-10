@@ -1,0 +1,11 @@
+# Integrated recovery and lifecycle persistence
+
+Exact frontend `caea30f6297a0da0b441c20cc9598ab1e798e192` passed three isolated disposable PostgreSQL16/TLS/SCRAM fixtures with Node24.18.0. Actual API source roots were clean canonical Course `a447bfde20299e12afab68a3331b3792ddd07598` and Community `939de65dd52f0b1a43993a25c7c428dce6e2bb43`. All fixtures apply83/22/11 migrations to their own databases, use loopback-only generated credentials and retain zero skips. Original stdout is preserved in the three JSON files.
+
+- Current-only recovery:55 groups,39 named faults, no SQL replay or original frontend terminal recreation.
+- Forward recovery:19 named groups, nine actual runtime credential refusals, a separately authenticated trusted-TLS foreign cluster refused for missing physical lock/marker binding, and zero provider calls during those faults. The actual source-owned build/probe/promote path uses an owned HTTPS provider fixture. Actual runtime containers are explicitly false.
+- Persistence:13 checks, including complete account-attempt inventory, omitted-attempt refusal, requested command version, expired export-ready refusal, original-email binding, retained export/ACK history and cross-context prior refusal. Live24-hour elapsed cleanup is not simulated into staging evidence; only this disposable fixture's observation clock is controlled.
+
+The persistence package's eight findings and forward package's three findings were independently cleared before integration. Their rejected prototype source, failures and original correction receipts remain unchanged. Root additionally reran the integrated persistence Node6/host8 tests and the fixed PG18 preparation helper's18 tests, with focused lint passing. Required PostgreSQL18 forward/persistence CI and actual host/provider/browser certification remain open. This run does not certify Linux/Docker/SSH, actual Google/Resend/Mux, live Vercel, production or G2.
+
+The persistence process emitted Node's module-type diagnostic for the existing TypeScript migration-lineage import; all checks completed successfully. No package setting was changed to hide it. No live database, provider, scheduler, deployment or admission was changed.

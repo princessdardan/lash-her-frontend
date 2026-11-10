@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "status": "PROFILE_REF_NONZERO_CORRECTION_PENDING_ROOT",
+  "originalSchemaSha256": "3458d245b54e5fe63aaea0354bbd40327f6b0180b97e6f62fd5b4cb40fb0e2b8",
+  "files": [
+    {
+      "name": "joint-schemas.json",
+      "bytes": 14160,
+      "sha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a"
+    },
+    {
+      "name": "README.md",
+      "bytes": 2665,
+      "sha256": "aa63e85fe9b148fd3d9fb791117678e974dc475c25874fa6669aa2419b35f66d"
+    }
+  ],
+  "productionAuthorityAvailable": false
+}

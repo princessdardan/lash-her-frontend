@@ -1,0 +1,45 @@
+✖ actual runner is Node24 and the two selected files fit the assigned combined budget (2.377041ms)
+✔ canonical safe bytes and hashes have a fixed golden vector; raw capture kinds are unsupported (0.421667ms)
+✔ all seven transport-safe kinds round trip into independent frozen data without issuing authority (2.885291ms)
+✔ metadata decode refuses noncanonical lexemes, ordering, missing LF, duplicates and invalid UTF8 (0.426625ms)
+✔ exact closed own keys refuse secrets, private paths, accessors, symbols and inherited data (0.490792ms)
+✔ reference data requires nonzero raw digest and exact syntax, without registry or allocated-profile acceptance (0.252791ms)
+✔ case counts, identities, generation, negative zero and scalar types are bounded (0.934209ms)
+✔ supported calendar validation preserves RFC3339 nanoseconds and offsets without normalization (0.688208ms)
+✔ R1 ordering is nanosecond strict, with one track and distinct actual-event data; A1 has no B proof (1.248125ms)
+✔ safe replay joins use prescribed reverse slots, exact safe hashes and sender response IDs (1.471ms)
+✔ 120-second wall/elapsed and original 300-second signature budgets never renew or authorize send (0.705916ms)
+✔ global counters include unrelated producers; counts are never actual drain or provider-queue proof (1.784875ms)
+✔ ledger count, individual16KiB and total192KiB limits are conjunctive, without aggregate exception (10.635458ms)
+✔ fixed intended traces bound observations/sends and cannot replay or continue after terminal intents (0.852666ms)
+✔ all public dispatch remains unavailable for missing/current/unregistered/profile/JSON/proxy authority (0.355417ms)
+✔ actual owned Node process rejects forbidden wire data and cannot dispatch a valid ARM frame (63.739709ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 15
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 132.219041
+
+✖ failing tests:
+
+test at ops/platform/p2q-mux-capture.test.mjs:52:1
+✖ actual runner is Node24 and the two selected files fit the assigned combined budget (2.377041ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(size <= 32768)
+  
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-mux-node/ops/platform/p2q-mux-capture.test.mjs:55:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

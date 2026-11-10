@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "sourceParent": "d94e3c1b",
+  "status": "SHARED_RECOVERY_DISPATCH_HOOKS_OWNED_CHECKS_PASS",
+  "checks": {
+    "selectedHost": 59,
+    "realPosixGuard": 8
+  },
+  "sourceFiles": {
+    "ops/platform/host/p2_release_supervisor.py": "afbb175847eb7999b5cdc00c4e600e2d6eb381c7d41db930fdae3a3dd24fabfb",
+    "ops/platform/host/p2_release_broker.py": "fb845b1c90fef4453c1dfb825b7d26f18ed45b006432acf60fb292d85f41c48e",
+    "ops/platform/host/p2_source_closure.py": "84525d18092ce0d18d5041b692640d299aad9a169b5d24c102598c46610665b2",
+    "ops/platform/host/p2_supervisor_dispatch_test.py": "875075666c27781b90b3de91ffff5cafff73cfd66477a1db6240d52b9168fe0e",
+    "ops/platform/host/p2_release_guard_test.py": "74fa4515224df4fdd7d30b67675e49721ce74e01bf65173d7940455f14a25e06",
+    "ops/platform/host/p2_source_closure_test.py": "0edbbc41bd13626fa2be097f2e587dc24c2c9a9ff6db71b885c1b0d1943f4b21"
+  },
+  "files": {
+    "recovery-hooks-host-59.log": "f68cebe4ffc902e5510141ba094d1b520f19870bab540899a1e3144f9218ea74",
+    "recovery-hooks-guard-8.log": "7f283432d7dfb5c67ca388aa2f57b798aeb8a0776785e704c07c5dd2727d07cb"
+  },
+  "recoveryControllerIntegrated": false,
+  "recoveryEndToEndVerified": false,
+  "liveOperationsPerformed": false,
+  "releaseAccepted": false,
+  "open": [
+    "Integrate separately owned recovery broker/controller and fixed supervisor entry",
+    "Qualify complete recovery parent path and fresh current-only physical observer",
+    "Independent review and integrated Linux/required CI",
+    "Actual Dardan-started deployed release/recovery certification"
+  ]
+}

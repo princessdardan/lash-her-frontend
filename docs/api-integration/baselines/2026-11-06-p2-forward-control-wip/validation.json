@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "status": "IMPLEMENTATION_ONLY_QUALIFICATION_OPEN",
+  "engine": "9b56688dce12cc109a6ff20d93fc7a6dceeabf4b",
+  "checks": {
+    "syntax": true,
+    "completeForwardPositive": false,
+    "completeFaultMatrix": false,
+    "liveOperations": false
+  },
+  "knownFailure": "transport fixture observation lacks workloadReceiptSha256",
+  "fileSha256": {
+    "ops/platform/p2-post-sql-recovery.mjs": "42b5ae46aaf924040f6896196ea50496955fae2ee6febcbf2c7c21ea2340f82e",
+    "ops/platform/p2-recovery.mjs": "3bfdaec22885f35526f2e96d08d37fbe15f4c812872424ee24cf25cd70001d75",
+    "ops/platform/p2-recovery-transport.mjs": "7345ffa85c447cfdfcfe4fcad524e54b20018dda606f5c3c364f2f6b75894421",
+    "ops/platform/host/p2_recovery_broker.py": "4488b9e1a2c912323c91d971971ca7e4b1805bf0285314945127df1ebf9be370",
+    "ops/platform/p2-post-sql-recovery.test.mjs": "e2e52935202d0b765a371113ec39e453e93ceaa801492de64b05d38a494fd042",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-control-wip/HANDOFF.md": "6f9a93c0b06ce72e96490669b0b694560aec55ee71915015acee90bc7d08085c"
+  }
+}

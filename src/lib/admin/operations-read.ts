@@ -1,3 +1,5 @@
+import { runAdminReadOperation } from "./read-operation";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import {
@@ -485,7 +487,7 @@ export async function listAdminSchedules(input: { resourceId?: string } = {}) {
 export async function listAdminCalendarConnections() {
   await requirePermission("calendar-connections:view");
   const db = getPrivateDb();
-  const [connections, resources, assignments, employees] = await Promise.all([
+  const [connections, resources, assignments, employees] = await settleWriterEffects([
     db
       .select({
         accountEmail: bookingCalendarConnections.accountEmail,
@@ -601,6 +603,12 @@ export async function listAdminAppointments() {
 }
 
 export async function getAdminAppointmentDetail(id: string) {
+  return runAdminReadOperation("appointment-detail", () =>
+    getAdminAppointmentDetailWork(id),
+  );
+}
+
+async function getAdminAppointmentDetailWork(id: string) {
   const actor = await requirePermission("bookings:view");
   const db = getPrivateDb();
   const resourceFilter = getResourceFilter(
@@ -674,6 +682,14 @@ export interface ListAdminMarketingContactsInput {
 
 export async function listAdminMarketingContacts(
   input: ListAdminMarketingContactsInput = {},
+) {
+  return runAdminReadOperation("marketing-contacts", () =>
+    listAdminMarketingContactsWork(input),
+  );
+}
+
+async function listAdminMarketingContactsWork(
+  input: ListAdminMarketingContactsInput,
 ) {
   const actor = await requirePermission("marketing:view");
   const db = getPrivateDb();
@@ -752,7 +768,7 @@ export async function listAdminMarketingContacts(
   }
 
   const contactFilter = filters.length > 0 ? and(...filters) : undefined;
-  const [totalRows, overviewRows, sourceRows] = await Promise.all([
+  const [totalRows, overviewRows, sourceRows] = await settleWriterEffects([
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(marketingContacts)

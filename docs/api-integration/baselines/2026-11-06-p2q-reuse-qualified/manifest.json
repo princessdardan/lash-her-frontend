@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 3087,
+      "sha256": "22b0872be31c9322cbb9af66ea697e731c9e10997442607a131a0819b10501c0"
+    },
+    {
+      "path": "google-authentication-followup.json",
+      "bytes": 1134,
+      "sha256": "7929c72e0a2205ec15675a827ff9200141ab10b57062f58a2608246483dbf7f5"
+    },
+    {
+      "path": "mux-current-readback.json",
+      "bytes": 1063,
+      "sha256": "24c8be389268f8a2aa16fce2a98a5b67ac867aba6d1f5cb7fe0d7f1d35609b99"
+    },
+    {
+      "path": "original-artifact-metadata.json",
+      "bytes": 15331,
+      "sha256": "6165c2cc72b49f2c85e8c0b1493b893ac3e0bac21d21e2192e4e68e833038c4a"
+    },
+    {
+      "path": "original-buy-now-validation.json",
+      "bytes": 1654,
+      "sha256": "4ac5d15426d9f950655110707f287e2e4ddc4d9a1589c0141d7488487266a36d"
+    },
+    {
+      "path": "original-firefox-ordering.json",
+      "bytes": 626,
+      "sha256": "0fb0416f49f5815be33cd8183c159c68d71930a68a852a28bc43871cde0e1ff7"
+    },
+    {
+      "path": "original-firefox-ordering.mjs",
+      "bytes": 3768,
+      "sha256": "a3afa95d58321776b8630c1352d85a23ea1a85a1b1f89499ed27d9ac7826a4d7"
+    },
+    {
+      "path": "original-terminal-report.json",
+      "bytes": 8101,
+      "sha256": "a70bb9db89ca1f951a7672952e774c63bc5433f2c27f032e67335eec8aa8339f"
+    },
+    {
+      "path": "validation.json",
+      "bytes": 2826,
+      "sha256": "c484f91c5f5ebb2c464149056aa86e20d060b59ffea598d33730d0bccd6fa857"
+    },
+    {
+      "path": "vercel-current-readback.json",
+      "bytes": 1383,
+      "sha256": "bd574ab48ea3615eb6c64be5ba57195170271090b45675f565248dd4e8a0e1ec"
+    }
+  ]
+}

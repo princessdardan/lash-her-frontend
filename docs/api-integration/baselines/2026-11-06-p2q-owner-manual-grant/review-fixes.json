@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "status": "REVIEW_CORRECTIONS_SOURCE_QUALIFIED_INDEPENDENT_REREVIEW_PENDING",
+  "reviewedOriginalFrontendSource": "cb77eab7598f96e26b5df3f9ad822a343848c83d",
+  "testedCorrectionFrontendSource": "b73af49f3d3410b0574c1ca2a1b2719d275af9d8",
+  "originalSnapshotPreserved": true,
+  "courseSource": "a447bfde20299e12afab68a3331b3792ddd07598",
+  "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+  "node": "24.18.0",
+  "corrections": [
+    {
+      "finding": "page-navigation-and-known-error-inside-admission",
+      "result": "Known auth/owner denial and typed Course read failure return settled discriminated results before Next navigation or rendering. Writer admission failure maps to a safe unavailable view outside admission.",
+      "actualPageExportExecuted": true,
+      "actualNextNotFoundDigestAsserted": true,
+      "activeAfterKnownFailures": 0,
+      "uncertainAfterKnownFailures": 0,
+      "genuineUncertaintyPreserved": [
+        "unexpected auth error",
+        "marked uncertain identity write followed by a known auth denial"
+      ],
+      "safeUnavailableView": "Existing page-data pattern; does not claim an HTTP503 document status.",
+      "fixtureLimit": "Page auth and Course reads modeled; semantic parent, TLS/SCRAM runner and SQL ledger are real.",
+      "knownFailureCompletedOperations": 4,
+      "successfulPageCompletedOperations": 1
+    },
+    {
+      "finding": "unvalidated-POST-command-returned-as-accepted",
+      "result": "Retain the receiver command only after actor/customer/course/action/scope/reason match. Admission OFF returns outcome-unknown with command null for a schema-valid mismatched receipt; ON remains uncertain and exposes no unvalidated command.",
+      "admissionOffSchemaValidMismatches": [
+        "actorUserId",
+        "courseId",
+        "userId",
+        "action",
+        "scope",
+        "reason"
+      ],
+      "validatedAcceptedReceiptOnLaterReadFailureRetained": true,
+      "explicitGetReconciliationNoPost": true,
+      "browserUnknownPresentation": "No command receipt or accepted claim; request locked; no automatic retry."
+    }
+  ],
+  "checks": {
+    "selectedSourceTests": 30,
+    "sourceSkipped": 0,
+    "ownedPostgres16NamedChecks": 11,
+    "ownedPostgres18NamedChecks": 11,
+    "ownedBrowserCases": 5,
+    "browserRetries": 0,
+    "focusedEslint": "passed",
+    "frontendTypecheck": "passed",
+    "diffCheck": "passed"
+  },
+  "admissionNamedChecks": [
+    "closed-before-auth-or-provider",
+    "whole-operation-single-completed-ledger",
+    "lost-ack-sticky-uncertain",
+    "GET-readback-no-POST-or-counter-clear",
+    "verified-TLS-SCRAM-role",
+    "actual-page-nonowner-and-auth-denial-settled-404",
+    "actual-page-missing-course-settled-404",
+    "actual-page-known-upstream-failure-settled-safe-view",
+    "actual-page-closed-admission-safe-view-before-auth",
+    "actual-page-unknown-auth-write-sticky-uncertain",
+    "mismatched-POST-receipt-sticky-uncertain-no-exposure"
+  ],
+  "browser": {
+    "actualNextAuthAndRoute": true,
+    "actualCanonicalCourseJwtAndPostgres": true,
+    "migrationsApplied": {
+      "frontend": 83,
+      "course": 22
+    },
+    "manualGrantCasePassedInBothRuns": true,
+    "unknownOutcomeEnvelopeInBrowser": "modeled safe envelope only; mismatched receiver bodies qualified through the real named client in source tests",
+    "communityOutbox": "Actual canonical pending event; downstream receiver delivery not run",
+    "workloadNetworkEdge": "owned fixture",
+    "identitySessions": "synthetic Auth.js fixture identities",
+    "admission": "off in browser-only fixture; actual page/route TLS ledger qualified separately",
+    "firstRun": {
+      "result": "4 passed, 1 failed",
+      "failure": "Existing paid-catalog final viewport page.evaluate lost its execution context during navigation. No source changed before complete five-case rerun passed.",
+      "outcome": {
+        "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-owner-manual-grant-review-fixes/test-results/course-authoring-browser/run-Y5WXGf/outcome.json",
+        "sha256": "668389e748e321e96a2257909fd2ea69dc389b83e6cbedaeb1b601127ecba60b",
+        "bytes": 435
+      }
+    },
+    "passingEvidence": {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-owner-manual-grant-review-fixes/test-results/course-authoring-browser/run-vj6ARZ/evidence.json",
+      "sha256": "630e95aea9308a0cb6810adc363c4aa4f949a1016048973575a1538a4b30bb20",
+      "bytes": 775
+    }
+  },
+  "sourceFiles": [
+    {
+      "path": "src/app/admin/(protected)/courses/[courseId]/manual-grants/page.tsx",
+      "sha256": "81f1f3968b5f8a7224419ab1709e3d31bc7705185f61345019c29ba712302f31",
+      "bytes": 3189
+    },
+    {
+      "path": "src/components/admin/course-authoring/manual-grant-form.tsx",
+      "sha256": "50267606e13aba5685337d80af1ad95f9a70828bee6fe0fd9d278234c718043c",
+      "bytes": 5858
+    },
+    {
+      "path": "src/lib/course-support/manual-grant-handler.test.ts",
+      "sha256": "0501281a437f0a49b3fc9949526e50ec65eef4cbd815ad9bf49816b1bd1c8ea7",
+      "bytes": 6013
+    },
+    {
+      "path": "src/lib/course-support/manual-grant-handler.ts",
+      "sha256": "58176ed2b6b7d2d5b0a6653a8334cf2d6e1423bc10061be88e3e29376e63b72d",
+      "bytes": 10130
+    },
+    {
+      "path": "tests/course-authoring-browser/authoring.spec.ts",
+      "sha256": "9b51a81f896b7b14e5f38404aaea6366325f5834b867a919d1d8d4a0389c5002",
+      "bytes": 30992
+    },
+    {
+      "path": "tests/course-support/manual-grant-admission-owned.mts",
+      "sha256": "8dcb177ab7173e3b39704fe49d8b4479cce226df99646f4105abf88a98d5738c",
+      "bytes": 13459
+    },
+    {
+      "path": "tests/course-support/manual-grant-fixture.ts",
+      "sha256": "38bb24f30e1c3b6e1e6f577294bfed3c0e138f54a0ed5edb3679eabb3e5aa186",
+      "bytes": 5736
+    }
+  ],
+  "privateRecords": [
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/source-b73af49f.log",
+      "sha256": "596a2c3afee098d75067c28c97a7d403fccb5df85502970041e19570021a8c2d",
+      "bytes": 3354
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/admission16-b73af49f.json",
+      "sha256": "3dac5000ab31cd0422e7862ace9501223b99b39e3dd942dd8082567e54f51e81",
+      "bytes": 599
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/admission16-b73af49f.stderr",
+      "sha256": "143700765b79d87af0cf93213aa5253acd72461f6a3d04174368160271705a60",
+      "bytes": 290
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/admission18-b73af49f.json",
+      "sha256": "7c5f1085c403bd9336f48e7993b1296d8f731d90eac426bafc18687d849a613d",
+      "bytes": 599
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/admission18-b73af49f.stderr",
+      "sha256": "9d8676e11f14a1c764dcfb3de82b016308b3405a76f4e6c0bc2e82dbc0d890f9",
+      "bytes": 290
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/browser-b73af49f.log",
+      "sha256": "6cfda797fcc32bf05e8d0fe62aca2f88121fc9ddc39bdb5e41024adff94315b1",
+      "bytes": 16430
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/browser-b73af49f-repeat.log",
+      "sha256": "3907d3128cb4204e7305bd532597f0c2b730381511dbc9eef03b5ce1467ab242",
+      "bytes": 1359
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/lint-b73af49f.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/private/tmp/p2q-owner-manual-grant-review-fixes-20261106/typecheck-b73af49f.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ],
+  "reproduction": "Node24 --experimental-test-module-mocks --import ./scripts/register-server-only-test.mjs --import tsx tests/course-support/manual-grant-admission-owned.mts, with minimal environment P2Q_MANUAL_GRANT_OWNED=true and exact local PG16/18 PG_BIN. No configured database URL accepted.",
+  "sharedIntegrationRequired": [
+    "Updated page source SHA and existing GET/POST whole-operation producer/source inventory bindings",
+    "Register manual-grant-handler.test.ts in server-only test list",
+    "Independent correction re-review and final shared source CI"
+  ],
+  "sharedClientsPermissionsSchemasContractsWorkflowsUnchanged": true,
+  "newOpsFiles": 0,
+  "liveActions": false,
+  "isolatedProfileRegistered": false,
+  "s10LiveQualified": false,
+  "g2Accepted": false
+}

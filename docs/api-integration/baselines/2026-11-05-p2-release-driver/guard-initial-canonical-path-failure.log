@@ -1,0 +1,24 @@
+E..
+======================================================================
+ERROR: test_failure_persists_closed_gateway_state_for_any_deliberate_restart (p2_release_guard_test.IndependentGuardTests.test_failure_persists_closed_gateway_state_for_any_deliberate_restart)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/ops/platform/host/p2_release_guard_test.py", line 137, in test_failure_persists_closed_gateway_state_for_any_deliberate_restart
+    staging_admission.persist_state(snapshot, {'releaseId': 'owned', 'candidateSha256': candidate_hash},
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                     'owned-open', new_work=True, recovery=True)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/ops/platform/host/staging_admission.py", line 131, in persist_state
+    require(directory.is_dir() and not any(p.is_symlink() for p in (directory, *directory.parents)), "CANONICAL_ADMISSION_DIRECTORY_REQUIRED")
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/ops/platform/host/staging_admission.py", line 52, in require
+    DEMAND(condition, "ADMISSION_" + code)
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/ops/platform/host/migrate.py", line 26, in demand
+    raise ValueError(code)
+ValueError: ADMISSION_CANONICAL_ADMISSION_DIRECTORY_REQUIRED
+
+----------------------------------------------------------------------
+Ran 3 tests in 2.510s
+
+FAILED (errors=1)

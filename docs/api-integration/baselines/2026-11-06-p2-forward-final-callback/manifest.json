@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "baseAndFailedCiSourceCommit": "138d01187160d18167376bd2ae8b396423b89284",
+  "implementationCommit": "01be9f58a19ca5c89cd4912f595c65cc2ddb140e",
+  "sourceSha256": {
+    "ops/platform/test-p2-recovery-owned.mjs": "d1e2e391af1c9df2af2a28f8e715c483ce97009a8db3a41e854c92c9110f8418",
+    "ops/platform/test-p2-recovery-owned.py": "e05474f6facede9b50347ce4eb592b13e5f21beba7653f675224d5dc9d4432cb",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "01925e0d9d0b2f09f46964900eb552e8d7200b52fd209a2984960788e0abdb87"
+  },
+  "evidenceSha256": {
+    "composed-final-envelopes.json": "2076ecbe9837ecb05b4029bedf4104a0339c14a57e167819870fe3c85373a2ef",
+    "composed-final-envelopes.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-138-ci-artifact.zip": "a93ec01788e1d74cf7afe19d35c077781a845520120758c7f032d048f631ed87",
+    "original-138-linux-platform-pg18.json": "7d43f94baa9e84b669134c15524e8261de22abbb724d4b7c27560f1eb3f57da2",
+    "owned-pg18-forward.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "owned-pg18-forward.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unit.log": "e764bd98dbd74fa6a6459c8c0b7b875f15b13989ca51c61d5c65bfaccfa28a12"
+  },
+  "originalCiRunId": "42214656961",
+  "originalCiJobId": "127881543552",
+  "originalZipSha256": "a93ec01788e1d74cf7afe19d35c077781a845520120758c7f032d048f631ed87",
+  "normalCasesPreserved": 19,
+  "composedControls": 6,
+  "fixtureOnly": true,
+  "linuxCauseIdentified": false,
+  "productionChanged": false,
+  "externalProviderTouched": false,
+  "releaseAccepted": false
+}
