@@ -120,6 +120,25 @@ export interface operations {
                     userId: string;
                     /** @enum {number} */
                     version: 1;
+                } | {
+                    command: {
+                        accountVersion: number;
+                        /** @enum {string} */
+                        action: "suspend";
+                        commandId: string;
+                        /** Format: date-time */
+                        issuedAt: string;
+                        userId: string;
+                        /** @enum {number} */
+                        version: 1;
+                    };
+                    expectedHead: {
+                        accountVersion: number;
+                        canonicalSha256: string;
+                        commandId: string;
+                    };
+                    /** @enum {number} */
+                    version: 2;
                 };
             };
         };

@@ -13,9 +13,13 @@ const REHEARSAL_API_REVISIONS = Object.freeze({
   course: "54fd289a5a8579bfbe343afb07482f406b56ad5b",
   community: "929fdeb13e0e5f5e25454a457961d6ed965dedff",
 });
-const FINAL_API_REVISIONS = Object.freeze({
+const PREVIOUS_API_REVISIONS = Object.freeze({
   course: "09e3aaf234d9d9c1296c438d7c872e6bd67db074",
   community: "5993d248a7c687e04792266b356aa9efb4928be3",
+});
+const FINAL_API_REVISIONS = Object.freeze({
+  course: "95963723a4955cc42b845d0aaf1152c2e2ac8535",
+  community: "8141533249f6c59a59e67e8663907c2f108c1d34",
 });
 const REPOSITORIES = Object.freeze({
   frontend: "lash-her-frontend",
@@ -64,6 +68,7 @@ const closed = (value, fields) => Boolean(value && typeof value === "object" && 
 const API_PAIRS = Object.freeze([
   Object.freeze({ ...API_REVISIONS, expiryFixed: false }),
   Object.freeze({ ...REHEARSAL_API_REVISIONS, expiryFixed: true }),
+  Object.freeze({ ...PREVIOUS_API_REVISIONS, expiryFixed: true }),
   Object.freeze({ ...FINAL_API_REVISIONS, expiryFixed: true }),
 ]);
 

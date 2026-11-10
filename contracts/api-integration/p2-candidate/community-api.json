@@ -69,69 +69,157 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "accountVersion": {
-                    "maximum": 9007199254740991,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "action": {
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "suspend"
-                        ],
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accountVersion": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "action": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "suspend"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "restore"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "export"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "delete"
+                            ],
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "commandId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "restore"
-                        ],
+                      "issuedAt": {
+                        "format": "date-time",
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "export"
-                        ],
+                      "userId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                         "type": "string"
                       },
-                      {
+                      "version": {
                         "enum": [
-                          "delete"
+                          1
                         ],
-                        "type": "string"
+                        "type": "number"
                       }
-                    ]
-                  },
-                  "commandId": {
-                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-                    "type": "string"
-                  },
-                  "issuedAt": {
-                    "format": "date-time",
-                    "type": "string"
-                  },
-                  "userId": {
-                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-                    "type": "string"
-                  },
-                  "version": {
-                    "enum": [
-                      1
+                    },
+                    "required": [
+                      "version",
+                      "commandId",
+                      "userId",
+                      "accountVersion",
+                      "action",
+                      "issuedAt"
                     ],
-                    "type": "number"
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "accountVersion": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "action": {
+                            "enum": [
+                              "suspend"
+                            ],
+                            "type": "string"
+                          },
+                          "commandId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "issuedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "userId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "version": {
+                            "enum": [
+                              1
+                            ],
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "commandId",
+                          "userId",
+                          "accountVersion",
+                          "action",
+                          "issuedAt"
+                        ],
+                        "type": "object"
+                      },
+                      "expectedHead": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "accountVersion": {
+                            "maximum": 9007199254740989,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "canonicalSha256": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "commandId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "accountVersion",
+                          "commandId",
+                          "canonicalSha256"
+                        ],
+                        "type": "object"
+                      },
+                      "version": {
+                        "enum": [
+                          2
+                        ],
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "command",
+                      "expectedHead"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "version",
-                  "commandId",
-                  "userId",
-                  "accountVersion",
-                  "action",
-                  "issuedAt"
-                ],
-                "type": "object"
+                ]
               }
             }
           },
