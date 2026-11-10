@@ -2,6 +2,8 @@ import { isDeepStrictEqual } from "node:util";
 import { Client } from "pg";
 import { FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-role-preparation.mjs";
+import { MANAGED_NEON_REPLACEMENT_CATALOG_SCOPE, replacementCatalogCount, replacementCatalogCountsSql,
+  selectManagedNeonCatalog, verifyManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 
 const targetFields = ["host", "port", "database", "user", "runtimeRole", "serverMajor"];
 const roleName = value => typeof value === "string" && /^[a-z][a-z0-9_]{0,62}$/u.test(value);
@@ -53,43 +55,16 @@ const loginSql = `SELECT rolname AS name,oid::text AS oid FROM pg_catalog.pg_rol
   WHERE rolcanlogin AND pg_catalog.has_database_privilege(oid,$1::oid,'CONNECT')
   LIMIT 34`;
 
-// These PostgreSQL 16/18 catalogs have normal OIDs for objects created after
-// initdb. Count them even in a built-in namespace, alongside objects without
-// an OID or without a dependency on another non-pinned object.
-const normalOidCatalogs = [
-  "pg_am", "pg_cast", "pg_class", "pg_collation", "pg_constraint", "pg_conversion",
-  "pg_language", "pg_namespace", "pg_opclass", "pg_operator", "pg_opfamily",
-  "pg_proc", "pg_rewrite", "pg_statistic_ext", "pg_trigger", "pg_ts_config",
-  "pg_ts_dict", "pg_ts_parser", "pg_ts_template", "pg_type",
-];
-const emptyCatalogs = [
-  "pg_default_acl", "pg_event_trigger", "pg_foreign_data_wrapper", "pg_foreign_server",
-  "pg_foreign_table", "pg_largeobject_metadata", "pg_policy", "pg_publication",
-  "pg_publication_namespace", "pg_publication_rel", "pg_transform", "pg_user_mappings",
-];
-const count = (catalog, predicate = "", name = catalog) =>
-  `(SELECT count(*)::int FROM pg_catalog.${catalog}${predicate ? " WHERE " + predicate : ""}) AS ${name}`;
-const catalogCounts = [
-  ...normalOidCatalogs.map(catalog => count(catalog, "oid>=16384")),
-  ...emptyCatalogs.map(catalog => count(catalog)),
-  count("pg_namespace", "nspname NOT IN ('pg_catalog','pg_toast','information_schema','public')", "unexpected_schemas"),
-  count("pg_extension", "extname<>'plpgsql'", "additional_extensions"),
-  "(SELECT count(subdbid)::int FROM pg_catalog.pg_subscription WHERE subdbid=$1::oid) AS local_subscriptions",
-  count("pg_depend", "objid>=16384 OR refobjid>=16384", "normal_object_dependencies"),
-  count("pg_shdepend", "dbid=$1::oid AND objid>=16384", "local_shared_dependencies"),
-  count("pg_db_role_setting", "setdatabase=$1::oid OR (setdatabase=0 AND setrole=ANY($2::oid[]))", "relevant_role_settings"),
-  count("pg_prepared_xacts", "database=pg_catalog.current_database()", "local_prepared_transactions"),
-];
-const countsSql = "SELECT " + catalogCounts.join(",\n  ");
-
 const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 function physicalIdentity(row) {
   return [row.pid, row.backend_start, row.database_oid, row.role_oid];
 }
 
 export async function verifyEmptyFrontendReplacement(client, options) {
-  demand(exact(options, ["target", "predecessorTarget", "administrativeLogins", "verifyEnvironment", "verifySession"]), "input");
-  const { target, predecessorTarget, administrativeLogins, verifyEnvironment, verifySession } = options;
+  const managed = options != null && Object.hasOwn(options, "managedCatalog");
+  demand(exact(options, ["target", "predecessorTarget", "administrativeLogins", "verifyEnvironment", "verifySession",
+    ...(managed ? ["managedCatalog", "provider"] : [])]), "input");
+  const { target, predecessorTarget, administrativeLogins, verifyEnvironment, verifySession, managedCatalog, provider } = options;
   demand(validateTarget(target) && validateTarget(predecessorTarget) &&
     ["host", "port", "database"].some(key => target[key] !== predecessorTarget[key]) &&
     target.user !== predecessorTarget.runtimeRole && typeof verifyEnvironment === "function" &&
@@ -139,7 +114,7 @@ export async function verifyEmptyFrontendReplacement(client, options) {
       await verifySession();
       return identify(false);
     }
-    async function observe() {
+    async function observe(managedSelection) {
       phase = "read-only-start";
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       try {
@@ -152,9 +127,11 @@ export async function verifyEmptyFrontendReplacement(client, options) {
         const logins = (await client.query(loginSql, [row.database_oid])).rows.sort(byName);
         demand(isDeepStrictEqual(logins, expected), "effective-login-access");
         phase = "catalog-scope";
-        const { rows } = await client.query(countsSql, [row.database_oid, expected.map(login => login.oid)]);
-        demand(rows.length === 1 && Object.keys(rows[0]).length === catalogCounts.length &&
-          Object.values(rows[0]).every(count => count === 0), phase);
+        const { rows } = await client.query(replacementCatalogCountsSql, [row.database_oid, expected.map(login => login.oid)]);
+        demand(rows.length === 1 && Object.keys(rows[0]).length === replacementCatalogCount &&
+          (managedSelection ? isDeepStrictEqual(rows[0], managedSelection.expectedCatalogCounts) :
+            Object.values(rows[0]).every(count => count === 0)), phase);
+        if (managedSelection) await verifyManagedNeonCatalog(client, managedSelection);
         await identify(true);
         return rows[0];
       } finally {
@@ -166,14 +143,20 @@ export async function verifyEmptyFrontendReplacement(client, options) {
       }
     }
     const initial = await verifyHeld();
-    const counts = await observe();
+    phase = "catalog-scope";
+    const managedSelection = managed ? selectManagedNeonCatalog(managedCatalog, { provider, target: selected,
+      databaseOid: initial.database_oid, migrationRoleOid: initial.role_oid, administrativeLogins: admins }) : undefined;
+    const counts = await observe(managedSelection);
     await verifyHeld();
-    await observe();
+    await observe(managedSelection);
     await verifyHeld();
     return Object.freeze({ version: 1, status: "FRONTEND_REPLACEMENT_BOUNDARY_VERIFIED", target: selected,
       predecessorTarget: predecessor, databaseOid: initial.database_oid, migrationRoleOid: initial.role_oid,
-      administrativeLogins: admins, catalogScope: "postgresql-16-18-stock-replacement-v1",
-      zeroCatalogCounts: Object.freeze(counts), observedAt: new Date().toISOString(), readOnlyVerified: true,
+      administrativeLogins: admins,
+      ...(managedSelection ? { catalogScope: MANAGED_NEON_REPLACEMENT_CATALOG_SCOPE,
+        catalogCounts: Object.freeze(counts), managedCatalog: managedSelection.reference } :
+        { catalogScope: "postgresql-16-18-stock-replacement-v1", zeroCatalogCounts: Object.freeze(counts) }),
+      observedAt: new Date().toISOString(), readOnlyVerified: true,
       completeDatabaseEmptyProven: false, authorityIssued: false });
   } catch (error) {
     throw error instanceof BoundaryRefusal ? error : refuse(phase);

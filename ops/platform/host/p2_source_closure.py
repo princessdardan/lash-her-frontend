@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 
@@ -29,6 +30,8 @@ PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
 PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 PROFILED_REPLACEMENT_ARM_MODE = 'p2-profiled-frontend-replacement-arm'
 PROFILED_REPLACEMENT_WRITE_MODE = 'p2-profiled-frontend-replacement-write'
+MANAGED_REPLACEMENT_CATALOG = 'ops/platform/managed-neon-replacement-catalog.json'
+MANAGED_REPLACEMENT_SOURCE_REQUIRED = {MANAGED_REPLACEMENT_CATALOG, 'ops/platform/frontend-managed-neon-catalog.mjs'}
 PROFILED_REPLACEMENT_ARM_REQUIRED = {
     'ops/platform/host/p2_frontend_replacement_parent.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
@@ -67,6 +70,19 @@ PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED = {
     'ops/platform/host/p2_profiled_known_ack_runtime.py',
     'ops/platform/p2-known-ack-loss-probe.mjs',
 }
+
+
+def read_managed_replacement_catalog(initial, root, expected_sha256):
+    import migrate
+    manifest = initial.get('sourceSha256')
+    migrate.demand(type(manifest) is dict and MANAGED_REPLACEMENT_SOURCE_REQUIRED.issubset(manifest) and
+                   all(type(manifest[key]) is str and re.fullmatch(r'(?!0+$)[a-f0-9]{64}', manifest[key])
+                       for key in MANAGED_REPLACEMENT_SOURCE_REQUIRED) and
+                   manifest[MANAGED_REPLACEMENT_CATALOG] == expected_sha256,
+                   'P2_MANAGED_REPLACEMENT_CATALOG_SOURCE_REQUIRED')
+    raw = migrate.read_input(root, MANAGED_REPLACEMENT_CATALOG, 16_384)
+    migrate.demand(migrate.file_hash(raw) == expected_sha256, 'P2_MANAGED_REPLACEMENT_CATALOG_SOURCE_CHANGED')
+    return raw
 
 
 def verify_source_closure(initial, root):
@@ -128,6 +144,9 @@ def verify_profiled_current_source_closure(initial, root):
         if certification.get('mode') == 'interactive-browser' and \
                 (certification.get('scopedAction') or {}).get('stage') == 'stalled-playback-renewal':
             required.add('ops/platform/p2-certification-transport.mjs')
+    manifest = initial.get('sourceSha256')
+    if type(manifest) is dict and MANAGED_REPLACEMENT_SOURCE_REQUIRED.intersection(manifest):
+        required |= MANAGED_REPLACEMENT_SOURCE_REQUIRED
     return _verify_source_closure(initial, root, required, 544, 48_000_000)
 
 

@@ -7,6 +7,7 @@ COPY ops/platform/qualification-target-profile.mjs ops/platform/qualification-ta
 COPY ops/platform/p2-profiled-current-probe.mjs ops/platform/p2-recovery-current-probe.mjs ./ops/platform/
 COPY ops/platform/p2-frontend-replacement-probe.mjs ops/platform/frontend-admission-bootstrap.mjs ./ops/platform/
 COPY ops/platform/p2-frontend-replacement-abort.mjs ops/platform/p2-frontend-replacement-written.mjs ops/platform/p2-frontend-replacement-closed.mjs ./ops/platform/
+COPY ops/platform/frontend-managed-neon-catalog.mjs ops/platform/managed-neon-replacement-catalog.json ./ops/platform/
 COPY src/lib/private-db/migration-lineage.ts ./src/lib/private-db/
 COPY scripts/api-contract-tools.mjs scripts/api-contract-compatibility-review.mjs ./scripts/
 COPY contracts/api-integration/v1/manifest.json ./contracts/api-integration/v1/

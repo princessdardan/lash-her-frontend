@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, linkSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, linkSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -29,7 +29,7 @@ const sourceCommit = "a".repeat(40), environment = "staging", releaseId = "owned
 const phase2 = { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
 const contractManifestSha256 = artifact.contractManifestSha256, sqlArtifactSha256 = artifact.sqlArtifactSha256;
 
-function fixture(t) {
+function fixture(t, managed) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "p2-replacement-plan-")));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bundle = join(directory, "bundle");
@@ -38,9 +38,9 @@ function fixture(t) {
     baseline: join(bundle, "schema/frontend.json"), review: join(directory, "review.json"), lineage: join(directory, "lineage.json") };
   const provider = label => ({ kind: "neon", projectId: "same-owner-project", branchId: "br-" + label, endpointId: "ep-" + label,
     directHost: "ep-" + label + ".us-east-1.aws.neon.tech" });
-  const predecessorProvider = provider("prior"), replacementProvider = provider("replacement");
+  const predecessorProvider = provider("prior"), replacementProvider = managed?.provider ?? provider("replacement");
   const target = { host: replacementProvider.directHost, port: 5432, database: "owned_replacement", user: "owned_migration",
-    serverMajor: 18, runtimeRole: FRONTEND_PREPARATION_ROLES.runtime };
+    serverMajor: 18, ...managed?.target, runtimeRole: FRONTEND_PREPARATION_ROLES.runtime };
   const predecessorTarget = { ...target, host: predecessorProvider.directHost, database: "owned_prior", runtimeRole: "prior_runtime" };
   const baseline = { version: 1, serverMajor: target.serverMajor, sqlArtifactSha256,
     catalog: Object.fromEntries(["relations", "columns", "constraints", "indexes", "triggers", "functions", "enums",
@@ -85,8 +85,9 @@ function fixture(t) {
     schemaBaselineFileSha256: write(files.baseline, baseline),
     predecessor: { provider: predecessorProvider, target: predecessorTarget, lineageSha256: write(files.lineage, lineage),
       deploymentId: "dpl_ownedPrior", recoveryRef: "owned/predecessor-recovery" },
-    replacement: { provider: replacementProvider, databaseOid: "42", migrationRoleOid: "55",
-      administrativeLogins: [{ name: "owned_admin", oid: "51" }], recoveryRef: job.recoveryRef } };
+    replacement: { provider: replacementProvider, databaseOid: managed?.databaseOid ?? "42", migrationRoleOid: managed?.migrationRoleOid ?? "55",
+      administrativeLogins: managed?.administrativeLogins ?? [{ name: "owned_admin", oid: "51" }], recoveryRef: job.recoveryRef,
+      ...(managed ? { managedCatalog: managed.reference } : {}) } };
   const options = { bundle, reviewFile: files.review, reviewSha256: write(files.review, review), lineageFile: files.lineage };
   return { directory, files, options, review, candidate, job, baseline, lineage };
 }
@@ -117,10 +118,38 @@ test("offline plan binds exact replacement, retained lineage and complete SQL or
     candidate: f.candidate, job: f.job, baseline: f.baseline, predecessorTarget: f.review.predecessor.target,
     targetSha256: plan.targetSha256, databaseOid: "42", migrationRoleOid: "55" });
   assert.deepEqual(administrativeLogins, f.review.replacement.administrativeLogins);
+  assert.equal(Object.hasOwn(plan.replacement, "managedCatalog"), false);
   assert(Object.isFrozen(plan.replacement.target) && Object.isFrozen(probe.job.target));
   const result = cli(f.options);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), plan);
+});
+
+test("managed Neon review binds only the pinned catalog reference without changing the physical probe", async t => {
+  const bytes = readFileSync(new URL("./managed-neon-replacement-catalog.json", import.meta.url));
+  const selected = JSON.parse(bytes);
+  const reference = { id: selected.id, sha256: digest(bytes) };
+  const f = fixture(t, { ...selected, reference });
+  const { plan, probe } = prepareP2FrontendReplacementPlan(f.options);
+  assert.deepEqual(plan.replacement.managedCatalog, reference);
+  assert.equal(Object.isFrozen(plan.replacement.managedCatalog), true);
+  assert.deepEqual(probe, { version: 1, qualificationTargetProfile: profile, operation: "verify-pre-bootstrap-lock",
+    candidate: f.candidate, job: f.job, baseline: f.baseline, predecessorTarget: f.review.predecessor.target,
+    targetSha256: plan.targetSha256, databaseOid: selected.databaseOid, migrationRoleOid: selected.migrationRoleOid });
+  for (const [name, change] of [
+    ["unknown catalog", row => { row.managedCatalog.id += "-other"; }],
+    ["wrong baseline bytes", row => { row.managedCatalog.sha256 = "b".repeat(64); }],
+    ["inline catalog", row => { row.managedCatalog.expectedCatalogCounts = {}; }],
+    ["provider drift", row => { row.provider.projectId = "other-project"; }],
+    ["database OID drift", row => { row.databaseOid = "43"; }],
+    ["migration role OID drift", row => { row.migrationRoleOid = "44"; }],
+    ["unreviewed administrator", row => { row.administrativeLogins.push({ name: "extra_owner", oid: "45" }); }],
+  ]) await t.test(name, () => {
+    const replacement = structuredClone(f.review.replacement);
+    change(replacement);
+    const reviewSha256 = write(f.files.review, { ...f.review, replacement });
+    assert.throws(() => prepareP2FrontendReplacementPlan({ ...f.options, reviewSha256 }));
+  });
 });
 
 test("reviewed raw bytes and private paths are mandatory", t => {

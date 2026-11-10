@@ -443,10 +443,12 @@ export async function runP2FrontendReplacementRelease(settings, confirmation) {
   // the disposable entry accepts an injected host or continuation.
   const { openP2FrontendReplacementOperator } = await import("./p2-frontend-replacement-release.mjs");
   const opened = await openP2FrontendReplacementOperator(settings, confirmation);
-  const { probe, administrativeLogins, runtimeReview } = opened.review;
+  const { plan, probe, administrativeLogins, runtimeReview } = opened.review;
+  const { managedCatalog, provider } = plan.replacement;
   const migration = prepareFrontendMigration(probe.candidate, probe.job, probe.baseline, undefined, probe.qualificationTargetProfile);
   return runFrontendReplacementBootstrap({ predecessorTarget: probe.predecessorTarget, administrativeLogins,
-    producerSha256: runtimeReview.producerSha256, inventorySha256: runtimeReview.producerSha256 }, migration, opened, {
+    producerSha256: runtimeReview.producerSha256, inventorySha256: runtimeReview.producerSha256,
+    ...(managedCatalog ? { managedCatalog, provider } : {}) }, migration, opened, {
     scope: "reviewed-staging", withEnvironmentLock: opened.withEnvironmentLock, verifySource: opened.verifySource,
     verifyTarget: () => ({ databaseOid: probe.databaseOid, migrationRoleOid: probe.migrationRoleOid }),
   });
@@ -545,6 +547,7 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
             const observeEmpty = () => verifyEmptyFrontendReplacement(client, {
               target, predecessorTarget: input.predecessorTarget, administrativeLogins: input.administrativeLogins,
               verifyEnvironment, verifySession,
+              ...(input.managedCatalog ? { managedCatalog: input.managedCatalog, provider: input.provider } : {}),
             });
             const observation = await observeEmpty();
             demand(observation.databaseOid === physical.databaseOid && observation.migrationRoleOid === physical.migrationRoleOid, refuse);

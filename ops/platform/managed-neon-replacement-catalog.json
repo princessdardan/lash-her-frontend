@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "id": "staging-neon-replacement-2026-11-09",
+  "provider": {
+    "kind": "neon",
+    "projectId": "noisy-river-83285109",
+    "branchId": "br-holy-art-bc3aif1l",
+    "endpointId": "ep-lingering-meadow-bc80gyj9",
+    "directHost": "ep-lingering-meadow-bc80gyj9.c-16.us-east-1.aws.neon.tech"
+  },
+  "target": {
+    "host": "ep-lingering-meadow-bc80gyj9.c-16.us-east-1.aws.neon.tech",
+    "port": 5432,
+    "database": "neondb",
+    "user": "neondb_owner",
+    "runtimeRole": "lash_her_frontend_staging_runtime_p2",
+    "serverMajor": 18
+  },
+  "databaseOid": "16397",
+  "migrationRoleOid": "16393",
+  "administrativeLogins": [
+    {
+      "name": "cloud_admin",
+      "oid": "10"
+    },
+    {
+      "name": "neon_service",
+      "oid": "16395"
+    }
+  ],
+  "roles": [
+    ["cloud_admin","10",true,true,true,true,true,true,true,-1],
+    ["neon_service","16395",true,false,true,true,true,true,true,-1],
+    ["neon_superuser","16384",false,false,true,true,true,true,true,-1],
+    ["neondb_owner","16393",true,false,true,true,true,true,true,-1]
+  ],
+  "memberships": [
+    ["3373","16384","10",true,true,true],
+    ["4200","16384","10",true,true,true],
+    ["6181","16384","10",true,true,true],
+    ["6182","16384","10",true,true,true],
+    ["6304","16384","10",true,true,true],
+    ["6337","16384","10",true,true,false],
+    ["6392","16384","10",true,true,false],
+    ["16384","16393","10",false,true,true],
+    ["16384","16395","10",false,true,true]
+  ],
+  "defaultAcl": [
+    ["16399","10","2200","r","{neon_superuser=a*r*w*d*D*m*/cloud_admin}"],
+    ["16400","10","2200","S","{neon_superuser=r*w*U*/cloud_admin}"]
+  ],
+  "dependencies": [
+    ["16399","pg_default_acl",0,"pg_namespace","2200",0,"a"],
+    ["16400","pg_default_acl",0,"pg_namespace","2200",0,"a"]
+  ],
+  "sharedDependencies": [
+    ["16399","pg_default_acl",0,"pg_authid","16384","a"],
+    ["16400","pg_default_acl",0,"pg_authid","16384","a"]
+  ],
+  "databaseAclBefore": [
+    ["0","16393","CONNECT",false],
+    ["0","16393","TEMPORARY",false],
+    ["16384","16393","CONNECT",false],
+    ["16384","16393","CREATE",false],
+    ["16384","16393","TEMPORARY",false],
+    ["16393","16393","CONNECT",false],
+    ["16393","16393","CREATE",false],
+    ["16393","16393","TEMPORARY",false]
+  ],
+  "databaseAclAfter": [
+    ["16384","16393","CONNECT",false],
+    ["16384","16393","CREATE",false],
+    ["16384","16393","TEMPORARY",false],
+    ["16393","16393","CONNECT",false],
+    ["16393","16393","CREATE",false],
+    ["16393","16393","TEMPORARY",false]
+  ],
+  "expectedNonzeroCatalogCounts": {
+    "pg_default_acl": 2,
+    "normal_object_dependencies": 2,
+    "local_shared_dependencies": 2
+  }
+}

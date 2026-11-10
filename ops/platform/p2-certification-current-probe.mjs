@@ -104,9 +104,9 @@ async function verifyReplacementIdentity(client,target,replacement){
     'current-replacement-database-identity');
 }
 
-async function verifyReplacementLogins(client,target,replacement,runtime){
+async function verifyReplacementLogins(client,target,replacement,runtime,owner){
   const {verifyReplacementLoginBoundary}=await import('./p2-frontend-replacement-written.mjs');
-  await verifyReplacementLoginBoundary(client,{...replacement,migrationRole:target.user,runtime});
+  await verifyReplacementLoginBoundary(client,{...replacement,migrationRole:target.user,runtime,target,owner});
   await client.query('SELECT pg_catalog.pg_stat_clear_snapshot()');
   const allowed=[replacement.migrationRoleOid,runtime.oid,...replacement.administrativeLogins.map(login=>login.oid)];
   const {rows}=await client.query(`SELECT 1 FROM pg_catalog.pg_stat_activity
@@ -294,7 +294,7 @@ async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,i
     let loginProof;
     if(replacementRelease){
       checkpoint='current-replacement-logins';
-      await verifyReplacementLogins(client,target,replacementRelease,runtime);
+      await verifyReplacementLogins(client,target,replacementRelease,runtime,owner);
       const {verifyReplacementAdmissionRelations}=await import('./p2-frontend-replacement-written.mjs');
       await verifyReplacementAdmissionRelations(client,owner.oid);
       loginProof=replacementProof(replacementRelease);
@@ -654,7 +654,7 @@ async function containProfiledCertificationAdmission(probe,{getUrl},replacing){
       const {verifyReplacementRuntimeGrants}=await import('./p2-recovery-current-probe.mjs');
       const runtime=await verifyReplacementRuntimeGrants(client,target,owner);
       demand(isDeepStrictEqual(runtime,receipt.runtime),'guard-replacement-runtime');
-      await verifyReplacementLogins(client,target,replacementRelease,runtime);
+      await verifyReplacementLogins(client,target,replacementRelease,runtime,owner);
       await client.query('ROLLBACK');started=false;await verify();
       await verifyReplacementParent(client,probe,true,true);
     }

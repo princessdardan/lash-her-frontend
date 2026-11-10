@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
+import { selectManagedNeonCatalogForTarget, verifyManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { validateP2FrontendReplacementProbe, verifyP2FrontendReplacementObservation,
   withP2FrontendReplacementReadOnlyProbe } from "./p2-frontend-replacement-probe.mjs";
@@ -66,7 +67,7 @@ function prepare(packet) {
 }
 
 export async function verifyReplacementLoginBoundary(client, {
-  databaseOid, migrationRoleOid, migrationRole, predecessorRuntimeRole, runtime, administrativeLogins,
+  databaseOid, migrationRoleOid, migrationRole, predecessorRuntimeRole, runtime, administrativeLogins, target, owner,
 }) {
   const access = (await client.query(`SELECT
     pg_catalog.has_database_privilege('public',$1::oid,'CONNECT,TEMP,CREATE') AS public_database_access,
@@ -82,6 +83,14 @@ export async function verifyReplacementLoginBoundary(client, {
     WHERE rolcanlogin AND pg_catalog.has_database_privilege(oid,$1::oid,'CONNECT') LIMIT 35`, [databaseOid])).rows;
   const expected = [...administrativeLogins, runtime, { name: migrationRole, oid: migrationRoleOid }];
   demand(isDeepStrictEqual(logins.sort(compareLogins), expected.sort(compareLogins)));
+  const selected = target && selectManagedNeonCatalogForTarget({
+    target: Object.fromEntries(["host", "port", "database", "user", "runtimeRole", "serverMajor"].map(key => [key, target[key]])),
+    databaseOid, migrationRoleOid, administrativeLogins,
+  });
+  if (selected) {
+    demand(owner?.name === FRONTEND_PREPARATION_ROLES.owner && oid(owner.oid));
+    await verifyManagedNeonCatalog(client, selected, { preparedRoles: { owner, runtime } });
+  }
 }
 
 export async function verifyReplacementJournalTable(client, migrationRoleOid) {
@@ -110,7 +119,8 @@ async function verifyWrittenState(client, selected) {
   demand(isDeepStrictEqual(actual, journal) && isDeepStrictEqual(await readMigrationCatalog(client), probe.baseline.catalog));
   demand(isDeepStrictEqual(await verifyReplacementRuntimeGrants(client, probe.job.target, owner), runtime));
   await verifyReplacementLoginBoundary(client, { databaseOid: probe.databaseOid, migrationRoleOid: probe.migrationRoleOid,
-    migrationRole: probe.job.target.user, predecessorRuntimeRole: probe.predecessorTarget.runtimeRole, runtime, administrativeLogins });
+    migrationRole: probe.job.target.user, predecessorRuntimeRole: probe.predecessorTarget.runtimeRole,
+    runtime, administrativeLogins, target: probe.job.target, owner });
   const ownership = (await client.query(`SELECT r.oid::text AS owner FROM pg_catalog.pg_roles r
     JOIN pg_catalog.pg_namespace n ON n.nspowner=r.oid
     WHERE n.nspname='frontend_admission' AND r.rolname=$1 AND NOT (

@@ -19,6 +19,7 @@ import migrate
 import p2_frontend_replacement_parent as parent
 import p2_release_broker as broker_module
 import p2_release_supervisor as supervisor
+from p2_source_closure import MANAGED_REPLACEMENT_CATALOG, MANAGED_REPLACEMENT_SOURCE_REQUIRED
 
 
 class ReplacementArmTests(unittest.TestCase):
@@ -113,6 +114,145 @@ class ReplacementArmTests(unittest.TestCase):
             'observationLockReleased': True, 'journalPresent': True, 'appliedPrefix': prefix,
             'appliedPrefixSha256': migrate.file_hash(parent.encoded(prefix)), 'replayAuthorized': False,
         }) + b'\n'
+
+    def managed_inputs(self, *, writing=True):
+        target = self.plan['replacement']['target']
+        provider = {'kind': 'neon', 'projectId': 'owned-project', 'branchId': 'br-owned',
+                    'endpointId': 'ep-owned', 'directHost': target['host']}
+        admins = [{'name': 'cloud_admin', 'oid': '10'}, {'name': 'neon_service', 'oid': '16395'}]
+        catalog = {'version': 1, 'id': parent.MANAGED_CATALOG_ID, 'provider': provider, 'target': target,
+                   'databaseOid': '42', 'migrationRoleOid': '43', 'administrativeLogins': admins,
+                   'roles': [], 'memberships': [], 'defaultAcl': [], 'dependencies': [], 'sharedDependencies': [],
+                   'databaseAclBefore': [], 'databaseAclAfter': [],
+                   'expectedNonzeroCatalogCounts': dict(parent.MANAGED_CATALOG_COUNTS)}
+        catalog_file = self.root / MANAGED_REPLACEMENT_CATALOG
+        catalog_file.parent.mkdir(parents=True)
+        raw = parent.encoded(catalog) + b'\n'
+        catalog_file.write_bytes(raw)
+        sha = migrate.file_hash(raw)
+        ref = {'id': catalog['id'], 'sha256': sha}
+        plan = {**self.plan, 'replacement': {**self.plan['replacement'], 'provider': provider,
+                                            'administrativeLogins': admins, 'managedCatalog': ref}}
+        plan_raw = parent.encoded(plan) + b'\n'
+        review = migrate.file_hash(plan_raw)
+        mode = 'write' if writing else 'arm'
+        initial = {**(self.write_initial if writing else self.initial),
+                   'sourceSha256': {**dict.fromkeys(MANAGED_REPLACEMENT_SOURCE_REQUIRED, '4' * 64),
+                                    MANAGED_REPLACEMENT_CATALOG: sha},
+                   'reviewedPlanBytes': base64.b64encode(plan_raw).decode(), 'reviewedPlanSha256': review,
+                   'confirmation': 'staging/' + self.release_id + '/replacement-' + mode + '/' + review}
+        boundary = {key: value for key, value in self.empty_boundary.items() if key != 'zeroCatalogCounts'}
+        boundary.update(administrativeLogins=admins, catalogScope=parent.MANAGED_CATALOG_SCOPE, managedCatalog=ref,
+                        catalogCounts={**self.empty_boundary['zeroCatalogCounts'], **catalog['expectedNonzeroCatalogCounts']})
+        return initial, plan, plan_raw, boundary, catalog_file
+
+    def test_checked_in_managed_catalog_projects_the_exact_host_boundary(self):
+        source = Path(__file__).resolve().parents[3]
+        manifest = {name: migrate.file_hash((source / name).read_bytes()) for name in MANAGED_REPLACEMENT_SOURCE_REQUIRED}
+        baseline = json.loads((source / MANAGED_REPLACEMENT_CATALOG).read_bytes())
+        ref = {'id': baseline['id'], 'sha256': manifest[MANAGED_REPLACEMENT_CATALOG]}
+        bindings = {key: baseline[key] for key in ('provider', 'target', 'databaseOid', 'migrationRoleOid', 'administrativeLogins')}
+        plan = {**self.plan, 'replacement': {**self.plan['replacement'], **bindings, 'managedCatalog': ref}}
+        target = {**self.probe['job']['target'], **bindings['target']}
+        probe = {**self.probe, 'job': {**self.probe['job'], 'target': target},
+                 'databaseOid': baseline['databaseOid'], 'migrationRoleOid': baseline['migrationRoleOid']}
+        boundary = {key: value for key, value in self.empty_boundary.items() if key != 'zeroCatalogCounts'}
+        boundary.update({key: bindings[key] for key in ('target', 'databaseOid', 'migrationRoleOid', 'administrativeLogins')})
+        boundary.update(catalogScope=parent.MANAGED_CATALOG_SCOPE, managedCatalog=ref,
+                        catalogCounts={**self.empty_boundary['zeroCatalogCounts'], **baseline['expectedNonzeroCatalogCounts']})
+        self.assertEqual(parent.empty_catalog_receipt({'sourceSha256': manifest}, plan, probe, boundary, source=source),
+                         parent.encoded(boundary) + b'\n')
+
+    def test_managed_plan_binds_approved_catalog_without_widening_the_physical_probe(self):
+        initial, plan, plan_raw, _boundary, _catalog_file = self.managed_inputs(writing=False)
+        installed = Path('/opt/lash-her/operators') / self.commit
+        jobs = {'frontend': {'job': self.job, 'schema': self.raw_baseline, 'image': self.image}}
+        read_catalog = parent.read_managed_replacement_catalog
+        with (patch.object(parent.runtime, 'assert_host'), patch.object(parent, 'verify_profiled_current_source_closure'),
+              patch.object(parent, 'exact_host_directory', side_effect=Path),
+              patch.object(migrate, 'make_plan', return_value=(self.candidate, jobs)),
+              patch.object(parent, 'read_managed_replacement_catalog',
+                           side_effect=lambda supplied, _source, sha: read_catalog(supplied, self.root, sha)) as read):
+            self.assertEqual(parent.prepare(initial, installed),
+                             (plan_raw, plan, self.probe_base, self.image, self.directory))
+            read.assert_called_once_with(initial, installed, plan['replacement']['managedCatalog']['sha256'])
+
+    def test_managed_receipt_requires_exact_source_bound_scope_and_counts(self):
+        initial, plan, _plan_raw, boundary, catalog_file = self.managed_inputs()
+        self.assertEqual(parent.empty_catalog_receipt(initial, plan, self.probe, boundary, source=self.root),
+                         parent.encoded(boundary) + b'\n')
+        for variant in (self.empty_boundary, {**boundary, 'zeroCatalogCounts': self.empty_boundary['zeroCatalogCounts']},
+                        {**boundary, 'catalogScope': self.empty_boundary['catalogScope']},
+                        {**boundary, 'managedCatalog': {**boundary['managedCatalog'], 'sha256': '6' * 64}},
+                        {**boundary, 'administrativeLogins': []}, {**boundary, 'completeDatabaseEmptyProven': True},
+                        {**boundary, 'catalogCounts': {**boundary['catalogCounts'], 'pg_class': 1}},
+                        {**boundary, 'catalogCounts': {**boundary['catalogCounts'], 'pg_type': 1}},
+                        {**boundary, 'catalogCounts': {key: value for key, value in boundary['catalogCounts'].items() if key != 'pg_type'}},
+                        {**boundary, 'catalogCounts': {**boundary['catalogCounts'], 'pg_default_acl': 0}},
+                        {**boundary, 'catalogCounts': {**boundary['catalogCounts'], 'pg_class': False}}):
+            with self.subTest(variant=variant), self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.empty_catalog_receipt(initial, plan, self.probe, variant, source=self.root)
+        with self.assertRaisesRegex(ValueError, parent.REFUSED):
+            parent.empty_catalog_receipt(self.initial, self.plan, self.probe, boundary, source=self.root)
+        for probe in ({**self.probe, 'databaseOid': '44'}, {**self.probe, 'migrationRoleOid': '44'}):
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.empty_catalog_receipt(initial, plan, probe, boundary, source=self.root)
+        for change in ({'provider': {**plan['replacement']['provider'], 'endpointId': 'ep-other'}},
+                       {'target': {**plan['replacement']['target'], 'serverMajor': 17}},
+                       {'databaseOid': '44'}, {'migrationRoleOid': '44'},
+                       {'administrativeLogins': [{'name': 'cloud_admin', 'oid': '11'}]},
+                       {'administrativeLogins': list(reversed(plan['replacement']['administrativeLogins']))},
+                       {'managedCatalog': {**boundary['managedCatalog'], 'id': 'other-catalog'}}):
+            changed_plan = {**plan, 'replacement': {**plan['replacement'], **change}}
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.empty_catalog_receipt(initial, changed_plan, self.probe, boundary, source=self.root)
+        with self.assertRaisesRegex(ValueError, 'CATALOG_SOURCE_REQUIRED'):
+            parent.empty_catalog_receipt({**initial, 'sourceSha256': {}}, plan, self.probe, boundary, source=self.root)
+        catalog_file.write_bytes(catalog_file.read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'CATALOG_SOURCE_CHANGED'):
+            parent.empty_catalog_receipt(initial, plan, self.probe, boundary, source=self.root)
+
+    def test_guard_rechecks_managed_bytes_after_observing_the_exact_held_backend(self):
+        initial, plan, plan_raw, boundary, catalog_file = self.managed_inputs()
+        self.write_directory.mkdir(mode=0o700)
+        migrate.write_exact_bytes(self.write_directory, 'reviewed-plan.json', plan_raw)
+        cancelled = threading.Event()
+        with (patch.object(supervisor, 'verify_guard_boundary'),
+              patch.object(parent, 'observe', return_value=self.raw_observation) as observe):
+            parent.verify_and_retain(initial, plan, self.probe_base, self.image, self.write_directory,
+                                     self.root, self.probe, cancelled)
+            arm_sha = migrate.file_hash((self.write_directory / parent.ARM).read_bytes())
+            request = {'armReceiptSha256': arm_sha, 'emptyCatalogReceipt': boundary}
+            def changed_catalog(*_args):
+                catalog_file.write_bytes(catalog_file.read_bytes() + b' ')
+                return self.raw_observation
+            observe.side_effect = changed_catalog
+            with self.assertRaisesRegex(ValueError, 'CATALOG_SOURCE_CHANGED'):
+                parent.verify_and_retain_write_custody(initial, plan, self.probe_base, self.image,
+                    self.write_directory, self.root, self.probe, request, cancelled)
+            self.assertTrue((self.write_directory / parent.WRITE_OBSERVER_RETURNED).is_file())
+            self.assertFalse((self.write_directory / parent.WRITE_BOUNDARY).exists())
+            self.assertFalse((self.write_directory / parent.WRITE_INTENT).exists())
+
+    def test_managed_write_custody_rejoins_exact_retained_bytes(self):
+        initial, plan, plan_raw, boundary, _catalog_file = self.managed_inputs()
+        self.write_directory.mkdir(mode=0o700)
+        migrate.write_exact_bytes(self.write_directory, 'reviewed-plan.json', plan_raw)
+        cancelled = threading.Event()
+        with (patch.object(supervisor, 'verify_guard_boundary'),
+              patch.object(parent, 'observe', return_value=self.raw_observation) as observe):
+            parent.verify_and_retain(initial, plan, self.probe_base, self.image, self.write_directory,
+                                     self.root, self.probe, cancelled)
+            arm_sha = migrate.file_hash((self.write_directory / parent.ARM).read_bytes())
+            request = {'armReceiptSha256': arm_sha, 'emptyCatalogReceipt': boundary}
+            parent.verify_and_retain_write_custody(initial, plan, self.probe_base, self.image,
+                self.write_directory, self.root, self.probe, request, cancelled)
+        self.assertEqual(observe.call_count, 2)
+        receipt, _intent, physical = parent.require_write_custody(initial, plan, self.probe, self.write_directory,
+            arm_sha, boundary, source=self.root)
+        self.assertEqual(physical, self.raw_observation)
+        self.assertEqual(receipt['emptyCatalogReceiptSha256'], migrate.file_hash(parent.encoded(boundary) + b'\n'))
+        self.assertTrue(all(receipt[key] is False for key in parent.NO_AUTHORITY))
 
     def test_exact_review_and_confirmation(self):
         self.assertEqual(parent.reviewed_plan(self.initial), (self.plan_raw, self.plan))
@@ -336,7 +476,11 @@ class ReplacementArmTests(unittest.TestCase):
                             {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'authorityIssued': True}},
                             {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'zeroCatalogCounts': {}}},
                             {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'zeroCatalogCounts': {
-                                **self.empty_boundary['zeroCatalogCounts'], 'pg_class': False}}}):
+                                **self.empty_boundary['zeroCatalogCounts'], 'pg_class': False}}},
+                            {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'zeroCatalogCounts': {
+                                **self.empty_boundary['zeroCatalogCounts'], 'pg_type': 1}}},
+                            {**request, 'emptyCatalogReceipt': {**self.empty_boundary, 'zeroCatalogCounts': {
+                                key: value for key, value in self.empty_boundary['zeroCatalogCounts'].items() if key != 'pg_type'}}}):
                 with self.assertRaisesRegex(ValueError, parent.REFUSED):
                     parent.verify_and_retain_write_custody(self.write_initial, self.plan, self.probe_base, self.image,
                         self.write_directory, self.root, self.probe, changed, threading.Event())

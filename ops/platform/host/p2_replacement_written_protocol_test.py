@@ -128,6 +128,7 @@ class ReplacementWrittenProtocolTests(unittest.TestCase):
         emitted = []
         broker = parent.ReplacementWriteBroker(self.write_initial, emitted.append, image=self.image)
         broker.probe, broker.plan, broker.directory = self.probe, self.plan, self.write_directory
+        broker.source = self.root
         broker.custody = {'armReceiptSha256': '3' * 64, 'emptyCatalogReceipt': self.empty_boundary}
         broker.guard_alive, broker.write_observation = True, self.raw_observation
         self.write_directory.mkdir(mode=0o700)
