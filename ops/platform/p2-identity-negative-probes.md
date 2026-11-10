@@ -77,6 +77,17 @@ Install the exact CI-qualified frontend source using `committedProfiledCurrentOp
 
 Use `successorRuntime: null` for the original replacement runtime. After a known-acknowledgement or interrupted restoration, supply the original four-field successor reference from the guardian receipt and the selected successor configuration directory. The host verifies the original release and successor before and after the probe, including their mounts, exact runtime inventory, gateway process and closed, zero-uncertainty admission. The Community API may bind only the selected configuration's read-only CA file. The fixed child, HTTP allowlist and check set are the same as version 1. The result supplies the private S06 probe only. Public browser/cache behavior, key rotation and deployed S06 acceptance require separate evidence.
 
+Prepare a mode-0600 settings JSON outside Git with version 2 and the exact profile. Include the reviewed version 2 object above without `operatorSourceFiles`, `operatorSourceSha256` or `programSha256`. The command derives those from the exact committed frontend source. Provide `host` with its existing `bundle`, `configuration` and `results` paths, local absolute `results`, `knownHosts` and `sshKey` paths, and local absolute paths in `priorEvidence.originalReleaseReceipt` and `priorEvidence.frontendDeploymentRecord`. The reviewed evidence hashes must already match those original files.
+
+From the exact candidate checkout on the `staging` branch, use Node 24.
+
+```sh
+node ops/platform/p2-replacement-identity-probe.mjs --plan /absolute/private/identity-probe-settings.json
+node ops/platform/p2-replacement-identity-probe.mjs --verify-readonly /absolute/private/identity-probe-settings.json --confirm EXACT_REVIEWED_CONFIRMATION
+```
+
+The offline command performs no SSH or GitHub calls. The reviewed action checks current exact staging CI using the existing read-only source token, verifies the host's machine identity through pinned SSH, installs the exact public operator source, and checks the host plan before sending the original evidence privately. It records the host receipt in a fresh local private results directory. A failed or uncertain attempt preserves its original diagnostics. The action carries no database credential, runs no SQL and changes no admission or provider configuration.
+
 ## Owned verification
 
 Run Node fixtures with explicit exact-source compiled API directories:
