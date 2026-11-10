@@ -391,6 +391,18 @@ class ProfiledReceiverCaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
             stage.require_joined()
 
+    def test_drift_between_completed_cases_refuses_before_second_intent_or_post(self):
+        stage = self.start()
+        stage.observe_next("owned-private-runtime-url")
+        retained = sorted(path.name for path in stage.directory.iterdir())
+        self.drift = True
+        for operation in (lambda: stage.observe_next("owned-private-runtime-url"), stage.require_joined):
+            with self.assertRaisesRegex(ValueError, "SCOPED_RECEIVER_NEGATIVES_REFUSED"):
+                operation()
+        self.assertEqual(self.posts, [("course", "exact-replay")])
+        self.assertEqual(self.read_count, 3)
+        self.assertEqual(sorted(path.name for path in stage.directory.iterdir()), retained)
+
     def test_missing_opt_in_legacy_or_future_gap_never_creates_authority(self):
         stage = self.start()
         for case in ("exact-replay", "future-gap"):
