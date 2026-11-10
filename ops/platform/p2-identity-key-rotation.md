@@ -16,10 +16,14 @@ a Community feature or a public debug/token endpoint.
 
 The package includes a source-fixed config-only parent, single-use SSH
 transport, exact source-CI/install operator, typed host broker/scope, canonical
-staging-origin observer, and normal frontend Course read recorder. Source
-dispatch is integrated, but the action remains live-ineligible until its
-actual Linux/Docker/Vercel/staging qualification. `keyRemovalVerified` remains
-false outside a successful joined run. The parent retains the Linux release
+staging-origin observer, and normal frontend Course read recorder. The
+controller remains live-ineligible. The operator's reviewed plan still needs
+a fixed projection to the controller's private action directory and record
+bindings. The legacy capture reply also needs to return only profile and timing
+metadata while keeping the exact JWT pairs on the host. Both boundaries need
+qualification on the actual Linux/Docker/Vercel/staging path.
+`keyRemovalVerified` remains false outside a successful joined run. The
+parent is designed to retain the Linux release
 flock and frontend PostgreSQL physical advisory/nonce lock throughout each
 configuration mutation, runtime recreation, frontend build/promotion, and
 proof. Retained-READY recovery and failed/canceled forward recovery are not
@@ -88,10 +92,10 @@ metadata inventory and remains closed for review.
    before any provider or Compose call.
 2. Recreate Course and Community with one registered Compose mutation on the
    exact same images using `overlap`.
-   Prove old and new controlled tokens for both API profiles are accepted. The
-   existing deployed Course verifier probe supplies the actual Course runtime
-   current/previous configuration and module proof; the Course HTTP child alone
-   deliberately reports no configuration-observation claim.
+   Verify the receiver overlap configuration. The existing deployed Course
+   verifier probe supplies the actual Course runtime current/previous
+   configuration and module proof. The Course HTTP child deliberately reports
+   no configuration-observation claim.
 3. Create and promote one exact frontend `overlap` build. Verify the actual
    protected Course learner/admin frontend operations use the new current key.
    Customer and administrator browser contexts authenticate through the normal
@@ -106,27 +110,31 @@ metadata inventory and remains closed for review.
    least 330 seconds: the 300-second maximum token lifetime plus 30-second
    verifier skew. Continuous guards must retain source, candidate,
    configuration, runtime, provider intent, and both locks.
-5. Only after that drain, immediately before removal, privately issue
-   controlled, unexpired old and new tokens for all four profiles. Tokens
-   remain only in root-owned mode-0600
-   action records and are never hashed into common output.
-6. Promote one exact frontend `currentOnly` build while both APIs still accept
-   overlap, then recreate Course and Community on the same images with
-   `currentOnly`.
-7. Prove the old unexpired token is rejected and the new token accepted for
-   every profile. Course learner/admin use real protected HTTPS operations and
-   exact request IDs/statuses. Community has no user feature route in this
-   phase, so its evidence is explicitly `deployed-private-community-verifier`:
-   the fixed child runs inside the exact selected Community container, imports
-   its real configured member/admin verifier, proves previous-key absence and
-   verifies moderator capability enforcement. It is not a Community member UI
-   or HTTP-journey claim.
-8. Re-prove actual frontend protected Course operations and qualified
-   restoration readiness. Prepare the terminal receipt while the frontend
-   session is still held, stop the observers, close that session, and use an
-   independent exact-image proof that its backend is absent, both advisory
-   locks are acquirable, and frontend admission remains closed and drained.
-   Only the final joined receipt may set `keyRemovalVerified: true`.
+5. After that drain, promote one exact frontend `currentOnly` build while
+   both APIs still accept overlap. Verify the current frontend signer with
+   the protected learner and administrator Course reads before issuing any
+   proof tokens. Build, promotion and browser authentication consume no part
+   of the proof tokens’ 300-second lifetime.
+6. Record the one-use capture intent. Privately issue controlled, unexpired
+   old and new tokens for all four profiles and prove both are accepted while
+   the receivers still run overlap. The controller retains only signer
+   references, profile names and issuance, expiry and observation times.
+   An unqualified retained capture intent requires review.
+7. Recreate Course and Community on the same images with `currentOnly`.
+   Prove that each exact, still-unexpired old token is rejected and its paired
+   new token is accepted. A lost receiver mutation acknowledgement is
+   reconciled GET-first against the retained capture. Course learner/admin
+   use real protected HTTPS operations with exact request IDs and statuses.
+   The `deployed-private-community-verifier` evidence comes from the fixed
+   child inside the exact selected Community container. It imports the real
+   member/admin verifier, proves previous-key absence and verifies moderator
+   capability enforcement.
+8. Recheck the current runtime and frontend boundary and the retained signer
+   proof. Prepare the terminal receipt while the frontend session is still
+   held, stop the observers, close that session, and use an independent
+   exact-image proof that its backend is absent, both advisory locks are
+   acquirable, and frontend admission remains closed and drained. Only the
+   final joined receipt may set `keyRemovalVerified: true`.
 
 Outside the source-fixed authentication and signer-read windows, frontend
 admission remains closed. Each authentication window is fixed at 300 seconds;
