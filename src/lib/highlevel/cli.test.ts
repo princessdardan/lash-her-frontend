@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 for (const [script, expectedError] of [
-  ["highlevel-config-check.ts", "missing_highlevel_location_id"],
+  ["highlevel-config-check.ts", "highlevel_configuration_check_failed"],
   ["highlevel-backfill.ts", "highlevel_backfill_failed"],
 ] as const) {
   test(`HighLevel CLI ${script} reaches its configuration guard under the package module settings`, () => {

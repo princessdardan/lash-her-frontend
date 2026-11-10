@@ -2,11 +2,11 @@ import { highlevel } from "../src/lib/highlevel/client";
 import { fieldIds, locationId, workflowId } from "../src/lib/highlevel/config";
 import { closePrivateDbPool } from "../src/lib/private-db/client";
 import { HighLevelError, type Journey } from "../src/lib/highlevel/contract";
-import { runWriterAdmission } from "../src/lib/writer-admission/runtime";
+import { runManualWriterAdmission } from "../src/lib/writer-admission/manual";
 
 async function main() {
   try {
-    await runWriterAdmission("new-work", async () => {
+    await runManualWriterAdmission(true, "new-work", async () => {
       const location = locationId();
       // These apparent reads may rotate the same OAuth token. Await each call so
       // no refresh/provider sibling can outlive a caught configuration failure.

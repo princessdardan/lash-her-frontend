@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { runWriterAdmission } from "../src/lib/writer-admission/runtime";
+import { runManualWriterAdmission } from "../src/lib/writer-admission/manual";
 
 import { and, eq, isNull, notExists, sql } from "drizzle-orm";
 
@@ -34,9 +34,7 @@ const BATCH_SIZE = 500;
 
 async function main(): Promise<void> {
   const execute = process.argv.includes("--execute");
-  return execute
-    ? runWriterAdmission("new-work", () => processBackfill(true))
-    : processBackfill(false);
+  return runManualWriterAdmission(execute, "new-work", () => processBackfill(execute));
 }
 
 async function processBackfill(execute: boolean): Promise<void> {

@@ -55,6 +55,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/writer-admission/square-booking.test.ts",
   "src/lib/writer-admission/consent-recovery.test.ts",
   "src/lib/writer-admission/training.test.ts",
+  "src/lib/writer-admission/manual-scripts.test.ts",
   "src/lib/api-integration/gateway-transport.test.ts",
   "src/lib/api-integration/rollout-flags.test.ts",
   "src/app/api/admin/shipping/label-handler.test.ts",
@@ -151,6 +152,8 @@ if (!new Set(["--no-db", "--db-only"]).has(mode)) {
   throw new Error(`Unsupported test mode: ${mode}`);
 }
 
+const testDatabaseUrl = mode === "--db-only" ? requireIsolatedTestDatabaseUrl() : undefined;
+
 const testFiles = (await listTestFiles("src")).sort();
 const registeredTestFiles = new Set([
   ...SERVER_ONLY_TEST_FILES,
@@ -214,13 +217,41 @@ if (mode === "--no-db") {
     "./scripts/register-server-only-test.mjs",
   ]);
 } else {
-  if (!process.env.TEST_DATABASE_URL) {
-    throw new Error(
-      "TEST_DATABASE_URL is required for the authoritative DB unit test suite",
-    );
-  }
-
   runTests(dbTestFiles, ["--conditions=react-server", "--test-concurrency=1"]);
+}
+
+function requireIsolatedTestDatabaseUrl() {
+  const refuse = () => {
+    throw new Error("DB unit tests require TEST_DATABASE_URL to name a disposable loopback PostgreSQL database");
+  };
+  const releaseEnvironment = [
+    process.env.APP_ENV,
+    process.env.VERCEL_ENV,
+    process.env.VERCEL_TARGET_ENV,
+  ].some(value => value === "staging" || value === "production");
+  if (releaseEnvironment || !process.env.TEST_DATABASE_URL) refuse();
+
+  let url;
+  try {
+    url = new URL(process.env.TEST_DATABASE_URL);
+  } catch {
+    refuse();
+  }
+  const options = [...url.searchParams.keys()];
+  const database = url.pathname.slice(1).toLowerCase();
+  const labels = database.split(/[-_]+/u);
+  if (!["postgres:", "postgresql:"].includes(url.protocol) ||
+    !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname.toLowerCase()) ||
+    !/^\/[a-zA-Z0-9_-]{1,63}$/u.test(url.pathname) ||
+    !labels.some(label => ["test", "ci", "integration", "audit", "roundtrip", "scratch", "owned", "e2e"].includes(label)) ||
+    labels.some(label => ["prod", "production", "staging", "stage", "live", "main"].includes(label)) ||
+    options.some(key => !["sslmode", "application_name", "connect_timeout", "sslrootcert", "sslcert", "sslkey"].includes(key)) ||
+    new Set(options).size !== options.length || url.hash) {
+    refuse();
+  }
+  // Bind every child to the checked test target, independent of an ambient PGPORT.
+  if (!url.port) url.port = "5432";
+  return url.href;
 }
 
 async function listTestFiles(directory) {
@@ -256,6 +287,11 @@ function runTests(files, nodeOptions) {
           process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "test-project",
       }
     : { ...process.env };
+
+  if (testDatabaseUrl) {
+    env.TEST_DATABASE_URL = testDatabaseUrl;
+    env.DATABASE_URL = testDatabaseUrl;
+  }
 
   // The DB tests run under `--conditions=react-server` (so `server-only`
   // resolves to its no-op stub). That condition also forces React 18 onto its
