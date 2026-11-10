@@ -22,7 +22,7 @@
     "test:unit:db": "node scripts/run-source-unit-tests.mjs --db-only",
     "test:unit:all": "npm run test:unit && npm run test:unit:db",
     "test:coverage:critical": "c8 --config scripts/critical-coverage.config.json npm run test:unit:all && node scripts/verify-critical-source-coverage.mjs",
-    "test:unit:scripts": "node --test scripts/check-square-card-on-file-env.test.mjs scripts/api-contract-tools.test.mjs scripts/validate-staging-release.test.mjs && npm run test:security-deps",
+    "test:unit:scripts": "node --test scripts/check-square-card-on-file-env.test.mjs scripts/api-contract-tools.test.mjs scripts/validate-staging-release.test.mjs scripts/run-source-unit-tests.test.mjs && npm run test:security-deps",
     "test:ui": "playwright test --ui",
     "test:bnpl": "playwright test --config tests/square-afterpay.playwright.config.ts",
     "test:headed": "playwright test --headed",
