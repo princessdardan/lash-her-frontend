@@ -3,17 +3,17 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact, frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 import { closeFrontendInteractiveAdmission, openFrontendInteractiveAdmission, prepareFrontendInteractiveProducer,
-  reconcileFrontendOperation } from "./frontend-admission.mjs";
+  reconcileFrontendOperation, runFrontendWriterOperation } from "./frontend-admission.mjs";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES as roles, prepareFrontendRolesPlan } from "./frontend-role-preparation.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
-import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
+import { assertOwnedFrontendReplacementCluster, openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import {
   containP2ProfiledCertificationAdmission, containP2ProfiledReplacementCertificationAdmission,
   containP2ProfiledReplacementRotationAdmission,
@@ -27,9 +27,9 @@ import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./quali
 const artifact = frontendMigrationArtifact();
 const digest = digit => digit.repeat(64);
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const sourceCommit = "a".repeat(40), producerSha256 = digest("b");
+const defaults = { sourceCommit: "a".repeat(40), producerSha256: digest("b"), releaseId: "owned-frontend-replacement" };
+const { sourceCommit, producerSha256 } = defaults;
 const migrationUser = "owned_frontend_certifier";
-const releaseId = "owned-frontend-replacement";
 const journalSql = "SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC";
 const expectedJournal = artifact.migrations.map(({ hash, folderMillis }) => ({ hash, created_at: String(folderMillis) }));
 const closed = { epoch: "1", newWork: false, recovery: false, active: 0, uncertain: 0 };
@@ -37,6 +37,7 @@ const closed = { epoch: "1", newWork: false, recovery: false, active: 0, uncerta
 function selection({
   port = 5432, serverMajor = 16, catalog = {}, databaseOid = "42", migrationRoleOid = "43",
   owner = { name: roles.owner, oid: "44" }, runtime = { name: roles.runtime, oid: "45" }, administrativeLogins = [],
+  sourceCommit = defaults.sourceCommit, producerSha256 = defaults.producerSha256, releaseId = defaults.releaseId,
 } = {}) {
   const { sqlArtifactSha256, contractManifestSha256, contractPhase, phase2ContractManifestSha256 } = artifact;
   const contracts = { contractManifestSha256, contractPhase, phase2ContractManifestSha256 };
@@ -249,7 +250,7 @@ async function verifyKnownAckRecovery({ admin, selected, dependencies, command, 
   await operate(6, true);
 }
 
-async function verifyRotationWriterScope({ admin, selected, dependencies, command, hold }) {
+async function verifyRotationWriterScope({ admin, selected, dependencies, command, hold, exerciseAuthentication }) {
   const reviewed = structuredClone(selected);
   const initial = "5", open = "6", closed = "7";
   const { plan } = reviewed;
@@ -342,8 +343,12 @@ async function verifyRotationWriterScope({ admin, selected, dependencies, comman
         await prepareFrontendInteractiveProducer(client, target, initial, writerSelection);
         await openFrontendInteractiveAdmission(client, target, initial, writerSelection);
       } finally { await client.query("RESET ROLE"); }
-      const selectedId = await insertOperation(open, interactive);
-      requireResult(await run(packet), open, "interactive", open, "interactive", interactive, [selectedId]);
+      const authenticationIds = await exerciseAuthentication(open);
+      fixtureOperations.push(...authenticationIds);
+      const authenticated = requireResult(await run(packet), open, "interactive", open, "interactive", interactive, authenticationIds);
+      assert.deepEqual(authenticated.writerScope.operations.map(row => [row.kind, row.state]),
+        [...Array(5).fill(["new-work", "completed"]), ...Array(2).fill(["recovery", "completed"])]);
+      await assert.rejects(exerciseAuthentication(open));
       await admin.query("UPDATE frontend_admission.producers SET enabled=true WHERE producer_sha256=$1", [ordinary.producerSha256]);
       await assert.rejects(run(packet), { checkpoint: "current-rotation-writer-registry" });
       await admin.query("UPDATE frontend_admission.producers SET enabled=false WHERE producer_sha256=$1", [ordinary.producerSha256]);
@@ -357,11 +362,11 @@ async function verifyRotationWriterScope({ admin, selected, dependencies, comman
       await client.query(`SET ROLE "${nativePlan.owner.name}"`);
       try { await closeFrontendInteractiveAdmission(client, target, open, writerSelection); }
       finally { await client.query("RESET ROLE"); }
-      const pending = requireResult(await run(packet), closed, "ordinary", open, "interactive", ordinary, [selectedId, draining]);
+      const pending = requireResult(await run(packet), closed, "ordinary", open, "interactive", ordinary, [...authenticationIds, draining]);
       assert.equal(pending.admission.active, 1);
       await assert.rejects(run(make(probe, closed, "ordinary")), { checkpoint: "current-rotation-writer-operations" });
       await admin.query("UPDATE frontend_admission.operations SET state='completed',completed_at=clock_timestamp() WHERE id=$1", [draining]);
-      requireResult(await run(packet), closed, "ordinary", open, "interactive", ordinary, [selectedId, draining]);
+      requireResult(await run(packet), closed, "ordinary", open, "interactive", ordinary, [...authenticationIds, draining]);
       requireResult(await run(make(probe, closed, "ordinary")), closed, "ordinary", closed, "ordinary", ordinary, []);
       await verify();
     }, reviewed);
@@ -479,13 +484,16 @@ async function verifyRotationGuardContainment({ admin, selected, dependencies, c
   }
 }
 
-async function verifyOwnedReplacementCertification() {
-  const pgBin = process.env.PG_BIN;
-  assert.ok(pgBin?.startsWith("/"));
-  const version = execFileSync(join(pgBin, "postgres"), ["--version"], { encoding: "utf8" });
-  const serverMajor = Number(version.match(/PostgreSQL\) (16|18)\./u)?.[1]);
-  assert.ok([16, 18].includes(serverMajor));
-  if (process.env.OWNED_POSTGRES_MAJOR !== undefined) assert.equal(String(serverMajor), process.env.OWNED_POSTGRES_MAJOR);
+// Only starts a new, owned TLS loopback cluster. The callback cannot supply a
+// database endpoint or reuse a pre-existing server. Python observes the same
+// cluster through the fixed Node observer on a separate physical connection.
+export async function withOwnedP2RotationPostgres({ pgBin, serverMajor: expectedMajor, runAsPostgres = false,
+  sourceCommit = defaults.sourceCommit, releaseId = defaults.releaseId, producerSha256 = defaults.producerSha256 }, task) {
+  assert.ok(typeof pgBin === "string" && resolve(pgBin) === pgBin && typeof task === "function");
+  assert.ok(/^(?!0+$)[a-f0-9]{40}$/u.test(sourceCommit) && /^(?!0+$)[a-f0-9]{64}$/u.test(producerSha256));
+  assert.match(releaseId, /^[a-z0-9][a-z0-9-]{0,63}$/u);
+  assert.equal(typeof runAsPostgres, "boolean");
+  assert.ok(expectedMajor === undefined || [16, 18].includes(expectedMajor));
   const directory = mkdtempSync(join(realpathSync(tmpdir()), "p2-cert-replacement-"));
   const key = join(directory, "server.key"), cert = join(directory, "server.crt"), clients = [];
   const originalCA = getCACertificates("default");
@@ -500,7 +508,10 @@ async function verifyOwnedReplacementCertification() {
       "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert], { stdio: "ignore" });
     chmodSync(key, 0o600);
     setDefaultCACertificates([...originalCA, readFileSync(cert, "utf8")]);
-    cluster = await openOwnedFrontendReplacementCluster(privateDir("cluster"), pgBin, migrationUser, key, cert);
+    cluster = await openOwnedFrontendReplacementCluster(privateDir("cluster"), pgBin, migrationUser, key, cert,
+      runAsPostgres ? { runAsPostgres } : {});
+    const { serverMajor } = cluster;
+    if (expectedMajor !== undefined) assert.equal(serverMajor, expectedMajor);
     const setup = await cluster.connect("postgres");
     clients.push(setup);
     await setup.query("CREATE DATABASE owned_replacement");
@@ -511,7 +522,7 @@ async function verifyOwnedReplacementCertification() {
     const { rows: [identity] } = await initializer.query(`SELECT datid::text AS "databaseOid",usesysid::text AS "migrationRoleOid"
       FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()`);
     const oldPid = initializer.processID;
-    const base = { port: cluster.port, serverMajor, ...identity };
+    const base = { port: cluster.port, serverMajor, sourceCommit, producerSha256, releaseId, ...identity };
     const { prepared: { migration: { candidate, job } } } = selection(base);
     await initializer.query("SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
     const verifySession = async () => {
@@ -521,10 +532,11 @@ async function verifyOwnedReplacementCertification() {
     const confirmation = `staging/${releaseId}`;
     const rolePlan = prepareFrontendRolesPlan(candidate, job,
       { version: 2, qualificationTargetProfile: profile, producerSha256: [producerSha256] }, profile);
-    const { owner, runtime, producers } = await applyPreparedFrontendRoles(rolePlan, initializer, {
+    const preparedRoles = await applyPreparedFrontendRoles(rolePlan, initializer, {
       confirmation, directory: privateDir("roles"), privateDirectory: privateDir("credentials"),
       verifyEnvironment: async () => {}, verifySession,
     }, profile);
+    const { owner, runtime, producers } = preparedRoles;
     await bootstrapFrontendAdmission({
       version: 2, qualificationTargetProfile: profile, environment: "staging", actionId: releaseId, sourceCommit,
       sqlSha256: frontendAdmissionBootstrapArtifact().sqlSha256, inventorySha256: digest("c"),
@@ -537,16 +549,58 @@ async function verifyOwnedReplacementCertification() {
     await admin.query("GRANT CONNECT ON DATABASE owned_replacement TO owned_reviewed_admin");
     const { rows: administrativeLogins } = await admin.query("SELECT rolname AS name,oid::text FROM pg_catalog.pg_roles WHERE rolname='owned_reviewed_admin'");
     const selected = selection({ ...base, catalog: await readMigrationCatalog(admin), owner, runtime, administrativeLogins });
+    const { target } = selected.prepared.migration.job;
+    const url = `postgresql://${migrationUser}:${randomUUID()}@127.0.0.1:${cluster.port}/owned_replacement?sslmode=verify-full`;
+    const runtimeUrl = preparedRoles.private.runtimeDatabaseUrl;
+    const verifyEnvironment = () => { assertOwnedFrontendReplacementCluster(cluster, target); };
+    const getUrl = () => { verifyEnvironment(); return url; };
+    const getRuntimeUrl = () => { verifyEnvironment(); return runtimeUrl; };
+    const observerEnvironment = () => ({ PATH: process.env.PATH, NODE_EXTRA_CA_CERTS: cert,
+      FRONTEND_STAGING_MIGRATION_DATABASE_URL: getUrl() });
+    const dependencies = { getUrl, verifyEnvironment };
+    const observeClosed = probe => observeP2ProfiledReplacementFrontendPhysical({ ...probe, operation: "verify-closed" }, dependencies);
+    const consumedEpochs = new Set();
+    const interactiveProducer = createHash("sha256").update(
+      `lash-her:p2q:interactive-producer:v1\n${sourceCommit}\n${selected.plan.targetSha256}`).digest("hex");
+    const exerciseAuthentication = async epoch => {
+      verifyEnvironment();
+      assert.match(epoch, /^[1-9][0-9]{0,17}$/u);
+      assert.ok(!consumedEpochs.has(epoch));
+      consumedEpochs.add(epoch);
+      const runtimeClient = await cluster.connect(target.database, runtime.name, decodeURIComponent(new URL(runtimeUrl).password));
+      try {
+        const ids = [];
+        for (const kind of ["new-work", "new-work", "new-work", "new-work", "new-work", "recovery", "recovery"]) {
+          const id = randomUUID();
+          await runFrontendWriterOperation(runtimeClient, { environment: "staging", targetSha256: selected.plan.targetSha256 },
+            { id, kind, epoch, producerSha256: interactiveProducer, sourceSha: sourceCommit }, async () => {});
+          ids.push(id);
+        }
+        return ids;
+      } finally { await runtimeClient.end(); }
+    };
+    return await task({ selected, serverMajor, oldPid, admin, cluster, getUrl, getRuntimeUrl, verifyEnvironment,
+      observerEnvironment, observeClosed, exerciseAuthentication });
+  } finally {
+    await Promise.allSettled(clients.map(client => client.end()));
+    if (cluster) await cluster.stop();
+    setDefaultCACertificates(originalCA);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+async function verifyOwnedReplacementCertification() {
+  const { PG_BIN: pgBin, OWNED_POSTGRES_MAJOR: expectedMajor } = process.env;
+  return withOwnedP2RotationPostgres({ pgBin, ...(expectedMajor === undefined ? {} : { serverMajor: Number(expectedMajor) }) },
+    async ({ selected, oldPid, admin, cluster, serverMajor, getUrl, verifyEnvironment, observerEnvironment, exerciseAuthentication }) => {
     const { plan } = selected;
-    const password = randomUUID();
-    const url = `postgresql://${migrationUser}:${password}@127.0.0.1:${cluster.port}/owned_replacement?sslmode=verify-full`;
-    const dependencies = { getUrl: () => url, verifyEnvironment: async () => {} };
+    const dependencies = { getUrl, verifyEnvironment };
     const hold = (task, reviewed = selected) => withP2CertificationFrontendSession(reviewed.prepared, reviewed.plan, dependencies, task, profile);
     const observer = (probe, operation) => observeP2ProfiledReplacementFrontendPhysical({ ...probe, operation }, dependencies);
     const command = (flag, packet) => spawnSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
       fileURLToPath(new URL("./p2-certification-current-probe.mjs", import.meta.url)), flag], {
       input: JSON.stringify(packet), encoding: "utf8", timeout: 15_000,
-      env: { PATH: process.env.PATH, NODE_EXTRA_CA_CERTS: cert, FRONTEND_STAGING_MIGRATION_DATABASE_URL: url },
+      env: observerEnvironment(),
     });
     let probe;
     await hold(async ({ client, verify, receipt, probe: actual }) => {
@@ -654,7 +708,7 @@ async function verifyOwnedReplacementCertification() {
     assert.deepEqual(JSON.parse(fixedFence.stdout), { ...fenced, admissionChanged: false });
     assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
     assert.deepEqual((await admin.query("SELECT new_work,recovery FROM frontend_admission.control")).rows, [{ new_work: false, recovery: false }]);
-    await verifyRotationWriterScope({ admin, selected, dependencies, command, hold });
+    await verifyRotationWriterScope({ admin, selected, dependencies, command, hold, exerciseAuthentication });
     await verifyRotationGuardContainment({ admin, selected, dependencies, command, hold });
     await verifyKnownAckRecovery({ admin, selected, dependencies, command, hold, observer });
     assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
@@ -671,20 +725,16 @@ async function verifyOwnedReplacementCertification() {
         "rotation-writer-scope-read-only-initial-open-and-closed-exact-epoch-and-registry",
         "rotation-guard-flag-only-fence-and-idempotent-scoped-preservation"],
       skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, fixtureOnly: true };
-  } finally {
-    await Promise.allSettled(clients.map(client => client.end()));
-    if (cluster) await cluster.stop();
-    setDefaultCACertificates(originalCA);
-    rmSync(directory, { recursive: true, force: true });
-  }
+  });
 }
 
 const owned = process.env.P2_CERTIFICATION_REPLACEMENT_OWNED_TEST === "true";
-if (process.argv.length === 2) {
+const main = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (main && process.argv.length === 2) {
   test("fresh replacement requires identical pinned full-tag provenance before credentials", rejectUnboundReplacementSelection);
   test("fresh certification independently observes replacement roles, closed admission and both new advisory locks",
     { skip: !owned, timeout: 120_000 }, verifyOwnedReplacementCertification);
-} else {
+} else if (main) {
   try {
     assert.deepEqual(process.argv.slice(2), ["--owned-json"]);
     assert.ok(owned && process.versions.node.split(".")[0] === "24");

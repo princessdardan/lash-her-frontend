@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { networkInterfaces, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { frontendCoordinationHash } from "./frontend-release-inventory.mjs";
 import { P2_CERTIFICATION_READY_FILES } from "./p2-certification.mjs";
+import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 import { bindP2ManagedIdentityRotationPlan, p2IdentityRotationOperator, prepareP2ManagedIdentityRotationDispatch } from "./p2-identity-key-rotation-operator.mjs";
@@ -17,6 +19,7 @@ import { prepareP2IdentityRotationReplacementLease, readP2IdentityRotationReplac
   readP2IdentityRotationReplacementHostReview, withP2IdentityRotationReplacementLease } from "./p2-identity-key-rotation-replacement.mjs";
 import { runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
 import { P2_IDENTITY_ROTATION_SERVICES } from "./p2-identity-key-rotation-observer.mjs";
+import { readProfiledCurrentOperatorSourceFiles } from "./recreation_source.mjs";
 
 const base = { version: 2, qualificationTargetProfile: profile, environment: "staging" };
 const pin = value => value.repeat(64);
@@ -26,11 +29,11 @@ const sourceFiles = ["ops/platform/p2-certification-current-probe.mjs", "ops/pla
   ({ path, sha256: p2NativeHash(path), data: Buffer.from(path).toString("base64") }));
 const sourceClosureSha256 = p2NativeHash(JSON.stringify(sourceFiles.map(({ path, sha256 }) => [path, sha256])));
 
-function managedFixture(t) {
-  const f = fixture(t);
+function managedFixture(t, owned) {
+  const f = fixture(t, owned);
   const lease = f.load({ ...f.settings, custody: { ...f.settings.custody,
     authenticationWindows: ["overlap", "current-only", "post-removal"] } });
-  const path = "/var/lib/lash-her/releases/staging/owned/rotation";
+  const path = owned ? join(owned.hostRoot, "rotation") : "/var/lib/lash-her/releases/staging/owned/rotation";
   const phases = ["baseline", "overlap", "current-only"];
   const uuid = digit => `${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}`;
   const rotation = { actionId: lease.plan.actionId, courseId: uuid("1"),
@@ -57,31 +60,48 @@ test("managed operator plan pins the reviewed lease, phases, actors and exact lo
     { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
 });
 
-function fixture(t) {
+function fixture(t, owned) {
   const results = realpathSync(mkdtempSync(join(tmpdir(), "p2-rotation-replacement-lease-")));
   t.after(() => rmSync(results, { recursive: true, force: true }));
-  const releaseId = "owned-replacement-release", sourceCommit = "a".repeat(40), targetSha256 = pin("3");
-  const phase2ContractManifestSha256 = "sha256:" + pin("b");
+  const prepared = owned?.postgres.selected.prepared;
+  const physical = prepared?.migration;
+  const releaseId = physical?.job.releaseId ?? "owned-replacement-release", sourceCommit = physical?.job.sourceCommit ?? "a".repeat(40);
+  const targetSha256 = prepared?.plan.targetSha256 ?? pin("3");
+  const phase2ContractManifestSha256 = physical?.job.phase2ContractManifestSha256 ?? "sha256:" + pin("b");
   const projectId = "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM";
-  const candidate = { ...base, version: 3, releaseId, phase2ContractManifestSha256, workload: { projectId },
-    sources: { frontend: { commit: sourceCommit } } };
+  const candidate = { ...base, version: 3, releaseId, phase2ContractManifestSha256,
+    sources: { frontend: { commit: sourceCommit } }, ...physical?.candidate, workload: { projectId } };
+  if (owned) {
+    candidate.workload = { projectId, environment: "production", qualificationTargetProfile: profile };
+    candidate.sources = Object.fromEntries(["frontend", "course", "community"].map(service => [service, {
+      commit: sourceCommit, ...candidate.sources[service], qualificationTargetProfile: profile,
+    }]));
+    for (const key of ["integration", "sourceApproval", "approval"]) {
+      candidate[key] = { ...candidate[key], qualificationTargetProfile: profile };
+    }
+    candidate.artifacts = { ...candidate.artifacts, ...owned.artifacts };
+    candidate.runtime = { composeSha256: owned.composeSha256 };
+  }
   const candidateBytes = raw(candidate), candidateSha256 = p2NativeHash(candidateBytes);
-  const target = { qualificationTargetProfile: profile, host: "owned-neon.invalid", port: 5432, database: "owned_frontend",
+  const target = physical?.job.target ?? { qualificationTargetProfile: profile, host: "owned-neon.invalid", port: 5432, database: "owned_frontend",
     user: "owned_migration", serverMajor: 16, runtimeRole: "owned_runtime" };
-  const job = { ...base, releaseId, sourceCommit, target, phase2ContractManifestSha256 };
-  const owner = { name: "owned_owner", oid: "103" }, runtime = { name: target.runtimeRole, oid: "104" };
-  const producer = { producerSha256: pin("4"), role: runtime };
-  const replacementRelease = { version: 1, kind: "frontend-replacement", qualificationTargetProfile: profile,
+  const job = physical?.job ?? { ...base, releaseId, sourceCommit, target, phase2ContractManifestSha256 };
+  const owner = prepared?.plan.owner ?? { name: "owned_owner", oid: "103" };
+  const runtime = prepared?.plan.producers[0].role ?? { name: target.runtimeRole, oid: "104" };
+  const producer = prepared?.plan.producers[0] ?? { producerSha256: pin("4"), role: runtime };
+  const replacementRelease = prepared?.plan.replacementRelease ?? { version: 1, kind: "frontend-replacement", qualificationTargetProfile: profile,
     reviewedPlanSha256: pin("1"), runtimeReviewSha256: pin("2"), postflightSha256: pin("5"),
     frontendSessionClosedSha256: pin("6"), frontendDatabaseReceiptSha256: pin("7"),
     databaseOid: "101", migrationRoleOid: "102", predecessorRuntimeRole: "owned_previous", administrativeLogins: [] };
-  const hostResults = "/var/lib/lash-her/releases/staging/owned/results";
-  const host = { machineId: "c".repeat(32), bundle: "/var/lib/lash-her/releases/staging/owned/bundle", results: hostResults,
+  const hostRoot = owned?.hostRoot ?? "/var/lib/lash-her/releases/staging/owned";
+  const hostResults = join(hostRoot, "results");
+  const host = { machineId: owned?.hostMachineId ?? "c".repeat(32), bundle: join(hostRoot, "bundle"), results: hostResults,
     configuration: join(hostResults, `runtime-profiled-frontend-replacement-${releaseId}`, "configuration") };
-  const featureControls = { CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED: true };
+  const certification = owned ? P2_CERTIFICATION_PROFILE : { featureControls: { CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED: true } };
+  const { featureControls } = certification;
   const writerAdmissionBinding = { mode: "enforce", targetSha256, producerSha256: producer.producerSha256,
     sourceCommit, roleName: runtime.name };
-  const configurationSha256 = { "runtime.json": pin("8"), "gateway.json": pin("9") };
+  const configurationSha256 = owned?.configurationSha256 ?? { "runtime.json": pin("8"), "gateway.json": pin("9") };
   const apiJobSha256 = { course: pin("a"), community: pin("b") };
   const frontendReceipts = join(results, "vercel");
   mkdirSync(frontendReceipts, { mode: 0o700 });
@@ -107,6 +127,10 @@ function fixture(t) {
   const originalReleaseReceipt = raw({ ...base, status: "P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION",
     releaseId, sourceCommit, candidateSha256, targetSha256, deploymentId, owner, runtime, producerSha256: producer.producerSha256,
     reviewedPlanSha256: replacementRelease.reviewedPlanSha256,
+    ...(owned && { runtimeReviewSha256: replacementRelease.runtimeReviewSha256, postflightSha256: replacementRelease.postflightSha256,
+      frontendSessionClosedSha256: replacementRelease.frontendSessionClosedSha256,
+      frontendDatabaseReceiptSha256: replacementRelease.frontendDatabaseReceiptSha256,
+      frontendSqlApplied: true, frontendSqlReplayed: false, frontendSessionClosed: true }),
     frontendWorkloadReceiptSha256: p2NativeHash(records["frontend-workload-outcome.json"]),
     frontendPromotionReceiptSha256: p2NativeHash(records["frontend-promotion-outcome.json"]) });
   const profiledRelease = { replacementRelease, receiptSha256: p2NativeHash(originalReleaseReceipt),
@@ -114,13 +138,14 @@ function fixture(t) {
   const inventory = { ...base, actionId: releaseId, sourceCommit, targetSha256, owner, producers: [producer], replacementRelease };
   const original = { plan: { ...base, releaseId, sourceCommit, candidateSha256, targetSha256, configurationSha256,
     phase2ContractManifestSha256, apiJobSha256, inventorySha256: frontendCoordinationHash(inventory), writerAdmissionBinding,
-    certification: { featureControls } }, inventory, migration: { candidate, job, baseline: { version: 1 } } };
+    certification }, inventory, migration: { ...physical, candidate, job, baseline: physical?.baseline ?? { version: 1 } } };
   const loaded = { original, profiledRelease, host, frontendReceipts, originalReleaseReceipt, candidateBytes };
   const settings = { ...base, operatorSourceCommit: sourceCommit,
     releaseSettings: { arm: { results, knownHosts: join(results, "fixture-known-hosts"), sshKey: join(results, "fixture-ssh-key") } },
     replacementRelease: { terminalFile: join(results, "owned-terminal.json"), terminalSha256: profiledRelease.receiptSha256 },
-    custody: { actionId: "p2-key-rotation-owned", initialEpoch: "9007199254740993", runtimeInventorySha256: pin("d"),
-      gatewayProcessSha256: pin("e"), operatorSourceClosureSha256: sourceClosureSha256 } };
+    custody: { actionId: "p2-key-rotation-owned", initialEpoch: owned?.postgres.selected.plan.initialEpoch ?? "9007199254740993",
+      runtimeInventorySha256: owned?.runtimeInventorySha256 ?? pin("d"), gatewayProcessSha256: pin("e"),
+      operatorSourceClosureSha256: owned?.sourceClosureSha256 ?? sourceClosureSha256 } };
   const load = (value = settings) => prepareP2IdentityRotationReplacementLease(value, { fixture: true,
     readReplacement(releaseSettings, selection) {
       assert.equal(releaseSettings, settings.releaseSettings);
@@ -462,4 +487,129 @@ test("managed source dispatch joins the actual controller, fixed wire, reviewed 
   assert.deepEqual(JSON.parse(readFileSync(join(dispatch.directory, "fixture-frontend-session-close-observation.json"), "utf8")), observedClosure);
   await assert.rejects(runP2IdentityRotationParent(dispatch.plan, { confirmation, transport: dispatch.transport }),
     { message: "P2_IDENTITY_ROTATION_LIVE_EXECUTION_UNQUALIFIED" });
+});
+
+test("owned Linux managed wire arms a real frontend lease and fences after controller loss", {
+  skip: process.env.P2_ROTATION_OWNED_REHEARSAL !== "true", timeout: 300_000,
+}, async t => {
+  assert.equal(process.platform, "linux");
+  assert.equal(process.getuid(), 0);
+  assert.ok(existsSync("/.dockerenv") && Object.values(networkInterfaces()).flat().every(address => address.internal));
+  const sourceRoot = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
+  const sourceCommit = process.env.P2_ROTATION_OWNED_SOURCE_COMMIT;
+  assert.match(sourceCommit, /^(?!0+$)[a-f0-9]{40}$/u);
+  const installed = join("/opt/lash-her/operators", sourceCommit);
+  assert.equal(existsSync(installed), false);
+  mkdirSync(installed, { recursive: true, mode: 0o755 });
+  t.after(() => rmSync(installed, { recursive: true, force: true }));
+  const files = readProfiledCurrentOperatorSourceFiles(sourceRoot);
+  for (const { path, data } of files) {
+    const destination = join(installed, path);
+    mkdirSync(dirname(destination), { recursive: true, mode: 0o755 });
+    writeFileSync(destination, Buffer.from(data, "base64"), { mode: 0o644, flag: "wx" });
+  }
+  const closureSha = p2NativeHash(JSON.stringify(files.map(({ path, sha256 }) => [path, sha256])
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)));
+  const hostParent = "/var/lib/lash-her/releases/staging";
+  mkdirSync(hostParent, { recursive: true, mode: 0o700 });
+  const hostRoot = mkdtempSync(join(hostParent, "p2-owned-rotation-"));
+  t.after(() => rmSync(hostRoot, { recursive: true, force: true }));
+  const hostMachineId = readFileSync("/etc/machine-id", "utf8").trim();
+  assert.match(hostMachineId, /^(?!0+$)[a-f0-9]{32}$/u);
+  const releaseId = "owned-frontend-replacement";
+  const configuration = join(hostRoot, "results", `runtime-profiled-frontend-replacement-${releaseId}`, "configuration");
+  for (const directory of [join(configuration, "admission"), join(hostRoot, "bundle"), join(hostRoot, "rotation")]) {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+  }
+  const configurationFiles = ["runtime.json", "gateway.json", "course-tls.json", "community-tls.json", "tls/ca.pem",
+    "tls/gateway/ca.pem", ...["gateway", "course", "community"].flatMap(service => [`tls/${service}/key.pem`, `tls/${service}/cert.pem`]),
+    ...["course-api", "course-publisher", "course-snapshot", "community-api", "community-worker", "course-media", "course-export-cleanup"]
+      .map(service => `${service}.env`)];
+  const configurationSha256 = Object.fromEntries(configurationFiles.map(name => {
+    const destination = join(configuration, name);
+    const contents = name.endsWith(".json") ? raw({ ...base, hostMachineId, releaseId }) : Buffer.from(`owned fixture ${name}\n`);
+    mkdirSync(dirname(destination), { recursive: true, mode: 0o700 });
+    writeFileSync(destination, contents, { mode: 0o600, flag: "wx" });
+    return [name, p2NativeHash(contents)];
+  }));
+  const compose = readFileSync(join(installed, "ops/platform/compose.yaml"));
+  writeFileSync(join(configuration, "compose.yaml"), compose, { mode: 0o600, flag: "wx" });
+  const artifacts = Object.fromEntries(["gateway", "courseRuntime", "communityRuntime"].map((name, index) => [name, {
+    image: `ghcr.io/princessdardan/owned-rotation-${name.toLowerCase()}@sha256:${pin("abc"[index])}`,
+  }]));
+  const services = ["community-api", "course-api", "community-tls", "course-tls", "course-snapshot", "community-worker",
+    "course-media", "course-export-cleanup", "course-publisher", "gateway"];
+  const inventory = services.map(service => ({ service,
+    containerId: createHash("sha256").update(`p2-owned-container:${service}`).digest("hex"),
+    image: artifacts[service.endsWith("-tls") || service === "gateway" ? "gateway"
+      : service.startsWith("course-") ? "courseRuntime" : "communityRuntime"].image,
+    health: service.endsWith("-tls") ? "none" : "healthy",
+  }));
+  const { withOwnedP2RotationPostgres } = await import("./p2-certification-replacement-probe.test.mjs");
+  await withOwnedP2RotationPostgres({ pgBin: process.env.PG_BIN, serverMajor: 18, runAsPostgres: true,
+    sourceCommit, releaseId, producerSha256: pin("b") }, async postgres => {
+    const { f, lease, path, rotation } = managedFixture(t, { postgres, hostRoot, hostMachineId, artifacts,
+      composeSha256: "sha256:" + p2NativeHash(compose), configurationSha256,
+      runtimeInventorySha256: p2NativeHash(inventory), sourceClosureSha256: closureSha });
+    writeFileSync(join(f.loaded.host.bundle, "release.candidate.json"), f.loaded.candidateBytes, { mode: 0o600, flag: "wx" });
+    writeFileSync(join(configuration, "admission/state.json"), raw({ version: 1, environment: "staging", releaseId,
+      candidateSha256: f.loaded.original.plan.candidateSha256, actionId: "owned-fixture", newWork: false, recovery: false }),
+    { mode: 0o644, flag: "wx" });
+    const selected = bindP2ManagedIdentityRotationPlan(lease, files, path, rotation);
+    const program = "import hashlib,sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import p2_identity_key_rotation as p;print(hashlib.sha256(p.private_program(Path(sys.argv[2]))).hexdigest())";
+    const operatorProgramSha256 = execFileSync("/usr/bin/python3", ["-I", "-B", "-c", program,
+      join(installed, "ops/platform/host"), installed], { encoding: "utf8", timeout: 10_000 }).trim();
+    const browser = readFileSync(join(installed, "ops/platform/p2-identity-key-rotation-browser-recorder.mjs"));
+    const privateInputs = { credentials: { FRONTEND_STAGING_MIGRATION_DATABASE_URL: await postgres.getUrl(),
+      COURSE_STAGING_DATABASE_URL: "owned-course-projection", COMMUNITY_STAGING_DATABASE_URL: "owned-community-projection" },
+      vercelToken: "owned-vercel-projection", scopedCronSecret: "owned-cron-projection".repeat(2),
+      gatewayHost: new URL(resolveQualificationTargetProfile(profile).gateway.publicOrigin).hostname, operatorProgramSha256,
+      rotationBrowserProgramSha256: p2NativeHash(Buffer.concat([browser, Buffer.from("\nawait runP2IdentityRotationBrowserChild();\n")])) };
+    let exited, probe;
+    const diagnostics = [];
+    const dispatch = prepareP2ManagedIdentityRotationDispatch(selected, privateInputs, { verifyEnvironment: postgres.verifyEnvironment },
+      { fixture: true, openOwnedChannel: () => {
+        const child = spawn("/usr/bin/python3", ["-I", "-B", "-u", join(sourceRoot, "ops/platform/host/p2_rotation_owned_rehearsal_test.py"),
+          "--supervisor", installed], { stdio: ["pipe", "pipe", "pipe"], env: { ...postgres.observerEnvironment(),
+          P2_ROTATION_OWNED_NODE_SOURCE: sourceRoot } });
+        child.on("exit", code => { exited = code; });
+        child.stderr.on("data", bytes => {
+          for (const code of bytes.toString().match(/(?:P2_|PROFILED_|QUALIFICATION_)[A-Z0-9_]{4,100}(?: [a-z0-9_]+\.py \d+)?/gu) ?? []) {
+            if (diagnostics.length < 24 && !diagnostics.includes(code)) diagnostics.push(code);
+          }
+        });
+        return child;
+      } });
+    const hostAction = join(f.loaded.host.results, `p2-identity-key-rotation-${dispatch.plan.actionId}`);
+    const readReceipt = name => JSON.parse(readFileSync(join(hostAction, name), "utf8"));
+    await assert.rejects(runP2IdentityRotationParent(dispatch.plan,
+      { confirmation: `staging/${dispatch.plan.actionId}`, transport: dispatch.transport }, {
+        fixture: true, runController: async (_plan, parent, dependencies) => {
+          assert.equal(parent.hostLockHeld, true);
+          assert.equal(parent.frontendPhysicalLockHeld, true);
+          const current = await dependencies.frontendSession.observeCurrent();
+          assert.equal(current.status, "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED");
+          assert.deepEqual(current.admission, { epoch: "1", newWork: false, recovery: false, active: 0, uncertain: 0 });
+          assert.equal(readReceipt("p2-identity-rotation-guard-ready.json").status, "P2_MANAGED_ROTATION_GUARD_ARM_READY");
+          assert.throws(() => execFileSync("/usr/bin/flock", ["-n", "/run/lock/lash-her-release.lock", "/usr/bin/true"]), { status: 1 });
+          probe = dependencies.frontendSession.probe;
+          throw new Error("OWNED_CONTROLLER_DISCONNECTED_AFTER_ARM");
+        },
+      }), { message: "P2_IDENTITY_ROTATION_FAILED_REQUIRES_REVIEW" });
+    assert.ok(probe, `Owned broker did not reach ARM (${diagnostics.join(", ")})`);
+    assert.equal(exited, 1);
+    const failure = readReceipt("p2-independent-guard-outcome.json");
+    assert.equal(failure.workerProcessesQuiesced, true);
+    assert.equal(failure.managedRotationArmReceiptVerified, true);
+    assert.equal(failure.frontendAdmissionClosed, true);
+    assert.equal(failure.gatewayAdmissionAcknowledged, true);
+    assert.equal(failure.runtimeStopped, true);
+    assert.deepEqual(Object.fromEntries(["epoch", "newWork", "recovery", "active", "uncertain", "admissionChanged"]
+      .map(key => [key, failure.frontendFence[key]])),
+    { epoch: "1", newWork: false, recovery: false, active: 0, uncertain: 0, admissionChanged: false });
+    assert.equal(existsSync(join(hostAction, "p2-identity-key-rotation-outcome.json")), false);
+    execFileSync("/usr/bin/flock", ["-n", "/run/lock/lash-her-release.lock", "/usr/bin/true"]);
+    const closed = await postgres.observeClosed(probe);
+    assert.equal(closed.backendAbsent && closed.migrationLockReleased && closed.nonceLockReleased, true);
+  });
 });
