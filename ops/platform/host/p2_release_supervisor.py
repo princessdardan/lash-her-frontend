@@ -19,6 +19,7 @@ import stat
 import sys
 import subprocess
 import time
+from uuid import uuid4
 
 sys.modules.setdefault('p2_release_supervisor', sys.modules[__name__])
 
@@ -29,7 +30,8 @@ import staging_admission
 import staging_state
 import p2_prior_gateway
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
-from p2_source_closure import verify_source_closure, verify_profiled_current_source_closure, private_observer_program
+from p2_source_closure import (verify_source_closure, verify_profiled_current_source_closure,
+                               verify_rotation_source_closure, private_observer_program)
 from p2_source_closure import (CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE,
                                PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_WRITE_MODE)
 
@@ -68,6 +70,9 @@ PROFILED_REPLACEMENT_ARM_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 
                                    'terminalName': 'p2-frontend-replacement-arm-outcome.json',
                                    'terminalStatus': 'P2_FRONTEND_REPLACEMENT_ARM_COMMITTED'}
 PROFILED_REPLACEMENT_WRITE_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-profiled-replacement-write-'}
+MANAGED_ROTATION_ARM = 'p2-identity-rotation-guard-armed.json'
+MANAGED_ROTATION_ARM_READY = 'p2-identity-rotation-guard-ready.json'
+MANAGED_ROTATION_FENCE = 'p2-identity-rotation-guard-frontend-closed.json'
 PROFILED_CERTIFICATION_ARM = 'p2-profiled-current-certification-guard-armed.json'
 PROFILED_CERTIFICATION_ARM_READY = 'p2-profiled-current-certification-guard-ready.json'
 PROFILED_INTERRUPTED_ARM = 'p2-profiled-known-ack-restoration-guard-armed.json'
@@ -81,9 +86,14 @@ PROFILED_CERTIFICATION_CONTAINMENT_NAMES = (
 )
 
 
+def _managed_rotation(initial):
+    return (fixed_layout(initial) == ROTATION_LAYOUT and initial.get('_guardObserverSource') == CERTIFICATION_OBSERVER and
+            type(initial.get('version')) is int and initial['version'] == 2)
+
+
 def _guard_profile(initial):
-    # The supervisor replaces this layout from its fixed source argument.
-    if fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT,
+    # The supervisor replaces this layout and source from its fixed arguments.
+    if not _managed_rotation(initial) and fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT,
                                      PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT,
                                      PROFILED_REPLACEMENT_ARM_LAYOUT, PROFILED_REPLACEMENT_WRITE_LAYOUT):
         return None
@@ -92,6 +102,8 @@ def _guard_profile(initial):
 
 
 def _verify_guard_source(initial, source):
+    if initial.get('_guardLayout') == ROTATION_LAYOUT:
+        return verify_rotation_source_closure(initial, source)
     checker = verify_profiled_current_source_closure if _guard_profile(initial) is not None else verify_source_closure
     return checker(initial, source)
 
@@ -297,6 +309,62 @@ def _validate_profiled_interrupted_arm(initial, probe, job_info):
     migrate.require_contract_identity(initial['candidate'], receipt)
 
 
+def _rotation_directory(initial):
+    require(fixed_layout(initial) == ROTATION_LAYOUT, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    directory = Path(initial['results']) / (ROTATION_LAYOUT['receiptPrefix'] + action_id(initial))
+    migrate.private_directory(directory)
+    require(directory.is_absolute() and directory == directory.resolve(), 'P2_GUARD_ROTATION_DIRECTORY_REFUSED')
+    return directory
+
+
+def _managed_rotation_arm_record(initial, probe):
+    expected = _guard_profile(initial)
+    require(_managed_rotation(initial) and expected is not None, 'P2_GUARD_MANAGED_ROTATION_REQUIRED')
+    plan = initial['frontendCustody']['certificationPlan']
+    rotation = initial['rotationPlan']
+    migrate.require_profile(expected, probe, plan)
+    receipt = probe['receipt']
+    require(probe['plan'] == plan and rotation['actionId'] == action_id(initial) == plan['certificationActionId'] and
+            receipt.get('candidateSha256') == initial['candidateSha256'] == plan['candidateSha256'] and
+            receipt.get('targetSha256') == plan['targetSha256'] and
+            receipt.get('planSha256') == plan['planSha256'],
+            'P2_GUARD_MANAGED_ROTATION_ARM_PROBE_REFUSED')
+    return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_MANAGED_ROTATION_GUARD_ARMED',
+            'environment': 'staging', 'actionId': rotation['actionId'], 'bindingSha256': rotation['bindingSha256'],
+            'originalReleaseId': initial['candidate']['releaseId'], 'sourceCommit': initial['sourceCommit'],
+            'candidateSha256': initial['candidateSha256'], 'targetSha256': plan['targetSha256'],
+            'planSha256': plan['planSha256'], 'probeSha256': _canonical_sha(probe)}
+
+
+def _managed_rotation_arm_ready(record, raw):
+    return {'version': 2, 'qualificationTargetProfile': record['qualificationTargetProfile'],
+            'status': 'P2_MANAGED_ROTATION_GUARD_ARM_READY', 'armReceiptSha256': migrate.file_hash(raw)}
+
+
+def require_managed_rotation_guard_arm(initial, probe):
+    """Grant no broker authority until the independent guard completed its durable ARM."""
+    from p2_frontend_replacement_parent import private_record
+    from qualification_target_profile import decode_qualification_target_json
+
+    directory = _rotation_directory(initial)
+    record = _managed_rotation_arm_record(initial, probe)
+    ready = decode_qualification_target_json(private_record(directory, MANAGED_ROTATION_ARM_READY), 'carrier')
+    raw = private_record(directory, MANAGED_ROTATION_ARM)
+    retained = decode_qualification_target_json(raw, 'carrier')
+    require(_canonical_sha(retained) == _canonical_sha(record) and
+            _canonical_sha(ready) == _canonical_sha(_managed_rotation_arm_ready(record, raw)),
+            'P2_GUARD_MANAGED_ROTATION_ARM_REQUIRED')
+    return retained
+
+
+def _retain_managed_rotation_guard_arm(initial, probe):
+    directory = _rotation_directory(initial)
+    record = _managed_rotation_arm_record(initial, probe)
+    migrate.write_json(directory, MANAGED_ROTATION_ARM, record)
+    raw = migrate.read_input(directory, MANAGED_ROTATION_ARM, 65_536)
+    migrate.write_json(directory, MANAGED_ROTATION_ARM_READY, _managed_rotation_arm_ready(record, raw))
+
+
 def _profiled_certification_arm_record(initial, probe):
     expected = _guard_profile(initial)
     plan = initial['certificationPlan']
@@ -458,14 +526,18 @@ def cleanup_recovery_current_containers():
     if failed:raise ValueError(failed)
 
 
-def cleanup_rotation_readonly_containers():
+def cleanup_rotation_readonly_containers(*, remove=True):
     # Fixed read-only observer containers only. The broker and all registered
     # mutators are reaped before this selector can run.
     patterns = ('^/lash-p2-rotation-current-(course|community)-[a-f0-9]{32}$',
                 '^/lash-p2-rotation-close-[a-f0-9]{32}$')
     for pattern in patterns:
         query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
-        for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
+        identities = runtime.command(query, runtime.SAFE_ENV, 15).splitlines()
+        if not remove:
+            require(not identities, 'P2_GUARD_ROTATION_CONTAINER_REMAINS')
+            continue
+        for identity in identities:
             require(re.fullmatch(r'[a-f0-9]{12,64}', identity), 'P2_GUARD_ROTATION_CONTAINER_ID_REFUSED')
             runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
         require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_ROTATION_CONTAINER_REMAINS')
@@ -1102,6 +1174,169 @@ def _stop_profiled_certification_runtime(initial, source, result, record_name):
             result['priorGatewayOrderedStopUnknown'] = True
 
 
+def _managed_rotation_fence_record(initial, armed, value):
+    from p2_certification_parent import REPLACEMENT_PROOF_FIELDS, require_certification_replacement_proof
+
+    expected = _guard_profile(initial)
+    plan = initial['frontendCustody']['certificationPlan']
+    migrate.require_profile(expected, value)
+    require_certification_replacement_proof(value, plan['replacementRelease'])
+    fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'releaseId', 'sourceCommit',
+              'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256', 'frontendAdmissionClosed',
+              'epoch', 'admissionChanged', 'sqlReplayed', 'releaseAccepted', 'newWork', 'recovery', 'active',
+              'uncertain', 'registry', 'registrySha256', *REPLACEMENT_PROOF_FIELDS}
+    require(armed['plan'] == plan and set(value) == fields and type(value['version']) is int and value['version'] == 2 and
+            value['status'] == 'P2_PROFILED_ROTATION_GUARD_FRONTEND_CLOSED' and value['environment'] == 'staging' and
+            value['releaseId'] == plan['originalReleaseId'] and
+            all(value[key] == plan[key] for key in ('sourceCommit', 'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256')) and
+            value['frontendAdmissionClosed'] is True and
+            all(value[key] is False for key in ('newWork', 'recovery', 'sqlReplayed', 'releaseAccepted')) and
+            type(value['admissionChanged']) is bool and
+            all(type(value[key]) is int and 0 <= value[key] <= 2**53 - 1 for key in ('active', 'uncertain')) and
+            type(value['epoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', value['epoch']) and
+            value['registry'] in ('ordinary', 'interactive') and
+            type(value['registrySha256']) is str and re.fullmatch(r'(?!0+$)[a-f0-9]{64}', value['registrySha256']),
+            'P2_GUARD_MANAGED_ROTATION_FENCE_REFUSED')
+    offset = int(value['epoch']) - int(plan['initialEpoch'])
+    require(offset in (0, 2, 4, 6) and (value['registry'] == 'ordinary' or offset > 0) and
+            (not value['admissionChanged'] or value['registry'] == 'interactive'),
+            'P2_GUARD_MANAGED_ROTATION_FENCE_REFUSED')
+
+
+def _contain_managed_rotation_frontend(initial, armed, source):
+    from p2_certification_parent import CORE, _cache_core
+    from qualification_target_profile import decode_qualification_target_json
+
+    verify_guard_boundary(initial, source)
+    _managed_rotation_arm_record(initial, armed)
+    credential = 'FRONTEND_STAGING_MIGRATION_DATABASE_URL'
+    secret = initial['credentials'][credential]
+    require(type(secret) is str and 0 < len(secret) <= 16_384, 'P2_GUARD_MANAGED_ROTATION_CREDENTIAL_REFUSED')
+    directory = _rotation_directory(initial)
+    program = private_observer_program(initial, directory / 'guard-rotation-frontend-source')
+    core = _cache_core(program.parent)
+    require(migrate.file_hash(core.read_bytes()) == initial['sourceSha256'][CORE], 'P2_GUARD_MANAGED_ROTATION_CORE_REFUSED')
+    container = 'lash-p2-profiled-certification-guard-close-' + uuid4().hex
+    args = ['docker', 'run', '--rm', '--pull', 'never', '--name', container, '--interactive', '--network', 'host',
+            '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '256m', '--pids-limit', '64',
+            '--env', credential, '--mount', f'type=bind,src={program},dst=/app/{CERTIFICATION_OBSERVER},readonly',
+            '--mount', f'type=bind,src={core},dst=/app/{CORE},readonly', '--entrypoint', 'node',
+            initial['candidate']['artifacts']['frontendMigration']['image'], CERTIFICATION_OBSERVER,
+            '--profiled-replacement-rotation-guard-fence']
+    try:
+        child = subprocess.run(args, input=json.dumps(armed), env={**runtime.SAFE_ENV, credential: secret},
+                               capture_output=True, text=True, timeout=30, check=True)
+    finally:
+        subprocess.run(['docker', 'rm', '--force', container], env=runtime.SAFE_ENV, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=15, check=False)
+        require(not runtime.command(['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + container + '$',
+                                     '--format', '{{.ID}}'], runtime.SAFE_ENV, 15), 'P2_GUARD_ROTATION_CONTAINER_REMAINS')
+    raw = child.stdout.encode()
+    require(not child.stderr and 0 < len(raw) <= 8192 and raw.endswith(b'\n'), 'P2_GUARD_MANAGED_ROTATION_FENCE_REFUSED')
+    value = decode_qualification_target_json(raw, 'carrier')
+    _managed_rotation_fence_record(initial, armed, value)
+    verify_guard_boundary(initial, source)
+    migrate.write_exact_bytes(directory, MANAGED_ROTATION_FENCE, raw)
+    return {key: value[key] for key in ('epoch', 'newWork', 'recovery', 'active', 'uncertain', 'registry', 'registrySha256',
+                                        'admissionChanged')}
+
+
+def _managed_rotation_containers(*, remove):
+    # Both are fixed read-only namespaces, shared only by actions serialized
+    # through the same staging flock.
+    failure = None
+    for cleanup in (_profiled_certification_containers, cleanup_rotation_readonly_containers):
+        try:
+            cleanup(remove=remove)
+        except BaseException:
+            failure = 'P2_GUARD_MANAGED_ROTATION_CONTAINER_CLEANUP_UNCERTAIN'
+    require(failure is None, failure)
+
+
+def _fail_managed_rotation(initial, armed, source, result, record_name):
+    plan = initial['frontendCustody']['certificationPlan']
+    result.update(rotationActionId=action_id(initial), targetSha256=plan['targetSha256'],
+                  planSha256=plan['planSha256'], runtimeStopAttempted=False, frontendCloseAttempted=False)
+    if armed is None:
+        result['status'] = 'P2_GUARD_REFUSED_BEFORE_ROTATION_STAGE'
+    if not result['workerProcessesQuiesced']:
+        result['managedRotationContainerCleanupUncertain'] = True
+    else:
+        if armed is not None:
+            try:
+                require_managed_rotation_guard_arm(initial, armed)
+                result['managedRotationArmReceiptVerified'] = True
+            except BaseException:
+                # ARM may have reached disk just before interruption. Keep
+                # closing using the same independently verified in-memory probe.
+                result['managedRotationArmReceiptUncertain'] = True
+            try:
+                result['frontendCloseAttempted'] = True
+                result['frontendFence'] = _contain_managed_rotation_frontend(initial, armed, source)
+                result['frontendAdmissionClosed'] = True
+            except BaseException:
+                result['frontendContainmentUncertain'] = True
+            try:
+                _stop_managed_rotation_runtime(initial, source, result, record_name)
+            except BaseException:
+                result['runtimeContainmentUncertain'] = True
+        try:
+            verify_guard_boundary(initial, source)
+            _managed_rotation_containers(remove=True)
+            result['managedRotationContainerCleanupVerified'] = True
+        except BaseException:
+            result['managedRotationContainerCleanupUncertain'] = True
+    try:
+        migrate.write_json(_rotation_directory(initial), record_name, result)
+    except BaseException:
+        result['guardReceiptRetained'] = False
+    return result
+
+
+def _stop_managed_rotation_runtime(initial, source, result, record_name):
+    selected = initial['candidate']
+    prior = None
+    directory = _rotation_directory(initial)
+    if record_name == 'p2-independent-guard-after-quiescence.json':
+        directory = directory / 'prior-gateway-after-quiescence'
+        directory.mkdir(mode=0o700, exist_ok=True)
+
+    def verify():
+        verify_guard_boundary(initial, source)
+
+    try:
+        prior = capture_gateway_before_stop({**initial, 'certificationActionId': action_id(initial)}, selected, directory, source)
+        result['priorGatewayBeforeStopSha256'] = migrate.file_hash(migrate.read_input(directory, p2_prior_gateway.BEFORE_STOP))
+        observed = prior.get('observation') or {}
+        acknowledged = prior.get('status') == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and p2_prior_gateway._closed_observed(observed)
+        result.update(gatewayAdmissionFileClosed=True if acknowledged else None,
+                      gatewayAdmissionAcknowledged=True if acknowledged else None)
+    except BaseException:
+        result['priorGatewayBeforeStopUnknown'] = True
+    if result.get('gatewayAdmissionAcknowledged') is not True:
+        try:
+            verify()
+            result.update(close_gateway(initial, selected, Path(initial['configuration'])))
+        except BaseException:
+            result['gatewayAdmissionFileClosed'] = None
+    try:
+        verify()
+        result['runtimeStopAttempted'] = True
+        migrate.suspend_runtime('staging', runtime.SAFE_ENV)
+        verify()
+        result['runtimeStopped'] = True
+    except BaseException:
+        pass
+    if prior is not None:
+        try:
+            p2_prior_gateway.retain_ordered_stop(prior, directory, verify, **_profile_kwargs(initial))
+            result['priorGatewayStopReceiptSha256'] = migrate.file_hash(migrate.read_input(directory, p2_prior_gateway.STOPPED))
+        except BaseException:
+            result['priorGatewayOrderedStopUnknown'] = True
+    if result['frontendAdmissionClosed'] is True and result.get('gatewayAdmissionAcknowledged') is True and result['runtimeStopped'] is True:
+        result['trafficAuthorized'] = False
+
+
 def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json', observer_type=None,
                 native_containment=None, frontend_containment=None):
     result = {'status': 'P2_INDEPENDENT_GUARD_FAILED_CLOSED_REQUIRES_REVIEW', 'trafficAuthorized': None,
@@ -1116,11 +1351,13 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
 
     if group is not None:
         try:
-            stop = (_stop_profiled_certification_group if fixed_layout(initial) in
+            stop = (_stop_profiled_certification_group if _managed_rotation(initial) or fixed_layout(initial) in
                     (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT) else stop_group)
             result['workerProcessesQuiesced'] = stop(group)
         except BaseException:
             result['workerProcessCleanupUncertain'] = True
+    if _managed_rotation(initial):
+        return _fail_managed_rotation(initial, armed, source, result, record_name)
     if fixed_layout(initial) == PROFILED_CERTIFICATION_LAYOUT:
         return _fail_profiled_certification(initial, armed, source, result, record_name, native_containment, frontend_containment)
     if fixed_layout(initial) == PROFILED_INTERRUPTED_LAYOUT:
@@ -1261,18 +1498,33 @@ def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None,
     if (armed is not None or _guard_profile(initial) is not None) and not failed['workerProcessesQuiesced']:
         # Admissions have already been closed/stopped as far as can be
         # observed. Keep the actual flock while an unreaped mutator survives.
-        stop = (_stop_profiled_certification_group if fixed_layout(initial) in
+        stop = (_stop_profiled_certification_group if _managed_rotation(initial) or fixed_layout(initial) in
                 (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT) else stop_group)
         while True:
             try:
                 if stop(child):
                     break
             except BaseException:
-                if fixed_layout(initial) not in (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT):
+                if not _managed_rotation(initial) and fixed_layout(initial) not in (PROFILED_CERTIFICATION_LAYOUT, PROFILED_INTERRUPTED_LAYOUT):
                     raise
             time.sleep(1)
         failed = fail_closed(initial, armed, source, group=child,
                              record_name='p2-independent-guard-after-quiescence.json', **options)
+    if _managed_rotation(initial) and failed.get('managedRotationContainerCleanupUncertain'):
+        # No fence or runtime action is replayed after the first verified reap.
+        while True:
+            try:
+                verify_guard_boundary(initial, source)
+                _managed_rotation_containers(remove=True)
+                break
+            except BaseException:
+                time.sleep(1)
+        failed = {**failed, 'managedRotationContainerCleanupVerified': True,
+                  'managedRotationContainerCleanupUncertain': False}
+        try:
+            migrate.write_json(_rotation_directory(initial), 'p2-independent-guard-after-container-cleanup.json', failed)
+        except BaseException:
+            failed['guardReceiptRetained'] = False
     if fixed_layout(initial) == PROFILED_CERTIFICATION_LAYOUT and failed.get('profiledCertificationContainerCleanupUncertain'):
         # A timed-out guard close may still own a Docker process. Keep the
         # canonical flock and retry only fixed removal and absence readback.
@@ -1294,6 +1546,47 @@ def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None,
     return failed
 
 
+def _require_rotation_certification_frontend(initial, terminal):
+    import p2_canonical_browser_origin as canonical
+    from p2_certification_parent import _iso, _profiled_host_receipt
+
+    plan = initial['certificationPlan']
+    if 'rotationSuccessor' not in plan:
+        require(not {'rotationSuccessor', 'rotationFrontendObservationSha256'}.intersection(terminal),
+                'P2_PROFILED_CERTIFICATION_GUARD_ROTATION_UNREVIEWED')
+        return
+    pins = terminal.get('rotationFrontendObservationSha256')
+    require(terminal.get('rotationSuccessor') == plan['rotationSuccessor'] and
+            type(pins) is dict and set(pins) == {'arm', 'terminal'} and pins['arm'] != pins['terminal'],
+            'P2_PROFILED_CERTIFICATION_GUARD_ROTATION_RECEIPTS_REFUSED')
+    directory = _profiled_certification_directory(initial)
+    native_plan = plan['nativePlan']
+    alias_sha = _canonical_sha({'alias': canonical.HOST, 'projectId': native_plan['projectId'],
+                                'deploymentId': native_plan['deploymentId'], 'redirect': False,
+                                'deleted': False, 'microfrontends': False})
+    observations = []
+    for stage in ('arm', 'terminal'):
+        observation, digest = _profiled_host_receipt(directory, 'p2-rotation-successor-frontend-' + stage + '.json', _guard_profile(initial))
+        require(digest == pins[stage] and observation.get('status') == 'P2_CANONICAL_BROWSER_ORIGIN_VERIFIED' and
+                observation.get('browserOrigin') == canonical.ORIGIN and observation.get('environment') == 'staging' and
+                observation.get('releaseId') == initial['candidate']['releaseId'] and
+                observation.get('phase2ContractManifestSha256') == initial['candidate']['phase2ContractManifestSha256'] and
+                all(observation.get(key) == native_plan[key] for key in ('projectId', 'candidateSha256', 'sourceCommit', 'deploymentId',
+                    'deploymentUrl', 'configurationRecordSha256', 'featureControls', 'writerAdmissionBinding')) and
+                observation.get('authenticationOrigins') == canonical.AUTHENTICATION_ORIGINS and
+                observation.get('aliasReadbackSha256') == alias_sha and observation.get('aliasReadbacks') == 2 and
+                observation.get('aliasRedirect') is False and
+                all(observation.get(key) is True for key in ('workloadChallengeVerified', 'tlsVerified')) and
+                all(observation.get(key) is False for key in ('probeExpiryExtended', 'releaseAccepted')) and
+                type(observation.get('protectedWorkloadSha256')) is str and
+                re.fullmatch(r'(?!0+$)[a-f0-9]{64}', observation['protectedWorkloadSha256']),
+                'P2_PROFILED_CERTIFICATION_GUARD_ROTATION_WORKLOAD_REFUSED')
+        observations.append((observation['protectedWorkloadSha256'], _iso(observation.get('observedAt'))))
+    (first_sha, first_time), (last_sha, last_time) = observations
+    require(first_sha != last_sha and 0 <= last_time - first_time < plan['maximumSeconds'],
+            'P2_PROFILED_CERTIFICATION_GUARD_ROTATION_WORKLOAD_REPLAYED')
+
+
 def _require_profiled_certification_terminal(initial, raw, committed, *, source=None):
     from p2_certification_parent import require_certification_replacement_lineage
     from qualification_target_profile import decode_qualification_target_json
@@ -1311,6 +1604,7 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
             all(terminal.get(key) is False for key in ('frontendSqlApplied', 'trafficAuthorized', 'releaseAccepted', 'sqlReplayed')) and
             terminal.get('nativeDisabled') is True, 'P2_PROFILED_CERTIFICATION_GUARD_TERMINAL_REFUSED')
     migrate.require_contract_identity(initial['candidate'], terminal)
+    _require_rotation_certification_frontend(initial, terminal)
     frontend, gateway = terminal.get('frontendAdmission'), terminal.get('gatewayAdmission')
     require(type(frontend) is dict and type(gateway) is dict and all(
         row.get('newWork') is False and row.get('recovery') is False for row in (frontend, gateway)) and
@@ -1507,6 +1801,79 @@ def _require_profiled_interrupted_gateway_after_reap(initial, source, terminal):
     verify()
 
 
+def _publish_rotation_terminal(initial, source, armed, committed, *, custody=None):
+    from p2_identity_key_rotation_parent import (JOINED_RECEIPT, PREPARED_RECEIPT, SESSION_CLOSED_RECEIPT,
+                                                 observe_rotation_session_closed)
+    managed = _managed_rotation(initial)
+    directory = (_rotation_directory(initial) if managed else
+                 Path(initial['results']) / (ROTATION_LAYOUT['receiptPrefix'] + initial['rotationActionId']))
+    migrate.private_directory(directory)
+    require((custody is not None) is managed, 'P2_GUARD_MANAGED_ROTATION_CUSTODY_REFUSED')
+    verify_guard_boundary(initial, source)
+    if managed:
+        from p2_frontend_replacement_parent import private_record
+        from qualification_target_profile import decode_qualification_target_json
+
+        prepared_raw, closed_raw, joined_raw = (
+            private_record(directory, name, 16_384) for name in (PREPARED_RECEIPT, SESSION_CLOSED_RECEIPT, JOINED_RECEIPT))
+        prepared, retained_closed, joined = (
+            decode_qualification_target_json(raw, 'carrier') for raw in (prepared_raw, closed_raw, joined_raw))
+    else:
+        prepared = json.loads(migrate.read_input(directory, PREPARED_RECEIPT, 16_384))
+        closed_raw = migrate.read_input(directory, SESSION_CLOSED_RECEIPT, 16_384)
+        joined_raw = migrate.read_input(directory, JOINED_RECEIPT, 16_384)
+        retained_closed, joined = json.loads(closed_raw), json.loads(joined_raw)
+    plan = initial['rotationPlan']
+    signer_hashes = prepared.get('frontendSignerReceiptSha256')
+    require(type(signer_hashes) is dict and set(signer_hashes) == {'overlap', 'current-only', 'post-removal'} and
+            all(type(value) is str and re.fullmatch(r'(?!0+$)[a-f0-9]{64}', value) for value in signer_hashes.values()) and
+            len(set(signer_hashes.values())) == 3, 'P2_GUARD_ROTATION_POST_REMOVAL_SIGNER_REQUIRED')
+    post_removal = migrate.read_json(directory, 'frontend-post-removal/rotation-frontend-browser-source.json')
+    require(post_removal.get('phase') == 'post-removal' and _canonical_sha(post_removal) == signer_hashes['post-removal'],
+            'P2_GUARD_ROTATION_POST_REMOVAL_SIGNER_CHANGED')
+    require(armed is not None and migrate.file_hash(joined_raw) == committed and
+            prepared.get('status') == 'P2_IDENTITY_KEY_ROTATION_CLOSE_PREPARED' and
+            prepared.get('keyRemovalVerified') is False and prepared.get('environment') == 'staging' and
+            all(prepared.get(key) == plan[key] for key in ('actionId', 'bindingSha256', 'candidateSha256', 'sourceCommit')) and
+            prepared.get('configurationSha256') == plan['configuration']['current-only']['sha256'] and
+            all(prepared.get(key) is False for key in ('sqlExecuted', 'rolesPrepared', 'loginChanged',
+                'nativeSchedulesEnabled', 'trafficAuthorized', 'tokenBytesOutput', 'credentialHashesOutput',
+                'communityMemberFeatureAdded', 'newPublicEndpoint', 'releaseAccepted', 'g2Accepted')) and
+            joined == {**prepared, 'status': ROTATION_LAYOUT['terminalStatus'], 'keyRemovalVerified': True,
+                       'frontendSessionCloseReceiptSha256': migrate.file_hash(closed_raw)},
+            'P2_GUARD_ROTATION_TERMINAL_REFUSED')
+    if managed:
+        from p2_identity_rotation_successor import retain_rotation_successor
+
+        review = initial['frontendCustody']['certificationPlan']
+        initial_epoch = review['initialEpoch']
+        require(type(initial_epoch) is str and re.fullmatch(r'[1-9][0-9]{0,17}', initial_epoch),
+                'P2_GUARD_MANAGED_ROTATION_EPOCH_REFUSED')
+        final_epoch = str(int(initial_epoch) + 6)
+        migrate.require_profile(_guard_profile(initial), prepared, joined)
+        require(type(prepared.get('version')) is int and prepared['version'] == 2 and
+                re.fullmatch(r'[1-9][0-9]{0,17}', final_epoch) and prepared.get('frontendFinalEpoch') == final_epoch and
+                prepared.get('frontendCustodyPlanSha256') == review['planSha256'],
+                'P2_GUARD_MANAGED_ROTATION_TERMINAL_REFUSED')
+        require_managed_rotation_guard_arm(initial, armed)
+        _managed_rotation_containers(remove=False)
+        fresh = custody.verify_closed(armed, final_epoch)
+        require(_canonical_sha(fresh) == _canonical_sha(retained_closed), 'P2_GUARD_ROTATION_SESSION_CLOSE_CHANGED')
+        _managed_rotation_containers(remove=False)
+        retain_rotation_successor(initial, source, joined, committed, fresh, worker_reaped=True, terminal_pending=True)
+        verify_guard_boundary(initial, source)
+        # Publish the qualified terminal last. An interrupted final write
+        # leaves a successor hash with no matching guarded terminal.
+        migrate.write_exact_bytes(directory, ROTATION_LAYOUT['terminalName'], joined_raw)
+    else:
+        cleanup_rotation_readonly_containers(remove=False)
+        fresh = observe_rotation_session_closed(initial, armed, source, subprocess.run)
+        require(fresh == retained_closed, 'P2_GUARD_ROTATION_SESSION_CLOSE_CHANGED')
+        cleanup_rotation_readonly_containers(remove=False)
+        verify_guard_boundary(initial, source)
+        migrate.write_json(directory, ROTATION_LAYOUT['terminalName'], joined)
+
+
 def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
               observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None,
               frontend_containment=None):
@@ -1514,10 +1881,21 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     layout = dict(DEFAULT_LAYOUT if layout is None else layout)
     require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
-    rotation_types = None
+    rotation = managed_rotation = False
     if layout == ROTATION_LAYOUT:
-        from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
-        rotation_types = (P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver)
+        from p2_identity_key_rotation_parent import LIVE_ELIGIBLE, P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
+        from p2_identity_rotation_replacement import ReplacementRotationPhysicalObserver
+
+        require(LIVE_ELIGIBLE, 'P2_ROTATION_LIVE_EXECUTION_UNQUALIFIED')
+        rotation = (initial.get('mode') == 'p2-identity-key-rotation' and broker_type is P2IdentityRotationBroker
+                    and native_containment is None and frontend_containment is None)
+        version = initial.get('version')
+        managed_rotation = (rotation and type(version) is int and version == 2 and
+                            observer_type is ReplacementRotationPhysicalObserver and observer_source == CERTIFICATION_OBSERVER)
+        rotation = managed_rotation or (rotation and type(version) is int and version == 1 and
+                                        'qualificationTargetProfile' not in initial and
+                                        observer_type is P2IdentityRotationPhysicalObserver and
+                                        observer_source == 'ops/platform/p2-recovery-current-probe.mjs')
     profiled = False
     if layout == PROFILED_CURRENT_LAYOUT:
         from p2_profiled_current_parent import P2ProfiledCurrentBroker, P2ProfiledCurrentPhysicalObserver
@@ -1539,6 +1917,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             callable(native_containment) and native_containment is getattr(certification_parent, 'contain_profiled_certification_native', None) and
             callable(frontend_containment) and frontend_containment is getattr(certification_parent, 'contain_profiled_certification_frontend', None))
         require(profiled_certification, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+        certification_parent.require_profiled_certification_execution(initial.get('certificationPlan', {}))
     elif initial.get('mode') != PROFILED_INTERRUPTED_MODE and layout != PROFILED_INTERRUPTED_LAYOUT:
         require(frontend_containment is None, 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     profiled_interrupted = False
@@ -1563,22 +1942,21 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                        observer_type is InterruptedRestorationPhysicalObserver and
                        observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is contain_interrupted_native)
     require((layout == DEFAULT_LAYOUT and broker_type is Broker and observer_type is PhysicalObserver
+             and initial.get('mode') != 'p2-identity-key-rotation'
              and observer_source == 'ops/platform/p2-frontend-live-probe.mjs' and native_containment is None) or
             (layout == RECOVERY_LAYOUT and initial.get('mode') == 'p2-post-sql-recovery'
              and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or
             (layout == CERTIFICATION_LAYOUT and initial.get('mode') == 'p2-bounded-certification'
              and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)) or
-            (layout == ROTATION_LAYOUT and initial.get('mode') == 'p2-identity-key-rotation'
-             and rotation_types == (broker_type, observer_type)
-             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or interrupted or profiled or
+            rotation or interrupted or profiled or
             profiled_certification or profiled_interrupted,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
     expected = _guard_profile(initial)
     if expected is not None:
-        require((profiled or profiled_certification or profiled_interrupted) and initial.get('version') == 2,
+        require((profiled or profiled_certification or profiled_interrupted or managed_rotation) and initial.get('version') == 2,
                 'PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
-        if profiled_certification or profiled_interrupted:
+        if profiled_certification or profiled_interrupted or managed_rotation:
             require(type(initial['version']) is int, 'PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
         migrate.require_profile(expected, initial)
     identity = action_id(initial)
@@ -1590,7 +1968,9 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     require(selected == initial['candidate'] and migrate.file_hash(migrate.read_input(Path(initial['bundle']), 'release.candidate.json')) == initial.get('candidateSha256'),
             'P2_GUARD_CANDIDATE_BINDING_REFUSED')
     if expected is not None:
-        require(initial.get('apiJobSha256') == migrate.profiled_current_job_hashes(Path(initial['bundle'])),
+        selected_jobs = (initial['frontendCustody']['apiJobSha256'] if managed_rotation else initial.get('apiJobSha256'))
+        require(selected_jobs == migrate.profiled_current_job_hashes(Path(initial['bundle'])) and
+                ('apiJobSha256' not in initial or selected_jobs == initial['apiJobSha256']),
                 'PROFILED_CURRENT_GUARD_API_JOB_BYTES_REFUSED')
     _verify_guard_source(initial, source)
     require(observer_source in initial['sourceSha256'], 'P2_FIXED_OBSERVER_CLOSURE_REQUIRED')
@@ -1605,9 +1985,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     initial['_guardLockDescriptor'] = fd
     if profiled_certification:
         try:
-            plan_mode = initial['certificationPlan']['mode']
-            input_fields = certification_parent.PROFILED_INITIAL_FIELDS | (
-                {'sourceSuspensionPlan'} if plan_mode in certification_parent.SUSPENSION_MODES else set())
+            input_fields = certification_parent.profiled_certification_review_fields(initial['certificationPlan'])
             verified = certification_parent.prepare_profiled_current_certification_input(
                 {key: initial[key] for key in input_fields}, source)
             require(verified.get('status') == 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED' and
@@ -1655,8 +2033,9 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                     # The profiled worker flushes its ACK before returning.
                     # Its next ordered stage may arrive during that tiny tail;
                     # wait on the actual mutex, never overlap or replay stages.
-                    acquired = (broker.operation_active.acquire(timeout=2) if profiled or profiled_certification or profiled_interrupted else
-                                broker.operation_active.acquire(blocking=False))
+                    acquired = (broker.operation_active.acquire(timeout=2)
+                                if profiled or profiled_certification or profiled_interrupted or managed_rotation
+                                else broker.operation_active.acquire(blocking=False))
                     require(acquired, 'P2_CONCURRENT_STAGE_REFUSED')
                     import threading
                     def operation(value=value):
@@ -1678,14 +2057,16 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             os.close(safety_write); os.close(health_read)
         os._exit(0 if committed else 1)
     os.close(safety_write); os.close(health_read)
-    armed = None
+    armed = rotation_custody = None
     replacement_certification = profiled_certification and 'replacementRelease' in initial['certificationPlan']
     replacement_interrupted = profiled_interrupted and 'replacementRelease' in initial['reviewedPlan']['frontendPlan']
-    replacement_guarded = replacement_certification or replacement_interrupted
+    replacement_guarded = replacement_certification or replacement_interrupted or managed_rotation
     try:
         def arm(probe):
             nonlocal armed
             require(armed is None, 'P2_SAFETY_REARM_REFUSED')
+            if managed_rotation:
+                return observer_worker.submit(arm_replacement, probe)
             if profiled_certification:
                 verify_guard_boundary(initial, source)
                 _validate_profiled_certification_arm(initial, probe, verified_jobs['frontend'])
@@ -1707,6 +2088,14 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                     and probe['baseline'] == json.loads(verified_jobs['frontend']['schema']), 'P2_SAFETY_SCOPE_REFUSED')
 
         def arm_replacement(probe):
+            if managed_rotation:
+                from p2_identity_rotation_replacement import prepare_replacement_rotation_custody
+
+                verify_guard_boundary(initial, source)
+                custody = prepare_replacement_rotation_custody(initial, source, lock_fd=fd, directory=_rotation_directory(initial))
+                custody.verify_arm(probe)
+                _managed_rotation_arm_record(initial, probe)
+                return probe, custody
             _observe_profiled_replacement_certification(initial, probe, source, 'verify-schema')
             if replacement_certification:
                 from p2_replacement_successor import verify_replacement_runtime_before_arm
@@ -1714,8 +2103,12 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             return probe
 
         def publish_replacement_arm(probe):
-            nonlocal armed
+            nonlocal armed, rotation_custody
             verify_guard_lock(initial)
+            if managed_rotation:
+                armed, rotation_custody = probe
+                _retain_managed_rotation_guard_arm(initial, armed)
+                return
             armed = probe
             retain_arm = _retain_profiled_interrupted_arm if replacement_interrupted else _retain_profiled_certification_arm
             retain_arm(initial, probe)
@@ -1724,8 +2117,12 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             committed = (watch_broker(child, safety_read, health_write, arm, profiled_certification=True,
                                       async_arm=replacement_guarded,
                                       publish_verified_arm=publish_replacement_arm if replacement_guarded else None)
-                         if profiled_certification or profiled_interrupted else
+                         if profiled_certification or profiled_interrupted or managed_rotation else
                          watch_broker(child, safety_read, health_write, arm))
+        if layout == ROTATION_LAYOUT:
+            require(not members(child), 'P2_GUARD_ROTATION_TERMINAL_CHILD_REMAINS')
+            _publish_rotation_terminal(initial, source, armed, committed, custody=rotation_custody)
+            return
         result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
         if profiled_certification:
             require(not members(child), 'P2_PROFILED_CERTIFICATION_TERMINAL_CHILD_REMAINS')
@@ -1742,6 +2139,9 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                         _canonical_sha(fresh['admission']) == _canonical_sha(terminal['frontendAdmission']),
                         'P2_PROFILED_CERTIFICATION_REPLACEMENT_TERMINAL_PHYSICAL_CHANGED')
                 _profiled_certification_containers(remove=False)
+                if 'rotationSuccessor' in initial['certificationPlan']:
+                    from p2_replacement_successor import verify_rotation_successor_guard_runtime
+                    verify_rotation_successor_guard_runtime(initial, source)
             verify_guard_boundary(initial, source)
             from p2_interactive_window import media_upload_selected
             cert = initial['certificationPlan']

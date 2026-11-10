@@ -13,8 +13,11 @@ import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2NativeHash } from "./p2-lifecycle-native.mjs";
 import { prepareP2CertificationReplacementRelease, validP2CertificationReplacementDescriptor } from "./p2-certification-replacement-release.mjs";
-import { P2_CERTIFICATION_READY_FILES, prepareP2ProfiledCertificationOperator } from "./p2-certification.mjs";
+import { P2_CERTIFICATION_READY_FILES, p2ProfiledCertificationOperator, prepareP2ProfiledCertificationOperator } from "./p2-certification.mjs";
+import { prepareP2CertificationRotationSuccessor, rotationSuccessorKind } from "./p2-certification-rotation-successor.mjs";
 import { prepareP2FrontendReplacementPlan } from "./p2-frontend-replacement-plan.mjs";
+import { bindP2ManagedIdentityRotationPlan } from "./p2-identity-key-rotation-operator.mjs";
+import { prepareP2IdentityRotationReplacementLease } from "./p2-identity-key-rotation-replacement.mjs";
 import { P2_PROFILED_CURRENT_CONFIGURATION_FILES } from "./p2-profiled-current-release.mjs";
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 import { phase2ContractManifestBinding } from "./release.mjs";
@@ -316,19 +319,19 @@ test("replacement certification requires the private digest-named terminal withi
   assert.throws(() => load(f.selection), refuse);
 });
 
-test("profiled certification planner consumes replacement readiness and binds the known acknowledgement intent", t => {
+function profiledFixture(t) {
   const sourceCommit = nativeSourceCommit(), f = fixture(t, sourceCommit);
   const { original } = prepareP2CertificationReplacementRelease(f.settings, f.selection);
   const { plan, inventory } = original;
   const deploymentId = f.terminal.deploymentId, deploymentUrl = "https://owned-candidate.vercel.app";
-  const build = { version: 2, qualificationTargetProfile: profile, environment, releaseId, sourceCommit,
-    projectId: f.probe.candidate.workload.projectId, previousDeploymentId: f.plan.predecessor.deploymentId, deploymentId,
-    trafficAuthorized: false, promotionAuthorized: false };
+  const readyIdentity = { version: 2, qualificationTargetProfile: profile, environment, releaseId, sourceCommit,
+    projectId: f.probe.candidate.workload.projectId, previousDeploymentId: f.plan.predecessor.deploymentId };
+  const build = { ...readyIdentity, trafficAuthorized: false, promotionAuthorized: false };
   for (const [name, record] of Object.entries({
-    "frontend-build-started.json": { ...build, status: "FRONTEND_BUILD_STARTED" },
-    "frontend-build-created.json": { ...build, status: "FRONTEND_BUILD_CREATED" },
-    "frontend-build-outcome.json": { ...build, status: "FRONTEND_STAGED", phase: "completed", readyState: "READY", url: deploymentUrl },
-    "frontend-promotion-started.json": { ...build, status: "FRONTEND_PROMOTION_STARTED", previousAliasRequestedAt: 0 },
+    "frontend-build-started.json": build,
+    "frontend-build-created.json": { ...build, deploymentId },
+    "frontend-build-outcome.json": { ...build, deploymentId, status: "FRONTEND_STAGED", phase: "completed", readyState: "READY", url: deploymentUrl },
+    "frontend-promotion-started.json": { ...readyIdentity, deploymentId, previousAliasRequestedAt: 0 },
   })) write(join(f.vercel, name), record);
   const readyReceiptSha256 = Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name => [name, digest(readFileSync(join(f.vercel, name)))]));
   const certification = { version: 2, qualificationTargetProfile: profile, environment, certificationActionId: "owned-certification",
@@ -343,6 +346,11 @@ test("profiled certification planner consumes replacement readiness and binds th
       windowSeconds: 60, drainSeconds: 15, finalDisposition: "disabled-and-admission-closed", commandWitnesses: [] } };
   const settings = { version: 2, qualificationTargetProfile: profile, environment, operatorSourceCommit: sourceCommit,
     releaseSettings: f.settings, replacementRelease: f.selection, certification };
+  return { f, original, plan, inventory, sourceCommit, deploymentId, readyReceiptSha256, certification, settings };
+}
+
+test("profiled certification planner consumes replacement readiness and binds the known acknowledgement intent", t => {
+  const { f, original, plan, inventory, sourceCommit, deploymentId, readyReceiptSha256, certification, settings } = profiledFixture(t);
   const selected = prepareP2ProfiledCertificationOperator(settings);
   assert.equal(selected.originalReleasePlanSha256, f.settings.arm.reviewedPlanSha256);
   assert.equal(selected.originalReleaseReceiptSha256, f.selection.terminalSha256);
@@ -405,4 +413,159 @@ test("profiled certification planner consumes replacement readiness and binds th
   assert.throws(() => prepareP2ProfiledCertificationOperator(settings));
   writeFileSync(path, originalReady);
   assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, certification: { ...certification, startState: "qualified-ready" } }));
+});
+
+function rotationFixture(t, predecessorKind) {
+  const { f, original, plan: release, inventory, sourceCommit, readyReceiptSha256: originalReady, settings } = profiledFixture(t);
+  const actionId = "p2-key-rotation-owned-successor";
+  const sourceFiles = ["ops/platform/p2-certification-current-probe.mjs", "ops/platform/p2-identity-key-rotation-replacement.mjs"]
+    .map(path => ({ path, sha256: digest(path), data: Buffer.from(path).toString("base64") }));
+  const sourceClosure = p2NativeHash(JSON.stringify(sourceFiles.map(({ path, sha256 }) => [path, sha256])));
+  const predecessorInventory = digest("predecessor inventory"), gatewayProcessSha256 = digest("gateway");
+  const results = f.settings.arm.results;
+  let predecessor;
+  if (predecessorKind) {
+    const priorAction = "owned-prior-certification";
+    const runtimeActionId = predecessorKind === "known-ack" ? "owned-runtime-successor" : priorAction;
+    const priorDirectory = join(results, priorAction);
+    mkdirSync(priorDirectory, { mode: 0o700 });
+    const receiptFile = join(priorDirectory, "p2-replacement-successor-runtime.json");
+    const terminalSha256 = digest("previous terminal");
+    const receiptSha256 = write(receiptFile, {
+      version: 2, qualificationTargetProfile: profile, environment, status: "P2_REPLACEMENT_SUCCESSOR_RUNTIME_VERIFIED",
+      kind: predecessorKind, actionId: priorAction, runtimeActionId, releaseId, sourceCommit, hostMachineId: f.settings.arm.host.machineId,
+      candidateSha256: release.candidateSha256, targetSha256: release.targetSha256, configurationCanonicalSha256: p2NativeHash(release.configurationSha256),
+      replacementRelease: inventory.replacementRelease, originalReleaseReceiptSha256: f.selection.terminalSha256,
+      originalReleasePlanSha256: f.settings.arm.reviewedPlanSha256, terminalSha256,
+      runtimeReceiptSha256: predecessorKind === "known-ack" ? digest("previous runtime") : terminalSha256,
+      frontendSessionClosedSha256: digest("previous close"), frontendEpoch: "3",
+      runtimeInventorySha256: predecessorInventory, gatewayProcessSha256,
+    });
+    predecessor = { receiptFile, receiptSha256 };
+  }
+  const lease = prepareP2IdentityRotationReplacementLease({
+    version: 2, qualificationTargetProfile: profile, environment, operatorSourceCommit: sourceCommit,
+    releaseSettings: f.settings, replacementRelease: f.selection, ...(predecessor ? { successorRuntime: predecessor } : {}),
+    custody: { actionId, initialEpoch: "4", runtimeInventorySha256: predecessorInventory, gatewayProcessSha256,
+      operatorSourceClosureSha256: sourceClosure, authenticationWindows: ["overlap", "current-only", "post-removal"] },
+  });
+  const phases = ["baseline", "overlap", "current-only"];
+  const rotationPath = "/var/lib/lash-her/releases/staging/owned/rotation";
+  const id = n => `${n.repeat(8)}-${n.repeat(4)}-4${n.repeat(3)}-8${n.repeat(3)}-${n.repeat(12)}`;
+  const { plan, hostReview } = bindP2ManagedIdentityRotationPlan(lease, sourceFiles, rotationPath, {
+    actionId, courseId: id("1"),
+    subjects: { "course-learner": id("2"), "course-admin": id("3"), "community-member": id("4"), "community-admin": id("5") },
+    configuration: Object.fromEntries(phases.map(phase => [phase, { privateRef: join(rotationPath, phase), sha256: digest(phase) }])),
+    privateConfigurationSha256: Object.fromEntries(phases.map(phase => [phase, digest(`private-${phase}`)])),
+  });
+  const directory = join(results, actionId);
+  mkdirSync(directory, { mode: 0o700 });
+  const save = (name, value) => write(join(directory, name), value);
+  save("reviewed-plan.json", plan);
+  save("frontend-custody.json", hostReview);
+  const frontendSessionClosedSha256 = digest("rotation closure"), postRemovalSignerReceiptSha256 = digest("signer");
+  const profileEvidenceClass = { "course-learner": "actual-protected-course-http", "course-admin": "actual-protected-course-http",
+    "community-member": "deployed-private-community-verifier", "community-admin": "deployed-private-community-verifier" };
+  save("host-rotation-joined.json", {
+    version: 2, qualificationTargetProfile: profile, environment, status: "P2_IDENTITY_KEY_ROTATION_QUALIFIED",
+    actionId, bindingSha256: plan.bindingSha256, candidateSha256: plan.candidateSha256, sourceCommit, keyRemovalVerified: true,
+    frontendCustodyPlanSha256: plan.frontendCustodyPlanSha256, frontendFinalEpoch: plan.finalEpoch,
+    frontendSessionCloseReceiptSha256: frontendSessionClosedSha256, configurationSha256: plan.configuration["current-only"].sha256,
+    sourceParentDispatchIntegrated: true, profileEvidenceClass,
+    profileReceiptSha256: Object.fromEntries(Object.keys(profileEvidenceClass).map(profile => [profile,
+      { overlap: digest(profile + "overlap"), "current-only": digest(profile + "current-only") }])),
+    frontendSignerReceiptSha256: { overlap: digest("overlap signer"), "current-only": digest("current signer"), "post-removal": postRemovalSignerReceiptSha256 },
+    ...Object.fromEntries(["nativeSchedulesEnabled", "trafficAuthorized", "releaseAccepted", "g2Accepted", "sqlExecuted", "rolesPrepared",
+      "loginChanged", "tokenBytesOutput", "credentialHashesOutput", "communityMemberFeatureAdded", "newPublicEndpoint"].map(key => [key, false])),
+  });
+  const deploymentId = "dpl_ownedCurrentOnly", deploymentUrl = "https://owned-current-only.vercel.app";
+  const readyBytes = Object.fromEntries(P2_CERTIFICATION_READY_FILES.map(name => {
+    const ready = JSON.parse(readFileSync(join(f.vercel, name)));
+    ready.previousDeploymentId = "dpl_ownedOverlap";
+    if (name !== "frontend-build-started.json") ready.deploymentId = deploymentId;
+    if (name === "frontend-build-outcome.json") ready.url = deploymentUrl;
+    return [name, Buffer.from(serialize(ready))];
+  }));
+  const readyReceiptSha256 = Object.fromEntries(Object.entries(readyBytes).map(([name, raw]) => [name, digest(raw)]));
+  const terminalReceiptSha256 = digest("exact raw guardian terminal"), runtimeInventorySha256 = digest("mixed inventory");
+  const receipt = { version: 2, qualificationTargetProfile: profile, environment,
+    status: "P2_IDENTITY_ROTATION_MIXED_SUCCESSOR_RUNTIME_VERIFIED", kind: rotationSuccessorKind, actionId, releaseId,
+    bindingSha256: plan.bindingSha256, sourceCommit, candidateSha256: plan.candidateSha256, hostMachineId: plan.hostMachineId,
+    targetSha256: plan.targetSha256, originalReleasePlanSha256: f.settings.arm.reviewedPlanSha256,
+    originalReleaseReceiptSha256: f.selection.terminalSha256, predecessorRuntimeInventorySha256: predecessorInventory,
+    ...(predecessor ? { predecessorSuccessorReceiptSha256: predecessor.receiptSha256 } : {}),
+    terminalReceiptSha256, frontendSessionClosedSha256, configurationSha256: plan.configuration["current-only"].sha256,
+    currentOnlyRuntimeConfigurationSha256: digest("current private composite"), runtimeInventorySha256, gatewayProcessSha256,
+    gatewayConfigurationSha256: release.configurationSha256["gateway.json"], frontendEpoch: plan.finalEpoch,
+    frontend: { deploymentId, deploymentUrl, readyReceiptSha256, postRemovalSignerReceiptSha256 },
+    mutationReceipts: [["overlap", "api"], ["overlap", "frontend"], ["current-only", "frontend"], ["current-only", "api"]]
+      .map(([phase, kind]) => ({ phase, kind, attemptReceiptSha256: digest(phase + kind), observationReceiptSha256: digest(kind + phase) })),
+    phaseRuntimeInventoryReceiptSha256: Object.fromEntries(phases.map(phase => [phase, digest("inventory" + phase)])),
+    unchangedOriginalServices: ["community-tls", "course-tls", "course-snapshot", "community-worker", "course-media", "course-export-cleanup", "course-publisher", "gateway"],
+    currentOnlyRecreatedServices: ["course-api", "community-api"], frontendAdmissionClosed: true, gatewayAdmissionClosed: true,
+    nativeSchedulesEnabled: false, trafficAuthorized: false, releaseAccepted: false, g2Accepted: false };
+  const record = value => {
+    const raw = Buffer.from(serialize(value)), receiptSha256 = digest(raw);
+    save("managed-rotation-successor-evidence.json", { receiptSha256, terminalReceiptSha256, originalBytesBase64: raw.toString("base64") });
+    save("managed-rotation-frontend-ready.json", { successorReceiptSha256: receiptSha256,
+      originalBytesBase64: Object.fromEntries(Object.entries(readyBytes).map(([name, bytes]) => [name, bytes.toString("base64")])) });
+    return { ...settings, rotationSuccessor: { actionId, receiptSha256 }, certification: { ...settings.certification,
+      runtimeInventorySha256, gatewayProcessSha256, operatorSourceClosureSha256: sourceClosure, initialEpoch: plan.finalEpoch, readyReceiptSha256,
+      native: { ...settings.certification.native, deploymentId, deploymentUrl, epoch: plan.finalEpoch,
+        configurationRecordSha256: readyReceiptSha256["frontend-workload-outcome.json"] } } };
+  };
+  const checked = prepareP2CertificationReplacementRelease(f.settings, f.selection);
+  return { f, original, originalReady, predecessor, receipt, record, directory, checked, plan, hostReview };
+}
+
+test("profiled mixed successor plans with current READY evidence and retains the original release and mount chain", async t => {
+  for (const kind of [null, "known-ack", "interrupted-known-ack"]) {
+    const fixture = rotationFixture(t, kind);
+    const settings = fixture.record(fixture.receipt);
+    const selected = prepareP2ProfiledCertificationOperator(settings);
+    assert.deepEqual(selected.rotationSuccessor, {
+      kind: rotationSuccessorKind, ...settings.rotationSuccessor, bindingSha256: fixture.plan.bindingSha256,
+      ...(kind ? { predecessorRuntime: fixture.hostReview.certificationPlan.successorRuntime } : {}),
+    });
+    assert.equal(selected.nativePlan.deploymentId, fixture.receipt.frontend.deploymentId);
+    assert.deepEqual(selected.readyReceiptSha256, fixture.receipt.frontend.readyReceiptSha256);
+    assert.deepEqual(selected.originalFrontendReady, { deploymentId: fixture.f.terminal.deploymentId,
+      deploymentUrl: fixture.hostReview.certificationPlan.nativePlan.deploymentUrl, readyReceiptSha256: fixture.originalReady });
+    assert.equal(selected.originalReleaseReceiptSha256, fixture.f.selection.terminalSha256);
+    assert.deepEqual(selected.apiJobSha256, fixture.original.plan.apiJobSha256);
+    const review = prepareP2CertificationRotationSuccessor(settings.rotationSuccessor, fixture.checked,
+      settings.certification, settings.releaseSettings.arm.results, P2_CERTIFICATION_READY_FILES);
+    assert.equal(review.configuration, fixture.hostReview.configuration);
+    assert.equal(digest(Buffer.from(review.rawReceiptBase64, "base64")), settings.rotationSuccessor.receiptSha256);
+    assert.equal(digest(review.originalReady.get("frontend-workload-outcome.json")), fixture.f.terminal.frontendWorkloadReceiptSha256);
+    assert.equal(digest(review.currentReady.get("frontend-workload-outcome.json")), selected.nativePlan.configurationRecordSha256);
+    await assert.rejects(p2ProfiledCertificationOperator(settings, { confirmation: "staging/owned-certification" }),
+      { message: "P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED" });
+  }
+});
+
+test("mixed successor refuses stale epochs, foreign provenance, changed original bytes, and wrong READY records", t => {
+  const fixture = rotationFixture(t, "known-ack");
+  for (const change of [
+    { originalReleaseReceiptSha256: digest("foreign release") },
+    { predecessorSuccessorReceiptSha256: digest("foreign predecessor") },
+    { currentOnlyRuntimeConfigurationSha256: undefined },
+    { unchangedOriginalServices: [] },
+    { frontend: { ...fixture.receipt.frontend, postRemovalSignerReceiptSha256: digest("foreign signer") } },
+  ]) assert.throws(() => prepareP2ProfiledCertificationOperator(fixture.record({ ...fixture.receipt, ...change })));
+  const settings = fixture.record(fixture.receipt);
+  assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, successorRuntime: fixture.predecessor }));
+  assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, certification: { ...settings.certification, initialEpoch: "9" } }));
+  assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings,
+    certification: { ...settings.certification, mode: "contain-native", scopedAction: undefined, persistenceReviewedSha256: undefined } }));
+  const original = join(fixture.f.vercel, "frontend-build-outcome.json");
+  const saved = readFileSync(original);
+  writeFileSync(original, Buffer.concat([saved, Buffer.from("\n")]));
+  assert.throws(() => prepareP2ProfiledCertificationOperator(settings));
+  writeFileSync(original, saved);
+  const retained = join(fixture.directory, "managed-rotation-frontend-ready.json");
+  const ready = JSON.parse(readFileSync(retained));
+  ready.originalBytesBase64["frontend-workload-outcome.json"] = ready.originalBytesBase64["frontend-build-outcome.json"];
+  write(retained, ready);
+  assert.throws(() => prepareP2ProfiledCertificationOperator(settings));
 });

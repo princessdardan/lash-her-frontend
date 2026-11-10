@@ -1,12 +1,22 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { getAdminOwnerEmails } from "@/lib/env/admin";
-import { currentWriterFirstOwner, matchesWriterFirstOwner, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
+import { getAdminUserStore } from "@/lib/admin/admin-user-store";
+import { readSelectedAdminGoogleUser } from "@/lib/admin/auth-service";
+import { currentWriterFirstOwner, currentWriterIdentityRotation, matchesWriterFirstOwner, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
 
 interface GoogleIdentityProfile {
   email?: unknown;
   email_verified?: unknown;
   sub?: unknown;
+}
+
+async function isSelectedRotationAdmin(actorId: string, email: unknown, emailVerified: unknown, providerUserId: unknown) {
+  try {
+    return (await readSelectedAdminGoogleUser(getAdminUserStore(), { email, emailVerified, providerUserId }, actorId)) !== null;
+  } catch {
+    return false;
+  }
 }
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
@@ -27,6 +37,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           typeof googleProfile.sub === "string" && matchesWriterFirstOwner(firstOwner, googleProfile.email.trim().toLowerCase(), googleProfile.sub)) {
           token.firstOwnerWindowSha256 = writerFirstOwnerWindowSha256(firstOwner);
         }
+      } else {
+        const rotation = currentWriterIdentityRotation();
+        if (rotation?.actorKind === "admin" &&
+          !await isSelectedRotationAdmin(rotation.actorId, token.email, token.googleEmailVerified, token.providerUserId)) return null;
       }
 
       if (!token.providerUserId && typeof token.sub === "string") {
@@ -44,6 +58,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           typeof token.adminAuthenticatedAt === "number"
             ? token.adminAuthenticatedAt
             : 0;
+        const rotation = currentWriterIdentityRotation();
+        if (rotation?.actorKind === "admin") session.user.id = rotation.actorId;
         if (typeof token.firstOwnerWindowSha256 === "string") {
           session.user.firstOwnerWindowSha256 = token.firstOwnerWindowSha256;
         }
@@ -60,6 +76,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
       if (googleProfile?.email_verified !== true || typeof googleProfile.email !== "string" ||
         !googleProfile.email.trim() || typeof googleProfile.sub !== "string" || !googleProfile.sub) return false;
+      const rotation = currentWriterIdentityRotation();
+      if (rotation?.actorKind === "admin") return account.providerAccountId === googleProfile.sub &&
+        isSelectedRotationAdmin(rotation.actorId, googleProfile.email, googleProfile.email_verified, googleProfile.sub);
       const firstOwner = currentWriterFirstOwner();
       if (!firstOwner) return true;
       const email = googleProfile.email.trim().toLowerCase();

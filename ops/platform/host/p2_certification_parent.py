@@ -92,6 +92,8 @@ SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
 PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
 SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'mux-readiness', 'mux-replacement-evidence', 'interactive-browser'}
 DAY_TWO_WORKLOAD_MODES = SCOPED_MODES | SUSPENSION_MODES
+ROTATION_SUCCESSOR_REVIEW_FIELDS = frozenset(('rotationSuccessorReceipt', 'originalReadyReceipts'))
+ROTATION_SUCCESSOR_LIVE_ELIGIBLE = False
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
 PAID_REVOKE_COURSE_SOURCE = '54fd289a5a8579bfbe343afb07482f406b56ad5b'
@@ -251,6 +253,17 @@ def _profiled_host_receipt(directory, name, expected):
     return _profiled_record(raw, expected), _sha(raw)
 
 
+def profiled_certification_review_fields(plan):
+    return (PROFILED_INITIAL_FIELDS |
+            ({'sourceSuspensionPlan'} if plan.get('mode') in SUSPENSION_MODES else set()) |
+            (ROTATION_SUCCESSOR_REVIEW_FIELDS if 'rotationSuccessor' in plan else set()))
+
+
+def require_profiled_certification_execution(plan):
+    require('rotationSuccessor' not in plan or ROTATION_SUCCESSOR_LIVE_ELIGIBLE,
+            'P2_CERTIFICATION_ROTATION_SUCCESSOR_LIVE_UNQUALIFIED')
+
+
 def _profiled_initial(initial, expected):
     require(type(initial) is dict and
             type(initial.get('version')) is int and initial['version'] == 2 and initial['environment'] == 'staging' and
@@ -296,10 +309,14 @@ def _profiled_initial(initial, expected):
         if 'successorRuntime' in plan:
             require(mode != 'known-ack-recovery', 'P2_PROFILED_CERTIFICATION_SUCCESSOR_MODE_REFUSED')
             extra.add('successorRuntime')
+        if 'rotationSuccessor' in plan:
+            require(mode in DAY_TWO_WORKLOAD_MODES and 'successorRuntime' not in plan,
+                    'P2_PROFILED_CERTIFICATION_ROTATION_SUCCESSOR_MODE_REFUSED')
+            extra.update(('rotationSuccessor', 'originalFrontendReady'))
     else:
         require(type(initial['inventory']) is dict and 'replacementRelease' not in initial['inventory'],
                 'P2_PROFILED_CERTIFICATION_REPLACEMENT_RELEASE_REQUIRED')
-    require(set(initial) == PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set()) and
+    require(set(initial) == profiled_certification_review_fields(plan) and
             set(plan) == PROFILED_PLAN_FIELDS | extra and plan['startState'] == 'already-closed' and
             plan['environment'] == 'staging' and plan['certificationActionId'] == initial['certificationActionId'] and
             plan['sourceCommit'] == plan['operatorSourceCommit'] == initial['sourceCommit'] and
@@ -518,6 +535,23 @@ def _profiled_ready_receipts(initial, plan, selected, expected):
             0 <= prior_time < alias_time <= 2**53 - 1 and type(promoted.get('previousAliasRequestedAt')) is int and
             promoted['previousAliasRequestedAt'] == prior_time,
             'P2_PROFILED_CERTIFICATION_PROMOTION_REQUIRED')
+
+
+def _profiled_rotation_original_ready(initial, plan, selected, expected):
+    original = plan.get('originalFrontendReady')
+    require(type(original) is dict and set(original) == {'deploymentId', 'deploymentUrl', 'readyReceiptSha256'} and
+            type(original['readyReceiptSha256']) is dict and set(original['readyReceiptSha256']) == set(READY_FILES) and
+            type(initial['originalReadyReceipts']) is dict and set(initial['originalReadyReceipts']) == set(READY_FILES) and
+            original['deploymentId'] != plan['nativePlan']['deploymentId'] and
+            original['deploymentUrl'] != plan['nativePlan']['deploymentUrl'],
+            'P2_PROFILED_CERTIFICATION_ROTATION_ORIGINAL_READY_REFUSED')
+    hashes = original['readyReceiptSha256']
+    original_initial = {**initial, 'readyReceipts': initial['originalReadyReceipts']}
+    original_plan = {**plan, 'readyReceiptSha256': hashes, 'nativePlan': {**plan['nativePlan'],
+        'deploymentId': original['deploymentId'], 'deploymentUrl': original['deploymentUrl'],
+        'configurationRecordSha256': hashes['frontend-workload-outcome.json']}}
+    _profiled_ready_receipts(original_initial, original_plan, selected, expected)
+    return original_initial, original_plan
 
 
 def _profiled_original_terminal(initial, plan, selected, results, expected, *, source):
@@ -780,17 +814,25 @@ def prepare_profiled_current_certification_input(initial, source):
                     for service,row in plan['knownAckReceiverTargets'].items()), 'P2_PROFILED_KNOWN_ACK_API_JOB_CHANGED')
         validate_known_configuration_input(plan['knownAckConfigurationInputDirectory'], configuration, selected, jobs,
                                            initial['configurationSha256'], expected_profile=expected)
-    original_initial = initial
-    if 'successorRuntime' in plan:
+    original_initial, original_plan = initial, plan
+    if 'rotationSuccessor' in plan:
+        from p2_certification_rotation_successor import require_rotation_successor_runtime
+
+        successor = require_rotation_successor_runtime(initial, plan, selected, results, source, expected)
+        require(successor.predecessor_configuration == configuration,
+                'P2_PROFILED_CERTIFICATION_ROTATION_GATEWAY_MOUNT_REQUIRED')
+        original_initial, original_plan = _profiled_rotation_original_ready(initial, plan, selected, expected)
+    elif 'successorRuntime' in plan:
         from p2_replacement_successor import require_successor_runtime
         require(require_successor_runtime(initial, plan, selected, results, source, expected) == configuration,
                 'P2_PROFILED_CERTIFICATION_SUCCESSOR_MOUNT_REQUIRED')
+    if 'successorRuntime' in plan or 'rotationSuccessor' in plan:
         original_mount = results / ('runtime-profiled-frontend-replacement-' + selected['releaseId']) / 'configuration'
         require(original_mount == original_mount.resolve() and
                 staging_state.configuration_hashes(original_mount) == initial['configurationSha256'],
                 'P2_PROFILED_CERTIFICATION_ORIGINAL_MOUNT_CHANGED')
-        original_initial = {**initial, 'configuration': str(original_mount)}
-    terminal_sha, plan_hash_verified = _profiled_original_terminal(original_initial, plan, selected, results, expected,
+        original_initial = {**original_initial, 'configuration': str(original_mount)}
+    terminal_sha, plan_hash_verified = _profiled_original_terminal(original_initial, original_plan, selected, results, expected,
                                                                   source=source)
     if plan['mode'] == 'interactive-browser' and plan['scopedAction']['stage'] == 'lesson-restore':
         _require_profiled_restore_prior(plan, results, expected)
@@ -802,7 +844,7 @@ def prepare_profiled_current_certification_input(initial, source):
             'originalReleasePlanSha256': plan['originalReleasePlanSha256'], 'originalReleasePlanHashHostVerified': plan_hash_verified,
             'executionEligible': False, 'providerTouched': False, 'admissionChanged': False, 'releaseAccepted': False,
             **({'replacementRelease': plan['replacementRelease']} if replacement else {}),
-            **({'successorRuntime': plan['successorRuntime']} if 'successorRuntime' in plan else {})}
+            **{key: plan[key] for key in ('successorRuntime', 'rotationSuccessor') if key in plan}}
 
 
 def _iso(value):
@@ -1183,7 +1225,11 @@ class P2CertificationScope(P2ReleaseScope):
                     'QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED')
         else:
             expected = _profiled_context()
-            require(self._expected_profile == expected and type(physical_observer) is P2CertificationPhysicalObserver and
+            fixed_observer = type(physical_observer) is P2CertificationPhysicalObserver
+            if not fixed_observer and replacement is not None and certification_plan.get('mode') == 'contain-native':
+                from p2_identity_rotation_replacement import ReplacementRotationPhysicalObserver
+                fixed_observer = type(physical_observer) is ReplacementRotationPhysicalObserver
+            require(self._expected_profile == expected and fixed_observer and
                     physical_observer._expected_profile == expected and getattr(physical_observer,'_interrupted',False) is
                     (certification_plan.get('mode') == PROFILED_INTERRUPTED_MODE), 'P2_PROFILED_CERTIFICATION_PHYSICAL_SCOPE_REQUIRED')
             migrate.candidate_profile(release, expected)
@@ -1441,6 +1487,7 @@ class P2CertificationBroker(Broker):
         # Independent cleanup is armed before readonly helpers are launched.
         # There is still no native/admission/fault mutation authority.
         self._accept_guard_arm(probe)
+        self._verify_rotation_successor_before_stage()
         if cert['mode']=='contain-native':native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
         elif self._uses_day_two_workload():
             workload = self._native_observe()
@@ -1452,9 +1499,7 @@ class P2CertificationBroker(Broker):
             require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
         api=self._read_api_current(self.directory/'current-api')
         self.runtime_snapshot=self.configuration
-        token=runtime._command_scope.set(self.scope)
-        try:self.runtime_current=runtime.check_containers(self.selected,self.configuration,**self.profile_arguments())
-        finally:runtime._command_scope.reset(token)
+        self.runtime_current=self._read_runtime_inventory()
         require(len(self.runtime_current)==10,'P2_CERTIFICATION_ALL_CURRENT_REQUIRED')
         self.last_api_verified=time.monotonic()
         require(_sha(_canonical(self.runtime_current))==cert['runtimeInventorySha256'],'P2_CERTIFICATION_REVIEWED_RUNTIME_SELECTION_REQUIRED')
@@ -1484,6 +1529,19 @@ class P2CertificationBroker(Broker):
                 self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
                 observe_frontend=lambda:self.observer.probe('witness'))
 
+    def _verify_rotation_successor_before_stage(self):
+        pass
+
+    def _runtime_mount_configuration(self, service):
+        return self.configuration
+
+    def _read_runtime_inventory(self, configuration=None):
+        token = runtime._command_scope.set(self.scope)
+        try:
+            return runtime.check_containers(self.selected, configuration or self.configuration, **self.profile_arguments())
+        finally:
+            runtime._command_scope.reset(token)
+
     def _verify_boundary(self):
         self.scope.require_frontend(self.selected,self.jobs['frontend']);self.scope.require_configuration(self.configuration)
         if self.known_ack_boundary is not None:
@@ -1491,9 +1549,7 @@ class P2CertificationBroker(Broker):
             if time.monotonic()-self.last_api_verified>=10:self._refresh_api()
             self.last_boundary=time.monotonic();return
         if self.known_ack_recorder is not None:self.known_ack_recorder.verify_backend_idle()
-        token=runtime._command_scope.set(self.scope)
-        try:require(runtime.check_containers(self.selected,self.configuration,**self.profile_arguments())==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
-        finally:runtime._command_scope.reset(token)
+        require(self._read_runtime_inventory()==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
         require(self._runtime_processes()==self.process_snapshot,'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
         self._verify_gateway_boundary()
         if self.initial['certificationPlan']['mode']=='contain-native':
@@ -1591,11 +1647,12 @@ class P2CertificationBroker(Broker):
                 env=runtime.SAFE_ENV,timeout=15,capture_output=True,check=True)
             require(not result.stderr and len(result.stdout)<=16384,'P2_CERTIFICATION_RUNTIME_PROCESS_READBACK_REQUIRED')
             fields=result.stdout.decode().strip().split('|',3);require(len(fields)==4 and fields[0].isdigit() and int(fields[0])>0 and fields[2]=='true','P2_CERTIFICATION_RUNTIME_PROCESS_REQUIRED')
+            configuration = self._runtime_mount_configuration(row['service'])
             mounts=json.loads(fields[3]);expected=expected_mounts.get(row['service'],{});actual={}
             for mount in mounts:
                 destination=mount.get('Destination');require(destination not in actual,'P2_CERTIFICATION_MOUNT_DUPLICATE')
                 if mount.get('Type')=='tmpfs' and destination=='/tmp':continue
-                require(destination in expected and mount.get('Type')=='bind' and mount.get('RW') is False and mount.get('Source')==str(self.configuration/expected[destination]),'P2_CERTIFICATION_MOUNT_CHANGED')
+                require(destination in expected and mount.get('Type')=='bind' and mount.get('RW') is False and mount.get('Source')==str(configuration/expected[destination]),'P2_CERTIFICATION_MOUNT_CHANGED')
                 actual[destination]=mount['Source']
             require(set(actual)==set(expected),'P2_CERTIFICATION_MOUNT_MISSING')
             rows.append({'service':row['service'],'containerId':row['containerId'],'pid':fields[0],'startedAt':fields[1],'mounts':actual})
@@ -2038,6 +2095,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.gateway_observation_attempted = False
         initial = self.initial
         plan = initial['certificationPlan']
+        require_profiled_certification_execution(plan)
         mode = plan['mode']
         require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'} or
                 mode == 'known-ack-recovery' and 'replacementRelease' in plan,
@@ -2046,7 +2104,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             from p2_interactive_window import EXECUTABLE_BROWSER_STAGES
             stage = plan.get('scopedAction', {}).get('stage')
             require(type(stage) is str and stage in EXECUTABLE_BROWSER_STAGES, 'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
-        review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
+        review_fields = profiled_certification_review_fields(plan)
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
         if mode in DAY_TWO_WORKLOAD_MODES:
             private_fields.add('scopedCronSecret')
@@ -2089,6 +2147,12 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.bundle, self.configuration, self.results = (Path(initial[key]) for key in ('bundle', 'configuration', 'results'))
         self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration,
             self.source / 'ops/platform/compose.yaml', **self.profile_arguments())
+        self.rotation_successor = None
+        if 'rotationSuccessor' in plan:
+            from p2_certification_rotation_successor import require_rotation_successor_runtime
+
+            self.rotation_successor = require_rotation_successor_runtime(review, plan, self.selected, self.results,
+                                                                          self.source, self.certification_profile())
         course_source = self.selected['sources']['course']['commit']
         from p2_interactive_window import media_upload_selected
         require((mode not in ('mux-callback-recovery', 'mux-readiness', 'mux-replacement-evidence') and not media_upload_selected(plan)) or
@@ -2158,6 +2222,45 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
 
     def _release_evidence(self):
         return {key: self.initial[key] for key in ('originalReleaseReceipt', 'readyReceipts')}
+
+    def _runtime_mount_configuration(self, service):
+        if self.rotation_successor is not None and service in ('course-api', 'community-api'):
+            return self.rotation_successor.current_only_configuration
+        return super()._runtime_mount_configuration(service)
+
+    def _read_runtime_inventory(self, configuration=None):
+        successor = self.rotation_successor
+        if successor is None:
+            return super()._read_runtime_inventory(configuration)
+        from p2_identity_key_rotation_adapter import _runtime_phase_hash
+
+        current = successor.current_only_configuration
+        self.scope.verify()
+        require(current == current.resolve() and self.configuration == successor.predecessor_configuration and
+                _runtime_phase_hash(current) == successor.current_only_configuration_sha256 and
+                migrate.read_input(current, 'compose.yaml', 65_536) == migrate.read_input(self.source, 'ops/platform/compose.yaml', 65_536),
+                'P2_PROFILED_CERTIFICATION_ROTATION_RUNTIME_CONFIGURATION_CHANGED')
+        containers = super()._read_runtime_inventory(current)
+        require(containers == successor.inventory, 'P2_PROFILED_CERTIFICATION_ROTATION_RUNTIME_CHANGED')
+        return containers
+
+    def _retain_rotation_frontend_observation(self, stage):
+        from p2_day_two_workload import observe_browser_origin
+
+        require(stage in ('arm', 'terminal'), 'P2_PROFILED_CERTIFICATION_ROTATION_OBSERVATION_STAGE_REFUSED')
+        observation = observe_browser_origin(self._native_context(), LockedClient(self.vercel, self.scope.verify),
+                                             self.initial['scopedCronSecret'], **self.profile_arguments())
+        name = 'p2-rotation-successor-frontend-' + stage + '.json'
+        migrate.write_json(self.directory, name, observation)
+        return _sha(migrate.read_input(self.directory, name, 65_536))
+
+    def _verify_rotation_successor_before_stage(self):
+        if self.rotation_successor is None:
+            return
+        from p2_certification_rotation_successor import observe_rotation_successor_runtime
+
+        observe_rotation_successor_runtime(self.initial, self.source, self.rotation_successor, self.scope.verify)
+        self.rotation_frontend_arm_sha = self._retain_rotation_frontend_observation('arm')
 
     def require_scoped_native_off(self):
         self.check()
@@ -2464,6 +2567,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         plan = self.initial['certificationPlan']
         if 'replacementRelease' in plan:
             self.prepared_terminal.update({key: plan[key] for key in REPLACEMENT_LINEAGE_FIELDS})
+        if self.rotation_successor is not None:
+            self.prepared_terminal.update(rotationSuccessor=plan['rotationSuccessor'], rotationFrontendObservationSha256={
+                'arm': self.rotation_frontend_arm_sha, 'terminal': self._retain_rotation_frontend_observation('terminal')})
         if self.authority_timing_sha256 is not None:
             self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
         if self.initial['certificationPlan']['mode'] == 'known-ack-recovery':

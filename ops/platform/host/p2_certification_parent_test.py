@@ -25,6 +25,11 @@ from p2_source_closure import TYPES, REQUIRED, verify_source_closure
 
 
 PROFILED_CURRENT_SOURCE_ONLY = frozenset({
+    'ops/platform/host/p2_frontend_replacement_parent.py',
+    'ops/platform/host/p2_replacement_operator_evidence.py',
+    'ops/platform/host/p2_replacement_runtime_containment.py',
+    'ops/platform/host/p2_replacement_runtime_review.py',
+    'ops/platform/host/p2_replacement_terminal.py',
     'ops/platform/host/p2_identity_replacement_provenance.py',
     'ops/platform/host/p2_scoped_mux_readiness.py',
     'ops/platform/p2-frontend-replacement-arm.mjs',
@@ -45,6 +50,11 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/host/p2_profiled_known_ack_restoration_parent.py',
     'ops/platform/host/p2_profiled_known_ack_runtime.py',
     'ops/platform/host/p2_profiled_known_ack_runtime_test.py',
+    'ops/platform/host/p2_identity_rotation_browser_scope.py',
+    'ops/platform/host/p2_identity_rotation_replacement.py',
+    'ops/platform/host/p2_identity_rotation_successor.py',
+    'ops/platform/host/p2_scoped_mux_replacement.py',
+    'ops/platform/p2-identity-key-rotation-replacement.mjs',
     'ops/platform/p2-profiled-current-frontend-adapters.mjs',
     'ops/platform/p2-profiled-current-frontend-adapters.test.mjs',
     'ops/platform/p2-profiled-current-probe.mjs',

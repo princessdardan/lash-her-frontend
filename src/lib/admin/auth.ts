@@ -9,7 +9,9 @@ import { getAdminUserStore } from "./admin-user-store";
 import { getAdminAuthorizationActor, runAdminAuthorizationOperation } from "./authorization-operation";
 import { assertFreshAdminAuthenticationTimestamp } from "./authentication-freshness";
 import {
+  assertAdminPermission,
   createAdminAuth,
+  readSelectedAdminGoogleUser,
   type AdminAuthService,
   type AdminPermissionContext,
 } from "./auth-service";
@@ -19,7 +21,7 @@ import {
 } from "./authorization-policy";
 import { getAdminDeveloperActor } from "./developer-mode";
 import type { AdminPermissionAction } from "./permissions";
-import type { AdminActor, AdminIdentity } from "./types";
+import { AdminAuthError, type AdminActor, type AdminIdentity } from "./types";
 import {
   ADMIN_STEP_UP_PROOF_COOKIE,
   consumeAdminStepUpProof,
@@ -46,6 +48,17 @@ export function getAdminAuth(): AdminAuthService {
 
 export async function requireAdminActor(): Promise<AdminActor> {
   return runAdminAuthorizationOperation(getRequestActor);
+}
+
+// Only the separately verified rotation Course GET may use this lookup.
+export async function requireRotationAdminCourseEditor(selectedId: string): Promise<AdminActor> {
+  const identity = await getAuthJsIdentity();
+  if (!identity) throw new AdminAuthError("unauthenticated");
+  const user = await readSelectedAdminGoogleUser(getAdminUserStore(), identity, selectedId);
+  if (!user) throw new AdminAuthError("forbidden");
+  const actor = { user, bookingProviderResourceIds: [], bookingResourceIds: [] };
+  assertAdminPermission(actor, "courses:edit");
+  return actor;
 }
 
 export async function requirePermission(

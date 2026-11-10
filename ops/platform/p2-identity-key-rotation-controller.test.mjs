@@ -82,8 +82,8 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
     observeFrontendSigner: async phase => {
       if (phase === "current-only") clock += currentSignerMs;
       note(`signer:${phase}`);
-      return { status: "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED",
-        configurationSha256: selected.configuration[phase].sha256,
+      return { status: "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED", phase,
+        configurationSha256: selected.configuration[phase === "post-removal" ? "current-only" : phase].sha256,
         issuanceCutoffAt: phase === "overlap" ? signerCutoff : new Date(clock).toISOString(),
         receiptSha256: sha(`frontend-${phase}`) };
     },
@@ -120,7 +120,7 @@ test("captures once after a frontend build longer than token life and proves bot
     const build = owned.timeline.find(row => row.operation === "apply:current-only:frontend");
     const afterBuild = owned.timeline.slice(owned.timeline.indexOf(build) + 1);
     assert.deepEqual(afterBuild.map(row => row.operation),
-      ["signer:current-only", "capture", "observe:overlap", "apply:current-only:api", "observe:current-only"]);
+      ["signer:current-only", "capture", "observe:overlap", "apply:current-only:api", "observe:current-only", "signer:post-removal"]);
     const [signer, capture, beforeRemoval, , afterRemoval] = afterBuild;
     assert.ok(capture.clock - build.clock > 300_000);
     assert.ok(capture.clock >= signer.clock);
@@ -129,6 +129,19 @@ test("captures once after a frontend build longer than token life and proves bot
     assert.strictEqual(beforeRemoval.captures, afterRemoval.captures);
     assert.equal(beforeRemoval.captures.some(row => Object.hasOwn(row, "privateFixtureMarker")), false);
     assert.equal(readFileSync(join(directory, "overlap-qualified.json"), "utf8").includes("private-capture-payload"), false);
+    assert.equal(outcome.postRemovalFrontendSignerReceiptSha256, sha("frontend-post-removal"));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("a successful overlap signer response cannot qualify after previous keys are removed", async () => {
+  const directory = fixture("post-removal-reuse");
+  try {
+    const selected = plan(directory), owned = harness(selected);
+    const observe = owned.dependencies.observeFrontendSigner;
+    owned.dependencies.observeFrontendSigner = phase => observe(phase === "post-removal" ? "current-only" : phase);
+    await assert.rejects(runIdentityKeyRotationController(selected, parent, owned.dependencies,
+      { fixture: true, nowMs: owned.nowMs }), error => error.check === "rotation-failure-contained");
+    assert.deepEqual(owned.restored, ["overlap"]);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -145,7 +158,7 @@ test("a retained receiver acknowledgement loss is reconciled without capturing a
       { fixture: true, nowMs: resumed.nowMs });
     assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
     assert.deepEqual(resumed.calls, ["reconcile:current-only:api"]);
-    assert.deepEqual(resumed.timeline.map(row => row.operation), ["observe:current-only"]);
+    assert.deepEqual(resumed.timeline.map(row => row.operation), ["observe:current-only", "signer:post-removal"]);
     assert.deepEqual(resumed.timeline[0].captures, beforeRemoval.captures);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

@@ -1,8 +1,10 @@
-import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { observeIdentityRotationBoundary } from "./p2-identity-key-rotation-observer.mjs";
 import { isP2IdentityRotationParentAuthority } from "./p2-identity-key-rotation-parent.mjs";
+import { frontendPrivateReceiptDirectory } from "./frontend-release-receipts.mjs";
+import { writeFrontendReceipt } from "./frontend-migration.mjs";
 
 const SHA = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
@@ -28,17 +30,22 @@ const closed = (value, fields) => Boolean(value && typeof value === "object" && 
 const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
   ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a.localeCompare(b))) : child);
 
-function validatePlan(plan, options = {}) {
+function validatePlan(plan, sourceBound) {
+  const privateDirectory = plan?.privateDirectory;
+  const firstReference = plan?.configuration?.baseline?.privateRef;
+  const configurationDirectory = sourceBound && typeof firstReference === "string" ? dirname(firstReference) : `${privateDirectory}/config`;
   demand(closed(plan, ["version", "environment", "actionId", "bindingSha256", "candidateSha256", "sourceCommit",
     "hostMachineId", "configuration", "privateDirectory", "courseId", "subjects"])
     && plan.version === 1 && plan.environment === "staging" && ACTION.test(plan.actionId)
     && [plan.bindingSha256, plan.candidateSha256].every(value => SHA.test(value)) && COMMIT.test(plan.sourceCommit)
-    && /^[a-f0-9]{32}$/u.test(plan.hostMachineId) && typeof plan.privateDirectory === "string"
-    && (resolve(plan.privateDirectory).startsWith("/var/lib/lash-her/releases/staging/")
-      || options.fixture === true && resolve(plan.privateDirectory).startsWith(FIXTURE_ROOT))
+    && /^[a-f0-9]{32}$/u.test(plan.hostMachineId) && typeof privateDirectory === "string"
+    && resolve(privateDirectory) === privateDirectory
+    && (sourceBound ? basename(privateDirectory) === "controller" && basename(dirname(privateDirectory)) === plan.actionId
+      && configurationDirectory.startsWith("/var/lib/lash-her/releases/staging/") && resolve(configurationDirectory) === configurationDirectory
+      : privateDirectory.startsWith(FIXTURE_ROOT))
     && closed(plan.configuration, PHASES) && PHASES.every(phase => closed(plan.configuration[phase], ["sha256", "privateRef"])
       && SHA.test(plan.configuration[phase].sha256)
-      && plan.configuration[phase].privateRef === `${plan.privateDirectory}/config/${phase}`)
+      && plan.configuration[phase].privateRef === `${configurationDirectory}/${phase}`)
     && /^[a-f0-9-]{36}$/u.test(plan.courseId)
     && closed(plan.subjects, ["course-learner", "course-admin", "community-member", "community-admin"])
     && Object.values(plan.subjects).every(value => /^[a-f0-9-]{36}$/u.test(value))
@@ -48,27 +55,34 @@ function validatePlan(plan, options = {}) {
 }
 
 class Records {
-  constructor(directory, options = {}) {
-    this.directory = directory; this.fixture = options.fixture === true;
-    const info = lstatSync(directory);
-    demand(info.isDirectory() && !info.isSymbolicLink() && (info.mode & 0o077) === 0
-      && realpathSync(directory) === resolve(directory) && (this.fixture || info.uid === 0), "private-record-directory");
+  constructor(directory) {
+    this.directory = frontendPrivateReceiptDirectory(directory);
+    this.identity = lstatSync(directory);
   }
-  path(name) { demand(/^[a-z0-9][a-z0-9-]{0,80}\.json$/u.test(name), "record-name"); return join(this.directory, name); }
+  path(name) {
+    demand(/^[a-z0-9][a-z0-9-]{0,80}\.json$/u.test(name), "record-name");
+    const info = lstatSync(frontendPrivateReceiptDirectory(this.directory));
+    demand(info.dev === this.identity.dev && info.ino === this.identity.ino, "private-record-directory-changed");
+    return join(this.directory, name);
+  }
   read(name) {
-    const path = this.path(name); if (!existsSync(path)) return null;
-    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const path = this.path(name);
+    let fd;
+    try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+    catch (error) { if (error.code === "ENOENT") return null; throw error; }
     try {
-      const info = fstatSync(fd); demand(info.isFile() && (info.mode & 0o077) === 0
-        && (this.fixture || info.uid === 0) && info.size <= 131_072, "private-record-file");
-      return JSON.parse(readFileSync(fd, "utf8"));
+      const info = fstatSync(fd);
+      demand(info.isFile() && info.uid === process.getuid() && (info.mode & 0o777) === 0o600
+        && info.size > 0 && info.size <= 131_072, "private-record-file");
+      const bytes = readFileSync(fd);
+      const raw = bytes.toString("utf8"), value = JSON.parse(raw);
+      demand(bytes.length === info.size && raw === canonical(value) + "\n", "private-record-bytes");
+      return value;
     } finally { closeSync(fd); }
   }
   create(name, value) {
-    const fd = openSync(this.path(name), "wx", 0o600);
-    try { writeFileSync(fd, canonical(value) + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
-    const directory = openSync(this.directory, constants.O_RDONLY | constants.O_DIRECTORY);
-    try { fsyncSync(directory); } finally { closeSync(directory); }
+    this.path(name);
+    writeFrontendReceipt(this.directory, name, JSON.parse(canonical(value)));
     return value;
   }
 }
@@ -110,7 +124,7 @@ function pendingMutation(records, plan, phase, kind) {
 
 function requireFrontendSigner(plan, phase, signer) {
   demand(signer?.status === "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED"
-    && signer.configurationSha256 === plan.configuration[phase].sha256
+    && signer.phase === phase && signer.configurationSha256 === plan.configuration[phase === "post-removal" ? "current-only" : phase].sha256
     && SHA.test(signer.receiptSha256) && Number.isFinite(Date.parse(signer.issuanceCutoffAt)), "frontend-signer");
   return signer;
 }
@@ -128,7 +142,7 @@ function requireFrontendMilestone(value, plan, phase) {
   demand(closed(value, ["version", "actionId", "bindingSha256", "phase", "configurationSha256",
     "frontendSignerReceiptSha256", "frontendIssuanceCutoffAt", "verifiedAt"])
     && value.version === 1 && value.actionId === plan.actionId && value.bindingSha256 === plan.bindingSha256
-    && value.phase === phase && value.configurationSha256 === plan.configuration[phase].sha256
+    && value.phase === phase && value.configurationSha256 === plan.configuration[phase === "post-removal" ? "current-only" : phase].sha256
     && SHA.test(value.frontendSignerReceiptSha256) && Number.isFinite(verifiedAt) && Number.isFinite(cutoff)
     && verifiedAt >= (phase === "overlap" ? earliestCapture(value.frontendIssuanceCutoffAt) : cutoff), "retained-frontend-milestone");
   return value;
@@ -212,9 +226,9 @@ function requireUnexpired(captures, observedAt) {
 }
 
 export async function runIdentityKeyRotationController(planValue, parent, dependencies, options = {}) {
-  demand(options.fixture === true || isP2IdentityRotationParentAuthority(options.parentAuthority, planValue),
-    "source-parent-dispatch-not-integrated");
-  const plan = validatePlan(planValue, options);
+  const sourceBound = isP2IdentityRotationParentAuthority(options.parentAuthority, planValue);
+  demand(options.fixture === true || sourceBound, "source-parent-dispatch-not-integrated");
+  const plan = validatePlan(planValue, sourceBound);
   demand(parent && parent.sourceOwnedFixedAction === true && parent.hostLockHeld === true && parent.frontendPhysicalLockHeld === true
     && parent.configOnly === true && parent.nativeSchedulesEnabled === false && parent.businessSchedulesEnabled === false
     && parent.sqlAuthorized === false && parent.rolePreparationAuthorized === false && parent.loginChangeAuthorized === false,
@@ -224,14 +238,29 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
   demand(required.every(name => name in dependencies) && ["applyMutation", "reconcileMutation", "captureTokens", "observeProfiles",
     "observeFrontendSigner", "wait", "failClosed", "restoreQualified"].every(name => typeof dependencies[name] === "function"),
   "controller-dependencies");
-  const records = new Records(plan.privateDirectory, options);
+  const records = new Records(plan.privateDirectory);
   const final = records.read("rotation-controller-qualified.json");
   const now = options.nowMs ?? Date.now;
   let overlapDrained = records.read("overlap-drained.json");
   let currentSigner = records.read("current-frontend-verified.json");
+  const postRemovalIntent = records.read("post-removal-signer-intent.json");
+  const postRemovalSigner = records.read("post-removal-signer-verified.json");
   const retainedCaptureIntent = records.read("pre-removal-capture-intent.json");
   if (overlapDrained !== null) requireFrontendMilestone(overlapDrained, plan, "overlap");
   if (currentSigner !== null) requireFrontendMilestone(currentSigner, plan, "current-only");
+  if (postRemovalIntent !== null) {
+    demand(closed(postRemovalIntent, ["version", "actionId", "bindingSha256", "startedAt"]) && postRemovalIntent.version === 1
+      && postRemovalIntent.actionId === plan.actionId && postRemovalIntent.bindingSha256 === plan.bindingSha256
+      && Number.isFinite(Date.parse(postRemovalIntent.startedAt)), "retained-post-removal-signer-intent");
+  }
+  if (postRemovalSigner !== null) {
+    requireFrontendMilestone(postRemovalSigner, plan, "post-removal");
+    demand(currentSigner !== null && postRemovalIntent !== null
+      && postRemovalSigner.frontendSignerReceiptSha256 !== currentSigner.frontendSignerReceiptSha256
+      && Date.parse(postRemovalIntent.startedAt) >= Date.parse(currentSigner.verifiedAt)
+      && Date.parse(postRemovalSigner.frontendIssuanceCutoffAt) >= Date.parse(postRemovalIntent.startedAt),
+    "retained-post-removal-signer-evidence");
+  }
   if (retainedCaptureIntent !== null) {
     const startedAt = Date.parse(retainedCaptureIntent.startedAt);
     demand(overlapDrained !== null && currentSigner !== null && Number.isFinite(startedAt)
@@ -264,7 +293,7 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
   if (final !== null) {
     demand(closed(final, ["version", "status", "environment", "actionId", "bindingSha256", "candidateSha256", "sourceCommit",
       "baselineConfigurationSha256", "overlapConfigurationSha256", "currentOnlyConfigurationSha256", "lastFullyQualifiedPhase",
-      "profileCount", "overlapDrainSeconds", "keyRemovalVerified", "sourceMechanicsQualified",
+      "profileCount", "overlapDrainSeconds", "postRemovalFrontendSignerReceiptSha256", "keyRemovalVerified", "sourceMechanicsQualified",
       "sourceParentDispatchIntegrated", "liveEligible", "sqlExecuted", "rolesPrepared", "loginChanged", "trafficAuthorized"])
       && final.version === 1 && final.environment === "staging"
       && final.status === "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED" && final.actionId === plan.actionId
@@ -274,6 +303,7 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
       && final.overlapConfigurationSha256 === plan.configuration.overlap.sha256
       && final.lastFullyQualifiedPhase === "current-only" && final.profileCount === PROFILES.length
       && final.overlapDrainSeconds === DRAIN_MS / 1000 && final.sourceMechanicsQualified === true
+      && postRemovalSigner !== null && final.postRemovalFrontendSignerReceiptSha256 === postRemovalSigner.frontendSignerReceiptSha256
       && ["sourceParentDispatchIntegrated", "liveEligible", "keyRemovalVerified", "sqlExecuted", "rolesPrepared", "loginChanged",
         "trafficAuthorized"].every(key => final[key] === false)
       && pending.length === 0 && overlapPhase !== null && overlapApi && overlapFrontend && currentFrontend && currentApi
@@ -286,6 +316,7 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
     return Object.freeze(final);
   }
   try {
+    demand(postRemovalIntent === null, "post-removal-signer-outcome-unknown");
     if (pending.length === 1) {
       const [[phase, kind]] = pending;
       demand(phase === "overlap" && kind === "api" || phase === "overlap" && kind === "frontend" && overlapApi
@@ -359,19 +390,29 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
     const observedCurrent = await dependencies.observeProfiles("current-only", captures);
     const currentEvidence = profileEvidence(observedCurrent, "current-only", captures, currentObservationStartedAt, now());
     await verifyBoundary("current-only");
+    const postRemovalStartedAt = now();
+    records.create("post-removal-signer-intent.json", { version: 1, actionId: plan.actionId,
+      bindingSha256: plan.bindingSha256, startedAt: new Date(postRemovalStartedAt).toISOString() });
+    const postRemoval = requireFrontendSigner(plan, "post-removal", await dependencies.observeFrontendSigner("post-removal"));
+    await verifyBoundary("current-only");
+    demand(Date.parse(postRemoval.issuanceCutoffAt) >= postRemovalStartedAt
+      && postRemoval.receiptSha256 !== currentSigner.frontendSignerReceiptSha256, "post-removal-signer-evidence");
+    records.create("post-removal-signer-verified.json", frontendMilestone(plan, "post-removal", postRemoval, now()));
     lastQualified = "current-only";
     const outcome = { version: 1, status: "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED", environment: "staging",
       actionId: plan.actionId, bindingSha256: plan.bindingSha256, candidateSha256: plan.candidateSha256, sourceCommit: plan.sourceCommit,
       baselineConfigurationSha256: plan.configuration.baseline.sha256, overlapConfigurationSha256: plan.configuration.overlap.sha256,
       currentOnlyConfigurationSha256: plan.configuration["current-only"].sha256, lastFullyQualifiedPhase: lastQualified,
-      profileCount: currentEvidence.length, overlapDrainSeconds: DRAIN_MS / 1000, keyRemovalVerified: false,
+      profileCount: currentEvidence.length, overlapDrainSeconds: DRAIN_MS / 1000,
+      postRemovalFrontendSignerReceiptSha256: postRemoval.receiptSha256, keyRemovalVerified: false,
       sourceMechanicsQualified: true, sourceParentDispatchIntegrated: false, liveEligible: false,
       sqlExecuted: false, rolesPrepared: false, loginChanged: false,
       trafficAuthorized: false };
     records.create("rotation-controller-qualified.json", outcome);
     return Object.freeze(outcome);
   } catch (error) {
-    mutationUncertain = error instanceof RotationControllerFailure && ["mutation-ack-unknown", "mutation-result", "capture-outcome-unknown"].includes(error.check);
+    mutationUncertain = error instanceof RotationControllerFailure && ["mutation-ack-unknown", "mutation-result", "capture-outcome-unknown",
+      "post-removal-signer-outcome-unknown"].includes(error.check);
     try { await dependencies.failClosed({ phase: lastQualified, mutationUncertain }); } catch { mutationUncertain = true; }
     if (!mutationUncertain) {
       try {

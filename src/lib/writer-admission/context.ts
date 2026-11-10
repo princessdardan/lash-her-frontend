@@ -9,13 +9,14 @@ export type WriterOperationIdentity = Readonly<{
   kind: "new-work" | "recovery"; targetSha256: string;
 }>;
 export type WriterIdentityEnrollment = Readonly<{ provider: "google" | "resend"; nonce: string; emailDigest: string }>;
+export type WriterIdentityRotation = Readonly<{ actorKind: "admin" | "customer"; actorId: string }>;
 export type WriterFirstOwner = Readonly<{ nonce: string; identityDigest: string; epoch: string; startedAt: number }>;
 export type WriterAuthoringOperation = "create-draft" | "edit-draft" | "reorder-curriculum" | "create-curriculum" | "publish-course"
   | "review-publication" | "save-quiz-revision" | "archive-paid-course" | "republish-paid-course" | "review-paid-restoration";
 const operationContext = new AsyncLocalStorage<{
   uncertain: boolean; identity?: WriterOperationIdentity; lifecycleSelectionSha256?: string; identityCustomerId?: string;
   identityEnrollment?: WriterIdentityEnrollment; authoringActorId?: string; authoringOperation?: WriterAuthoringOperation;
-  paidAccessActorId?: string; firstOwner?: WriterFirstOwner;
+  paidAccessActorId?: string; firstOwner?: WriterFirstOwner; identityRotation?: WriterIdentityRotation;
 }>();
 
 export function currentWriterOperationIdentity(): WriterOperationIdentity | undefined {
@@ -32,6 +33,10 @@ export function currentWriterIdentityCustomerId(): string | undefined {
 
 export function currentWriterIdentityEnrollment(): WriterIdentityEnrollment | undefined {
   return operationContext.getStore()?.identityEnrollment;
+}
+
+export function currentWriterIdentityRotation(): WriterIdentityRotation | undefined {
+  return operationContext.getStore()?.identityRotation;
 }
 
 export function currentWriterFirstOwner(): WriterFirstOwner | undefined {
@@ -83,11 +88,13 @@ export function assertWriterOperationCertain(): void {
 
 export async function withWriterOperationContext<T>(task: () => Promise<T>, identity?: WriterOperationIdentity,
   lifecycleSelectionSha256?: string, identityCustomerId?: string, identityEnrollment?: WriterIdentityEnrollment,
-  authoringActorId?: string, authoringOperation?: WriterAuthoringOperation, paidAccessActorId?: string, firstOwner?: WriterFirstOwner): Promise<T> {
+  authoringActorId?: string, authoringOperation?: WriterAuthoringOperation, paidAccessActorId?: string, firstOwner?: WriterFirstOwner,
+  identityRotation?: WriterIdentityRotation): Promise<T> {
   const operation = { uncertain: false, identity: identity ? Object.freeze({ ...identity }) : undefined,
     lifecycleSelectionSha256, identityCustomerId, authoringActorId, authoringOperation, paidAccessActorId,
     identityEnrollment: identityEnrollment ? Object.freeze({ ...identityEnrollment }) : undefined,
-    firstOwner: firstOwner ? Object.freeze({ ...firstOwner }) : undefined };
+    firstOwner: firstOwner ? Object.freeze({ ...firstOwner }) : undefined,
+    identityRotation: identityRotation ? Object.freeze({ ...identityRotation }) : undefined };
   return operationContext.run(operation, async () => {
     try {
       const result = await task();
@@ -101,6 +108,7 @@ export async function withWriterOperationContext<T>(task: () => Promise<T>, iden
       operation.authoringOperation = undefined;
       operation.paidAccessActorId = undefined;
       operation.firstOwner = undefined;
+      operation.identityRotation = undefined;
     }
   });
 }

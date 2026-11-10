@@ -5,7 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, verify_source_closure, verify_profiled_current_source_closure, private_observer_program
-from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_CERTIFICATION_REQUIRED
+from p2_source_closure import (CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_CERTIFICATION_REQUIRED,
+                               ROTATION_MODE, ROTATION_REQUIRED, verify_rotation_source_closure)
 from p2_source_closure import (MANAGED_REPLACEMENT_CATALOG, MANAGED_REPLACEMENT_SOURCE_REQUIRED,
                                PROFILED_REPLACEMENT_ARM_MODE, PROFILED_REPLACEMENT_ARM_REQUIRED,
                                PROFILED_REPLACEMENT_CERTIFICATION_REQUIRED, PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED,
@@ -92,6 +93,22 @@ class SourceClosureTests(unittest.TestCase):
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
 
+    def test_rotation_requires_its_fixed_dispatch_and_complete_runtime_sources(self):
+        manifest = dict(self.manifest)
+        for name in ROTATION_REQUIRED:
+            path = self.root / name
+            path.write_bytes(('owned ' + name).encode())
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = self.make(manifest)
+        with self.assertRaisesRegex(ValueError, 'ROTATION_FIXED_SOURCE_DISPATCH_REQUIRED'):
+            verify_rotation_source_closure(selected, self.root)
+        selected['mode'] = ROTATION_MODE
+        self.assertEqual(verify_rotation_source_closure(selected, self.root), selected['sourceClosureSha256'])
+        for name in ROTATION_REQUIRED:
+            partial = {key: value for key, value in manifest.items() if key != name}
+            with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+                verify_rotation_source_closure({**self.make(partial), 'mode': ROTATION_MODE}, self.root)
+
     def test_managed_replacement_source_requires_paired_catalog_bytes_and_observer(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)
@@ -159,6 +176,22 @@ class SourceClosureTests(unittest.TestCase):
         successor = {**replacement, 'certificationPlan': {**replacement['certificationPlan'], 'successorRuntime': {}}}
         with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
             verify_profiled_current_source_closure(successor, self.root)
+        rotation = {**replacement, 'certificationPlan': {**replacement['certificationPlan'], 'rotationSuccessor': {}}}
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure(rotation, self.root)
+        mixed = {'ops/platform/p2-certification-rotation-successor.mjs',
+                 'ops/platform/host/p2_certification_rotation_successor.py',
+                 'ops/platform/host/p2_canonical_browser_origin.py', 'ops/platform/host/p2_prior_gateway.py'}
+        for name in (ROTATION_REQUIRED | mixed) - manifest.keys():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned mixed successor source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        rotation.update(self.make(manifest))
+        self.assertEqual(verify_profiled_current_source_closure(rotation, self.root), rotation['sourceClosureSha256'])
+        rotation['certificationPlan']['rotationSuccessor']['predecessorRuntime'] = {}
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure(rotation, self.root)
 
     def test_profiled_suspension_source_closure_requires_day_two_and_worker_helpers(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE

@@ -30,6 +30,26 @@ PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
 PROFILED_INTERRUPTED_MODE = 'p2-profiled-known-ack-interrupted-restoration'
 PROFILED_REPLACEMENT_ARM_MODE = 'p2-profiled-frontend-replacement-arm'
 PROFILED_REPLACEMENT_WRITE_MODE = 'p2-profiled-frontend-replacement-write'
+ROTATION_MODE = 'p2-identity-key-rotation'
+COMPACT_SOURCE_LIMITS = (544, 48_000_000)
+ROTATION_REQUIRED = {
+    'ops/platform/host/p2_identity_key_rotation.py',
+    'ops/platform/host/p2_identity_key_rotation_parent.py',
+    'ops/platform/host/p2_identity_key_rotation_adapter.py',
+    'ops/platform/host/p2_identity_rotation_browser_scope.py',
+    'ops/platform/host/p2_identity_rotation_replacement.py',
+    'ops/platform/host/p2_identity_rotation_successor.py',
+    'ops/platform/host/p2_replacement_operator_evidence.py',
+    'ops/platform/host/p2_day_two_workload.py',
+    'ops/platform/p2-identity-key-rotation.mjs',
+    'ops/platform/p2-identity-key-rotation-browser-recorder.mjs',
+    'ops/platform/p2-identity-key-rotation-replacement.mjs',
+    'ops/platform/p2-identity-key-rotation-session-closed.mjs',
+    'ops/platform/p2-identity-negative-probe.mjs',
+    'ops/platform/p2-certification-current-probe.mjs',
+    'ops/platform/p2-recovery-current-probe.mjs',
+    'ops/platform/p2-recovery-api-current-probe.mjs',
+}
 MANAGED_REPLACEMENT_CATALOG = 'ops/platform/managed-neon-replacement-catalog.json'
 MANAGED_REPLACEMENT_SOURCE_REQUIRED = {MANAGED_REPLACEMENT_CATALOG, 'ops/platform/frontend-managed-neon-catalog.mjs'}
 PROFILED_REPLACEMENT_ARM_REQUIRED = {
@@ -89,6 +109,12 @@ def verify_source_closure(initial, root):
     return _verify_source_closure(initial, root, REQUIRED, 512, 41_000_000)
 
 
+def verify_rotation_source_closure(initial, root):
+    if initial.get('mode') != ROTATION_MODE:
+        raise ValueError('P2_ROTATION_FIXED_SOURCE_DISPATCH_REQUIRED')
+    return _verify_source_closure(initial, root, REQUIRED | ROTATION_REQUIRED, *COMPACT_SOURCE_LIMITS)
+
+
 def verify_profiled_current_source_closure(initial, root):
     import migrate
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
@@ -126,6 +152,15 @@ def verify_profiled_current_source_closure(initial, root):
                     'ops/platform/p2-replacement-successor.mjs',
                     'ops/platform/host/p2_replacement_operator_evidence.py',
                 }
+            if 'rotationSuccessor' in certification:
+                required |= ROTATION_REQUIRED | {
+                    'ops/platform/p2-certification-rotation-successor.mjs',
+                    'ops/platform/host/p2_certification_rotation_successor.py',
+                    'ops/platform/host/p2_canonical_browser_origin.py',
+                    'ops/platform/host/p2_prior_gateway.py',
+                }
+                if 'predecessorRuntime' in certification['rotationSuccessor']:
+                    required |= PROFILED_REPLACEMENT_KNOWN_ACK_REQUIRED | {'ops/platform/p2-replacement-successor.mjs'}
         scoped = {
             'export-cleanup': {'ops/platform/host/p2_scoped_export_cleanup.py', 'ops/platform/host/p2_interactive_ingress.py'},
             'mux-callback-recovery': {'ops/platform/host/p2_scoped_mux.py', 'ops/gateway/admission.mjs',
@@ -159,7 +194,7 @@ def verify_profiled_current_source_closure(initial, root):
     manifest = initial.get('sourceSha256')
     if type(manifest) is dict and MANAGED_REPLACEMENT_SOURCE_REQUIRED.intersection(manifest):
         required |= MANAGED_REPLACEMENT_SOURCE_REQUIRED
-    return _verify_source_closure(initial, root, required, 544, 48_000_000)
+    return _verify_source_closure(initial, root, required, *COMPACT_SOURCE_LIMITS)
 
 
 def _verify_source_closure(initial, root, required, max_files, max_bytes):

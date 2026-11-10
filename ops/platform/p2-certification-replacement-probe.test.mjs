@@ -8,15 +8,18 @@ import test from "node:test";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact, frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
-import { reconcileFrontendOperation } from "./frontend-admission.mjs";
+import { closeFrontendInteractiveAdmission, openFrontendInteractiveAdmission, prepareFrontendInteractiveProducer,
+  reconcileFrontendOperation } from "./frontend-admission.mjs";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES as roles, prepareFrontendRolesPlan } from "./frontend-role-preparation.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import {
   containP2ProfiledCertificationAdmission, containP2ProfiledReplacementCertificationAdmission,
+  containP2ProfiledReplacementRotationAdmission,
   observeP2CertificationPhysical, observeP2ProfiledInterruptedFrontendPhysical, observeP2ProfiledReplacementFrontendPhysical,
-  observeP2ProfiledInterruptedReplacementFrontendPhysical, readP2CertificationCurrent,
+  observeP2ProfiledInterruptedReplacementFrontendPhysical, observeP2ProfiledReplacementRotationWriterScope,
+  readP2CertificationCurrent,
   withP2CertificationFrontendSession, withP2ProfiledInterruptedFrontendSession,
 } from "./p2-certification-current-probe.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
@@ -246,6 +249,236 @@ async function verifyKnownAckRecovery({ admin, selected, dependencies, command, 
   await operate(6, true);
 }
 
+async function verifyRotationWriterScope({ admin, selected, dependencies, command, hold }) {
+  const reviewed = structuredClone(selected);
+  const initial = "5", open = "6", closed = "7";
+  const { plan } = reviewed;
+  plan.mode = "contain-native";
+  plan.initialEpoch = initial;
+  const { nativePlan } = plan;
+  delete nativePlan.purpose;
+  Object.assign(nativePlan, { initialEpoch: initial, providerQueuedInventory: null,
+    automaticReplayAllowed: false, migrationAuthorized: false, wholeReleaseAccepted: false });
+  const ordinary = nativePlan.producer;
+  const interactive = { producerSha256: createHash("sha256").update(
+    `lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`).digest("hex"), role: ordinary.role };
+  const writerSelection = { sourceCommit, ordinaryProducers: [ordinary], runtimeProducer: ordinary,
+    interactiveProducer: interactive };
+  const target = { environment: "staging", targetSha256: plan.targetSha256, runtimeRole: ordinary.role.name };
+  const fixtureOperations = [];
+  const insertOperation = async (selectedEpoch, producer, state = "completed") => {
+    const id = randomUUID();
+    await admin.query(`INSERT INTO frontend_admission.operations
+      (id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+      VALUES($1,$2,$3,$4,$5,'new-work',$6,CASE WHEN $6='completed' THEN clock_timestamp() ELSE NULL END)`,
+    [id, producer.producerSha256, sourceCommit, producer.role.oid, selectedEpoch, state]);
+    fixtureOperations.push(id);
+    return id;
+  };
+  const make = (probe, operationEpoch, operationRegistry) =>
+    ({ ...probe, operation: "writer-scope", writerScope: { operationEpoch, operationRegistry } });
+  const run = (packet, deps = dependencies) => observeP2ProfiledReplacementRotationWriterScope(packet, deps);
+  const flag = "--profiled-replacement-rotation-writer-scope";
+  const requireResult = (result, currentEpoch, currentRegistry, operationEpoch, operationRegistry, producer, ids) => {
+    assert.equal(result.status, "P2_ROTATION_WRITER_SCOPE_VERIFIED");
+    assert.equal(Object.hasOwn(result, "witness"), false);
+    assert.equal(Object.hasOwn(result, "witnessSha256"), false);
+    const { operations, ...scope } = result.writerScope;
+    assert.deepEqual(scope, { currentEpoch, currentRegistry, operationEpoch, operationRegistry,
+      producers: [producer], registrySha256: hash([producer]) });
+    assert.deepEqual(operations.map(row => row.id), ids);
+    assert.ok(operations.every(row => row.epoch === operationEpoch));
+    return result;
+  };
+  const { rows: [before] } = await admin.query("SELECT epoch::text,new_work,recovery FROM frontend_admission.control");
+  await admin.query("UPDATE frontend_admission.control SET epoch=5");
+  await insertOperation("4", ordinary);
+  const initialId = await insertOperation(initial, ordinary);
+  let baselinePacket;
+  try {
+    await hold(async ({ client, probe, receipt, verify }) => {
+      baselinePacket = make(probe, initial, "ordinary");
+      assert.equal(receipt.witness.operations.some(row => row.id === initialId), false);
+      const baseline = requireResult(await run(baselinePacket), initial, "ordinary", initial, "ordinary", ordinary, [initialId]);
+      assert.equal(baseline.journalSha256, receipt.journalSha256);
+      assert.equal(baseline.backendPid, probe.backendPid);
+      assert.equal(baseline.marker, probe.marker);
+      const cli = command(flag, baselinePacket);
+      assert.equal(cli.status, 0, cli.stderr);
+      assert.deepEqual(JSON.parse(cli.stdout), JSON.parse(JSON.stringify(baseline)));
+      const pooler = structuredClone(baselinePacket);
+      for (const target of [pooler.job.target, pooler.plan.nativePlan.target, pooler.receipt.target])
+        target.host = "owned-pooler.example.com";
+      const wrongTarget = hash({ environment: "staging", ...Object.fromEntries(
+        ["host", "port", "database", "user", "serverMajor"].map(key => [key, pooler.job.target[key]])) });
+      pooler.plan.targetSha256 = pooler.plan.nativePlan.targetSha256 = pooler.receipt.targetSha256 = wrongTarget;
+      for (const bad of [{ ...baselinePacket, writerScope: { ...baselinePacket.writerScope, currentEpoch: initial } },
+        make(probe, "04", "ordinary"), make(probe, initial, "unreviewed"), { ...baselinePacket, operation: "fence" },
+        { ...baselinePacket, marker: "0".repeat(64) }, pooler]) {
+        let credentialsRead = false;
+        await assert.rejects(run(bad, { getUrl() { credentialsRead = true; throw Error("credential-read"); } }));
+        assert.equal(credentialsRead, false);
+      }
+      for (const wrongFlag of ["--profiled-replacement", "--profiled-replacement-guard-fence"]) {
+        const wrong = command(wrongFlag, baselinePacket);
+        assert.equal(wrong.status, 1);
+        assert.equal(wrong.stdout, "");
+      }
+      await assert.rejects(run(make(probe, "4", "interactive")), { checkpoint: "current-rotation-writer-request" });
+      await assert.rejects(run(make(probe, "8", "interactive")), { checkpoint: "current-rotation-writer-epoch" });
+      await assert.rejects(run({ ...baselinePacket, marker: digest("9") }), { checkpoint: "current-replacement-lock-identity" });
+      await assert.rejects(run({ ...baselinePacket, backendStart: "2026-11-01T00:00:00.000000Z" }),
+        { checkpoint: "current-replacement-backend-identity" });
+      await admin.query("UPDATE frontend_admission.control SET new_work=true");
+      await assert.rejects(run(baselinePacket), { checkpoint: "current-rotation-writer-admission" });
+      await admin.query("UPDATE frontend_admission.control SET new_work=false");
+      const packet = make(probe, open, "interactive");
+      requireResult(await run(packet), initial, "ordinary", open, "interactive", ordinary, []);
+      const unexpected = await insertOperation(open, ordinary);
+      await assert.rejects(run(packet), { checkpoint: "current-rotation-writer-operations" });
+      await admin.query("DELETE FROM frontend_admission.operations WHERE id=$1", [unexpected]);
+      await client.query(`SET ROLE "${nativePlan.owner.name}"`);
+      try {
+        await prepareFrontendInteractiveProducer(client, target, initial, writerSelection);
+        await openFrontendInteractiveAdmission(client, target, initial, writerSelection);
+      } finally { await client.query("RESET ROLE"); }
+      const selectedId = await insertOperation(open, interactive);
+      requireResult(await run(packet), open, "interactive", open, "interactive", interactive, [selectedId]);
+      await admin.query("UPDATE frontend_admission.producers SET enabled=true WHERE producer_sha256=$1", [ordinary.producerSha256]);
+      await assert.rejects(run(packet), { checkpoint: "current-rotation-writer-registry" });
+      await admin.query("UPDATE frontend_admission.producers SET enabled=false WHERE producer_sha256=$1", [ordinary.producerSha256]);
+      const wrongProducer = await insertOperation(open, ordinary);
+      await assert.rejects(run(packet), { checkpoint: "current-rotation-writer-operations" });
+      await admin.query("DELETE FROM frontend_admission.operations WHERE id=$1", [wrongProducer]);
+      const wrongEpoch = await insertOperation(initial, ordinary, "active");
+      await assert.rejects(run(packet), { checkpoint: "current-rotation-writer-operations" });
+      await admin.query("DELETE FROM frontend_admission.operations WHERE id=$1", [wrongEpoch]);
+      const draining = await insertOperation(open, interactive, "active");
+      await client.query(`SET ROLE "${nativePlan.owner.name}"`);
+      try { await closeFrontendInteractiveAdmission(client, target, open, writerSelection); }
+      finally { await client.query("RESET ROLE"); }
+      const pending = requireResult(await run(packet), closed, "ordinary", open, "interactive", ordinary, [selectedId, draining]);
+      assert.equal(pending.admission.active, 1);
+      await assert.rejects(run(make(probe, closed, "ordinary")), { checkpoint: "current-rotation-writer-operations" });
+      await admin.query("UPDATE frontend_admission.operations SET state='completed',completed_at=clock_timestamp() WHERE id=$1", [draining]);
+      requireResult(await run(packet), closed, "ordinary", open, "interactive", ordinary, [selectedId, draining]);
+      requireResult(await run(make(probe, closed, "ordinary")), closed, "ordinary", closed, "ordinary", ordinary, []);
+      await verify();
+    }, reviewed);
+    await assert.rejects(run(baselinePacket), { checkpoint: "current-replacement-backend-identity" });
+  } finally {
+    await admin.query("DELETE FROM frontend_admission.operations WHERE id=ANY($1::uuid[])", [fixtureOperations]);
+    await admin.query("DELETE FROM frontend_admission.producers WHERE producer_sha256=$1", [interactive.producerSha256]);
+    await admin.query("UPDATE frontend_admission.control SET new_work=$1,recovery=$2,epoch=$3", [before.new_work, before.recovery, before.epoch]);
+  }
+}
+
+async function verifyRotationGuardContainment({ admin, selected, dependencies, command, hold }) {
+  const reviewed = structuredClone(selected);
+  const initial = 11n;
+  const { plan } = reviewed;
+  plan.mode = "contain-native";
+  plan.initialEpoch = initial.toString();
+  delete plan.nativePlan.purpose;
+  Object.assign(plan.nativePlan, { initialEpoch: plan.initialEpoch, providerQueuedInventory: null,
+    automaticReplayAllowed: false, migrationAuthorized: false, wholeReleaseAccepted: false });
+  const { producer: ordinary } = plan.nativePlan;
+  const interactive = { producerSha256: createHash("sha256").update(
+    `lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`).digest("hex"), role: ordinary.role };
+  const historical = digest("8");
+  const flag = "--profiled-replacement-rotation-guard-fence";
+  const contain = (probe, deps = dependencies) => containP2ProfiledReplacementRotationAdmission(probe, deps);
+  const control = async () => (await admin.query("SELECT epoch::text,new_work,recovery FROM frontend_admission.control")).rows[0];
+  const ledger = async () => (await admin.query("SELECT * FROM frontend_admission.operations ORDER BY id")).rows;
+  const registry = async () => (await admin.query("SELECT * FROM frontend_admission.producers ORDER BY producer_sha256")).rows;
+  const original = await control();
+  const ids = [randomUUID(), randomUUID(), randomUUID()];
+  const set = async (offset, newWork, recovery, producer) => {
+    await admin.query("UPDATE frontend_admission.control SET epoch=$1,new_work=$2,recovery=$3",
+      [(initial+BigInt(offset)).toString(), newWork, recovery]);
+    await admin.query("UPDATE frontend_admission.producers SET enabled=producer_sha256=$1", [producer]);
+  };
+  const check = async (probe, offset, changed, producer, active = 1, uncertain = 1) => {
+    const beforeRows = await ledger(), beforeRegistry = await registry();
+    const result = await contain(probe);
+    const expected = (initial+BigInt(offset)).toString();
+    assert.deepEqual(await control(), { epoch: expected, new_work: false, recovery: false });
+    assert.deepEqual(await ledger(), beforeRows);
+    assert.deepEqual(await registry(), beforeRegistry);
+    assert.equal(result.status, "P2_PROFILED_ROTATION_GUARD_FRONTEND_CLOSED");
+    assert.equal(result.frontendAdmissionClosed, true);
+    assert.equal(result.effectiveLoginBoundaryVerified, true);
+    assert.equal(result.predecessorRuntimeRoleAbsent, true);
+    assert.equal(result.sqlReplayed, false);
+    assert.equal(result.releaseAccepted, false);
+    assert.deepEqual([result.epoch, result.admissionChanged, result.newWork, result.recovery, result.active, result.uncertain],
+      [expected, changed, false, false, active, uncertain]);
+    assert.equal(result.registry, producer === ordinary ? "ordinary" : "interactive");
+    assert.equal(result.registrySha256, hash([producer]));
+    return result;
+  };
+  try {
+    await set(0, false, false, ordinary.producerSha256);
+    const probe = await hold(async ({ probe: held }) => {
+      await assert.rejects(contain(held), { checkpoint: "guard-physical-lock" });
+      return held;
+    }, reviewed);
+    await check(probe, 0, false, ordinary, 0, 0);
+    for (const invalid of [{ ...probe, operation: "fence" },
+      { ...probe, plan: { ...probe.plan, mode: "lifecycle-persistence" } }]) {
+      let credentialReads = 0;
+      await assert.rejects(contain(invalid, { getUrl() { credentialReads++; } }));
+      assert.equal(credentialReads, 0);
+    }
+    const malformedCli = command(flag, { ...probe, writerScope: {} });
+    assert.equal(malformedCli.status, 1);
+    assert.equal(malformedCli.stdout, "");
+    await admin.query(`INSERT INTO frontend_admission.producers(producer_sha256,source_sha,database_role,enabled)
+      VALUES($1,$3,$4,false),($2,$5,$4,false)`, [interactive.producerSha256, historical, sourceCommit, ordinary.role.oid, "9".repeat(40)]);
+    await admin.query(`INSERT INTO frontend_admission.operations
+      (id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+      VALUES($1,$4,$6,$7,$8,'new-work','active',NULL),($2,$4,$6,$7,$8,'recovery','uncertain',NULL),
+      ($3,$5,$6,$7,$9,'new-work','completed',clock_timestamp())`,
+    [...ids, interactive.producerSha256, ordinary.producerSha256, sourceCommit, ordinary.role.oid,
+      (initial+1n).toString(), initial.toString()]);
+    for (const offset of [1, 3, 5]) {
+      await set(offset, true, true, interactive.producerSha256);
+      await check(probe, offset+1, true, interactive);
+      await check(probe, offset+1, false, interactive);
+      await set(offset+1, false, false, ordinary.producerSha256);
+      await check(probe, offset+1, false, ordinary);
+    }
+    const cli = command(flag, probe);
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.deepEqual(JSON.parse(cli.stdout), await check(probe, 6, false, ordinary));
+    for (const [offset, newWork, recovery, producer] of [[0, false, false, interactive], [1, false, false, ordinary],
+      [1, true, false, interactive], [1, true, true, ordinary], [2, true, true, interactive], [6, true, true, interactive],
+      [7, false, false, ordinary]]) {
+      await set(offset, newWork, recovery, producer.producerSha256);
+      const before = [await control(), await registry(), await ledger()];
+      await assert.rejects(contain(probe));
+      assert.deepEqual([await control(), await registry(), await ledger()], before);
+    }
+    await set(5, true, true, interactive.producerSha256);
+    await admin.query("SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))", [probe.marker]);
+    try { await assert.rejects(contain(probe), { checkpoint: "current-replacement-lock-identity" }); }
+    finally { await admin.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))", [probe.marker]); }
+    assert.deepEqual(await control(), { epoch: (initial+5n).toString(), new_work: true, recovery: true });
+    await admin.query("UPDATE drizzle.__drizzle_migrations SET hash='wrong' WHERE id=1");
+    try { await assert.rejects(contain(probe), { checkpoint: "guard-replacement-journal-schema" }); }
+    finally { await admin.query("UPDATE drizzle.__drizzle_migrations SET hash=$1 WHERE id=1", [expectedJournal[0].hash]); }
+    assert.deepEqual(await control(), { epoch: (initial+5n).toString(), new_work: true, recovery: true });
+    await check(probe, 6, true, interactive);
+  } finally {
+    await admin.query("DELETE FROM frontend_admission.operations WHERE id=ANY($1::uuid[])", [ids]);
+    await admin.query("DELETE FROM frontend_admission.producers WHERE producer_sha256=ANY($1::text[])",
+      [[interactive.producerSha256, historical]]);
+    await admin.query("UPDATE frontend_admission.producers SET enabled=true WHERE producer_sha256=$1", [ordinary.producerSha256]);
+    await admin.query("UPDATE frontend_admission.control SET new_work=$1,recovery=$2,epoch=$3",
+      [original.new_work, original.recovery, original.epoch]);
+  }
+}
+
 async function verifyOwnedReplacementCertification() {
   const pgBin = process.env.PG_BIN;
   assert.ok(pgBin?.startsWith("/"));
@@ -421,6 +654,8 @@ async function verifyOwnedReplacementCertification() {
     assert.deepEqual(JSON.parse(fixedFence.stdout), { ...fenced, admissionChanged: false });
     assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
     assert.deepEqual((await admin.query("SELECT new_work,recovery FROM frontend_admission.control")).rows, [{ new_work: false, recovery: false }]);
+    await verifyRotationWriterScope({ admin, selected, dependencies, command, hold });
+    await verifyRotationGuardContainment({ admin, selected, dependencies, command, hold });
     await verifyKnownAckRecovery({ admin, selected, dependencies, command, hold, observer });
     assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
     assert.equal(expectedJournal.length, 83);
@@ -432,7 +667,9 @@ async function verifyOwnedReplacementCertification() {
         "journal-admission-marker-backend-and-database-identity-refusal",
         "independent-guard-fence-without-sql-replay",
         "replacement-known-ack-exact-uncertainty-and-selected-settlement",
-        "replacement-known-ack-guard-preserves-uncertainty-and-fresh-interrupted-closure"],
+        "replacement-known-ack-guard-preserves-uncertainty-and-fresh-interrupted-closure",
+        "rotation-writer-scope-read-only-initial-open-and-closed-exact-epoch-and-registry",
+        "rotation-guard-flag-only-fence-and-idempotent-scoped-preservation"],
       skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, fixtureOnly: true };
   } finally {
     await Promise.allSettled(clients.map(client => client.end()));

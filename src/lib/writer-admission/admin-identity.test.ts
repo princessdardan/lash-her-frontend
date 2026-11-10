@@ -10,6 +10,7 @@ import { WriterAdmissionError } from "./config";
 import { withWriterAdmission } from "./route";
 import { interactiveAdmissionFixture } from "./interactive-fixture";
 import type { WriterAdmissionRunner } from "./runtime";
+import { withWriterOperationContext } from "./context";
 
 function identityRepository(effects: string[]): AdminUserRepository {
   const user = {
@@ -120,6 +121,32 @@ test("admin authentication routes classify provider initiation separately from c
     );
   assert.deepEqual(kinds, ["new-work", "recovery", "recovery", "recovery"]);
   assert.equal(calls, 3);
+});
+
+test("rotation admin session verifies the exact actor without clearing another session cookie", async () => {
+  const actorId = "11111111-1111-4111-8111-111111111111";
+  const request = () => new Request("https://staging.lashher.com/api/auth/session");
+  const run: WriterAdmissionRunner = (kind, task) => {
+    assert.equal(kind, "recovery");
+    return withWriterOperationContext(task, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { actorKind: "admin", actorId });
+  };
+  for (const payload of [null, { user: { id: "another-user" } }, { user: { id: actorId } }]) {
+    const handler = withAdminAuthRouteAdmission(async () => Response.json(payload, {
+      headers: { "set-cookie": "owned-session=fixture; Path=/; HttpOnly" },
+    }), run);
+    const result = await handler(request());
+    if (payload?.user.id === actorId) {
+      assert.equal(result.status, 200);
+      assert.deepEqual(await result.json(), payload);
+      assert.ok(result.headers.get("set-cookie"));
+    } else {
+      assert.equal(result.status, 403);
+      assert.equal(result.headers.get("set-cookie"), null);
+      assert.equal(result.headers.get("cache-control"), "private, no-store");
+      assert.equal(await result.json(), null);
+    }
+  }
 });
 
 test("admin sign-out awaits the installed Auth.js raw-response shape before returning its fixed redirect", async () => {

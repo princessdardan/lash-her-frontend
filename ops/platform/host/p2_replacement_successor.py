@@ -204,6 +204,24 @@ def _observe(initial, source, selected, expected, configuration, verify, *, incl
     return containers, gateway, value['processSha256']
 
 
+def verify_rotation_successor_guard_runtime(initial, source):
+    from p2_certification_rotation_successor import require_rotation_successor_runtime, observe_rotation_successor_runtime
+    from p2_release_supervisor import verify_guard_boundary, verify_guard_lock
+
+    plan, selected = initial['certificationPlan'], initial['candidate']
+    expected = _profile(initial['qualificationTargetProfile'])
+    deadline = time.monotonic() + 25
+    verify_guard_boundary(initial, source)
+
+    def verify():
+        require(time.monotonic() < deadline, REFUSED)
+        verify_guard_lock(initial)
+
+    successor = require_rotation_successor_runtime(initial, plan, selected, Path(initial['results']), source, expected)
+    observe_rotation_successor_runtime(initial, source, successor, verify)
+    verify_guard_boundary(initial, source)
+
+
 def verify_replacement_runtime_before_arm(initial, source):
     """Reject a stale runtime selection before the guardian can arm containment."""
     from p2_certification_parent import PROFILED_MODES
@@ -218,6 +236,8 @@ def verify_replacement_runtime_before_arm(initial, source):
             plan['gatewayConfigurationSha256'] == initial['configurationSha256']['gateway.json'], REFUSED)
     selected, expected = initial['candidate'], _profile(initial['qualificationTargetProfile'])
     _identity(initial, plan, selected, expected)
+    if 'rotationSuccessor' in plan:
+        return verify_rotation_successor_guard_runtime(initial, source)
     results, configuration = Path(initial['results']), Path(initial['configuration'])
     deadline = time.monotonic() + 25
     verify_guard_boundary(initial, source)

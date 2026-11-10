@@ -18,6 +18,66 @@ import p2_release_supervisor as supervisor
 
 
 class FixedDispatchTests(unittest.TestCase):
+    def test_rotation_successor_live_gate_refuses_before_host_inputs(self):
+        initial = self.profiled_interrupted()
+        initial.update(mode=supervisor.PROFILED_CERTIFICATION_MODE,
+                       certificationPlan={'rotationSuccessor': {}}, _guardLayout=supervisor.PROFILED_CERTIFICATION_LAYOUT)
+        with patch.object(supervisor.migrate, 'make_plan', side_effect=AssertionError('live inputs reached')):
+            with self.assertRaisesRegex(ValueError, 'ROTATION_SUCCESSOR_LIVE_UNQUALIFIED'):
+                supervise(initial, broker_type=certification.P2ProfiledCertificationBroker,
+                          observer_type=certification.P2CertificationPhysicalObserver,
+                          observer_source=supervisor.CERTIFICATION_OBSERVER, layout=supervisor.PROFILED_CERTIFICATION_LAYOUT,
+                          native_containment=certification.contain_profiled_certification_native,
+                          frontend_containment=certification.contain_profiled_certification_frontend)
+
+    def test_rotation_frontend_terminal_requires_two_current_canonical_challenges(self):
+        import p2_canonical_browser_origin as canonical
+
+        with TemporaryDirectory() as temporary:
+            initial = self.profiled_interrupted(Path(temporary).resolve())
+            profile = initial['qualificationTargetProfile']
+            initial.update(mode=supervisor.PROFILED_CERTIFICATION_MODE, certificationActionId='owned',
+                           _guardLayout=supervisor.PROFILED_CERTIFICATION_LAYOUT)
+            directory = Path(initial['results']) / (supervisor.PROFILED_CERTIFICATION_LAYOUT['receiptPrefix'] + 'owned')
+            directory.mkdir(mode=0o700)
+            candidate = initial['candidate']
+            plan = {'projectId': canonical.PROJECT, 'candidateSha256': initial['candidateSha256'],
+                    'sourceCommit': candidate['sources']['frontend']['commit'], 'actionId': candidate['releaseId'],
+                    'deploymentId': 'dpl_Current', 'deploymentUrl': 'https://current.vercel.app',
+                    'configurationRecordSha256': '2' * 64, 'featureControls': {'owned': True}, 'writerAdmissionBinding': {'owned': 'writer'}}
+            rotation = {'kind': 'identity-key-rotation-mixed-mount-v1', 'receiptSha256': '3' * 64}
+            initial['certificationPlan'] = {'nativePlan': plan, 'rotationSuccessor': rotation, 'maximumSeconds': 300}
+            alias = {'alias': canonical.HOST, 'projectId': canonical.PROJECT, 'deploymentId': plan['deploymentId'],
+                     'redirect': False, 'deleted': False, 'microfrontends': False}
+            answer = {**{key: value for key, value in plan.items() if key != 'actionId'},
+                      'version': 2, 'qualificationTargetProfile': profile, 'status': 'P2_CANONICAL_BROWSER_ORIGIN_VERIFIED',
+                      'environment': 'staging', 'releaseId': candidate['releaseId'], 'browserOrigin': canonical.ORIGIN,
+                      'phase2ContractManifestSha256': candidate['phase2ContractManifestSha256'],
+                      'authenticationOrigins': canonical.AUTHENTICATION_ORIGINS, 'aliasReadbackSha256': supervisor._canonical_sha(alias),
+                      'aliasReadbacks': 2, 'aliasRedirect': False, 'workloadChallengeVerified': True, 'tlsVerified': True,
+                      'probeExpiryExtended': False, 'releaseAccepted': False}
+            observations = {stage: {**answer, 'protectedWorkloadSha256': supervisor._canonical_sha(stage),
+                                    'observedAt': f'2026-11-09T18:00:0{index}.000Z'}
+                            for index, stage in enumerate(('arm', 'terminal'))}
+
+            def write(stage, record):
+                path = directory / f'p2-rotation-successor-frontend-{stage}.json'
+                path.unlink(missing_ok=True)
+                supervisor.migrate.write_json(directory, path.name, record)
+                return supervisor.migrate.file_hash(path.read_bytes())
+
+            pins = {stage: write(stage, row) for stage, row in observations.items()}
+            terminal = {'rotationSuccessor': rotation, 'rotationFrontendObservationSha256': pins}
+            supervisor._require_rotation_certification_frontend(initial, terminal)
+            for changed in ({'deploymentId': 'dpl_Predecessor'}, {'aliasReadbackSha256': '8' * 64}):
+                pins['terminal'] = write('terminal', {**observations['terminal'], **changed})
+                with self.assertRaisesRegex(ValueError, 'ROTATION_WORKLOAD_REFUSED'):
+                    supervisor._require_rotation_certification_frontend(initial, terminal)
+            pins['terminal'] = write('terminal', {**observations['terminal'],
+                'protectedWorkloadSha256': observations['arm']['protectedWorkloadSha256']})
+            with self.assertRaisesRegex(ValueError, 'ROTATION_WORKLOAD_REPLAYED'):
+                supervisor._require_rotation_certification_frontend(initial, terminal)
+
     def profiled_interrupted(self, root=None):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile
         app_source, operator_source = 'a' * 40, 'b' * 40
@@ -46,7 +106,8 @@ class FixedDispatchTests(unittest.TestCase):
                  ('known-ack', False, None), ('interrupted-known-ack', False, None),
                  ('contain-native', True, None), ('known-ack', True, 'terminal'),
                  ('interrupted-known-ack', True, 'physical'), ('interrupted-known-ack', True, 'gateway'),
-                 ('known-ack', True, 'successor'), ('known-ack', True, 'prearm-runtime'))
+                 ('known-ack', True, 'successor'), ('known-ack', True, 'prearm-runtime'),
+                 ('rotation', True, None), ('rotation', True, 'prearm-runtime'), ('rotation', True, 'terminal-runtime'))
         cleanup = supervisor.finish_failure_cleanup
         for kind, replacement, refused in cases:
             with self.subTest(kind=kind, replacement=replacement, refused=refused), TemporaryDirectory() as temporary:
@@ -58,6 +119,8 @@ class FixedDispatchTests(unittest.TestCase):
                     frontend['replacementRelease'] = {'kind': 'frontend-replacement'}
                     if kind == 'contain-native':
                         frontend['successorRuntime'] = {'kind': 'known-ack'}
+                    if kind == 'rotation':
+                        frontend['rotationSuccessor'] = {'kind': 'identity-key-rotation-mixed-mount-v1'}
                 if kind == 'interrupted-known-ack':
                     layout = supervisor.PROFILED_INTERRUPTED_LAYOUT
                     broker = interrupted.P2ProfiledInterruptedKnownAckBroker
@@ -69,8 +132,8 @@ class FixedDispatchTests(unittest.TestCase):
                     broker = certification.P2ProfiledCertificationBroker
                     native = certification.contain_profiled_certification_native
                     contain_frontend = certification.contain_profiled_certification_frontend
-                    fields = certification.PROFILED_INITIAL_FIELDS
-                    frontend['mode'] = 'known-ack-recovery' if kind == 'known-ack' else kind
+                    frontend['mode'] = {'known-ack': 'known-ack-recovery', 'rotation': 'lifecycle-persistence'}.get(kind, kind)
+                    fields = certification.profiled_certification_review_fields(frontend)
                     initial.update(mode=supervisor.PROFILED_CERTIFICATION_MODE, certificationActionId='owned',
                                    certificationPlan=frontend, _guardLayout=layout)
                 initial.update(dict.fromkeys(fields - initial.keys()))
@@ -120,9 +183,17 @@ class FixedDispatchTests(unittest.TestCase):
                     self.assertIs(actual, initial)
                     self.assertEqual(actual_source, source)
                     self.assertEqual('successorRuntime' in actual['certificationPlan'], kind == 'contain-native')
+                    self.assertEqual('rotationSuccessor' in actual['certificationPlan'], kind == 'rotation')
                     with lock.open('rb') as contender, self.assertRaises(BlockingIOError):
                         fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     record('prearm-runtime')()
+
+                def verify_rotation_terminal(actual, actual_source):
+                    self.assertIs(actual, initial)
+                    self.assertEqual(actual_source, source)
+                    with lock.open('rb') as contender, self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    record('terminal-runtime')()
 
                 def on_failure(actual, armed, actual_source, child, **options):
                     record('cleanup')()
@@ -163,11 +234,13 @@ class FixedDispatchTests(unittest.TestCase):
                       patch.object(supervisor.migrate, 'make_plan', return_value=(candidate, jobs)),
                       patch.object(supervisor.migrate, 'profiled_current_job_hashes', return_value=None),
                       patch.object(supervisor.migrate, 'read_input', side_effect=read),
+                      patch.object(certification, 'ROTATION_SUCCESSOR_LIVE_ELIGIBLE', True),
                       patch.object(certification, 'prepare_profiled_current_certification_input', return_value=verified),
                       patch.object(interrupted, 'prepare_profiled_interrupted_input',
                                    return_value=(initial['reviewedPlan'], None, candidate, jobs)),
                       patch.dict(sys.modules, {'p2_replacement_successor': Mock(retain_successor_runtime=retain,
-                                                                                verify_replacement_runtime_before_arm=verify_runtime)})):
+                          verify_replacement_runtime_before_arm=verify_runtime,
+                          verify_rotation_successor_guard_runtime=verify_rotation_terminal)})):
                     options = dict(broker_type=broker, observer_type=certification.P2CertificationPhysicalObserver,
                                    observer_source=supervisor.CERTIFICATION_OBSERVER, layout=layout,
                                    native_containment=native, frontend_containment=contain_frontend)
@@ -190,7 +263,9 @@ class FixedDispatchTests(unittest.TestCase):
                     expected.extend((*(['physical'] if replacement else []), 'terminal', 'gateway'))
                 else:
                     expected.extend(('terminal', *(['physical'] if replacement else [])))
-                if replacement and kind != 'contain-native':
+                if kind == 'rotation':
+                    expected.append('terminal-runtime')
+                elif replacement and kind != 'contain-native':
                     expected.append('successor')
                 if refused is not None:
                     expected = expected[:expected.index(refused) + 1] + ['cleanup']
@@ -731,26 +806,28 @@ class FixedDispatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'RECOVERY_CONTAINER_ID_REFUSED'): cleanup_recovery_current_containers()
 
     def test_rotation_dispatch_is_exact_and_cannot_be_selected_by_private_json(self):
-        initial = {'candidate': {'releaseId': 'original'}, 'mode': 'p2-identity-key-rotation',
+        initial = {'version': 1, 'candidate': {'releaseId': 'original'}, 'mode': 'p2-identity-key-rotation',
                    'rotationActionId': 'p2-key-rotation-owned', '_guardLayout': ROTATION_LAYOUT}
         with patch('p2_release_supervisor.os.geteuid', return_value=1):
-            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
                 supervise(initial)
-        self.assertEqual(initial['_guardLayout'], DEFAULT_LAYOUT)
         options = {'broker_type': P2IdentityRotationBroker,
                    'observer_type': P2IdentityRotationPhysicalObserver,
                    'observer_source': 'ops/platform/p2-recovery-current-probe.mjs',
                    'layout': ROTATION_LAYOUT}
-        with patch('p2_release_supervisor.os.geteuid', return_value=1):
-            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
-                supervise(initial, **options)
-        self.assertEqual(initial['_guardLayout'], ROTATION_LAYOUT)
-        for changed in ({**options, 'observer_source': 'ops/platform/p2-frontend-live-probe.mjs'},
-                        {**options, 'layout': {**ROTATION_LAYOUT, 'terminalName': '../out.json'}},
-                        {**options, 'broker_type': Broker},
-                        {**options, 'observer_type': PhysicalObserver}):
-            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
-                supervise(initial, **changed)
+        with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
+            supervise(initial, **options)
+        with patch('p2_identity_key_rotation_parent.LIVE_ELIGIBLE', True):
+            with patch('p2_release_supervisor.os.geteuid', return_value=1):
+                with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                    supervise(initial, **options)
+            self.assertEqual(initial['_guardLayout'], ROTATION_LAYOUT)
+            for changed in ({**options, 'observer_source': 'ops/platform/p2-frontend-live-probe.mjs'},
+                            {**options, 'layout': {**ROTATION_LAYOUT, 'terminalName': '../out.json'}},
+                            {**options, 'broker_type': Broker},
+                            {**options, 'observer_type': PhysicalObserver}):
+                with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                    supervise(initial, **changed)
 
     def test_rotation_readonly_cleanup_accepts_only_fixed_names_and_docker_ids(self):
         commands = []
@@ -799,3 +876,255 @@ class FixedDispatchTests(unittest.TestCase):
             with self.subTest(kind=kind),patch('p2_release_supervisor.runtime.command',side_effect=command):
                 with self.assertRaisesRegex(ValueError,'CLEANUP_UNKNOWN'):cleanup_recovery_current_containers()
             self.assertEqual(seen,{'recovery':2,'certification':2});self.assertIn(['docker','rm','--force','b'*12],calls)
+
+
+class ManagedRotationSupervisorTests(unittest.TestCase):
+    def setUp(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        import p2_identity_key_rotation_parent as parent
+        import p2_identity_rotation_replacement as custody
+
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name).resolve()
+        self.profile = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        self.parent, self.custody_module = parent, custody
+        self.action, self.source_commit = 'p2-key-rotation-owned', 'a' * 40
+        self.candidate = {'releaseId': 'original'}
+        self.source = Path('/opt/lash-her/operators') / self.source_commit
+        self.raw_candidate = b'owned candidate\n'
+        self.raw_observer = b'owned observer\n'
+        self.directory = self.root / ('p2-identity-key-rotation-' + self.action)
+        self.directory.mkdir(mode=0o700)
+        self.lock = self.root / 'owned.lock'
+        self.candidate_sha = supervisor.migrate.file_hash(self.raw_candidate)
+        self.review = {'qualificationTargetProfile': self.profile, 'originalReleaseId': 'original', 'certificationActionId': self.action,
+                       'sourceCommit': self.source_commit, 'candidateSha256': self.candidate_sha, 'targetSha256': 'b' * 64,
+                       'planSha256': 'c' * 64, 'initialEpoch': '12', 'replacementRelease': {'owned': True}}
+        self.rotation = {'actionId': self.action, 'bindingSha256': 'd' * 64, 'candidateSha256': self.candidate_sha,
+                         'sourceCommit': self.source_commit, 'configuration': {'current-only': {'sha256': 'e' * 64}}}
+        self.initial = {'version': 2, 'qualificationTargetProfile': self.profile, 'mode': 'p2-identity-key-rotation',
+                        'environment': 'staging', 'rotationActionId': self.action, 'sourceCommit': self.source_commit,
+                        'candidate': self.candidate, 'candidateSha256': self.candidate_sha, 'bundle': str(self.root),
+                        'results': str(self.root), 'rotationPlan': self.rotation,
+                        'sourceSha256': {supervisor.CERTIFICATION_OBSERVER: supervisor.migrate.file_hash(self.raw_observer)},
+                        'frontendCustody': {'certificationPlan': self.review, 'apiJobSha256': {'frontend': 'f' * 64}},
+                        '_guardLayout': ROTATION_LAYOUT, '_guardObserverSource': supervisor.CERTIFICATION_OBSERVER}
+        self.probe = {'qualificationTargetProfile': self.profile, 'plan': self.review, 'receipt': {
+            'candidateSha256': self.candidate_sha, 'targetSha256': 'b' * 64, 'planSha256': 'c' * 64}}
+        self.closed = {'admission': {'epoch': '18', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}}
+        post_removal = {'phase': 'post-removal'}
+        (self.directory / 'frontend-post-removal').mkdir(mode=0o700)
+        supervisor.migrate.write_json(self.directory / 'frontend-post-removal', 'rotation-frontend-browser-source.json', post_removal)
+        prepared = {'version': 2, 'qualificationTargetProfile': self.profile, 'status': 'P2_IDENTITY_KEY_ROTATION_CLOSE_PREPARED',
+                    'environment': 'staging', 'keyRemovalVerified': False, 'frontendFinalEpoch': '18',
+                    'frontendCustodyPlanSha256': self.review['planSha256'],
+                    'configurationSha256': 'e' * 64, **{key: self.rotation[key] for key in
+                        ('actionId', 'bindingSha256', 'candidateSha256', 'sourceCommit')},
+                    'frontendSignerReceiptSha256': {'overlap': '1' * 64, 'current-only': '2' * 64,
+                                                     'post-removal': supervisor._canonical_sha(post_removal)},
+                    **dict.fromkeys(('sqlExecuted', 'rolesPrepared', 'loginChanged', 'nativeSchedulesEnabled', 'trafficAuthorized',
+                                     'tokenBytesOutput', 'credentialHashesOutput', 'communityMemberFeatureAdded', 'newPublicEndpoint',
+                                     'releaseAccepted', 'g2Accepted'), False)}
+        supervisor.migrate.write_json(self.directory, parent.PREPARED_RECEIPT, prepared)
+        supervisor.migrate.write_json(self.directory, parent.SESSION_CLOSED_RECEIPT, self.closed)
+        close_raw = (self.directory / parent.SESSION_CLOSED_RECEIPT).read_bytes()
+        joined = {**prepared, 'status': ROTATION_LAYOUT['terminalStatus'], 'keyRemovalVerified': True,
+                  'frontendSessionCloseReceiptSha256': supervisor.migrate.file_hash(close_raw)}
+        supervisor.migrate.write_json(self.directory, parent.JOINED_RECEIPT, joined)
+        self.joined_raw = (self.directory / parent.JOINED_RECEIPT).read_bytes()
+        self.final = self.directory / ROTATION_LAYOUT['terminalName']
+        self.options = {'broker_type': parent.P2IdentityRotationBroker, 'observer_type': custody.ReplacementRotationPhysicalObserver,
+                        'observer_source': supervisor.CERTIFICATION_OBSERVER, 'layout': ROTATION_LAYOUT}
+
+    def test_managed_rotation_requires_exact_source_dispatch_and_version(self):
+        with patch.object(supervisor.os, 'geteuid', return_value=1):
+            with self.assertRaisesRegex(ValueError, 'ROTATION_LIVE_EXECUTION_UNQUALIFIED'):
+                supervise(dict(self.initial), **self.options)
+            with patch.object(self.parent, 'LIVE_ELIGIBLE', True):
+                with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                    supervise(dict(self.initial), **self.options)
+                for value, options in (({'version': 1}, {}), ({'version': True}, {}), ({'version': 2.0}, {}),
+                                       ({}, {'observer_type': certification.P2CertificationPhysicalObserver}),
+                                       ({}, {'observer_source': 'ops/platform/p2-recovery-current-probe.mjs'}),
+                                       ({}, {'frontend_containment': lambda: None})):
+                    with self.subTest(value=value, options=options), self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                        supervise({**self.initial, **value}, **{**self.options, **options})
+
+    def test_durable_guard_arm_requires_exact_ready_and_probe_bytes(self):
+        with self.assertRaises(FileNotFoundError):
+            supervisor.require_managed_rotation_guard_arm(self.initial, self.probe)
+        supervisor._retain_managed_rotation_guard_arm(self.initial, self.probe)
+        record = supervisor.require_managed_rotation_guard_arm(self.initial, self.probe)
+        self.assertEqual(record['probeSha256'], supervisor._canonical_sha(self.probe))
+        with self.assertRaisesRegex(ValueError, 'MANAGED_ROTATION_ARM_REQUIRED'):
+            supervisor.require_managed_rotation_guard_arm(self.initial, {**self.probe, 'marker': 'changed'})
+        ready = self.directory / supervisor.MANAGED_ROTATION_ARM_READY
+        ready.write_text(ready.read_text().replace(record['qualificationTargetProfile']['sha256'], '0' * 64))
+        with self.assertRaisesRegex(ValueError, 'MANAGED_ROTATION_ARM_REQUIRED'):
+            supervisor.require_managed_rotation_guard_arm(self.initial, self.probe)
+
+    def exercise_supervisor(self, failure=None):
+        import p2_identity_rotation_successor as successor
+
+        order = []
+        read_input, fstat = supervisor.migrate.read_input, os.fstat
+
+        def read(root, relative, *args):
+            if relative == 'release.candidate.json':
+                return self.raw_candidate
+            if relative == supervisor.CERTIFICATION_OBSERVER:
+                return self.raw_observer
+            return read_input(root, relative, *args)
+
+        def owned_root_fstat(fd):
+            actual = fstat(fd)
+            if self.lock.exists() and actual.st_ino == self.lock.stat().st_ino:
+                fields = list(actual)
+                fields[4] = 0
+                return os.stat_result(fields)
+            return actual
+
+        def assert_flock(*_):
+            with self.lock.open('rb') as contender, self.assertRaises(BlockingIOError):
+                fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        def check_arm(probe):
+            self.assertEqual(probe, self.probe)
+            assert_flock()
+            order.append('physical-arm')
+            if failure == 'arm':
+                raise ValueError('owned-arm-failure')
+
+        def check_closed(probe, epoch):
+            self.assertEqual((probe, epoch), (self.probe, '18'))
+            assert_flock()
+            self.assertIn('reaped', order)
+            self.assertFalse(self.final.exists())
+            order.append('physical-close')
+            return {} if failure == 'closed' else self.closed
+
+        def watch(_child, _safety, _health, arm, *, publish_verified_arm, **flags):
+            self.assertEqual(flags, {'profiled_certification': True, 'async_arm': True})
+            result = arm(self.probe).result()
+            self.assertFalse((self.directory / supervisor.MANAGED_ROTATION_ARM_READY).exists())
+            publish_verified_arm(result)
+            supervisor.require_managed_rotation_guard_arm(self.initial, self.probe)
+            order.extend(('guard-arm', 'reaped'))
+            return supervisor.migrate.file_hash(self.joined_raw)
+
+        def retain(initial, source, terminal, committed, closed, *, worker_reaped, terminal_pending):
+            self.assertEqual((initial, source, terminal, committed, closed),
+                             (self.initial, self.source, json.loads(self.joined_raw), supervisor.migrate.file_hash(self.joined_raw), self.closed))
+            self.assertTrue(worker_reaped and terminal_pending)
+            self.assertFalse(self.final.exists())
+            assert_flock()
+            order.append('mixed-successor')
+            if failure == 'successor':
+                raise ValueError('owned-successor-failure')
+
+        def fail(initial, armed, source, child, **_):
+            self.assertEqual((initial, armed, source, child), (self.initial, None if failure == 'arm' else self.probe, self.source, 1234))
+            self.assertFalse(self.final.exists())
+            assert_flock()
+            order.append('contain')
+
+        with (patch.multiple(supervisor, __file__=str(self.source / 'ops/platform/host/p2_release_supervisor.py'),
+                             LOCK=self.lock, _verify_guard_source=Mock(), verify_guard_lock=Mock(side_effect=assert_flock),
+                             watch_broker=Mock(side_effect=watch), members=Mock(return_value=[]),
+                             _managed_rotation_containers=Mock(), finish_failure_cleanup=Mock(side_effect=fail)),
+              patch.object(supervisor.sys, 'platform', 'linux'), patch.object(supervisor.os, 'geteuid', return_value=0),
+              patch.object(supervisor.os, 'fstat', side_effect=owned_root_fstat),
+              patch.object(supervisor.os, 'fork', return_value=1234),
+              patch.object(supervisor.ctypes, 'CDLL', return_value=Mock(prctl=Mock(return_value=0))),
+              patch.object(supervisor.migrate, 'make_plan', return_value=(self.candidate, {'frontend': {}})),
+              patch.object(supervisor.migrate, 'profiled_current_job_hashes', return_value=self.initial['frontendCustody']['apiJobSha256']),
+              patch.object(supervisor.migrate, 'read_input', side_effect=read),
+              patch.object(self.parent, 'LIVE_ELIGIBLE', True),
+              patch.object(self.custody_module, 'prepare_replacement_rotation_custody',
+                           return_value=Mock(verify_arm=check_arm, verify_closed=check_closed)),
+              patch.object(successor, 'retain_rotation_successor', side_effect=retain)):
+            if failure is None:
+                supervise(self.initial, **self.options)
+                self.assertEqual(self.final.read_bytes(), self.joined_raw)
+            else:
+                with self.assertRaises(ValueError):
+                    supervise(self.initial, **self.options)
+                self.assertFalse(self.final.exists())
+        return order
+
+    def test_independent_guard_arms_and_publishes_after_reap_under_the_flock(self):
+        self.assertEqual(self.exercise_supervisor(), ['physical-arm', 'guard-arm', 'reaped', 'physical-close', 'mixed-successor'])
+
+    def test_failed_arm_never_creates_marker_or_terminal(self):
+        self.assertEqual(self.exercise_supervisor('arm'), ['physical-arm', 'contain'])
+        self.assertFalse((self.directory / supervisor.MANAGED_ROTATION_ARM_READY).exists())
+
+    def test_fresh_closure_mismatch_does_not_run_successor(self):
+        self.assertEqual(self.exercise_supervisor('closed'), ['physical-arm', 'guard-arm', 'reaped', 'physical-close', 'contain'])
+
+    def test_mixed_successor_failure_does_not_publish_terminal(self):
+        self.assertEqual(self.exercise_supervisor('successor'),
+                         ['physical-arm', 'guard-arm', 'reaped', 'physical-close', 'mixed-successor', 'contain'])
+
+    def test_after_reap_retains_uncertainty_without_reopening_or_fencing_twice(self):
+        supervisor._retain_managed_rotation_guard_arm(self.initial, self.probe)
+        readback = {'epoch': '14', 'newWork': False, 'recovery': False, 'active': 1, 'uncertain': 2,
+                    'registry': 'interactive', 'registrySha256': '1' * 64, 'admissionChanged': True}
+        with (patch.object(supervisor, '_stop_profiled_certification_group', side_effect=[False, True, True]),
+              patch.object(supervisor, '_contain_managed_rotation_frontend', return_value=readback) as fence,
+              patch.object(supervisor, '_stop_managed_rotation_runtime') as stop,
+              patch.object(supervisor, 'verify_guard_boundary'),
+              patch.object(supervisor, '_managed_rotation_containers')):
+            result = supervisor.finish_failure_cleanup(self.initial, self.probe, self.source, 1234)
+        fence.assert_called_once_with(self.initial, self.probe, self.source)
+        stop.assert_called_once()
+        self.assertEqual(result['frontendFence'], readback)
+        self.assertIs(result['frontendAdmissionClosed'], True)
+        self.assertIsNone(result['trafficAuthorized'])
+        self.assertTrue(result['workerProcessesQuiesced'])
+
+    def test_rotation_fence_launcher_uses_only_fixed_node_path_and_retains_original_ledger(self):
+        from types import SimpleNamespace
+
+        from p2_certification_parent import CORE, REPLACEMENT_PROOF_FIELDS
+
+        self.candidate['artifacts'] = {'frontendMigration': {'image': 'owned/frontend@sha256:' + '1' * 64}}
+        self.initial['credentials'] = {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-fixture-credential'}
+        program, core = self.directory / 'observer.mjs', self.directory / 'core.mjs'
+        core.write_bytes(b'owned core\n')
+        self.initial['sourceSha256'][CORE] = supervisor.migrate.file_hash(core.read_bytes())
+        receipt = {'version': 2, 'qualificationTargetProfile': self.profile,
+                   'status': 'P2_PROFILED_ROTATION_GUARD_FRONTEND_CLOSED', 'environment': 'staging',
+                   'releaseId': 'original', 'frontendAdmissionClosed': True, 'epoch': '14', 'admissionChanged': True,
+                   'sqlReplayed': False, 'releaseAccepted': False, 'newWork': False, 'recovery': False,
+                   'active': 1, 'uncertain': 2, 'registry': 'interactive', 'registrySha256': '1' * 64,
+                   **{key: self.review[key] for key in
+                      ('sourceCommit', 'certificationActionId', 'candidateSha256', 'targetSha256', 'planSha256')},
+                   **dict.fromkeys(REPLACEMENT_PROOF_FIELDS, 'owned')}
+        stdout = json.dumps(receipt) + '\n'
+        invocations = []
+
+        def run(args, **kwargs):
+            invocations.append(args)
+            if args[:2] == ['docker', 'run']:
+                self.assertEqual(args[-2:], [supervisor.CERTIFICATION_OBSERVER, '--profiled-replacement-rotation-guard-fence'])
+                self.assertEqual(json.loads(kwargs['input']), self.probe)
+                self.assertNotIn('owned-fixture-credential', args)
+                return SimpleNamespace(stdout=stdout, stderr='')
+            self.assertEqual(args[:3], ['docker', 'rm', '--force'])
+            return SimpleNamespace()
+
+        with (patch.object(supervisor, 'verify_guard_boundary'),
+              patch.object(supervisor, 'private_observer_program', return_value=program),
+              patch.object(certification, '_cache_core', return_value=core),
+              patch.object(certification, 'require_certification_replacement_proof'),
+              patch.object(supervisor.subprocess, 'run', side_effect=run),
+              patch.object(supervisor.runtime, 'command', return_value='')):
+            readback = supervisor._contain_managed_rotation_frontend(self.initial, self.probe, self.source)
+            self.assertEqual((self.directory / supervisor.MANAGED_ROTATION_FENCE).read_text(), stdout)
+            self.assertEqual((readback['active'], readback['uncertain'], readback['registry']), (1, 2, 'interactive'))
+            for change in ({'epoch': '15'}, {'active': True}, {'registry': 'ordinary'}, {'newWork': True}):
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'MANAGED_ROTATION_FENCE_REFUSED'):
+                    supervisor._managed_rotation_fence_record(self.initial, self.probe, {**receipt, **change})
+        self.assertEqual(len(invocations), 2)

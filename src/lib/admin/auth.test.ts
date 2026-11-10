@@ -4,7 +4,7 @@ import { withWriterOperationContext, writerFirstOwnerWindowSha256 } from "@/lib/
 import { p2FirstOwnerIdentitySha256 } from "../../../ops/platform/p2-first-owner-identity.mjs";
 
 import type { AdminUserStore } from "./admin-user-store";
-import { createAdminAuth } from "./auth-service";
+import { createAdminAuth, readSelectedAdminGoogleUser } from "./auth-service";
 import { assertFirstOwnerGoogleAuthentication } from "./authentication-freshness";
 import {
   AdminAuthError,
@@ -29,6 +29,33 @@ const employee: AdminUserRecord = {
   role: "employee",
   status: "active",
 };
+
+test("rotation reads only the selected active admin with an existing verified Google binding", async () => {
+  const user = { ...employee, id: "11111111-1111-4111-8111-111111111111", role: "owner" as const };
+  let providerUser: AdminUserRecord | null = user, emailUser: AdminUserRecord | null = user;
+  const reads: string[] = [];
+  const store = {
+    async findByProviderUserId(subject: string) { reads.push(subject); return providerUser; },
+    async findByEmailNormalized(email: string) { reads.push(email); return emailUser; },
+  };
+  const check = (candidate = identity, actorId = user.id) => readSelectedAdminGoogleUser(store, candidate, actorId);
+  assert.equal(await check({ ...identity, emailVerified: false }), null);
+  assert.equal(await check({ ...identity, providerUserId: "" }), null);
+  assert.deepEqual(reads, []);
+  assert.equal(await check({ ...identity, email: " EMPLOYEE@example.com " }), user);
+  assert.deepEqual(reads, [identity.providerUserId, user.emailNormalized]);
+  assert.equal(await check(identity, "22222222-2222-4222-8222-222222222222"), null);
+  for (const mismatch of [null, { ...user, providerUserId: "" }, { ...user, status: "disabled" as const },
+    { ...user, id: "22222222-2222-4222-8222-222222222222" }]) {
+    providerUser = mismatch;
+    assert.equal(await check(), null);
+    providerUser = user;
+    emailUser = mismatch;
+    assert.equal(await check(), null);
+    emailUser = user;
+  }
+  assert.equal(await check({ ...identity, email: "another@example.com" }), null);
+});
 
 test("admin auth keeps database roles authoritative and enforces resource scopes", async () => {
   const employeeStore = createStore(

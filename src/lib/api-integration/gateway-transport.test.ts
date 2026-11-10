@@ -423,3 +423,97 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   assert.equal(captured.length, expected.length + 44);
   assert.ok(captured.slice(expected.length).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });
+
+test("rotation uses the real admin Course handler and signer with closed writer admission", async t => {
+  Object.assign(globalThis, { AsyncLocalStorage });
+  const { NextRequest } = await import("next/server");
+  const { createCourseAdminHandler } = await import("./course-admin-handler");
+  const { createCourseClient } = await import("./course-client");
+  const { WriterAdmissionError } = await import("@/lib/writer-admission/config");
+  const { attestInteractiveRequest } = await import("@/lib/writer-admission/interactive-proof");
+  const id = "11111111-1111-4111-8111-111111111111";
+  const actor = { bookingProviderResourceIds: [], bookingResourceIds: [], user: { id, email: "owner@example.invalid",
+    emailNormalized: "owner@example.invalid", displayName: null, providerUserId: "provider-sub", role: "owner" as const, status: "active" as const } };
+  const { createRequestStoreForAPI } = await import("next/dist/server/async-storage/request-store.js");
+  const { createWorkStore } = await import("next/dist/server/async-storage/work-store.js");
+  const { workAsyncStorage } = await import("next/dist/server/app-render/work-async-storage.external.js");
+  const { workUnitAsyncStorage } = await import("next/dist/server/app-render/work-unit-async-storage.external.js");
+  const source = "a".repeat(40), target = "b".repeat(64), deployment = "owned-staging-build.vercel.app";
+  const secret = "owned-test-cron-key-no-live-credentials", now = Math.floor(Date.now() / 1000);
+  const signerSecret = "owned-course-admin-signing-key-fixture";
+  const env = {
+    APP_ENV: "staging", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
+    APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    VERCEL_URL: deployment, VERCEL_GIT_COMMIT_SHA: source, FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ targetSha256: target }), CRON_SECRET: secret, ADMIN_DEVELOPER_MODE: "false",
+    COURSE_ADMIN_JWT_CURRENT_SECRET: signerSecret,
+  };
+  const previous = Object.fromEntries(Object.keys(env).map(name => [name, process.env[name]]));
+  Object.assign(process.env, env);
+  t.after(() => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  const courseId = "22222222-2222-4222-8222-222222222222", path = `/api/admin/courses/${courseId}`;
+  const selector = (actor.user.id + courseId).replaceAll("-", "");
+  const permit = `v2.1.rotation-admin.${now}.${now + 120}.${"c".repeat(32)}.${selector}`;
+  const mac = createHmac("sha256", secret)
+    .update(`lash-her:p2q:interactive:browser:v1\n${deployment}\n${source}\n${target}\n${permit}`).digest("hex");
+  const cookie = `${permit}.${mac}`;
+  const proof = attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method: "GET", path, cookie }, env, now);
+  assert.ok(proof);
+  const inRequest = <T>(run: (request: InstanceType<typeof NextRequest>) => Promise<T>, attestation = proof) => {
+    const request = new NextRequest(INTERACTIVE_ORIGIN + path, { headers: {
+      cookie: `${INTERACTIVE_COOKIE}=${cookie}`, [INTERACTIVE_HEADER]: attestation,
+    } });
+    const url = new URL(request.url);
+    const store = createRequestStoreForAPI(request, url, { tags: [], expirationsByCacheKind: new Map() }, undefined, undefined, undefined);
+    const work = createWorkStore({ page: url.pathname + "/route", deploymentId: "owned", buildId: "owned", previouslyRevalidatedTags: [],
+      renderOpts: { cacheLifeProfiles: { default: { stale: 0, revalidate: 0, expire: 1 } }, staticPageGenerationTimeout: 60,
+        cacheComponents: false, validationLevel: "warning",
+        experimental: { isRoutePPREnabled: false, authInterrupts: false, useCacheTimeout: 60, durableUseCacheEntries: false },
+        waitUntil: undefined, onClose() {}, onAfterTaskError: undefined } });
+    return workAsyncStorage.run(work, () => workUnitAsyncStorage.run(store, () => run(request)));
+  };
+  let scopedActor: import("@/lib/admin/types").AdminActor = actor;
+  let admissions = 0, upstream = 0, returnedCourseId = courseId;
+  const run = async () => { admissions++; throw new WriterAdmissionError("unavailable"); };
+  const client = createCourseClient({
+    enabled: () => true, run, getAdmin: async () => assert.fail("ordinary authorization entered"),
+    getRotationAdmin: async selected => { assert.equal(selected, actor.user.id); return scopedActor; },
+    getTransport: () => async request => {
+      upstream++;
+      const { applicationToken, ...routed } = request;
+      assert.deepEqual(routed, { method: "GET", service: "course", path: `/v1/admin/courses/${courseId}` });
+      const [header, payload, signature, extra] = applicationToken?.split(".") ?? [];
+      assert.ok(header && payload && signature && extra === undefined);
+      assert.equal(signature, createHmac("sha256", signerSecret).update(`${header}.${payload}`).digest("base64url"));
+      const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+      assert.equal(claims.sub, actor.user.id);
+      assert.equal(claims.aud, "lash-her-course-api:admin");
+      assert.deepEqual(claims.capabilities, ["course-editor", "course-support"]);
+      return Response.json({ course: { id: returnedCourseId, title: "Owned course", slug: "owned-course", description: null, status: "published", accessMode: "free",
+        priceCents: 0, currency: "CAD", revision: 1, modules: [], introduction: null, cover: null, seo: null, taxClassification: null } });
+    },
+  });
+  const handler = createCourseAdminHandler("get-course", { client: () => client, enabled: () => true, run });
+  const response = await inRequest(request => handler(request, { courseId }));
+  assert.equal(response.status, 200, JSON.stringify({ admissions, upstream, response: await response.text() }));
+  assert.equal((await inRequest(request => handler(request, { courseId: id }))).status, 403);
+  assert.equal((await inRequest(() => handler(new Request("https://foreign.example.invalid" + path), { courseId }))).status, 403);
+  await inRequest(() => assert.rejects(client.getPublicationReadiness(courseId), { code: "forbidden" }));
+  for (const user of [{ ...actor.user, id: courseId }, { ...actor.user, role: "employee" as const }]) {
+    scopedActor = { ...actor, user };
+    assert.equal((await inRequest(request => handler(request, { courseId }))).status, 403);
+  }
+  assert.equal(upstream, 1);
+  assert.equal(admissions, 0);
+  scopedActor = actor;
+  returnedCourseId = id;
+  assert.equal((await inRequest(request => handler(request, { courseId }))).status, 503);
+  assert.equal((await inRequest(request => handler(request, { courseId }), "tampered")).status, 503);
+  assert.equal(upstream, 2);
+  assert.equal(admissions, 1);
+});

@@ -82,6 +82,28 @@ const selectedCustomerId = "33a4ad34-9e01-407b-82db-d32bb1067ce1";
 const foreignCustomerId = "de425257-3165-4da6-b53b-e6bbab53586d";
 const inSelectedIdentity = <T>(task: () => Promise<T>) => withWriterOperationContext(task, undefined, undefined, selectedCustomerId);
 
+test("rotation customer authorization is Google-only and retains the selected linked actor and fixed return", async () => {
+  const user = { id: selectedCustomerId, email: "reviewed@example.com", emailVerified: null };
+  const account = { provider: "google", type: "oidc" as const, providerAccountId: "verified-subject" };
+  const profile = { sub: account.providerAccountId, email_verified: true };
+  let linkedId = selectedCustomerId;
+  const store = {
+    adapter: { async getUserByAccount() { return { ...user, id: linkedId }; } },
+    isActive: async () => true,
+  } as unknown as CustomerAuthStore;
+  const callbacks = createCustomerAuthConfig(configuration, store).callbacks!;
+  await withWriterOperationContext(async () => {
+    assert.equal(await callbacks.signIn!({ user, account, profile }), true);
+    assert.equal(await callbacks.signIn!({ user: { ...user, id: foreignCustomerId }, account, profile }), false);
+    assert.equal(await callbacks.signIn!({ user, account: { ...account, provider: "resend", type: "email" } }), false);
+    linkedId = foreignCustomerId;
+    assert.equal(await callbacks.signIn!({ user, account, profile }), false);
+    assert.equal(await callbacks.redirect!({ url: "/account", baseUrl: configuration.origin }), configuration.origin + "/courses");
+  }, undefined, undefined, selectedCustomerId, undefined, undefined, undefined, undefined, undefined,
+  { actorKind: "customer", actorId: selectedCustomerId });
+  assert.equal(await callbacks.redirect!({ url: "/account", baseUrl: configuration.origin }), configuration.origin + "/account");
+});
+
 test("scoped email initiation reaches Auth.js only for the selected active address and retains the generic response", async () => {
   const seen: string[] = [];
   const handler = createCustomerAuthHandler({

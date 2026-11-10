@@ -5,7 +5,7 @@ import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import Resend from "next-auth/providers/resend";
 import { assertStagingEmailRecipients } from "@/lib/env/staging-email-policy.mjs";
-import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterIdentityRotation, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { CUSTOMER_AUTH_BASE_PATH, CUSTOMER_EMAIL_MAX_AGE, CUSTOMER_SESSION_MAX_AGE, customerSessionCookieName, normalizeCustomerEmail, safeCustomerReturn, type CustomerAuthConfiguration } from "./policy";
 import { customerEnrollmentScopeId, generateCustomerSessionToken, type CustomerAuthStore } from "./store";
 
@@ -68,6 +68,7 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
     ],
     callbacks: {
       async signIn({ user, account, profile, email }) {
+        if (currentWriterIdentityRotation()?.actorKind === "customer" && account?.provider !== "google") return false;
         const enrollment = currentWriterIdentityEnrollment();
         if (enrollment) {
           if (account?.provider !== enrollment.provider || !user.email) return false;
@@ -95,7 +96,10 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
           provider: "google", providerAccountId: profile.sub,
         }))?.id === selectedId;
       },
-      async redirect({ url }) { return new URL(safeCustomerReturn(url, configuration.origin), configuration.origin).href; },
+      async redirect({ url }) {
+        const path = currentWriterIdentityRotation()?.actorKind === "customer" ? "/courses" : safeCustomerReturn(url, configuration.origin);
+        return new URL(path, configuration.origin).href;
+      },
       async session({ session, user }) {
         // Never expose session bearer tokens, provider identifiers or admin fields.
         return { expires: session.expires, user: { id: user.id, name: user.name ?? null, email: user.email, image: null } } as typeof session;

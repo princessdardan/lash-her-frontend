@@ -5,7 +5,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { isAdminDeveloperModeEnabled } from "@/lib/admin/developer-mode-config";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import type { WriterAuthoringOperation, WriterFirstOwner, WriterIdentityEnrollment } from "./context";
+import type { WriterAuthoringOperation, WriterFirstOwner, WriterIdentityEnrollment, WriterIdentityRotation } from "./context";
 import { P2_FIRST_OWNER_PATH, P2_FIRST_OWNER_SELECTOR_PREFIX } from "../../../ops/platform/p2-first-owner-identity.mjs";
 import { parseAssessmentAttempt } from "../../../ops/gateway/assessment-attempt.mjs";
 import { EXIT_SAVE_LESSON_STARTED, parseLessonExitSavePosition, parseLessonRestorePosition, parseLessonResumePosition,
@@ -16,10 +16,12 @@ export const INTERACTIVE_COOKIE = "__Host-lash-p2q-window";
 export const INTERACTIVE_HEADER = "x-lash-internal-interactive-admission";
 export const INTERACTIVE_GATEWAY_PROOF_HEADER = "x-lash-certification-interactive";
 
-const stages = ["identity", "authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "stalled-playback-renewal", "paid-grant", "paid-revoke", "lifecycle"] as const;
+const stages = ["identity", "rotation-admin", "authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "stalled-playback-renewal", "paid-grant", "paid-revoke", "lifecycle"] as const;
 type Stage = (typeof stages)[number];
 const adminIdentitySelector = createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
 const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
+const rotationCustomerPrefix = Buffer.from("p2q-rot-cust-v1\0").toString("hex");
+const rotationAdminPrefix = Buffer.from("p2q-rot-admn-v1\0").toString("hex");
 const authoringActorPrefix = "7032712d617574686f72696e672d7631";
 const authoringEditActorPrefix = "7032712d617574682d656469742d7631";
 const authoringReorderActorPrefix = "7032712d617574682d736f72742d7631";
@@ -31,7 +33,7 @@ const authoringArchivePaidActorPrefix = "7032712d617574682d6172632d763100";
 const authoringRepublishPaidActorPrefix = "7032712d617574682d7265702d763100";
 const authoringReviewPaidRestorationActorPrefix = "7032712d617574682d72626c2d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
-  firstOwner?: WriterFirstOwner;
+  firstOwner?: WriterFirstOwner; identityRotation?: WriterIdentityRotation; rotationAdmin?: RotationAdminSelection;
   authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection; mediaReservation?: LessonSelection;
   lessonEntry?: LessonSelection; lessonDenial?: LessonSelection; lessonAssessment?: LessonSelection;
   lessonResume?: LessonSelection; lessonRestore?: LessonSelection; lessonAckLoss?: LessonSelection; lessonExitSave?: LessonSelection;
@@ -41,6 +43,7 @@ export type PaidGrantSelection = Readonly<{ actorId: string; idempotencyKey: str
 export type PaidRevokeSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
 export type LearnerAccessSelection = Readonly<{ actorId: string; lessonId: string }>;
 export type LessonSelection = Readonly<{ actorId: string; courseId: string; lessonId: string }>;
+export type RotationAdminSelection = Readonly<{ actorId: string; courseId: string }>;
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string;
   authoringActorId?: string; learningEnrollment?: LearningEnrollmentSelection; paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
@@ -68,6 +71,14 @@ const staffAuth = {
 };
 const firstOwnerAuth = {
   GET: at(`/admin/sign-in|/api/auth/callback/google|${P2_FIRST_OWNER_PATH}`),
+  POST: at("/admin/sign-in"),
+};
+const rotationCustomerAuth = {
+  GET: at("/sign-in|/api/customer-auth/(?:csrf|session|callback/google)"),
+  POST: at("/api/customer-auth/signin/google"),
+};
+const rotationAdminAuth = {
+  GET: at("/admin/(?:sign-in|not-authorized)|/api/auth/(?:callback/google|session)"),
   POST: at("/admin/sign-in"),
 };
 const authoringEdit = {
@@ -120,13 +131,16 @@ function permitsCustomerAuth(method: string, path: string, provider?: WriterIden
   return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
 }
 
-function permits({ stage, identityActorKind, identityEnrollment, firstOwner, authoringOperation, learnerAccess, mediaReservation, lessonEntry, lessonDenial, lessonAssessment,
+function permits({ stage, identityActorKind, identityEnrollment, firstOwner, identityRotation, rotationAdmin, authoringOperation, learnerAccess, mediaReservation, lessonEntry, lessonDenial, lessonAssessment,
   lessonResume, lessonRestore, lessonAckLoss, lessonExitSave, lessonVisibilitySave, lessonStaleRevision, stalledPlaybackRenewal }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
     case "identity":
       if (firstOwner) return matches(firstOwnerAuth, method, path);
+      if (identityRotation) return matches(identityRotation.actorKind === "admin" ? rotationAdminAuth : rotationCustomerAuth, method, path);
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
+    case "rotation-admin":
+      return rotationAdmin !== undefined && method === "GET" && path === `/api/admin/courses/${rotationAdmin.courseId}`;
     case "authoring":
       if (authoringOperation === "save-quiz-revision") return matches(authoringSaveQuiz, method, path);
       if (authoringOperation === "publish-course" || authoringOperation === "republish-paid-course" || authoringOperation === "review-paid-restoration") {
@@ -248,7 +262,7 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     stage === "lesson-resume" || stage === "lesson-restore" || stage === "lesson-ack-loss" || stage === "lesson-exit-save" ||
     stage === "lesson-visibility-save" || stage === "lesson-stale-revision" || stage === "stalled-playback-renewal";
   const hasSelection = lessonStage || stage === "lifecycle" || stage === "identity" || stage === "authoring" || stage === "learning" ||
-    stage === "learner-access" || stage === "paid-grant" || stage === "paid-revoke";
+    stage === "learner-access" || stage === "paid-grant" || stage === "paid-revoke" || stage === "rotation-admin";
   const selectorShape = lessonStage ? lessonSelector : signedDigest;
   if ((hasSelection ? version !== "v2" || fields.length !== 8 || !selectorShape.test(selection ?? "")
     : version !== "v1" || fields.length !== 7) ||
@@ -280,6 +294,11 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const lessonId = decodeCompactUuid(selection.slice(32));
     return actorId && lessonId ? { ...permit, learnerAccess: { actorId, lessonId } } : null;
   }
+  if (stage === "rotation-admin") {
+    const actorId = decodeCompactUuid(selection.slice(0, 32));
+    const courseId = decodeCompactUuid(selection.slice(32));
+    return actorId && courseId ? { ...permit, rotationAdmin: { actorId, courseId } } : null;
+  }
   if (stage === "learning" || stage === "paid-grant" || stage === "paid-revoke") {
     const actorId = decodeCompactUuid(selection.slice(0, 32));
     const idempotencyKey = decodeCompactUuid(selection.slice(32));
@@ -289,6 +308,11 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     return stage === "paid-grant" ? { ...permit, paidGrant: selected } : { ...permit, paidRevoke: selected };
   }
   if (stage === "identity") {
+    const rotationCustomerId = decodeSelectedUuid(selection, rotationCustomerPrefix);
+    if (rotationCustomerId) return { ...permit, identityActorKind: "customer", identityCustomerId: rotationCustomerId,
+      identityRotation: { actorKind: "customer", actorId: rotationCustomerId } };
+    const rotationAdminId = decodeSelectedUuid(selection, rotationAdminPrefix);
+    if (rotationAdminId) return { ...permit, identityActorKind: "admin", identityRotation: { actorKind: "admin", actorId: rotationAdminId } };
     if (selection === adminIdentitySelector) return { ...permit, identityActorKind: "admin" };
     if (selection.startsWith(P2_FIRST_OWNER_SELECTOR_PREFIX) && !/^0+$/u.test(nonce)) {
       return { ...permit, identityActorKind: "admin", firstOwner: { nonce, identityDigest: selection.slice(2), epoch, startedAt: Number(started) } };
@@ -332,8 +356,18 @@ export function attestInteractiveRequest(request: { origin: string; method: stri
   const authority = binding(env);
   const browser = authority && browserProof(authority, request.cookie, now);
   if (!authority || !browser ||
-    (["media", "lesson-entry", "lesson-resume", "lesson-restore", "lesson-exit-save", "lesson-visibility-save",
+    (["media", "rotation-admin", "lesson-entry", "lesson-resume", "lesson-restore", "lesson-exit-save", "lesson-visibility-save",
       "stalled-playback-renewal"].includes(browser.stage) && request.search)) return null;
+  if (browser.identityRotation && request.search) {
+    // OAuth callback parameters stay in Auth.js. Only the fixed landing queries
+    // are accepted on the sign-in forms.
+    const callback = request.method === "GET" && request.path === (browser.identityRotation.actorKind === "admin"
+      ? "/api/auth/callback/google" : "/api/customer-auth/callback/google");
+    const [name, value] = request.path === "/admin/sign-in" ? ["returnTo", "/admin/not-authorized"] : ["callbackUrl", "/courses"];
+    const query = new URLSearchParams(request.search);
+    const landing = (request.path === "/admin/sign-in" || request.path === "/sign-in") && query.size === 1 && query.get(name) === value;
+    if (!callback && !landing) return null;
+  }
   // Next strips its internal Flight key before proxy runs. Retain the exact
   // remaining search string for the selected progress read.
   const target = ["lesson-denial", "lesson-assessment", "lesson-ack-loss", "lesson-stale-revision"].includes(browser.stage)
@@ -375,6 +409,7 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
     lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment; firstOwner?: WriterFirstOwner;
+    identityRotation?: WriterIdentityRotation; identityRotationWriterKind?: "new-work" | "recovery"; rotationAdmin?: RotationAdminSelection;
     authoringActorId?: string; authoringOperation?: WriterAuthoringOperation; learningEnrollment?: LearningEnrollmentSelection;
     paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection; learnerAccess?: LearnerAccessSelection;
     lessonEntry?: LessonSelection; lessonDenial?: LessonSelection;
@@ -389,11 +424,16 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
   if (!authority || !browser) return null;
   const { source, target } = authority;
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
+  const identityRotationWriterKind = browser.identityRotation?.actorKind === "customer" && browser.path.startsWith("/api/customer-auth/")
+    ? "new-work" : browser.identityRotation?.actorKind === "admin" && browser.path === "/admin/sign-in" && browser.method === "POST"
+    ? "new-work" : browser.identityRotation?.actorKind === "admin" && browser.path.startsWith("/api/auth/") ? "recovery" : undefined;
   return { epoch: browser.epoch, producerSha256, source, target,
     ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}),
     ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}),
     ...(browser.identityEnrollment ? { identityEnrollment: browser.identityEnrollment } : {}),
     ...(browser.firstOwner ? { firstOwner: browser.firstOwner } : {}),
+    ...(browser.identityRotation ? { identityRotation: browser.identityRotation, identityRotationWriterKind } : {}),
+    ...(browser.rotationAdmin ? { rotationAdmin: browser.rotationAdmin } : {}),
     ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}),
     ...(browser.learningEnrollment ? { learningEnrollment: browser.learningEnrollment } : {}),
     ...(browser.paidGrant ? { paidGrant: browser.paidGrant } : {}),

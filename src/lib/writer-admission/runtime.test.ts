@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, currentWriterPaidAccessActorId, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
+import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment,
+  currentWriterIdentityRotation, currentWriterLifecycleSelection, currentWriterOperationIdentity, currentWriterPaidAccessActorId,
+  markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { P2_FIRST_OWNER_PATH, p2FirstOwnerIdentitySha256 } from "../../../ops/platform/p2-first-owner-identity.mjs";
@@ -16,6 +18,87 @@ import { createServicePaymentAlertLogger } from "@/lib/booking/payments/service-
 const selectedCustomerId = "8d680a92-8071-4fd0-9da2-c4d350aa729d";
 const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
 const customerIdentitySelector = customerIdentityPrefix + selectedCustomerId.replaceAll("-", "");
+
+test("rotation auth admits only exact Google identity routes and the assigned operation kind", async () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const admin = "8e2280dc-0389-4248-b21c-f87427f9e85c";
+  const courseId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const compact = (id: string) => id.replaceAll("-", "");
+  const issue = (stage: string, selector: string) => {
+    const body = `v2.12.${stage}.${now}.${now + 120}.${"a".repeat(32)}.${selector}`;
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const customer = issue("identity", Buffer.from("p2q-rot-cust-v1\0").toString("hex") + compact(selectedCustomerId));
+  const staff = issue("identity", Buffer.from("p2q-rot-admn-v1\0").toString("hex") + compact(admin));
+  const signer = issue("rotation-admin", compact(admin) + compact(courseId));
+  const attest = (cookie: string, method: string, path: string, search = "") =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie }, env, now);
+  const f = fixture();
+  f.state.epoch = "12";
+  let verified: ReturnType<typeof readInteractiveRequest> = null;
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(env), createClient: () => f.client, getInteractiveWriter: async () => verified,
+  });
+  for (const [cookie, actorKind, actorId, method, path, search, kind] of [
+    [customer, "customer", selectedCustomerId, "GET", "/sign-in", "?callbackUrl=/courses", undefined],
+    [customer, "customer", selectedCustomerId, "GET", "/api/customer-auth/csrf", "", "new-work"],
+    [customer, "customer", selectedCustomerId, "POST", "/api/customer-auth/signin/google", "", "new-work"],
+    [customer, "customer", selectedCustomerId, "GET", "/api/customer-auth/callback/google", "?code=owned&state=owned", "new-work"],
+    [customer, "customer", selectedCustomerId, "GET", "/api/customer-auth/session", "", "new-work"],
+    [staff, "admin", admin, "GET", "/admin/sign-in", "?returnTo=/admin/not-authorized", undefined],
+    [staff, "admin", admin, "POST", "/admin/sign-in", "?returnTo=/admin/not-authorized", "new-work"],
+    [staff, "admin", admin, "GET", "/api/auth/callback/google", "?code=owned&state=owned", "recovery"],
+    [staff, "admin", admin, "GET", "/api/auth/session", "", "recovery"],
+    [staff, "admin", admin, "GET", "/admin/not-authorized", "", undefined],
+  ] as const) {
+    const proof = attest(cookie, method, path, search);
+    assert.ok(proof);
+    const verify = () => readInteractiveRequest(proof, cookie, env, now);
+    if (method === "POST" && path === "/admin/sign-in") assert.equal(verify(), null);
+    verified = await withinInteractiveAdminGoogleAction(async () => verify());
+    assert.deepEqual(verified?.identityRotation, { actorKind, actorId });
+    assert.equal(verified?.identityRotationWriterKind, kind);
+    assert.equal(verified?.identityCustomerId, actorKind === "customer" ? actorId : undefined);
+    assert.equal(readInteractiveRequest(proof, cookie === staff ? customer : staff, env, now), null);
+    await assert.rejects(run(kind === "recovery" ? "new-work" : "recovery", () => assert.fail("unselected writer kind")), WriterAdmissionError);
+    if (kind) {
+      await run(kind, async () => { assert.deepEqual(currentWriterIdentityRotation(), { actorKind, actorId }); });
+      assert.equal(currentWriterIdentityRotation(), undefined);
+    } else await assert.rejects(run("new-work", () => assert.fail("read-only landing opened a writer")), WriterAdmissionError);
+  }
+  for (const [cookie, method, path, search] of [
+    [customer, "GET", "/sign-in", "?callbackUrl=/account"],
+    [customer, "POST", "/api/customer-auth/signin/google", "?prompt=consent"],
+    [customer, "GET", "/api/customer-auth/providers", ""],
+    [customer, "POST", "/api/customer-auth/signin/resend", ""],
+    [customer, "GET", "/api/customer-auth/callback/resend", ""],
+    [customer, "POST", "/api/customer-auth/signout", ""],
+    [customer, "GET", "/api/auth/session", ""],
+    [staff, "GET", "/admin", ""],
+    [staff, "POST", "/admin/sign-in", "?returnTo=/admin"],
+    [staff, "POST", "/api/auth/signin/google", ""],
+    [staff, "POST", "/api/auth/signout", ""],
+    [staff, "GET", "/api/customer-auth/session", ""],
+    [staff, "GET", `/api/admin/courses/${courseId}`, ""],
+    [signer, "GET", `/api/admin/courses/${courseId}`, "?x=1"],
+    [signer, "GET", `/api/admin/courses/${admin}`, ""],
+    [signer, "PATCH", `/api/admin/courses/${courseId}`, ""],
+    [signer, "GET", "/api/auth/session", ""],
+  ] as const) assert.equal(attest(cookie, method, path, search), null);
+
+  const proof = attest(signer, "GET", `/api/admin/courses/${courseId}`);
+  assert.ok(proof);
+  verified = readInteractiveRequest(proof, signer, env, now);
+  assert.deepEqual(verified?.rotationAdmin, { actorId: admin, courseId });
+  for (const kind of ["new-work", "recovery"] as const) {
+    await assert.rejects(run(kind, () => assert.fail("closed signer entered the writer ledger")), WriterAdmissionError);
+  }
+  assert.equal(f.calls.filter(call => call.sql.includes("begin_operation")).length, 7);
+  assert.equal(f.calls.filter(call => call.sql.includes("finish_operation")).length, 7);
+});
 
 function environment() {
   return { FRONTEND_WRITER_ADMISSION_MODE: "enforce", VERCEL: "1", APP_ENV: "staging", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",

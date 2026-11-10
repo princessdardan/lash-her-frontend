@@ -371,6 +371,23 @@ const reviewedCanonicalWorkloadDependencies = {
   ...reviewedStalledRenewalDependencies,
   "src/app/api/internal/release-probe/route.ts": "6c54747f87fe39b2030b2fc410293f92e6da617c2ea5c8b6368e992e364b7973"
 };
+const reviewedManagedRotationSource = {
+  ...reviewedCanonicalWorkloadSource,
+  "src/lib/writer-admission/context.ts": "8374701b154bd8f96a1e3ba0dece425fbd26c3d98f0bda0092c7bc19d68ac6a9",
+  "src/lib/writer-admission/runtime.ts": "422ffa808cd9db9fc8810b29876b8583b1ac39eda2dddc7cc9fd2f049c327e89"
+};
+const reviewedManagedRotationDependencies = {
+  ...reviewedCanonicalWorkloadDependencies,
+  "src/app/admin/auth-actions.ts": "ae7efeb6d0ac83aff39b43166cf216ae6cb8db9340bb9b88fd370e5842d6812e",
+  "src/auth.ts": "faf74fbf6cd7e5cb13e5df2303dd23b56c04aacb18629ace5b5cf8df14cc37cd",
+  "src/lib/admin/auth-route-admission.ts": "96dc03dc6004650d4eb7721875a851137d5300d773aa8c7d99b64010f6f3d9e0",
+  "src/lib/admin/auth-service.ts": "56015fc1e25952b4843b77da37a56ce2a72ca92d70797851e5ea76f292d38ff9",
+  "src/lib/admin/auth.ts": "6c105d8a5d55165ae82c78923e65d9b5d772e17c2941db88f69da91ff4d4f88c",
+  "src/lib/api-integration/course-admin-handler.ts": "43d5e912afe61868463a31ef80b255de44d9170d15645f2b9434f30bc3bd587a",
+  "src/lib/api-integration/course-client.ts": "c77b5057eb6434812c2c75a2859ce5a87a9656cc8a9af0aedfd8f73d3f24784d",
+  "src/lib/customer-auth/config.ts": "45bcbc26a912c440b14bd548e8ca6ad47089a1d36963211d6a849b5e38665f2f",
+  "src/lib/writer-admission/interactive-proof.ts": "79fa696689af88a23215beaa182e4850df5136286cfebecabdb085ab52bf911e"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -412,7 +429,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]],
     [reviewedFirstOwnerSource, [reviewedFirstOwnerDependencies, reviewedMediaReservationDependencies, reviewedMediaUploadDependencies]],
     [reviewedStalledRenewalSource, [reviewedStalledRenewalDependencies]],
-    [reviewedCanonicalWorkloadSource, [reviewedCanonicalWorkloadDependencies]]]
+    [reviewedCanonicalWorkloadSource, [reviewedCanonicalWorkloadDependencies]],
+    [reviewedManagedRotationSource, [reviewedManagedRotationDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
