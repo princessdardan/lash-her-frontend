@@ -33,6 +33,53 @@ class SuspensionEvidenceTests(unittest.TestCase):
         self.assertEqual(stage._carrier('OWNED'), {'version': 2,
             'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE), 'status': 'OWNED'})
 
+    def test_held_stage_verifies_profiled_source_entries_and_legacy_source_object(self):
+        from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, PROFILED_CERTIFICATION_REQUIRED
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+
+        program_names = {
+            "browserProgramSha256": "ops/platform/p2-lifecycle-browser-recorder.mjs",
+            "pendingProgramSha256": "ops/platform/p2-lifecycle-pending-probe.mjs",
+            "parentProgramSha256": "ops/platform/p2-lifecycle-suspension-evidence.mjs",
+            "hostProgramSha256": "ops/platform/host/p2_lifecycle_suspension_evidence.py",
+        }
+        files = REQUIRED | PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | evidence.identity.SOURCE_ANCHORS | set(program_names.values())
+        manifest = {}
+        for name in sorted(files, reverse=True):
+            path = self.directory / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            raw = ("owned-source:" + name + "\n").encode()
+            path.write_bytes(raw)
+            manifest[name] = evidence.digest(raw)
+
+        stage = evidence.P2LifecycleSuspensionEvidenceStage.__new__(evidence.P2LifecycleSuspensionEvidenceStage)
+        stage.source = stage.configuration = self.directory
+        stage.selected = stage.jobs = {}
+        stage.scope = SimpleNamespace(require_configuration=Mock())
+        stage._inventory = Mock(return_value=[])
+        stage.inventory = []
+        stage.plan = {"hostMachineId": "a" * 32, "configurationSha256": "b" * 64}
+        for field, name in program_names.items():
+            raw = (self.directory / name).read_bytes()
+            stage.plan[field] = evidence.digest(raw + (evidence.BROWSER_LAUNCHER if field == "browserProgramSha256" else b""))
+
+        object_sha = evidence.digest(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode())
+        entries_sha = evidence.digest(json.dumps(sorted(manifest.items()), separators=(",", ":")).encode())
+        self.assertNotEqual(entries_sha, object_sha)
+        stage.reviewed = {"operatorSourceFiles": manifest, "plan": {}}
+        with patch.object(evidence, "bind_frontend_scope"), \
+                patch.object(evidence.identity, "_configuration_hash", return_value=stage.plan["configurationSha256"]), \
+                patch.object(Path, "read_text", return_value=stage.plan["hostMachineId"]):
+            for profile, accepted, refused in ((None, object_sha, entries_sha),
+                    (dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE), entries_sha, object_sha)):
+                with self.subTest(profile=profile):
+                    stage.expected_profile = profile
+                    stage.reviewed["plan"]["operatorSourceSha256"] = accepted
+                    stage.verify()
+                    stage.reviewed["plan"]["operatorSourceSha256"] = refused
+                    with self.assertRaisesRegex(ValueError, "P2_SUSPENSION_SOURCE_CONFIGURATION_OR_MACHINE_CHANGED"):
+                        stage.verify()
+
     def test_legacy_source_parent_registration_return_shape_remains_exact(self):
         stage = evidence.P2LifecycleSuspensionEvidenceStage.__new__(evidence.P2LifecycleSuspensionEvidenceStage)
         stage.expected_profile = None; stage.challenge = None; stage.directory = self.directory

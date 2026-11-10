@@ -220,7 +220,7 @@ class P2LifecycleSuspensionEvidenceStage:
         demand(Path("/etc/machine-id").read_text().strip() == self.plan["hostMachineId"]
             and identity._configuration_hash(self.configuration) == self.plan["configurationSha256"]
             and persistence._source_closure(self.source, self.reviewed, self.expected_profile) == self.reviewed["operatorSourceFiles"]
-            and digest(json.dumps(self.reviewed["operatorSourceFiles"], sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode())
+            and persistence._source_manifest_digest(self.reviewed["operatorSourceFiles"], self.expected_profile)
                 == self.reviewed["plan"]["operatorSourceSha256"]
             and digest(migrate.read_input(self.source, "ops/platform/p2-lifecycle-browser-recorder.mjs")+BROWSER_LAUNCHER) == self.plan["browserProgramSha256"]
             and digest(migrate.read_input(self.source, "ops/platform/p2-lifecycle-pending-probe.mjs")) == self.plan["pendingProgramSha256"]
