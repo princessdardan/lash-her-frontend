@@ -74,9 +74,9 @@ function runProfiledChild(program, payload, gateway, ca, ports, expectedGuardedW
     };
     syncBuiltinESMExports();
   `;
-  const module = "data:text/javascript;base64," + Buffer.from(preload).toString("base64");
+  const preloadUrl = "data:text/javascript;base64," + Buffer.from(preload).toString("base64");
   return new Promise((resolve, reject) => {
-    const child = execFile(process.execPath, ["--import", module, "--input-type=module", "--eval", program],
+    const child = execFile(process.execPath, ["--import", preloadUrl, "--input-type=module", "--eval", program],
       { env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000, maxBuffer: 8192 }, (error, stdout, stderr) => {
         const exitCode = error?.code ?? 0;
         if (stderr || ![0, 1].includes(exitCode)) return reject(new Error("OWNED_PROFILED_RECEIVER_CHILD_FAILED"));
