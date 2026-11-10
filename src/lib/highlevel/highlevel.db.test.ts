@@ -7,6 +7,8 @@ import { getPrivateDb, closePrivateDbPool } from "@/lib/private-db/client";
 import {
   recordGeneralInquirySubmission,
   recordContactPopupSubmission,
+  recordCourseSignupSubmission,
+  recordInternalUnsubscribe,
 } from "@/lib/marketing-contact/marketing-contact-store";
 import { claimCustomerEmailById } from "@/lib/commerce/customer-email-outbox";
 import { recordCheckoutConsent } from "./checkout-consent";
@@ -121,6 +123,166 @@ async function submissionJob(id: string): Promise<CrmJob> {
     )
   ).rows[0];
 }
+
+for (const marketingConsent of [false, true]) {
+  test(
+    `course signup reaches CRM with profile and Instagram, marketing consent ${marketingConsent}`,
+    { skip },
+    async (t) => {
+      const previous = process.env.HIGHLEVEL_MARKETING_ENABLED;
+      process.env.HIGHLEVEL_MARKETING_ENABLED = "false";
+      t.after(() => {
+        if (previous === undefined)
+          delete process.env.HIGHLEVEL_MARKETING_ENABLED;
+        else process.env.HIGHLEVEL_MARKETING_ENABLED = previous;
+      });
+      const address = email(`course-${marketingConsent}`);
+      const input = {
+        name: "Course Learner",
+        email: address,
+        phone: marketingConsent ? "+14165550131" : "+14165550130",
+        instagram: "@course.learner",
+        courseId: "free-mini-course",
+        courseTitle: "Free Mini Course",
+        sourcePath: "/courses/free-mini-course",
+        marketingConsent,
+        smsMarketingConsent: false,
+      };
+      const saved = await recordCourseSignupSubmission(input);
+      const job = await submissionJob(saved.submissionId);
+      assert.ok(
+        job,
+        "the submission trigger must enqueue without marketing consent",
+      );
+      assert.equal((await loadSource(job))?.instagram, input.instagram);
+      let remote: ProviderContact | undefined;
+      let creates = 0;
+      const notes: string[] = [];
+      const tags: string[] = [];
+      const api: CrmRequest = async <T>(
+        path: string,
+        options?: Parameters<CrmRequest>[1],
+      ) => {
+        if (path.startsWith("/contacts/lookup?"))
+          return { contacts: remote ? [remote] : [] } as T;
+        if (path === "/contacts/upsert") {
+          creates++;
+          remote = {
+            id: randomUUID(),
+            locationId: location,
+            ...(options?.body as object),
+          } as ProviderContact;
+          return { contact: remote } as T;
+        }
+        if (path === `/contacts/${remote?.id}/notes`) {
+          notes.push((options?.body as { body: string }).body);
+          return { note: { id: randomUUID() } } as T;
+        }
+        if (path === `/contacts/${remote?.id}/tags`) {
+          tags.push(...(options?.body as { tags: string[] }).tags);
+          return {} as T;
+        }
+        if (path === `/contacts/${remote?.id}`) {
+          if (options?.method === "PUT") Object.assign(remote!, options.body);
+          return { contact: remote } as T;
+        }
+        throw new Error(`Unexpected CRM operation: ${path}`);
+      };
+      await syncJob(job, api);
+      await syncJob(job, api);
+      assert.equal(creates, 1);
+      assert.equal(remote?.name, input.name);
+      assert.equal(remote?.email, address);
+      assert.equal(remote?.phone, input.phone);
+      assert.ok(tags.includes("lh:source:course_signup"));
+      assert.equal(notes.length, 1);
+      assert.ok(notes[0].includes(input.courseTitle));
+      assert.ok(notes[0].includes(input.sourcePath));
+      assert.ok(notes[0].includes(`Instagram: ${input.instagram}`));
+      const fields = remote?.customFields as unknown as {
+        id: string;
+        fieldValue: string;
+      }[];
+      assert.equal(
+        fields.find((f) => f.id === "email_eligible")?.fieldValue,
+        marketingConsent ? "yes" : "no",
+      );
+      assert.equal(
+        fields.find((f) => f.id === "sms_eligible")?.fieldValue,
+        "no",
+      );
+    },
+  );
+}
+
+test(
+  "course-only recovery is idempotent, preserves withdrawals and checks conflicts across sources",
+  { skip },
+  async () => {
+    const courseInput = {
+      name: "Historical Learner",
+      email: email("course-backfill"),
+      phone: "+14165550132",
+      courseId: "free-mini-course",
+      courseTitle: "Free Mini Course",
+      sourcePath: "/courses/free-mini-course",
+      marketingConsent: true,
+    };
+    const course = await recordCourseSignupSubmission(courseInput);
+    const other = await recordGeneralInquirySubmission({
+      name: "Other Person",
+      email: email("non-course-backfill"),
+      message: "Question",
+      marketingConsent: true,
+    });
+    await recordInternalUnsubscribe({
+      email: courseInput.email,
+      reason: "test-withdrawal",
+    });
+    const conflict = await recordCourseSignupSubmission({
+      ...courseInput,
+      email: email("course-conflict"),
+      phone: "+14165550133",
+    });
+    await recordGeneralInquirySubmission({
+      name: "Different Person",
+      email: email("non-course-conflict"),
+      phone: "+14165550133",
+      message: "Question",
+      marketingConsent: false,
+    });
+    const db = getPrivateDb();
+    const key = `backfill:v1:submission:${course.submissionId}`;
+    await db.execute(
+      sql`delete from highlevel_consent_events where email_normalized = ${courseInput.email}`,
+    );
+    await backfillHighLevel(false, "course_signup");
+    assert.equal(
+      (
+        await db.execute(
+          sql`select id from highlevel_outbox where event_key = ${key}`,
+        )
+      ).rows.length,
+      0,
+    );
+    await backfillHighLevel(true, "course_signup");
+    await backfillHighLevel(true, "course_signup");
+    const jobs = await db.execute<{ entity_id: string; historical: boolean }>(
+      sql`select entity_id, historical from highlevel_outbox where event_key in (${key}, ${`backfill:v1:submission:${other.submissionId}`}, ${`backfill:v1:submission:${conflict.submissionId}`})`,
+    );
+    assert.deepEqual(jobs.rows, [
+      { entity_id: course.submissionId, historical: true },
+    ]);
+    assert.equal(
+      await channelConsent(courseInput.email, "email", courseInput.email),
+      "unsubscribed",
+    );
+    assert.equal(
+      await channelConsent(courseInput.email, "sms", courseInput.phone),
+      "unknown",
+    );
+  },
+);
 async function contactFor(
   address: string,
   providerId = randomUUID(),
@@ -150,6 +312,111 @@ async function consentJob(
     )
   ).rows[0];
 }
+
+test(
+  "mapped email-only contacts cannot acquire another CRM contact's phone",
+  { skip },
+  async () => {
+    for (const otherEmail of [undefined, email("phone-owner")]) {
+      const address = email(`mapped-phone-${otherEmail ? "named" : "unnamed"}`);
+      const saved = await recordCourseSignupSubmission({
+        email: address,
+        name: "Course Learner",
+        phone: "+14165550123",
+        courseId: "free-mini-course",
+        courseTitle: "Free Mini Course",
+        sourcePath: "/courses/free-mini-course",
+        marketingConsent: false,
+        smsMarketingConsent: false,
+      });
+      const mapped = await contactFor(address);
+      let lookups = 0;
+      let writes = 0;
+      const api: CrmRequest = async <T>(
+        path: string,
+        options?: Parameters<CrmRequest>[1],
+      ) => {
+        if (options?.method) writes++;
+        if (path === `/contacts/${mapped.provider_id}`)
+          return {
+            contact: {
+              id: mapped.provider_id,
+              locationId: location,
+              email: address,
+            },
+          } as T;
+        if (path.startsWith("/contacts/lookup?")) {
+          assert.equal(
+            new URL(`https://crm.test${path}`).searchParams.get("phone"),
+            "+14165550123",
+          );
+          lookups++;
+          return {
+            contacts: [
+              {
+                id: "different-contact",
+                locationId: location,
+                phone: "+14165550123",
+                email: otherEmail,
+              },
+            ],
+          } as T;
+        }
+        throw new Error("Unexpected CRM operation");
+      };
+      await assert.rejects(
+        syncJob(await submissionJob(saved.submissionId), api),
+        /identity_conflict/,
+      );
+      assert.equal(lookups, 1);
+      assert.equal(writes, 0);
+    }
+  },
+);
+
+test(
+  "email withdrawal survives a mapped contact's missing-phone ownership conflict",
+  { skip },
+  async () => {
+    const address = email("missing-phone-withdrawal");
+    const mapped = await contactFor(address);
+    const job = await consentJob(address, "email", "unsubscribed");
+    const writes: unknown[] = [];
+    const api: CrmRequest = async <T>(
+      path: string,
+      options?: Parameters<CrmRequest>[1],
+    ) => {
+      if (options?.method) writes.push(options.body);
+      if (path.startsWith("/contacts/lookup?"))
+        return {
+          contacts: [
+            {
+              id: "other-contact",
+              locationId: location,
+              phone: mapped.phone,
+              email: email("other-owner"),
+            },
+          ],
+        } as T;
+      return {
+        contact: {
+          id: mapped.provider_id,
+          locationId: location,
+          email: address,
+        },
+      } as T;
+    };
+    await assert.rejects(syncJob(job, api), /identity_conflict/);
+    assert.deepEqual(writes, [
+      {
+        customFields: [{ id: "email_eligible", fieldValue: "no" }],
+        dndSettings: {
+          email: { status: "active", message: "lh:website-withdrawal" },
+        },
+      },
+    ]);
+  },
+);
 
 test(
   "email withdrawal survives a phone conflict without relaxing identity review",

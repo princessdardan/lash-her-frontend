@@ -63,6 +63,36 @@ export function callbackUrl(): string {
     throw new HighLevelError("invalid_redirect_uri");
   return url.href;
 }
+export function agencyInstallationEnabled(): boolean {
+  return process.env.HIGHLEVEL_AGENCY_INSTALLATION_ENABLED === "true";
+}
+export function agencyCompanyId(): string {
+  const id = required("HIGHLEVEL_COMPANY_ID");
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id))
+    throw new HighLevelError("invalid_highlevel_company_id");
+  return id;
+}
+export function authorizationUrl(state: string): URL {
+  const version = required("HIGHLEVEL_APP_VERSION_ID");
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(version))
+    throw new HighLevelError("invalid_highlevel_app_version_id");
+  const url = new URL(
+    "https://marketplace.gohighlevel.com/v2/oauth/chooselocation",
+  );
+  if (agencyInstallationEnabled()) agencyCompanyId();
+  url.search = new URLSearchParams({
+    response_type: "code",
+    client_id: required("HIGHLEVEL_CLIENT_ID"),
+    redirect_uri: callbackUrl(),
+    scope: [
+      ...HIGHLEVEL_SCOPES,
+      ...(agencyInstallationEnabled() ? ["oauth.write"] : []),
+    ].join(" "),
+    version_id: version,
+    state,
+  }).toString();
+  return url;
+}
 export function fieldIds(): Record<string, string> {
   const fields: unknown = JSON.parse(required("HIGHLEVEL_FIELD_IDS"));
   if (
