@@ -17,22 +17,30 @@ export function frontendPrivateReceiptDirectory(directory, empty = false) {
 
 export function frontendReleaseReceiptStore(directory) {
   frontendPrivateReceiptDirectory(directory, true);
+  const retain = (name, bytes) => {
+    demand(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 2_000_000);
+    frontendPrivateReceiptDirectory(directory);
+    const fd = openSync(join(directory, name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      writeFileSync(fd, bytes); fsyncSync(fd);
+      const parent = openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      try { fsyncSync(parent); } finally { closeSync(parent); }
+    } finally { closeSync(fd); }
+    // A failed durability check leaves exclusive partial evidence; it never
+    // authorizes SQL or an overwrite/retry in this action directory.
+  };
   return {
     record(name, value) {
       demand(/^[a-z0-9][a-z0-9.-]{0,180}\.json$/u.test(name));
       frontendPrivateReceiptDirectory(directory); writeFrontendReceipt(directory, name, value);
     },
     retain(name, bytes) {
-      demand(/^[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name) && Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 2_000_000);
-      frontendPrivateReceiptDirectory(directory);
-      const fd = openSync(join(directory, name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-      try {
-        writeFileSync(fd, bytes); fsyncSync(fd);
-        const parent = openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-        try { fsyncSync(parent); } finally { closeSync(parent); }
-      } finally { closeSync(fd); }
-      // A failed durability check leaves exclusive partial evidence; it never
-      // authorizes SQL or an overwrite/retry in this action directory.
+      demand(/^[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name));
+      retain(name, bytes);
+    },
+    retainOriginal(name, bytes) {
+      demand(["database-receipt.json", "frontend-continuation-started.json", "replacement-write-custody.json"].includes(name));
+      retain(name, bytes);
     },
   };
 }

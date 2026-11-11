@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 from p2_source_closure import (CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_CERTIFICATION_REQUIRED,
                                ROTATION_MODE, ROTATION_REQUIRED, verify_rotation_source_closure)
@@ -40,6 +41,21 @@ class SourceClosureTests(unittest.TestCase):
         verify_source_closure(self.initial, self.root)
         (self.root / 'ops/platform/host/migrate.py').write_text('unreviewed')
         with self.assertRaisesRegex(ValueError, 'CONTENT_CHANGED'): verify_source_closure(self.initial, self.root)
+
+    def test_recovery_reuses_hashes_for_unchanged_files_but_refuses_same_size_rewrite(self):
+        import p2_source_closure as closure
+        selected = {**self.initial, 'mode': closure.PROFILED_REPLACEMENT_WRITE_MODE,
+                    'recoveryReviewSha256': 'a' * 64}
+        closure._verify_source_closure(selected, self.root, REQUIRED, 512, 41_000_000)
+        with patch.object(Path, 'read_bytes', side_effect=AssertionError('unchanged file hashed again')):
+            self.assertEqual(closure._verify_source_closure(selected, self.root, REQUIRED, 512, 41_000_000),
+                             selected['sourceClosureSha256'])
+        changed = self.root / 'ops/platform/host/migrate.py'
+        original = changed.stat()
+        changed.write_bytes(b'X' * original.st_size)
+        os.utime(changed, ns=(original.st_atime_ns, original.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError, 'CONTENT_CHANGED'):
+            closure._verify_source_closure(selected, self.root, REQUIRED, 512, 41_000_000)
 
     def test_certification_source_file_bound_is_finite_and_keeps_complete_coverage(self):
         manifest = dict(self.manifest)

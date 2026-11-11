@@ -295,9 +295,11 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
         self.api_job_sha256 = copy.deepcopy(api_job_sha256)
         self.runtime_cleanup_label = replacement_write_label(parent.initial['reviewedPlanSha256'])
         self.original_frontend_bytes = (database_raw, started_raw, postflight_raw)
+        recovery = getattr(parent, 'recovery', None)
         super().__init__(parent.lock_fd, replacement.LOCK, lambda: replacement.ReplacementWriteBroker.verify_replacement_runtime(parent),
                          receipt, parent.initial['candidateSha256'], release=release, jobs=jobs,
-                         configuration_sha256=configuration_sha256)
+                         configuration_sha256=configuration_sha256,
+                         recovery_action_id=recovery['actionId'] if recovery is not None else None)
         self.runtime_parent = parent
         for name, raw in zip(self._frontend_records, self.original_frontend_bytes):
             migrate.write_exact_bytes(self.directory, name, raw)
@@ -344,6 +346,19 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
                        'P2_REPLACEMENT_GUARD_READBACK_CHANGED')
         self.verify()
         return raw
+
+    def api_role_policy_supplement(self, name):
+        parent = self._require_parent()
+        recovery = getattr(parent, 'recovery', None)
+        if recovery is None or 'rolePolicySupplement' not in recovery:
+            return None
+        migrate.demand(self.recovery_action_id == recovery['actionId'] and self.prior_gateway is not None and
+                       self.prior_gateway.stopped and name in migrate.SERVICES,
+                       'REPLACEMENT_RECOVERY_ROLE_POLICY_ARTIFACT_REFUSED')
+        pin, raw = migrate.read_replacement_role_policy_artifact(
+            parent.initial, recovery, name, self.release['sources'][name]['commit'])
+        self.verify()
+        return pin, raw
 
     def runtime_ready(self, attempt, migration_attempt, snapshot, selected, outcome):
         from p2_frontend_replacement_parent import ReplacementWriteBroker

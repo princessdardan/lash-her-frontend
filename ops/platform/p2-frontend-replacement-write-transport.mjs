@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { posix as path } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
 import { selectManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 import { verifyP2FrontendReplacementObservation } from "./p2-frontend-replacement-probe.mjs";
+import { replacementApiNames, requireReplacementRolePolicyReview } from "./p2-replacement-role-policy-supplement.mjs";
 import { decodeQualificationTargetJson, requireQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -18,6 +20,8 @@ const fields = (value, names) => value && Object.getPrototypeOf(value) === Objec
 const pick = (value, names) => Object.fromEntries(names.map(key => [key, value[key]]));
 const compareName = (left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
 const targetFields = ["host", "port", "database", "user", "runtimeRole", "serverMajor"];
+const originalEvidenceNames = ["physicalObservation", "databaseReceipt", "continuationStarted", "writtenObservation",
+  "abortObservation", "runtimeOutcome", "writeContainment", "runtimeContainment"];
 const maximumPacket = 4_000_000;
 const maximumReply = 4096;
 const guardianReapTimeout = 20 * 60_000;
@@ -26,6 +30,7 @@ const evidence = {
   boundary: "p2-frontend-replacement-empty-catalog.json",
   writeIntent: "p2-frontend-replacement-write-intent.json",
   written: "p2-frontend-replacement-written-observation.json",
+  recoveryPhysical: "p2-frontend-replacement-recovery-physical-observation.json",
   runtimeIntent: "p2-frontend-replacement-runtime-intent.json",
   migration: "migration-outcome.json",
   runtime: "runtime-outcome.json",
@@ -53,7 +58,7 @@ function base64Bytes(value, maximum, newline = true) {
   return bytes;
 }
 
-function snapshotSelection(initial, plan) {
+function snapshotSelection(initial, plan, recoveryInput) {
   requireQualificationTargetProfile(profile, initial, plan);
   demand(initial.version === 1 && initial.mode === mode && initial.environment === "staging" &&
     !Object.hasOwn(initial, "id") && !Object.hasOwn(initial, "operation") &&
@@ -66,9 +71,12 @@ function snapshotSelection(initial, plan) {
     isDeepStrictEqual(decodeQualificationTargetJson(planBytes, "carrier"), plan));
   const hasReview = ["runtimeReviewBytes", "runtimeReviewSha256"].some(field => Object.hasOwn(initial, field));
   demand(!Object.hasOwn(initial, "vercelToken") || hasReview && typeof initial.vercelToken === "string" && /^[!-~]{1,8192}$/u.test(initial.vercelToken));
+  const hasRecovery = ["operatorSourceCommit", "recoveryReviewBytes", "recoveryReviewSha256"].some(field => Object.hasOwn(initial, field));
+  demand(hasRecovery === (recoveryInput !== undefined) && (!hasRecovery || hasReview));
   const confirmation = `staging/${plan.releaseId}/replacement-write/${initial.reviewedPlanSha256}`;
-  demand(initial.confirmation === confirmation + (hasReview ? "/" + initial.runtimeReviewSha256 : ""));
-  if (!hasReview) return undefined;
+  demand(initial.confirmation === confirmation + (hasReview ? "/" + initial.runtimeReviewSha256 : "") +
+    (hasRecovery ? "/recover/" + initial.recoveryReviewSha256 : ""));
+  if (!hasReview) return {};
   const bytes = base64Bytes(initial.runtimeReviewBytes, 65_536, false);
   demand(digest(initial.runtimeReviewSha256) && hash(bytes) === initial.runtimeReviewSha256);
   const review = decodeQualificationTargetJson(bytes, "carrier");
@@ -77,7 +85,20 @@ function snapshotSelection(initial, plan) {
   demand(isDeepStrictEqual(pick(review, bindings), pick(plan, bindings)) &&
     review.reviewedPlanSha256 === initial.reviewedPlanSha256 && review.hostMachineId === initial.hostMachineId &&
     digest(review.producerSha256));
-  return review;
+  if (!hasRecovery) return { review };
+  const recoveryBytes = base64Bytes(initial.recoveryReviewBytes, 65_536, false);
+  demand(typeof initial.operatorSourceCommit === "string" && /^(?!0+$)[a-f0-9]{40}$/u.test(initial.operatorSourceCommit) &&
+    digest(initial.recoveryReviewSha256) && hash(recoveryBytes) === initial.recoveryReviewSha256);
+  const recoveryReview = decodeQualificationTargetJson(recoveryBytes, "carrier");
+  requireReplacementRolePolicyReview(recoveryReview);
+  const { actionId, originalDirectory, originalEvidenceSha256 } = recoveryReview;
+  demand(typeof actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(actionId) && actionId !== plan.releaseId &&
+    typeof originalDirectory === "string" && path.isAbsolute(originalDirectory) && path.normalize(originalDirectory) === originalDirectory &&
+    path.basename(originalDirectory) === `p2-profiled-replacement-write-${plan.releaseId}` &&
+    initial.results === path.join(path.dirname(originalDirectory), actionId) && initial.results !== originalDirectory &&
+    fields(originalEvidenceSha256, originalEvidenceNames) && Object.values(originalEvidenceSha256).every(digest));
+  return { review, recovery: prepareRecovery(recoveryInput, recoveryReview, plan, review),
+    rolePolicySupplement: recoveryReview.rolePolicySupplement };
 }
 
 function receiptBinding(initial, plan, status) {
@@ -149,9 +170,60 @@ function capture(input, names, maximum = 65_536) {
   return { bytes, records, packet };
 }
 
+function prepareWritten(input, probe, review) {
+  demand(fields(input, ["databaseReceipt", "continuationStarted", "owner", "runtime", "producerSha256"]));
+  const database = originalBytes(input.databaseReceipt, 65_536), started = originalBytes(input.continuationStarted, 8192);
+  const startedRecord = decodeQualificationTargetJson(started, "carrier");
+  demand(decodeQualificationTargetJson(database, "carrier")?.status === "DATABASE_VERIFIED" &&
+    startedRecord?.status === "FRONTEND_CONTINUATION_STARTED" && startedRecord.databaseVerified === true);
+  const { owner, runtime, producerSha256 } = structuredClone(pick(input, ["owner", "runtime", "producerSha256"]));
+  demand(fields(owner, ["name", "oid"]) && fields(runtime, ["name", "oid"]) &&
+    owner.name === FRONTEND_PREPARATION_ROLES.owner && runtime.name === probe.job.target.runtimeRole &&
+    oid(owner.oid) && oid(runtime.oid) && new Set([owner.oid, runtime.oid, probe.migrationRoleOid]).size === 3 &&
+    digest(producerSha256) && (!review || producerSha256 === review.producerSha256));
+  return { database, started, startedRecord, databaseReceiptSha256: hash(database), continuationStartedSha256: hash(started),
+    owner, runtime, producerSha256 };
+}
+
+function writtenBinding(plan, observation, physicalObservationSha256, written) {
+  return {
+    ...observation, status: "P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED", operation: "verify-replacement-written",
+    physicalObservationSha256, ...pick(written, ["databaseReceiptSha256", "continuationStartedSha256", "owner", "runtime", "producerSha256"]),
+    administrativeLogins: [...plan.replacement.administrativeLogins].sort(compareName),
+    appliedMigrationCount: plan.replacement.approvedPendingTags.length, epoch: "1", newWork: false, recovery: false,
+    active: 0, uncertain: 0, schemaVerified: true, runtimeRoleVerified: true, effectiveLoginBoundaryVerified: true,
+  };
+}
+
+function prepareRecovery(input, recoveryReview, plan, review) {
+  demand(fields(input, ["originalProbe", "physicalObservation", "databaseReceipt", "continuationStarted", "writtenObservation"]));
+  const probe = structuredClone(input.originalProbe);
+  validateProbe(probe, plan);
+  const physical = originalBytes(input.physicalObservation, 8192);
+  const observation = verifyP2FrontendReplacementObservation(probe, physical);
+  const bytes = originalBytes(input.writtenObservation, 8192), written = decodeQualificationTargetJson(bytes, "carrier");
+  const original = prepareWritten({ ...pick(input, ["databaseReceipt", "continuationStarted"]),
+    ...pick(written, ["owner", "runtime", "producerSha256"]) }, probe, review);
+  const { originalEvidenceSha256: reviewed } = recoveryReview;
+  const physicalSha256 = hash(physical);
+  demand(reviewed.physicalObservation === physicalSha256 && reviewed.databaseReceipt === original.databaseReceiptSha256 &&
+    reviewed.continuationStarted === original.continuationStartedSha256 && reviewed.writtenObservation === hash(bytes) &&
+    isDeepStrictEqual(written, writtenBinding(plan, observation, physicalSha256, original)));
+  return { probe, bytes, frontend: { ...pick(original, ["databaseReceiptSha256", "continuationStartedSha256"]),
+    postflightSha256: hash(bytes), written, started: original.startedRecord } };
+}
+
+function validateFreshProbe(probe, original, plan) {
+  const identity = ["marker", "backendPid", "backendStart"];
+  validateProbe(probe, plan);
+  const fixed = Object.keys(original).filter(key => !identity.includes(key));
+  demand(fields(probe, [...fixed, ...identity]) && isDeepStrictEqual(pick(probe, fixed), pick(original, fixed)) &&
+    identity.every(key => probe[key] !== original[key]));
+}
+
 // The caller supplies the already-selected process and reads evidence from the
 // same private host action. No executable, remote command or shell is selected here.
-export async function exchangeFrontendReplacementWrite(child, initialInput, planInput, task, { readHostEvidence } = {}) {
+export async function exchangeFrontendReplacementWrite(child, initialInput, planInput, task, { readHostEvidence, recovery: recoveryInput } = {}) {
   const controller = new AbortController(), pending = new Map();
   let failure, closed = false, closing = false, stdout = Buffer.alloc(0), stderrBytes = 0, heartbeat;
   let sequence = 0, phase = "starting", busy = false, heartbeatPending, result, committed, writeRequested = false;
@@ -233,10 +305,11 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
 
   try {
     demand(typeof task === "function" && typeof readHostEvidence === "function");
-    const initial = structuredClone(initialInput), plan = structuredClone(planInput), review = snapshotSelection(initial, plan);
+    const initial = structuredClone(initialInput), plan = structuredClone(planInput);
+    const { review, recovery, rolePolicySupplement } = snapshotSelection(initial, plan, recoveryInput);
     const managed = Object.hasOwn(plan.replacement, "managedCatalog") ? selectManagedNeonCatalog(plan.replacement.managedCatalog,
       pick(plan.replacement, ["provider", "target", "databaseOid", "migrationRoleOid", "administrativeLogins"])) : undefined;
-    await send(initial, "LOCKED", [], 5_000);
+    await send(initial, "LOCKED", [], recovery ? 90_000 : 5_000);
     phase = "locked";
     heartbeat = setInterval(() => {
       if (heartbeatPending || closing || failure) return;
@@ -244,9 +317,21 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
     }, 1000);
     await verifyEnvironment();
     let armed, custody, frontend, api, provider, sessionClosed, joined;
-    const host = {
-      signal: controller.signal,
-      verifyEnvironment,
+    const startup = recovery ? {
+      resumeReplacementWritten: input => advance("locked", "written", async () => {
+        const probe = structuredClone(input);
+        validateFreshProbe(probe, recovery.probe, plan);
+        writeRequested = true;
+        const reply = await request("resume-replacement-written", "REPLACEMENT_WRITTEN_RESUMED", { probe }, ["postflightSha256"]);
+        demand(reply.postflightSha256 === recovery.frontend.postflightSha256);
+        const physical = await read(evidence.recoveryPhysical, undefined, 8192);
+        verifyP2FrontendReplacementObservation(probe, physical.bytes);
+        const { bytes, receipt } = await read(evidence.written, reply.postflightSha256, 8192);
+        demand(bytes.equals(recovery.bytes));
+        frontend = recovery.frontend;
+        return { receipt, bytes, postflightSha256: frontend.postflightSha256 };
+      }),
+    } : {
       armReplacement: input => advance("locked", "armed", async () => {
         const probe = structuredClone(input);
         validateProbe(probe, plan);
@@ -279,33 +364,23 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
         return { receipt, writeIntentSha256: custody };
       }),
       verifyReplacementWritten: input => advance("custody", "written", async () => {
-        demand(fields(input, ["databaseReceipt", "continuationStarted", "owner", "runtime", "producerSha256"]));
-        const database = originalBytes(input.databaseReceipt, 65_536), started = originalBytes(input.continuationStarted, 8192);
-        const startedRecord = decodeQualificationTargetJson(started, "carrier");
-        demand(decodeQualificationTargetJson(database, "carrier")?.status === "DATABASE_VERIFIED" &&
-          startedRecord?.status === "FRONTEND_CONTINUATION_STARTED" && startedRecord.databaseVerified === true);
-        const { owner, runtime, producerSha256 } = structuredClone(pick(input, ["owner", "runtime", "producerSha256"]));
-        demand(fields(owner, ["name", "oid"]) && fields(runtime, ["name", "oid"]) &&
-          owner.name === FRONTEND_PREPARATION_ROLES.owner && runtime.name === armed.probe.job.target.runtimeRole &&
-          oid(owner.oid) && oid(runtime.oid) && new Set([owner.oid, runtime.oid, armed.probe.migrationRoleOid]).size === 3 &&
-          digest(producerSha256) && (!review || producerSha256 === review.producerSha256));
-        const databaseReceiptSha256 = hash(database), continuationStartedSha256 = hash(started);
+        const selected = prepareWritten(input, armed.probe, review);
+        const { database, started, startedRecord, databaseReceiptSha256, continuationStartedSha256, owner, runtime, producerSha256 } = selected;
         const reply = await request("verify-replacement-written", "REPLACEMENT_WRITTEN_VERIFIED", {
           writeIntentSha256: custody, databaseReceipt: database.toString("base64"), continuationStarted: started.toString("base64"),
           owner, runtime, producerSha256,
         }, ["postflightSha256"]);
         const { bytes, receipt } = await read(evidence.written, reply.postflightSha256, 8192);
-        demand(isDeepStrictEqual(receipt, {
-          ...armed.observation, status: "P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED", operation: "verify-replacement-written",
-          physicalObservationSha256: armed.physicalObservationSha256, databaseReceiptSha256, continuationStartedSha256,
-          owner, runtime, producerSha256, administrativeLogins: [...plan.replacement.administrativeLogins].sort(compareName),
-          appliedMigrationCount: plan.replacement.approvedPendingTags.length, epoch: "1", newWork: false, recovery: false,
-          active: 0, uncertain: 0, schemaVerified: true, runtimeRoleVerified: true, effectiveLoginBoundaryVerified: true,
-        }));
+        demand(isDeepStrictEqual(receipt, writtenBinding(plan, armed.observation, armed.physicalObservationSha256, selected)));
         frontend = { databaseReceiptSha256, continuationStartedSha256, postflightSha256: reply.postflightSha256,
           written: structuredClone(receipt), started: startedRecord };
         return { receipt, bytes, postflightSha256: frontend.postflightSha256 };
       }),
+    };
+    const host = {
+      signal: controller.signal,
+      verifyEnvironment,
+      ...startup,
       startReplacementRuntime: () => advance("written", "runtime", async () => {
         demand(review);
         const reply = await request("start-replacement-runtime", "REPLACEMENT_API_RUNTIME_READY",
@@ -321,6 +396,14 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
         const runtime = await read(evidence.runtime, reply.runtimeOutcomeSha256, 2_000_000);
         runtimeEvidenceBinding(migration.receipt, plan, frontend);
         runtimeEvidenceBinding(runtime.receipt, plan, frontend);
+        const appliedRolePolicy = migration.receipt.apiRolePolicySupplement;
+        if (rolePolicySupplement) {
+          demand(fields(appliedRolePolicy, replacementApiNames));
+          for (const name of replacementApiNames) {
+            const { readOnlyPreflightSha256, ...observed } = appliedRolePolicy[name];
+            demand(digest(readOnlyPreflightSha256) && isDeepStrictEqual(observed, rolePolicySupplement[name]));
+          }
+        } else demand(appliedRolePolicy === undefined);
         demand(migration.receipt.status === "API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" &&
           migration.receipt.databaseReceiptSha256?.frontend === frontend.databaseReceiptSha256 &&
           runtime.receipt.status === "API_RUNTIME_READY" && runtime.receipt.sourceCommit === plan.sourceCommit &&

@@ -433,6 +433,158 @@ def cleanup_migration_container(runner, name, env):
     demand(not inventory.stdout.strip(), "MIGRATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
+_ROLE_POLICY_MODULE = "/app/dist-migration/src/db/operator-migration.js"
+_ROLE_POLICY_PREFLIGHT = f"""
+import {{ createHash }} from 'node:crypto';
+import {{ readFileSync }} from 'node:fs';
+import {{ Client }} from 'pg';
+import {{ prepareOperatorMigration, verifyOperatorRoles }} from '{_ROLE_POLICY_MODULE}';
+import {{ directMigrationConnection, hasVerifiedMigrationTransport }} from './dist-migration/src/db/migration-lineage.js';
+import {{ MIGRATION_RELEASE_LOCK_KEY }} from './dist-migration/src/db/migration-release.js';
+import {{ STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile }} from './dist-migration/src/db/qualification-target-profile.js';
+
+const require = ok => {{ if (!ok) throw new Error('REPLACEMENT_API_ROLE_PREFLIGHT_REFUSED'); }};
+const input = name => readFileSync('/run/release-input/' + name, 'utf8');
+try {{
+  const {{ name: service }} = JSON.parse(readFileSync('package.json', 'utf8'));
+  const {{ manifest, target }} = prepareOperatorMigration(input('job.json'), input('schema.json'), 'drizzle', service, profile);
+  require(manifest.environment === 'staging' && process.env.DATABASE_TARGET === 'staging');
+  const connection = directMigrationConnection(process.env.STAGING_DATABASE_URL, target);
+  const client = new Client({{ ...connection, enableChannelBinding: true, query_timeout: 12000,
+    options: '-c default_transaction_read_only=on -c search_path=pg_catalog,public',
+    application_name: 'lash-her-p2-recovery-role-preflight' }});
+  let lost = false;
+  client.on('error', () => {{ lost = true; }});
+  try {{
+    await client.connect();
+    require(hasVerifiedMigrationTransport(client, target.host));
+    await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    try {{
+      const {{ rows: [identity] }} = await client.query(`SELECT pg_catalog.current_database() AS database,
+        current_user AS role, pg_catalog.current_setting('server_version_num')::int/10000 AS major,
+        pg_catalog.current_setting('transaction_read_only') AS readonly,
+        pg_catalog.pg_try_advisory_xact_lock($1::pg_catalog.int8) AS acquired`, [MIGRATION_RELEASE_LOCK_KEY]);
+      require(identity.database === target.database && identity.role === target.user &&
+        identity.major === target.serverMajor && identity.readonly === 'on' && identity.acquired === true);
+      await verifyOperatorRoles(client, target.user, manifest.runtimeRole, false,
+        {{ service, environment: manifest.environment, qualificationTargetProfile: profile }}, profile);
+      require(!lost && hasVerifiedMigrationTransport(client, target.host));
+    }} finally {{ await client.query('ROLLBACK'); }}
+  }} finally {{ await client.end(); }}
+  require(!lost);
+  console.log(JSON.stringify({{ status: 'REPLACEMENT_API_ROLE_PREFLIGHT_PASS', environment: 'staging', service,
+    releaseId: manifest.releaseId, sourceCommit: manifest.sourceCommit, migrationImageDigest: manifest.migrationImageDigest,
+    qualificationTargetProfile: profile,
+    compiledSha256: createHash('sha256').update(readFileSync('{_ROLE_POLICY_MODULE}')).digest('hex'),
+    readOnlyVerified: true, tlsVerified: true, runtimeRoleVerified: true, migrationAuthorized: false }}));
+}} catch {{ console.error('REPLACEMENT_API_ROLE_PREFLIGHT_REFUSED'); process.exitCode = 1; }}
+"""
+
+
+def read_replacement_role_policy_artifact(initial, recovery, name, base_source_commit):
+    """Read only the reviewed, fixed staging input for this recovery action."""
+    from p2_frontend_replacement_parent import private_record
+
+    code = "REPLACEMENT_RECOVERY_ROLE_POLICY_ARTIFACT_REFUSED"
+    action = recovery.get("actionId")
+    supplement = recovery.get("rolePolicySupplement")
+    demand(initial.get("environment") == "staging" and type(action) is str and
+           re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", action) and name in SERVICES and
+           type(supplement) is dict and set(supplement) == set(SERVICES), code)
+    pin = supplement[name]
+    demand(type(pin) is dict and set(pin) == {"baseSourceCommit", "sourceCommit", "sourceSha256", "compiledSha256"} and
+           source_commit(base_source_commit) and pin["baseSourceCommit"] == base_source_commit and
+           source_commit(pin["sourceCommit"]) and pin["sourceCommit"] != base_source_commit and
+           all(type(pin[key]) is str and digest("sha256:" + pin[key])
+               for key in ("sourceSha256", "compiledSha256")), code)
+    results = Path(initial["results"])
+    directory = results.parent / (action + "-role-policy")
+    demand(results.name == action and directory.is_absolute() and directory.resolve() == directory, code)
+    private_directory(directory)
+    raw = private_record(directory, name + ".js", 128_000)
+    demand(file_hash(raw) == pin["compiledSha256"], code)
+    return dict(pin), raw
+
+
+def replacement_role_policy_mount(attempt, name, pin):
+    code = "REPLACEMENT_RECOVERY_ROLE_POLICY_ARTIFACT_REFUSED"
+    demand(name in SERVICES, code)
+    file = attempt / (name + "-role-policy.js")
+    info = file.lstat()
+    demand(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1 and
+           stat.S_IMODE(info.st_mode) == 0o444 and file.resolve() == file and "," not in str(file) and
+           file_hash(read_input(attempt, file.name, 128_000)) == pin["compiledSha256"], code)
+    return ["--mount", f"type=bind,src={file},dst={_ROLE_POLICY_MODULE},readonly"]
+
+
+def verify_replacement_api_roles(scope, attempt, prepared, credentials, env, expected, supplements):
+    from qualification_target_profile import decode_qualification_target_json
+
+    evidence = {}
+    for name, info, inputs, _ in prepared:
+        pin, job = supplements[name], info["job"]
+        container = f"lash-p2-profiled-current-image-check-{uuid4().hex}"
+        private_env = {**env, "DATABASE_TARGET": "staging", "STAGING_DATABASE_URL": credentials[name]}
+        args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
+                "--label", scope.runtime_cleanup_label, "--network", "bridge", "--read-only", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
+                "--cpus", "0.5", "--pids-limit", "64", "--env", "DATABASE_TARGET", "--env", "STAGING_DATABASE_URL",
+                "--mount", f"type=bind,src={inputs.resolve()},dst=/run/release-input,readonly",
+                *replacement_role_policy_mount(attempt, name, pin), "--entrypoint", "node", info["image"],
+                "--input-type=module", "--eval", _ROLE_POLICY_PREFLIGHT]
+        try:
+            result = scope.run(args, env=private_env, capture_output=True, timeout=120)
+            demand(result.returncode == 0 and 0 < len(result.stdout) <= 8192, "REPLACEMENT_RECOVERY_ROLE_POLICY_REFUSED")
+            proof = decode_qualification_target_json(result.stdout, "carrier")
+            demand(proof == {"status": "REPLACEMENT_API_ROLE_PREFLIGHT_PASS", "environment": "staging",
+                             "service": info["service"], "releaseId": job["releaseId"], "sourceCommit": pin["baseSourceCommit"],
+                             "migrationImageDigest": job["migrationImageDigest"], "qualificationTargetProfile": expected,
+                             "compiledSha256": pin["compiledSha256"], "readOnlyVerified": True, "tlsVerified": True,
+                             "runtimeRoleVerified": True, "migrationAuthorized": False}, "REPLACEMENT_RECOVERY_ROLE_POLICY_REFUSED")
+            write_exact_bytes(attempt, f"{name}-recovery-role-preflight.json", result.stdout)
+            evidence[name] = {**pin, "readOnlyPreflightSha256": file_hash(result.stdout)}
+        finally:
+            scope.cleanup_runtime_helper(container, env)
+    return evidence
+
+
+def verify_replacement_api_suffix(scope, attempt, prepared, credentials, env, expected):
+    from qualification_target_profile import decode_qualification_target_json
+    for name, info, inputs, _ in prepared:
+        target = info["job"]["target"]
+        demand(name in SERVICES and target["approvedPendingTags"] and target["allowEmptyBootstrap"] is False,
+               "REPLACEMENT_RECOVERY_API_SUFFIX_REQUIRED")
+        write_json(inputs, "target.json", target)
+        target_file = inputs / "target.json"
+        target_file.chmod(0o400)
+        if os.getuid() == 0:
+            os.chown(target_file, 65532, 65532)
+        container = f"lash-p2-profiled-current-image-check-{uuid4().hex}"
+        private_env = {**env, "DATABASE_TARGET": "staging", "STAGING_DATABASE_URL": credentials[name],
+                       "PGOPTIONS": "-c search_path=pg_catalog,public"}
+        args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
+                "--label", scope.runtime_cleanup_label, "--network", "bridge", "--read-only", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
+                "--cpus", "0.5", "--pids-limit", "64", "--env", "DATABASE_TARGET", "--env", "STAGING_DATABASE_URL",
+                "--env", "PGOPTIONS", "--mount", f"type=bind,src={inputs.resolve()},dst=/check/input,readonly",
+                "--entrypoint", "node", info["image"], "dist-migration/scripts/check-migration-lineage.js",
+                "--target-file-profiled-current", "/check/input/target.json"]
+        try:
+            result = scope.run(args, env=private_env, capture_output=True, timeout=120)
+            demand(result.returncode == 0 and 0 < len(result.stdout) <= 8192, "REPLACEMENT_RECOVERY_API_SUFFIX_REFUSED")
+            proof = decode_qualification_target_json(result.stdout, "carrier")
+            require_profile(expected, proof)
+            demand(proof.get("status") == "READ_ONLY_PREFLIGHT_PASS" and proof.get("environment") == "staging"
+                   and proof.get("service") == info["service"] and proof.get("artifactSha256") == target["artifactSha256"]
+                   and type(proof.get("appliedCount")) is int and proof["appliedCount"] > 0
+                   and proof.get("pendingTags") == target["approvedPendingTags"] and proof.get("databaseIdentityMatched") is True
+                   and proof.get("tlsVerified") is True and proof.get("migrationAuthorized") is False,
+                   "REPLACEMENT_RECOVERY_API_SUFFIX_REFUSED")
+            write_exact_bytes(attempt, f"{name}-recovery-lineage.json", result.stdout)
+        finally:
+            scope.cleanup_runtime_helper(container, env)
+
+
 def profiled_current_action_id(scope, selected):
     """Fixed source scope selects only a canonical action identity, never a path."""
     from p2_profiled_current_scope import P2ProfiledCurrentScope, P2ProfiledReplacementScope
@@ -442,7 +594,7 @@ def profiled_current_action_id(scope, selected):
         return selected["releaseId"]
     demand(isinstance(recovery, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", recovery)
            and recovery != selected["releaseId"], "PROFILED_CURRENT_RECOVERY_ACTION_REQUIRED")
-    return recovery
+    return selected["releaseId"] if type(scope) is P2ProfiledReplacementScope else recovery
 
 
 def profiled_current_job_hashes(bundle):
@@ -542,7 +694,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
         base_env = dict(docker_env) if docker_env is not None else {
             key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG") if key in os.environ}
         uid, gid = (65532, 65532) if os.getuid() == 0 else (os.getuid(), os.getgid())
-        prepared = []
+        prepared, supplements = [], {}
         try:
             if replacement:
                 # The original source already applied FE SQL while retaining
@@ -583,6 +735,14 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     demand(raw_job == read_input(bundle, f"jobs/{name}.json"),
                            "PROFILED_CURRENT_API_JOB_BYTES_CHANGED")
                     write_exact_bytes(inputs, "job.json", raw_job)
+                    if replacement:
+                        supplement = active_scope.api_role_policy_supplement(name)
+                        if supplement is not None:
+                            pin, raw = supplement
+                            snapshot = f"{name}-role-policy.js"
+                            write_exact_bytes(attempt, snapshot, raw)
+                            (attempt / snapshot).chmod(0o444)
+                            supplements[name] = pin
                 (inputs / "schema.json").write_bytes(info["schema"])
                 for file in inputs.iterdir():
                     file.chmod(0o400)
@@ -594,7 +754,15 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                         os.chown(receipts, uid, gid)
                 prepared.append((name, info, inputs, receipts))
                 runner = active_scope.run if active_scope is not None else subprocess.run
-                runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
+                if replacement:
+                    try:
+                        cached = runner(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", info["image"]],
+                                        check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=base_env, timeout=30)
+                    except subprocess.SubprocessError:
+                        raise ValueError("CACHED_API_MIGRATION_IMAGE_REQUIRED") from None
+                    demand(digest(cached.stdout.strip()), "CACHED_API_MIGRATION_IMAGE_REQUIRED")
+                else:
+                    runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
                 preflight_name = (f"lash-p2-profiled-current-image-check-{uuid4().hex}"
                                   if profiled_scope is not None else f"lash-check-{name}-{release_id}")
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", preflight_name, True, info.get("frontend", False), expected_profile=expected)
@@ -602,6 +770,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
                 if replacement:
                     args[2:2] = ["--label", active_scope.runtime_cleanup_label]
+                    if name in supplements:
+                        args[2:2] = replacement_role_policy_mount(attempt, name, supplements[name])
                 try:
                     runner(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
                 finally:
@@ -635,6 +805,14 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 # read-only image session before any API database is changed.
                 # An empty reviewed list alone never establishes a no-op.
                 prepared.sort(key=lambda item: item[0] != "frontend")
+            if replacement and active_scope.recovery_action_id is not None:
+                outcome["phase"] = "replacement-recovery-api-lineage"
+                verify_replacement_api_suffix(active_scope, attempt, prepared, credentials, base_env, expected)
+                if supplements:
+                    outcome["phase"] = "replacement-recovery-api-roles"
+                    demand(set(supplements) == set(SERVICES), "REPLACEMENT_RECOVERY_ROLE_POLICY_ARTIFACT_REFUSED")
+                    outcome["apiRolePolicySupplement"] = verify_replacement_api_roles(
+                        active_scope, attempt, prepared, credentials, base_env, expected, supplements)
             outcome["phase"] = "suspend-runtime"
             if profiled_scope is not None:
                 outcome["stoppedRuntimeContainers"] = active_scope.suspend_api_runtime(environment, base_env)
@@ -692,6 +870,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
                 if replacement:
                     args[2:2] = ["--label", active_scope.runtime_cleanup_label]
+                    if name in supplements:
+                        args[2:2] = replacement_role_policy_mount(attempt, name, supplements[name])
                 log_fd = os.open(receipts / "container.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
                     runner = active_scope.run if active_scope is not None else subprocess.run

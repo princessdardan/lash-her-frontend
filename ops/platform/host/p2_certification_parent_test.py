@@ -79,6 +79,13 @@ LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
     'ops/platform/harness/owned-frontend-identity-admission.mjs',
     'ops/platform/harness/owned-p2-lifecycle-receivers.mjs',
 }
+SUPPLEMENTAL_REPLACEMENT_RECOVERY = frozenset({
+    'ops/platform/harness/owned-frontend-replacement-recovery-guardian.py',
+    'ops/platform/harness/owned-frontend-replacement-recovery.mjs',
+    'ops/platform/p2-frontend-replacement-recovery.mjs',
+})
+
+
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
@@ -101,7 +108,8 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
 
 def legacy_source_fixture(source, destination):
     """Install the v1 fixture with all production and required source files."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY,
+    excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY | SUPPLEMENTAL_REPLACEMENT_RECOVERY
+    names = tracked_source_fixture(source, destination, exclude=excluded,
                                    include_tests=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')

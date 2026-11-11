@@ -131,7 +131,7 @@ function withReplacementOperatorHost(arm, initial, plan, ssh, task) {
     host => task(host.verifyEnvironment, host.signal, host), { readHostEvidence });
 }
 
-async function continueReplacementFrontend(review, directory, provider, continuation, stagingCronSecret) {
+export async function continueReplacementFrontend(review, directory, provider, continuation, stagingCronSecret) {
   const { deployProfiledReplacementFrontend, observeProfiledReplacementFrontend,
     readProfiledReplacementWorkloadReceipt, readProfiledReplacementPromotionReceipt } =
     await import("./p2-profiled-current-frontend-adapters.mjs");

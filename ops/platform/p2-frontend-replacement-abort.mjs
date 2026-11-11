@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { readSync } from "node:fs";
 import { Client } from "pg";
 import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
-import { validateP2FrontendReplacementProbe, verifyP2FrontendReplacementObservation } from "./p2-frontend-replacement-probe.mjs";
+import { createP2FrontendReplacementProbe, validateP2FrontendReplacementProbe, verifyP2FrontendReplacementObservation,
+  verifyP2FrontendReplacementSession } from "./p2-frontend-replacement-probe.mjs";
 import { P2_PROFILED_CURRENT_LOCK_APPLICATION } from "./p2-profiled-current-probe.mjs";
 import { decodeQualificationTargetJson } from "./qualification-target-profile.mjs";
 
@@ -40,16 +41,20 @@ async function readBoundary(client, values, serverMajor) {
   return row;
 }
 
-async function withReadOnlyReplacementSession(probe, getUrl, applicationName, work) {
+async function withReadOnlyReplacementSession(probe, getUrl, applicationName, work, signal) {
   demand(typeof getUrl === "function");
+  demand(!signal?.aborted);
   const target = probe.job.target;
   const options = frontendConnectionOptions(await getUrl(), target);
   const client = new Client({ ...options, application_name: applicationName,
     options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on -c row_security=off",
     statement_timeout: 7000, query_timeout: 8000, lock_timeout: 2000 });
   let lost = false;
+  const abort = () => { lost = true; client.connection?.stream?.destroy(); };
   client.on("error", () => { lost = true; });
+  signal?.addEventListener("abort", abort, { once: true });
   try {
+    demand(!signal?.aborted);
     await client.connect();
     demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
     const values = [probe.backendPid, probe.backendStart, target.user, target.database, probe.migrationRoleOid,
@@ -61,12 +66,13 @@ async function withReadOnlyReplacementSession(probe, getUrl, applicationName, wo
     };
     return await work(client, values, boundary);
   } finally {
+    signal?.removeEventListener("abort", abort);
     await client.end();
     demand(!lost);
   }
 }
 
-async function readAfterOriginalClosure(client, boundary, read) {
+async function readAfterOriginalClosure(client, boundary, read, continueHeld) {
   const requireOriginalAbsent = async observerLockHeld => {
     const actual = await boundary();
     demand(!actual.pid_present && !actual.original_lock_present && actual.observer_lock_held === observerLockHeld);
@@ -77,16 +83,19 @@ async function readAfterOriginalClosure(client, boundary, read) {
   const { rows: [locked] } = await client.query("SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS acquired",
     [FRONTEND_MIGRATION_LOCK]);
   demand(locked?.acquired === true);
-  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-  let result;
-  try {
-    await requireOriginalAbsent(true);
-    result = await read(client);
-    await client.query("SELECT pg_catalog.pg_stat_clear_snapshot()");
-    await requireOriginalAbsent(true);
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  const recheck = async () => {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    try {
+      await requireOriginalAbsent(true);
+      const result = await read(client);
+      await client.query("SELECT pg_catalog.pg_stat_clear_snapshot()");
+      await requireOriginalAbsent(true);
+      return result;
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  };
+  const result = continueHeld ? await continueHeld(recheck) : await recheck();
   await requireOriginalAbsent(true);
   const { rows: [unlocked] } = await client.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS released",
     [FRONTEND_MIGRATION_LOCK]);
@@ -99,6 +108,25 @@ export function withP2FrontendReplacementClosedProbe(probe, getUrl, read) {
   validateP2FrontendReplacementProbe(probe);
   return withReadOnlyReplacementSession(probe, getUrl, "lash-her-frontend-replacement-closed",
     (client, _values, boundary) => readAfterOriginalClosure(client, boundary, read));
+}
+
+export function withP2FrontendReplacementRecoveryProbe(original, getUrl, read, work, signal) {
+  validateP2FrontendReplacementProbe(original);
+  const { backendPid, backendStart, marker, ...selection } = original;
+  return withReadOnlyReplacementSession(original, getUrl, P2_PROFILED_CURRENT_LOCK_APPLICATION,
+    (client, _values, boundary) => readAfterOriginalClosure(client, boundary, read, async readSnapshot => {
+      const fresh = await createP2FrontendReplacementProbe(selection, client, async () => {});
+      demand(fresh.backendPid !== backendPid && fresh.backendStart >= backendStart && fresh.marker !== marker);
+      const verify = async () => {
+        await verifyP2FrontendReplacementSession(client, fresh);
+        await readSnapshot();
+        await verifyP2FrontendReplacementSession(client, fresh);
+      };
+      await verify();
+      const result = await work({ probe: structuredClone(fresh), verify, databaseClient: client });
+      await verify();
+      return result;
+    }), signal);
 }
 
 async function readJournal(client, migrations, migrationRoleOid) {

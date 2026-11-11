@@ -621,12 +621,15 @@ def sticky_cleanup_signals():
 
 def watch_broker(child, safety_read, health_write, arm, *, profiled_certification=False, async_arm=False,
                  authorize_replacement_write=None, verify_replacement_written=None, start_replacement_runtime=None,
-                 verify_replacement_closed=None, publish_verified_arm=None):
+                 verify_replacement_closed=None, publish_verified_arm=None, resume_replacement_written=None):
     require(authorize_replacement_write is None or profiled_certification and async_arm,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     require(verify_replacement_written is None or authorize_replacement_write is not None,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
-    require(start_replacement_runtime is None or verify_replacement_written is not None,
+    require(resume_replacement_written is None or profiled_certification and async_arm and
+            authorize_replacement_write is None and verify_replacement_written is None and publish_verified_arm is None,
+            'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    require(start_replacement_runtime is None or verify_replacement_written is not None or resume_replacement_written is not None,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     require(verify_replacement_closed is None or start_replacement_runtime is not None,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
@@ -663,6 +666,9 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                     if verify_replacement_written is not None:
                         from p2_frontend_replacement_parent import WRITTEN_REQUEST_FIELDS
                         keys['replacement-written'] = {'operation', *WRITTEN_REQUEST_FIELDS}
+                    if resume_replacement_written is not None:
+                        keys.pop('armed')
+                        keys['replacement-recovery-armed'] = {'operation', 'probe'}
                     if start_replacement_runtime is not None:
                         keys['replacement-runtime'] = {'operation', 'postflightSha256'}
                     if verify_replacement_closed is not None:
@@ -690,6 +696,11 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                             'P2_SAFETY_REPLACEMENT_WRITTEN_REFUSED')
                     written_requested = True
                     pending_written = verify_replacement_written(value)
+                elif value.get('operation') == 'replacement-recovery-armed':
+                    require(resume_replacement_written is not None and not armed and not written_requested,
+                            'P2_SAFETY_REPLACEMENT_WRITTEN_REFUSED')
+                    armed = written_requested = True
+                    pending_written = resume_replacement_written(value['probe'])
                 elif value.get('operation') == 'replacement-runtime':
                     require(start_replacement_runtime is not None and written_requested and not runtime_requested,
                             'P2_SAFETY_REPLACEMENT_RUNTIME_REFUSED')
@@ -701,7 +712,7 @@ def watch_broker(child, safety_read, health_write, arm, *, profiled_certificatio
                     closed_requested = True
                     pending_closed = verify_replacement_closed(value)
                 elif value.get('operation') == 'committed':
-                    if authorize_replacement_write is not None:
+                    if authorize_replacement_write is not None or resume_replacement_written is not None:
                         require(verify_replacement_closed is not None and closed_requested and
                                 (pending_closed is None or pending_closed.done()), 'P2_SAFETY_REPLACEMENT_WRITE_TERMINAL_REFUSED')
                         if pending_closed is not None:
