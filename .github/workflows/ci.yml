@@ -131,7 +131,6 @@ jobs:
           path: |
             ${{ runner.temp }}/p2-owned-fixture-failure/
             ${{ runner.temp }}/p2-platform-postgres18.json
-            ${{ runner.temp }}/p2-replacement-recovery-postgres18.json
             ${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json
           if-no-files-found: ignore
           retention-days: 3

@@ -362,6 +362,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert engine['PROFILED_CURRENT_SOURCE_ONLY'].isdisjoint(manifest)
     assert engine['LEGACY_FIXTURE_EVIDENCE_ONLY'].isdisjoint(manifest)
     assert engine['INTERRUPTED_RESTORATION_UNRELATED_HARNESS'].isdisjoint(manifest)
+    assert engine['SUPPLEMENTAL_REPLACEMENT_RECOVERY'].isdisjoint(manifest)
     assert not (source / 'ops/platform/host/p2_certification_parent_test.py').exists()
     assert not (source / 'ops/platform/prepare-p2-identity-probe-fixtures.test.mjs').exists()
     assert not (source / 'ops/platform/harness/owned-frontend-identity-admission.mjs').exists()
