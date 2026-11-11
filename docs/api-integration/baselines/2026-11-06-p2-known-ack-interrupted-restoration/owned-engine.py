@@ -37,6 +37,11 @@ from p2_certification_parent_test import LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_
 from p2_source_closure import REQUIRED, TYPES
 
 
+INTERRUPTED_RESTORATION_UNRELATED_HARNESS = frozenset({
+    'ops/platform/harness/owned-frontend-identity-admission.mjs',
+})
+
+
 def write(directory,name,value):
     directory.mkdir(mode=0o700,parents=True,exist_ok=True)
     path=directory/name;path.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -68,10 +73,11 @@ def archive_operator_sources(root,commit,source):
             raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
         if path.is_file() and path.suffix in TYPES:
             paths[path.relative_to(source).as_posix()]=path
-    if not PROFILED_CURRENT_SOURCE_ONLY.issubset(paths):
+    if not (PROFILED_CURRENT_SOURCE_ONLY | INTERRUPTED_RESTORATION_UNRELATED_HARNESS).issubset(paths):
         raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
-    # Match the v1 fixture's source projection, excluding unrelated tests and evidence.
-    excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY
+    # Match the v1 fixture's source projection, excluding unrelated tests,
+    # evidence and the separately executed identity-admission harness.
+    excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY | INTERRUPTED_RESTORATION_UNRELATED_HARNESS
     for name in list(paths):
         if name in excluded or (name not in REQUIRED and name.endswith(('_test.py','.test.mjs','.test.ts','.test.mts'))):
             paths.pop(name).unlink()
