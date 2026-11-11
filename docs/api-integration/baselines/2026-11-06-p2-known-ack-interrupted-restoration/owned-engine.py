@@ -33,17 +33,13 @@ import p2_known_ack_interrupted_restoration as c
 import p2_release_broker as shared
 import p2_prior_gateway as prior
 import frontend_gateway_observation
-from p2_certification_parent_test import LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_CURRENT_SOURCE_ONLY
+from p2_certification_parent_test import (LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_CURRENT_SOURCE_ONLY,
+                                          SUPPLEMENTAL_REPLACEMENT_RECOVERY)
 from p2_source_closure import REQUIRED, TYPES
 
 
 INTERRUPTED_RESTORATION_UNRELATED_HARNESS = frozenset({
     'ops/platform/harness/owned-frontend-identity-admission.mjs',
-})
-SUPPLEMENTAL_REPLACEMENT_RECOVERY = frozenset({
-    'ops/platform/harness/owned-frontend-replacement-recovery-guardian.py',
-    'ops/platform/harness/owned-frontend-replacement-recovery.mjs',
-    'ops/platform/p2-frontend-replacement-recovery.mjs',
 })
 
 
