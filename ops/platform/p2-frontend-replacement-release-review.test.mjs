@@ -211,6 +211,7 @@ test("fixed replacement operator plans with exact confirmation before provider c
   assert.equal(plan.confirmation, `staging/${f.plan.releaseId}/replacement-write/${f.settings.arm.reviewedPlanSha256}/${f.settings.runtimeReviewSha256}`);
   assert.equal(plan.migrationCount, f.plan.replacement.approvedPendingTags.length);
   assert.equal(plan.providerCredentialsResolved, false);
+  assert.equal(Object.hasOwn(plan, "stagingCronSecretInitialization"), false);
   assert.equal(plan.migrationAuthorized, false);
   assert.equal(existsSync(f.settings.providerContext), false);
   await assert.rejects(runP2FrontendReplacementRelease(f.settings, "staging/unreviewed"),
@@ -220,6 +221,31 @@ test("fixed replacement operator plans with exact confirmation before provider c
   assert.equal(refused.status, 1);
   assert.equal(refused.stdout, "");
   assert.match(refused.stderr, /P2_FRONTEND_REPLACEMENT_RELEASE_REVIEW_REQUIRED/u);
+});
+
+test("reviewed staging cron initialization is explicit and concrete in the offline plan", t => {
+  const f = fixture(t);
+  f.runtimeReview.initializeStagingCronSecret = true;
+  f.rewriteRuntime();
+  assert.equal(prepareP2FrontendReplacementReleaseReview(f.settings).runtimeReview.initializeStagingCronSecret, true);
+  const path = join(f.directory, "replacement-operator-settings-cron.json");
+  writeFileSync(path, JSON.stringify(f.settings) + "\n", { mode: 0o600, flag: "wx" });
+  const program = fileURLToPath(new URL("./p2-frontend-replacement-release.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [program, "--plan", path], {
+    encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).stagingCronSecretInitialization, {
+    action: "initialize-staging-cron-secret", provider: "vercel", environment: "staging",
+    projectId: profileDefinition.frontend.projectId, workloadTarget: "production", key: "CRON_SECRET",
+    type: "sensitive", source: "FRONTEND_STAGING_CRON_SECRET", nativeSchedulesEnabled: false,
+    providerApiAcknowledgementRequired: true, deployedBearerVerification: "day-two-workload-certification",
+  });
+  for (const value of [false, "true", null]) {
+    f.runtimeReview.initializeStagingCronSecret = value;
+    f.rewriteRuntime();
+    assert.throws(() => prepareP2FrontendReplacementReleaseReview(f.settings), refuse);
+  }
 });
 
 test("raw approval cannot substitute a different host, profile, gateway, API job or coverage", async t => {
@@ -245,6 +271,7 @@ test("raw approval cannot substitute a different host, profile, gateway, API job
     ["duplicate surface", f => { f.writerReview.candidateCoverage[0] = f.writerReview.candidateCoverage[1]; f.rewriteWriter(); }],
     ["foreign producer", f => { f.writerReview.candidateCoverage[0].producerSha256 = "4".repeat(64); f.rewriteWriter(); }],
     ["unexpected closure claim", f => { f.writerReview.historicalProviderClosureClaimed = true; f.rewriteWriter(); }],
+    ["unknown runtime selector", f => { f.runtimeReview.initializeCronSecret = true; f.rewriteRuntime(); }],
   ];
   for (const [name, mutate] of cases) await t.test(name, t => {
     const f = fixture(t);

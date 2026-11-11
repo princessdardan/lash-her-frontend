@@ -26,6 +26,10 @@ FIELDS = frozenset((
     'candidateSha256', 'targetSha256', 'reviewedPlanSha256', 'hostMachineId', 'configuration',
     'configurationSha256', 'apiJobSha256', 'certification', 'producerSha256',
 ))
+OPTIONAL_FIELDS = frozenset(('priorGatewayReference', 'initializeStagingCronSecret'))
+RUNTIME_CREDENTIALS = frozenset(('FRONTEND_STAGING_MIGRATION_DATABASE_URL', 'COURSE_STAGING_DATABASE_URL',
+                                 'COMMUNITY_STAGING_DATABASE_URL'))
+CRON_CREDENTIAL = 'FRONTEND_STAGING_CRON_SECRET'
 TARGET_FIELDS = ('host', 'port', 'database', 'user', 'runtimeRole', 'serverMajor')
 
 
@@ -57,11 +61,21 @@ def reviewed_bytes(initial):
 def _prepare_runtime_review(initial, plan, source, probe):
     require(type(plan) is dict and type(probe) is dict)
     review = decode_qualification_target_json(reviewed_bytes(initial), 'carrier')
-    require(type(review) is dict and set(review) in (FIELDS, FIELDS | {'priorGatewayReference'}) and
+    selected_optional = set(review) - FIELDS if type(review) is dict else set()
+    require(type(review) is dict and selected_optional <= OPTIONAL_FIELDS and set(review) == FIELDS | selected_optional and
             type(review['version']) is int and review['version'] == 1 and
             initial['mode'] == PROFILED_REPLACEMENT_WRITE_MODE and
             type(probe.get('version')) is int and probe['version'] == 1 and probe['operation'] == 'verify-pre-bootstrap-lock' and
             review['environment'] == initial['environment'] == plan['environment'] == 'staging')
+    initialize_cron = review.get('initializeStagingCronSecret')
+    require(initialize_cron is None or initialize_cron is True)
+    credentials = initial.get('credentials')
+    expected_credentials = RUNTIME_CREDENTIALS | ({CRON_CREDENTIAL} if initialize_cron is True else set())
+    require(type(credentials) is dict and set(credentials) == expected_credentials and
+            all(type(value) is str and 0 < len(value) <= 16_384 and
+                all(ord(character) >= 32 for character in value) for value in credentials.values()) and
+            (initialize_cron is not True or
+             re.fullmatch(r'[!-~]{32,8192}', credentials[CRON_CREDENTIAL]) is not None))
     migrate.require_profile(PROFILE, initial, plan, probe, review)
     require(review['releaseId'] == plan['releaseId'] and
             review['sourceCommit'] == plan['sourceCommit'] == initial['sourceCommit'] and

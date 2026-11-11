@@ -305,7 +305,10 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
     def test_replacement_deploy_refuses_alias_drift_after_workload_check(self):
         self.exercise_profiled_deploy(replacement=True, alias_drift="workload")
 
-    def exercise_profiled_deploy(self, replacement=False, alias_drift=None):
+    def test_replacement_deploy_initializes_only_the_reviewed_staging_cron_secret(self):
+        self.exercise_profiled_deploy(replacement=True, initialize_cron=True)
+
+    def exercise_profiled_deploy(self, replacement=False, alias_drift=None, initialize_cron=False):
         root = self.private(); checks = []
         previous = "dpl_Previous123"
         controls = {name: name != "INTEGRATION_CHECKOUT_ENABLED" for name in subject.FEATURES}
@@ -346,9 +349,13 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                         producers=[{"producerSha256": writer["producerSha256"], "role": {"name": runtime_role, "oid": "17002"}}],
                         runtimeProducerSha256=writer["producerSha256"], certification=CERTIFICATION_PROFILE,
                         configurationSha256=configuration, predecessorDeploymentId=previous)
+            if initialize_cron:
+                plan["initializeStagingCronSecret"] = True
             job.update(contractPhase=candidate["contractPhase"], phase2ContractManifestSha256=candidate["phase2ContractManifestSha256"])
             context.update(inventorySha256=subject.json_sha(plan), replacementProvenance={
                 key: str(index + 1) * 64 for index, key in enumerate(sorted(subject.REPLACEMENT_PINS))})
+            if initialize_cron:
+                context["stagingCronSecret"] = "owned-staging-cron-secret-" + "x" * 32
         environment_rows, workload = [], []
         state = {"cronDisabled": False, "built": False, "promoted": False,
                  "alias": "dpl_OtherAlias" if alias_drift == "initial" else previous}
@@ -427,7 +434,8 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
             result = subject.deploy(context, lambda: checks.append("checked"), replacement=replacement)
             if replacement:
                 calls = list(Provider.calls)
-                read_context = {key: value for key, value in context.items() if key != "frontendRuntimeDatabaseUrl"}
+                read_context = {key: value for key, value in context.items()
+                                if key not in ("frontendRuntimeDatabaseUrl", "stagingCronSecret")}
                 self.assertEqual(subject.observe(read_context, lambda: checks.append("checked"), replacement=True), result)
                 self.assertTrue(all(call[0] == "GET" for call in Provider.calls[len(calls):]))
                 wrong_plan = {**plan, "predecessorDeploymentId": "dpl_OtherAlias"}
@@ -444,6 +452,20 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
                     if "/env?upsert=true" in path and body["key"] in ("DATABASE_URL", "FRONTEND_WRITER_ADMISSION_DATABASE_URL")],
                     [("FRONTEND_WRITER_ADMISSION_DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive"),
                      ("DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive")])
+                cron_calls = [body for _, path, body in Provider.calls
+                              if "/env?upsert=true" in path and body["key"] == "CRON_SECRET"]
+                self.assertEqual(len(cron_calls), 1 if initialize_cron else 0)
+                if initialize_cron:
+                    self.assertEqual(cron_calls[0], {"key": "CRON_SECRET", "value": context["stagingCronSecret"],
+                        "type": "sensitive", "target": ["production"], "gitBranch": None,
+                        "customEnvironmentIds": [], "comment": "Profiled replacement frontend owned-release"})
+                    cron_outcome = subject.migrate.read_json(root / "vercel", "p2-replacement-cron-secret-outcome.json")
+                    self.assertTrue(cron_outcome["providerMutationAttempted"])
+                    self.assertTrue(cron_outcome["providerApiAcknowledged"])
+                    self.assertTrue(cron_outcome["providerReadbackVerified"])
+                    self.assertFalse(cron_outcome["deployedBearerVerified"])
+                    self.assertNotIn(context["stagingCronSecret"], "".join(
+                        path.read_text() for path in root.rglob("*.json")))
         self.assertEqual(result["status"], subject.REPLACEMENT_STATUS if replacement else "P2_PROFILED_CURRENT_FRONTEND_VERIFIED")
         self.assertEqual(len(workload), 1)
         self.assertEqual([path for method, path, _ in Provider.calls if method == "POST" and
@@ -455,6 +477,42 @@ class ProfiledCurrentFrontendTest(unittest.TestCase):
         self.assertEqual(len(checks), len(Provider.calls))
         intents = sorted((root / "vercel").glob("provider-mutation-intent-*.json"))
         self.assertEqual(len(intents), len([call for call in Provider.calls if call[0] in ("POST", "PATCH", "DELETE")]))
+
+    def test_cron_initialization_retains_provider_acknowledgement_on_later_configuration_failure(self):
+        attempt = self.private()
+        secret = "owned-staging-cron-secret-" + "x" * 32
+        controls = {name: False for name in subject.FEATURES}
+        writer = {"producerSha256": "c" * 64}
+        context = {
+            "plan": {"initializeStagingCronSecret": True}, "stagingCronSecret": secret,
+            "bootstrapRuntimeTarget": {"owned": True},
+            "frontendRuntimeDatabaseUrl": "postgresql://runtime:private@db.example.com/frontend?sslmode=verify-full",
+            "candidate": {"releaseId": "owned-release", "sources": {"frontend": {"commit": SOURCE}}},
+            "configurationSha256": {"owned": "d" * 64},
+        }
+        class FailingClient:
+            def __init__(self): self.calls = []
+            def request(self, method, path, body=None):
+                self.calls.append((method, path, body))
+                if len(self.calls) == 1:
+                    return {"failed": [], "created": {key: body[key] for key in
+                        ("key", "type", "target", "gitBranch", "customEnvironmentIds")}}
+                raise ValueError("owned later failure")
+        client = FailingClient()
+        with self.assertRaisesRegex(ValueError, "owned later failure"):
+            subject.configure_runtime(client, context, attempt, PROJECT, controls, writer, replacement=True)
+        outcome = subject.migrate.read_json(attempt, "p2-replacement-cron-secret-outcome.json")
+        self.assertTrue(outcome["providerMutationAttempted"])
+        self.assertTrue(outcome["providerApiAcknowledged"])
+        self.assertFalse(outcome["providerReadbackVerified"])
+        self.assertFalse(outcome["deployedBearerVerified"])
+        self.assertNotIn(secret, "".join(path.read_text() for path in attempt.rglob("*.json")))
+        missing = dict(context); missing.pop("stagingCronSecret")
+        for refused in (missing, {**context, "plan": {}},
+                        {**context, "plan": {"initializeStagingCronSecret": False}},
+                        {**context, "stagingCronSecret": "short"}):
+            with self.assertRaises(ValueError):
+                subject.configure_runtime(RequestClient(), refused, self.private(), PROJECT, controls, writer, replacement=True)
 
 
 if __name__ == "__main__":

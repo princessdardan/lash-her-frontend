@@ -40,7 +40,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.calls, self.variables, self.verify_calls = [], {}, 0
         self.current, self.disabled, self.alias = "dpl_previous", True, None
         self.lost_promotion, self.lost_lock, self.fail_lock_after_build, self.ignore_pin = False, False, False, False
-        self.lost_build, self.failed_build = False, False
+        self.lost_build, self.failed_build, self.fail_env_after_cron = False, False, False
         self.bootstrap_probe_wrong = False
         self.lost_delete, self.historical_source_wrong, self.switch_current_after_delete = False, False, False
         self.previous = {"uid": "dpl_previous", "state": "READY", "target": "production", "created": 20,
@@ -163,6 +163,8 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         if owner.fail_lock_after_build and deployment_id == "dpl_candidate":
                             owner.lost_lock = True
                     elif path.endswith("/env") and self.command == "POST":
+                        if owner.fail_env_after_cron and body["key"] != "CRON_SECRET" and "CRON_SECRET" in owner.variables:
+                            raise ValueError("OWNED_POST_CRON_CONFIGURATION_FAILURE")
                         if not owner.ignore_pin:
                             owner.variables[body["key"]] = dict(body)
                         result = {"failed": [], "created": dict(body)}
@@ -325,6 +327,59 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.built_crons[observed["deploymentId"]].append({"host": "owned.vercel.app", "path": "/api/cron/highlevel-sync", "schedule": "* * * * *"})
         with self.assertRaisesRegex(ValueError, "P2_EXACT_DEPLOYMENT_LIFECYCLE_SCHEDULE_REQUIRED"):
             self.execute("observe-compatible")
+
+    def test_reviewed_staging_cron_secret_is_initialized_before_build_without_entering_receipts(self):
+        self.bootstrap_context()
+        pair = {"contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "9" * 64}
+        self.context["candidate"].update(pair); self.database.update(pair)
+        self.context["plan"].update(certification=adapter.p2_certification_profile.PROFILE,
+                                    initializeStagingCronSecret=True)
+        secret = "owned-staging-cron-secret-" + "x" * 32
+        self.context["stagingCronSecret"] = secret
+        migrate.write_json(self.parent, "database-receipt.json", self.database)
+        self.assertEqual(self.execute("deploy-compatible")["status"], "FRONTEND_DOMAINS_PROMOTED")
+        self.assertEqual(self.variables["CRON_SECRET"], {"key": "CRON_SECRET", "value": secret,
+            "type": "sensitive", "target": ["production"], "gitBranch": None, "customEnvironmentIds": [],
+            "comment": "Reviewed P2 staging certification adapter-owned"})
+        outcome = migrate.read_json(self.parent / "vercel", "certification-features-outcome.json")
+        self.assertEqual(outcome["stagingCronSecretInitialization"], {
+            "environment": "staging", "projectId": vercel.PROJECTS["staging"], "workloadTarget": "production",
+            "key": "CRON_SECRET", "type": "sensitive", "providerMutationAttempted": True, "providerApiAcknowledged": True,
+            "providerReadbackVerified": True, "deployedBearerVerified": False,
+        })
+        self.assertNotIn(secret, "".join(path.read_text() for path in self.parent.rglob("*.json")))
+        self.assertFalse(outcome["nativeSchedulesEnabled"])
+
+    def test_staging_cron_secret_partial_acknowledgement_is_retained_and_selector_is_closed(self):
+        self.bootstrap_context()
+        pair = {"contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "9" * 64}
+        self.context["candidate"].update(pair); self.database.update(pair)
+        self.context["plan"].update(certification=adapter.p2_certification_profile.PROFILE,
+                                    initializeStagingCronSecret=True)
+        secret = "owned-staging-cron-secret-" + "x" * 32
+        self.context["stagingCronSecret"] = secret
+        self.fail_env_after_cron = True
+        (self.parent / "vercel").mkdir(mode=0o700)
+        with self.assertRaises(ValueError):
+            adapter.configure_compatible_features(self.context, self.client, self.parent / "vercel")
+        outcome = migrate.read_json(self.parent / "vercel", "certification-features-outcome.json")
+        self.assertTrue(outcome["stagingCronSecretInitialization"]["providerMutationAttempted"])
+        self.assertTrue(outcome["stagingCronSecretInitialization"]["providerApiAcknowledged"])
+        self.assertFalse(outcome["stagingCronSecretInitialization"]["providerReadbackVerified"])
+        self.assertFalse(outcome["stagingCronSecretInitialization"]["deployedBearerVerified"])
+        self.assertNotIn(secret, "".join(path.read_text() for path in self.parent.rglob("*.json")))
+        self.assertFalse(any(row["path"] == "/v13/deployments" for row in self.calls))
+
+        self.fail_env_after_cron = False
+        for plan, value in (({**self.context["plan"], "initializeStagingCronSecret": False}, secret),
+                            ({key: value for key, value in self.context["plan"].items()
+                              if key != "initializeStagingCronSecret"}, secret),
+                            (self.context["plan"], "short")):
+            rejected = {**self.context, "plan": plan, "stagingCronSecret": value}
+            writes = len(self.mutations())
+            with self.assertRaisesRegex(ValueError, "P2_STAGING_CRON_SECRET_REVIEW_REQUIRED"):
+                adapter.configure_compatible_features(rejected, self.client, self.parent / "vercel")
+            self.assertEqual(len(self.mutations()), writes)
 
     def test_existing_admission_new_action_configures_explicit_reviewed_runtime_producer_before_final_build(self):
         self.bootstrap_context()

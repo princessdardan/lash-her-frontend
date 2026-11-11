@@ -255,8 +255,11 @@ assert p['operation'] in ('replacement-deploy','replacement-observe')
 assert p['job']['target']['allowEmptyBootstrap'] is True and p['job']['target']['approvedPendingTags']
 assert p['plan']['predecessorDeploymentId']=='dpl_reviewedPredecessor'
 assert ('frontendRuntimeDatabaseUrl' in p)==(p['operation']=='replacement-deploy')
+selected=p['plan'].get('initializeStagingCronSecret') is True
+assert ('stagingCronSecret' in p)==(p['operation']=='replacement-deploy' and selected)
 if p['operation']=='replacement-deploy':
  assert p['frontendRuntimeDatabaseUrl'].startswith('postgresql://lash_her_frontend_staging_runtime_p2:')
+ if selected: assert p['stagingCronSecret']=='owned-staging-cron-secret-'+('x'*32)
 folder=pathlib.Path(p['directory'])/'vercel'
 workload=hashlib.sha256((folder/'frontend-workload-outcome.json').read_bytes()).hexdigest()
 promotion=hashlib.sha256((folder/'frontend-promotion-outcome.json').read_bytes()).hexdigest()
@@ -269,6 +272,10 @@ print(json.dumps({'type':'result','value':r}),flush=True)
 test("replacement worker preserves apply-forward identity, held locks, and raw workload and promotion receipts", async t => {
   const f = replacementFixture(t);
   try {
+    f.context.plan.initializeStagingCronSecret = true;
+    f.context.inventorySha256 = sha(JSON.stringify(f.context.plan));
+    const stagingCronSecret = "owned-staging-cron-secret-" + "x".repeat(32);
+    Object.defineProperty(f.context, "stagingCronSecret", { value: stagingCronSecret, configurable: true });
     const directory = join(f.context.directory, "vercel");
     mkdirSync(directory, { mode: 0o700 });
     const workload = Buffer.from('{"fixture":"workload"}\n'), promotion = Buffer.from('{"fixture":"promotion"}\n');
@@ -281,8 +288,10 @@ test("replacement worker preserves apply-forward identity, held locks, and raw w
       assert.equal(deployed.frontendSqlReplayed, false);
       assert.equal(deployed.evidenceSha256, sha(deployed.evidence));
       assert.ok(!deployed.evidence.includes(f.minted));
+      assert.ok(!deployed.evidence.includes(stagingCronSecret));
       for (const [name, value] of Object.entries(f.context.replacementProvenance)) assert.equal(deployed[name], value);
       delete f.context.frontendRuntimeDatabaseUrl;
+      delete f.context.stagingCronSecret;
       const observed = await observeProfiledReplacementFrontend(f.context);
       assert.deepEqual(observed, deployed);
       assert.deepEqual(readProfiledReplacementWorkloadReceipt(f.context, observed), workload);
@@ -301,6 +310,17 @@ test("replacement worker refuses current-only inputs, wrong provenance, physical
     await withWorker(context.directory, `#!/usr/bin/python3\nopen(${JSON.stringify(marker)}, 'w').close()\nraise SystemExit(1)\n`, async () => {
       await assert.rejects(deployProfiledCurrentFrontend(context), /REVIEW_REQUIRED/u);
       await assert.rejects(deployProfiledReplacementFrontend({ ...context, replacementProvenance: {} }), /REVIEW_REQUIRED/u);
+      Object.defineProperty(context, "stagingCronSecret", { value: "owned-staging-cron-secret-" + "x".repeat(32), configurable: true });
+      await assert.rejects(deployProfiledReplacementFrontend(context), /REVIEW_REQUIRED/u);
+      delete context.stagingCronSecret;
+      context.plan.initializeStagingCronSecret = true;
+      context.inventorySha256 = sha(JSON.stringify(context.plan));
+      await assert.rejects(deployProfiledReplacementFrontend(context), /REVIEW_REQUIRED/u);
+      context.plan.initializeStagingCronSecret = false;
+      context.inventorySha256 = sha(JSON.stringify(context.plan));
+      await assert.rejects(deployProfiledReplacementFrontend(context), /REVIEW_REQUIRED/u);
+      delete context.plan.initializeStagingCronSecret;
+      context.inventorySha256 = sha(JSON.stringify(context.plan));
       const { predecessorDeploymentId, ...unboundPlan } = context.plan;
       assert.equal(predecessorDeploymentId, "dpl_reviewedPredecessor");
       await assert.rejects(deployProfiledReplacementFrontend({ ...context, plan: unboundPlan,

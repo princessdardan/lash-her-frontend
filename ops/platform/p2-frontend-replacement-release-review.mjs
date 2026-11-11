@@ -21,6 +21,7 @@ const settingsFields = ["version", "qualificationTargetProfile", "environment", 
   "runtimeReviewFile", "runtimeReviewSha256", "writerReviewFile", "providerContext"];
 const runtimeFields = ["version", "qualificationTargetProfile", "environment", "releaseId", "sourceCommit", "candidateSha256",
   "targetSha256", "reviewedPlanSha256", "hostMachineId", "configuration", "configurationSha256", "apiJobSha256", "certification", "producerSha256"];
+const runtimeOptionalFields = ["priorGatewayReference", "initializeStagingCronSecret"];
 const writerFields = ["version", "qualificationTargetProfile", "sourceCommit", "targetSha256", "sourceInventorySha256",
   "adaptersSha256", "gatewayBindingSha256", "candidateCoverage"];
 const coverageFields = ["surfaceSha256", "disposition", "evidenceSha256"];
@@ -66,12 +67,13 @@ function privateBytes(path, maximum) {
 }
 
 function requireRuntimeReview(runtimeReview, settings, plan) {
-  const priorSelected = Object.hasOwn(runtimeReview ?? {}, "priorGatewayReference");
-  demand(exact(runtimeReview, [...runtimeFields, ...(priorSelected ? ["priorGatewayReference"] : [])]) &&
+  const selectedOptionalFields = runtimeOptionalFields.filter(field => Object.hasOwn(runtimeReview ?? {}, field));
+  demand(exact(runtimeReview, [...runtimeFields, ...selectedOptionalFields]) &&
     runtimeReview.version === 1 && runtimeReview.environment === "staging" && runtimeReview.releaseId === plan.releaseId &&
     runtimeReview.sourceCommit === plan.sourceCommit && runtimeReview.targetSha256 === plan.targetSha256 &&
     runtimeReview.candidateSha256 === plan.candidateSha256 && runtimeReview.reviewedPlanSha256 === settings.arm.reviewedPlanSha256 &&
     runtimeReview.hostMachineId === settings.arm.host.machineId && digest(runtimeReview.producerSha256));
+  demand(!Object.hasOwn(runtimeReview, "initializeStagingCronSecret") || runtimeReview.initializeStagingCronSecret === true);
   requireQualificationTargetProfile(profile, runtimeReview, plan);
   prepareP2CertificationProfile(runtimeReview.certification);
   validateP2HostSettings({ ...settings.arm.host, configuration: runtimeReview.configuration });

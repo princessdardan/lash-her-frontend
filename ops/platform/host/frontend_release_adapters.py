@@ -772,7 +772,15 @@ def configure_compatible_features(context, client, attempt):
     selected = identity(context)
     expected_writer = compatible_writer_admission_binding(context)
     runtime_url = require_runtime_database_binding(context)
-    variables = [(key, "true" if value else "false", "plain") for key, value in controls.items()] + [
+    initialize_cron = context["plan"].get("initializeStagingCronSecret")
+    demand(initialize_cron is None or initialize_cron is True, "P2_STAGING_CRON_SECRET_REVIEW_REQUIRED")
+    cron_secret = context.get("stagingCronSecret")
+    demand((initialize_cron is True and type(cron_secret) is str and
+            re.fullmatch(r'[!-~]{32,8192}', cron_secret) is not None) or
+           (initialize_cron is None and "stagingCronSecret" not in context),
+           "P2_STAGING_CRON_SECRET_REVIEW_REQUIRED")
+    variables = ([('CRON_SECRET', cron_secret, 'sensitive')] if initialize_cron is True else []) + [
+        (key, "true" if value else "false", "plain") for key, value in controls.items()] + [
         ("LASH_P2_CERTIFICATION_SCHEDULES", "account-lifecycle" if context["plan"].get("certification") else "off", "plain"),
         ("FRONTEND_WRITER_ADMISSION_MODE", "enforce", "plain"),
         ("FRONTEND_WRITER_ADMISSION_TARGET_JSON", json.dumps(context["writerTarget"], separators=(",", ":")), "plain"),
@@ -780,10 +788,18 @@ def configure_compatible_features(context, client, attempt):
         ("FRONTEND_WRITER_ADMISSION_DATABASE_URL", runtime_url, "sensitive"), ("DATABASE_URL", runtime_url, "sensitive")]
     outcome = {**selected, "status": "P2_FEATURE_CONFIGURATION_REQUIRES_REVIEW", "featureControls": controls,
         "nativeSchedulesEnabled": False, "expectedWriterAdmissionBinding": expected_writer, "trafficAuthorized": False}
+    if initialize_cron is True:
+        outcome["stagingCronSecretInitialization"] = {
+            "environment": "staging", "projectId": selected["projectId"], "workloadTarget": "production",
+            "key": "CRON_SECRET", "type": "sensitive", "providerMutationAttempted": False,
+            "providerApiAcknowledged": False, "providerReadbackVerified": False, "deployedBearerVerified": False,
+        }
     migrate.write_json(attempt, "certification-features-started.json", outcome)
     try:
         demand(vercel.promotion_state(client, selected["projectId"])["cronsEnabled"] is False, "P2_NATIVE_SCHEDULES_MUST_REMAIN_OFF")
         for key, value, kind in variables:
+            if key == "CRON_SECRET":
+                outcome["stagingCronSecretInitialization"]["providerMutationAttempted"] = True
             result = client.request("POST", f'/v10/projects/{selected["projectId"]}/env?upsert=true', {
                 "key": key, "value": value, "type": kind, "target": ["production"], "gitBranch": None,
                 "customEnvironmentIds": [], "comment": "Reviewed P2 staging certification " + selected["actionId"]})
@@ -791,6 +807,8 @@ def configure_compatible_features(context, client, attempt):
             demand(result.get("failed") == [] and isinstance(row, dict) and row.get("key") == key and row.get("type") == kind
                 and row.get("target") == ["production"] and not row.get("gitBranch") and not row.get("customEnvironmentIds"),
                 "P2_FEATURE_CONFIGURATION_UNVERIFIED")
+            if key == "CRON_SECRET":
+                outcome["stagingCronSecretInitialization"]["providerApiAcknowledged"] = True
         rows = client.request("GET", f'/v10/projects/{selected["projectId"]}/env?decrypt=false').get("envs")
         demand(isinstance(rows, list), "P2_FEATURE_CONFIGURATION_UNVERIFIED")
         for key, value, kind in variables:
@@ -798,6 +816,8 @@ def configure_compatible_features(context, client, attempt):
                 not row.get("gitBranch") and not row.get("customEnvironmentIds")]
             demand(len(found) == 1 and found[0].get("type") == kind and (kind == "sensitive" or found[0].get("value") == value),
                 "P2_FEATURE_CONFIGURATION_UNVERIFIED")
+            if key == "CRON_SECRET":
+                outcome["stagingCronSecretInitialization"]["providerReadbackVerified"] = True
         demand(vercel.promotion_state(client, selected["projectId"])["cronsEnabled"] is False, "P2_NATIVE_SCHEDULES_MUST_REMAIN_OFF")
         outcome["status"] = "P2_FEATURE_CONFIGURATION_VERIFIED"
     finally:

@@ -71,7 +71,11 @@ class ReplacementRuntimeReviewTests(TestCase):
         self.initial = {'mode': review.PROFILED_REPLACEMENT_WRITE_MODE, 'qualificationTargetProfile': profile,
                         'environment': 'staging', 'sourceCommit': self.plan['sourceCommit'], 'candidateSha256': candidate_sha,
                         'reviewedPlanSha256': migrate.file_hash(raw(self.plan)), 'hostMachineId': fixture.target['hostMachineId'],
-                        'bundle': str(self.bundle)}
+                        'bundle': str(self.bundle), 'credentials': {
+                            'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-frontend-database',
+                            'COURSE_STAGING_DATABASE_URL': 'owned-course-database',
+                            'COMMUNITY_STAGING_DATABASE_URL': 'owned-community-database',
+                        }}
         self.review = {'version': 1, **{key: self.plan[key] for key in ('qualificationTargetProfile', 'environment', 'releaseId',
                                                                      'sourceCommit', 'candidateSha256', 'targetSha256')},
                        **{key: self.initial[key] for key in ('reviewedPlanSha256', 'hostMachineId')},
@@ -100,6 +104,23 @@ class ReplacementRuntimeReviewTests(TestCase):
         self.assertEqual(selected, self.review)
         self.assertNotIn('private-fixture', json.dumps(selected))
         self.assertEqual({path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}, before)
+
+    def test_optional_staging_cron_secret_requires_exact_review_and_private_carrier(self):
+        secret = 'owned-staging-cron-secret-' + 'x' * 32
+        supplied = {**self.review, 'initializeStagingCronSecret': True}
+        selected = self.envelope(raw(supplied), credentials={**self.initial['credentials'],
+            review.CRON_CREDENTIAL: secret})
+        self.assertEqual(self.prepare(selected), supplied)
+        for initial in (
+            self.envelope(raw(supplied)),
+            self.envelope(raw(supplied), credentials={**self.initial['credentials'], review.CRON_CREDENTIAL: 'short'}),
+            self.envelope(raw({**self.review, 'initializeStagingCronSecret': False}),
+                          credentials={**self.initial['credentials'], review.CRON_CREDENTIAL: secret}),
+            self.envelope(credentials={**self.initial['credentials'], review.CRON_CREDENTIAL: secret}),
+            self.envelope(raw(supplied), credentials={**self.initial['credentials'], review.CRON_CREDENTIAL: secret,
+                                                      'UNEXPECTED_PRIVATE': 'owned'}),
+        ):
+            self.assert_refused(initial)
 
     def test_refuses_bad_carrier_scope_and_extra_fields(self):
         encoded = self.envelope()

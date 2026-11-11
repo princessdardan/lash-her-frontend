@@ -286,6 +286,12 @@ class ReplacementArmTests(unittest.TestCase):
                     'runtimeReviewSha256': runtime_sha, 'vercelToken': 'owned-provider-token',
                     'confirmation': self.write_initial['confirmation'] + '/' + runtime_sha,
                     'credentials': {**self.write_initial['credentials'], **dict.fromkeys(parent.API_CREDENTIALS, 'owned-migration-credential')}}
+        runtime_cron_raw = parent.encoded({'initializeStagingCronSecret': True}) + b'\n'
+        runtime_cron_sha = migrate.file_hash(runtime_cron_raw)
+        reviewed_cron = {**reviewed, 'runtimeReviewBytes': base64.b64encode(runtime_cron_raw).decode(),
+            'runtimeReviewSha256': runtime_cron_sha,
+            'confirmation': self.write_initial['confirmation'] + '/' + runtime_cron_sha,
+            'credentials': {**reviewed['credentials'], parent.CRON_CREDENTIAL: 'owned-staging-cron-secret-' + 'x' * 32}}
         def dispatch(initial):
             data = io.TextIOWrapper(io.BytesIO(parent.encoded(initial) + b'\n'))
             with (patch.object(parent.sys, 'argv', ['parent.py', '--supervise-replacement-write']),
@@ -301,6 +307,18 @@ class ReplacementArmTests(unittest.TestCase):
             dispatch(reviewed)
             supervise.assert_called_once()
             self.assertEqual(supervise.call_args.args[0], reviewed)
+            supervise.reset_mock()
+            dispatch(reviewed_cron)
+            supervise.assert_called_once()
+            self.assertEqual(supervise.call_args.args[0], reviewed_cron)
+            for credentials in ({**reviewed['credentials'], parent.CRON_CREDENTIAL: 'short'},
+                                {**reviewed_cron['credentials'], 'UNEXPECTED_PRIVATE': 'owned'}):
+                supervise.reset_mock()
+                with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                    dispatch({**reviewed_cron, 'credentials': credentials})
+                supervise.assert_not_called()
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                dispatch({**reviewed, 'credentials': reviewed_cron['credentials']})
 
     def test_bundle_raw_bytes_match_probe_and_review(self):
         source = Path('/opt/lash-her/operators') / self.commit
