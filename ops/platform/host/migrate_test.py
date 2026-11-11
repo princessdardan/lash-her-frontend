@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import migrate
 
@@ -109,6 +109,47 @@ class MigrationDriverTests(unittest.TestCase):
         self.save(); self.jobs["course"]["target"]["qualificationTargetProfile"]["sha256"] = "a" * 64; self.save()
         with self.assertRaisesRegex(ValueError, "DIGEST_MISMATCH"):
             migrate.make_plan(self.bundle, expected_profile=ref)
+
+    def test_replacement_recovery_checks_both_exact_api_suffixes_without_apply(self):
+        expected = self.profiled()
+        for job in self.jobs.values():
+            job["target"]["allowEmptyBootstrap"] = False
+        scope = Mock(runtime_cleanup_label="owned-recovery-label")
+        prepared = []
+        for name, job in self.jobs.items():
+            inputs = self.root / (name + "-input")
+            inputs.mkdir(mode=0o700)
+            prepared.append((name, {"job": job, "service": migrate.SERVICES[name][0], "image": name + "-pinned"}, inputs, None))
+        credentials = {name: "owned-private-" + name for name in self.jobs}
+        def check(args, *, env, **kwargs):
+            self.assertIn("--target-file-profiled-current", args)
+            self.assertIn("--read-only", args)
+            self.assertEqual(args[args.index("--pull") + 1], "never")
+            self.assertFalse(any("owned-private" in arg for arg in args))
+            name = args[args.index("--entrypoint") + 2].removesuffix("-pinned")
+            self.assertEqual(env["STAGING_DATABASE_URL"], credentials[name])
+            target = json.loads((self.root / (name + "-input") / "target.json").read_bytes())
+            self.assertEqual(target, self.jobs[name]["target"])
+            proof = {"schemaVersion": 2, "qualificationTargetProfile": expected, "status": "READ_ONLY_PREFLIGHT_PASS",
+                     "service": migrate.SERVICES[name][0], "environment": "staging", "appliedCount": 7,
+                     "pendingTags": target["approvedPendingTags"], "artifactSha256": target["artifactSha256"],
+                     "databaseIdentityMatched": True, "tlsVerified": True, "migrationAuthorized": False}
+            return subprocess.CompletedProcess(args, 0, json.dumps(proof).encode() + b"\n", b"")
+        scope.run.side_effect = check
+        migrate.verify_replacement_api_suffix(scope, self.results, prepared, credentials, {}, expected)
+        self.assertEqual(scope.run.call_count, 2)
+        self.assertEqual(scope.cleanup_runtime_helper.call_count, 2)
+        for name in self.jobs:
+            proof = json.loads((self.results / (name + "-recovery-lineage.json")).read_bytes())
+            self.assertEqual(proof["pendingTags"], self.jobs[name]["target"]["approvedPendingTags"])
+        other_inputs = self.root / "drift-input"
+        other_inputs.mkdir(mode=0o700)
+        name, info, _, receipts = prepared[0]
+        scope.run.side_effect = None
+        scope.run.return_value = subprocess.CompletedProcess([], 1, b"", b"private-error")
+        with self.assertRaisesRegex(ValueError, "REPLACEMENT_RECOVERY_API_SUFFIX_REFUSED"):
+            migrate.verify_replacement_api_suffix(scope, self.results, [(name, info, other_inputs, receipts)], credentials, {}, expected)
+        self.assertEqual(scope.cleanup_runtime_helper.call_count, 3)
 
     def test_actual_source_cli_receipt_shapes_and_fixed_image_commands(self):
         ref = self.profiled()

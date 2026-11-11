@@ -320,6 +320,119 @@ class ReplacementArmTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, parent.REFUSED):
                 dispatch({**reviewed, 'credentials': reviewed_cron['credentials']})
 
+    def test_recovery_binds_original_frontier_and_keeps_a_separate_fresh_backend(self):
+        from p2_profiled_current_scope import COMMON, TARGET
+        from p2_replacement_runtime_containment import RECEIPT, _binding
+
+        self.write_directory.mkdir(mode=0o700)
+        attempt = self.results / ('runtime-profiled-frontend-replacement-' + self.release_id)
+        attempt.mkdir(mode=0o700)
+        identity = {'contractPhase': 'p2', 'phase2ContractManifestSha256': self.job['phase2ContractManifestSha256']}
+        candidate = {**self.candidate, **identity}
+        job = {**self.job, **identity, 'environment': 'staging'}
+        probe_base = {**self.probe_base, 'job': job, 'candidate': candidate}
+        probe = {**self.probe, **probe_base}
+        review = {'apiJobSha256': dict.fromkeys(migrate.SERVICES, '2' * 64),
+                  'configurationSha256': dict.fromkeys(parent.staging_state.CONFIGURATION_FILES, '3' * 64),
+                  'producerSha256': '4' * 64}
+        runtime_raw = parent.encoded(review) + b'\n'
+        runtime_sha = migrate.file_hash(runtime_raw)
+        initial = {**self.write_initial, 'runtimeReviewBytes': base64.b64encode(runtime_raw).decode(),
+                   'runtimeReviewSha256': runtime_sha, 'vercelToken': 'fixture',
+                   'credentials': {**self.write_initial['credentials'], **dict.fromkeys(parent.API_CREDENTIALS, 'fixture')}}
+        initial['confirmation'] += '/' + runtime_sha
+        for name, raw in (('reviewed-plan.json', self.plan_raw), (parent.RUNTIME_REVIEW, runtime_raw)):
+            migrate.write_exact_bytes(self.write_directory, name, raw)
+        with (patch.object(supervisor, 'verify_guard_boundary'),
+              patch.object(parent, 'observe', return_value=self.raw_observation), patch.object(parent, 'verify_bundle')):
+            parent.verify_and_retain(initial, self.plan, probe_base, self.image, self.write_directory,
+                                     self.root, probe, threading.Event())
+            arm_sha = migrate.file_hash((self.write_directory / parent.ARM).read_bytes())
+            parent.verify_and_retain_write_custody(initial, self.plan, probe_base, self.image, self.write_directory,
+                self.root, probe, {'armReceiptSha256': arm_sha, 'emptyCatalogReceipt': self.empty_boundary}, threading.Event())
+        journal = json.loads(self.raw_abort)['appliedPrefix'][0]
+        base = {'version': 2, 'qualificationTargetProfile': parent.PROFILE, 'service': 'frontend',
+                **{key: job[key] for key in COMMON}, 'operator': 'Dardan', 'migrationMode': 'apply-forward',
+                'target': {key: job['target'][key] for key in TARGET}, 'recoveryRef': job['recoveryRef'], 'trafficAuthorized': False}
+        database = {**base, 'status': 'DATABASE_VERIFIED', 'before': [], 'after': [
+            {'hash': journal['hash'], 'created_at': str(journal['folderMillis'])}],
+            'applied': [{'tag': journal['tag'], 'hash': journal['hash']}], 'schemaVerified': True,
+            'runtimeRoleVerified': True, 'readOnlyVerified': False}
+        started = {**base, 'status': 'FRONTEND_CONTINUATION_STARTED', 'databaseVerified': True}
+        database_raw, started_raw = (parent.encoded(value) + b'\n' for value in (database, started))
+        written = {**json.loads(self.raw_observation), 'status': 'P2_FRONTEND_REPLACEMENT_WRITTEN_VERIFIED',
+                   'operation': 'verify-replacement-written', 'physicalObservationSha256': migrate.file_hash(self.raw_observation),
+                   'databaseReceiptSha256': migrate.file_hash(database_raw), 'continuationStartedSha256': migrate.file_hash(started_raw),
+                   'owner': {'name': 'lash_her_frontend_staging_admission_owner_p2', 'oid': '44'},
+                   'runtime': {'name': self.job['target']['runtimeRole'], 'oid': '45'}, 'producerSha256': review['producerSha256'],
+                   'appliedMigrationCount': 1, 'epoch': '1', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0,
+                   'schemaVerified': True, 'runtimeRoleVerified': True, 'administrativeLogins': [], 'effectiveLoginBoundaryVerified': True}
+        written_raw = parent.encoded(written) + b'\n'
+        for name, state in ((parent.WRITTEN_OBSERVER_STARTED, 'WRITTEN_STARTED'), (parent.WRITTEN_OBSERVER_RETURNED, 'WRITTEN_RETURNED')):
+            migrate.write_json(self.write_directory, name, parent.write_observer_receipt(initial, probe, self.raw_observation, state))
+        for name, raw in (('frontend-original-database-receipt.json', database_raw), ('frontend-continuation-started.json', started_raw),
+                          (parent.WRITTEN_OBSERVATION, written_raw), (parent.ABORT_OBSERVATION, self.raw_abort)):
+            migrate.write_exact_bytes(self.write_directory, name, raw)
+        migrate.write_json(self.write_directory, parent.RUNTIME_INTENT, parent.runtime_intent_record(initial, self.plan, review, written_raw))
+        status = 'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN'
+        migrate.write_json(self.write_directory, parent.WRITE_CONTAINMENT, {**parent.receipt_base(initial, self.plan, status),
+            'automaticReplayAuthorized': False, 'backendClosureVerified': True, 'abortObservationSha256': migrate.file_hash(self.raw_abort),
+            'physicalObservationSha256': migrate.file_hash(self.raw_observation), 'appliedPrefixCount': 1})
+        migrate.write_json(self.write_directory, RECEIPT, {**_binding(initial, self.plan),
+            'status': 'P2_FRONTEND_REPLACEMENT_RUNTIME_CONTAINMENT_UNCERTAIN', 'automaticReplayAuthorized': False,
+            'frontendSqlReplayed': False, 'releaseAccepted': False})
+        migrate.write_json(attempt, 'runtime-outcome.json', {**parent.receipt_base(initial, self.plan, 'FAILED_REQUIRES_REVIEW'),
+            **identity, 'version': 2, 'configurationSha256': review['configurationSha256'], 'phase': 'configuration-preflight',
+            'frontendSqlApplied': True, 'frontendPromotionAuthorized': False, 'releaseAccepted': False, 'nativeSchedulesEnabled': False})
+        evidence = {'physicalObservation': self.raw_observation, 'databaseReceipt': database_raw, 'continuationStarted': started_raw,
+                    'writtenObservation': written_raw, 'abortObservation': self.raw_abort,
+                    'runtimeOutcome': (attempt / 'runtime-outcome.json').read_bytes(),
+                    'writeContainment': (self.write_directory / parent.WRITE_CONTAINMENT).read_bytes(),
+                    'runtimeContainment': (self.write_directory / RECEIPT).read_bytes()}
+        recovery_raw = parent.encoded({'actionId': 'owned-retry', 'originalDirectory': str(self.write_directory),
+            'originalEvidenceSha256': {key: migrate.file_hash(raw) for key, raw in evidence.items()}}) + b'\n'
+        recovery_sha = migrate.file_hash(recovery_raw)
+        initial.update(operatorSourceCommit='b' * 40, recoveryReviewBytes=base64.b64encode(recovery_raw).decode(),
+                       recoveryReviewSha256=recovery_sha, results=str(self.results / 'owned-retry'),
+                       confirmation=initial['confirmation'] + '/recover/' + recovery_sha)
+        with patch.object(parent, 'exact_host_directory', side_effect=Path):
+            self.assertEqual(parent.reviewed_plan(initial, mode=parent.WRITE_MODE), (self.plan_raw, self.plan))
+            retained = parent.prepare_recovery_evidence(initial, self.plan, probe_base, review, self.root)
+            self.assertEqual((retained['physical'], retained['written']), (self.raw_observation, written_raw))
+            fresh = {**probe, 'backendPid': 314, 'marker': '8' * 64, 'backendStart': '2026-11-09T21:52:00.000000Z'}
+            parent.recovery_probe_identity(fresh, retained['probe'], probe_base)
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.recovery_probe_identity(probe, retained['probe'], probe_base)
+            (self.results / ('migration-profiled-frontend-replacement-' + self.release_id)).mkdir()
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.prepare_recovery_evidence(initial, self.plan, probe_base, review, self.root)
+
+    def test_recovery_validation_runs_the_locked_frontier_without_creating_attempt(self):
+        from types import SimpleNamespace
+
+        lock = self.root / 'release.lock'
+        lock.touch(mode=0o600)
+        results = self.root / 'owned-recovery'
+        directory = results / self.write_directory.name
+        initial = {**self.write_initial, 'results': str(results), 'runtimeReviewSha256': '1' * 64,
+                   'recoveryReviewSha256': '2' * 64}
+        recovery = {'actionId': results.name}
+        output = io.StringIO()
+        with (patch.object(parent, 'LOCK', lock), patch.object(parent.sys, 'platform', 'linux'),
+              patch.object(parent.os, 'geteuid', return_value=0),
+              patch.object(parent.os, 'fstat', return_value=SimpleNamespace(st_mode=0o100600, st_uid=0)),
+              patch.object(parent, 'prepare', return_value=(self.plan_raw, self.plan, self.probe_base, self.image, directory)),
+              patch.object(supervisor, 'verify_guard_boundary'),
+              patch('p2_replacement_runtime_review.prepare_runtime_review', return_value={'fixture': True}),
+              patch.object(parent, 'prepare_recovery_evidence', return_value=recovery),
+              patch.object(parent, 'verify_original_recovery_frontier') as verify,
+              patch.object(parent.os, 'fork', side_effect=AssertionError('broker started')),
+              contextlib.redirect_stdout(output)):
+            parent._supervise_replacement(initial, self.root, writing=True, validate_only=True)
+        verify.assert_called_once()
+        self.assertEqual(json.loads(output.getvalue())['status'], 'P2_FRONTEND_REPLACEMENT_RECOVERY_FRONTIER_VERIFIED')
+        self.assertFalse(results.exists())
+
     def test_bundle_raw_bytes_match_probe_and_review(self):
         source = Path('/opt/lash-her/operators') / self.commit
         jobs = {'frontend': {'job': self.job, 'schema': self.raw_baseline, 'image': self.image}}

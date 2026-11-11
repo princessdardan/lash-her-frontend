@@ -70,6 +70,20 @@ node ops/platform/p2-frontend-replacement-release.mjs --apply /absolute/private/
 
 The apply entry requires passing CI for the exact source, the selected host and all three reviewed migration credentials through the existing private runtime handoff. The Node transport carries the original receipts into the supervisor and joins the replacement runtime, reviewed predecessor promotion and independent PostgreSQL closure. The supervisor returns a certification-readiness receipt after broker exit and fresh readback. Retain the original digest-named terminal and session-closure files in the private frontend action directory. [Operator and terminal qualification](baselines/2026-11-09-p2-replacement-operator.json).
 
+### Continue after frontend SQL committed and API preflight failed
+
+Use the replacement recovery only when the original frontend journal and admission readback are complete, the original backend closed, and the failure stopped before the API migration stage or frontend deployment. Preserve the original local and host result directories and the verified runtime credential. The private recovery review binds the eight original receipt hashes and a new action ID. Use the original signed application candidate and exact jobs with independently CI-qualified operator source.
+
+The read-only `--validate` action checks the original receipts and actual frontend database and predecessor gateway under the host lock. The owner-started `--apply` action uses new private result directories, acquires a fresh frontend database lock, checks both approved API suffixes in the pinned migration images, and continues through closed runtime and frontend promotion. The frontend job remains the original apply-forward record. No frontend SQL or role setup runs in recovery. A failed recovery is retained for reconciliation.
+
+```sh
+node ops/platform/p2-frontend-replacement-recovery.mjs --plan /absolute/private/recovery-settings.json
+node ops/platform/p2-frontend-replacement-recovery.mjs --validate /absolute/private/recovery-settings.json --confirm EXACT_REVIEWED_CONFIRMATION
+node ops/platform/p2-frontend-replacement-recovery.mjs --apply /absolute/private/recovery-settings.json --confirm EXACT_REVIEWED_CONFIRMATION
+```
+
+On success use the generated `certification-release-settings.json` and the terminal receipt in the new results directory for bounded staging certification.
+
 ## Bounded certification after the replacement release
 
 Use version 2 certification settings with the same `staging-current` profile. Set `releaseSettings` to the reviewed replacement operator settings and add `replacementRelease` with exactly two fields, `terminalFile` and `terminalSha256`. Use the absolute path to the original digest-named terminal under `RESULTS/RELEASE_ID-replacement-write/frontend` and its independently retained raw SHA-256. The original PostgreSQL, API, workload and promotion receipts stay in that same release directory structure.

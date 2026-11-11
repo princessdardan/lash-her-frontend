@@ -317,7 +317,10 @@ def preflight(release, snapshot, jobs, pull=True, *, expected_profile=None):
         if pull:
             command(["docker", "pull", image], SAFE_ENV, 180)
         else:
-            identity = command(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image], SAFE_ENV)
+            try:
+                identity = command(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image], SAFE_ENV)
+            except subprocess.SubprocessError:
+                raise ValueError("CACHED_RUNTIME_IMAGE_REQUIRED") from None
             demand(re.fullmatch(r"sha256:[a-f0-9]{64}", identity), "CACHED_RUNTIME_IMAGE_REQUIRED")
     # Avoid serialized/interpolation-escaped secret values from `compose config`.
     # Merge each already-validated raw file with its pinned public overrides.
@@ -550,7 +553,9 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             active_scope.initialize_runtime(snapshot, release)
         checked_release, checked_jobs, checked_plan, _ = make_plan(immutable_bundle, snapshot, snapshot / "compose.yaml", expected_profile=expected)
         demand(checked_release == release and checked_jobs == jobs and checked_plan == plan, "RUNTIME_CONFIGURATION_CHANGED")
-        preflight(release, snapshot, jobs, pull=verified_current is None, expected_profile=expected)
+        # The reviewed replacement prepares its exact images before the write.
+        # Require those local digests before running the configuration helpers.
+        preflight(release, snapshot, jobs, pull=verified_current is None and not replacement, expected_profile=expected)
         if verified_current is not None:
             # Rejoin the immutable producer receipts under the still-held FE
             # and host locks. This path never calls the migration executor.

@@ -433,6 +433,43 @@ def cleanup_migration_container(runner, name, env):
     demand(not inventory.stdout.strip(), "MIGRATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
+def verify_replacement_api_suffix(scope, attempt, prepared, credentials, env, expected):
+    from qualification_target_profile import decode_qualification_target_json
+    for name, info, inputs, _ in prepared:
+        target = info["job"]["target"]
+        demand(name in SERVICES and target["approvedPendingTags"] and target["allowEmptyBootstrap"] is False,
+               "REPLACEMENT_RECOVERY_API_SUFFIX_REQUIRED")
+        write_json(inputs, "target.json", target)
+        target_file = inputs / "target.json"
+        target_file.chmod(0o400)
+        if os.getuid() == 0:
+            os.chown(target_file, 65532, 65532)
+        container = f"lash-p2-profiled-current-image-check-{uuid4().hex}"
+        private_env = {**env, "DATABASE_TARGET": "staging", "STAGING_DATABASE_URL": credentials[name],
+                       "PGOPTIONS": "-c search_path=pg_catalog,public"}
+        args = ["docker", "run", "--rm", "--pull", "never", "--platform", "linux/amd64", "--name", container,
+                "--label", scope.runtime_cleanup_label, "--network", "bridge", "--read-only", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--user", "65532:65532", "--memory", "256m",
+                "--cpus", "0.5", "--pids-limit", "64", "--env", "DATABASE_TARGET", "--env", "STAGING_DATABASE_URL",
+                "--env", "PGOPTIONS", "--mount", f"type=bind,src={inputs.resolve()},dst=/check/input,readonly",
+                "--entrypoint", "node", info["image"], "dist-migration/scripts/check-migration-lineage.js",
+                "--target-file-profiled-current", "/check/input/target.json"]
+        try:
+            result = scope.run(args, env=private_env, capture_output=True, timeout=120)
+            demand(result.returncode == 0 and 0 < len(result.stdout) <= 8192, "REPLACEMENT_RECOVERY_API_SUFFIX_REFUSED")
+            proof = decode_qualification_target_json(result.stdout, "carrier")
+            require_profile(expected, proof)
+            demand(proof.get("status") == "READ_ONLY_PREFLIGHT_PASS" and proof.get("environment") == "staging"
+                   and proof.get("service") == info["service"] and proof.get("artifactSha256") == target["artifactSha256"]
+                   and type(proof.get("appliedCount")) is int and proof["appliedCount"] > 0
+                   and proof.get("pendingTags") == target["approvedPendingTags"] and proof.get("databaseIdentityMatched") is True
+                   and proof.get("tlsVerified") is True and proof.get("migrationAuthorized") is False,
+                   "REPLACEMENT_RECOVERY_API_SUFFIX_REFUSED")
+            write_exact_bytes(attempt, f"{name}-recovery-lineage.json", result.stdout)
+        finally:
+            scope.cleanup_runtime_helper(container, env)
+
+
 def profiled_current_action_id(scope, selected):
     """Fixed source scope selects only a canonical action identity, never a path."""
     from p2_profiled_current_scope import P2ProfiledCurrentScope, P2ProfiledReplacementScope
@@ -442,7 +479,7 @@ def profiled_current_action_id(scope, selected):
         return selected["releaseId"]
     demand(isinstance(recovery, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", recovery)
            and recovery != selected["releaseId"], "PROFILED_CURRENT_RECOVERY_ACTION_REQUIRED")
-    return recovery
+    return selected["releaseId"] if type(scope) is P2ProfiledReplacementScope else recovery
 
 
 def profiled_current_job_hashes(bundle):
@@ -594,7 +631,15 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                         os.chown(receipts, uid, gid)
                 prepared.append((name, info, inputs, receipts))
                 runner = active_scope.run if active_scope is not None else subprocess.run
-                runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
+                if replacement:
+                    try:
+                        cached = runner(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", info["image"]],
+                                        check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=base_env, timeout=30)
+                    except subprocess.SubprocessError:
+                        raise ValueError("CACHED_API_MIGRATION_IMAGE_REQUIRED") from None
+                    demand(digest(cached.stdout.strip()), "CACHED_API_MIGRATION_IMAGE_REQUIRED")
+                else:
+                    runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
                 preflight_name = (f"lash-p2-profiled-current-image-check-{uuid4().hex}"
                                   if profiled_scope is not None else f"lash-check-{name}-{release_id}")
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", preflight_name, True, info.get("frontend", False), expected_profile=expected)
@@ -635,6 +680,9 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 # read-only image session before any API database is changed.
                 # An empty reviewed list alone never establishes a no-op.
                 prepared.sort(key=lambda item: item[0] != "frontend")
+            if replacement and active_scope.recovery_action_id is not None:
+                outcome["phase"] = "replacement-recovery-api-lineage"
+                verify_replacement_api_suffix(active_scope, attempt, prepared, credentials, base_env, expected)
             outcome["phase"] = "suspend-runtime"
             if profiled_scope is not None:
                 outcome["stoppedRuntimeContainers"] = active_scope.suspend_api_runtime(environment, base_env)

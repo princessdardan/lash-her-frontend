@@ -157,7 +157,7 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   let sequence=0;
   async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false,maxInput=24_000_000) {
     assert.ok(timeout>=1000 && timeout<=3_600_000);
-    const raw=payload===undefined?Buffer.alloc(0):Buffer.from(JSON.stringify(payload));
+    const raw=payload===undefined?Buffer.alloc(0):Buffer.isBuffer(payload)?payload:Buffer.from(JSON.stringify(payload));
     assert.ok(raw.length<=maxInput,"Bounded SSH input required");
     // Persist a public command identifier before an uncertain remote mutation;
     // neither the caller nor transport automatically repeats it.
@@ -202,6 +202,13 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
       return run(["sudo","-n","/usr/bin/python3","-I","-u",
         `/opt/lash-her/operators/${commit}/ops/platform/host/p2_replacement_operator_evidence.py`],
         payload,15_000,2_700_000,false,8192);
+    },
+    replacementRecoveryFrontier:(commit,payload)=> {
+      assert.match(commit,/^(?!0+$)[a-f0-9]{40}$/u);
+      assert.equal(payload?.operatorSourceCommit,commit);
+      return run(["sudo","-n","/usr/bin/python3","-I","-u",
+        `/opt/lash-her/operators/${commit}/ops/platform/host/p2_frontend_replacement_parent.py`,"--validate-replacement-recovery"],
+        Buffer.from(JSON.stringify(payload)+"\n"),90_000,65_536,false,2_000_000);
     },
     replacementIdentityProbe:(commit,payload)=> {
       assert.match(commit,/^(?!0+$)[a-f0-9]{40}$/u);

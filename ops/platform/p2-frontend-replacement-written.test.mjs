@@ -15,11 +15,13 @@ import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import { createP2FrontendReplacementProbe, observeP2FrontendReplacement, verifyP2FrontendReplacementSession } from "./p2-frontend-replacement-probe.mjs";
 import { observeP2FrontendReplacementWritten, prepareP2FrontendReplacementWrittenReadback } from "./p2-frontend-replacement-written.mjs";
-import { observeP2FrontendReplacementClosed } from "./p2-frontend-replacement-closed.mjs";
+import { abortP2FrontendReplacement } from "./p2-frontend-replacement-abort.mjs";
+import { observeP2FrontendReplacementClosed, withP2FrontendReplacementRecovery } from "./p2-frontend-replacement-closed.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const refusal = { message: "P2_FRONTEND_REPLACEMENT_WRITTEN_OBSERVATION_REFUSED" };
 const closedRefusal = { message: "P2_FRONTEND_REPLACEMENT_CLOSED_OBSERVATION_REFUSED" };
+const recoveryRefusal = { message: "P2_FRONTEND_REPLACEMENT_RECOVERY_OBSERVATION_REFUSED" };
 const artifact = frontendMigrationArtifact();
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const encode = value => Buffer.from(JSON.stringify(value, null, 2) + "\n").toString("base64");
@@ -388,6 +390,41 @@ test("owned TLS PostgreSQL independently verifies written and closed state at th
       assert.deepEqual((await tryLock()).rows, [{ acquired: false }]);
     } finally { await admin.query("ROLLBACK"); }
     assert.deepEqual(await closing, expected);
+    assert.deepEqual((await tryLock()).rows, [{ acquired: true }]);
+    await unlock(admin, FRONTEND_MIGRATION_LOCK);
+    assert.deepEqual((await admin.query(journalSql)).rows, after);
+
+    const abortObservation = await abortP2FrontendReplacement(probe, Buffer.from(packet.physicalObservation, "base64"), dependencies);
+    const recoveryPacket = { ...closedPacket, abortObservation: encode(abortObservation) };
+    for (const mutate of [
+      proof => { proof.appliedPrefix.pop(); },
+      proof => { proof.backendPid++; },
+      proof => { proof.replayAuthorized = true; },
+    ]) {
+      const changed = structuredClone(recoveryPacket);
+      editReceipt(changed, "abortObservation", mutate);
+      await assert.rejects(withP2FrontendReplacementRecovery(changed,
+        { getUrl() { assert.fail("invalid receipt reached the connection"); } }, () => assert.fail("invalid receipt reached work")), recoveryRefusal);
+    }
+    let fresh;
+    assert.equal(await withP2FrontendReplacementRecovery(recoveryPacket, dependencies, async lease => {
+      fresh = lease.probe;
+      assert.notEqual(fresh.backendPid, probe.backendPid);
+      assert.notEqual(fresh.marker, probe.marker);
+      assert.equal(lease.retained.databaseReceiptSha256, encodedHash(packet.databaseReceipt));
+      assert.equal(lease.retained.abortObservationSha256, encodedHash(recoveryPacket.abortObservation));
+      assert.equal((await observeP2FrontendReplacement(fresh, dependencies)).backendPid, fresh.backendPid);
+      assert.deepEqual((await tryLock()).rows, [{ acquired: false }]);
+      await lease.verify();
+      return "verified";
+    }), "verified");
+    await assert.rejects(observeP2FrontendReplacement(fresh, dependencies));
+    assert.deepEqual((await tryLock()).rows, [{ acquired: true }]);
+    await unlock(admin, FRONTEND_MIGRATION_LOCK);
+    await assert.rejects(withP2FrontendReplacementRecovery(recoveryPacket, dependencies, async () => {
+      await admin.query("UPDATE frontend_admission.control SET recovery=true");
+    }), recoveryRefusal);
+    await admin.query("UPDATE frontend_admission.control SET recovery=false");
     assert.deepEqual((await tryLock()).rows, [{ acquired: true }]);
     await unlock(admin, FRONTEND_MIGRATION_LOCK);
     assert.deepEqual((await admin.query(journalSql)).rows, after);

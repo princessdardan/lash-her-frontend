@@ -295,9 +295,11 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
         self.api_job_sha256 = copy.deepcopy(api_job_sha256)
         self.runtime_cleanup_label = replacement_write_label(parent.initial['reviewedPlanSha256'])
         self.original_frontend_bytes = (database_raw, started_raw, postflight_raw)
+        recovery = getattr(parent, 'recovery', None)
         super().__init__(parent.lock_fd, replacement.LOCK, lambda: replacement.ReplacementWriteBroker.verify_replacement_runtime(parent),
                          receipt, parent.initial['candidateSha256'], release=release, jobs=jobs,
-                         configuration_sha256=configuration_sha256)
+                         configuration_sha256=configuration_sha256,
+                         recovery_action_id=recovery['actionId'] if recovery is not None else None)
         self.runtime_parent = parent
         for name, raw in zip(self._frontend_records, self.original_frontend_bytes):
             migrate.write_exact_bytes(self.directory, name, raw)

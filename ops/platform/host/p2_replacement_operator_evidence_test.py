@@ -6,10 +6,42 @@ from pathlib import Path
 from unittest.mock import patch
 
 import migrate
+import p2_frontend_replacement_parent as replacement
 import p2_replacement_operator_evidence as evidence
 
 
 class ReplacementOperatorEvidenceTest(unittest.TestCase):
+    def test_recovery_evidence_requires_both_commits_and_review(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            release_id, action_id = 'owned-replacement', 'owned-recovery'
+            original = root / ('p2-profiled-replacement-write-' + release_id)
+            results = root / action_id
+            action = results / original.name
+            original.mkdir(mode=0o700)
+            results.mkdir(mode=0o700)
+            action.mkdir(mode=0o700)
+            identity = {'version': 1, 'qualificationTargetProfile': evidence.PROFILE, 'environment': 'staging',
+                        'releaseId': release_id, 'sourceCommit': 'a' * 40, 'candidateSha256': 'b' * 64}
+            migrate.write_json(action, 'reviewed-plan.json', {**identity, 'status': 'P2_FRONTEND_REPLACEMENT_PLAN_PREPARED'})
+            migrate.write_json(action, evidence.RECOVERY_REVIEW, {'actionId': action_id, 'originalDirectory': str(original),
+                'originalEvidenceSha256': dict.fromkeys(('physicalObservation', 'databaseReceipt', 'continuationStarted',
+                    'writtenObservation', 'abortObservation', 'runtimeOutcome', 'writeContainment', 'runtimeContainment'), 'c' * 64)})
+            request = {**identity, 'results': str(results), 'name': evidence.RECOVERY_PHYSICAL,
+                       'reviewedPlanSha256': migrate.file_hash((action / 'reviewed-plan.json').read_bytes()),
+                       'operatorSourceCommit': 'd' * 40, 'recoveryReviewSha256': migrate.file_hash((action / evidence.RECOVERY_REVIEW).read_bytes())}
+            migrate.write_json(action, evidence.RECOVERY_OPERATOR, {'actionId': action_id, 'sourceClosureSha256': 'e' * 64,
+                **{key: request[key] for key in ('sourceCommit', 'operatorSourceCommit', 'recoveryReviewSha256')}})
+            raw = b'{"observed":true}\n'
+            migrate.write_exact_bytes(action, request['name'], raw)
+            with patch.object(evidence, 'ROOT', root), patch.object(replacement, 'exact_host_directory', side_effect=Path):
+                self.assertEqual(evidence.read_replacement_evidence(request), raw)
+                for changed in ({**request, 'operatorSourceCommit': 'f' * 40},
+                                {**request, 'recoveryReviewSha256': 'f' * 64},
+                                {key: value for key, value in request.items() if key != 'operatorSourceCommit'}):
+                    with self.assertRaises(ValueError):
+                        evidence.read_replacement_evidence(changed)
+
     def test_reads_only_original_receipts_for_bound_action(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()

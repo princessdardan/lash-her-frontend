@@ -107,6 +107,21 @@ const commitIntent = { ...releaseBase, status: "P2_FRONTEND_REPLACEMENT_WRITE_CO
 const commitIntentSha256 = hash(raw(commitIntent));
 const writeOutcome = { ...commitIntent, status: "P2_FRONTEND_REPLACEMENT_READY_FOR_CERTIFICATION" };
 const providerInitial = { ...initial, vercelToken: "owned-test-token" };
+const freshIdentity = { marker: "3".repeat(64), backendPid: 317, backendStart: "2026-11-11T19:45:00.123456Z" };
+const freshProbe = { ...probe, ...freshIdentity }, freshPhysical = { ...physical, ...freshIdentity };
+const originalDirectory = `/var/lib/lash/results/p2-profiled-replacement-write-${release.releaseId}`;
+const recoveryReview = { actionId: "owned-replacement-recovery", originalDirectory, originalEvidenceSha256: {
+  physicalObservation: hash(physicalBytes), databaseReceipt: hash(databaseReceipt), continuationStarted: hash(continuationStarted),
+  writtenObservation: postflightSha256, abortObservation: "4".repeat(64), runtimeOutcome: "5".repeat(64),
+  writeContainment: "6".repeat(64), runtimeContainment: "7".repeat(64),
+} };
+const retained = { originalProbe: probe, physicalObservation: physicalBytes, databaseReceipt, continuationStarted, writtenObservation: raw(written) };
+
+function recoveryInitial(review = recoveryReview) {
+  const bytes = raw(review), sha = hash(bytes);
+  return { ...providerInitial, operatorSourceCommit: "9".repeat(40), results: `/var/lib/lash/results/${review.actionId}`,
+    recoveryReviewBytes: bytes.toString("base64"), recoveryReviewSha256: sha, confirmation: `${initial.confirmation}/recover/${sha}` };
+}
 
 function host({ mutate = value => value, slowArm = false, alterEvidence = (_name, bytes) => bytes, exit = 1,
   replacement = { armed, armReceiptSha256, boundary, custody, writeIntentSha256 } } = {}) {
@@ -116,6 +131,7 @@ function host({ mutate = value => value, slowArm = false, alterEvidence = (_name
     "p2-frontend-replacement-empty-catalog.json": replacement.boundary,
     "p2-frontend-replacement-write-intent.json": replacement.custody,
     "p2-frontend-replacement-written-observation.json": written,
+    "p2-frontend-replacement-recovery-physical-observation.json": freshPhysical,
     "p2-frontend-replacement-runtime-intent.json": runtimeIntent,
     "migration-outcome.json": migration,
     "runtime-outcome.json": runtimeOutcome,
@@ -151,6 +167,7 @@ function host({ mutate = value => value, slowArm = false, alterEvidence = (_name
       if (operation === "authorize-replacement-write") response = { id, status: "REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED", receipt: replacement.custody,
         writeIntentSha256: replacement.writeIntentSha256 };
       if (operation === "verify-replacement-written") response = { id, status: "REPLACEMENT_WRITTEN_VERIFIED", postflightSha256 };
+      if (operation === "resume-replacement-written") response = { id, status: "REPLACEMENT_WRITTEN_RESUMED", postflightSha256 };
       if (operation === "start-replacement-runtime") response = { id, status: "REPLACEMENT_API_RUNTIME_READY", runtimeOutcomeSha256, migrationOutcomeSha256 };
       if (operation === "verify-replacement-frontend") response = { id, status: "REPLACEMENT_FRONTEND_VERIFIED", proofSha256 };
       if (operation === "prepare-replacement-close") response = { id, status: "REPLACEMENT_CLOSE_PREPARED" };
@@ -189,6 +206,9 @@ async function toRuntime(operator) {
 
 const exchange = (fixture, task, input = initial) =>
   exchangeFrontendReplacementWrite(fixture.child, input, plan, task, { readHostEvidence: fixture.readHostEvidence });
+
+const exchangeRecovery = (fixture, task, input = recoveryInitial(), recovery = retained) =>
+  exchangeFrontendReplacementWrite(fixture.child, input, plan, task, { readHostEvidence: fixture.readHostEvidence, recovery });
 
 test("write transport joins original receipts and heartbeats during a pending arm, then contains on EOF", async () => {
   const fixture = host({ slowArm: true });
@@ -316,6 +336,10 @@ test("host loss cancels the task and reaps even if the callback remains pending"
 
 async function toJoined(operator) {
   await toRuntime(operator);
+  return joinReplacement(operator);
+}
+
+async function joinReplacement(operator) {
   assert.deepEqual(await operator.verifyReplacementFrontend({ proof: raw(proof), workload: raw(workload), promotion: raw(promotion) }),
     { receipt: proof, bytes: raw(proof), proofSha256 });
   await operator.prepareReplacementClose();
@@ -350,5 +374,49 @@ test("late uncertain exit, wrong commit digest and altered terminal refuse succe
     const fixture = host({ exit: 0, ...options });
     await assert.rejects(exchange(fixture, toJoined, providerInitial), refusal);
     assert.equal(fixture.reaped(), true);
+  }
+});
+
+test("recovery joins original committed bytes using independently verified fresh lock evidence", async () => {
+  const fixture = host({ exit: 0 });
+  const result = await exchangeRecovery(fixture, async operator => {
+    for (const key of ["armReplacement", "authorizeReplacementWrite", "verifyReplacementWritten"]) assert.equal(operator[key], undefined);
+    const resumed = await operator.resumeReplacementWritten(freshProbe);
+    assert.deepEqual(resumed, { receipt: written, bytes: retained.writtenObservation, postflightSha256 });
+    await operator.startReplacementRuntime();
+    return joinReplacement(operator);
+  });
+  assert.deepEqual(result, { result: "owned-joined", receipt: writeOutcome, bytes: raw(writeOutcome), commitIntentSha256 });
+  assert.deepEqual(fixture.calls.map(call => call.operation).filter(operation => operation !== "check"), ["initial",
+    "resume-replacement-written", "start-replacement-runtime", "verify-replacement-frontend", "prepare-replacement-close",
+    "observe-replacement-closed", "finish-replacement", "commit"]);
+  const request = fixture.calls.find(call => call.operation === "resume-replacement-written").packet;
+  assert.deepEqual(request, { id: request.id, operation: "resume-replacement-written", probe: freshProbe });
+});
+
+test("recovery refuses unreviewed input or reuse of the original result path before a host command", async () => {
+  for (const [input, recovery] of [
+    [recoveryInitial(), { ...retained, databaseReceipt: raw({ status: "DATABASE_VERIFIED", after: [1] }) }],
+    [{ ...recoveryInitial(), results: originalDirectory }, retained],
+    [recoveryInitial({ ...recoveryReview, originalEvidenceSha256: { ...recoveryReview.originalEvidenceSha256, abortObservation: undefined } }), retained],
+  ]) {
+    const fixture = host();
+    await assert.rejects(exchangeRecovery(fixture, () => assert.fail("Host should not start"), input, recovery), refusal);
+    assert.deepEqual(fixture.calls, []);
+  }
+});
+
+test("recovery refuses an old backend, mismatched fresh evidence or a rewritten original observation", async () => {
+  for (const [candidate, alterEvidence] of [
+    [{ ...freshProbe, backendPid: probe.backendPid }],
+    [freshProbe, (name, bytes) => name.includes("recovery-physical-observation") ? physicalBytes : bytes],
+    [freshProbe, (name, bytes) => name.includes("replacement-written-observation") ? raw({ ...written, ...freshIdentity }) : bytes],
+  ]) {
+    const fixture = host({ alterEvidence });
+    await assert.rejects(exchangeRecovery(fixture, async operator => {
+      await operator.resumeReplacementWritten(candidate);
+      assert.fail("Invalid recovery must not reach runtime");
+    }), refusal);
+    assert.equal(fixture.calls.some(call => call.operation === "start-replacement-runtime"), false);
   }
 });

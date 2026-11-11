@@ -9,7 +9,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
-from p2_frontend_replacement_parent import PROFILE, private_record
+from p2_frontend_replacement_parent import (PROFILE, RECOVERY_CLOSED, RECOVERY_OPERATOR, RECOVERY_PHYSICAL, RECOVERY_REVIEW,
+                                           private_record, recovery_review)
 from qualification_target_profile import decode_qualification_target_json
 
 REFUSED = 'P2_REPLACEMENT_OPERATOR_EVIDENCE_REFUSED'
@@ -23,6 +24,8 @@ ACTION_NAMES = {
     'frontend-job-outcome.json', 'frontend-continuation-completed.json', 'frontend-release-outcome.json',
     'p2-frontend-replacement-write-commit-intent.json', 'p2-frontend-replacement-write-outcome.json',
 }
+RECOVERY_NAMES = {RECOVERY_PHYSICAL, RECOVERY_CLOSED}
+RECOVERY_REQUEST_FIELDS = {'operatorSourceCommit', 'recoveryReviewSha256'}
 OUTCOME_PREFIXES = {
     'migration-outcome.json': 'migration-profiled-frontend-replacement-',
     'runtime-outcome.json': 'runtime-profiled-frontend-replacement-',
@@ -86,10 +89,20 @@ def read_replacement_evidence(request):
         return read_rotation_frontend_ready_evidence(request)
     if 'operation' in request:
         return read_successor_runtime_evidence(request)
-    require(set(request) == REQUEST_FIELDS | {'reviewedPlanSha256', 'name'})
+    recovering = bool(RECOVERY_REQUEST_FIELDS & set(request))
+    require(set(request) == REQUEST_FIELDS | {'reviewedPlanSha256', 'name'} |
+            (RECOVERY_REQUEST_FIELDS if recovering else set()))
     release, name = request['releaseId'], request['name']
-    require(type(name) is str and name in ACTION_NAMES | OUTCOME_PREFIXES.keys())
+    require(type(name) is str and name in ACTION_NAMES | OUTCOME_PREFIXES.keys() | (RECOVERY_NAMES if recovering else set()))
     results, action = read_reviewed_action(request, request['reviewedPlanSha256'])
+    if recovering:
+        reviewed = private_record(action, RECOVERY_REVIEW)
+        review = recovery_review({**request, 'recoveryReviewBytes': base64.b64encode(reviewed).decode('ascii')}, release)
+        operator = decode_qualification_target_json(private_record(action, RECOVERY_OPERATOR), 'carrier')
+        require(type(operator) is dict and set(operator) == {
+            'operatorSourceCommit', 'sourceClosureSha256', 'sourceCommit', 'recoveryReviewSha256', 'actionId'} and
+            all(operator[key] == request[key] for key in ('operatorSourceCommit', 'sourceCommit', 'recoveryReviewSha256')) and
+            operator['actionId'] == review['actionId'] and digest(operator['sourceClosureSha256']))
     directory = results / (OUTCOME_PREFIXES[name] + release) if name in OUTCOME_PREFIXES else action
     migrate.private_directory(directory)
     raw = private_record(directory, name, 2_000_000 if name in OUTCOME_PREFIXES else 65_536)
@@ -234,7 +247,8 @@ if __name__ == '__main__':
         raw = sys.stdin.buffer.read(8193)
         require(len(sys.argv) == 1 and os.geteuid() == 0 and 0 < len(raw) <= 8192)
         request = decode_qualification_target_json(raw, 'private-packet')
-        require(Path(__file__).resolve().parents[3] == Path('/opt/lash-her/operators') / request['sourceCommit'])
+        commit = request.get('operatorSourceCommit', request['sourceCommit'])
+        require(migrate.source_commit(commit) and Path(__file__).resolve().parents[3] == Path('/opt/lash-her/operators') / commit)
         print(json.dumps({'bytes': base64.b64encode(read_replacement_evidence(request)).decode('ascii')}))
     except BaseException:
         print(REFUSED, file=sys.stderr)

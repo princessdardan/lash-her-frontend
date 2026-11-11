@@ -340,14 +340,19 @@ class RuntimeReleaseTests(unittest.TestCase):
         credentials = {f"{name.upper()}_STAGING_DATABASE_URL": f"owned-{name}-private" for name in migrate.SERVICES}
         applied_apis = []
         attempt = self.results / "migration-profiled-frontend-replacement-test-release"
+        runtime_images = [selected["artifacts"][key]["image"] for key in ("gateway", "courseRuntime", "communityRuntime")]
+        migration_images = [jobs[name]["image"] for name in migrate.SERVICES]
 
         def docker(args, *, env, **kwargs):
             self.assertNotIn("ops/platform/frontend-image.mjs", args)
             self.assertNotIn(jobs["frontend"]["image"], args)
             self.assertNotIn(replacement.CREDENTIAL, env)
+            self.assertNotEqual(args[:2], ["docker", "pull"])
             if args[1] == "run":
                 self.assertEqual(args[args.index("--label") + 1], replacement_write_label(broker.initial["reviewedPlanSha256"]))
             if "--execute-profiled-current" in args:
+                for image in migration_images:
+                    self.assertIn(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image], self.calls)
                 name = next(name for name in migrate.SERVICES if f"lash-migrate-{name}-test-release" in args)
                 applied_apis.append(name)
                 self.assertEqual(env["STAGING_DATABASE_URL"], credentials[f"{name.upper()}_STAGING_DATABASE_URL"])
@@ -427,6 +432,10 @@ class RuntimeReleaseTests(unittest.TestCase):
                 outcome = release.execute_profiled_replacement_runtime(self.bundle, self.configuration, self.results,
                     self.compose, expected_profile=ref, _profiled_replacement_scope=scope)
             self.assertEqual(ready.call_args.args[2], attempt)
+        self.assertEqual(self.calls[:len(runtime_images)], [
+            ["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image]
+            for image in runtime_images
+        ])
         self.assertEqual(applied_apis, ["course", "community"])
         self.assertEqual(self.running, set(release.SERVICES))
         self.assertEqual((attempt / "candidate.json").read_bytes(), candidate_raw)
@@ -584,6 +593,9 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertEqual(len(image_reads), 3)
         self.assertTrue(all(args[args.index("--platform") + 1] == "linux/amd64" for args in image_reads))
         with patch.object(release, "command", return_value="not-an-image"), self.assertRaisesRegex(ValueError, "CACHED_RUNTIME_IMAGE"):
+            release.preflight(selected, snapshot, jobs, pull=False)
+        failure = subprocess.CalledProcessError(1, ["docker", "image", "inspect"], stderr="private diagnostic")
+        with patch.object(release, "command", side_effect=failure), self.assertRaisesRegex(ValueError, "^CACHED_RUNTIME_IMAGE_REQUIRED$"):
             release.preflight(selected, snapshot, jobs, pull=False)
         with patch.object(release, "command", side_effect=AssertionError("process invoked")), self.assertRaisesRegex(ValueError, "EXPLICIT_IMAGE_PREFLIGHT_MODE"):
             release.preflight(selected, snapshot, jobs, pull="false")

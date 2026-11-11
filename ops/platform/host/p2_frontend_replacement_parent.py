@@ -60,6 +60,11 @@ CLOSED_OBSERVER_STARTED = 'p2-frontend-replacement-closed-observer-started.json'
 CLOSED_OBSERVER_RETURNED = 'p2-frontend-replacement-closed-observer-returned.json'
 CLOSE_SECONDS = 120
 RUNTIME_REVIEW_FIELDS = frozenset(('runtimeReviewBytes', 'runtimeReviewSha256'))
+RECOVERY_FIELDS = frozenset(('operatorSourceCommit', 'recoveryReviewBytes', 'recoveryReviewSha256'))
+RECOVERY_PHYSICAL = 'p2-frontend-replacement-recovery-physical-observation.json'
+RECOVERY_CLOSED = 'p2-frontend-replacement-recovery-close-observation.json'
+RECOVERY_REVIEW = 'p2-frontend-replacement-recovery-review.json'
+RECOVERY_OPERATOR = 'p2-frontend-replacement-recovery-operator.json'
 API_CREDENTIALS = ('COURSE_STAGING_DATABASE_URL', 'COMMUNITY_STAGING_DATABASE_URL')
 WRITE_CONTAINMENT = 'p2-frontend-replacement-write-containment.json'
 ABORT_ATTEMPT = 'p2-frontend-replacement-abort-attempt.json'
@@ -133,12 +138,32 @@ def exact_host_directory(value):
     return path
 
 
+def recovery_review(initial, release_id):
+    raw = unbase64(initial['recoveryReviewBytes'], 65_536)
+    require(digest(initial['recoveryReviewSha256']) and migrate.file_hash(raw) == initial['recoveryReviewSha256']
+            and migrate.source_commit(initial['operatorSourceCommit']), REFUSED)
+    review = decode_qualification_target_json(raw, 'carrier')
+    require(type(review) is dict and set(review) == {'actionId', 'originalDirectory', 'originalEvidenceSha256'}
+            and match(review['actionId'], r'[a-z0-9][a-z0-9-]{0,63}') and review['actionId'] != release_id, REFUSED)
+    pins = review['originalEvidenceSha256']
+    require(type(pins) is dict and set(pins) == {'physicalObservation', 'databaseReceipt', 'continuationStarted',
+            'writtenObservation', 'abortObservation', 'runtimeOutcome', 'writeContainment', 'runtimeContainment'}
+            and all(digest(pin) for pin in pins.values()), REFUSED)
+    original = exact_host_directory(review['originalDirectory'])
+    require(original.name == supervisor.PROFILED_REPLACEMENT_WRITE_LAYOUT['receiptPrefix'] + release_id and
+            initial['results'] == str(original.parent / review['actionId']), REFUSED)
+    return review
+
+
 def reviewed_plan(initial, *, mode=MODE):
     require(mode in (MODE, WRITE_MODE), REFUSED)
     require(type(initial) is dict, REFUSED)
     has_runtime = mode == WRITE_MODE and bool(RUNTIME_REVIEW_FIELDS & set(initial))
     provider_fields = {'vercelToken'} if has_runtime and 'vercelToken' in initial else set()
-    require(set(initial) == INITIAL_FIELDS | (RUNTIME_REVIEW_FIELDS if has_runtime else set()) | provider_fields and
+    recovering = bool(RECOVERY_FIELDS & set(initial))
+    require((not recovering or has_runtime and provider_fields and digest(initial.get('recoveryReviewSha256'))) and
+            set(initial) == INITIAL_FIELDS | (RUNTIME_REVIEW_FIELDS if has_runtime else set()) | provider_fields |
+            (RECOVERY_FIELDS if recovering else set()) and
             type(initial['version']) is int and initial['version'] == 1 and initial['mode'] == mode and
             initial['environment'] == 'staging' and migrate.source_commit(initial['sourceCommit']) and
             match(initial['hostMachineId'], r'[a-f0-9]{32}') and
@@ -170,8 +195,11 @@ def reviewed_plan(initial, *, mode=MODE):
             and all(plan[key] is False for key in (*NO_AUTHORITY, 'replacementObserved', 'releaseAccepted'))
             and initial['confirmation'] == 'staging/' + plan['releaseId'] +
                 ('/replacement-write/' if mode == WRITE_MODE else '/replacement-arm/') + initial['reviewedPlanSha256'] +
-                ('/' + initial['runtimeReviewSha256'] if has_runtime else ''),
+                ('/' + initial['runtimeReviewSha256'] if has_runtime else '') +
+                ('/recover/' + initial['recoveryReviewSha256'] if recovering else ''),
             REFUSED)
+    if recovering:
+        recovery_review(initial, plan['releaseId'])
     credentials = initial['credentials']
     expected_credentials = {CREDENTIAL, *API_CREDENTIALS} if has_runtime else {CREDENTIAL}
     credential_fields = set(credentials) if type(credentials) is dict else set()
@@ -214,10 +242,15 @@ def managed_catalog(initial, plan, source=None):
 
 def prepare(initial, source, *, mode=MODE):
     raw, plan = reviewed_plan(initial, mode=mode)
-    require(source == Path('/opt/lash-her/operators') / initial['sourceCommit'] and source == source.resolve(), REFUSED)
+    require(source == Path('/opt/lash-her/operators') / initial.get('operatorSourceCommit', initial['sourceCommit'])
+            and source == source.resolve(), REFUSED)
     runtime.assert_host({'environment': 'staging', 'hostMachineId': initial['hostMachineId']})
     verify_profiled_current_source_closure(initial, source)
-    bundle, results = (exact_host_directory(initial[key]) for key in ('bundle', 'results'))
+    bundle = exact_host_directory(initial['bundle'])
+    results = Path(initial['results']) if 'recoveryReviewSha256' in initial else exact_host_directory(initial['results'])
+    if 'recoveryReviewSha256' in initial:
+        exact_host_directory(str(results.parent))
+        require(results == results.resolve() and not os.path.lexists(results), REFUSED)
     require(bundle != results and bundle not in results.parents and results not in bundle.parents, REFUSED)
     selected, jobs = migrate.make_plan(bundle, expected_profile=PROFILE)
     job_info = jobs['frontend']
@@ -598,7 +631,7 @@ def closed_result(packet, written, raw):
 
 
 def retain_closed_observation(initial, plan, review, source, directory, image, probe, physical,
-                              custody, written_request, request, cancelled):
+                              custody, written_request, request, cancelled, *, recovery=None, fresh=None):
     import p2_replacement_terminal as terminal
     import vercel
 
@@ -626,11 +659,17 @@ def retain_closed_observation(initial, plan, review, source, directory, image, p
     raw = run_replacement_image(initial, image, probe, closed_packet={**written, 'writtenObservation': base64.b64encode(postflight).decode()})
     migrate.write_json(directory, CLOSED_OBSERVER_RETURNED, write_observer_receipt(initial, probe, physical, 'CLOSED_RETURNED'))
     closed_result(written, postflight, raw)
+    if recovery is not None:
+        fresh_physical = private_record(directory, RECOVERY_PHYSICAL, 8192)
+        closure = observe_recovery_closed(initial, image, recovery, fresh, fresh_physical)
+        verify()
+        migrate.write_json(directory, RECOVERY_CLOSED, closure)
     verify()
     migrate.write_exact_bytes(directory, terminal.SESSION_CLOSED, raw)
 
 
-def finalize_replacement_terminal(initial, plan, review, source, directory, image, probe, physical, written_request, committed):
+def finalize_replacement_terminal(initial, plan, review, source, directory, image, probe, physical, written_request, committed,
+                                  *, recovery=None, fresh=None):
     import p2_replacement_terminal as terminal
     import vercel
 
@@ -656,6 +695,11 @@ def finalize_replacement_terminal(initial, plan, review, source, directory, imag
         closed_packet={**written, 'writtenObservation': base64.b64encode(postflight).decode()})
     closed_result(written, postflight, fresh_closed)
     require(fresh_closed == closed, REFUSED)
+    if recovery is not None:
+        require(prepare_recovery_evidence(initial, plan, probe, review, source) == recovery, REFUSED)
+        fresh_physical = private_record(directory, RECOVERY_PHYSICAL, 8192)
+        require(decode_qualification_target_json(private_record(directory, RECOVERY_CLOSED, 8192), 'carrier') ==
+                observe_recovery_closed(initial, image, recovery, fresh, fresh_physical), REFUSED)
     terminal.verify_provider(proof, base, probe['candidate'], plan, review, written, vercel.Client(initial['vercelToken']), verify)
     terminal.verify_runtime(initial, probe['candidate'], api, verify)
     # Re-read every byte after the independent provider and runtime checks.
@@ -702,6 +746,175 @@ def abort_result(plan, probe, physical, raw):
         previous = row['folderMillis']
     require(value['appliedPrefixSha256'] == migrate.file_hash(encoded(prefix)), REFUSED)
     return value
+
+
+def prepare_recovery_evidence(initial, plan, base_probe, review, source):
+    from p2_replacement_runtime_containment import RECEIPT, _binding, verify_runtime_intent
+    import p2_replacement_terminal as terminal
+
+    selected = recovery_review(initial, plan['releaseId'])
+    original = Path(selected['originalDirectory'])
+    results, release_id = original.parent, plan['releaseId']
+    attempt = exact_host_directory(str(results / ('runtime-profiled-frontend-replacement-' + release_id)))
+    require(not os.path.lexists(results / ('migration-profiled-frontend-replacement-' + release_id)) and
+            not any((attempt / 'configuration').glob('*.resolved.env')) and
+            not any(os.path.lexists(original / name) for name in (*terminal.PROVIDER_FILES, *terminal.NODE_FILES,
+                CLOSE_PREPARED, CLOSED_OBSERVER_STARTED, CLOSED_OBSERVER_RETURNED, terminal.SESSION_CLOSED,
+                terminal.INTENT, terminal.TERMINAL)), REFUSED)
+    armed = decode_qualification_target_json(private_record(original, ARM), 'carrier')
+    physical = unbase64(armed['physicalObservation'], 8192)
+    observed = decode_qualification_target_json(physical, 'carrier')
+    base_probe = {key: value for key, value in base_probe.items() if key not in PROBE_IDENTITY}
+    probe = {**base_probe, **{key: observed[key] for key in PROBE_IDENTITY}}
+    probe_identity(probe, base_probe)
+    _, arm_sha = require_arm(initial, plan, probe, original)
+    boundary = decode_qualification_target_json(private_record(original, WRITE_BOUNDARY), 'carrier')
+    _, write_sha, original_physical = require_write_custody(initial, plan, probe, original, arm_sha, boundary, source=source)
+    require(original_physical == physical, REFUSED)
+    require_write_observer_returned(initial, probe, physical, original, written=True)
+    database = private_record(original, 'frontend-original-database-receipt.json')
+    started = private_record(original, 'frontend-continuation-started.json', 8192)
+    written = private_record(original, WRITTEN_OBSERVATION, 8192)
+    aborted = private_record(original, ABORT_OBSERVATION)
+    failed = private_record(attempt, 'runtime-outcome.json')
+    write_containment = private_record(original, WRITE_CONTAINMENT)
+    runtime_containment = private_record(original, RECEIPT)
+    require(selected['originalEvidenceSha256'] == {key: migrate.file_hash(raw) for key, raw in zip(
+        ('physicalObservation', 'databaseReceipt', 'continuationStarted', 'writtenObservation', 'abortObservation',
+         'runtimeOutcome', 'writeContainment', 'runtimeContainment'),
+        (physical, database, started, written, aborted, failed, write_containment, runtime_containment))}, REFUSED)
+    postflight = decode_qualification_target_json(written, 'carrier')
+    request = {key: postflight[key] for key in ('owner', 'runtime', 'producerSha256')} | {
+        'writeIntentSha256': write_sha,
+        'databaseReceipt': base64.b64encode(database).decode(), 'continuationStarted': base64.b64encode(started).decode()}
+    packet = written_packet(plan, probe, physical, request)
+    written_result(packet, written)
+    require(postflight['producerSha256'] == review['producerSha256'], REFUSED)
+    abort = abort_result(plan, probe, physical, aborted)
+    expected_tags = plan['replacement']['approvedPendingTags']
+    journal = decode_qualification_target_json(database, 'carrier')['after']
+    require(abort['journalPresent'] is True and abort['appliedPrefix'] == [
+        {'tag': tag, 'hash': row['hash'], 'folderMillis': int(row['created_at'])}
+        for tag, row in zip(expected_tags, journal)
+    ], REFUSED)
+    verify_runtime_intent(initial, plan, original, configuration_sha256=review['configurationSha256'],
+                          api_job_sha256=review['apiJobSha256'], postflight_sha256=migrate.file_hash(written))
+    failed_record = terminal.exact_receipt(failed)
+    migrate.require_contract_identity(base_probe['candidate'], failed_record)
+    require(all(failed_record.get(key) == plan[key] for key in ('environment', 'releaseId', 'sourceCommit', 'candidateSha256'))
+            and failed_record.get('configurationSha256') == review['configurationSha256']
+            and failed_record.get('status') == 'FAILED_REQUIRES_REVIEW'
+            and failed_record.get('phase') == 'configuration-preflight' and not failed_record.get('containers')
+            and failed_record.get('frontendSqlApplied') is True and all(failed_record.get(key) is False for key in
+                ('trafficAuthorized', 'frontendPromotionAuthorized', 'releaseAccepted', 'nativeSchedulesEnabled')), REFUSED)
+    write = decode_qualification_target_json(write_containment, 'carrier')
+    require(write.get('status') in ('P2_FRONTEND_REPLACEMENT_WRITE_CONTAINMENT_UNCERTAIN',
+            'P2_FRONTEND_REPLACEMENT_WRITE_CONTAINED_REQUIRES_REVIEW') and
+            all(write.get(key) == value for key, value in receipt_base(initial, plan, write['status']).items()) and
+            write.get('automaticReplayAuthorized') is False and write.get('backendClosureVerified') is True and
+            write.get('abortObservationSha256') == migrate.file_hash(aborted) and
+            write.get('physicalObservationSha256') == migrate.file_hash(physical) and
+            write.get('appliedPrefixCount') == len(expected_tags), REFUSED)
+    runtime_record = decode_qualification_target_json(runtime_containment, 'carrier')
+    require(runtime_record.get('status') in ('P2_FRONTEND_REPLACEMENT_RUNTIME_CONTAINMENT_UNCERTAIN',
+            'P2_FRONTEND_REPLACEMENT_RUNTIME_CONTAINMENT_OBSERVED_REQUIRES_REVIEW') and
+            all(runtime_record.get(key) == value for key, value in _binding(initial, plan).items()) and
+            all(runtime_record.get(key) is False for key in ('automaticReplayAuthorized', 'frontendSqlReplayed',
+                                                            'releaseAccepted')), REFUSED)
+    names = (ARM, READY, WRITE_BOUNDARY, WRITE_INTENT, WRITE_READY, WRITE_OBSERVER_STARTED, WRITE_OBSERVER_RETURNED,
+             WRITTEN_OBSERVER_STARTED, WRITTEN_OBSERVER_RETURNED)
+    return {'actionId': selected['actionId'], 'probe': probe, 'physical': physical, 'written': written,
+            'request': request, 'packet': packet, 'copies': {name: private_record(original, name) for name in names},
+            'custody': {'armReceiptSha256': arm_sha, 'emptyCatalogReceipt': boundary}}
+
+
+def verify_original_recovery_frontier(initial, plan, review, source, image, recovery):
+    from p2_replacement_runtime_containment import HELPER, _helper_rows, replacement_write_label
+    import p2_prior_gateway
+
+    def verify():
+        supervisor.verify_guard_boundary(initial, source)
+
+    def run(args, timeout):
+        verify()
+        result = runtime.command(args, runtime.SAFE_ENV, timeout)
+        verify()
+        return result
+
+    probe, written = recovery['probe'], recovery['written']
+    packet = {**recovery['packet'], 'writtenObservation': base64.b64encode(written).decode()}
+    closed_result(recovery['packet'], written, run_replacement_image(initial, image, probe, closed_packet=packet))
+    label = replacement_write_label(initial['reviewedPlanSha256'])
+    require(not _helper_rows(run, HELPER, label) and all(not _helper_rows(run, re.escape(f'lash-migrate-{service}-{plan["releaseId"]}'))
+                for service in migrate.SERVICES), REFUSED)
+    selected = probe['candidate']
+    prior_input = {**initial, 'candidate': selected, **{key: review[key] for key in ('configurationSha256', 'priorGatewayReference') if key in review}}
+    prior = p2_prior_gateway.preflight_prior_gateway(prior_input, selected, verify, expected_profile=PROFILE)
+    require(p2_prior_gateway._zero(prior), REFUSED)
+    verify()
+
+
+def recovery_probe_identity(fresh, original, base_probe):
+    probe_identity(fresh, base_probe)
+    require(fresh['marker'] != original['marker'] and fresh['backendPid'] != original['backendPid'] and
+            fresh['backendStart'] >= original['backendStart'], REFUSED)
+
+
+RECOVERY_CLOSED_PROGRAM = '''
+import { readFileSync } from "node:fs";
+import { Client } from "pg";
+import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from "./ops/platform/frontend-migration.mjs";
+const input = JSON.parse(readFileSync(0, "utf8"));
+const { target, databaseOid, migrationRoleOid, pids, markers } = input;
+const client = new Client({ ...frontendConnectionOptions(process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL, target),
+  application_name: "lash-her-frontend-replacement-recovery-close", statement_timeout: 7000, query_timeout: 8000,
+  options: "-c search_path=pg_catalog -c default_transaction_read_only=on" });
+let lost = false;
+client.on("error", () => { lost = true; });
+try {
+  await client.connect();
+  if (!client.connection?.stream?.encrypted || !client.connection.stream.authorized) throw new Error();
+  const { rows: [result] } = await client.query(`SELECT current_user=$1 AND session_user=$1 AND
+    pg_catalog.current_database()=$2 AND pg_catalog.current_setting('server_version_num')::int/10000=$3::int AND
+    pg_catalog.current_setting('transaction_read_only')='on' AND
+    EXISTS(SELECT FROM pg_catalog.pg_roles WHERE oid=$4::oid AND rolname=session_user) AND
+    EXISTS(SELECT FROM pg_catalog.pg_database WHERE oid=$5::oid AND datname=pg_catalog.current_database()) AND
+    NOT EXISTS(SELECT FROM pg_catalog.pg_stat_activity WHERE pid=ANY($6::int[])) AND
+    NOT EXISTS(SELECT FROM pg_catalog.pg_prepared_xacts WHERE database=pg_catalog.current_database()) AND
+    NOT EXISTS(SELECT FROM pg_catalog.pg_locks l JOIN
+      (SELECT pg_catalog.hashtext(name)::bigint AS key FROM pg_catalog.unnest($7::text[]) AS name) wanted
+      ON l.classid=((wanted.key>>32)&4294967295)::oid AND l.objid=(wanted.key&4294967295)::oid
+      WHERE l.locktype='advisory' AND l.database=$5::oid AND l.objsubid=1) AS verified`,
+    [target.user, target.database, target.serverMajor, migrationRoleOid, databaseOid, pids, [...markers, FRONTEND_MIGRATION_LOCK]]);
+  if (result?.verified !== true || lost) throw new Error();
+} finally { await client.end(); }
+if (lost) throw new Error();
+console.log("RECOVERY_BACKENDS_AND_LOCKS_ABSENT");
+'''
+
+
+def observe_recovery_closed(initial, image, recovery, fresh, physical):
+    observation(fresh, physical)
+    probe = recovery['probe']
+    plan_sha = initial['reviewedPlanSha256']
+    name = container_name(initial, fresh)
+    args = ['docker', 'run', '--rm', '--pull=never', '--platform', 'linux/amd64', '--name', name,
+            '--label', 'io.lash-her.replacement-arm=' + plan_sha, '--interactive', '--network', 'host',
+            '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '256m',
+            '--pids-limit', '64', '--env', CREDENTIAL, '--entrypoint', 'node', image, '--input-type=module',
+            '--eval', RECOVERY_CLOSED_PROGRAM]
+    packet = {'target': fresh['job']['target'], 'databaseOid': fresh['databaseOid'], 'migrationRoleOid': fresh['migrationRoleOid'],
+              'pids': [probe['backendPid'], fresh['backendPid']], 'markers': [probe['marker'], fresh['marker']]}
+    env = {**runtime.SAFE_ENV, CREDENTIAL: initial['credentials'][CREDENTIAL]}
+    try:
+        require(run_bounded_image(args, encoded(packet), env) == b'RECOVERY_BACKENDS_AND_LOCKS_ABSENT\n', REFUSED)
+    finally:
+        remove_container(name, plan_sha)
+    return {'version': 1, 'status': 'P2_FRONTEND_REPLACEMENT_RECOVERY_SESSION_CLOSED',
+            'recoveryReviewSha256': initial['recoveryReviewSha256'],
+            'originalPhysicalObservationSha256': migrate.file_hash(recovery['physical']),
+            'freshPhysicalObservationSha256': migrate.file_hash(physical),
+            'originalBackendAbsent': True, 'freshBackendAbsent': True, 'advisoryLocksAbsent': True}
 
 
 def contain_replacement_write(initial, plan, image, directory, probe, physical, *, process_reconciled=True,
@@ -867,6 +1080,10 @@ class ReplacementRuntimeObserver(PhysicalObserver):
         broker = self.broker
         try:
             with self.probe_lock:
+                if broker.recovery is not None:
+                    raw = observe(broker.initial, broker.image, broker.fresh_probe)
+                    require(raw == broker.fresh_observation, REFUSED)
+                    return observation(broker.fresh_probe, raw)
                 raw = run_replacement_image(broker.initial, broker.image, broker.probe, written_packet=self.request)
             require(raw == self.original, REFUSED)
             return written_result(self.request, raw)
@@ -879,8 +1096,10 @@ class ReplacementRuntimeObserver(PhysicalObserver):
         try:
             with self.probe_lock:
                 require(not broker.failed.is_set(), REFUSED)
-                raw = observe(broker.initial, broker.image, broker.probe)
-            require(raw == broker.write_observation, REFUSED)
+                probe, physical = ((broker.probe, broker.write_observation) if broker.recovery is None else
+                                   (broker.fresh_probe, broker.fresh_observation))
+                raw = observe(broker.initial, broker.image, probe)
+            require(raw == physical, REFUSED)
         except BaseException:
             broker.runtime_observer_cleanup_uncertain = True
             raise
@@ -889,7 +1108,7 @@ class ReplacementRuntimeObserver(PhysicalObserver):
 class ReplacementWriteBroker(ReplacementArmBroker):
     """Source-only replacement through closed staged runtime and provider join."""
 
-    def __init__(self, *args, image, runtime_review=None, **kwargs):
+    def __init__(self, *args, image, runtime_review=None, recovery=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.image = image
         self.write_mutex = threading.Lock()
@@ -899,6 +1118,8 @@ class ReplacementWriteBroker(ReplacementArmBroker):
         self.verified_written = None
         self.written_request = None
         self.runtime_review = runtime_review
+        self.recovery = recovery
+        self.fresh_probe = self.fresh_observation = None
         self.runtime_intent = None
         self.runtime_observer_cleanup_uncertain = False
         self.provider_raw = None
@@ -913,6 +1134,10 @@ class ReplacementWriteBroker(ReplacementArmBroker):
 
     def command(self, value):
         operation = value.get('operation') if type(value) is dict else None
+        if operation == 'resume-replacement-written':
+            return self.resume_replacement_written(value)
+        if self.recovery is not None:
+            require(operation not in ('arm-replacement', 'authorize-replacement-write', 'verify-replacement-written'), REFUSED)
         if operation in ('check', 'arm-replacement'):
             return super().command(value)
         if operation == 'verify-replacement-written':
@@ -962,6 +1187,32 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             self.write_intent_sha = intent_sha
             self.send(value['id'], 'REPLACEMENT_WRITE_CUSTODY_ACKNOWLEDGED', receipt=receipt, writeIntentSha256=intent_sha)
 
+    def resume_replacement_written(self, value):
+        require(self.recovery is not None and self.probe is None and set(value) == {'id', 'operation', 'probe'} and
+                type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1, REFUSED)
+        self.last_command = time.monotonic()
+        self.check()
+        fresh = value['probe']
+        recovery_probe_identity(fresh, self.recovery['probe'], self.base_probe)
+        self.safety({'operation': 'replacement-recovery-armed', 'probe': fresh})
+        deadline = time.monotonic() + 60
+        while True:
+            require(not self.failed.is_set() and self.guard_alive and time.monotonic() < deadline, REFUSED)
+            try:
+                raw = private_record(self.directory, RECOVERY_PHYSICAL, 8192)
+                written = private_record(self.directory, WRITTEN_OBSERVATION, 8192)
+                break
+            except FileNotFoundError:
+                time.sleep(0.05)
+        self.check()
+        observation(fresh, raw)
+        require(written == self.recovery['written'], REFUSED)
+        self.fresh_probe, self.fresh_observation = fresh, raw
+        self.probe, self.write_observation = self.recovery['probe'], self.recovery['physical']
+        self.written_request, self.verified_written = self.recovery['packet'], written
+        self.custody, self.write_intent_sha = self.recovery['custody'], self.recovery['request']['writeIntentSha256']
+        self.send(value['id'], 'REPLACEMENT_WRITTEN_RESUMED', postflightSha256=migrate.file_hash(written))
+
     def verify_written(self, value):
         require(set(value) == {'id', 'operation', *WRITTEN_REQUEST_FIELDS} and
                 type(value['id']) is int and 0 < value['id'] <= (1 << 53) - 1 and
@@ -1001,6 +1252,9 @@ class ReplacementWriteBroker(ReplacementArmBroker):
         require(require_write_custody(self.initial, self.plan, self.probe, self.directory,
                                       self.custody['armReceiptSha256'], self.custody['emptyCatalogReceipt'], source=self.source)[1:] ==
                 (self.write_intent_sha, self.write_observation), REFUSED)
+        if self.recovery is not None:
+            require(private_record(self.directory, RECOVERY_PHYSICAL, 8192) == self.fresh_observation and
+                    migrate.file_hash(private_record(self.directory, RECOVERY_REVIEW)) == self.initial['recoveryReviewSha256'], REFUSED)
         verify_bundle(Path(self.initial['bundle']), self.plan, self.probe)
         require(migrate.profiled_current_job_hashes(Path(self.initial['bundle'])) == self.runtime_review['apiJobSha256'] and
                 staging_state.configuration_hashes(Path(self.runtime_review['configuration'])) == self.runtime_review['configurationSha256'],
@@ -1247,9 +1501,12 @@ class ReplacementWriteBroker(ReplacementArmBroker):
                     contain_runtime_if_started(self.initial, self.plan, self.probe['candidate'], self.directory,
                                                self.runtime_review, reaped)
                 finally:
-                    contain_replacement_write(self.initial, self.plan, self.image, self.directory, self.probe,
-                                              self.write_observation, process_reconciled=reaped,
-                                              runtime_observer_reconciled=reaped and not self.runtime_observer_cleanup_uncertain)
+                    if self.recovery is None:
+                        contain_replacement_write(self.initial, self.plan, self.image, self.directory, self.probe,
+                                                  self.write_observation, process_reconciled=reaped,
+                                                  runtime_observer_reconciled=reaped and not self.runtime_observer_cleanup_uncertain)
+                    elif reaped:
+                        remove_container(container_name(self.initial, self.fresh_probe), self.initial['reviewedPlanSha256'])
             except Exception:
                 pass  # Each containment stage retains its own uncertainty.
 
@@ -1272,7 +1529,8 @@ class ReplacementWriteBroker(ReplacementArmBroker):
             require(len(buffer) < MAXIMUM, REFUSED)
 
 
-def broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image=None, runtime_review=None):
+def broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image=None,
+                 runtime_review=None, recovery=None):
     writing = initial['mode'] == WRITE_MODE
     broker_type = ReplacementWriteBroker if writing else ReplacementArmBroker
     output_fd = sys.stdout.fileno() if writing else None
@@ -1290,7 +1548,7 @@ def broker_child(initial, source, plan, base_probe, directory, fd, safety_write,
 
     broker = broker_type(initial, emit,
                          shared_lock_fd=fd, safety_write=safety_write, guard_read=health_read,
-                         **({'image': image, 'runtime_review': runtime_review} if writing else {}))
+                         **({'image': image, 'runtime_review': runtime_review, 'recovery': recovery} if writing else {}))
     try:
         broker.initialize_arm(source, plan, base_probe, directory)
         broker.send(0, 'LOCKED')
@@ -1333,10 +1591,12 @@ def qualify_replacement_write_frontier(initial, source):
     return _supervise_replacement(initial, source, writing=True)
 
 
-def _supervise_replacement(initial, source, *, writing):
+def _supervise_replacement(initial, source, *, writing, validate_only=False):
     require(sys.platform == 'linux' and os.geteuid() == 0, REFUSED)
     require(initial.get('mode') == (WRITE_MODE if writing else MODE), REFUSED)
-    fd = os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    require(not validate_only or writing and 'recoveryReviewSha256' in initial, REFUSED)
+    flags = os.O_RDWR | os.O_NOFOLLOW | (0 if validate_only else os.O_CREAT)
+    fd = os.open(LOCK, flags, 0o600)
     try:
         info = os.fstat(fd)
         require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077, REFUSED)
@@ -1346,9 +1606,24 @@ def _supervise_replacement(initial, source, *, writing):
         initial = {**initial, '_guardLayout': layout, '_guardLockDescriptor': fd, '_guardPid': os.getpid()}
         supervisor.verify_guard_boundary(initial, source)
         runtime_review = None
+        recovery = None
         if writing and 'runtimeReviewSha256' in initial:
             from p2_replacement_runtime_review import prepare_runtime_review
             runtime_review = prepare_runtime_review(initial, plan, source, base_probe)
+        if 'recoveryReviewSha256' in initial:
+            recovery = prepare_recovery_evidence(initial, plan, base_probe, runtime_review, source)
+            verify_original_recovery_frontier(initial, plan, runtime_review, source, image, recovery)
+            if validate_only:
+                print(encoded({'status': 'P2_FRONTEND_REPLACEMENT_RECOVERY_FRONTIER_VERIFIED',
+                               'environment': 'staging', 'releaseId': plan['releaseId'], 'actionId': recovery['actionId'],
+                               'recoveryReviewSha256': initial['recoveryReviewSha256'], 'trafficAuthorized': False}).decode())
+                return
+            directory.parent.mkdir(mode=0o700)
+            previous_results = os.open(directory.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(previous_results)
+            finally:
+                os.close(previous_results)
         directory.mkdir(mode=0o700)
         results_fd = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -1358,6 +1633,14 @@ def _supervise_replacement(initial, source, *, writing):
         migrate.write_exact_bytes(directory, 'reviewed-plan.json', raw)
         if runtime_review is not None:
             migrate.write_exact_bytes(directory, RUNTIME_REVIEW, unbase64(initial['runtimeReviewBytes'], 65_536))
+        if recovery is not None:
+            migrate.write_exact_bytes(directory, RECOVERY_REVIEW, unbase64(initial['recoveryReviewBytes'], 65_536))
+            migrate.write_json(directory, RECOVERY_OPERATOR, {
+                **{key: initial[key] for key in ('operatorSourceCommit', 'sourceClosureSha256', 'sourceCommit', 'recoveryReviewSha256')},
+                'actionId': recovery['actionId'],
+            })
+            for name, record in recovery['copies'].items():
+                migrate.write_exact_bytes(directory, name, record)
         safety_read, safety_write = os.pipe()
         health_read, health_write = os.pipe()
         child = os.fork()
@@ -1365,12 +1648,14 @@ def _supervise_replacement(initial, source, *, writing):
             os.close(safety_read)
             os.close(health_write)
             os.setsid()
-            os._exit(broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image, runtime_review))
+            os._exit(broker_child(initial, source, plan, base_probe, directory, fd, safety_write, health_read, image,
+                                  runtime_review, recovery))
         os.close(safety_write)
         os.close(health_read)
         cancelled = threading.Event()
         armed_probe = None
         write_physical = None
+        fresh_probe = None
         try:
             with ThreadPoolExecutor(max_workers=1) as worker:
                 custody_request = None
@@ -1395,6 +1680,23 @@ def _supervise_replacement(initial, source, *, writing):
                     written_request = request
                     return worker.submit(verify_and_retain_written, initial, plan, base_probe, image, directory,
                                          source, armed_probe, custody_request, request, cancelled)
+                def resume_written(probe):
+                    nonlocal armed_probe, write_physical, fresh_probe, custody_request, written_request
+                    recovery_probe_identity(probe, recovery['probe'], base_probe)
+                    fresh_probe = probe
+                    armed_probe, write_physical = recovery['probe'], recovery['physical']
+                    custody_request, written_request = recovery['custody'], recovery['request']
+
+                    def retain():
+                        supervisor.verify_guard_boundary(initial, source)
+                        verify_bundle(Path(initial['bundle']), plan, fresh_probe)
+                        physical = observe(initial, image, fresh_probe)
+                        supervisor.verify_guard_boundary(initial, source)
+                        require(not cancelled.is_set(), REFUSED)
+                        migrate.write_exact_bytes(directory, WRITTEN_OBSERVATION, recovery['written'])
+                        migrate.write_exact_bytes(directory, RECOVERY_PHYSICAL, physical)
+
+                    return worker.submit(retain)
                 def start_runtime(request):
                     require(written_request is not None and write_physical is not None, REFUSED)
                     return worker.submit(retain_runtime_intent, initial, plan, runtime_review, source, directory,
@@ -1403,15 +1705,17 @@ def _supervise_replacement(initial, source, *, writing):
                     require(written_request is not None and write_physical is not None and runtime_review is not None and
                             digest(request['providerProofSha256']), REFUSED)
                     return worker.submit(retain_closed_observation, initial, plan, runtime_review, source, directory,
-                                         image, armed_probe, write_physical, custody_request, written_request, request, cancelled)
+                                         image, armed_probe, write_physical, custody_request, written_request, request, cancelled,
+                                         recovery=recovery, fresh=fresh_probe)
                 provider_selected = runtime_review is not None and 'vercelToken' in initial
                 try:
                     committed = supervisor.watch_broker(child, safety_read, health_write, arm,
                                                         profiled_certification=True, async_arm=True,
-                                                        authorize_replacement_write=authorize_write if writing else None,
-                                                        verify_replacement_written=verify_written if writing else None,
+                                                        authorize_replacement_write=authorize_write if writing and recovery is None else None,
+                                                        verify_replacement_written=verify_written if writing and recovery is None else None,
                                                         start_replacement_runtime=start_runtime if runtime_review is not None else None,
-                                                        verify_replacement_closed=verify_closed if provider_selected else None)
+                                                        verify_replacement_closed=verify_closed if provider_selected else None,
+                                                        resume_replacement_written=resume_written if recovery is not None else None)
                 except BaseException:
                     cancelled.set()
                     raise
@@ -1422,7 +1726,7 @@ def _supervise_replacement(initial, source, *, writing):
                                               custody_request['emptyCatalogReceipt'], source=source)[1:] ==
                         (written_request['writeIntentSha256'], write_physical), REFUSED)
                 finalize_replacement_terminal(initial, plan, runtime_review, source, directory, image, armed_probe, write_physical,
-                                              written_request, committed)
+                                              written_request, committed, recovery=recovery, fresh=fresh_probe)
                 return
             supervisor.verify_guard_boundary(initial, source)
             verify_bundle(Path(initial['bundle']), plan, base_probe)
@@ -1443,8 +1747,11 @@ def _supervise_replacement(initial, source, *, writing):
                         try:
                             contain_runtime_if_started(initial, plan, base_probe['candidate'], directory, runtime_review, reaped)
                         finally:
-                            contain_replacement_write(initial, plan, image, directory, armed_probe, write_physical,
-                                                      process_reconciled=reaped)
+                            if recovery is None:
+                                contain_replacement_write(initial, plan, image, directory, armed_probe, write_physical,
+                                                          process_reconciled=reaped)
+                            elif reaped:
+                                remove_container(container_name(initial, fresh_probe), initial['reviewedPlanSha256'])
                     elif reaped and armed_probe is not None:
                         remove_container(container_name(initial, armed_probe), initial['reviewedPlanSha256'])
             raise
@@ -1456,16 +1763,20 @@ def _supervise_replacement(initial, source, *, writing):
 
 
 def main():
-    require(sys.argv[1:] in (['--supervise-pre-bootstrap'], ['--supervise-replacement-write']) and
+    require(sys.argv[1:] in (['--supervise-pre-bootstrap'], ['--supervise-replacement-write'],
+                            ['--validate-replacement-recovery']) and
             sys.platform == 'linux' and os.geteuid() == 0, REFUSED)
     raw = sys.stdin.buffer.readline(MAXIMUM + 1)
     require(0 < len(raw) <= MAXIMUM and raw.endswith(b'\n'), REFUSED)
     initial = decode_qualification_target_json(raw, 'private-packet')
     source = Path(__file__).resolve().parents[3]
-    if sys.argv[1] == '--supervise-replacement-write':
+    if sys.argv[1] in ('--supervise-replacement-write', '--validate-replacement-recovery'):
         require(type(initial) is dict and {*RUNTIME_REVIEW_FIELDS, 'vercelToken'} <= set(initial), REFUSED)
         reviewed_plan(initial, mode=WRITE_MODE)
-        qualify_replacement_write_frontier(initial, source)
+        if sys.argv[1] == '--validate-replacement-recovery':
+            _supervise_replacement(initial, source, writing=True, validate_only=True)
+        else:
+            qualify_replacement_write_frontier(initial, source)
     else:
         supervise_replacement_arm(initial, source)
 

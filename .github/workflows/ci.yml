@@ -96,9 +96,10 @@ jobs:
           FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
       - name: Qualify Phase 2 roles, release failure and certification scopes on owned PostgreSQL 18
         run: |
-          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+          run_owned_fixture() {
+            docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
-            --env P2_PLATFORM_OWNED_TEST=true --env OWNED_POSTGRES_MAJOR=18 \
+            --env P2_PLATFORM_OWNED_TEST=true --env OWNED_POSTGRES_MAJOR=18 --env P2_REPLACEMENT_RECOVERY_OWNED_TEST=true \
             --mount "type=bind,src=$PWD/.git,dst=/source/.git,readonly" \
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
@@ -112,8 +113,10 @@ jobs:
             --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
-            --entrypoint node lash-her-frontend-migration:postgres18-test \
-            ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
+            --entrypoint node lash-her-frontend-migration:postgres18-test "$1"
+          }
+          run_owned_fixture ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
+          run_owned_fixture ops/platform/harness/owned-frontend-replacement-recovery.mjs > "$RUNNER_TEMP/p2-replacement-recovery-postgres18.json"
       - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
@@ -128,6 +131,7 @@ jobs:
           path: |
             ${{ runner.temp }}/p2-owned-fixture-failure/
             ${{ runner.temp }}/p2-platform-postgres18.json
+            ${{ runner.temp }}/p2-replacement-recovery-postgres18.json
             ${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json
           if-no-files-found: ignore
           retention-days: 3
