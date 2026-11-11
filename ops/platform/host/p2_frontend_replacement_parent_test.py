@@ -433,6 +433,81 @@ class ReplacementArmTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())['status'], 'P2_FRONTEND_REPLACEMENT_RECOVERY_FRONTIER_VERIFIED')
         self.assertFalse(results.exists())
 
+    def test_second_recovery_requires_exact_prior_failure_and_stopped_gateway_receipts(self):
+        from p2_replacement_runtime_containment import RECEIPT, _binding
+
+        previous = self.results / 'first-recovery'
+        directory = previous / self.write_directory.name
+        runtime = previous / ('runtime-profiled-frontend-replacement-' + self.release_id)
+        migration = previous / ('migration-profiled-frontend-replacement-' + self.release_id)
+        stop = directory / 'prior-gateway-api-suspension'
+        for path in (previous, directory, runtime, migration, migration / 'frontend', migration / 'course', stop):
+            path.mkdir(mode=0o700)
+        recovery_plan = {'actionId': 'next-recovery', 'originalDirectory': str(self.write_directory),
+                         'originalEvidenceSha256': dict.fromkeys(('physicalObservation', 'databaseReceipt', 'continuationStarted',
+                         'writtenObservation', 'abortObservation', 'runtimeOutcome', 'writeContainment', 'runtimeContainment'), '1' * 64),
+                         'rolePolicySupplement': {name: {'baseSourceCommit': 'a' * 40, 'sourceCommit': 'b' * 40,
+                             'sourceSha256': '3' * 64, 'compiledSha256': '4' * 64} for name in migrate.SERVICES}}
+        previous_probe = {**self.probe, 'backendPid': 314, 'marker': '8' * 64, 'backendStart': '2026-11-09T21:52:00.000000Z'}
+        phase2 = {'contractPhase': 'p2', 'phase2ContractManifestSha256': self.job['phase2ContractManifestSha256']}
+        base_probe = {**self.probe_base, 'candidate': {**self.candidate, **phase2}}
+        initial = {**self.write_initial, 'runtimeReviewSha256': '2' * 64,
+                   'results': str(self.results / recovery_plan['actionId'])}
+        review = {'apiJobSha256': {}, 'configurationSha256': {}, 'priorGatewayReference': {'kind': 'retained-runtime'}}
+        failed = {**phase2, 'version': 2, 'qualificationTargetProfile': parent.PROFILE,
+                  'status': 'FAILED_REQUIRES_REVIEW', 'environment': 'staging', 'releaseId': self.release_id,
+                  'frontendSqlApplied': True, 'trafficAuthorized': False, 'releaseAccepted': False, 'nativeSchedulesEnabled': False}
+        records = {
+            'physicalObservation': (directory / parent.RECOVERY_PHYSICAL, {**json.loads(self.raw_observation),
+                **{key: previous_probe[key] for key in parent.PROBE_IDENTITY}}),
+            'runtimeOutcome': (runtime / 'runtime-outcome.json', {**failed, 'phase': 'migrations',
+                'sourceCommit': self.commit, 'candidateSha256': self.plan['candidateSha256'],
+                'configurationSha256': {}, 'frontendPromotionAuthorized': False, 'failureCode': 'RUNTIME_OR_INPUT_FAILURE'}),
+            'migrationOutcome': (migration / 'migration-outcome.json', {**failed, 'phase': 'apply-course',
+                'runtimeResumed': False, 'frontendSqlReplayed': False, 'failureCode': 'EXECUTION_OR_INPUT_FAILURE',
+                'frontendReplacementReadbackSha256': migrate.file_hash(b'written\n'),
+                'frontendContinuationStartedSha256': migrate.file_hash(b'started\n'), 'stoppedRuntimeContainers': ['a' * 12]}),
+            'courseJobOutcome': (migration / 'course/job-outcome.json', {**phase2,
+                'qualificationTargetProfile': parent.PROFILE, 'status': 'FAILED_REQUIRES_REVIEW', 'trafficAuthorized': False}),
+            'runtimeContainment': (directory / RECEIPT, {**_binding(initial, self.plan),
+                'status': 'P2_FRONTEND_REPLACEMENT_RUNTIME_CONTAINMENT_UNCERTAIN',
+                'frontendSqlReplayed': False, 'automaticReplayAuthorized': False, 'releaseAccepted': False}),
+            'gatewayStopped': (stop / 'prior-gateway-stopped.json', {'status': 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED',
+                'actionId': self.release_id, 'candidateSha256': self.plan['candidateSha256'], 'sourceCommit': self.commit,
+                'stoppedProcess': {'containerId': 'a' * 64}}),
+        }
+        for path, value in records.values():
+            migrate.write_json(path.parent, path.name, value)
+        recovery_plan['priorRecovery'] = {'actionId': previous.name,
+            'evidenceSha256': {key: migrate.file_hash(path.read_bytes()) for key, (path, _value) in records.items()}}
+        raw = parent.encoded(recovery_plan) + b'\n'
+        initial.update(operatorSourceCommit='c' * 40, recoveryReviewBytes=base64.b64encode(raw).decode(),
+                       recoveryReviewSha256=migrate.file_hash(raw))
+        for name, data in (('database-receipt.json', b'database'), ('frontend-continuation-started.json', b'started'),
+                           ('frontend-replacement-written-observation.json', b'written')):
+            migrate.write_exact_bytes(migration / 'frontend', name, data + b'\n')
+        migrate.write_exact_bytes(migration, 'candidate.json', (self.bundle / 'release.candidate.json').read_bytes())
+        evidence = {'probe': self.probe, 'written': b'written\n', 'request': {
+            'databaseReceipt': base64.b64encode(b'database\n').decode(), 'continuationStarted': base64.b64encode(b'started\n').decode()}}
+        read_private = parent.private_record
+        with (patch.object(parent, 'exact_host_directory', side_effect=Path),
+              patch('p2_replacement_runtime_containment.verify_runtime_intent'),
+              patch.object(parent, 'private_record', side_effect=lambda *args, **kwargs: read_private(*args))):
+            selected = parent.recovery_review(initial, self.release_id)
+            retained = parent.retain_prior_recovery(initial, self.plan, base_probe, review, selected, evidence)
+            self.assertEqual(retained['priorRecoveryProbe']['backendPid'], previous_probe['backendPid'])
+            self.assertEqual(retained['priorGatewayReference']['stopReceiptDirectory'], str(stop))
+            self.assertEqual(retained['rolePolicySupplement'], selected['rolePolicySupplement'])
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.recovery_probe_identity(retained['priorRecoveryProbe'], self.probe, base_probe, retained['priorRecoveryProbe'])
+            (directory / 'frontend-deployment-proof.json').touch()
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.retain_prior_recovery(initial, self.plan, base_probe, review, selected, evidence)
+            (directory / 'frontend-deployment-proof.json').unlink()
+            (migration / 'candidate.json').write_bytes(b'{}\n')
+            with self.assertRaisesRegex(ValueError, parent.REFUSED):
+                parent.retain_prior_recovery(initial, self.plan, base_probe, review, selected, evidence)
+
     def test_bundle_raw_bytes_match_probe_and_review(self):
         source = Path('/opt/lash-her/operators') / self.commit
         jobs = {'frontend': {'job': self.job, 'schema': self.raw_baseline, 'image': self.image}}

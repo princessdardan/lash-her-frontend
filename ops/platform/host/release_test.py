@@ -238,6 +238,15 @@ class RuntimeReleaseTests(unittest.TestCase):
             os.close(fd)
 
     def test_replacement_continuation_runs_only_pinned_api_jobs_and_retains_original_frontend_bytes(self):
+        self._assert_replacement_continuation(supplemented=False)
+
+    def test_replacement_recovery_role_supplement_checks_both_roles_before_apply(self):
+        self._assert_replacement_continuation(supplemented=True)
+
+    def test_replacement_recovery_refuses_before_apply_when_either_role_preflight_fails(self):
+        self._assert_replacement_continuation(supplemented=True, refuse_role=True)
+
+    def _assert_replacement_continuation(self, *, supplemented, refuse_role=False):
         from unittest.mock import Mock
         import p2_frontend_replacement_parent as replacement
         from p2_profiled_current_scope import COMMON, TARGET, P2ProfiledReplacementScope, _replacement_producer_bytes
@@ -255,6 +264,9 @@ class RuntimeReleaseTests(unittest.TestCase):
         owner = {"name": "lash_her_frontend_staging_admission_owner_p2", "oid": "17"}
         self.fixture.jobs["frontend"]["target"].update(runtimeRole=runtime_role["name"],
                                                       approvedPendingTags=["0000_test", "0001_test"])
+        if supplemented:
+            for name in migrate.SERVICES:
+                self.fixture.jobs[name]["target"]["allowEmptyBootstrap"] = False
         self.fixture.save()
         self.target.update(version=2, qualificationTargetProfile=ref)
         self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
@@ -310,6 +322,21 @@ class RuntimeReleaseTests(unittest.TestCase):
         broker.initial = {"mode": replacement.WRITE_MODE, "bundle": str(self.bundle), "candidateSha256": candidate_sha,
                           "sourceCommit": job["sourceCommit"], "environment": "staging", "qualificationTargetProfile": ref,
                           "reviewedPlanSha256": "e" * 64, "runtimeReviewSha256": "f" * 64}
+        supplement_pins = {}
+        if supplemented:
+            action = "owned-role-recovery"
+            self.results = self.results / action
+            self.results.mkdir(mode=0o700)
+            broker.initial["results"] = str(self.results)
+            supplement_directory = self.results.parent / (action + "-role-policy")
+            supplement_directory.mkdir(mode=0o700)
+            for name in migrate.SERVICES:
+                compiled = ("// owned supplement for " + name + "\n").encode()
+                migrate.write_exact_bytes(supplement_directory, name + ".js", compiled)
+                supplement_pins[name] = {"baseSourceCommit": jobs[name]["job"]["sourceCommit"],
+                    "sourceCommit": "b" * 40, "sourceSha256": "c" * 64, "compiledSha256": migrate.file_hash(compiled)}
+            broker.recovery = {"actionId": action, "rolePolicySupplement": supplement_pins}
+            self.running.clear()
         broker.plan = {"candidateSha256": candidate_sha, "sourceCommit": job["sourceCommit"], "targetSha256": probe["targetSha256"],
                        "environment": "staging", "releaseId": job["releaseId"], "qualificationTargetProfile": ref,
                        "schemaBaselineFileSha256": migrate.file_hash(schema),
@@ -339,6 +366,7 @@ class RuntimeReleaseTests(unittest.TestCase):
         migrate.write_json(broker.directory, INTENT, intent)
         credentials = {f"{name.upper()}_STAGING_DATABASE_URL": f"owned-{name}-private" for name in migrate.SERVICES}
         applied_apis = []
+        proved_roles = []
         attempt = self.results / "migration-profiled-frontend-replacement-test-release"
         runtime_images = [selected["artifacts"][key]["image"] for key in ("gateway", "courseRuntime", "communityRuntime")]
         migration_images = [jobs[name]["image"] for name in migrate.SERVICES]
@@ -350,7 +378,41 @@ class RuntimeReleaseTests(unittest.TestCase):
             self.assertNotEqual(args[:2], ["docker", "pull"])
             if args[1] == "run":
                 self.assertEqual(args[args.index("--label") + 1], replacement_write_label(broker.initial["reviewedPlanSha256"]))
+            if supplemented and any(mode in args for mode in ("--check-profiled-current", "--eval", "--execute-profiled-current")):
+                # Runtime preflight also uses --eval; it must never carry an API overlay.
+                image = args[args.index("--entrypoint") + 2]
+                if image in migration_images:
+                    name = next(name for name in migrate.SERVICES if image == jobs[name]["image"])
+                    self.assertIn(f"type=bind,src={attempt / (name + '-role-policy.js')},dst={migrate._ROLE_POLICY_MODULE},readonly", args)
+                    self.assertEqual(args[args.index("--pull") + 1], "never")
+                    if "--eval" in args:
+                        self.assertFalse(applied_apis)
+                        self.assertEqual(args[args.index("--eval") + 1], migrate._ROLE_POLICY_PREFLIGHT)
+                        self.assertEqual(env["STAGING_DATABASE_URL"], credentials[f"{name.upper()}_STAGING_DATABASE_URL"])
+                        proved_roles.append(name)
+                        if refuse_role and name == "community":
+                            return subprocess.CompletedProcess(args, 1, b"", b"private-diagnostic")
+                        proof = {"status": "REPLACEMENT_API_ROLE_PREFLIGHT_PASS", "environment": "staging",
+                                 "service": jobs[name]["service"], "releaseId": job["releaseId"],
+                                 "sourceCommit": jobs[name]["job"]["sourceCommit"],
+                                 "migrationImageDigest": jobs[name]["job"]["migrationImageDigest"],
+                                 "qualificationTargetProfile": ref, "compiledSha256": supplement_pins[name]["compiledSha256"],
+                                 "readOnlyVerified": True, "tlsVerified": True, "runtimeRoleVerified": True,
+                                 "migrationAuthorized": False}
+                        return subprocess.CompletedProcess(args, 0, raw(proof), b"")
+                else:
+                    self.assertFalse(any(migrate._ROLE_POLICY_MODULE in item for item in args))
+            if "--target-file-profiled-current" in args:
+                image = args[args.index("--entrypoint") + 2]
+                name = next(name for name in migrate.SERVICES if image == jobs[name]["image"])
+                target = jobs[name]["job"]["target"]
+                proof = {"schemaVersion": 2, "qualificationTargetProfile": ref, "status": "READ_ONLY_PREFLIGHT_PASS",
+                         "service": jobs[name]["service"], "environment": "staging", "appliedCount": 7,
+                         "pendingTags": target["approvedPendingTags"], "artifactSha256": target["artifactSha256"],
+                         "databaseIdentityMatched": True, "tlsVerified": True, "migrationAuthorized": False}
+                return subprocess.CompletedProcess(args, 0, raw(proof), b"")
             if "--execute-profiled-current" in args:
+                self.assertEqual(proved_roles, list(migrate.SERVICES) if supplemented else [])
                 for image in migration_images:
                     self.assertIn(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image], self.calls)
                 name = next(name for name in migrate.SERVICES if f"lash-migrate-{name}-test-release" in args)
@@ -400,7 +462,7 @@ class RuntimeReleaseTests(unittest.TestCase):
             (broker.directory / INTENT).write_bytes(raw(intent))
             scope = broker.scope = scope_for_replacement()
             self.addCleanup(scope.revoke)
-            scope.prior_gateway = Mock(stopped=False, api_suspension_started=False, api_suspension_finished=False)
+            scope.prior_gateway = Mock(stopped=supplemented, api_suspension_started=False, api_suspension_finished=False)
             scope.prior_gateway.before_api_suspension.side_effect = lambda: setattr(scope.prior_gateway, "api_suspension_started", True)
             scope.prior_gateway.after_api_suspension.side_effect = lambda: setattr(scope.prior_gateway, "api_suspension_finished", True)
             from p2_release_scope import P2ReleaseScope
@@ -429,9 +491,23 @@ class RuntimeReleaseTests(unittest.TestCase):
             course.write_bytes(original_course)
             with (patch.object(scope, "run", side_effect=docker), patch.object(release, "assert_host"),
                   patch.dict(os.environ, credentials, clear=True)):
+                if refuse_role:
+                    with self.assertRaisesRegex(ValueError, "REPLACEMENT_RECOVERY_ROLE_POLICY_REFUSED"):
+                        release.execute_profiled_replacement_runtime(self.bundle, self.configuration, self.results,
+                            self.compose, expected_profile=ref, _profiled_replacement_scope=scope)
+                    self.assertEqual(proved_roles, list(migrate.SERVICES))
+                    self.assertFalse(applied_apis or self.running or scope.runtime_suspension_started)
+                    self.assertTrue((attempt / "course-recovery-role-preflight.json").is_file())
+                    self.assertFalse((attempt / "community-recovery-role-preflight.json").exists())
+                    migration = migrate.read_json(attempt, "migration-outcome.json", expected_profile=ref)
+                    self.assertEqual(migration["phase"], "replacement-recovery-api-roles")
+                    ready.assert_not_called()
+                    return
                 outcome = release.execute_profiled_replacement_runtime(self.bundle, self.configuration, self.results,
                     self.compose, expected_profile=ref, _profiled_replacement_scope=scope)
             self.assertEqual(ready.call_args.args[2], attempt)
+            if supplemented:
+                scope.prior_gateway.before_api_suspension.assert_not_called()
         self.assertEqual(self.calls[:len(runtime_images)], [
             ["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image]
             for image in runtime_images
@@ -448,6 +524,13 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertFalse(outcome["frontendReadOnlyVerified"])
         self.assertFalse(outcome["releaseAccepted"])
         self.assertEqual(outcome["frontendReplacementReadbackSha256"], migrate.file_hash(readback_raw))
+        migration = migrate.read_json(attempt, "migration-outcome.json", expected_profile=ref)
+        if supplemented:
+            self.assertEqual(migration["apiRolePolicySupplement"], {
+                name: {**pin, "readOnlyPreflightSha256": migrate.file_hash((attempt / f"{name}-recovery-role-preflight.json").read_bytes())}
+                for name, pin in supplement_pins.items()})
+        else:
+            self.assertNotIn("apiRolePolicySupplement", migration)
 
     def test_profiled_runtime_requires_the_registered_project_and_gateway_origin(self):
         ref = self.fixture.profiled()

@@ -81,6 +81,35 @@ class RecreationPrivateFiles(unittest.TestCase):
             files.stage(self.value)
         self.assertFalse(self.root.joinpath("inputs").exists())
 
+    def test_replacement_role_policy_staging_binds_host_paths_and_immutable_bytes(self):
+        results = self.root / "p2-owned-results"
+        results.mkdir(mode=0o700)
+        action = "p2-recovery-owned"
+        machine = "a" * 32
+        payload = {"version": 1, "operation": "stage-replacement-role-policy", "actionId": action,
+                   "hostMachineId": machine, "resultsRoot": str(results), "files": {}}
+        for name in ("course", "community"):
+            raw = f"export const rolePolicy = '{name}'\n".encode()
+            payload["files"][name] = {"sha256": hashlib.sha256(raw).hexdigest(), "data": base64.b64encode(raw).decode()}
+        directory = results / (action + "-role-policy")
+        with patch.object(Path, "read_text", return_value="b" * 32):
+            with self.assertRaisesRegex(ValueError, "STAGING_REFUSED"):
+                files.stage_replacement_role_policy(payload)
+            self.assertFalse(directory.exists())
+        with patch.object(Path, "read_text", return_value=machine):
+            escaped = {**payload, "resultsRoot": str(self.root / "production" / results.name)}
+            with self.assertRaisesRegex(ValueError, "STAGING_REFUSED"):
+                files.stage_replacement_role_policy(escaped)
+            result = files.stage_replacement_role_policy(payload)
+            self.assertEqual(result["status"], "REPLACEMENT_ROLE_POLICY_STAGED")
+            self.assertEqual(files.stage_replacement_role_policy(payload), result)
+            course = directory / "course.js"
+            self.assertEqual(course.stat().st_mode & 0o777, 0o600)
+            course.write_bytes(b"tampered")
+            with self.assertRaisesRegex(ValueError, "STAGING_REFUSED"):
+                files.stage_replacement_role_policy(payload)
+            self.assertEqual(course.read_bytes(), b"tampered")
+
     def test_export_reads_only_fixed_json_receipts_and_excludes_keys_env_and_child_errors(self):
         directory = self.root / self.action / "retirement"
         directory.mkdir(parents=True, mode=0o700)

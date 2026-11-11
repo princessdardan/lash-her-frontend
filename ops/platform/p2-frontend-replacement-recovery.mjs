@@ -16,6 +16,7 @@ import { committedProfiledCurrentOperatorSource, verifyOperatorCi } from "./recr
 import { recreationSsh, sshCommand } from "./recreation_ssh.mjs";
 import { githubSourceApi } from "./release-inputs.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
+import { replacementApiNames, requireReplacementRolePolicyReview, verifyReplacementRolePolicySource } from "./p2-replacement-role-policy-supplement.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const refusal = "P2_FRONTEND_REPLACEMENT_RECOVERY_REQUIRES_REVIEW";
@@ -44,20 +45,33 @@ function file(path) {
 }
 
 function prepare(settings) {
+  const supplementDirectory = settings?.rolePolicySupplementDirectory;
   demand(exact(settings, ["releaseSettingsFile", "recoveryReviewFile", "recoveryReviewSha256",
-    "operatorSourceCommit", "originalHostEvidenceDirectory"]) && digest(settings.recoveryReviewSha256) &&
+    "operatorSourceCommit", "originalHostEvidenceDirectory", ...(supplementDirectory ? ["rolePolicySupplementDirectory"] : [])]) && digest(settings.recoveryReviewSha256) &&
     typeof settings.operatorSourceCommit === "string" && /^(?!0+$)[a-f0-9]{40}$/u.test(settings.operatorSourceCommit));
   const release = prepareP2FrontendReplacementReleaseReview(decode(file(settings.releaseSettingsFile)));
   const recoveryRaw = file(settings.recoveryReviewFile);
   demand(hash(recoveryRaw) === settings.recoveryReviewSha256);
   const recovery = decode(recoveryRaw);
+  requireReplacementRolePolicyReview(recovery);
   const { actionId, originalDirectory, originalEvidenceSha256 } = recovery;
   const { plan, probe, runtimeReview, settings: { arm } } = release;
-  demand(exact(recovery, ["actionId", "originalDirectory", "originalEvidenceSha256"]) &&
-    typeof actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(actionId) && actionId !== plan.releaseId &&
+  demand(typeof actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(actionId) && actionId !== plan.releaseId &&
     originalDirectory === join(arm.host.results, "p2-profiled-replacement-write-" + plan.releaseId) &&
     exact(originalEvidenceSha256, [...Object.keys(applicationFiles), ...Object.keys(hostFiles)]) &&
     Object.values(originalEvidenceSha256).every(digest));
+  demand(Boolean(recovery.rolePolicySupplement) === Boolean(supplementDirectory) &&
+    (!recovery.priorRecovery || recovery.priorRecovery.actionId !== plan.releaseId));
+  const supplementFiles = recovery.rolePolicySupplement && Object.fromEntries(replacementApiNames.map(name => {
+    const source = recovery.rolePolicySupplement[name];
+    const packed = decode(file(join(supplementDirectory, name + ".json")));
+    demand(exact(packed, ["data"]) && typeof packed.data === "string" && packed.data.length <= 87_384);
+    const bytes = Buffer.from(packed.data, "base64");
+    const job = decode(readFrontendReleaseEvidence(join(arm.bundle, "jobs"), name + ".json"));
+    demand(source.baseSourceCommit === job.sourceCommit && bytes.length > 0 && bytes.length <= 65_536 &&
+      bytes.toString("base64") === packed.data && hash(bytes) === source.compiledSha256);
+    return [name, { sha256: source.compiledSha256, data: packed.data }];
+  }));
   const originalLocal = join(arm.results, plan.releaseId + "-replacement-write");
   const originalFrontend = join(originalLocal, "frontend");
   const raw = Object.fromEntries([
@@ -85,7 +99,8 @@ function prepare(settings) {
   };
   const confirmation = `staging/${plan.releaseId}/replacement-write/${arm.reviewedPlanSha256}/${release.settings.runtimeReviewSha256}/recover/${settings.recoveryReviewSha256}`;
   return { release, recovery, recoveryRaw, raw, packet, originalLocal, confirmation,
-    localResults: join(arm.results, actionId), hostResults: join(arm.host.results, actionId), operatorSourceCommit: settings.operatorSourceCommit };
+    localResults: join(arm.results, actionId), hostResults: join(arm.host.results, actionId), operatorSourceCommit: settings.operatorSourceCommit,
+    supplementFiles };
 }
 
 export function planP2FrontendReplacementRecovery(settings) {
@@ -100,6 +115,7 @@ export function planP2FrontendReplacementRecovery(settings) {
     operatorSourceCommit: prepared.operatorSourceCommit, candidateSha256: plan.candidateSha256, hostMachineId: arm.host.machineId,
     frontendTarget: plan.replacement.target, frontendMigrationsPreserved: plan.replacement.approvedPendingTags.length,
     frontendMigrationsPending: 0, apiTargets, recoveryReviewSha256: settings.recoveryReviewSha256,
+    ...(prepared.supplementFiles ? { priorRecovery: prepared.recovery.priorRecovery, rolePolicySupplement: prepared.recovery.rolePolicySupplement } : {}),
     localResults: prepared.localResults, hostResults: prepared.hostResults, confirmation: prepared.confirmation,
     applicationSqlExecuted: false, applicationDeployment: false, trafficAuthorized: false, productionTarget: false };
 }
@@ -171,8 +187,12 @@ export async function runP2FrontendReplacementRecovery(settings, confirmation, {
   const { plan, runtimeReview, writerReview, settings: { arm } } = release;
   const source = committedProfiledCurrentOperatorSource(root, operatorSourceCommit);
   demand(source.files.find(file => file.path === "ops/platform/p2-profiled-current-frontend-adapters.mjs")?.sha256 === writerReview.adaptersSha256);
-  const ci = await verifyOperatorCi({ api: githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
-    sourceCommit: operatorSourceCommit, branch: source.branch, workflowBytes: source.workflowBytes });
+  const api = githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN);
+  const [ci, rolePolicyCi] = await Promise.all([
+    verifyOperatorCi({ api, sourceCommit: operatorSourceCommit, branch: source.branch, workflowBytes: source.workflowBytes }),
+    selected.supplementFiles && Promise.all(replacementApiNames.map(async name =>
+      [name, await verifyReplacementRolePolicySource(api, name, selected.recovery.rolePolicySupplement[name])])),
+  ]);
   const provider = decode(file(release.settings.providerContext));
   requireQualificationTargetProfile(profile, provider);
   demand(exact(provider, ["version", "qualificationTargetProfile", "vercelToken", "bindings"]) && provider.version === 2 &&
@@ -204,6 +224,12 @@ export async function runP2FrontendReplacementRecovery(settings, confirmation, {
   demand((await ssh.machine()).machineId === arm.host.machineId);
   const installed = await ssh.installProfiledCurrentSource({ commit: operatorSourceCommit, files: source.files });
   demand(installed.status === "EXACT_OPERATOR_SOURCE_INSTALLED" && installed.commit === operatorSourceCommit);
+  if (selected.supplementFiles) {
+    const staged = await ssh.privateFiles(operatorSourceCommit, { version: 1, operation: "stage-replacement-role-policy",
+      actionId: selected.recovery.actionId, hostMachineId: arm.host.machineId, resultsRoot: arm.host.results, files: selected.supplementFiles });
+    demand(staged.status === "REPLACEMENT_ROLE_POLICY_STAGED" && staged.actionId === selected.recovery.actionId &&
+      isDeepStrictEqual(staged.sha256, Object.fromEntries(replacementApiNames.map(name => [name, selected.supplementFiles[name].sha256]))));
+  }
   const entries = source.files.map(({ path, sha256 }) => [path, sha256]).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
   const initial = { version: 1, mode: "p2-profiled-frontend-replacement-write", qualificationTargetProfile: profile,
     environment: "staging", sourceCommit: plan.sourceCommit, operatorSourceCommit, sourceSha256: Object.fromEntries(entries),
@@ -218,12 +244,14 @@ export async function runP2FrontendReplacementRecovery(settings, confirmation, {
     demand(isDeepStrictEqual(receipt, { status: "P2_FRONTEND_REPLACEMENT_RECOVERY_FRONTIER_VERIFIED", environment: "staging",
       releaseId: plan.releaseId, actionId: selected.recovery.actionId, recoveryReviewSha256: settings.recoveryReviewSha256,
       trafficAuthorized: false }));
-    return { ...receipt, operatorSourceCommit, operatorCi: ci, applicationSqlExecuted: false, applicationDeployment: false };
+    return { ...receipt, operatorSourceCommit, operatorCi: ci,
+      ...(rolePolicyCi ? { rolePolicyCi: Object.fromEntries(rolePolicyCi) } : {}), applicationSqlExecuted: false, applicationDeployment: false };
   }
   mkdirSync(localResults, { mode: 0o700 });
   mkdirSync(action, { mode: 0o700 });
   const actionStore = frontendReleaseReceiptStore(action);
   actionStore.record("exact-source-ci.json", ci);
+  if (rolePolicyCi) actionStore.record("exact-api-role-policy-source-ci.json", Object.fromEntries(rolePolicyCi));
   actionStore.record("ssh-diagnostics-reference.json", { directory: diagnostics });
   actionStore.retain(`${settings.recoveryReviewSha256}-${plan.candidateSha256}.json`, selected.recoveryRaw);
   const directory = join(action, "frontend");

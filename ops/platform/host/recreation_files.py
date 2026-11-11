@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import sys
 
 import migrate
@@ -122,6 +123,41 @@ def stage(value):
             "files": len(verified), "inputValuesDisplayed": False}
 
 
+def stage_replacement_role_policy(value):
+    refusal = "REPLACEMENT_ROLE_POLICY_STAGING_REFUSED"
+    demand(set(value) == {"version", "operation", "actionId", "hostMachineId", "resultsRoot", "files"} and
+           re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", value["actionId"]) and
+           re.fullmatch(r"[a-f0-9]{32}", value["hostMachineId"]) and
+           Path("/etc/machine-id").read_text().strip() == value["hostMachineId"], refusal)
+    results = Path(value["resultsRoot"])
+    demand(results.parent == ROOT and results == results.resolve() and str(results) == value["resultsRoot"] and
+           re.fullmatch(r"p2-[a-z0-9-]+-results", results.name), refusal)
+    migrate.private_directory(results)
+    target = results / (value["actionId"] + "-role-policy")
+    demand(type(value["files"]) is dict and set(value["files"]) == {"course", "community"}, refusal)
+    files, hashes = {}, {}
+    for name, item in value["files"].items():
+        demand(type(item) is dict and set(item) == {"sha256", "data"} and type(item["data"]) is str and
+               len(item["data"]) <= 87_384, refusal)
+        raw = base64.b64decode(item["data"], validate=True)
+        demand(0 < len(raw) <= 65_536 and base64.b64encode(raw).decode() == item["data"] and
+               migrate.file_hash(raw) == item["sha256"], refusal)
+        files[name], hashes[name] = raw, item["sha256"]
+    if os.path.lexists(target):
+        migrate.private_directory(target)
+        demand(set(path.name for path in target.iterdir()) == {"course.js", "community.js"}, refusal)
+        for name, raw in files.items():
+            file = target / (name + ".js")
+            info = file.lstat()
+            demand(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o600 and
+                   migrate.read_input(target, file.name, 65_536) == raw, refusal)
+    else:
+        target.mkdir(mode=0o700)
+        for name, raw in files.items():
+            migrate.write_exact_bytes(target, name + ".js", raw)
+    return {"status": "REPLACEMENT_ROLE_POLICY_STAGED", "actionId": value["actionId"], "sha256": hashes}
+
+
 def receipts(value):
     root = action_root(value["action"])
     phase = value.get("phase")
@@ -151,8 +187,9 @@ def main():
         raw = sys.stdin.buffer.read(24_000_001)
         demand(len(raw) <= 24_000_000, "RECREATION_FILES_PAYLOAD_TOO_LARGE")
         value = json.loads(raw)
-        demand(value.get("version") == 1 and value.get("operation") in ("stage", "receipts"), "RECREATION_FILES_FIXED_OPERATION_REQUIRED")
-        print(json.dumps(stage(value) if value["operation"] == "stage" else receipts(value)))
+        operations = {"stage": stage, "receipts": receipts, "stage-replacement-role-policy": stage_replacement_role_policy}
+        demand(value.get("version") == 1 and value.get("operation") in operations, "RECREATION_FILES_FIXED_OPERATION_REQUIRED")
+        print(json.dumps(operations[value["operation"]](value)))
     except BaseException as error:
         print(json.dumps({"status": "RECREATION_FILES_REQUIRES_REVIEW", "failureCode": runtime_actions.safe_code(error)}), file=sys.stderr)
         raise SystemExit(1) from None

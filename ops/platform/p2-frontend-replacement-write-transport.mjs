@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
 import { selectManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
 import { verifyP2FrontendReplacementObservation } from "./p2-frontend-replacement-probe.mjs";
+import { replacementApiNames, requireReplacementRolePolicyReview } from "./p2-replacement-role-policy-supplement.mjs";
 import { decodeQualificationTargetJson, requireQualificationTargetProfile,
   STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -89,14 +90,15 @@ function snapshotSelection(initial, plan, recoveryInput) {
   demand(typeof initial.operatorSourceCommit === "string" && /^(?!0+$)[a-f0-9]{40}$/u.test(initial.operatorSourceCommit) &&
     digest(initial.recoveryReviewSha256) && hash(recoveryBytes) === initial.recoveryReviewSha256);
   const recoveryReview = decodeQualificationTargetJson(recoveryBytes, "carrier");
-  demand(fields(recoveryReview, ["actionId", "originalDirectory", "originalEvidenceSha256"]));
+  requireReplacementRolePolicyReview(recoveryReview);
   const { actionId, originalDirectory, originalEvidenceSha256 } = recoveryReview;
   demand(typeof actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(actionId) && actionId !== plan.releaseId &&
     typeof originalDirectory === "string" && path.isAbsolute(originalDirectory) && path.normalize(originalDirectory) === originalDirectory &&
     path.basename(originalDirectory) === `p2-profiled-replacement-write-${plan.releaseId}` &&
     initial.results === path.join(path.dirname(originalDirectory), actionId) && initial.results !== originalDirectory &&
     fields(originalEvidenceSha256, originalEvidenceNames) && Object.values(originalEvidenceSha256).every(digest));
-  return { review, recovery: prepareRecovery(recoveryInput, recoveryReview, plan, review) };
+  return { review, recovery: prepareRecovery(recoveryInput, recoveryReview, plan, review),
+    rolePolicySupplement: recoveryReview.rolePolicySupplement };
 }
 
 function receiptBinding(initial, plan, status) {
@@ -304,7 +306,7 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
   try {
     demand(typeof task === "function" && typeof readHostEvidence === "function");
     const initial = structuredClone(initialInput), plan = structuredClone(planInput);
-    const { review, recovery } = snapshotSelection(initial, plan, recoveryInput);
+    const { review, recovery, rolePolicySupplement } = snapshotSelection(initial, plan, recoveryInput);
     const managed = Object.hasOwn(plan.replacement, "managedCatalog") ? selectManagedNeonCatalog(plan.replacement.managedCatalog,
       pick(plan.replacement, ["provider", "target", "databaseOid", "migrationRoleOid", "administrativeLogins"])) : undefined;
     await send(initial, "LOCKED", [], recovery ? 90_000 : 5_000);
@@ -394,6 +396,14 @@ export async function exchangeFrontendReplacementWrite(child, initialInput, plan
         const runtime = await read(evidence.runtime, reply.runtimeOutcomeSha256, 2_000_000);
         runtimeEvidenceBinding(migration.receipt, plan, frontend);
         runtimeEvidenceBinding(runtime.receipt, plan, frontend);
+        const appliedRolePolicy = migration.receipt.apiRolePolicySupplement;
+        if (rolePolicySupplement) {
+          demand(fields(appliedRolePolicy, replacementApiNames));
+          for (const name of replacementApiNames) {
+            const { readOnlyPreflightSha256, ...observed } = appliedRolePolicy[name];
+            demand(digest(readOnlyPreflightSha256) && isDeepStrictEqual(observed, rolePolicySupplement[name]));
+          }
+        } else demand(appliedRolePolicy === undefined);
         demand(migration.receipt.status === "API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" &&
           migration.receipt.databaseReceiptSha256?.frontend === frontend.databaseReceiptSha256 &&
           runtime.receipt.status === "API_RUNTIME_READY" && runtime.receipt.sourceCommit === plan.sourceCommit &&

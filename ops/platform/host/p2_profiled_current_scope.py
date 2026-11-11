@@ -347,6 +347,19 @@ class P2ProfiledReplacementScope(P2ProfiledCurrentScope):
         self.verify()
         return raw
 
+    def api_role_policy_supplement(self, name):
+        parent = self._require_parent()
+        recovery = getattr(parent, 'recovery', None)
+        if recovery is None or 'rolePolicySupplement' not in recovery:
+            return None
+        migrate.demand(self.recovery_action_id == recovery['actionId'] and self.prior_gateway is not None and
+                       self.prior_gateway.stopped and name in migrate.SERVICES,
+                       'REPLACEMENT_RECOVERY_ROLE_POLICY_ARTIFACT_REFUSED')
+        pin, raw = migrate.read_replacement_role_policy_artifact(
+            parent.initial, recovery, name, self.release['sources'][name]['commit'])
+        self.verify()
+        return pin, raw
+
     def runtime_ready(self, attempt, migration_attempt, snapshot, selected, outcome):
         from p2_frontend_replacement_parent import ReplacementWriteBroker
         return ReplacementWriteBroker.replacement_runtime_ready(

@@ -151,6 +151,37 @@ class MigrationDriverTests(unittest.TestCase):
             migrate.verify_replacement_api_suffix(scope, self.results, [(name, info, other_inputs, receipts)], credentials, {}, expected)
         self.assertEqual(scope.cleanup_runtime_helper.call_count, 3)
 
+    def test_role_policy_supplement_requires_exact_staging_action_and_artifact_bytes(self):
+        self.root = self.root.resolve()
+        action = "owned-correction"
+        directory = self.root / (action + "-role-policy")
+        directory.mkdir(mode=0o700)
+        initial = {"environment": "staging", "results": str(self.root / action)}
+        raw = b"// exact reviewed compiled policy\n"
+        pin = {"baseSourceCommit": "a" * 40, "sourceCommit": "b" * 40,
+               "sourceSha256": "c" * 64, "compiledSha256": migrate.file_hash(raw)}
+        recovery = {"actionId": action, "rolePolicySupplement": dict.fromkeys(migrate.SERVICES, pin)}
+        migrate.write_exact_bytes(directory, "course.js", raw)
+        self.assertEqual(migrate.read_replacement_role_policy_artifact(initial, recovery, "course", "a" * 40), (pin, raw))
+        for changed, selected, commit in (({**initial, "environment": "production"}, recovery, "a" * 40),
+                                          ({**initial, "results": str(self.root / "another-action")}, recovery, "a" * 40),
+                                          (initial, {**recovery, "actionId": "../foreign"}, "a" * 40),
+                                          (initial, recovery, "c" * 40)):
+            with self.assertRaisesRegex(ValueError, "ROLE_POLICY_ARTIFACT_REFUSED"):
+                migrate.read_replacement_role_policy_artifact(changed, selected, "course", commit)
+        migrate.write_exact_bytes(self.results, "course-role-policy.js", raw)
+        snapshot = self.results / "course-role-policy.js"
+        snapshot.chmod(0o444)
+        self.assertEqual(migrate.replacement_role_policy_mount(self.results.resolve(), "course", pin),
+                         ["--mount", f"type=bind,src={snapshot.resolve()},dst={migrate._ROLE_POLICY_MODULE},readonly"])
+        snapshot.unlink()
+        snapshot.symlink_to(directory / "course.js")
+        with self.assertRaisesRegex(ValueError, "ROLE_POLICY_ARTIFACT_REFUSED"):
+            migrate.replacement_role_policy_mount(self.results.resolve(), "course", pin)
+        (directory / "course.js").write_bytes(raw + b"// drift\n")
+        with self.assertRaisesRegex(ValueError, "ROLE_POLICY_ARTIFACT_REFUSED"):
+            migrate.read_replacement_role_policy_artifact(initial, recovery, "course", "a" * 40)
+
     def test_actual_source_cli_receipt_shapes_and_fixed_image_commands(self):
         ref = self.profiled()
         for service, receipt in (("frontend", {"version": 2}), ("lash-her-course-api", {"schemaVersion": 2})):

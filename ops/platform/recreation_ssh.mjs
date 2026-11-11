@@ -193,7 +193,7 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
     },
     privateFiles:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
-      assert.ok(["stage","receipts"].includes(payload.operation));
+      assert.ok(["stage","receipts","stage-replacement-role-policy"].includes(payload.operation));
       return run(["sudo","-n","/usr/bin/python3",`/opt/lash-her/operators/${commit}/ops/platform/host/recreation_files.py`],payload,
         120_000,payload.operation==="receipts"?14_000_000:4_000_000,payload.operation==="receipts");
     },
