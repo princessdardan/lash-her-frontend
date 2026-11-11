@@ -972,8 +972,9 @@ async function runBoundedCertification(plan,dependencies,profile){
   const store=frontendReleaseReceiptStore(dependencies.directory);store.record('p2-certification-started.json',p2CertificationReviewView(plan));
   if(dependencies.sourceCi)store.record('operator-source-ci.json',dependencies.sourceCi);
   bindP2CertificationReadyReceipts(context.frontendReceipts,plan);
-  let phase='host-serialization',discoveredFirstOwner;
-  try{const outcome=await dependencies.withEnvironmentLock(async(verifyEnvironment,signal,host)=>{
+  let phase='host-serialization';
+  try{return await runP2CertificationEnvironmentLockWithFirstOwnerHandoff(retainFirstOwnerSelection=>
+    dependencies.withEnvironmentLock(async(verifyEnvironment,signal,host)=>{
     demand(host.mode===mode&&host.certificationActionId===plan.certificationActionId);
     const environment=async()=>{await dependencies.assertSource?.();demand(!signal.aborted);bindP2CertificationReadyReceipts(context.frontendReceipts,plan);await verifyEnvironment();};
     let terminal;
@@ -996,7 +997,7 @@ async function runBoundedCertification(plan,dependencies,profile){
         requireQualificationTargetProfile(currentProfile,joined);
         if(plan.scopedAction.firstOwnerDiscovery){
           demand(validP2FirstOwnerSelection(joined.firstOwner)&&joined.firstOwner.nonce===plan.scopedAction.firstOwnerDiscovery.nonce);
-          discoveredFirstOwner={...joined.firstOwner};
+          retainFirstOwnerSelection(joined.firstOwner);
         }
         terminal=await host.prepareClose(joined);
         demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256&&
@@ -1160,16 +1161,25 @@ async function runBoundedCertification(plan,dependencies,profile){
     // environment lock while joining these exact immutable terminal bytes.
     if(!profile)store.record('p2-certification-outcome.json',terminal);
     await host.finish(terminal);
-    if(discoveredFirstOwner)store.record(P2_FIRST_OWNER_SELECTION_HANDOFF,{version:1,firstOwner:discoveredFirstOwner});
     return terminal;
-  });
-    if(profile)store.record('p2-certification-outcome.json',outcome);
-    return outcome;
+  }), (name,value)=>store.record(name,value),!!profile);
   }catch{
     try{store.record('p2-certification-outcome.json', {...versionFields,status:'P2_BOUNDED_CERTIFICATION_REQUIRES_REVIEW',planSha256:plan.planSha256,phase,
       certificationActionId:plan.certificationActionId,nativeDisabled:null,frontendAdmissionClosed:null,gatewayAdmissionClosed:null,runtimeStopped:null,trafficAuthorized:null,sqlReplayed:false});}catch{/* Preserve exclusive prior evidence. */}
     throw new Error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');
   }
+}
+
+export async function runP2CertificationEnvironmentLockWithFirstOwnerHandoff(run,record,profiled){
+  demand(typeof run==='function'&&typeof record==='function'&&typeof profiled==='boolean');
+  let firstOwner;
+  const outcome=await run(value=>{
+    demand(firstOwner===undefined&&validP2FirstOwnerSelection(value));
+    firstOwner=Object.freeze({...value});
+  });
+  if(profiled)record('p2-certification-outcome.json',outcome);
+  if(firstOwner)record(P2_FIRST_OWNER_SELECTION_HANDOFF,{version:1,firstOwner});
+  return outcome;
 }
 
 function privateBytes(path,maximum=2_000_000){
