@@ -75,7 +75,10 @@ LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
         'owned-operator-source-closure.json', 'owned-verifiers-current-only.json',
         'owned-verifiers.json', 'validation.json',
     )
-) | {'ops/platform/harness/owned-p2-lifecycle-receivers.mjs'}
+) | {
+    'ops/platform/harness/owned-frontend-identity-admission.mjs',
+    'ops/platform/harness/owned-p2-lifecycle-receivers.mjs',
+}
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
@@ -388,6 +391,13 @@ class ActualCertificationEntryTests(unittest.TestCase):
         temporary=tempfile.TemporaryDirectory();cls.addClassCleanup(temporary.cleanup)
         cls.source=Path(temporary.name).resolve()
         cls.source_names=legacy_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source)
+
+    def test_legacy_source_omits_separately_executed_identity_harness_within_existing_bounds(self):
+        omitted='ops/platform/harness/owned-frontend-identity-admission.mjs'
+        self.assertIn(omitted,LEGACY_FIXTURE_EVIDENCE_ONLY)
+        self.assertNotIn(omitted,self.source_names);self.assertFalse((self.source/omitted).exists())
+        self.assertTrue(REQUIRED.issubset(self.source_names));self.assertLessEqual(len(self.source_names),512)
+        self.assertLessEqual(sum((self.source/name).stat().st_size for name in self.source_names),41_000_000)
 
     def entry(self,mode,flavor='normal'):
         root=self.source
