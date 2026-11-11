@@ -478,6 +478,10 @@ class ReplacementArmTests(unittest.TestCase):
         }
         for path, value in records.values():
             migrate.write_json(path.parent, path.name, value)
+        if os.getuid() == 0:
+            course_job = migration / 'course/job-outcome.json'
+            os.chown(course_job, 65532, 65532)
+            os.chown(course_job.parent, 65532, 65532)
         recovery_plan['priorRecovery'] = {'actionId': previous.name,
             'evidenceSha256': {key: migrate.file_hash(path.read_bytes()) for key, (path, _value) in records.items()}}
         raw = parent.encoded(recovery_plan) + b'\n'
@@ -489,10 +493,8 @@ class ReplacementArmTests(unittest.TestCase):
         migrate.write_exact_bytes(migration, 'candidate.json', (self.bundle / 'release.candidate.json').read_bytes())
         evidence = {'probe': self.probe, 'written': b'written\n', 'request': {
             'databaseReceipt': base64.b64encode(b'database\n').decode(), 'continuationStarted': base64.b64encode(b'started\n').decode()}}
-        read_private = parent.private_record
         with (patch.object(parent, 'exact_host_directory', side_effect=Path),
-              patch('p2_replacement_runtime_containment.verify_runtime_intent'),
-              patch.object(parent, 'private_record', side_effect=lambda *args, **kwargs: read_private(*args))):
+              patch('p2_replacement_runtime_containment.verify_runtime_intent')):
             selected = parent.recovery_review(initial, self.release_id)
             retained = parent.retain_prior_recovery(initial, self.plan, base_probe, review, selected, evidence)
             self.assertEqual(retained['priorRecoveryProbe']['backendPid'], previous_probe['backendPid'])

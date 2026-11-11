@@ -779,7 +779,12 @@ def retain_prior_recovery(initial, plan, base_probe, review, selection, evidence
     directory = exact_host_directory(str(results / original.name))
     runtime_attempt = exact_host_directory(str(results / ('runtime-profiled-frontend-replacement-' + release_id)))
     migration = exact_host_directory(str(results / ('migration-profiled-frontend-replacement-' + release_id)))
-    course = exact_host_directory(str(migration / 'course'))
+    # The migration container writes its own job receipt as UID 65532.
+    course = migration / 'course'
+    course_uid = 65532 if os.getuid() == 0 else os.getuid()
+    course_info = course.lstat()
+    require(course == course.resolve() and stat.S_ISDIR(course_info.st_mode) and
+            course_info.st_uid == course_uid and stat.S_IMODE(course_info.st_mode) == 0o700, REFUSED)
     stop = exact_host_directory(str(directory / 'prior-gateway-api-suspension'))
     for path in (results, directory, runtime_attempt, migration, stop):
         migrate.private_directory(path)
@@ -795,7 +800,7 @@ def retain_prior_recovery(initial, plan, base_probe, review, selection, evidence
         'physicalObservation': private_record(directory, RECOVERY_PHYSICAL, 8192),
         'runtimeOutcome': private_record(runtime_attempt, 'runtime-outcome.json'),
         'migrationOutcome': private_record(migration, 'migration-outcome.json'),
-        'courseJobOutcome': private_record(course, 'job-outcome.json', owner_uid=65532),
+        'courseJobOutcome': private_record(course, 'job-outcome.json', owner_uid=course_uid),
         'runtimeContainment': private_record(directory, RECEIPT),
         'gatewayStopped': private_record(stop, p2_prior_gateway.STOPPED),
     }
