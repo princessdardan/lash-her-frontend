@@ -18,6 +18,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/course-support/manual-revoke-handler.test.ts",
   "src/lib/admin/authorization-operation.test.ts",
   "src/lib/admin/auth-callback-admission.test.ts",
+  "src/lib/admin/auth-route-admission.test.ts",
   "src/lib/writer-admission/resend-binding-probe.test.ts",
   "src/lib/customer-lifecycle/worker.test.ts",
   "src/lib/customer-lifecycle/cron.test.ts",

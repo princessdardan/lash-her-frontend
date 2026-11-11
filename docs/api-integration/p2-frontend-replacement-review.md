@@ -55,6 +55,10 @@ The current staging predecessor retains the accepted C07 runtime receipt with st
 
 The replacement operator settings point to the original arm review, a private local configuration copy, the reviewed runtime plan, the writer coverage review and the private provider handoff. The planner binds both API jobs and the exact configuration hashes, and checks that the writer review covers the candidate source. Use its exact confirmation value for the separately reviewed operator start.
 
+When the reviewed runtime document selects `initializeStagingCronSecret: true`, provide `FRONTEND_STAGING_CRON_SECRET` privately for that action. The offline plan names the dedicated staging Vercel project, its Production workload target and the sensitive `CRON_SECRET` update. The guarded continuation configures this value before building the compatible frontend, while both release locks remain held and native schedules remain disabled. An absent selector preserves the existing configuration. The generic production credential and production project are outside this action.
+
+The configuration receipt records the mutation attempt, provider acknowledgement and metadata readback, including partial acknowledgement on a later failure. The subsequent day-two workload/certification action verifies the deployed bearer. Preserve those original receipts for reconciliation; the operator does not read or automatically restore an unknown previous secret.
+
 ```sh
 node ops/platform/p2-frontend-replacement-release.mjs --plan /absolute/private/replacement-settings.json
 node ops/platform/p2-frontend-replacement-release.mjs --apply /absolute/private/replacement-settings.json --confirm EXACT_REVIEWED_CONFIRMATION
