@@ -38,7 +38,10 @@ def observe(configuration, reviewed, verify, command=None, assert_host=None):
     container = ids[0]
     local = run(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image])
     actual = run(["docker", "inspect", "--format", docker_inspect.RUNTIME_FIELDS, container]).split("|")
-    demand(actual == [local, "true", "healthy", "lash-her-staging", "gateway"] and re.fullmatch(r"sha256:[a-f0-9]{64}", local),
+    # Match release.check_containers: containerd may retain the pinned manifest
+    # digest in .Image while platform-specific inspect returns its child digest.
+    demand(len(actual) == 5 and actual[0] in (local, image.split("@")[1]) and
+        actual[1:] == ["true", "healthy", "lash-her-staging", "gateway"] and re.fullmatch(r"sha256:[a-f0-9]{64}", local),
         "RESTORATION_GATEWAY_HEALTH_OR_IMAGE_CHANGED")
     mounts = json.loads(run(["docker", "inspect", "--format", "{{json .Mounts}}", container]))
     demand(isinstance(mounts, list), "RESTORATION_GATEWAY_MOUNTS_REFUSED")
