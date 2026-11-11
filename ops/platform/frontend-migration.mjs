@@ -578,6 +578,8 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
             phase = "replacement-role-preparation";
             roles = await applyPreparedFrontendRoles(rolePlan, client, {
               confirmation, directory: rolesDirectory, privateDirectory, verifyEnvironment, verifySession,
+              ...(!owned && input.managedCatalog ? { managedNeon: { reference: input.managedCatalog,
+                provider: input.provider, administrativeLogins: input.administrativeLogins } } : {}),
             }, profile);
             phase = "replacement-closed-admission";
             await bootstrapFrontendAdmission({

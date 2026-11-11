@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -65,6 +66,83 @@ test("serialized plans and missing parent lock/session hooks cannot reach SQL", 
   const client = { query: async () => { queries++; } };
   await assert.rejects(applyPreparedFrontendRoles(structuredClone(plan), client, {}));
   await assert.rejects(applyPreparedFrontendRoles(plan, client, { confirmation: "staging/owned-role-preparation" })); assert.equal(queries, 0);
+});
+test("only the locked managed Neon target receives a password literal for server-side SCRAM", async t => {
+  const raw = readFileSync(new URL("./managed-neon-replacement-catalog.json", import.meta.url));
+  const catalog = JSON.parse(raw);
+  const reference = { id: catalog.id, sha256: createHash("sha256").update(raw).digest("hex") };
+  const makeProfiled = target => {
+    const f = roleFixture(target);
+    f.candidate.version = 3; f.job.version = 2; f.specification.version = 2;
+    for (const value of [f.candidate, f.candidate.frontendMigration, f.job, f.job.target, f.specification]) {
+      value.qualificationTargetProfile = current;
+    }
+    return prepareFrontendRolesPlan(f.candidate, f.job, f.specification, current);
+  };
+  for (const mode of ["managed", "stock", "foreign-oid", "foreign-provider", "unverified-tls"]) await t.test(mode, async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "frontend-role-password-fixture-")));
+    const directory = join(root, "roles"), privateDirectory = join(root, "credentials");
+    mkdirSync(directory, { mode: 0o700 }); mkdirSync(privateDirectory, { mode: 0o700 });
+    try {
+      const plan = makeProfiled(mode === "stock" ? undefined : catalog.target);
+      const operations = [];
+      let passwordSql;
+      const client = {
+        connection: { stream: { encrypted: true, authorized: true } },
+        connectionParameters: { host: plan.target.host, port: plan.target.port,
+          ssl: { rejectUnauthorized: mode !== "unverified-tls" } },
+        async query(statement) {
+          if (typeof statement === "object") {
+            const text = statement.text;
+            if (text.includes("FROM pg_catalog.pg_roles")) return { rows: catalog.roles };
+            if (text.includes("FROM pg_catalog.pg_auth_members")) return { rows: catalog.memberships };
+            if (text.includes("FROM pg_catalog.pg_default_acl")) return { rows: catalog.defaultAcl };
+            if (text.includes("FROM pg_catalog.pg_depend d")) return { rows: catalog.dependencies };
+            if (text.includes("FROM pg_catalog.pg_shdepend d")) return { rows: catalog.sharedDependencies };
+            if (text.includes("aclexplode(d.datacl)")) return { rows: catalog.databaseAclAfter };
+            throw new Error("unexpected fixture catalog query");
+          }
+          if (statement.includes("pg_backend_pid() AS pid")) return { rows: [{ pid: 91, username: plan.target.user,
+            session_username: plan.target.user, database: plan.target.database, major: plan.target.serverMajor, read_only: "off" }] };
+          if (statement.includes("AS held")) return { rows: [{ held: true }] };
+          if (statement.includes('AS "databaseOid"')) return { rows: [{ databaseOid: mode === "foreign-oid" ? "1" : catalog.databaseOid,
+            migrationRoleOid: catalog.migrationRoleOid }] };
+          if (statement.includes("rolname=ANY")) return { rows: [] };
+          if (statement.includes(" PASSWORD ")) {
+            passwordSql = statement;
+            operations.push("password-role");
+            throw Object.assign(new Error(statement), { code: "XX000" });
+          }
+          operations.push(statement);
+          return { rows: [] };
+        },
+      };
+      await assert.rejects(applyPreparedFrontendRoles(plan, client, {
+        confirmation: "staging/owned-role-preparation", directory, privateDirectory,
+        verifyEnvironment: async () => {}, verifySession: async () => {},
+        ...(mode === "stock" ? {} : { managedNeon: { reference,
+          administrativeLogins: catalog.administrativeLogins,
+          provider: mode === "foreign-provider" ? { ...catalog.provider, branchId: "br-foreign" } : catalog.provider } }),
+      }, current), { message: "FRONTEND_ROLE_PREPARATION_FAILED_REVIEW_REQUIRED" });
+      const credential = JSON.parse(readFileSync(join(privateDirectory, "frontend-role-credentials.json"), "utf8"));
+      const outcome = readFileSync(join(directory, "roles-preparation-outcome.json"), "utf8");
+      assert.equal(outcome.includes(credential.password), false);
+      assert.equal(JSON.parse(outcome).sqlOutcome, "rolled-back");
+      assert.ok(operations.includes("ROLLBACK"));
+      if (mode === "managed") {
+        const encryption = operations.indexOf("SET LOCAL password_encryption = 'scram-sha-256'");
+        assert.ok(encryption >= 0 && encryption < operations.indexOf("password-role"));
+        assert.equal(passwordSql.endsWith(`PASSWORD '${credential.password}'`), true);
+        assert.equal(JSON.parse(outcome).passwordAssignment, "managed-neon-server-scram");
+      } else if (mode === "stock") {
+        assert.equal(passwordSql.includes("PASSWORD 'SCRAM-SHA-256$"), true);
+        assert.equal(passwordSql.includes(credential.password), false);
+      } else {
+        assert.equal(passwordSql, undefined);
+        assert.ok(!operations.some(text => text.startsWith("CREATE ROLE")));
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });
 test("standalone defaults to offline planning and never reads configured migration credentials", async () => {
   const directory = mkdtempSync(join(tmpdir(), "frontend-roles-plan-"));

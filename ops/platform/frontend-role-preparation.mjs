@@ -2,9 +2,12 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes, randomUUID } from "node:crypto";
 import { constants, openSync, closeSync, fstatSync, lstatSync, realpathSync, readFileSync, writeFileSync, fsyncSync, linkSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { Client } from "pg";
+import { isDeepStrictEqual } from "node:util";
+import { Client, escapeLiteral } from "pg";
 import { frontendAdmissionTargetSha256, FRONTEND_PREPARATION_ROLES } from "./frontend-admission-bootstrap.mjs";
-import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
+import { selectManagedNeonCatalog, verifyManagedNeonCatalog } from "./frontend-managed-neon-catalog.mjs";
+import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
+  STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 
 export { FRONTEND_PREPARATION_ROLES };
 const roleSpecification = {
@@ -208,6 +211,12 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
   const { directory, privateDirectory: privatePath } = dependencies;
   privateDirectory(directory); privateDirectory(privatePath); demand(directory !== privatePath);
   demand(!existsSync(join(directory, "roles-preparation-started.json")) && !existsSync(join(directory, "roles-preparation-outcome.json")) && !existsSync(join(privatePath, "frontend-role-credentials.json")));
+  const managedNeon = dependencies.managedNeon;
+  if (managedNeon !== undefined) {
+    demand(isDeepStrictEqual(profile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE) && !plan.reuse &&
+      managedNeon && typeof managedNeon === "object" &&
+      isDeepStrictEqual(Object.keys(managedNeon).sort(), ["administrativeLogins", "provider", "reference"]));
+  }
   // Refuse a legacy reuse graph before any physical-session/SQL work. Genuine
   // original records remain unmodified; profile identity is never inferred.
   let profiledReuse;
@@ -227,7 +236,8 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
     profiledReuse = { previous, priorPrivate };
   }
   let phase = "locked-target-preflight", started = false, transaction = false, commitAttempted = false, committed = false, rollbackAcknowledged = false, roleSqlAttempted = false, physicalPid;
-  const base = { ...plan, admissionChanged: false, featuresEnabled: false, providerTouched: false };
+  const base = { ...plan, ...(managedNeon ? { passwordAssignment: "managed-neon-server-scram" } : {}),
+    admissionChanged: false, featuresEnabled: false, providerTouched: false };
   const verify = async () => {
     await dependencies.verifyEnvironment(); await dependencies.verifySession();
     demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true &&
@@ -267,11 +277,26 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
       await verify();
       demand(readPrivate(privatePath, "frontend-role-credentials.json").runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);
       await client.query("SET LOCAL createrole_self_grant = ''");
+      if (managedNeon) {
+        demand(client.connectionParameters.ssl?.rejectUnauthorized === true &&
+          client.connectionParameters.ssl.checkServerIdentity === undefined);
+        const { rows: [physical] } = await client.query(`SELECT
+          (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS "databaseOid",
+          current_user::regrole::oid::text AS "migrationRoleOid"`);
+        const { qualificationTargetProfile, ...target } = plan.target;
+        const selected = selectManagedNeonCatalog(managedNeon.reference, { target, ...physical,
+          provider: managedNeon.provider, administrativeLogins: managedNeon.administrativeLogins });
+        await verifyManagedNeonCatalog(client, selected);
+        await client.query("SET LOCAL password_encryption = 'scram-sha-256'");
+      }
       if (!plan.reuse) {
         const owner = identifier(FRONTEND_PREPARATION_ROLES.owner), runtime = identifier(FRONTEND_PREPARATION_ROLES.runtime), operator = identifier(plan.target.user), database = identifier(plan.target.database);
         const flags = "NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS";
         roleSqlAttempted = true; await client.query(`CREATE ROLE ${owner} NOLOGIN ${flags}`);
-        await client.query(`CREATE ROLE ${runtime} LOGIN ${flags} PASSWORD '${scram(privateRecord.password)}'`);
+        // Neon forwards the password at commit and rejects client-generated verifiers.
+        // Only the exact managed target can send an escaped literal over verified TLS.
+        const passwordLiteral = escapeLiteral(managedNeon ? privateRecord.password : scram(privateRecord.password));
+        await client.query(`CREATE ROLE ${runtime} LOGIN ${flags} PASSWORD ${passwordLiteral}`);
         await client.query(`GRANT CREATE ON DATABASE ${database} TO ${owner}`);
         await client.query(`GRANT ${owner} TO ${operator} WITH INHERIT FALSE`);
         await client.query(`GRANT ${owner} TO ${operator} WITH SET TRUE`);
