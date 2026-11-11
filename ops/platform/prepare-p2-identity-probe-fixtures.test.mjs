@@ -905,7 +905,7 @@ test("operator CI installs exact gateway dependencies and retains the fifth-stag
   const job = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")).jobs["frontend-operator-migrations"];
   const gateway = job.steps.findIndex(step => step.run === "npm ci --ignore-scripts --prefix ops/gateway"),
     fixture = job.steps.findIndex(step => step.run?.includes("prepare-p2-identity-probe-fixtures.mjs"));
-  assert.ok(gateway >= 0 && gateway < fixture); assert.equal(job["timeout-minutes"], 20);
+  assert.ok(gateway >= 0 && gateway < fixture); assert.equal(job["timeout-minutes"], 30);
   assert.match(job.steps[fixture].run, /--recovery-postgres18 --lifecycle-postgres18\s+> "\$RUNNER_TEMP\/p2-identity-recovery-lifecycle-postgres18.json"/u);
   const success = job.steps.find(step => step.with?.name === "frontend-operator-schema-summary"),
     failure = job.steps.find(step => step.name === "Retain private owned fixture failure diagnostics");
