@@ -7,6 +7,7 @@ declare module "next-auth" {
       providerUserId: string;
       authenticatedAt: number;
       firstOwnerWindowSha256?: string;
+      firstOwnerDiscoveryWindowSha256?: string;
     };
   }
 }
@@ -17,6 +18,7 @@ declare module "next-auth/jwt" {
     providerUserId?: string;
     adminAuthenticatedAt?: number;
     firstOwnerWindowSha256?: string;
+    firstOwnerDiscoveryWindowSha256?: string;
   }
 }
 

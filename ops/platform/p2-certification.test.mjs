@@ -1,16 +1,55 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,realpathSync,chmodSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {existsSync,mkdtempSync,mkdirSync,realpathSync,chmodSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {nativeDocuments} from './harness/p2-native-unit-fixture.mjs';
 import {frontendCoordinationHash as hash} from './frontend-release-inventory.mjs';
-import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts,p2CertificationReviewView,requireP2GuardedReceiverContracts} from './p2-certification.mjs';
+import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts,
+  p2CertificationReviewView,requireP2GuardedReceiverContracts,runP2CertificationEnvironmentLockWithFirstOwnerHandoff} from './p2-certification.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {readKnownAckRuntimeDatabaseUrl} from './p2-known-ack-loss-probe.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
 import {phase2ContractManifestBinding} from './release.mjs';
+import {frontendReleaseReceiptStore} from './frontend-release-receipts.mjs';
+import {P2_FIRST_OWNER_SELECTION_HANDOFF,readP2FirstOwnerSelectionHandoff} from './p2-first-owner-identity.mjs';
+
+test('first-owner handoff waits for environment-lock transport commit and final verification',async()=>{
+  const firstOwner={nonce:'9'.repeat(32),identitySha256:'6'.repeat(64)};
+  for(const failAfterHostFinish of [true,false]){
+    const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-first-owner-finalize-')));chmodSync(directory,0o700);
+    try{
+      const store=frontendReleaseReceiptStore(directory),handoff=join(directory,P2_FIRST_OWNER_SELECTION_HANDOFF);
+      let hostFinished=false,transportFinalized=false;
+      const host={async finish(){await Promise.resolve();hostFinished=true;}};
+      const environmentLock=async callback=>{
+        const outcome=await callback();
+        // The callback and host finish have succeeded. Transport commit,
+        // final verification and cleanup still have to complete.
+        if(failAfterHostFinish)throw new Error('owned-transport-final-verification');
+        transportFinalized=true;
+        return outcome;
+      };
+      const run=retain=>environmentLock(async()=>{
+        retain(firstOwner);await host.finish();
+        return {status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED'};
+      });
+      const execute=()=>runP2CertificationEnvironmentLockWithFirstOwnerHandoff(run,
+        (name,value)=>store.record(name,value),true);
+      if(failAfterHostFinish)await assert.rejects(execute(),/owned-transport-final-verification/u);
+      else assert.deepEqual(await execute(),{status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED'});
+      assert.equal(hostFinished,true);assert.equal(transportFinalized,!failAfterHostFinish);
+      if(failAfterHostFinish){
+        assert.equal(existsSync(handoff),false);assert.equal(readP2FirstOwnerSelectionHandoff(handoff),null);
+      }else{
+        assert.deepEqual(readP2FirstOwnerSelectionHandoff(handoff),firstOwner);
+        await assert.rejects(execute());
+        assert.deepEqual(readP2FirstOwnerSelectionHandoff(handoff),firstOwner);
+      }
+    }finally{rmSync(directory,{recursive:true,force:true});}
+  }
+});
 
 test('guarded receiver qualification requires both exact sources and complete request schemas',()=>{
   const manifest=phase2ContractManifestBinding(undefined,{requireReleased:true});

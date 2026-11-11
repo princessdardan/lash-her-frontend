@@ -343,13 +343,15 @@ async function runWorker(operation, payload, checkpoint, signal) {
   } catch { refuse(); } finally { clearTimeout(timeout); clearTimeout(killTimeout); }
 }
 
-function releasePayload(selected, provider, directory, runtimeDatabaseUrl = provider.frontendRuntimeDatabaseUrl) {
+function releasePayload(selected, provider, directory, runtimeDatabaseUrl = provider.frontendRuntimeDatabaseUrl,
+  stagingCronSecret) {
   return { qualificationTargetProfile: profile, plan: selected.plan, candidate: selected.candidate, job: selected.job,
     candidateSha256: selected.candidateSha256, inventorySha256: selected.inventorySha256,
     configurationSha256: selected.configurationSha256, directory, vercelToken: provider.vercelToken,
     bindings: provider.bindings, expectedFeatureControls: selected.expectedFeatureControls,
     writerAdmissionBinding: selected.writerAdmissionBinding, bootstrapRuntimeTarget: selected.target,
     ...(runtimeDatabaseUrl === undefined ? {} : { frontendRuntimeDatabaseUrl: runtimeDatabaseUrl }),
+    ...(stagingCronSecret === undefined ? {} : { stagingCronSecret }),
     ...(selected.replacementProvenance === undefined ? {} : { replacementProvenance: selected.replacementProvenance }) };
 }
 
@@ -521,12 +523,20 @@ async function runReplacementFrontend(context, deploy) {
     const selected = validateRelease(context, true);
     const checkpoint = () => replacementClosedAdmission(context, selected);
     await checkpoint();
-    let runtimeDatabaseUrl;
+    const initializeStagingCronSecret = selected.plan.initializeStagingCronSecret;
+    demand(initializeStagingCronSecret === undefined || initializeStagingCronSecret === true);
+    const cronDescriptor = Object.getOwnPropertyDescriptor(context, "stagingCronSecret");
+    const validCronDescriptor = cronDescriptor?.enumerable === false && Object.hasOwn(cronDescriptor, "value") &&
+      typeof cronDescriptor.value === "string" && /^[!-~]{32,8192}$/u.test(cronDescriptor.value);
+    demand(initializeStagingCronSecret === true ? (deploy ? validCronDescriptor :
+      cronDescriptor === undefined || validCronDescriptor) : cronDescriptor === undefined);
+    let runtimeDatabaseUrl, stagingCronSecret;
     if (deploy) {
       const minted = Object.getOwnPropertyDescriptor(context, "frontendRuntimeDatabaseUrl");
       demand(minted?.enumerable === false && Object.hasOwn(minted, "value") && typeof minted.value === "string" &&
         minted.value.length > 0 && minted.value.length <= 16_384 && !/[\r\n]/u.test(minted.value));
       runtimeDatabaseUrl = minted.value;
+      stagingCronSecret = cronDescriptor?.value;
       await proveRuntimeDatabase(selected, runtimeDatabaseUrl, {
         pid: selected.replacementProbe.backendPid, databaseOid: selected.replacementProbe.databaseOid,
       });
@@ -536,7 +546,8 @@ async function runReplacementFrontend(context, deploy) {
     demand(jsonHash(provider.bindings.gatewayObservation) === selected.plan.restoration.gatewayBindingSha256);
     await checkpoint();
     const result = await runWorker(deploy ? "replacement-deploy" : "replacement-observe",
-      releasePayload(selected, provider, context.directory, runtimeDatabaseUrl), checkpoint, context.environmentSignal);
+      releasePayload(selected, provider, context.directory, runtimeDatabaseUrl, stagingCronSecret),
+      checkpoint, context.environmentSignal);
     return releaseProof(result, selected);
   } catch { refuse(); }
 }

@@ -361,8 +361,10 @@ with tempfile.TemporaryDirectory() as directory:
     assert engine['REQUIRED'] <= manifest.keys()
     assert engine['PROFILED_CURRENT_SOURCE_ONLY'].isdisjoint(manifest)
     assert engine['LEGACY_FIXTURE_EVIDENCE_ONLY'].isdisjoint(manifest)
+    assert engine['INTERRUPTED_RESTORATION_UNRELATED_HARNESS'].isdisjoint(manifest)
     assert not (source / 'ops/platform/host/p2_certification_parent_test.py').exists()
     assert not (source / 'ops/platform/prepare-p2-identity-probe-fixtures.test.mjs').exists()
+    assert not (source / 'ops/platform/harness/owned-frontend-identity-admission.mjs').exists()
     assert len(manifest) <= 512 and sum((source / name).stat().st_size for name in manifest) <= 41_000_000
     retained = 'ops/platform/host/p2_release_supervisor.py'
     committed = subprocess.check_output([*git, 'cat-file', 'blob', f'{commit}:{retained}'])

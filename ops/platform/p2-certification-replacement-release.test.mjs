@@ -41,7 +41,7 @@ const environment = "staging", releaseId = "owned-certification-replacement";
 const phase2 = { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
 const contractManifestSha256 = artifact.contractManifestSha256, sqlArtifactSha256 = artifact.sqlArtifactSha256;
 
-function reviewedFixture(t, sourceCommit) {
+function reviewedFixture(t, sourceCommit, fixtureOptions = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "p2-replacement-plan-")));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bundle = join(directory, "bundle");
@@ -143,14 +143,15 @@ function reviewedFixture(t, sourceCommit) {
   const runtimeReview = { version: 1, qualificationTargetProfile: profile, environment, releaseId, sourceCommit,
     candidateSha256: plan.candidateSha256, targetSha256: plan.targetSha256, reviewedPlanSha256: arm.reviewedPlanSha256,
     hostMachineId: host.machineId, configuration: hostRoot + "/configuration", configurationSha256, apiJobSha256,
-    certification: structuredClone(P2_CERTIFICATION_PROFILE), producerSha256: write(writerReviewFile, writerReview) };
+    certification: structuredClone(P2_CERTIFICATION_PROFILE), producerSha256: write(writerReviewFile, writerReview),
+    ...(fixtureOptions.initializeStagingCronSecret === true ? { initializeStagingCronSecret: true } : {}) };
   const settings = { version: 1, qualificationTargetProfile: profile, environment, arm, configuration, runtimeReviewFile,
     runtimeReviewSha256: write(runtimeReviewFile, runtimeReview), writerReviewFile, providerContext: join(directory, "provider-context.json") };
   return { settings, plan, probe, administrativeLogins, runtimeReview, writerReview, bundle, directory };
 }
 
-function fixture(t, sourceCommit = "a".repeat(40)) {
-  const review = reviewedFixture(t, sourceCommit);
+function fixture(t, sourceCommit = "a".repeat(40), options = {}) {
+  const review = reviewedFixture(t, sourceCommit, options);
   const { plan, probe, administrativeLogins, settings, runtimeReview } = review;
   const action = join(settings.arm.results, plan.releaseId + "-replacement-write");
   const frontend = join(action, "frontend"), vercel = join(frontend, "vercel");
@@ -273,6 +274,31 @@ test("replacement certification joins original apply-forward evidence and derive
     { ...descriptor, administrativeLogins: [descriptor.administrativeLogins[0], { name: "owned_admin_z", oid: descriptor.administrativeLogins[0].oid }] }]) {
     assert.equal(validP2CertificationReplacementDescriptor(invalid), false);
   }
+});
+
+test("cron initialization remains bound through original receipts without replay authority", t => {
+  const f = fixture(t, "a".repeat(40), { initializeStagingCronSecret: true });
+  const loaded = prepareP2CertificationReplacementRelease(f.settings, f.selection);
+  const runtimeReviewSha256 = digest(readFileSync(f.settings.runtimeReviewFile));
+  assert.equal(f.runtimeReview.initializeStagingCronSecret, true);
+  assert.equal(f.terminal.runtimeReviewSha256, runtimeReviewSha256);
+  assert.equal(loaded.profiledRelease.replacementRelease.runtimeReviewSha256, runtimeReviewSha256);
+  assert.equal(loaded.original.inventory.replacementRelease.runtimeReviewSha256, runtimeReviewSha256);
+  assert.equal(loaded.original.plan.inventorySha256, hash(loaded.original.inventory));
+  assert.equal(Object.hasOwn(loaded.original.inventory, "initializeStagingCronSecret"), false);
+  assert.equal(Object.hasOwn(loaded.profiledRelease.replacementRelease, "initializeStagingCronSecret"), false);
+
+  const plain = fixture(t);
+  const ordinary = prepareP2CertificationReplacementRelease(plain.settings, plain.selection);
+  assert.notEqual(ordinary.original.inventory.replacementRelease.runtimeReviewSha256, runtimeReviewSha256);
+  assert.notEqual(ordinary.original.plan.inventorySha256, loaded.original.plan.inventorySha256);
+
+  const withoutInitialization = { ...f.runtimeReview };
+  delete withoutInitialization.initializeStagingCronSecret;
+  f.settings.runtimeReviewSha256 = write(f.settings.runtimeReviewFile, withoutInitialization);
+  assert.throws(() => prepareP2CertificationReplacementRelease(f.settings, f.selection), refuse);
+  assert.throws(() => prepareP2CertificationReplacementRelease(f.settings,
+    f.select({ ...f.terminal, runtimeReviewSha256: f.settings.runtimeReviewSha256 })), refuse);
 });
 
 test("replacement certification refuses substituted originals and retagged semantic failures", t => {

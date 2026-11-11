@@ -1,6 +1,6 @@
 // Fixed source parent for bounded certification stages. No release replay.
 import {isDeepStrictEqual} from 'node:util';
-import {validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
+import {P2_FIRST_OWNER_SELECTION_HANDOFF,validP2FirstOwnerDiscoverySelection,validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {frontendCoordinationHash as rawHash} from './frontend-release-inventory.mjs';
 import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {prepareP2LifecycleNativePlan,p2NativeHash,P2_LIFECYCLE_NATIVE_SCHEDULE} from './p2-lifecycle-native.mjs';
@@ -36,12 +36,12 @@ import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP
 import {p2MediaUploadCallbackOperation,p2StalledRenewalStage,readP2MediaReservationFile} from './p2-lifecycle-browser-recorder.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
-  readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
+  readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,requireP2InteractiveFirstOwnerDiscoveryEvidence,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,captureP2InteractiveEnrollmentBaseline,
   observeP2InteractiveEnrollmentCase,validateP2InteractiveEnrollmentEmail,captureP2InteractiveFirstOwnerBaseline,
-  observeP2InteractiveFirstOwnerCase,
+  observeP2InteractiveFirstOwnerCase,captureP2InteractiveFirstOwnerDiscoveryBaseline,observeP2InteractiveFirstOwnerDiscoveryCase,
   captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
 import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftCase,validateP2InteractiveCourseDraft,
   captureP2InteractiveCourseDraftEditsBaseline,observeP2InteractiveCourseDraftEditsCase,validateP2InteractiveCourseDraftEdits,
@@ -311,6 +311,7 @@ function interactiveActionValid(value){
   const media=value?.stage==='media';
   const enrollment=identity&&Object.hasOwn(value,'identityEnrollment');
   const firstOwner=identity&&Object.hasOwn(value,'firstOwner');
+  const firstOwnerDiscovery=identity&&Object.hasOwn(value,'firstOwnerDiscovery');
   const learning=value?.stage==='learning',paidGrant=value?.stage==='paid-grant';
   const learnerAccess=value?.stage==='learner-access',paidRevoke=value?.stage==='paid-revoke',lessonEntry=value?.stage==='lesson-entry';
   const lessonDenial=value?.stage==='lesson-denial',assessment=value?.stage==='lesson-assessment',resume=value?.stage==='lesson-resume',restore=value?.stage==='lesson-restore';
@@ -321,7 +322,8 @@ function interactiveActionValid(value){
   const selectionKey=media?'mediaAction':lifecycle?'frontendAction':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':
     learnerAccess?'learnerAccessAction':lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':
     resume?'resumeAction':restore?'restoreAction':ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':
-      staleRevision?'staleRevisionAction':stalledRenewal?'stalledRenewalAction':paidRevoke?'paidRevokeAction':identity?(firstOwner?'firstOwner':enrollment?'identityEnrollment':'identityActor'):null;
+      staleRevision?'staleRevisionAction':stalledRenewal?'stalledRenewalAction':paidRevoke?'paidRevokeAction':identity?
+        (firstOwner?'firstOwner':firstOwnerDiscovery?'firstOwnerDiscovery':enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','lifecycle',...courseBackedBrowserStages].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
@@ -351,6 +353,7 @@ function interactiveActionValid(value){
   }
   if(identity){
     if(firstOwner)return value.requests.length===0&&validP2FirstOwnerSelection(value.firstOwner);
+    if(firstOwnerDiscovery)return value.requests.length===0&&validP2FirstOwnerDiscoverySelection(value.firstOwnerDiscovery);
     if(enrollment){
       const selected=value.identityEnrollment;
       return value.requests.length===0&&exactKeys(selected,['provider','emailSha256','nonce'])&&
@@ -739,7 +742,8 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     plan.startState==='already-closed'&&plan.maximumSeconds===(stalledRenewal?900:300)&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,
-    firstOwner=identity&&action.firstOwner!==undefined,authoring=action.stage==='authoring';
+    firstOwner=identity&&action.firstOwner!==undefined,firstOwnerDiscovery=identity&&action.firstOwnerDiscovery!==undefined,
+    authoring=action.stage==='authoring';
   const learning=action.stage==='learning',paidGrant=action.stage==='paid-grant',courseBacked=courseBackedBrowserStages.has(action.stage);
   const media=action.stage==='media',learnerAccess=action.stage==='learner-access';
   const mediaUpload=media&&action.mediaAction.operation===p2MediaUploadCallbackOperation;
@@ -771,8 +775,9 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     stalledRenewal?{actorId:action.actorId,...action.stalledRenewalAction}:
     paidRevoke?paidRevokeSelection(action,courseDraft.paidRevokeReason):
     paidGrant?{...paidGrantSelection,actorId:action.actorId,reason:courseDraft.paidGrantReason}:
-    firstOwner?action.firstOwner:enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
-  const context=media||firstOwner||authoring||paidGrant||paidRevoke||!enrollment&&selection.actorKind==='admin'?'owner':'learner';
+    firstOwner?action.firstOwner:firstOwnerDiscovery?action.firstOwnerDiscovery:enrollment?action.identityEnrollment:identity?action.identityActor:
+      {...action.frontendAction,actorId:action.actorId};
+  const context=media||firstOwner||firstOwnerDiscovery||authoring||paidGrant||paidRevoke||!enrollment&&selection.actorKind==='admin'?'owner':'learner';
   const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
   const runtimeProducer=plan.nativePlan.producer;
   const producerSha256=rawHash(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`);
@@ -802,6 +807,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       paidRevoke?await captureP2InteractivePaidRevokeBaseline(courseDraft.job,selection,courseObservations):
       paidGrant?await captureP2InteractivePaidGrantBaseline(courseDraft.job,selection,courseObservations):
       firstOwner?await captureP2InteractiveFirstOwnerBaseline(client,target,selection,observations):
+      firstOwnerDiscovery?await captureP2InteractiveFirstOwnerDiscoveryBaseline(client,target,selection,observations):
       enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
       identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
         await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
@@ -898,6 +904,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       demand(observed.status==='P2_INTERACTIVE_MEDIA_UPLOAD_OBSERVED');
       record('p2-interactive-media-upload-callback.json',observed);
     }
+    if(firstOwnerDiscovery)requireP2InteractiveFirstOwnerDiscoveryEvidence(plan,controller,browserEvidence);
     const witness=media?undefined:authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
       authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
       learning?await observeP2InteractiveFreeEnrollmentCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
@@ -914,6 +921,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       paidRevoke?await observeP2InteractivePaidRevokeCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       paidGrant?await observeP2InteractivePaidGrantCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       firstOwner?await observeP2InteractiveFirstOwnerCase(client,target,selection,baseline,browserEvidence,observations):
+      firstOwnerDiscovery?await observeP2InteractiveFirstOwnerDiscoveryCase(client,target,selection,baseline,browserEvidence,observations):
       enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
       identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
         await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
@@ -965,7 +973,8 @@ async function runBoundedCertification(plan,dependencies,profile){
   if(dependencies.sourceCi)store.record('operator-source-ci.json',dependencies.sourceCi);
   bindP2CertificationReadyReceipts(context.frontendReceipts,plan);
   let phase='host-serialization';
-  try{const outcome=await dependencies.withEnvironmentLock(async(verifyEnvironment,signal,host)=>{
+  try{return await runP2CertificationEnvironmentLockWithFirstOwnerHandoff(retainFirstOwnerSelection=>
+    dependencies.withEnvironmentLock(async(verifyEnvironment,signal,host)=>{
     demand(host.mode===mode&&host.certificationActionId===plan.certificationActionId);
     const environment=async()=>{await dependencies.assertSource?.();demand(!signal.aborted);bindP2CertificationReadyReceipts(context.frontendReceipts,plan);await verifyEnvironment();};
     let terminal;
@@ -986,6 +995,10 @@ async function runBoundedCertification(plan,dependencies,profile){
           ordinaryProducers:prepared.plan.producers,signal,identityEnrollmentEmail:dependencies.identityEnrollmentEmail,courseDraft:dependencies.courseDraft,
           record:(name,receipt)=>store.record(name,receipt)});
         requireQualificationTargetProfile(currentProfile,joined);
+        if(plan.scopedAction.firstOwnerDiscovery){
+          demand(validP2FirstOwnerSelection(joined.firstOwner)&&joined.firstOwner.nonce===plan.scopedAction.firstOwnerDiscovery.nonce);
+          retainFirstOwnerSelection(joined.firstOwner);
+        }
         terminal=await host.prepareClose(joined);
         demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256&&
           terminal.caseStatus===joined.status&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false);
@@ -1147,15 +1160,26 @@ async function runBoundedCertification(plan,dependencies,profile){
     // The physical session is now actually closed. The host retains its real
     // environment lock while joining these exact immutable terminal bytes.
     if(!profile)store.record('p2-certification-outcome.json',terminal);
-    await host.finish(terminal);return terminal;
-  });
-    if(profile)store.record('p2-certification-outcome.json',outcome);
-    return outcome;
+    await host.finish(terminal);
+    return terminal;
+  }), (name,value)=>store.record(name,value),!!profile);
   }catch{
     try{store.record('p2-certification-outcome.json', {...versionFields,status:'P2_BOUNDED_CERTIFICATION_REQUIRES_REVIEW',planSha256:plan.planSha256,phase,
       certificationActionId:plan.certificationActionId,nativeDisabled:null,frontendAdmissionClosed:null,gatewayAdmissionClosed:null,runtimeStopped:null,trafficAuthorized:null,sqlReplayed:false});}catch{/* Preserve exclusive prior evidence. */}
     throw new Error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');
   }
+}
+
+export async function runP2CertificationEnvironmentLockWithFirstOwnerHandoff(run,record,profiled){
+  demand(typeof run==='function'&&typeof record==='function'&&typeof profiled==='boolean');
+  let firstOwner;
+  const outcome=await run(value=>{
+    demand(firstOwner===undefined&&validP2FirstOwnerSelection(value));
+    firstOwner=Object.freeze({...value});
+  });
+  if(profiled)record('p2-certification-outcome.json',outcome);
+  if(firstOwner)record(P2_FIRST_OWNER_SELECTION_HANDOFF,{version:1,firstOwner});
+  return outcome;
 }
 
 function privateBytes(path,maximum=2_000_000){
@@ -1464,12 +1488,13 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const firstOwner=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.firstOwner;
-  const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment||!!firstOwner;
+  const firstOwnerDiscovery=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.firstOwnerDiscovery;
+  const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment||!!firstOwner||!!firstOwnerDiscovery;
   const replacementKnownAck=plan.mode==='known-ack-recovery'&&plan.replacementRelease!==undefined;
   demand(confirmation==='staging/'+plan.certificationActionId&&
     (scoped||replacementKnownAck||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
   let identityEnrollmentEmail,authoringDraft;
-  if(firstOwner)demand(execution===undefined);
+  if(firstOwner||firstOwnerDiscovery)demand(execution===undefined);
   if(enrollment){
     demand(exactKeys(execution,['identityEnrollmentEmail']));
     identityEnrollmentEmail=validateP2InteractiveEnrollmentEmail(enrollment,execution.identityEnrollmentEmail);
@@ -1518,7 +1543,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       const reviewed=plan.mode==='browser-pending'?selection.browser.input.persistencePlan:selection.worker.suspensionInput.persistencePlan;
       demand(isDeepStrictEqual(persistenceReviewed.plan,reviewed));
     }
-  }else if(!enrollment&&!authoring&&!paidGrant&&!paidRevoke&&!media)demand(execution===undefined);
+  }else if(!enrollment&&!firstOwnerDiscovery&&!authoring&&!paidGrant&&!paidRevoke&&!media)demand(execution===undefined);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
     sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
   let provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
@@ -1573,7 +1598,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),
       withEnvironmentLock:p2CertificationEnvironmentLock(releaseSettings,initial,results,{expectedProfile:currentProfile})},currentProfile);
   };
-  if(enrollment||firstOwner){
+  if(enrollment||firstOwner||firstOwnerDiscovery){
     const controller=await launchP2InteractiveBrowserRecorder(plan);
     try{
       await controller.initialized();

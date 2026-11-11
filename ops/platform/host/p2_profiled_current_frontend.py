@@ -166,6 +166,14 @@ def require_replacement_release(context, expected, plan, candidate, job, control
                        "user": target["runtimeRole"]}
     target_binding = {"environment": "staging", **{key: target[key] for key in ("host", "port", "database", "user", "serverMajor")}}
     certification = require_certification_profile(plan.get("certification"))
+    initialize_cron = plan.get("initializeStagingCronSecret")
+    demand(initialize_cron is None or initialize_cron is True, "PROFILED_REPLACEMENT_CRON_SECRET_REFUSED")
+    if initialize_cron is True and "stagingCronSecret" in context:
+        secret = context.get("stagingCronSecret")
+        demand(type(secret) is str and re.fullmatch(r'[!-~]{32,8192}', secret) is not None,
+               "PROFILED_REPLACEMENT_CRON_SECRET_REFUSED")
+    elif initialize_cron is None:
+        demand("stagingCronSecret" not in context, "PROFILED_REPLACEMENT_CRON_SECRET_REFUSED")
     producers, owner = plan.get("producers"), plan.get("owner")
     predecessor = plan.get("predecessorDeploymentId")
     demand(runtime_target == expected_target and target["runtimeRole"] == REPLACEMENT_ROLES[1] != target["user"] and
@@ -213,7 +221,13 @@ def configure_runtime(client, context, attempt, project_id, controls, writer, *,
     target, runtime_url = context["bootstrapRuntimeTarget"], context.get("frontendRuntimeDatabaseUrl")
     demand(isinstance(runtime_url, str) and 0 < len(runtime_url) <= 16_384 and "\n" not in runtime_url and "\r" not in runtime_url,
            "PROFILED_CURRENT_RUNTIME_DATABASE_REFUSED")
-    variables = [(key, "true" if value else "false", "plain") for key, value in controls.items()] + [
+    initialize_cron = replacement and context["plan"].get("initializeStagingCronSecret") is True
+    cron_secret = context.get("stagingCronSecret")
+    demand(not initialize_cron or type(cron_secret) is str and re.fullmatch(r'[!-~]{32,8192}', cron_secret) is not None,
+           "PROFILED_REPLACEMENT_CRON_SECRET_REFUSED")
+    demand(initialize_cron or "stagingCronSecret" not in context, "PROFILED_REPLACEMENT_CRON_SECRET_REFUSED")
+    variables = ([('CRON_SECRET', cron_secret, 'sensitive')] if initialize_cron else []) + [
+        (key, "true" if value else "false", "plain") for key, value in controls.items()] + [
         ("STAGING_RELEASE_COMMIT", context["candidate"]["sources"]["frontend"]["commit"], "plain"),
         ("STAGING_MIGRATION_VERIFIED_COMMIT", context["candidate"]["sources"]["frontend"]["commit"], "plain"),
         ("LASH_P2_CERTIFICATION_SCHEDULES", "account-lifecycle", "plain"),
@@ -229,24 +243,47 @@ def configure_runtime(client, context, attempt, project_id, controls, writer, *,
         "configurationSha256": context["configurationSha256"], "featureControls": controls,
         "writerAdmissionBinding": writer, "trafficAuthorized": False,
     })
-    for key, value, kind in variables:
-        response = client.request("POST", f"/v10/projects/{project_id}/env?upsert=true", {
-            "key": key, "value": value, "type": kind, "target": ["production"], "gitBranch": None,
-            "customEnvironmentIds": [], "comment": ("Profiled replacement frontend " if replacement else "Profiled current frontend ") +
-            context["candidate"]["releaseId"],
-        })
-        created = response.get("created")
-        demand(response.get("failed") == [] and isinstance(created, dict) and created.get("key") == key and
-               created.get("type") == kind and created.get("target") == ["production"] and
-               not created.get("gitBranch") and not created.get("customEnvironmentIds"),
-               "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
-    rows = client.request("GET", f"/v10/projects/{project_id}/env?decrypt=false").get("envs")
-    demand(isinstance(rows, list), "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
-    for key, value, kind in variables:
-        found = [row for row in rows if row.get("key") == key and row.get("target") == ["production"] and
-                 not row.get("gitBranch") and not row.get("customEnvironmentIds")]
-        demand(len(found) == 1 and found[0].get("type") == kind and
-               (kind == "sensitive" or found[0].get("value") == value), "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
+    cron_outcome = None
+    if initialize_cron:
+        cron_outcome = {
+            "version": 2, "qualificationTargetProfile": dict(PROFILE),
+            "status": "P2_STAGING_CRON_SECRET_INITIALIZATION_REQUIRES_REVIEW", "environment": "staging",
+            "projectId": project_id, "workloadTarget": "production", "key": "CRON_SECRET", "type": "sensitive",
+            "nativeSchedulesEnabled": False, "providerMutationAttempted": False,
+            "providerApiAcknowledged": False, "providerReadbackVerified": False, "deployedBearerVerified": False,
+            "trafficAuthorized": False,
+        }
+        migrate.write_json(attempt, "p2-replacement-cron-secret-started.json", cron_outcome)
+    try:
+        for key, value, kind in variables:
+            if key == "CRON_SECRET":
+                cron_outcome["providerMutationAttempted"] = True
+            response = client.request("POST", f"/v10/projects/{project_id}/env?upsert=true", {
+                "key": key, "value": value, "type": kind, "target": ["production"], "gitBranch": None,
+                "customEnvironmentIds": [], "comment": ("Profiled replacement frontend " if replacement else "Profiled current frontend ") +
+                context["candidate"]["releaseId"],
+            })
+            created = response.get("created")
+            demand(response.get("failed") == [] and isinstance(created, dict) and created.get("key") == key and
+                   created.get("type") == kind and created.get("target") == ["production"] and
+                   not created.get("gitBranch") and not created.get("customEnvironmentIds"),
+                   "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
+            if key == "CRON_SECRET":
+                cron_outcome["providerApiAcknowledged"] = True
+        rows = client.request("GET", f"/v10/projects/{project_id}/env?decrypt=false").get("envs")
+        demand(isinstance(rows, list), "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
+        for key, value, kind in variables:
+            found = [row for row in rows if row.get("key") == key and row.get("target") == ["production"] and
+                     not row.get("gitBranch") and not row.get("customEnvironmentIds")]
+            demand(len(found) == 1 and found[0].get("type") == kind and
+                   (kind == "sensitive" or found[0].get("value") == value), "PROFILED_CURRENT_CONFIGURATION_UNVERIFIED")
+            if key == "CRON_SECRET":
+                cron_outcome["providerReadbackVerified"] = True
+        if cron_outcome is not None:
+            cron_outcome["status"] = "P2_STAGING_CRON_SECRET_INITIALIZATION_PROVIDER_ACKNOWLEDGED"
+    finally:
+        if cron_outcome is not None:
+            migrate.write_json(attempt, "p2-replacement-cron-secret-outcome.json", cron_outcome)
 
 
 def observe_release(context, client, attempt, *, replacement=False):
@@ -321,6 +358,9 @@ def deploy(context, verify=checkpoint, *, replacement=False):
     """Mutating release path. The fixed call graph contains every mutation."""
     expected, plan, candidate, _job, project_id, controls, writer = release_identity(context, replacement=replacement)
     if replacement:
+        initialize_cron = plan.get("initializeStagingCronSecret") is True
+        demand(("stagingCronSecret" in context) is initialize_cron,
+               "PROFILED_REPLACEMENT_CRON_SECRET_REFUSED")
         runtime_url = context.get("frontendRuntimeDatabaseUrl")
         demand(type(runtime_url) is str and 0 < len(runtime_url) <= 16_384 and
                all(32 <= ord(character) < 127 for character in runtime_url),
@@ -362,7 +402,8 @@ def observe(context, verify=checkpoint, *, replacement=False):
     """Release readback only; it never creates a missing provider effect."""
     release_identity(context, replacement=replacement)
     if replacement:
-        demand("frontendRuntimeDatabaseUrl" not in context, "PROFILED_REPLACEMENT_READBACK_CREDENTIAL_REFUSED")
+        demand("frontendRuntimeDatabaseUrl" not in context and "stagingCronSecret" not in context,
+               "PROFILED_REPLACEMENT_READBACK_CREDENTIAL_REFUSED")
     parent = private_directory(context["directory"])
     attempt = existing_child(parent, "vercel")
     client = GuardedClient(vercel.Client(context["vercelToken"]), attempt, verify, read_only=True)

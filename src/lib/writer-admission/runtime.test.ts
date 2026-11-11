@@ -6,7 +6,8 @@ import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, current
   markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
-import { P2_FIRST_OWNER_PATH, p2FirstOwnerIdentitySha256 } from "../../../ops/platform/p2-first-owner-identity.mjs";
+import { P2_FIRST_OWNER_PATH, p2FirstOwnerDiscoveryEmailSha256,
+  p2FirstOwnerIdentitySha256 } from "../../../ops/platform/p2-first-owner-identity.mjs";
 import { createWriterAdmissionRunner } from "./runtime";
 import { attestInteractiveRequest, interactiveRequestHeaders, readInteractiveRequest, withinInteractiveAdminGoogleAction, INTERACTIVE_COOKIE, INTERACTIVE_HEADER, INTERACTIVE_ORIGIN } from "./interactive-proof";
 import { withWriterAdmission } from "./route";
@@ -862,6 +863,35 @@ test("first-owner permit scopes the ordinary Google sign-in to one materializati
   for (const [method, path] of [["GET", "/admin"], ["GET", "/admin/courses"], ["GET", "/api/auth/session"],
     ["GET", "/api/auth/callback/other"], ["POST", "/api/auth/signin/google"], ["POST", P2_FIRST_OWNER_PATH],
     ["GET", "/api/customer-auth/callback/google"]]) assert.equal(attest(method, path), null);
+});
+
+test("first-owner discovery permits only auth-only Google routes and carries no materialization scope", async () => {
+  const now = 1_794_009_600, nonce = "8".repeat(32);
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const emailDigest = p2FirstOwnerDiscoveryEmailSha256(nonce, "owned-owner@example.invalid")!.slice(0, 62);
+  const body = `v2.12.identity.${now}.${now + 120}.${nonce}.a4${emailDigest}`;
+  const mac = createHmac("sha256", env.CRON_SECRET)
+    .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+  const cookie = `${body}.${mac}`;
+  const attest = (method: string, path: string, search?: string) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie }, env, now);
+  for (const [method, path, search] of [
+    ["GET", "/admin/sign-in", ""], ["POST", "/admin/sign-in", ""],
+    ["GET", "/api/auth/callback/google", "?code=private&state=private"],
+    ["GET", "/admin/not-authorized", ""], ["GET", "/api/auth/session", ""],
+  ] as const) {
+    const proof = attest(method, path, search)!;
+    const selected = method === "POST" ?
+      await withinInteractiveAdminGoogleAction(async () => readInteractiveRequest(proof, cookie, env, now)) :
+      readInteractiveRequest(proof, cookie, env, now);
+    assert.deepEqual(selected?.firstOwnerDiscovery, { nonce, emailDigest, epoch: "12", startedAt: now });
+    assert.equal(selected?.firstOwner, undefined);
+  }
+  for (const [method, path, search] of [
+    ["GET", P2_FIRST_OWNER_PATH, ""], ["GET", "/admin", ""], ["POST", "/api/auth/signin/google", ""],
+    ["GET", "/api/auth/providers", ""], ["GET", "/api/auth/session", "?extra=1"],
+    ["GET", "/admin/not-authorized", "?extra=1"], ["GET", "/api/auth/callback/other", "?code=private"],
+  ] as const) assert.equal(attest(method, path, search), null);
 });
 
 test("first-time identity permits bind the selected provider, normalized email and operation context", async () => {

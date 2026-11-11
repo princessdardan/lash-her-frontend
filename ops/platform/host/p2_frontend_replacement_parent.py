@@ -38,6 +38,7 @@ MODE = PROFILED_REPLACEMENT_ARM_MODE
 WRITE_MODE = PROFILED_REPLACEMENT_WRITE_MODE
 LAYOUT = supervisor.PROFILED_REPLACEMENT_ARM_LAYOUT
 CREDENTIAL = 'FRONTEND_STAGING_MIGRATION_DATABASE_URL'
+CRON_CREDENTIAL = 'FRONTEND_STAGING_CRON_SECRET'
 REFUSED = 'P2_FRONTEND_REPLACEMENT_HOST_ARM_REFUSED'
 ARM = 'p2-frontend-replacement-guard-armed.json'
 READY = 'p2-frontend-replacement-guard-ready.json'
@@ -144,6 +145,15 @@ def reviewed_plan(initial, *, mode=MODE):
             all(digest(initial[key]) for key in ('sourceClosureSha256', 'candidateSha256', 'reviewedPlanSha256')), REFUSED)
     if has_runtime:
         require(digest(initial['runtimeReviewSha256']), REFUSED)
+        runtime_raw = unbase64(initial['runtimeReviewBytes'], 65_536)
+        require(migrate.file_hash(runtime_raw) == initial['runtimeReviewSha256'], REFUSED)
+        runtime_carrier = decode_qualification_target_json(runtime_raw, 'carrier')
+        require(type(runtime_carrier) is dict and
+                ('initializeStagingCronSecret' not in runtime_carrier or
+                 runtime_carrier['initializeStagingCronSecret'] is True), REFUSED)
+        initialize_cron = runtime_carrier.get('initializeStagingCronSecret') is True
+    else:
+        initialize_cron = False
     if provider_fields:
         require(match(initial['vercelToken'], r'[!-~]{1,8192}'), REFUSED)
     raw = unbase64(initial['reviewedPlanBytes'], 2_000_000)
@@ -163,9 +173,14 @@ def reviewed_plan(initial, *, mode=MODE):
                 ('/' + initial['runtimeReviewSha256'] if has_runtime else ''),
             REFUSED)
     credentials = initial['credentials']
-    require(type(credentials) is dict and set(credentials) == ({CREDENTIAL, *API_CREDENTIALS} if has_runtime else {CREDENTIAL}) and
+    expected_credentials = {CREDENTIAL, *API_CREDENTIALS} if has_runtime else {CREDENTIAL}
+    credential_fields = set(credentials) if type(credentials) is dict else set()
+    if initialize_cron:
+        expected_credentials.add(CRON_CREDENTIAL)
+    require(type(credentials) is dict and credential_fields == expected_credentials and
             all(type(value) is str and 0 < len(value) <= 16_384 and
-                all(ord(character) >= 32 for character in value) for value in credentials.values()), REFUSED)
+                all(ord(character) >= 32 for character in value) for value in credentials.values()) and
+            (CRON_CREDENTIAL not in credentials or match(credentials[CRON_CREDENTIAL], r'[!-~]{32,8192}')), REFUSED)
     return raw, plan
 
 

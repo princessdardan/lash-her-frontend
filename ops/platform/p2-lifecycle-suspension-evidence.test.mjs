@@ -27,7 +27,7 @@ import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
-import { P2_FIRST_OWNER_PATH, p2FirstOwnerIdentitySha256 } from "./p2-first-owner-identity.mjs";
+import { P2_FIRST_OWNER_PATH, p2FirstOwnerDiscoveryEmailSha256, p2FirstOwnerIdentitySha256 } from "./p2-first-owner-identity.mjs";
 
 const at = "2026-11-06T12:00:00.000Z", userId = randomUUID(), commandId = randomUUID(), adminId = randomUUID();
 const headers = { "cache-control": "private, no-store", "x-request-id": randomUUID(), date: at };
@@ -203,7 +203,8 @@ function interactiveInput(overrides = {}) {
   if (value.stage === "lifecycle" && !Object.hasOwn(value, "lifecycle")) {
     value.lifecycle = p2LifecycleMutationTarget({ actorKind: "admin", userId, operation: "suspend" });
   }
-  if (value.stage === "identity" && !Object.hasOwn(value, "identity") && !Object.hasOwn(value, "identityEnrollment") && !Object.hasOwn(value, "firstOwner")) {
+  if (value.stage === "identity" && !Object.hasOwn(value, "identity") && !Object.hasOwn(value, "identityEnrollment") &&
+    !Object.hasOwn(value, "firstOwner") && !Object.hasOwn(value, "firstOwnerDiscovery")) {
     value.identity = { actorKind: "admin", actorId: adminId };
   }
   return value;
@@ -237,8 +238,10 @@ function interactivePermit(input) {
   const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
   const enrollment = input.identityEnrollment;
   const firstOwner = input.firstOwner;
+  const firstOwnerDiscovery = input.firstOwnerDiscovery;
   let selector = input.stage === "lifecycle" ? "4".repeat(64) : undefined;
   if (firstOwner) selector = "a3" + firstOwner.identitySha256.slice(0, 62);
+  else if (firstOwnerDiscovery) selector = "a4" + firstOwnerDiscovery.emailSha256.slice(0, 62);
   else if (enrollment) selector = (enrollment.provider === "google" ? "a1" : "a2") + enrollment.emailSha256.slice(0, 62);
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
@@ -255,7 +258,8 @@ function interactivePermit(input) {
       ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
         ? authoringCurriculumSelector(input.authoring.actorId) : input.authoring.operation === "qualify-publication"
           ? authoringPublicationSelector(input.authoring.actorId, input.authoring.outcome) : authoringSelector(input.authoring.actorId);
-  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, firstOwner?.nonce ?? enrollment?.nonce ?? "3".repeat(32),
+  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires,
+    firstOwner?.nonce ?? firstOwnerDiscovery?.nonce ?? enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
 }
@@ -979,6 +983,43 @@ test("first-owner browser accepts only the scoped materialization receipt and it
   assert.deepEqual(await observeP2InteractiveIdentitySession(page(canonical, body), selected, observation), body);
   await assert.rejects(observeP2InteractiveIdentitySession(page(canonical, { ...body, actorKind: "customer" }), selected, observation),
     /IDENTITY_SESSION_REFUSED/u);
+});
+
+test("first-owner discovery derives only the strict later selection from a fresh window-bound auth session", async () => {
+  const nonce = "8".repeat(32), email = "owned-owner@example.invalid";
+  const firstOwnerDiscovery = { nonce, emailSha256: p2FirstOwnerDiscoveryEmailSha256(nonce, email) };
+  const selected = interactiveInput({ firstOwnerDiscovery });
+  assert.equal(validateP2InteractiveBrowserInput(selected), selected);
+  assert.throws(() => validateP2InteractiveBrowserInput({ ...selected,
+    firstOwner: { nonce, identitySha256: "6".repeat(64) } }));
+  const permit = interactivePermit(selected), startedAt = Number(permit.cookie.split(".")[3]);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, selected), permit);
+  const windowSha256 = identityHash(["p2q-first-owner-discovery-window-v1", nonce,
+    firstOwnerDiscovery.emailSha256.slice(0, 62), selected.epoch, startedAt]);
+  const body = { expires: new Date(Date.now() + 3_600_000).toISOString(), user: {
+    name: "Owned owner", email, image: null, providerUserId: ownedGoogleSubject, isEmailVerified: true,
+    authenticatedAt: Math.floor(Date.now() / 1000), firstOwnerDiscoveryWindowSha256: windowSha256,
+  } };
+  const observation = { context: "owner", openedAt: Date.now(), startedAt, expires: permit.expires };
+  const page = value => ({
+    url: () => selected.browserOrigin + "/admin/not-authorized",
+    request: { get: async url => ({ url: () => url, status: () => 200, headersArray: () => [
+      { name: "content-type", value: "application/json" }, { name: "cache-control", value: "private, no-store" },
+    ], body: async () => Buffer.from(JSON.stringify(value)), dispose: async () => {} }) },
+  });
+  const receipt = await observeP2InteractiveIdentitySession(page(body), selected, observation);
+  assert.deepEqual(receipt, { firstOwner: { nonce,
+    identitySha256: p2FirstOwnerIdentitySha256(nonce, email, ownedGoogleSubject) }, sessionVerified: true });
+  assert.equal(JSON.stringify(receipt).includes(email), false);
+  assert.equal(JSON.stringify(receipt).includes(ownedGoogleSubject), false);
+  for (const changed of [
+    { ...body, user: { ...body.user, email: "other@example.invalid" } },
+    { ...body, user: { ...body.user, firstOwnerDiscoveryWindowSha256: "6".repeat(64) } },
+    { ...body, user: { ...body.user, authenticatedAt: startedAt - 1 } },
+    { ...body, user: { ...body.user, isEmailVerified: false } },
+  ]) await assert.rejects(observeP2InteractiveIdentitySession(page(changed), selected, observation), /IDENTITY_SESSION_REFUSED/u);
+  assert.throws(() => validateP2InteractiveIdentityReceipt({ ...receipt,
+    firstOwner: { ...receipt.firstOwner, identitySha256: firstOwnerDiscovery.emailSha256 } }, selected));
 });
 
 test("identity session refuses wrong or expired identity and waits for a newly authenticated verified owner", async () => {

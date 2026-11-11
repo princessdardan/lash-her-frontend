@@ -4,8 +4,9 @@ import type { NextRequest } from "next/server";
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 import { getAdminUserStore } from "@/lib/admin/admin-user-store";
 import { readSelectedAdminGoogleUser } from "@/lib/admin/auth-service";
-import { currentWriterFirstOwner, currentWriterIdentityRotation, markWriterOperationUncertain,
-  matchesWriterFirstOwner, writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
+import { currentWriterFirstOwner, currentWriterFirstOwnerDiscovery, currentWriterIdentityRotation, markWriterOperationUncertain,
+  matchesWriterFirstOwner, matchesWriterFirstOwnerDiscovery, writerFirstOwnerDiscoveryWindowSha256,
+  writerFirstOwnerWindowSha256 } from "@/lib/writer-admission/context";
 import { createGoogleCallbackAdmission } from "@/lib/writer-admission/google-auth-callback";
 
 interface GoogleIdentityProfile {
@@ -37,10 +38,16 @@ const adminAuthConfig: NextAuthConfig = {
         token.googleEmailVerified = googleProfile?.email_verified === true;
         token.adminAuthenticatedAt = Math.floor(Date.now() / 1000);
         const firstOwner = currentWriterFirstOwner();
+        const firstOwnerDiscovery = currentWriterFirstOwnerDiscovery();
         delete token.firstOwnerWindowSha256;
+        delete token.firstOwnerDiscoveryWindowSha256;
         if (firstOwner && googleProfile?.email_verified === true && typeof googleProfile.email === "string" &&
           typeof googleProfile.sub === "string" && matchesWriterFirstOwner(firstOwner, googleProfile.email.trim().toLowerCase(), googleProfile.sub)) {
           token.firstOwnerWindowSha256 = writerFirstOwnerWindowSha256(firstOwner);
+        }
+        if (firstOwnerDiscovery && googleProfile?.email_verified === true && typeof googleProfile.email === "string" &&
+          matchesWriterFirstOwnerDiscovery(firstOwnerDiscovery, googleProfile.email.trim().toLowerCase())) {
+          token.firstOwnerDiscoveryWindowSha256 = writerFirstOwnerDiscoveryWindowSha256(firstOwnerDiscovery);
         }
       } else {
         const rotation = currentWriterIdentityRotation();
@@ -68,6 +75,9 @@ const adminAuthConfig: NextAuthConfig = {
         if (typeof token.firstOwnerWindowSha256 === "string") {
           session.user.firstOwnerWindowSha256 = token.firstOwnerWindowSha256;
         }
+        if (typeof token.firstOwnerDiscoveryWindowSha256 === "string") {
+          session.user.firstOwnerDiscoveryWindowSha256 = token.firstOwnerDiscoveryWindowSha256;
+        }
       }
 
       return session;
@@ -85,9 +95,10 @@ const adminAuthConfig: NextAuthConfig = {
       if (rotation?.actorKind === "admin") return account.providerAccountId === googleProfile.sub &&
         isSelectedRotationAdmin(rotation.actorId, googleProfile.email, googleProfile.email_verified, googleProfile.sub);
       const firstOwner = currentWriterFirstOwner();
-      if (!firstOwner) return true;
       const email = googleProfile.email.trim().toLowerCase();
-      return getAdminOwnerEmails().has(email) && matchesWriterFirstOwner(firstOwner, email, googleProfile.sub);
+      if (firstOwner) return getAdminOwnerEmails().has(email) && matchesWriterFirstOwner(firstOwner, email, googleProfile.sub);
+      const firstOwnerDiscovery = currentWriterFirstOwnerDiscovery();
+      return !firstOwnerDiscovery || getAdminOwnerEmails().has(email) && matchesWriterFirstOwnerDiscovery(firstOwnerDiscovery, email);
     },
   },
   pages: {

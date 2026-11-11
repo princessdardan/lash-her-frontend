@@ -26,6 +26,51 @@ import vercel
 
 
 class FirstOwnerWindowTests(unittest.TestCase):
+    def test_first_owner_discovery_is_empty_admin_read_only_and_uses_a_distinct_selector(self):
+        discovery = {"nonce": "9" * 32, "emailSha256": "7" * 64}
+        action = {"stage": "identity", "actorId": None, "requests": [], "windowSeconds": 120,
+                  "firstOwnerDiscovery": discovery}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        cookie, gateway_key, _, _ = window._material("s" * 40, "https://owned.vercel.app", "a" * 40,
+            "b" * 64, "8", "identity", 1794009600, 120, discovery["nonce"], selector)
+        self.assertIsNone(gateway_key)
+        self.assertEqual(cookie.split(".")[5:7], [discovery["nonce"], "a4" + "7" * 62])
+        for rejected in ({**action, "actorId": "12345678-1234-4123-8123-000000000001"},
+                         {**action, "firstOwner": {"nonce": "9" * 32, "identitySha256": "6" * 64}},
+                         {**action, "firstOwnerDiscovery": {**discovery, "emailSha256": "7" * 62}},
+                         {**action, "requests": [{}]}):
+            with self.assertRaises(ValueError):
+                window.validate_interactive_action(rejected)
+
+        plan = {"mode": "interactive-browser", "sourceCommit": "a" * 40, "targetSha256": "b" * 64,
+                "initialEpoch": "7", "nativePlan": {"producer": {"role": {"oid": "42"}}},
+                "scopedAction": action}
+        first_owner = {"nonce": discovery["nonce"], "identitySha256": "6" * 64}
+        evidence = {"browserIdentity": {"firstOwner": first_owner, "sessionVerified": True},
+                    "identityWitness": {"adminUserCount": 0, "firstOwnerDiscoveryVerified": True,
+                                        "firstOwnerIdentitySha256": first_owner["identitySha256"]}}
+        self.assertEqual(window.browser_case_evidence(plan, evidence)["firstOwner"], first_owner)
+        for witness in ({**evidence["identityWitness"], "adminUserCount": 1},
+                        {**evidence["identityWitness"], "firstOwnerIdentitySha256": "5" * 64}):
+            with self.assertRaises(ValueError):
+                window.browser_case_evidence(plan, {**evidence, "identityWitness": witness})
+        with self.assertRaises(ValueError):
+            window.browser_case_evidence(plan, {**evidence, "browserIdentity": {
+                "firstOwner": {"nonce": discovery["nonce"], "identitySha256": discovery["emailSha256"]},
+                "sessionVerified": True}})
+
+        producer = hashlib.sha256(("lash-her:p2q:interactive-producer:v1\n" + "a" * 40 + "\n" + "b" * 64).encode()).hexdigest()
+        ledger = {"commands": [], "deliveries": [], "orderViolations": [], "operations": [
+            {"id": f"12345678-1234-4123-8123-{index:012d}", "epoch": "8", "kind": kind, "state": "completed",
+             "producer_sha256": producer, "source_sha": "a" * 40, "role_oid": "42", "completed_at": "owned",
+             "reconciliation_sha256": None}
+            for index, kind in enumerate(("new-work", "recovery", "recovery"), start=1)]}
+        self.assertEqual(window.require_browser_ledger(plan, ledger), 3)
+        with self.assertRaisesRegex(ValueError, "FIRST_OWNER_DISCOVERY_OPERATIONS_REQUIRED"):
+            window.require_browser_ledger(plan, {**ledger, "operations": ledger["operations"] + [
+                {**ledger["operations"][0], "id": "12345678-1234-4123-8123-000000000004"}]})
+
     def test_first_owner_selection_never_opens_the_gateway(self):
         owner = {"nonce": "9" * 32, "identitySha256": "6" * 64}
         action = {"stage": "identity", "actorId": None, "requests": [], "windowSeconds": 120, "firstOwner": owner}

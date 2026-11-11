@@ -396,6 +396,32 @@ const reviewedRouteReceiptDependencies = {
   "src/lib/customer-auth/handler.ts": "ddfed6f62f4912609a7c2e79f2d6658f963b5c50011f779bdbbce66132137d36",
   "src/lib/writer-admission/google-auth-callback.ts": "a9fb4a1307b0b168dd90b7664dff1590531e2d4b56c37aae86e21c602ff9180a"
 };
+// First-owner discovery is a separate reviewed source family. It admits only the
+// selected allowlisted Google identity in an a4 window and cannot create an admin.
+// Keep all previously reviewed source families available for their original receipts.
+const reviewedFirstOwnerDiscoverySource = {
+  ...reviewedManagedRotationSource,
+  "src/lib/writer-admission/runtime.ts": "a8ab1b74ce8893d9d789c91cc3f09ac03192d3144355717f3c1807942c08a33f",
+  "src/lib/writer-admission/context.ts": "e9cee75d83399b9b69f17d6dfdb8ff4b03a09ffdcc9f08c5651c3c410f633bbe"
+};
+const reviewedFirstOwnerDiscoveryDependencies = {
+  ...reviewedRouteReceiptDependencies,
+  "src/lib/writer-admission/action.ts": "4b701f4ba64da3cfda2a818c2cda507ebc5527f9ff1f3102773ea88c9b60406e",
+  "src/lib/writer-admission/route.ts": "6c7a496c8f866da8abe89f4e48cfa18d5631ad543c767e7b83e66433082879c5",
+  "src/lib/env/application-environment.mjs": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+  "src/lib/admin/developer-mode-config.ts": "43d8ec1e8334865f09068fbcdf1595fd590d328ebd8497c0cc41fafe2ffadda6",
+  "src/lib/writer-admission/interactive-proof.ts": "1a26d00087fc40e0d0788cdb1c5d35d35e7c3f94c3992e1b2a5d077b917fa189",
+  "src/app/admin/auth-actions.ts": "2ac1f89215745a46e0f27caed57093fab6d8783a8d11bf7e557b53ccea3a6304",
+  "src/auth.ts": "aa22516d0ce6c1db47e32b78d5c33358677c8c8367c0f0e98292d53ef79a3a0f",
+  "src/lib/admin/auth-route-admission.ts": "e1bc09e615a4f6bf523601c5d5d535e1c4c957ef829ecdf25c3b497097f09b94",
+  "src/lib/admin/authentication-freshness.ts": "b3a8b59f7371bb12a5723822f1b84505af52dbc23175d23117c2f03d8d4a1c95",
+  "ops/platform/p2-first-owner-identity.mjs": "7a152b414305e337dcf8e7713edf97ae824cf807c7a68e0a12388867d58526c7",
+  "src/app/admin/not-authorized/page.tsx": "122878fa97c8f4288c648ba95d4e69b6003eacd4444fa776ff54cf99759e7cbd",
+  "src/app/admin/sign-in/page.tsx": "4ac271bc5649b6af2464278d374fee350d66a071fe74b8725397458f858a86bd",
+  "src/app/api/auth/[...nextauth]/route.ts": "5fe7209fe0fd02719dd02f8e733c9141da62d412711c10326dd44e18972c9325",
+  "src/lib/env/admin.ts": "52d4b49f292de3706a1290b5a474126981a6495fbd70ec4e654ad2bfe72b5117",
+  "src/lib/admin/auth-session.d.ts": "4174638a5b247c99d92f070124feb1e6de54d1fcc07acba72fbbc1caf3acbb4f"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -417,6 +443,11 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
+  if (same(selected, reviewedFirstOwnerDiscoverySource)) {
+    const dependencies = Object.fromEntries(Object.keys(reviewedFirstOwnerDiscoveryDependencies).map(file => [file, readSourceHash(file)]));
+    demand(same(dependencies, reviewedFirstOwnerDiscoveryDependencies));
+    return { ...selected, ...dependencies };
+  }
   if (same(selected, reviewedManagedRotationSource)) {
     const expected = readSourceHash("src/auth.ts") === reviewedRouteReceiptDependencies["src/auth.ts"]
       ? reviewedRouteReceiptDependencies : reviewedManagedRotationDependencies;

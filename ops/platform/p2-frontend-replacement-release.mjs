@@ -19,6 +19,7 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const refusal = "P2_FRONTEND_REPLACEMENT_RELEASE_REVIEW_REQUIRED";
 const mode = "p2-profiled-frontend-replacement-write";
 const credentialNames = ["FRONTEND_STAGING_MIGRATION_DATABASE_URL", "COURSE_STAGING_DATABASE_URL", "COMMUNITY_STAGING_DATABASE_URL"];
+const cronCredentialName = "FRONTEND_STAGING_CRON_SECRET";
 const demand = condition => { if (!condition) throw new Error(refusal); };
 const hash = value => createHash("sha256").update(value).digest("hex");
 const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype &&
@@ -41,6 +42,12 @@ export function planP2FrontendReplacementRelease(settings) {
     reviewedPlanSha256: review.settings.arm.reviewedPlanSha256, runtimeReviewSha256: review.settings.runtimeReviewSha256,
     configurationSha256: runtimeReview.configurationSha256, apiJobSha256: runtimeReview.apiJobSha256,
     producerSha256: runtimeReview.producerSha256, migrationCount: plan.replacement.approvedPendingTags.length,
+    ...(runtimeReview.initializeStagingCronSecret === true ? { stagingCronSecretInitialization: {
+      action: "initialize-staging-cron-secret", provider: "vercel", environment: "staging",
+      projectId: review.probe.candidate.workload.projectId, workloadTarget: "production", key: "CRON_SECRET",
+      type: "sensitive", source: cronCredentialName, nativeSchedulesEnabled: false,
+      providerApiAcknowledgementRequired: true, deployedBearerVerification: "day-two-workload-certification",
+    } } : {}),
     confirmation: confirmationFor(review), providerCredentialsResolved: false, migrationAuthorized: false, trafficAuthorized: false,
   };
 }
@@ -59,9 +66,12 @@ export async function openP2FrontendReplacementOperator(settings, confirmation) 
     typeof context.vercelToken === "string" && /^[!-~]{1,8192}$/u.test(context.vercelToken) &&
     hash(JSON.stringify(context.bindings?.gatewayObservation)) === writerReview.gatewayBindingSha256);
   requireQualificationTargetProfile(profile, context);
-  const credentials = Object.fromEntries(credentialNames.map(key => {
+  const selectedCredentialNames = [...credentialNames,
+    ...(runtimeReview.initializeStagingCronSecret === true ? [cronCredentialName] : [])];
+  const credentials = Object.fromEntries(selectedCredentialNames.map(key => {
     const value = process.env[key];
-    demand(typeof value === "string" && value.length > 0 && value.length <= 16_384 && !/[\x00-\x1f]/u.test(value));
+    demand(typeof value === "string" && (key === cronCredentialName ? /^[!-~]{32,8192}$/u.test(value) :
+      value.length > 0 && value.length <= 16_384 && !/[\x00-\x1f]/u.test(value)));
     return [key, value];
   }));
   const url = credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL;
@@ -95,7 +105,8 @@ export async function openP2FrontendReplacementOperator(settings, confirmation) 
   return { review, directory, rolesDirectory, privateDirectory, getUrl: () => url,
     verifySource: () => assertSourceCheckout(root, plan.sourceCommit),
     withEnvironmentLock: task => withReplacementOperatorHost(arm, initial, plan, ssh, task),
-    continueRelease: continuation => continueReplacementFrontend(review, directory, context, continuation),
+    continueRelease: continuation => continueReplacementFrontend(review, directory, context, continuation,
+      credentials[cronCredentialName]),
   };
 }
 
@@ -120,7 +131,7 @@ function withReplacementOperatorHost(arm, initial, plan, ssh, task) {
     host => task(host.verifyEnvironment, host.signal, host), { readHostEvidence });
 }
 
-async function continueReplacementFrontend(review, directory, provider, continuation) {
+async function continueReplacementFrontend(review, directory, provider, continuation, stagingCronSecret) {
   const { deployProfiledReplacementFrontend, observeProfiledReplacementFrontend,
     readProfiledReplacementWorkloadReceipt, readProfiledReplacementPromotionReceipt } =
     await import("./p2-profiled-current-frontend-adapters.mjs");
@@ -137,6 +148,7 @@ async function continueReplacementFrontend(review, directory, provider, continua
     predecessorDeploymentId: plan.predecessor.deploymentId,
     runtimeProducerSha256: runtimeReview.producerSha256, producers: [{ producerSha256: runtimeReview.producerSha256, role: runtime }],
     configurationSha256: runtimeReview.configurationSha256, certification: runtimeReview.certification,
+    ...(runtimeReview.initializeStagingCronSecret === true ? { initializeStagingCronSecret: true } : {}),
     restoration: { gatewayBindingSha256: writerReview.gatewayBindingSha256 } };
   const context = { qualificationTargetProfile: profile, plan: inventory, inventorySha256: hash(JSON.stringify(inventory)), candidate,
     candidateSha256: plan.candidateSha256, job, configurationSha256: runtimeReview.configurationSha256, directory,
@@ -146,6 +158,10 @@ async function continueReplacementFrontend(review, directory, provider, continua
     admissionObservation: { epoch: admission.admissionEpoch, newWork: admission.newWork, recovery: admission.recovery, operations: admission.operations },
     replacementProbe: probe, replacementProvenance };
   Object.defineProperty(context, "frontendRuntimeDatabaseUrl", { value: continuation.private.runtimeDatabaseUrl });
+  if (runtimeReview.initializeStagingCronSecret === true) {
+    demand(typeof stagingCronSecret === "string" && /^[!-~]{32,8192}$/u.test(stagingCronSecret));
+    Object.defineProperty(context, "stagingCronSecret", { value: stagingCronSecret });
+  } else demand(stagingCronSecret === undefined);
   await deployProfiledReplacementFrontend(context);
   await verifyLockedSession();
   const observed = await observeProfiledReplacementFrontend(context);
