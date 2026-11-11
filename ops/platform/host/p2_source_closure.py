@@ -197,7 +197,11 @@ def verify_profiled_current_source_closure(initial, root):
     return _verify_source_closure(initial, root, required, *COMPACT_SOURCE_LIMITS)
 
 
+_replacement_source_fingerprints = None
+
+
 def _verify_source_closure(initial, root, required, max_files, max_bytes):
+    global _replacement_source_fingerprints
     manifest = initial.get('sourceSha256')
     if not isinstance(manifest, dict) or not 1 <= len(manifest) <= max_files or not required.issubset(manifest):
         raise ValueError('P2_CLOSED_OPERATOR_SOURCE_REQUIRED')
@@ -212,16 +216,38 @@ def _verify_source_closure(initial, root, required, max_files, max_bytes):
             installed.add(path.relative_to(root).as_posix())
     if installed != set(manifest):
         raise ValueError('P2_SOURCE_CLOSURE_INCOMPLETE')
+    # Recovery repeatedly verifies the same root-owned installation under the
+    # host lock. Reuse hashes only while the kernel file identities match.
+    cache_key = (root, digest) if (initial.get('mode') == PROFILED_REPLACEMENT_WRITE_MODE and
+                                  initial.get('recoveryReviewSha256')) else None
+    retained = _replacement_source_fingerprints
+    previous = retained[1] if cache_key and retained and retained[0] == cache_key else {}
+    fingerprints = {}
     total = 0
     for name, expected in manifest.items():
         path = root / name
-        info = path.stat()
+        info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022 or not 0 < info.st_size <= 2_000_000:
             raise ValueError('P2_SOURCE_PERMISSIONS_REFUSED')
-        raw = path.read_bytes(); total += len(raw)
-        if hashlib.sha256(raw).hexdigest() != expected or total > max_bytes:
+        total += info.st_size
+        if total > max_bytes:
             raise ValueError('P2_SOURCE_CONTENT_CHANGED')
+        fingerprint = _source_file_fingerprint(info)
+        if not cache_key or previous.get(name) != fingerprint:
+            raw = path.read_bytes()
+            if len(raw) != info.st_size or hashlib.sha256(raw).hexdigest() != expected or (
+                    cache_key and _source_file_fingerprint(path.lstat()) != fingerprint):
+                raise ValueError('P2_SOURCE_CONTENT_CHANGED')
+        if cache_key:
+            fingerprints[name] = fingerprint
+    if cache_key:
+        _replacement_source_fingerprints = (cache_key, fingerprints)
     return digest
+
+
+def _source_file_fingerprint(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns)
 
 
 def private_observer_program(initial, directory):

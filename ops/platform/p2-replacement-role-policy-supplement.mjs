@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { REQUIRED_SOURCE_JOBS, SOURCE_REPOSITORIES, SOURCE_REPOSITORY_IDS, SOURCE_OPERATOR_ID, isRevision } from "./source-policy.mjs";
 
@@ -64,4 +68,41 @@ export async function verifyReplacementRolePolicySource(api, name, supplement) {
     REQUIRED_SOURCE_JOBS[name].every(required => jobs.jobs.some(job => job.name === required)) &&
     jobs.jobs.every(job => job.status === "completed" && job.conclusion === "success"));
   return { ...supplement, ciUrl: `https://github.com/${repository}/actions/runs/${run.id}`, ciAttempt: run.run_attempt };
+}
+
+export function verifyReplacementRolePolicyBuild(name, sourceDirectory, supplement) {
+  demand(replacementApiNames.includes(name) && process.versions.node === "24.18.0" &&
+    typeof sourceDirectory === "string" && resolve(sourceDirectory) === sourceDirectory &&
+    realpathSync(sourceDirectory) === sourceDirectory && isRevision(supplement.sourceCommit));
+  const scratch = mkdtempSync(join(realpathSync(tmpdir()), "lash-role-policy-build-"));
+  const checkout = join(scratch, "source"), archive = join(scratch, "source.tar");
+  // Neither Git nor npm inherits the release launcher’s credential environment.
+  const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, HOME: scratch, LANG: "C",
+    GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_REPLACE_OBJECTS: "1" };
+  const run = (program, args, cwd, timeout = 30_000) => execFileSync(program, args, {
+    env, cwd, timeout, maxBuffer: 1_000_000, stdio: ["ignore", "pipe", "pipe"],
+  });
+  const git = (...args) => run("/usr/bin/git", ["-C", sourceDirectory, ...args], scratch);
+  try {
+    demand(git("remote", "get-url", "origin").toString().trim() === `https://github.com/${SOURCE_REPOSITORIES[name]}.git`);
+    demand(git("rev-parse", "--verify", `${supplement.sourceCommit}^{commit}`).toString().trim() === supplement.sourceCommit);
+    git("archive", "--format=tar", "--output=" + archive, supplement.sourceCommit);
+    mkdirSync(checkout, { mode: 0o700 });
+    run("/usr/bin/tar", ["-xf", archive, "-C", checkout], scratch);
+    demand(sha(readFileSync(join(checkout, sourceFile))) === supplement.sourceSha256);
+    const npm = resolve(dirname(process.execPath), "../lib/node_modules/npm/bin/npm-cli.js");
+    run(process.execPath, [npm, "ci", "--ignore-scripts", "--prefer-offline", "--no-audit", "--no-fund",
+      "--globalconfig=/dev/null", "--registry=https://registry.npmjs.org",
+      "--cache=" + join(homedir(), ".npm")], checkout, 120_000);
+    const packageInfo = JSON.parse(readFileSync(join(checkout, "package.json")));
+    demand(packageInfo.scripts?.["build:migration"] === "tsc -p tsconfig.migration-build.json");
+    run(process.execPath, [join(checkout, "node_modules", "typescript", "bin", "tsc"),
+      "-p", "tsconfig.migration-build.json"], checkout, 90_000);
+    const compiled = readFileSync(join(checkout, "dist-migration", "src", "db", "operator-migration.js"));
+    demand(compiled.length > 0 && compiled.length <= 65_536 && sha(compiled) === supplement.compiledSha256);
+    return { compiledSha256: sha(compiled), lockfileSha256: sha(readFileSync(join(checkout, "package-lock.json"))),
+      nodeVersion: process.versions.node };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }

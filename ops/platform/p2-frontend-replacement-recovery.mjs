@@ -16,7 +16,8 @@ import { committedProfiledCurrentOperatorSource, verifyOperatorCi } from "./recr
 import { recreationSsh, sshCommand } from "./recreation_ssh.mjs";
 import { githubSourceApi } from "./release-inputs.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
-import { replacementApiNames, requireReplacementRolePolicyReview, verifyReplacementRolePolicySource } from "./p2-replacement-role-policy-supplement.mjs";
+import { replacementApiNames, requireReplacementRolePolicyReview, verifyReplacementRolePolicyBuild,
+  verifyReplacementRolePolicySource } from "./p2-replacement-role-policy-supplement.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const refusal = "P2_FRONTEND_REPLACEMENT_RECOVERY_REQUIRES_REVIEW";
@@ -47,7 +48,8 @@ function file(path) {
 function prepare(settings) {
   const supplementDirectory = settings?.rolePolicySupplementDirectory;
   demand(exact(settings, ["releaseSettingsFile", "recoveryReviewFile", "recoveryReviewSha256",
-    "operatorSourceCommit", "originalHostEvidenceDirectory", ...(supplementDirectory ? ["rolePolicySupplementDirectory"] : [])]) && digest(settings.recoveryReviewSha256) &&
+    "operatorSourceCommit", "originalHostEvidenceDirectory",
+    ...(supplementDirectory ? ["rolePolicySupplementDirectory", "rolePolicySourceDirectories"] : [])]) && digest(settings.recoveryReviewSha256) &&
     typeof settings.operatorSourceCommit === "string" && /^(?!0+$)[a-f0-9]{40}$/u.test(settings.operatorSourceCommit));
   const release = prepareP2FrontendReplacementReleaseReview(decode(file(settings.releaseSettingsFile)));
   const recoveryRaw = file(settings.recoveryReviewFile);
@@ -61,7 +63,8 @@ function prepare(settings) {
     exact(originalEvidenceSha256, [...Object.keys(applicationFiles), ...Object.keys(hostFiles)]) &&
     Object.values(originalEvidenceSha256).every(digest));
   demand(Boolean(recovery.rolePolicySupplement) === Boolean(supplementDirectory) &&
-    (!recovery.priorRecovery || recovery.priorRecovery.actionId !== plan.releaseId));
+    (!recovery.priorRecovery || recovery.priorRecovery.actionId !== plan.releaseId &&
+      exact(settings.rolePolicySourceDirectories, replacementApiNames)));
   const supplementFiles = recovery.rolePolicySupplement && Object.fromEntries(replacementApiNames.map(name => {
     const source = recovery.rolePolicySupplement[name];
     const packed = decode(file(join(supplementDirectory, name + ".json")));
@@ -193,6 +196,8 @@ export async function runP2FrontendReplacementRecovery(settings, confirmation, {
     selected.supplementFiles && Promise.all(replacementApiNames.map(async name =>
       [name, await verifyReplacementRolePolicySource(api, name, selected.recovery.rolePolicySupplement[name])])),
   ]);
+  const rolePolicyBuild = selected.supplementFiles && Object.fromEntries(replacementApiNames.map(name =>
+    [name, verifyReplacementRolePolicyBuild(name, settings.rolePolicySourceDirectories[name], selected.recovery.rolePolicySupplement[name])]));
   const provider = decode(file(release.settings.providerContext));
   requireQualificationTargetProfile(profile, provider);
   demand(exact(provider, ["version", "qualificationTargetProfile", "vercelToken", "bindings"]) && provider.version === 2 &&
@@ -245,13 +250,17 @@ export async function runP2FrontendReplacementRecovery(settings, confirmation, {
       releaseId: plan.releaseId, actionId: selected.recovery.actionId, recoveryReviewSha256: settings.recoveryReviewSha256,
       trafficAuthorized: false }));
     return { ...receipt, operatorSourceCommit, operatorCi: ci,
-      ...(rolePolicyCi ? { rolePolicyCi: Object.fromEntries(rolePolicyCi) } : {}), applicationSqlExecuted: false, applicationDeployment: false };
+      ...(rolePolicyCi ? { rolePolicyCi: Object.fromEntries(rolePolicyCi), rolePolicyBuild } : {}),
+      applicationSqlExecuted: false, applicationDeployment: false };
   }
   mkdirSync(localResults, { mode: 0o700 });
   mkdirSync(action, { mode: 0o700 });
   const actionStore = frontendReleaseReceiptStore(action);
   actionStore.record("exact-source-ci.json", ci);
-  if (rolePolicyCi) actionStore.record("exact-api-role-policy-source-ci.json", Object.fromEntries(rolePolicyCi));
+  if (rolePolicyCi) {
+    actionStore.record("exact-api-role-policy-source-ci.json", Object.fromEntries(rolePolicyCi));
+    actionStore.record("exact-api-role-policy-build.json", rolePolicyBuild);
+  }
   actionStore.record("ssh-diagnostics-reference.json", { directory: diagnostics });
   actionStore.retain(`${settings.recoveryReviewSha256}-${plan.candidateSha256}.json`, selected.recoveryRaw);
   const directory = join(action, "frontend");
