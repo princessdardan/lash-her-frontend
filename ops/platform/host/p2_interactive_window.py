@@ -257,6 +257,20 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None, observation_
     identity, witness = evidence["browserIdentity"], evidence["identityWitness"]
     enrollment = action.get("identityEnrollment")
     first_owner = action.get("firstOwner")
+    first_owner_discovery = action.get("firstOwnerDiscovery")
+    if first_owner_discovery is not None:
+        demand(_closed_fields(identity, "firstOwner sessionVerified") and identity["sessionVerified"] is True and
+               _closed_fields(identity["firstOwner"], "nonce identitySha256") and
+               identity["firstOwner"]["nonce"] == first_owner_discovery["nonce"] and
+               _digest(identity["firstOwner"]["identitySha256"]) and
+               identity["firstOwner"]["identitySha256"] != first_owner_discovery["emailSha256"],
+               "P2_INTERACTIVE_FIRST_OWNER_DISCOVERY_SESSION_REQUIRED")
+        demand(_closed_fields(witness, "adminUserCount firstOwnerDiscoveryVerified firstOwnerIdentitySha256") and
+               witness["adminUserCount"] == 0 and witness["firstOwnerDiscoveryVerified"] is True and
+               witness["firstOwnerIdentitySha256"] == identity["firstOwner"]["identitySha256"],
+               "P2_INTERACTIVE_FIRST_OWNER_DISCOVERY_WITNESS_REQUIRED")
+        return {"actorKind": "admin", "firstOwner": copy.deepcopy(identity["firstOwner"]), "context": "owner",
+                "browserIdentitySha256": _receipt_sha(identity), "identityWitnessSha256": _receipt_sha(witness)}
     paired = action.get("identityActor", {}).get("sessionCount") == 2
     fields = "actorKind actorId sessionVerified" + (" sessionProofs" if paired else "")
     demand(_closed_fields(identity, fields) and identity["sessionVerified"] is True and _matches(_UUID, identity["actorId"]),
@@ -1493,6 +1507,10 @@ def require_browser_ledger(plan, witness):
         demand(sum(row["kind"] == "new-work" for row in operations) >= 2 and
                sum(row["kind"] == "recovery" for row in operations) >= 2,
                browser_status(plan, "FIRST_OWNER_OPERATIONS_REQUIRED"))
+    if "firstOwnerDiscovery" in plan["scopedAction"]:
+        demand(len(operations) == 3 and sum(row["kind"] == "new-work" for row in operations) == 1 and
+               sum(row["kind"] == "recovery" for row in operations) == 2,
+               browser_status(plan, "FIRST_OWNER_DISCOVERY_OPERATIONS_REQUIRED"))
     if plan["scopedAction"]["stage"] == _MEDIA:
         demand(sum(row["kind"] == "new-work" for row in operations) == 3,
                browser_status(plan, "THREE_NEW_WORK_REQUIRED"))
@@ -1577,8 +1595,10 @@ def validate_interactive_action(action):
         fields.add("stalledRenewalAction")
     enrollment = identity and "identityEnrollment" in action
     first_owner = identity and "firstOwner" in action
+    first_owner_discovery = identity and "firstOwnerDiscovery" in action
     if identity:
-        fields.add("firstOwner" if first_owner else "identityEnrollment" if enrollment else "identityActor")
+        fields.add("firstOwner" if first_owner else "firstOwnerDiscovery" if first_owner_discovery else
+                   "identityEnrollment" if enrollment else "identityActor")
     demand(type(action) is dict and set(action) == fields and
            type(action["stage"]) is str and action["stage"] in _STAGES and
            type(action["windowSeconds"]) is int and 30 <= action["windowSeconds"] <= 300 and
@@ -1601,6 +1621,11 @@ def validate_interactive_action(action):
         demand(_closed_fields(selected_owner, "nonce identitySha256") and _digest(selected_owner["identitySha256"]) and
                _matches(_NONCE, selected_owner["nonce"]) and selected_owner["nonce"] != "0" * 32,
                "P2_INTERACTIVE_FIRST_OWNER_REQUIRED")
+    elif first_owner_discovery:
+        selected_discovery = action["firstOwnerDiscovery"]
+        demand(_closed_fields(selected_discovery, "nonce emailSha256") and _digest(selected_discovery["emailSha256"]) and
+               _matches(_NONCE, selected_discovery["nonce"]) and selected_discovery["nonce"] != "0" * 32,
+               "P2_INTERACTIVE_FIRST_OWNER_DISCOVERY_REQUIRED")
     elif enrollment:
         selected_enrollment = action["identityEnrollment"]
         demand(_closed_fields(selected_enrollment, "provider emailSha256 nonce") and
@@ -1978,6 +2003,8 @@ def _selection_sha(action):
     if action["stage"] == "identity":
         if "firstOwner" in action:
             return "a3" + action["firstOwner"]["identitySha256"][:62]
+        if "firstOwnerDiscovery" in action:
+            return "a4" + action["firstOwnerDiscovery"]["emailSha256"][:62]
         if "identityEnrollment" in action:
             enrollment = action["identityEnrollment"]
             return ("a1" if enrollment["provider"] == "google" else "a2") + enrollment["emailSha256"][:62]
@@ -2185,7 +2212,7 @@ class P2InteractiveWindow:
                {"epoch": self.plan["initialEpoch"], "newWork": False, "recovery": False, "active": 0, "uncertain": 0},
                "P2_INTERACTIVE_GATEWAY_FRONTEND_START_REQUIRED")
         now = int(time.time())
-        reviewed_identity = self.action.get("firstOwner") or self.action.get("identityEnrollment")
+        reviewed_identity = self.action.get("firstOwner") or self.action.get("firstOwnerDiscovery") or self.action.get("identityEnrollment")
         nonce = reviewed_identity["nonce"] if reviewed_identity is not None else secrets.token_hex(16)
         epoch = str(int(self.plan["initialEpoch"]) + 1)
         remaining = math.floor(self.broker.certification_started + self.plan["maximumSeconds"] - time.monotonic()) - 10

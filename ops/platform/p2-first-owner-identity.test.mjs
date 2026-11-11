@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync,
+  writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import test from "node:test";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
-import { p2FirstOwnerIdentitySha256, validP2FirstOwnerSelection } from "./p2-first-owner-identity.mjs";
-import { captureP2InteractiveFirstOwnerBaseline, observeP2InteractiveFirstOwnerCase } from "./p2-lifecycle-pending-probe.mjs";
+import { p2FirstOwnerDiscoveryEmailSha256, p2FirstOwnerIdentitySha256, readP2FirstOwnerSelectionHandoff,
+  validP2FirstOwnerDiscoverySelection, validP2FirstOwnerSelection } from "./p2-first-owner-identity.mjs";
+import { captureP2InteractiveFirstOwnerBaseline, captureP2InteractiveFirstOwnerDiscoveryBaseline,
+  observeP2InteractiveFirstOwnerCase, observeP2InteractiveFirstOwnerDiscoveryCase } from "./p2-lifecycle-pending-probe.mjs";
 
 const nonce = "9".repeat(32);
 const email = "owned-owner@example.invalid", subject = "owned-google-subject";
@@ -23,6 +26,33 @@ test("first-owner review binds normalized email, Google subject and a nonzero no
   assert.equal(p2FirstOwnerIdentitySha256(nonce, email, subject + "\n"), null);
   assert.notEqual(p2FirstOwnerIdentitySha256(nonce, email, "other-google-subject"), firstOwner.identitySha256);
   assert.notEqual(p2FirstOwnerIdentitySha256("8".repeat(32), email, subject), firstOwner.identitySha256);
+});
+
+test("first-owner discovery binds only a normalized allowlisted email until Google supplies the subject", () => {
+  const discovery = { nonce, emailSha256: p2FirstOwnerDiscoveryEmailSha256(nonce, email) };
+  assert.ok(validP2FirstOwnerDiscoverySelection(discovery));
+  assert.equal(validP2FirstOwnerDiscoverySelection({ ...discovery, identitySha256: firstOwner.identitySha256 }), false);
+  assert.equal(p2FirstOwnerDiscoveryEmailSha256(nonce, email.toUpperCase()), null);
+  assert.notEqual(p2FirstOwnerDiscoveryEmailSha256("8".repeat(32), email), discovery.emailSha256);
+});
+
+test("private first-owner selection handoff requires an owned mode-0600 regular file", () => {
+  const directory = mkdtempSync(join(realpathSync(tmpdir()), "p2-first-owner-handoff-"));
+  try {
+    chmodSync(directory, 0o700);
+    const path = join(directory, "selection.json");
+    writeFileSync(path, JSON.stringify({ version: 1, firstOwner }) + "\n", { mode: 0o600 });
+    assert.deepEqual(readP2FirstOwnerSelectionHandoff(path), firstOwner);
+    const hardlink = join(directory, "hardlink.json");
+    linkSync(path, hardlink);
+    assert.equal(readP2FirstOwnerSelectionHandoff(path), null);
+    unlinkSync(hardlink);
+    const symlink = join(directory, "symlink.json");
+    symlinkSync(path, symlink);
+    assert.equal(readP2FirstOwnerSelectionHandoff(symlink), null);
+    chmodSync(path, 0o644);
+    assert.equal(readP2FirstOwnerSelectionHandoff(path), null);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("owned TLS runtime DML role can lock and create exactly the first owner through the app store", {
@@ -68,6 +98,18 @@ test("owned TLS runtime DML role can lock and create exactly the first owner thr
     const target = { host: "127.0.0.1", port: cluster.port, user, database, serverMajor };
     const verify = async () => {};
     const dependencies = { verifyEnvironment: verify, verifySession: verify };
+    const discovery = { nonce, emailSha256: p2FirstOwnerDiscoveryEmailSha256(nonce, email) };
+    const discoveryBaseline = await captureP2InteractiveFirstOwnerDiscoveryBaseline(admin, target, discovery, dependencies);
+    const discoveryReceipt = { firstOwner, sessionVerified: true };
+    assert.deepEqual(await observeP2InteractiveFirstOwnerDiscoveryCase(admin, target, discovery, discoveryBaseline,
+      discoveryReceipt, dependencies), { adminUserCount: 0, firstOwnerDiscoveryVerified: true,
+      firstOwnerIdentitySha256: firstOwner.identitySha256 });
+    const forgedBaseline = await captureP2InteractiveFirstOwnerDiscoveryBaseline(admin, target, discovery, dependencies);
+    await assert.rejects(observeP2InteractiveFirstOwnerDiscoveryCase(admin, target, discovery, forgedBaseline,
+      { ...discoveryReceipt, firstOwner: { ...firstOwner, nonce: "8".repeat(32) } }, dependencies), /P2_LIFECYCLE_PENDING_REFUSED/u);
+    const confusedBaseline = await captureP2InteractiveFirstOwnerDiscoveryBaseline(admin, target, discovery, dependencies);
+    await assert.rejects(observeP2InteractiveFirstOwnerDiscoveryCase(admin, target, discovery, confusedBaseline,
+      { ...discoveryReceipt, firstOwner: { nonce, identitySha256: discovery.emailSha256 } }, dependencies), /P2_LIFECYCLE_PENDING_REFUSED/u);
     const alternate = { ...firstOwner, identitySha256: p2FirstOwnerIdentitySha256(nonce, email, "different-subject") };
     const baseline = await captureP2InteractiveFirstOwnerBaseline(admin, target, firstOwner, dependencies);
     const wrongSubjectBaseline = await captureP2InteractiveFirstOwnerBaseline(admin, target, alternate, dependencies);
@@ -91,6 +133,7 @@ test("owned TLS runtime DML role can lock and create exactly the first owner thr
     const verified = await observeP2InteractiveFirstOwnerCase(admin, target, firstOwner, baseline, receipt, dependencies);
     assert.deepEqual(verified, { actorKind: "admin", actorId: owner.id, actorActive: true, ownerMappingVerified: true, firstOwnerVerified: true });
     await assert.rejects(captureP2InteractiveFirstOwnerBaseline(admin, target, firstOwner, dependencies), /P2_LIFECYCLE_PENDING_REFUSED/u);
+    await assert.rejects(captureP2InteractiveFirstOwnerDiscoveryBaseline(admin, target, discovery, dependencies), /P2_LIFECYCLE_PENDING_REFUSED/u);
     await assert.rejects(repository.createBootstrapOwner({ email: "other@example.invalid", emailVerified: true, providerUserId: "other-subject",
       displayName: null }, { requireEmpty: true }), /First-owner bootstrap requires an empty admin store/u);
     assert.equal((await admin.query("SELECT count(*)::int AS count FROM public.admin_users")).rows[0].count, 1);

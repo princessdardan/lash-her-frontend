@@ -1,5 +1,6 @@
 import { AdminAuthenticationFreshnessError } from "./types";
-import { writerFirstOwnerWindowSha256, type WriterFirstOwner } from "@/lib/writer-admission/context";
+import { writerFirstOwnerDiscoveryWindowSha256, writerFirstOwnerWindowSha256, type WriterFirstOwner,
+  type WriterFirstOwnerDiscovery } from "@/lib/writer-admission/context";
 
 export function assertFreshAdminAuthenticationTimestamp(authenticatedAt: unknown, now: number, maxAgeMs: number): Date {
   if (typeof authenticatedAt !== "number" || !Number.isSafeInteger(authenticatedAt) || authenticatedAt <= 0 ||
@@ -15,6 +16,14 @@ export function assertFirstOwnerGoogleAuthentication(selection: WriterFirstOwner
   windowSha256: unknown, now: number): void {
   const authenticated = assertFreshAdminAuthenticationTimestamp(authenticatedAt, now, 240_000);
   if (windowSha256 !== writerFirstOwnerWindowSha256(selection) || authenticated.getTime() < selection.startedAt * 1000) {
+    throw new AdminAuthenticationFreshnessError("required");
+  }
+}
+
+export function assertFirstOwnerDiscoveryGoogleAuthentication(selection: WriterFirstOwnerDiscovery, authenticatedAt: unknown,
+  windowSha256: unknown, now: number): void {
+  const authenticated = assertFreshAdminAuthenticationTimestamp(authenticatedAt, now, 240_000);
+  if (windowSha256 !== writerFirstOwnerDiscoveryWindowSha256(selection) || authenticated.getTime() < selection.startedAt * 1000) {
     throw new AdminAuthenticationFreshnessError("required");
   }
 }

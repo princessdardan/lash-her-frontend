@@ -6,7 +6,7 @@ import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {sshCommand} from './recreation_ssh.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
-import {validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
+import {validP2FirstOwnerDiscoverySelection,validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {requireP2CertificationRotationCurrent,requireP2CertificationRotationMuxReadiness,
   requireP2CertificationRotationTerminal} from './p2-certification-rotation-successor.mjs';
@@ -494,11 +494,12 @@ function reviewedInteractivePlan(plan,initial){
   const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision||stalledRenewal;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   const firstOwner=identity&&Object.hasOwn(action,'firstOwner');
+  const firstOwnerDiscovery=identity&&Object.hasOwn(action,'firstOwnerDiscovery');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===(stalledRenewal?900:300)&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
-      firstOwner?'firstOwner':enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':media?'mediaAction':learning?'learningAction':
+      firstOwner?'firstOwner':firstOwnerDiscovery?'firstOwnerDiscovery':enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':media?'mediaAction':learning?'learningAction':
         paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':
           lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':resume?'resumeAction':restore?'restoreAction':
             ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':staleRevision?'staleRevisionAction':stalledRenewal?'stalledRenewalAction':'frontendAction'])&&
@@ -533,6 +534,10 @@ function reviewedInteractivePlan(plan,initial){
   if(firstOwner){
     demand(action.actorId===null&&validP2FirstOwnerSelection(action.firstOwner));
     return {selection:{actorKind:'admin'},firstOwner:{...action.firstOwner}};
+  }
+  if(firstOwnerDiscovery){
+    demand(action.actorId===null&&validP2FirstOwnerDiscoverySelection(action.firstOwnerDiscovery));
+    return {selection:{actorKind:'admin'},firstOwnerDiscovery:{...action.firstOwnerDiscovery}};
   }
   if(enrollment){
     const selected=action.identityEnrollment;
@@ -582,10 +587,20 @@ function lifecycleJoinedEvidence(evidence,selected){
   return {...selected,browserResponseSha256:p2NativeHash(response),lifecycleWitnessSha256:p2NativeHash(witness)};
 }
 
-function identityJoinedEvidence(evidence,selected,context,enrollment,firstOwner){
+function identityJoinedEvidence(evidence,selected,context,enrollment,firstOwner,firstOwnerDiscovery){
   demand(exact(evidence,['browserIdentity','identityWitness']));
   const {browserIdentity:identity,identityWitness:witness}=evidence;
   const owner=context==='owner';
+  if(firstOwnerDiscovery){
+    demand(owner&&exact(identity,['firstOwner','sessionVerified'])&&identity.sessionVerified===true&&
+      validP2FirstOwnerSelection(identity.firstOwner)&&identity.firstOwner.nonce===firstOwnerDiscovery.nonce&&
+      identity.firstOwner.identitySha256!==firstOwnerDiscovery.emailSha256&&
+      exact(witness,['adminUserCount','firstOwnerDiscoveryVerified','firstOwnerIdentitySha256'])&&
+      witness.adminUserCount===0&&witness.firstOwnerDiscoveryVerified===true&&
+      witness.firstOwnerIdentitySha256===identity.firstOwner.identitySha256);
+    return {actorKind:'admin',firstOwner:{...identity.firstOwner},context,
+      browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
+  }
   const {sessionCount,...actorSelection}=selected;
   const paired=sessionCount===2;
   const actor={...actorSelection,actorId:enrollment||firstOwner?identity?.actorId:actorSelection.actorId};
@@ -1188,7 +1203,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           demand(launch===spawn&&interactivePlan&&armed&&!prepared&&!interactiveCreated&&active&&!failed);
           interactiveCreated=true;
           const {readP2InteractiveBrowserControllerBinding,requireP2InteractiveBrowserMediaEvidence,
-            requireP2InteractiveBrowserStalledRenewalEvidence}=await import('./p2-lifecycle-suspension-evidence.mjs');
+            requireP2InteractiveBrowserStalledRenewalEvidence,requireP2InteractiveFirstOwnerDiscoveryEvidence}=
+            await import('./p2-lifecycle-suspension-evidence.mjs');
           const {validateP2InteractiveBrowserPermit}=await import('./p2-lifecycle-browser-recorder.mjs');
           const binding=structuredClone(initial.interactiveController),snapshot=structuredClone(interactivePlan);
           const alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&
@@ -1205,7 +1221,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const visibility=stage==='lesson-visibility-save';
           const staleRevision=stage==='lesson-stale-revision',stalledRenewal=stage===p2StalledRenewalStage;
           const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision||stalledRenewal;
-          const {selection,enrollment,firstOwner,authoring:authoringPermit,media:mediaPermit,learning:learningPermit,paidGrant:paidGrantPermit,
+          const {selection,enrollment,firstOwner,firstOwnerDiscovery,authoring:authoringPermit,media:mediaPermit,learning:learningPermit,paidGrant:paidGrantPermit,
             learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit,lessonEntry:lessonEntryPermit,
             lessonDenial:lessonDenialPermit,assessment:assessmentPermit,resume:resumePermit,restore:restorePermit,ackLoss:ackLossPermit,
             exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit,stalledRenewal:stalledRenewalTarget}=selectedInteractive;
@@ -1218,7 +1234,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               lessonEntry?{lessonEntry:lessonEntryPermit}:lessonDenial?{lessonDenial:lessonDenialPermit}:assessment?{assessment:assessmentPermit}:resume?{resume:resumePermit}:restore?{restore:restorePermit}:
               ackLoss?{ackLoss:ackLossPermit}:exitSave?{exitSave:exitSavePermit}:visibility?{visibility:visibilityPermit}:
               staleRevision?{staleRevision:staleRevisionPermit}:stalledRenewal?{stalledRenewal:stalledRenewalTarget}:
-              firstOwner?{firstOwner}:enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
+              firstOwner?{firstOwner}:firstOwnerDiscovery?{firstOwnerDiscovery}:enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation,mediaArm,mediaUpload,heldMediaResponse,stalledBaseline,stalledFence;
           const statusFor=disposition=>`P2_INTERACTIVE_${stageLabel}_${disposition}`;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000,waitingDisposition)=>{
@@ -1351,6 +1367,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               demand(phase===(joinedUpload?'media-observed':stalledRenewal?'observation-fenced':'fenced')&&installed&&(!gatewayScoped||gatewayObservation)&&
                 (!joinedUpload||mediaUpload&&caseEvidence?.browserResponse===heldMediaResponse));requireRecorder();
               if(stalledRenewal)requireP2InteractiveBrowserStalledRenewalEvidence(interactivePlan,browserController,caseEvidence?.stalledRenewalBrowser);
+              if(firstOwnerDiscovery)requireP2InteractiveFirstOwnerDiscoveryEvidence(interactivePlan,browserController,caseEvidence?.browserIdentity);
               const evidence=structuredClone(caseEvidence);
               const expected=media?mediaReservationJoinedEvidence(evidence,selection,gatewayObservation):
                 learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
@@ -1372,7 +1389,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
                 authoringPublicationCase(selection.operation)?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):
                 authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
-                identity?identityJoinedEvidence(evidence,selection,context,enrollment,firstOwner):lifecycleJoinedEvidence(evidence,selection);
+                identity?identityJoinedEvidence(evidence,selection,context,enrollment,firstOwner,firstOwnerDiscovery):lifecycleJoinedEvidence(evidence,selection);
               if(joinedUpload)Object.assign(expected,{uploadSent:true,upload:mediaUpload});
               phase='retaining';
               const receipt=await call('interactive-retain','JOINED',

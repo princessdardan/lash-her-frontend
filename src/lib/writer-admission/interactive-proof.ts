@@ -5,8 +5,9 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { isAdminDeveloperModeEnabled } from "@/lib/admin/developer-mode-config";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import type { WriterAuthoringOperation, WriterFirstOwner, WriterIdentityEnrollment, WriterIdentityRotation } from "./context";
-import { P2_FIRST_OWNER_PATH, P2_FIRST_OWNER_SELECTOR_PREFIX } from "../../../ops/platform/p2-first-owner-identity.mjs";
+import type { WriterAuthoringOperation, WriterFirstOwner, WriterFirstOwnerDiscovery, WriterIdentityEnrollment, WriterIdentityRotation } from "./context";
+import { P2_FIRST_OWNER_DISCOVERY_SELECTOR_PREFIX, P2_FIRST_OWNER_PATH,
+  P2_FIRST_OWNER_SELECTOR_PREFIX } from "../../../ops/platform/p2-first-owner-identity.mjs";
 import { parseAssessmentAttempt } from "../../../ops/gateway/assessment-attempt.mjs";
 import { EXIT_SAVE_LESSON_STARTED, parseLessonExitSavePosition, parseLessonRestorePosition, parseLessonResumePosition,
   permitsLessonAckLossBody, permitsLessonStaleRevisionBody, RESTORE_LESSON_STARTED } from "../../../ops/gateway/lesson-resume-position.mjs";
@@ -34,6 +35,7 @@ const authoringRepublishPaidActorPrefix = "7032712d617574682d7265702d763100";
 const authoringReviewPaidRestorationActorPrefix = "7032712d617574682d72626c2d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
   firstOwner?: WriterFirstOwner; identityRotation?: WriterIdentityRotation; rotationAdmin?: RotationAdminSelection;
+  firstOwnerDiscovery?: WriterFirstOwnerDiscovery;
   authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection; mediaReservation?: LessonSelection;
   lessonEntry?: LessonSelection; lessonDenial?: LessonSelection; lessonAssessment?: LessonSelection;
   lessonResume?: LessonSelection; lessonRestore?: LessonSelection; lessonAckLoss?: LessonSelection; lessonExitSave?: LessonSelection;
@@ -71,6 +73,10 @@ const staffAuth = {
 };
 const firstOwnerAuth = {
   GET: at(`/admin/sign-in|/api/auth/callback/google|${P2_FIRST_OWNER_PATH}`),
+  POST: at("/admin/sign-in"),
+};
+const firstOwnerDiscoveryAuth = {
+  GET: at("/admin/(?:sign-in|not-authorized)|/api/auth/(?:callback/google|session)"),
   POST: at("/admin/sign-in"),
 };
 const rotationCustomerAuth = {
@@ -131,11 +137,12 @@ function permitsCustomerAuth(method: string, path: string, provider?: WriterIden
   return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
 }
 
-function permits({ stage, identityActorKind, identityEnrollment, firstOwner, identityRotation, rotationAdmin, authoringOperation, learnerAccess, mediaReservation, lessonEntry, lessonDenial, lessonAssessment,
+function permits({ stage, identityActorKind, identityEnrollment, firstOwner, firstOwnerDiscovery, identityRotation, rotationAdmin, authoringOperation, learnerAccess, mediaReservation, lessonEntry, lessonDenial, lessonAssessment,
   lessonResume, lessonRestore, lessonAckLoss, lessonExitSave, lessonVisibilitySave, lessonStaleRevision, stalledPlaybackRenewal }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
     case "identity":
       if (firstOwner) return matches(firstOwnerAuth, method, path);
+      if (firstOwnerDiscovery) return matches(firstOwnerDiscoveryAuth, method, path);
       if (identityRotation) return matches(identityRotation.actorKind === "admin" ? rotationAdminAuth : rotationCustomerAuth, method, path);
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
@@ -317,6 +324,10 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     if (selection.startsWith(P2_FIRST_OWNER_SELECTOR_PREFIX) && !/^0+$/u.test(nonce)) {
       return { ...permit, identityActorKind: "admin", firstOwner: { nonce, identityDigest: selection.slice(2), epoch, startedAt: Number(started) } };
     }
+    if (selection.startsWith(P2_FIRST_OWNER_DISCOVERY_SELECTOR_PREFIX) && !/^0+$/u.test(nonce)) {
+      return { ...permit, identityActorKind: "admin",
+        firstOwnerDiscovery: { nonce, emailDigest: selection.slice(2), epoch, startedAt: Number(started) } };
+    }
     const identityCustomerId = decodeSelectedUuid(selection, customerIdentityPrefix);
     if (identityCustomerId) return { ...permit, identityActorKind: "customer", identityCustomerId };
     const identityEnrollment = decodeIdentityEnrollment(selection, nonce);
@@ -368,6 +379,13 @@ export function attestInteractiveRequest(request: { origin: string; method: stri
     const landing = (request.path === "/admin/sign-in" || request.path === "/sign-in") && query.size === 1 && query.get(name) === value;
     if (!callback && !landing) return null;
   }
+  if (browser.firstOwnerDiscovery && request.search) {
+    const callback = request.method === "GET" && request.path === "/api/auth/callback/google";
+    const query = new URLSearchParams(request.search);
+    const landing = request.method === "GET" && request.path === "/admin/sign-in" &&
+      query.size === 1 && query.get("returnTo") === "/admin/not-authorized";
+    if (!callback && !landing) return null;
+  }
   // Next strips its internal Flight key before proxy runs. Retain the exact
   // remaining search string for the selected progress read.
   const target = ["lesson-denial", "lesson-assessment", "lesson-ack-loss", "lesson-stale-revision"].includes(browser.stage)
@@ -409,6 +427,7 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
     lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment; firstOwner?: WriterFirstOwner;
+    firstOwnerDiscovery?: WriterFirstOwnerDiscovery;
     identityRotation?: WriterIdentityRotation; identityRotationWriterKind?: "new-work" | "recovery"; rotationAdmin?: RotationAdminSelection;
     authoringActorId?: string; authoringOperation?: WriterAuthoringOperation; learningEnrollment?: LearningEnrollmentSelection;
     paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection; learnerAccess?: LearnerAccessSelection;
@@ -432,6 +451,7 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
     ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}),
     ...(browser.identityEnrollment ? { identityEnrollment: browser.identityEnrollment } : {}),
     ...(browser.firstOwner ? { firstOwner: browser.firstOwner } : {}),
+    ...(browser.firstOwnerDiscovery ? { firstOwnerDiscovery: browser.firstOwnerDiscovery } : {}),
     ...(browser.identityRotation ? { identityRotation: browser.identityRotation, identityRotationWriterKind } : {}),
     ...(browser.rotationAdmin ? { rotationAdmin: browser.rotationAdmin } : {}),
     ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}),

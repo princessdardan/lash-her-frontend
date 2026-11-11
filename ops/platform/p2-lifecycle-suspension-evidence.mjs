@@ -350,6 +350,7 @@ async function reviewedInteractiveInput(plan, challenge, mediaFile) {
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
     browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: action.windowSeconds,
     ...(action.stage === "identity" ? Object.hasOwn(action, "firstOwner") ? { firstOwner: action.firstOwner }
+      : Object.hasOwn(action, "firstOwnerDiscovery") ? { firstOwnerDiscovery: action.firstOwnerDiscovery }
       : Object.hasOwn(action, "identityEnrollment") ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
     ...(action.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(action.frontendAction) } : {}),
     ...(authoring ? { authoring } : {}), ...(learning ? { learning } : {}), ...(paidGrant ? { paidGrant } : {}),
@@ -620,12 +621,14 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const remaining = selection.expires * 1000 - Date.now();
       demand(phase === "opened" && !closing && binding.stage === "identity"
         && context === p2InteractiveIdentityContext(input)
-        && (context === "owner" && !input.firstOwner ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined)
+        && (context === "owner" && !input.firstOwner && !input.firstOwnerDiscovery ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined)
         && remaining > 0 && remaining <= input.windowSeconds * 1000);
       phase = "capturing";
-      const packet = { ...binding, ...selection, ...(context === "owner" && !input.firstOwner ? { ownerSubjectSha256 } : {}) };
+      const packet = { ...binding, ...selection,
+        ...(context === "owner" && !input.firstOwner && !input.firstOwnerDiscovery ? { ownerSubjectSha256 } : {}) };
       const receipt = await command("interactive-capture-identity", packet, "interactive-identity-captured", selection, remaining + 5000);
       verifiedIdentity = receipt.identity;
+      if (input.firstOwnerDiscovery) interactiveControllers.get(controller).firstOwnerDiscovery = verifiedIdentity;
       phase = "cleared";
       clearTimeout(phaseTimer);
       return verifiedIdentity;
@@ -641,7 +644,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     },
     async selectPlan(nextPlan, mediaFile) {
       demand(phase === "cleared" && !failed && !ended && !closing && actions.size < 24
-        && !input.identityEnrollment && !input.firstOwner && !nextPlan?.scopedAction?.identityEnrollment && !nextPlan?.scopedAction?.firstOwner);
+        && !input.identityEnrollment && !input.firstOwner && !input.firstOwnerDiscovery && !nextPlan?.scopedAction?.identityEnrollment &&
+        !nextPlan?.scopedAction?.firstOwner && !nextPlan?.scopedAction?.firstOwnerDiscovery);
       phase = "selecting";
       try {
         const next = await reviewedInteractiveInput(nextPlan, binding.challenge, mediaFile), nextBinding = interactiveBinding(next);
@@ -707,6 +711,12 @@ export function requireP2InteractiveBrowserMediaEvidence(plan, controller, reser
   demand(source && source.plan === plan && source.active() && source.mediaReservation && source.mediaReservation === reservation
     && (dispatch === undefined || source.mediaAttempt && dispatch.response === source.mediaAttempt.response
       && dispatch.intentSha256 === source.mediaAttempt.intentSha256));
+}
+
+export function requireP2InteractiveFirstOwnerDiscoveryEvidence(plan, controller, identity) {
+  const source = interactiveControllers.get(controller);
+  demand(source?.plan === plan && source.active() && plan.scopedAction?.stage === "identity" &&
+    plan.scopedAction.firstOwnerDiscovery !== undefined && source.firstOwnerDiscovery === identity);
 }
 
 export function readP2LifecycleBrowserControllerBinding(plan, controller) {

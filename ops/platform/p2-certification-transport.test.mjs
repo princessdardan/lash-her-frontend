@@ -288,6 +288,7 @@ plan=initial['certificationPlan'];binding=initial['interactiveController'];profi
 action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpoch'])+1);behavior=sys.argv[1]
 enrollment=action.get('identityEnrollment')
 first_owner=action.get('firstOwner')
+first_owner_discovery=action.get('firstOwnerDiscovery')
 authoring=stage=='authoring';learning=stage=='learning';paid_grant=stage=='paid-grant';gateway_observation=None
 media=stage=='media';media_action=action.get('mediaAction',{});joined_upload=media_action.get('operation')=='upload-video-and-observe-callback'
 learner_access=stage=='learner-access';access_action=action.get('learnerAccessAction',{})
@@ -391,6 +392,11 @@ for raw in sys.stdin:
     nonce=first_owner['nonce']
     if behavior=='wrong-nonce':nonce='8'+nonce[1:]
     selector='a3'+first_owner['identitySha256'][:62]
+    if behavior=='wrong-selector':selector='a1'+selector[2:]
+   elif first_owner_discovery:
+    nonce=first_owner_discovery['nonce']
+    if behavior=='wrong-nonce':nonce='8'+nonce[1:]
+    selector='a4'+first_owner_discovery['emailSha256'][:62]
     if behavior=='wrong-selector':selector='a1'+selector[2:]
    elif enrollment:
     provider=enrollment['provider'];nonce=enrollment['nonce'];email_digest=enrollment['emailSha256']
@@ -846,23 +852,32 @@ for raw in sys.stdin:
      'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
     if behavior=='wrong-join':joined['authoritativeGatewayRequestId']=next(row['requestId'] for row in acks[:5] if row['requestIndex']==2)
    elif stage=='identity':
-    actor={'actorKind':'admin' if first_owner else 'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment or first_owner else action['identityActor']
-    assert set(evidence)=={'browserIdentity','identityWitness'}
-    if actor.get('sessionCount')==2:
-     assert evidence['browserIdentity']=={'actorKind':actor['actorKind'],'actorId':actor['actorId'],
-      'sessionVerified':True,'sessionProofs':['1'*64,'2'*64]}
-     assert evidence['identityWitness']=={**actor,'actorActive':True,'liveSessionCount':2,'verifiedFreshSessionCount':2}
-    else:assert evidence['browserIdentity']=={**actor,'sessionVerified':True}
-    if enrollment:
-     provider=enrollment['provider']
-     assert evidence['identityWitness']=={**actor,'actorActive':True,'liveSessionCount':1,
-      'provider':provider,'providerLinkCount':1 if provider=='google' else 0}
-    if first_owner:assert evidence['identityWitness']=={**actor,'actorActive':True,'ownerMappingVerified':True,'firstOwnerVerified':True}
-    joined={**actor,'context':'owner' if actor['actorKind']=='admin' else 'learner',
-     'browserIdentitySha256':digest(evidence['browserIdentity']),'identityWitnessSha256':digest(evidence['identityWitness'])}
-    if behavior=='wrong-join':
-     if enrollment:joined['actorId']='12345678-1234-4123-8123-000000000002'
-     else:joined['identityWitnessSha256']='0'*64
+    if first_owner_discovery:
+     assert set(evidence)=={'browserIdentity','identityWitness'}
+     identity=evidence['browserIdentity'];witness=evidence['identityWitness']
+     assert identity=={'firstOwner':{'nonce':first_owner_discovery['nonce'],'identitySha256':'6'*64},'sessionVerified':True}
+     assert witness=={'adminUserCount':0,'firstOwnerDiscoveryVerified':True,'firstOwnerIdentitySha256':'6'*64}
+     joined={'actorKind':'admin','firstOwner':identity['firstOwner'],'context':'owner',
+      'browserIdentitySha256':digest(identity),'identityWitnessSha256':digest(witness)}
+     if behavior=='wrong-join':joined['firstOwner']['identitySha256']='5'*64
+    else:
+     actor={'actorKind':'admin' if first_owner else 'customer','actorId':'12345678-1234-4123-8123-000000000005'} if enrollment or first_owner else action['identityActor']
+     assert set(evidence)=={'browserIdentity','identityWitness'}
+     if actor.get('sessionCount')==2:
+      assert evidence['browserIdentity']=={'actorKind':actor['actorKind'],'actorId':actor['actorId'],
+       'sessionVerified':True,'sessionProofs':['1'*64,'2'*64]}
+      assert evidence['identityWitness']=={**actor,'actorActive':True,'liveSessionCount':2,'verifiedFreshSessionCount':2}
+     else:assert evidence['browserIdentity']=={**actor,'sessionVerified':True}
+     if enrollment:
+      provider=enrollment['provider']
+      assert evidence['identityWitness']=={**actor,'actorActive':True,'liveSessionCount':1,
+       'provider':provider,'providerLinkCount':1 if provider=='google' else 0}
+     if first_owner:assert evidence['identityWitness']=={**actor,'actorActive':True,'ownerMappingVerified':True,'firstOwnerVerified':True}
+     joined={**actor,'context':'owner' if actor['actorKind']=='admin' else 'learner',
+      'browserIdentitySha256':digest(evidence['browserIdentity']),'identityWitnessSha256':digest(evidence['identityWitness'])}
+     if behavior=='wrong-join':
+      if enrollment:joined['actorId']='12345678-1234-4123-8123-000000000002'
+      else:joined['identityWitnessSha256']='0'*64
    else:
     assert set(evidence)=={'browserResponse','lifecycleWitness'}
     joined={'browserResponseSha256':digest(evidence['browserResponse']),'lifecycleWitnessSha256':digest(evidence['lifecycleWitness']),
@@ -877,7 +892,8 @@ for raw in sys.stdin:
      (5 if behavior=='unexpected-frontend-operation' else 4) if resume else
      (4 if behavior=='unexpected-frontend-operation' else 3) if assessment else
      2 if lesson_entry and behavior=='unexpected-frontend-operation' else
-     0 if (learner_access or lesson_denial or stalled_renewal) and behavior!='unexpected-frontend-operation' else 5 if first_owner else 1}
+     0 if (learner_access or lesson_denial or stalled_renewal) and behavior!='unexpected-frontend-operation' else
+     3 if first_owner_discovery else 5 if first_owner else 1}
   else:raise AssertionError('unexpected interactive operation')
  elif op=='certification-prepare-close':
   assert phase=='retained' and p['caseOutcome']['status']==status('JOINED')
@@ -923,7 +939,8 @@ const staleRevision=certificationStage==='lesson-stale-revision',stalledRenewal=
 const gatewayScoped=authoring||media||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision||stalledRenewal;
 const identityPair=identity&&variant==='two-sessions';
 const firstOwner=identity&&variant==='first-owner'?{nonce:'9'.repeat(32),identitySha256:'6'.repeat(64)}:null;
-const provider=identity&&!identityPair?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
+const firstOwnerDiscovery=identity&&variant==='first-owner-discovery'?{nonce:'9'.repeat(32),emailSha256:'7'.repeat(64)}:null;
+const provider=identity&&['google','resend'].includes(variant)?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
 const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const createCurriculum=authoring&&['create-module','create-lesson'].includes(variant);
 const republish=authoring&&typeof variant==='string'&&variant.startsWith('republish-');
@@ -1131,7 +1148,7 @@ const requests=stalledRenewal?[studentCourse,studentLesson,student+'/progress?le
   {method:'POST',target:'/course/v1/admin/courses',bodySha256:'8'.repeat(64),uses:1},
 ]:[];
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests,windowSeconds:120,
-  ...(firstOwner?{firstOwner}:identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:media?{mediaAction}:learning?{learningAction}:
+  ...(firstOwner?{firstOwner}:firstOwnerDiscovery?{firstOwnerDiscovery}:identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:media?{mediaAction}:learning?{learningAction}:
     paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:paidRevoke?{paidRevokeAction}:
     lessonEntry?{lessonEntryAction}:lessonDenial?{lessonDenialAction}:assessment?{assessmentAction}:resume?{resumeAction}:
     restore?{restoreAction}:ackLoss?{ackLossAction}:exitSave?{exitSaveAction}:visibility?{visibilityAction}:
@@ -1148,7 +1165,7 @@ const outcome={status:'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED',sqlReplayed:
   version:2,qualificationTargetProfile:profile,planSha256};
 const fenced={status:status('FENCED'),version:2,qualificationTargetProfile:profile,certificationActionId:actionId,planSha256,
   stage:certificationStage,gatewayAdmissionClosed:true,gatewayActive:0,gatewayUncertain:0};
-let privatePacket,alive=true,installCount=0,dispatchTaken=false,stalledFenceTaken=false;
+let privatePacket,alive=true,installCount=0,dispatchTaken=false,stalledFenceTaken=false,discoveryEvidenceTaken=false;
 const browser={
  async installPermit(permit,actualContext){
   assert.equal(actualContext,context);installCount++;
@@ -1178,6 +1195,9 @@ mock.module(fixture.browserUrl,{exports:{readP2InteractiveBrowserControllerBindi
    assert.equal(dispatch.response,dispatchEvidence);
    assert.equal(dispatch.intentSha256,'6'.repeat(64));
   }
+},requireP2InteractiveFirstOwnerDiscoveryEvidence(selected,controller,identity){
+  assert.ok(firstOwnerDiscovery&&alive&&selected===plan&&controller===browser&&identity===evidence.browserIdentity);
+  discoveryEvidenceTaken=true;
 }}});
 const {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,takeP2InteractiveMediaDispatch,takeP2InteractiveStalledObservationFence}=await import(fixture.transportUrl);
 const start=(input=initial)=>p2CertificationEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key'},input,directory,{expectedProfile:profile});
@@ -1198,6 +1218,12 @@ for(const changed of [
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,nonce:'9'.repeat(31)}}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,emailSha256:'0'.repeat(64)}}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,identityEnrollment:{...identityEnrollment,nonce:'0'.repeat(32)}}}},
+ ]:[]),
+ ...(firstOwnerDiscovery?[
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,firstOwnerDiscovery:{...firstOwnerDiscovery,emailSha256:'7'.repeat(62)}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,firstOwnerDiscovery:{...firstOwnerDiscovery,emailSha256:'0'.repeat(64)}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,firstOwnerDiscovery:{...firstOwnerDiscovery,nonce:'0'.repeat(32)}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,firstOwner:{nonce:'9'.repeat(32),identitySha256:'6'.repeat(64)}}}},
  ]:[]),
  ...(authoring?[
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[...requests].reverse()}}},
@@ -1576,6 +1602,8 @@ const evidence=stalledRenewal?{stalledRenewalBrowser:stalledBrowser}:media?{brow
  courseWitness:{...draft,readOnly:true}}
  :identityPair?{browserIdentity:{...observedActor,sessionVerified:true,sessionProofs:['1'.repeat(64),'2'.repeat(64)]},
  identityWitness:{...observedActor,sessionCount:2,actorActive:true,liveSessionCount:2,verifiedFreshSessionCount:2}}
+ :firstOwnerDiscovery?{browserIdentity:{firstOwner:{nonce:firstOwnerDiscovery.nonce,identitySha256:'6'.repeat(64)},sessionVerified:true},
+ identityWitness:{adminUserCount:0,firstOwnerDiscoveryVerified:true,firstOwnerIdentitySha256:'6'.repeat(64)}}
  :identity?{browserIdentity:{...observedActor,sessionVerified:true},
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
   ...(firstOwner?{firstOwnerVerified:true}:identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
@@ -1967,6 +1995,15 @@ const result=start()(async(_verify,_signal,host)=>{
  if(firstOwner){
   await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,firstOwnerVerified:false}}));
  }
+ if(firstOwnerDiscovery){
+  await assert.rejects(stage.retain({...evidence,browserIdentity:{...evidence.browserIdentity,
+   firstOwner:{...evidence.browserIdentity.firstOwner,nonce:'8'.repeat(32)}}}));
+  await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,adminUserCount:1}}));
+  await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,
+   firstOwnerIdentitySha256:'5'.repeat(64)}}));
+  await assert.rejects(stage.retain({...evidence,browserIdentity:{...evidence.browserIdentity,
+   firstOwner:{nonce:firstOwnerDiscovery.nonce,identitySha256:firstOwnerDiscovery.emailSha256}}}));
+ }
  if(identityPair){
   for(const sessionProofs of [['1'.repeat(64)],['1'.repeat(64),'1'.repeat(64)],['1'.repeat(64),'0'.repeat(64)]]){
    await assert.rejects(stage.retain({...evidence,browserIdentity:{...evidence.browserIdentity,sessionProofs}}));
@@ -1991,6 +2028,11 @@ const result=start()(async(_verify,_signal,host)=>{
  }
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
+ if(firstOwnerDiscovery){
+  assert.equal(discoveryEvidenceTaken,true);
+  assert.deepEqual(retained.firstOwner,evidence.browserIdentity.firstOwner);
+  assert.equal(retained.frontendOperationCount,3);
+ }
  if(stalledRenewal)assert.equal(retained.playbackGatewayRequestId,stalledPlayback.requestId);
  if(media){
   assert.equal(retained.uploadSent,joinedUpload);
@@ -2112,7 +2154,7 @@ const result=start()(async(_verify,_signal,host)=>{
    assert.equal(retained.revision,draft.revision);
   }
  }
- if(identity){
+ if(identity&&!firstOwnerDiscovery){
   assert.equal(retained.context,context);
   assert.equal(retained.actorId,observedActor.actorId);
  }
@@ -2154,6 +2196,10 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['identity','admin','wrong-nonce','first-owner'],
  ['identity','admin','wrong-selector','first-owner'],
  ['identity','admin','wrong-join','first-owner'],
+ ['identity','admin','joined','first-owner-discovery'],
+ ['identity','admin','wrong-nonce','first-owner-discovery'],
+ ['identity','admin','wrong-selector','first-owner-discovery'],
+ ['identity','admin','wrong-join','first-owner-discovery'],
  ['identity','customer','joined'],
  ['identity','customer','wrong-kind'],
  ['identity','customer','wrong-selector'],
