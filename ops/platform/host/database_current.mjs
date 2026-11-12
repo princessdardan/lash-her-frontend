@@ -86,7 +86,7 @@ export async function checkCurrentDatabase({ client, prepared, assertAppliedLine
     if (expected !== undefined) {
       // The pinned verifier uses a SELECT CTE for ACL inspection. The server
       // transaction independently refuses DDL/DML, including writable CTEs.
-      const roleReader = { async query(sql, values) {
+      const roleReader = { host: client.host, port: client.port, async query(sql, values) {
         demand(typeof sql === "string" && /^(SELECT|WITH)\b/iu.test(sql.trimStart()), "CURRENT_CHECK_SELECT_ONLY");
         return client.query(sql, values);
       } };

@@ -1962,8 +1962,10 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     identity = action_id(initial)
     require(os.geteuid() == 0 and sys.platform == 'linux' and initial.get('environment') == 'staging', 'P2_LINUX_ROOT_GUARD_REQUIRED')
     source = Path(__file__).resolve().parents[3]
-    require(migrate.source_commit(initial.get('sourceCommit')) and str(source) == '/opt/lash-her/operators/' + initial['sourceCommit'],
-            'P2_INSTALLED_GUARD_SOURCE_REQUIRED')
+    operator_commit = (certification_parent.profiled_certification_operator_commit(initial) if profiled_certification
+                       else initial.get('sourceCommit'))
+    require(migrate.source_commit(initial.get('sourceCommit')) and migrate.source_commit(operator_commit) and
+            str(source) == '/opt/lash-her/operators/' + operator_commit, 'P2_INSTALLED_GUARD_SOURCE_REQUIRED')
     selected, verified_jobs = migrate.make_plan(Path(initial['bundle']), **_profile_kwargs(initial))
     require(selected == initial['candidate'] and migrate.file_hash(migrate.read_input(Path(initial['bundle']), 'release.candidate.json')) == initial.get('candidateSha256'),
             'P2_GUARD_CANDIDATE_BINDING_REFUSED')

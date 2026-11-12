@@ -1,5 +1,7 @@
 // Fixed source parent for bounded certification stages. No release replay.
 import {isDeepStrictEqual} from 'node:util';
+import {execFileSync} from 'node:child_process';
+import {firstOwnerSupplementAllowed} from './p2-certification-transport.mjs';
 import {P2_FIRST_OWNER_SELECTION_HANDOFF,validP2FirstOwnerDiscoverySelection,validP2FirstOwnerSelection} from './p2-first-owner-identity.mjs';
 import {frontendCoordinationHash as rawHash} from './frontend-release-inventory.mjs';
 import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
@@ -463,6 +465,8 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   const replacement=profiledRelease?.replacementRelease;
   const successorRuntime=profiledRelease?.successorRuntime;
   const rotationSuccessor=profiledRelease?.rotationSuccessor;
+  const supplement=input.supplementalOperatorCommit;
+  if(supplement!==undefined)demand(profile&&!successorRuntime&&!rotationSuccessor&&firstOwnerSupplementAllowed(input,job.sourceCommit,replacement));
   if(replacement!==undefined){
     demand(profile&&validP2CertificationReplacementDescriptor(replacement)&&
       isDeepStrictEqual(replacement,inventory.replacementRelease)&&replacement.reviewedPlanSha256===profiledRelease.planSha256&&
@@ -555,6 +559,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     frontendSqlReplay:false,apiSqlReplay:false,rolePreparationAllowed:false,historicalLoginRestorationAllowed:false,buildAllowed:false,promotionAllowed:false,
     wholeReleaseAccepted:false};
   if(replacement)base.replacementRelease=structuredClone(replacement);
+  if(supplement!==undefined)base.supplementalOperatorCommit=supplement;
   if(successorRuntime)base.successorRuntime=structuredClone(successorRuntime);
   if(rotationSuccessor){
     base.rotationSuccessor=structuredClone(rotationSuccessor);
@@ -1241,7 +1246,7 @@ function prepareProfiledCertification(settings){
     :settings?.certification?.mode==='direct-worker'?['worker']
       :settings?.certification?.mode==='interactive-browser'&&pairedBrowserStages.has(settings.certification.scopedAction?.stage)?['interactiveIdentity']:[];
   demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra,
-    ...(replacement?['replacementRelease']:[]),...(successor?['successorRuntime']:[]),...(rotation?['rotationSuccessor']:[])])&&settings.version===2&&settings.environment==='staging'&&
+    ...(replacement?['replacementRelease']:[]),...(Object.hasOwn(settings,'supplementalOperatorCommit')?['supplementalOperatorCommit']:[]),...(successor?['successorRuntime']:[]),...(rotation?['rotationSuccessor']:[])])&&settings.version===2&&settings.environment==='staging'&&
     (!(successor||rotation)||replacement)&&!(successor&&rotation));
   requireQualificationTargetProfile(currentProfile,settings);
   const checked=replacement?prepareP2CertificationReplacementRelease(settings.releaseSettings,settings.replacementRelease)
@@ -1249,7 +1254,9 @@ function prepareProfiledCertification(settings){
   const {original,frontendReceipts,originalReleaseReceipt,candidateBytes,profiledRelease,host}=checked;
   const {plan:release}=original;
   const receipt=decodeQualificationTargetJson(originalReleaseReceipt,'carrier');
-  const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
+  const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit,
+    supplementalOperatorCommit:settings.supplementalOperatorCommit};
+  demand(!Object.hasOwn(settings.certification,'supplementalOperatorCommit'));
   demand(replacement===Object.hasOwn(profiledRelease,'replacementRelease')&&settings.operatorSourceCommit===release.sourceCommit&&
     input.gatewayConfigurationSha256===release.configurationSha256['gateway.json']&&
     (rotation||input.native?.configurationRecordSha256===receipt.frontendWorkloadReceiptSha256&&
@@ -1283,12 +1290,45 @@ export function prepareP2ProfiledCertificationOperator(settings){
   return authPlan?{version:2,qualificationTargetProfile:currentProfile,status:'P2_BROWSER_CERTIFICATION_ACTIONS_PLANNED',authentication:authPlan,browser:plan}:plan;
 }
 
+const firstOwnerSupplementFiles = new Set([
+  'ops/platform/host/current_databases.py',
+  'ops/platform/host/current_databases_test.py',
+  'ops/platform/host/database_current.mjs',
+  'ops/platform/host/p2_interactive_ingress.py',
+  'ops/platform/host/p2_interactive_ingress_test.py',
+  'ops/platform/host/p2_certification_parent.py',
+  'ops/platform/host/p2_certification_parent_test.py',
+  'ops/platform/host/p2_release_guard_test.py',
+  'ops/platform/host/p2_release_supervisor.py',
+  'ops/platform/p2-certification.mjs',
+  'ops/platform/p2-certification-transport.mjs',
+  'ops/platform/p2-first-owner-identity.test.mjs',
+  'ops/platform/p2-lifecycle-suspension-evidence.mjs',
+]);
+
+function profiledCertificationOperatorSource(root,plan){
+  const revision=plan.supplementalOperatorCommit??plan.operatorSourceCommit;
+  const source=committedProfiledCurrentOperatorSource(root,revision);
+  if(plan.supplementalOperatorCommit!==undefined){
+    demand(firstOwnerSupplementAllowed(plan,plan.sourceCommit,plan.replacementRelease));
+    const git=args=>execFileSync('/usr/bin/git',['--no-replace-objects','-C',root,...args],
+      {encoding:'utf8',timeout:10000,maxBuffer:65536,stdio:['ignore','pipe','pipe']}).trim();
+    demand(git(['rev-list','--parents','-1',revision])===revision+' '+plan.sourceCommit);
+    const changes=git(['diff','--name-status','--no-renames',plan.sourceCommit,revision]).split('\n');
+    demand(changes.includes('M\tops/platform/host/p2_interactive_ingress.py')&&changes.every(row=>{
+      const [status,path]=row.split('\t');
+      return status==='M'&&firstOwnerSupplementFiles.has(path);
+    }));
+  }
+  return {...source,revision};
+}
+
 function profiledCertificationHostPlan(settings,authentication=false){
   const checked=prepareProfiledCertification(settings);
   const plan=authentication?(checked.authPlan??checked.identityPlan):checked.plan;
   demand(plan);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
-  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
+  const source=profiledCertificationOperatorSource(root,plan);
   return bindProfiledCertificationHostPlan(checked,source,plan);
 }
 
@@ -1516,7 +1556,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   if(!plan.replacementRelease)verifyP2ProfiledCurrentReleaseConfiguration(original);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
-  const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
+  const source=profiledCertificationOperatorSource(root,plan);
   const packet=bindProfiledCertificationHostPlan(checked,source,plan);
   const authPacket=authPlan?bindProfiledCertificationHostPlan(checked,source,authPlan):null;
   const identityPacket=identityPlan?bindProfiledCertificationHostPlan(checked,source,identityPlan):null;
@@ -1545,7 +1585,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     }
   }else if(!enrollment&&!firstOwnerDiscovery&&!authoring&&!paidGrant&&!paidRevoke&&!media)demand(execution===undefined);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
-    sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
+    sourceCommit:source.revision,branch:source.branch,workflowBytes:source.workflowBytes});
   let provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
   requireQualificationTargetProfile(currentProfile,provider);
   const needsRuntimeUrl=['direct-worker','lifecycle-persistence'].includes(plan.mode);
@@ -1573,8 +1613,8 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const diagnostics=join(directory,plan.certificationActionId+'-ssh');mkdirSync(diagnostics,{mode:0o700});
   const ssh=await recreationSsh({knownHosts:releaseSettings.knownHosts,keyFile:releaseSettings.sshKey,diagnostics});
   demand((await ssh.machine()).machineId===releaseSettings.host.machineId);
-  const installed=await ssh.installProfiledCurrentSource({commit:plan.operatorSourceCommit,files:source.files});
-  demand(installed.status==='EXACT_OPERATOR_SOURCE_INSTALLED'&&installed.commit===plan.operatorSourceCommit);
+  const installed=await ssh.installProfiledCurrentSource({commit:source.revision,files:source.files});
+  demand(installed.status==='EXACT_OPERATOR_SOURCE_INSTALLED'&&installed.commit===source.revision);
   const execute=async(action,reviewedPacket,browserSource,interactiveController)=>{
     const results=join(directory,action.certificationActionId);mkdirSync(results,{mode:0o700});
     const actionConfirmation='staging/'+action.certificationActionId;
@@ -1595,7 +1635,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
           readCommunityDatabaseUrl:()=>credentials.COMMUNITY_STAGING_DATABASE_URL}:{})}}:{}),
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),
-      assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),
+      assertSource:()=>assertSourceCheckout(root,source.revision),
       withEnvironmentLock:p2CertificationEnvironmentLock(releaseSettings,initial,results,{expectedProfile:currentProfile})},currentProfile);
   };
   if(enrollment||firstOwner||firstOwnerDiscovery){
@@ -1687,11 +1727,29 @@ export async function p2CertificationOperator(settings,{apply=false,confirmation
   }finally{browserSource.active=false;await controller.close();}
 }
 
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply','apply-profiled-current','retain-successor-runtime'].includes(operation)&&typeof path==='string'&&
+async function checkFirstOwnerBrowser(settings){
+  const {plan}=prepareProfiledCertification(settings);
+  demand(plan.scopedAction?.firstOwnerDiscovery&&firstOwnerSupplementAllowed(plan,plan.sourceCommit,plan.replacementRelease));
+  const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
+  const source=profiledCertificationOperatorSource(root,plan);
+  const controller=await launchP2InteractiveBrowserRecorder(plan);
+  try{
+    await controller.initialized();
+  }finally{
+    await controller.close();
+  }
+  return {status:'STAGING_FIRST_OWNER_BROWSER_INITIALIZED',actionId:plan.certificationActionId,
+    applicationCommit:plan.sourceCommit,operatorCommit:source.revision,browserOpened:false,admissionChanged:false};
+}
+
+async function runCertificationCli(){
+  try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply','apply-profiled-current','retain-successor-runtime','check-first-owner-browser'].includes(operation)&&typeof path==='string'&&
     (operation.startsWith('apply')?flag==='--confirm'&&typeof confirmation==='string':confirmation===undefined&&
       (flag===undefined||operation==='host-plan-profiled-current'&&flag==='--authentication')));
-    if(operation==='retain-successor-runtime'){
+    if(operation==='check-first-owner-browser'){
+      const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
+      console.log(JSON.stringify(await checkFirstOwnerBrowser(settings)));
+    }else if(operation==='retain-successor-runtime'){
       const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
       console.log(JSON.stringify(await retainReplacementSuccessorRuntime(settings)));
     }else if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'||operation==='apply-profiled-current'){
@@ -1704,5 +1762,13 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
         console.log(JSON.stringify(preview));
       }
     }else console.log(JSON.stringify(await p2CertificationOperator(privateObject(resolve(path)),{apply:operation==='apply',confirmation})));
+    process.exitCode=0;
   }catch{console.error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');process.exitCode=1;}
+}
+
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+  // The browser controller imports this module to check the issued plan. Let
+  // module evaluation finish before waiting for the controller to start.
+  process.exitCode=1;
+  void runCertificationCli();
 }

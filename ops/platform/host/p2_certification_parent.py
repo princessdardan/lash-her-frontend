@@ -277,6 +277,44 @@ def require_profiled_certification_execution(plan):
             type(replacement) is dict and replacement.get('kind') == 'frontend-replacement', refused)
 
 
+_FIRST_OWNER_SUPPLEMENT_FILES = {
+    'ops/platform/host/current_databases.py', 'ops/platform/host/database_current.mjs',
+    'ops/platform/host/p2_interactive_ingress.py', 'ops/platform/host/p2_certification_parent.py',
+    'ops/platform/host/p2_release_supervisor.py', 'ops/platform/p2-certification.mjs',
+    'ops/platform/p2-certification-transport.mjs', 'ops/platform/p2-lifecycle-suspension-evidence.mjs',
+}
+
+
+def profiled_certification_operator_commit(initial):
+    plan = initial['certificationPlan']
+    application = initial['sourceCommit']
+    if 'supplementalOperatorCommit' not in plan:
+        return application
+    revision = plan['supplementalOperatorCommit']
+    action = plan.get('scopedAction')
+    require(initial['environment'] == 'staging' and migrate.source_commit(revision) and revision != application and
+            plan.get('mode') == 'interactive-browser' and 'replacementRelease' in plan and
+            'successorRuntime' not in plan and 'rotationSuccessor' not in plan and
+            type(action) is dict and action.get('stage') == 'identity' and
+            ('firstOwnerDiscovery' in action or 'firstOwner' in action),
+            'P2_CERTIFICATION_FIRST_OWNER_SUPPLEMENT_REFUSED')
+    return revision
+
+
+def _verify_first_owner_supplement(initial):
+    application = initial['sourceCommit']
+    if profiled_certification_operator_commit(initial) == application:
+        return
+    original = PROFILED_OPERATOR_ROOT / application
+    require(original == original.resolve() and original.is_dir() and
+            original.stat().st_uid == os.geteuid() and not original.stat().st_mode & 0o022,
+            'P2_CERTIFICATION_FIRST_OWNER_BASE_SOURCE_REFUSED')
+    changed = {path for path, digest in initial['sourceSha256'].items()
+               if migrate.file_hash(migrate.read_input(original, path)) != digest}
+    require('ops/platform/host/p2_interactive_ingress.py' in changed and changed <= _FIRST_OWNER_SUPPLEMENT_FILES,
+            'P2_CERTIFICATION_FIRST_OWNER_SUPPLEMENT_SCOPE_REFUSED')
+
+
 def _profiled_initial(initial, expected):
     require(type(initial) is dict and
             type(initial.get('version')) is int and initial['version'] == 2 and initial['environment'] == 'staging' and
@@ -296,13 +334,14 @@ def _profiled_initial(initial, expected):
     plan = initial['certificationPlan']
     require(type(plan) is dict and type(plan.get('mode')) is str and plan['mode'] in PROFILED_MODES,
             'P2_PROFILED_CERTIFICATION_PLAN_REQUIRED')
+    profiled_certification_operator_commit(initial)
     mode = plan['mode']
     maximum_seconds = 300 if mode == 'auth-preparation' or mode in SCOPED_MODES else 900
-    extra = set()
+    extra = {'supplementalOperatorCommit'} if 'supplementalOperatorCommit' in plan else set()
     if mode == 'known-ack-recovery':
-        extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
+        extra |= {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
     if mode in SCOPED_MODES:
-        extra = {'scopedAction'}
+        extra.add('scopedAction')
         _require_profiled_scoped_action(mode, plan)
         if mode == 'interactive-browser':
             from p2_interactive_window import stalled_renewal_selected
@@ -606,7 +645,7 @@ def _profiled_replacement_original_terminal(initial, plan, selected, results, ex
     """Rejoin the installed guardian's original apply-forward bytes."""
     import p2_frontend_replacement_parent as replacement
     import p2_replacement_terminal as terminal
-    from p2_replacement_runtime_review import FIELDS as REVIEW_FIELDS
+    from p2_replacement_runtime_review import FIELDS as REVIEW_FIELDS, OPTIONAL_FIELDS as OPTIONAL_REVIEW_FIELDS
     from qualification_target_profile import decode_qualification_target_json
 
     descriptor = require_certification_replacement_release(plan['replacementRelease'], expected)
@@ -630,7 +669,8 @@ def _profiled_replacement_original_terminal(initial, plan, selected, results, ex
             original_plan['operation'] == 'profiled-frontend-replacement' and
             original_plan['status'] == 'P2_FRONTEND_REPLACEMENT_PLAN_PREPARED' and
             all(original_plan[key] is False for key in (*replacement.NO_AUTHORITY, 'releaseAccepted', 'replacementObserved')) and
-            set(original_review) in (REVIEW_FIELDS, REVIEW_FIELDS | {'priorGatewayReference'}) and
+            REVIEW_FIELDS <= set(original_review) <= REVIEW_FIELDS | OPTIONAL_REVIEW_FIELDS and
+            original_review.get('initializeStagingCronSecret', True) is True and
             type(original_review['version']) is int and original_review['version'] == 1 and
             all(original_plan[key] == original_review[key] == plan[key]
                 for key in ('environment', 'sourceCommit', 'candidateSha256', 'targetSha256')) and
@@ -768,9 +808,10 @@ def prepare_profiled_current_certification_input(initial, source):
     expected = _profiled_context()
     plan = _profiled_initial(initial, expected)
     source = Path(source)
-    require(source == PROFILED_OPERATOR_ROOT / initial['sourceCommit'] and source == source.resolve(),
+    require(source == PROFILED_OPERATOR_ROOT / profiled_certification_operator_commit(initial) and source == source.resolve(),
             'P2_PROFILED_CERTIFICATION_INSTALLED_SOURCE_REQUIRED')
     verify_profiled_current_source_closure(initial, source)
+    _verify_first_owner_supplement(initial)
     require(PROFILED_MACHINE_ID.read_text().strip() == initial['hostMachineId'], 'P2_PROFILED_CERTIFICATION_HOST_REQUIRED')
     paths = []
     for key in ('bundle', 'configuration', 'results'):
@@ -968,7 +1009,7 @@ def _profiled_guard_context(initial, armed, source):
     expected = _profiled_context()
     vercel.require_record_profile(expected, initial, armed, initial.get('certificationPlan'))
     require(initial.get('mode') == PROFILED_CERTIFICATION_MODE and
-            source == PROFILED_OPERATOR_ROOT / initial['sourceCommit'] and os.geteuid() == 0,
+            source == PROFILED_OPERATOR_ROOT / profiled_certification_operator_commit(initial) and os.geteuid() == 0,
             'P2_PROFILED_CERTIFICATION_GUARD_CONTEXT_REQUIRED')
     descriptor = initial.get('_guardLockDescriptor')
     require(type(descriptor) is int and descriptor >= 0, 'P2_PROFILED_CERTIFICATION_GUARD_LOCK_REQUIRED')
@@ -1432,6 +1473,7 @@ class P2CertificationBroker(Broker):
         self.fault_stage=None;self.runtime_current=None;self.last_boundary=None;self.external_armed=False
         self.native_enable_attempted=False;self.admission_fd=None;self.process_snapshot=None;self.api_cycle=0
         self.native_expected=False
+        self.first_owner_runtime_snapshot=None
         self.api_mutex=threading.Lock();self.last_api_verified=0;self.prepared_terminal=None
         self.suspension_stage=None;self.authentication_issued=False;self.browser_retained=None;self.pending_retained=None
         self.browser_origin=None
@@ -1478,7 +1520,9 @@ class P2CertificationBroker(Broker):
         super().check()
         require(time.monotonic()-self.certification_started<self.initial['certificationPlan']['maximumSeconds'],'P2_CERTIFICATION_BOUNDED_STAGE_EXPIRED')
         if self.external_armed:
-            require(self.last_boundary is not None and 0<=time.monotonic()-self.last_boundary<40,'P2_CERTIFICATION_CURRENT_BOUNDARY_STALE')
+            if self.last_boundary is None or not 0 <= time.monotonic() - self.last_boundary < 40:
+                self._retain_boundary_failure('P2_CERTIFICATION_CURRENT_BOUNDARY_STALE')
+                raise ValueError('P2_CERTIFICATION_CURRENT_BOUNDARY_STALE')
             require(staging_state.configuration_hashes(self.configuration)==self.initial['configurationSha256'],'P2_CERTIFICATION_CONFIGURATION_CHANGED')
 
     def _native_context(self):
@@ -1520,6 +1564,22 @@ class P2CertificationBroker(Broker):
                 'P2_CERTIFICATION_ALL_CURRENT_REQUIRED')
         return api
 
+    def _start_physical_observer(self, probe):
+        observer = self.observer_type(self.selected, probe, self.source,
+            self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'],
+            program=self.observer_program, program_sha256=self.initial['sourceSha256'][OBSERVER],
+            **self.profile_arguments())
+        try:
+            observer.start(self.abort)
+            observer.verify()
+            self.check()
+        except BaseException:
+            observer.stop()
+            raise
+        # The protocol checks the host lock concurrently with arm. Publish the
+        # observer only after its initial probe and watch thread are ready.
+        self.observer = observer
+
     def arm(self,request):
         self.check();require(self.scope is None and self.observer is None and not self.external_armed,'P2_CERTIFICATION_ALREADY_ARMED')
         raw,receipt=decode(request['receipt']);probe=request['probe'];cert=self.initial['certificationPlan']
@@ -1533,9 +1593,7 @@ class P2CertificationBroker(Broker):
             probe.get('plan')==cert and probe.get('owner')==self.initial['owner'] and probe.get('producers')==self.initial['producers'] and
             probe.get(boundary)==self.initial[boundary],'P2_CERTIFICATION_CURRENT_PROBE_BINDING_REQUIRED')
         self.frontend_raw=raw;self.armed_probe=probe
-        self.observer=self.observer_type(self.selected,probe,self.source,self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'],
-            program=self.observer_program,program_sha256=self.initial['sourceSha256'][OBSERVER],**self.profile_arguments())
-        self.observer.start(self.abort)
+        self._start_physical_observer(probe)
         self.scope=P2CertificationScope(self.lock_fd,LOCK,self.check,receipt,self.initial['candidateSha256'],release=self.selected,jobs=self.jobs,
             configuration_sha256=self.initial['configurationSha256'],certification_plan=cert,**self._scope_arguments())
         # Independent cleanup is armed before readonly helpers are launched.
@@ -1559,6 +1617,9 @@ class P2CertificationBroker(Broker):
         require(_sha(_canonical(self.runtime_current))==cert['runtimeInventorySha256'],'P2_CERTIFICATION_REVIEWED_RUNTIME_SELECTION_REQUIRED')
         self.admission_fd=os.open(self.configuration/'admission',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);self.admission_identity=os.fstat(self.admission_fd)
         self.process_snapshot=self._runtime_processes();gateway=self._gateway_current()
+        action = cert.get('scopedAction', {})
+        if cert['mode'] == 'interactive-browser' and ('firstOwner' in action or 'firstOwnerDiscovery' in action):
+            self.first_owner_runtime_snapshot = self._read_first_owner_runtime_snapshot()
         expected=cert['startState']=='qualified-ready';actual=gateway['admission']
         require(actual.get('newWork') is expected and actual.get('recovery') is expected and
             all(actual.get('uncertain',{}).get(key)==0 for key in ('newWork','recovery')) and
@@ -1603,8 +1664,12 @@ class P2CertificationBroker(Broker):
             if time.monotonic()-self.last_api_verified>=10:self._refresh_api()
             self.last_boundary=time.monotonic();return
         if self.known_ack_recorder is not None:self.known_ack_recorder.verify_backend_idle()
-        require(self._read_runtime_inventory()==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
-        require(self._runtime_processes()==self.process_snapshot,'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
+        if getattr(self, 'first_owner_runtime_snapshot', None) is None:
+            require(self._read_runtime_inventory()==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
+            require(self._runtime_processes()==self.process_snapshot,'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
+        else:
+            require(self._read_first_owner_runtime_snapshot() == self.first_owner_runtime_snapshot,
+                    'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
         self._verify_gateway_boundary()
         if self.initial['certificationPlan']['mode']=='contain-native':
             native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
@@ -1630,11 +1695,23 @@ class P2CertificationBroker(Broker):
             for service in ('course','community'):observe_certification_api(self.scope,self.jobs,self.source,service,directory)
             self.last_api_verified=time.monotonic()
 
+    def _retain_boundary_failure(self, code):
+        try:
+            migrate.write_json(self.directory, 'p2-certification-boundary-failure.json',
+                               {'status': 'P2_CERTIFICATION_BOUNDARY_REQUIRES_REVIEW', 'code': code})
+        except (OSError, ValueError, AttributeError):
+            pass  # Preserve the first receipt if the heartbeat and watcher both refuse.
+
     def _start_boundary_watch(self):
         def watch():
             while not self.boundary_stop.wait(2):
                 try:self._verify_boundary()
-                except BaseException:self.abort();return
+                except BaseException as error:
+                    message = str(error)
+                    code = message if isinstance(error, ValueError) and re.fullmatch(r'P2_[A-Z0-9_]{1,96}', message) else 'P2_CERTIFICATION_BOUNDARY_CHECK_FAILED'
+                    self._retain_boundary_failure(code)
+                    self.abort()
+                    return
         self.boundary_thread=threading.Thread(target=watch,daemon=True);self.boundary_thread.start()
 
     def native_operation(self,operation,request):
@@ -1690,6 +1767,36 @@ class P2CertificationBroker(Broker):
         observation=self._observe_browser_origin()
         migrate.write_json(self.directory,'p2-canonical-browser-'+stage+'.json',observation)
         return {'canonicalBrowserObservation':observation,'canonicalBrowserObservationSha256':_sha(_canonical(observation))}
+
+    def _read_first_owner_runtime_snapshot(self):
+        # The exact image checks and mount policy have already run at arm.
+        # Inspect the same immutable IDs in one batch during the browser window.
+        expected = {row['containerId']: row for row in self.runtime_current}
+
+        def read(args):
+            result = self.scope.run(args, env=runtime.SAFE_ENV, timeout=15, capture_output=True, check=True)
+            require(not result.stderr and 0 < len(result.stdout) <= 65_536, 'P2_CERTIFICATION_RUNTIME_SNAPSHOT_REFUSED')
+            return result.stdout.decode().splitlines()
+
+        project = 'lash-her-staging'
+        ids = read(['docker', 'ps', '--all', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + project,
+                    '--format', '{{.ID}}'])
+        require(len(ids) == len(expected) == 10 and set(ids) == set(expected) and
+                all(re.fullmatch(r'[a-f0-9]{64}', identity) for identity in ids), 'P2_CERTIFICATION_RUNTIME_CHANGED')
+        fields = ('{{.Id}}|{{.Config.Image}}|' + runtime.docker_inspect.RUNTIME_FIELDS +
+                  '|{{.State.Pid}}|{{.State.StartedAt}}|{{.HostConfig.ReadonlyRootfs}}|{{json .Mounts}}')
+        rows = read(['docker', 'inspect', '--format', fields, *sorted(ids)])
+        require(len(rows) == len(ids), 'P2_CERTIFICATION_RUNTIME_SNAPSHOT_REFUSED')
+        observed = {}
+        for row in rows:
+            identity, reference, image, running, health, actual_project, service, pid, started, readonly, mounts = row.split('|', 10)
+            require(identity in expected and identity not in observed and
+                    reference == expected[identity]['image'] and service == expected[identity]['service'] and
+                    running == 'true' and health == expected[identity]['health'] and actual_project == project and
+                    re.fullmatch(r'sha256:[a-f0-9]{64}', image) and pid.isdigit() and int(pid) > 0 and started and
+                    readonly == 'true' and type(json.loads(mounts)) is list, 'P2_CERTIFICATION_RUNTIME_SNAPSHOT_REFUSED')
+            observed[identity] = row
+        return observed
 
     def _runtime_processes(self):
         rows=[]

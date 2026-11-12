@@ -197,7 +197,7 @@ class InteractiveIngressTests(unittest.TestCase):
                 if flight:
                     expected_headers.add("rsc")
                     self.assertEqual(request.get_header("Rsc"), "1")
-                    self.assertEqual(request.get_header("Accept"), "text/x-component")
+                    self.assertEqual(request.get_header("Accept"), "text/x-component,application/json")
                 self.assertEqual({name.lower() for name, _ in request.header_items()}, expected_headers)
                 urls.append(request.full_url)
                 target = url.path + (f"?{url.query}" if url.query else "")
@@ -258,6 +258,20 @@ class InteractiveIngressTests(unittest.TestCase):
                 self.fixture.responses.clear()
         self.assertEqual(denied.origins, [])
 
+    def test_current_automation_bypass_metadata_is_accepted_and_never_reported(self):
+        project = self.project()
+        bypass = project["protectionBypass"]["fixture-private-bypass"]
+        bypass.update(isEnvVar=True, note="owned note")
+        self.assertEqual(ingress._protection(project), {
+            "method": "vercel-authentication", "scope": "all-deployments",
+            "automationBypassScope": "automation-bypass", "automationBypassCount": 1,
+        })
+        for invalid in ({"isEnvVar": 1}, {"note": None}, {"unknown": False}):
+            with self.subTest(invalid=invalid):
+                project["protectionBypass"]["fixture-private-bypass"] = {**bypass, **invalid}
+                with self.assertRaisesRegex(ValueError, "PROTECTION_BYPASS_SCOPE_REFUSED"):
+                    ingress._protection(project)
+
     def test_unknown_integration_or_malformed_bypass_scope_refuses_without_returning_keys(self):
         variants = (
             {"integration-secret": {"createdAt": 1, "createdBy": "integration", "scope": "integration-automation-bypass"}},
@@ -300,6 +314,7 @@ class InteractiveIngressTests(unittest.TestCase):
         class ExactTransport:
             def open(inner, request, timeout):
                 self.assertEqual(request.full_url, canonical.ORIGIN + "/")
+                self.assertEqual(request.get_header("Accept"), "text/html,application/xhtml+xml,application/json")
                 for name in ("Authorization", "Cookie", "X-vercel-protection-bypass", "Host"):
                     self.assertIsNone(request.get_header(name))
                 mapped = urllib.request.Request(fixture.origin + "/", headers=dict(request.header_items()), method="GET")
