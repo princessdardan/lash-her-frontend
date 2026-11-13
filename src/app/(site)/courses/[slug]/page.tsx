@@ -30,10 +30,14 @@ const resolveCourse = cache(async (slug: string) => {
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
   const selected = await resolveCourse((await props.params).slug);
-  if (selected.kind === "legacy") return generateLegacyCourseMetadata(props);
+  const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://lashher.com");
+  if (selected.kind === "legacy") {
+    return { ...await generateLegacyCourseMetadata(props), metadataBase };
+  }
   if (selected.kind !== "course") return { title: "Course unavailable", robots: { index: false } };
   const { course } = selected;
   return {
+    metadataBase,
     title: course.seo?.title || course.title,
     description: course.seo?.description || course.introduction || course.description || undefined,
     alternates: { canonical: `/courses/${course.slug}` },
