@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "source": { "projectId": "7o23yrvk", "dataset": "staging-2026-05-10", "perspective": "published" },
+  "count": 1,
+  "courses": [
+    {
+      "_id": "phase3-synthetic-rehearsal-v1",
+      "_rev": "synthetic-v1",
+      "slug": "phase3-synthetic-legacy-rehearsal",
+      "title": "Synthetic Phase 3 rehearsal",
+      "introduction": "Disposable staging exercise for free-course migration.",
+      "cover": null,
+      "seo": { "title": "Synthetic Phase 3 rehearsal", "description": "Staging-only synthetic content.", "noIndex": true },
+      "modules": [
+        {
+          "_key": "practice-module",
+          "title": "Synthetic practice module",
+          "lesson": [{ "_type": "block", "_key": "practice-block", "children": [{ "_type": "span", "_key": "practice-text", "text": "This lesson is synthetic rehearsal content.", "marks": [] }], "markDefs": [] }],
+          "transcript": "Synthetic transcript for the staging exercise.",
+          "mux": null,
+          "video": null,
+          "poster": null,
+          "captions": null,
+          "quiz": [
+            {
+              "_key": "practice-question",
+              "prompt": "Which environment is this fixture for?",
+              "explanation": "This fixture is for the Lightsail staging rehearsal.",
+              "options": [
+                { "_key": "staging", "text": "Staging", "isCorrect": true },
+                { "_key": "production", "text": "Production", "isCorrect": false }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

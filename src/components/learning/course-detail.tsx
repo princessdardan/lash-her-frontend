@@ -3,10 +3,14 @@ import { cache } from "react";
 import { readLearningPage } from "@/lib/learning/page-result";
 import { getCourseClient } from "@/lib/api-integration/course-client";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
+import { loaders } from "@/data/loaders";
+import { readCourseAccess } from "@/lib/courses/access";
+import { legacyProgressImportEnabled } from "@/lib/learning/rollout";
 import { getCustomerActor } from "@/lib/customer-auth/session";
 import { readInteractiveBrowserRequest } from "@/lib/writer-admission/interactive-proof";
 import { coursePrice, customerSignInHref, lessonHref } from "@/lib/learning/presentation";
 import { CourseCover } from "./course-cover";
+import { LegacyProgressImport } from "./legacy-progress-import";
 import { FreeEnrollment } from "./free-enrollment";
 import { LearningFailure, LearningNavigation, LearningShell, learningAction } from "./shared";
 
@@ -36,6 +40,11 @@ export async function ApiCourseDetail({ slug }: { slug: string }) {
   });
   if (result.error) return <LearningShell><LearningNavigation /><LearningFailure error={result.error} returnTo={path} retryHref={path} /></LearningShell>;
   const { course, customer, enrolled, accessFailure, reviewedIdempotencyKey } = result.data;
+  let legacyGrant = null;
+  if (enrolled && course.accessMode === "free" && legacyProgressImportEnabled()) {
+    const legacy = await loaders.getShortCourseSummary(course.slug).catch(() => null);
+    if (legacy) legacyGrant = await readCourseAccess(legacy._id).catch(() => null);
+  }
   return <LearningShell><LearningNavigation />
       <header className="border-b border-lh-primary/20 pb-10"><p className="eyebrow-label text-lh-primary">{coursePrice(course)} course</p><h1 className="mt-4 max-w-4xl font-heading text-5xl sm:text-6xl">{course.title}</h1>
         {course.introduction || course.description ? <p className="mt-6 max-w-3xl whitespace-pre-line leading-relaxed">{course.introduction || course.description}</p> : null}</header>
@@ -54,6 +63,7 @@ export async function ApiCourseDetail({ slug }: { slug: string }) {
           {accessFailure ? <LearningFailure error={accessFailure} returnTo={path} retryHref={path} headingLevel={2} /> : enrolled ? <Link className={learningAction} href={`/academy/courses/${course.id}`}>Open course</Link> : !customer ?
             <Link className={learningAction} href={customerSignInHref(path)}>Sign in to {course.accessMode === "free" ? "enroll" : "continue"}</Link> : course.accessMode === "free" && course.priceCents === 0 && course.currency === "CAD" ? <FreeEnrollment courseId={course.id} reviewedIdempotencyKey={reviewedIdempotencyKey} /> :
               <p role="status" className="leading-relaxed">Enrollment for this course is not open yet.</p>}
+          {legacyGrant && <LegacyProgressImport courseId={course.id} grant={legacyGrant} />}
         </section>
       </div>
     </LearningShell>;

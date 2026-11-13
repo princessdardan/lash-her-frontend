@@ -679,3 +679,66 @@ test("closed gateway rate-limit and pre-forward maintenance envelopes remain saf
   const mismatchedOwner = createCourseClient({ enabled: allowed, getCustomer: customer, mintToken: () => "learner.jwt", getTransport: () => async () => Response.json({ progress: [{ ...progress, userId: adminId }] }) });
   await assert.rejects(mismatchedOwner.listProgress(), { code: "service_unavailable" });
 });
+
+test("legacy progress requires a signed-in learner, the legacy cookie, and same-origin admission", async () => {
+  const courseId = adminId;
+  const origin = "https://site.example.com";
+  const sourceId = "sanity-course";
+  const body = { sourceId, modules: [{ key: "lesson", answers: [{ questionKey: "q", optionKey: "a" }] }] };
+  const result = { lessons: [{ lessonId, imported: true }] };
+  const calls: GatewayRequest[] = [];
+  let admissions = 0;
+  const client = createCourseClient({
+    enabled: allowed,
+    getCustomer: customer,
+    mintToken: principal => {
+      assert.deepEqual(principal, { profile: "course-learner", customerId });
+      return "server.minted.jwt";
+    },
+    run: async (kind, work) => {
+      assert.equal(kind, "new-work");
+      admissions++;
+      return work();
+    },
+    getTransport: () => async request => {
+      calls.push(request);
+      return Response.json(result);
+    },
+  });
+  let enabled = false;
+  let hasCookie = false;
+  let signedIn = true;
+  const handler = createAcademyHandler("legacy-progress", {
+    client: () => client, origin: () => origin, legacyProgressEnabled: () => enabled,
+    getCustomer: async () => signedIn ? customer() : null,
+    getLegacyAccess: async id => {
+      assert.equal(id, sourceId);
+      return hasCookie ? { courseId: id, version: 1, expiresAt: 1, grantId: lessonId } : null;
+    },
+  });
+  const send = (payload: unknown, requestOrigin = origin) => handler(
+    new Request(`${origin}/api/academy/courses/${courseId}/legacy-progress`, {
+      method: "POST", headers: { origin: requestOrigin, "content-type": "application/json", "x-lash-csrf": "1" },
+      body: JSON.stringify(payload),
+    }),
+    { courseId },
+  );
+  assert.equal((await send(body)).status, 404);
+  enabled = true;
+  signedIn = false;
+  assert.equal((await send(body)).status, 401);
+  signedIn = true;
+  assert.equal((await send(body, "https://other.example.com")).status, 403);
+  assert.equal((await send(body)).status, 403);
+  hasCookie = true;
+  assert.equal((await send({ ...body, userId: adminId })).status, 400);
+  assert.equal(admissions, 0);
+  const accepted = await send(body);
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await accepted.json(), result);
+  assert.equal(admissions, 1);
+  assert.equal(calls[0]?.path, `/v1/student/courses/${courseId}/legacy-progress`);
+  assert.equal(calls[0]?.applicationToken, "server.minted.jwt");
+  assert.deepEqual(JSON.parse(calls[0]?.body ?? "null"), body);
+});

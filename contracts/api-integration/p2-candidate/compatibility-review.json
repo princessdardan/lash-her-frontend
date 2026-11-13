@@ -7,7 +7,7 @@
     "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488"
   },
   "candidate": {
-    "manifestSha256": "9e4696f51655ab2655aa02200657744600d6161040f08efb5b5a69c05b8ef6c1"
+    "manifestSha256": "17e361db63b8196acc6adc9376a06c1a28765a7abdb6cac71c5e5a19948d0c7f"
   },
   "changes": [
     {
@@ -578,6 +578,18 @@
         "P2-08"
       ],
       "reason": "Add authenticated idempotent orderless free enrollment using the shared grant ledger and transactional Community transitions."
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "post /v1/student/courses/{courseId}/legacy-progress",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "86ce9efcbbaf2662950ea6e731c6ff0a04da9de66ff91b86044a8f140c8cf624",
+      "requirementIds": [
+        "P3-03"
+      ],
+      "reason": "Allow an authenticated enrolled learner to import bounded practice progress from the mapped legacy course."
     },
     {
       "document": "course",

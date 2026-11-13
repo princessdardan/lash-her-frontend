@@ -15,10 +15,10 @@ import { getGatewayTransport, type GatewayRequest } from "./gateway-transport";
 import { isIntegrationFeatureEnabled, type IntegrationFeature } from "./rollout-flags";
 import { IntegrationServiceError, parseGatewayFailure, safeIntegrationRequestId, upstreamIntegrationError } from "./service-errors";
 import { courseCapabilitiesForActor } from "./staff-capabilities";
-import type { paths } from "./candidate-generated/course";
 import { invalidateCourseCatalog } from "./catalog-invalidation";
 import { runCourseAdminOperation } from "./course-admin-operation";
 
+import type { paths } from "./candidate-generated/course";
 type Method = "get" | "post" | "patch" | "put" | "delete";
 type Body<P extends keyof paths, M extends Method> = CandidateBody<"course", P, M>;
 type Query<P extends keyof paths> = CandidateQuery<"course", P, "get">;
@@ -200,6 +200,8 @@ export function createCourseClient(dependencies: {
     listProgress: (query: Query<"/v1/student/progress"> = {}) => request("/v1/student/progress", "get", "learner", { query }),
     recordProgress: (lessonId: string, body: Body<"/v1/student/lessons/{lessonId}/progress", "post">) => request("/v1/student/lessons/{lessonId}/progress", "post", "learner", { params: { lessonId }, body }),
     enrollFree: (courseId: string, body: Body<"/v1/student/courses/{courseId}/enrollments", "post">) => request("/v1/student/courses/{courseId}/enrollments", "post", "learner", { params: { courseId }, body, idempotencyKey: body.idempotencyKey }),
+    importLegacyPracticeProgress: (courseId: string, body: Body<"/v1/student/courses/{courseId}/legacy-progress", "post">) =>
+      request("/v1/student/courses/{courseId}/legacy-progress", "post", "learner", { params: { courseId }, body }),
     getQuiz: (lessonId: string) => request("/v1/student/lessons/{lessonId}/quiz", "get", "learner", { params: { lessonId } }),
     listQuizAttempts: (lessonId: string) => request("/v1/student/lessons/{lessonId}/quiz/attempts", "get", "learner", { params: { lessonId } }),
     submitQuizAttempt: (lessonId: string, body: Body<"/v1/student/lessons/{lessonId}/quiz/attempts", "post">) => request("/v1/student/lessons/{lessonId}/quiz/attempts", "post", "learner", { params: { lessonId }, body }),
