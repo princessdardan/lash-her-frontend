@@ -15,7 +15,7 @@ import { prepareP2ProfiledCurrentRelease, runP2ProfiledCurrentRelease, p2Profile
   openP2ProfiledCurrentSource, readP2ProfiledCurrentSource, P2_PROFILED_CURRENT_CONFIGURATION_FILES } from './p2-profiled-current-release.mjs';
 import { p2ProfiledCertificationOperator, prepareP2ProfiledCertificationOperator, runP2BoundedCertification } from './p2-certification.mjs';
 import { writeP2LessonRestorePriorFixture } from '../../tests/support/p2-lesson-restore-prior-fixture.mjs';
-import { nativeSourceCommit } from './harness/p2-native-unit-fixture.mjs';
+import { nativeSourceCommit, ownedCheckoutCommit } from './harness/p2-native-unit-fixture.mjs';
 import { p2NativeHash } from './p2-lifecycle-native.mjs';
 import { p2LifecyclePersistenceTargetSha256, prepareP2LifecyclePersistencePlan } from './p2-lifecycle-persistence-probe.mjs';
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from './qualification-target-profile.mjs';
@@ -1210,27 +1210,36 @@ test('fixed current certification plan joins the original release plan, terminal
       authPreparation: { certificationActionId: 'owned-auth', initialEpoch: '1', startState: 'already-closed' },
       certification: { ...settings.certification, mode: 'browser-pending', certificationActionId: 'owned-browser', initialEpoch: '3',
         native: { ...settings.certification.native, commandWitnesses: [] } } };
-    const browser = prepareP2ProfiledCertificationOperator(browserSettings);
-    assert.equal(browser.authentication.maximumSeconds, 300);
-    assert.equal(browser.browser.initialEpoch, '3');
-    assert.equal(browser.browser.browserPlanSha256, browser.authentication.browserPlanSha256);
-    assert.equal(browser.browser.nativePlan.commandWitnesses.length, 0);
-    assert.ok(!JSON.stringify(browser).includes(suspension.resources.userId));
-    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...browserSettings,
-      authPreparation: { ...browserSettings.authPreparation, initialEpoch: '2' } }));
-    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...browserSettings, browser: { input: { ...suspension,
-      persistencePlan: { ...persistencePlan, originalReleaseSha256: '6'.repeat(64) } } } }));
-
-    const worker = prepareP2ProfiledCertificationOperator({ ...settings, worker: { suspensionInput: suspension },
+    const workerSettings = { ...settings, worker: { suspensionInput: suspension },
       certification: { ...settings.certification, mode: 'direct-worker', certificationActionId: 'owned-worker', initialEpoch: '5',
         worker: { input: { version: 2, qualificationTargetProfile: profile, actionId: 'owned-worker', commandIndex: 0,
           pendingRecordSha256: '1'.repeat(64), canonicalCommandSha256: '2'.repeat(64),
           gatewayProcessSha256: settings.certification.gatewayProcessSha256, gatewayConfigurationSha256: settings.certification.gatewayConfigurationSha256,
-          denialProgramSha256: '3'.repeat(64) } } } });
-    assert.equal(worker.workerPlan.suspensionPlanSha256, browser.browser.browserPlanSha256);
-    assert.equal(worker.workerPlan.nativeInvocationQualified, false);
-    assert.equal(worker.nativePlan.initialEpoch, '6');
-    await assert.rejects(runP2BoundedCertification(worker, {}), /P2_CERTIFICATION_PARENT_REFUSED/);
+          denialProgramSha256: '3'.repeat(64) } } } };
+    // CI also runs this test at the reviewed P2 commit, where both the
+    // historical native policy and same-checkout browser requirement hold.
+    if (plan.sourceCommit === ownedCheckoutCommit()) {
+      const browser = prepareP2ProfiledCertificationOperator(browserSettings);
+      assert.equal(browser.authentication.maximumSeconds, 300);
+      assert.equal(browser.browser.initialEpoch, '3');
+      assert.equal(browser.browser.browserPlanSha256, browser.authentication.browserPlanSha256);
+      assert.equal(browser.browser.nativePlan.commandWitnesses.length, 0);
+      assert.ok(!JSON.stringify(browser).includes(suspension.resources.userId));
+      assert.throws(() => prepareP2ProfiledCertificationOperator({ ...browserSettings,
+        authPreparation: { ...browserSettings.authPreparation, initialEpoch: '2' } }));
+      assert.throws(() => prepareP2ProfiledCertificationOperator({ ...browserSettings, browser: { input: { ...suspension,
+        persistencePlan: { ...persistencePlan, originalReleaseSha256: '6'.repeat(64) } } } }));
+
+      const worker = prepareP2ProfiledCertificationOperator(workerSettings);
+      assert.equal(worker.workerPlan.suspensionPlanSha256, browser.browser.browserPlanSha256);
+      assert.equal(worker.workerPlan.nativeInvocationQualified, false);
+      assert.equal(worker.nativePlan.initialEpoch, '6');
+      await assert.rejects(runP2BoundedCertification(worker, {}), /P2_CERTIFICATION_PARENT_REFUSED/);
+    } else {
+      for (const settings of [browserSettings, workerSettings]) {
+        assert.throws(() => prepareP2ProfiledCertificationOperator(settings), /P2_LIFECYCLE_SUSPENSION_EVIDENCE_REFUSED/);
+      }
+    }
 
     assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, certification: { ...settings.certification, startState: 'qualified-ready' } }));
     write(terminalPath, { ...terminal, frontendWorkloadReceiptSha256: '5'.repeat(64) });

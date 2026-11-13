@@ -93,3 +93,45 @@ test("unmigrated courses retain their Sanity file and saved video identity", asy
     url: "https://cdn.sanity.io/old.mp4",
   });
 });
+
+test("migration export retains published course keys and both old and current media references", async () => {
+  const exportQuery = source
+    .slice(source.indexOf("async function getLegacyShortCourseMigrationExport"))
+    .match(/groq`([^`]+)`/)![1]
+    .replaceAll("${PUBLISHED_COURSE_FILTER}", filter);
+  const course = {
+    _type: "shortCourse", _id: "course", _rev: "revision-1",
+    title: "Practice", slug: { current: "practice" }, introduction: "Introduction.",
+    coverImage: { asset: { _ref: "image" }, alt: "Cover", crop: { left: 0.25 } },
+    seo: { noIndex: true },
+    modules: [{
+      _key: "module", title: "Module", transcript: "Transcript.",
+      lesson: [{ _type: "block", _key: "block", children: [{ _type: "span", _key: "span", text: "Lesson" }] }],
+      muxVideo: { asset: { _ref: "mux" } },
+      video: { asset: { _ref: "video" } },
+      poster: { asset: { _ref: "image" } },
+      captions: { asset: { _ref: "captions" } },
+      quiz: [{ _key: "q", prompt: "Prompt", explanation: "Feedback", options: [{ _key: "a", text: "Correct", isCorrect: true }] }],
+    }],
+  };
+  const result = await evaluate(parse(exportQuery), { dataset: [
+    course, { ...course, _id: "drafts.course" }, { ...course, _id: "versions.release.course" },
+    { _id: "mux", assetId: "asset", status: "ready", data: { playback_ids: [{ id: "signed", policy: "signed" }, { id: "public", policy: "public" }] } },
+    { _id: "video", url: "https://cdn.sanity.io/video.mp4" },
+    { _id: "image", url: "https://cdn.sanity.io/cover.png" },
+    { _id: "captions", url: "https://cdn.sanity.io/captions.vtt" },
+  ] });
+  assert.deepEqual(await result.get(), { count: 1, courses: [{
+    _id: "course", _rev: "revision-1", slug: "practice", title: "Practice", introduction: "Introduction.",
+    cover: { id: "image", url: "https://cdn.sanity.io/cover.png", alt: "Cover", crop: { left: 0.25 }, hotspot: null },
+    seo: { title: null, description: null, noIndex: true },
+    modules: [{
+      _key: "module", title: "Module", lesson: course.modules[0].lesson, transcript: "Transcript.",
+      mux: { id: "mux", assetId: "asset", status: "ready", publicPlaybackId: "public", thumbTime: null },
+      video: { id: "video", url: "https://cdn.sanity.io/video.mp4" },
+      poster: { id: "image", url: "https://cdn.sanity.io/cover.png", crop: null, hotspot: null },
+      captions: { id: "captions", url: "https://cdn.sanity.io/captions.vtt" },
+      quiz: course.modules[0].quiz,
+    }],
+  }] });
+});

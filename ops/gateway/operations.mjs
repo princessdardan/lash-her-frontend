@@ -35,6 +35,7 @@ const interactiveCourseGroups = {
     "GET /v1/student/courses/{courseId}",
     "GET /v1/student/courses/{courseId}/lessons",
     "POST /v1/student/courses/{courseId}/enrollments",
+    "POST /v1/student/courses/{courseId}/legacy-progress",
     "GET /v1/student/lessons/{lessonId}",
     "GET /v1/student/lessons/{lessonId}/playback",
     "POST /v1/student/lessons/{lessonId}/progress",

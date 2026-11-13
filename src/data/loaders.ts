@@ -1105,6 +1105,12 @@ const COURSE_SUMMARY_PROJECTION = groq`{
 }`;
 const PUBLISHED_COURSE_FILTER = groq`_type == "shortCourse" && !(_id in path("drafts.**")) && !(_id in path("versions.**"))`;
 
+async function getLegacyShortCourseSlugs(): Promise<Array<{ slug: string; noIndex: boolean | null }>> {
+  return sanityStaticFetch(groq`*[${PUBLISHED_COURSE_FILTER} && defined(slug.current)] | order(slug.current asc){
+    "slug": slug.current, "noIndex": seo.noIndex
+  }`, {}, ["shortCourse"]);
+}
+
 async function getShortCourseSummary(
   slug: string,
 ): Promise<TShortCourseSummary | null> {
@@ -1156,7 +1162,46 @@ async function getShortCourseContent(
   );
 }
 
+// Keep the export independent of draft mode, caching, and presentation transforms.
+async function getLegacyShortCourseMigrationExport() {
+  if (client.config().projectId !== "7o23yrvk" || client.config().dataset !== "staging-2026-05-10") {
+    throw new Error("Legacy course export requires the reviewed staging Sanity binding");
+  }
+  const result = await client.withConfig({ apiVersion: "2026-03-24", useCdn: false, perspective: "published", stega: false })
+    .fetch<{ count: number; courses: unknown[] }>(groq`{
+      "count": count(*[${PUBLISHED_COURSE_FILTER}]),
+      "courses": *[${PUBLISHED_COURSE_FILTER}] | order(_id asc)[0...200]{
+        _id, _rev, title, "slug": slug.current, introduction,
+        "cover": select(defined(coverImage.asset._ref) => coverImage{
+          "id": asset._ref, "url": asset->url, crop, hotspot, alt
+        }),
+        seo{title, description, noIndex},
+        modules[]{_key, title, lesson, transcript,
+          quiz[]{_key, prompt, explanation, options[]{_key, text, isCorrect}},
+          "mux": select(defined(muxVideo.asset._ref) => muxVideo{
+            "id": asset._ref, "assetId": asset->assetId,
+            "publicPlaybackId": asset->data.playback_ids[policy == "public"][0].id,
+            "status": asset->status, "thumbTime": asset->thumbTime
+          }),
+          "video": select(defined(video.asset._ref) => video{"id": asset._ref, "url": asset->url}),
+          "poster": select(defined(poster.asset._ref) => poster{"id": asset._ref, "url": asset->url, crop, hotspot}),
+          "captions": select(defined(captions.asset._ref) => captions{"id": asset._ref, "url": asset->url})
+        }
+      }
+    }`, {}, { cache: "no-store" });
+  if (!Number.isSafeInteger(result.count) || result.count !== result.courses.length) {
+    throw new Error("Legacy course export is incomplete");
+  }
+  return {
+    version: 1,
+    source: { projectId: "7o23yrvk", dataset: "staging-2026-05-10", perspective: "published" },
+    ...result,
+  };
+}
+
 export const loaders = {
+  getLegacyShortCourseMigrationExport,
+  getLegacyShortCourseSlugs,
   getShortCourseSummary,
   getShortCourseSignupDetails,
   getShortCourseContent,

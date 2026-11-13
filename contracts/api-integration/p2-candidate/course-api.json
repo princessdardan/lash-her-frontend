@@ -21974,6 +21974,341 @@
         ]
       }
     },
+    "/v1/student/courses/{courseId}/legacy-progress": {
+      "post": {
+        "operationId": "importStudentLegacyPracticeProgress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "modules": {
+                    "items": {
+                      "additionalProperties": false,
+                      "minProperties": 2,
+                      "properties": {
+                        "answers": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "optionKey": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.:-]*$",
+                                "type": "string"
+                              },
+                              "questionKey": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.:-]*$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "questionKey",
+                              "optionKey"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 10,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "key": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.:-]*$",
+                          "type": "string"
+                        },
+                        "video": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.:-]*$",
+                              "type": "string"
+                            },
+                            "positionSeconds": {
+                              "maximum": 86400,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "positionSeconds"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "key"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 30,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "sourceId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.:-]*$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sourceId",
+                  "modules"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "lessons": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "imported": {
+                            "type": "boolean"
+                          },
+                          "lessonId": {
+                            "format": "uuid",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "lessonId",
+                          "imported"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 30,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "lessons"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "userBearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/student/courses/{courseId}/lessons": {
       "get": {
         "operationId": "listStudentCourseLessons",

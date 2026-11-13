@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { ownedCheckoutCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, installP2PaidRevokeObserver, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths,
@@ -22,7 +23,6 @@ import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, in
   watchP2PaidRevoke } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
-import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
@@ -54,8 +54,9 @@ function browserRecord(selected) {
     playbackRemovalAfterSuspensionMs: 567100, nativeInvocationQualified: false, releaseAccepted: false };
 }
 function documents() {
+  const operatorSourceCommit = ownedCheckoutCommit();
   const raw = { version: 1, environment: "staging", releaseId: "owned-browser-release", hostMachineId: "1".repeat(32), candidateSha256: "1".repeat(64),
-    configurationSha256: "2".repeat(64), sources: { frontend: nativeSourceCommit(), course: "2".repeat(40), community: "3".repeat(40) },
+    configurationSha256: "2".repeat(64), sources: { frontend: operatorSourceCommit, course: "2".repeat(40), community: "3".repeat(40) },
     targets: Object.fromEntries(["frontend", "course", "community"].map(service => {
       const target = { host: "localhost", port: 5432, database: "owned_" + service, runtimeRole: "owned_" + service, runtimeRoleOid: "1234", serverMajor: 16 };
       return [service, { ...target, targetSha256: p2LifecyclePersistenceTargetSha256(service, target) }];

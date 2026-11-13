@@ -26,8 +26,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Install pinned gateway dependencies for owned HTTP fixtures
-        run: npm ci --ignore-scripts --prefix ops/gateway
       - name: Enable the containerd image store for attested local builds
         uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
         with:
@@ -114,12 +112,25 @@ jobs:
             --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
+      - name: Prepare the reviewed P2 source for owned HTTP fixtures
+        env:
+          P2_OWNED_FRONTEND_REVISION: 174ae9fe407956ba009e94356a39cc8e5032a904
+        run: |
+          fixture_source="$RUNNER_TEMP/p2-owned-source"
+          git clone --no-hardlinks --no-checkout "$GITHUB_WORKSPACE" "$fixture_source"
+          cd "$fixture_source"
+          git remote set-url origin https://github.com/princessdardan/lash-her-frontend.git
+          git checkout --detach "$P2_OWNED_FRONTEND_REVISION"
+          npm ci
+          npm ci --ignore-scripts --prefix ops/gateway
+          node --test --test-name-pattern='fixed current certification plan joins' ops/platform/p2-profiled-current-release.test.mjs
       - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
-        run: >-
-          node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18 --lifecycle-postgres18
-          > "$RUNNER_TEMP/p2-identity-recovery-lifecycle-postgres18.json"
+        run: |
+          cd "$RUNNER_TEMP/p2-owned-source"
+          node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18 --lifecycle-postgres18 \
+            > "$RUNNER_TEMP/p2-identity-recovery-lifecycle-postgres18.json"
       - name: Retain private owned fixture failure diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

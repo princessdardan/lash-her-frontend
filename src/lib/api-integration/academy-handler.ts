@@ -1,5 +1,7 @@
 import "server-only";
 
+import { readCourseAccess } from "@/lib/courses/access";
+import { legacyProgressImportEnabled } from "@/lib/learning/rollout";
 import { getCustomerActor } from "@/lib/customer-auth/session";
 import { hasStalledPlaybackRenewalPermit, readInteractiveBrowserRequest, type LearningEnrollmentSelection } from "@/lib/writer-admission/interactive-proof";
 import { createCourseClient } from "./course-client";
@@ -7,17 +9,17 @@ import { integrationErrorResponse, IntegrationServiceError, safeIntegrationReque
 import { readSameOriginJson } from "./same-origin-json";
 
 type Client = ReturnType<typeof createCourseClient>;
-export type AcademyOperation = "catalog" | "catalog-course" | "my-courses" | "my-course" | "course-lessons" | "lesson" | "playback" | "progress" | "record-progress" | "free-enrollment" | "quiz" | "quiz-attempts" | "submit-quiz-attempt";
+export type AcademyOperation = "catalog" | "catalog-course" | "my-courses" | "my-course" | "course-lessons" | "lesson" | "playback" | "progress" | "record-progress" | "legacy-progress" | "free-enrollment" | "quiz" | "quiz-attempts" | "submit-quiz-attempt";
 
 export function createAcademyHandler(operation: AcademyOperation, dependencies: { client?: () => Client; origin?: () => string | undefined;
-  getCustomer?: typeof getCustomerActor; getLearningEnrollment?: () => Promise<LearningEnrollmentSelection | undefined> } = {}) {
+  getCustomer?: typeof getCustomerActor; getLegacyAccess?: typeof readCourseAccess; legacyProgressEnabled?: () => boolean; getLearningEnrollment?: () => Promise<LearningEnrollmentSelection | undefined> } = {}) {
   const origin = dependencies.origin ?? (() => process.env.CUSTOMER_AUTH_URL);
   const getLearningEnrollment = dependencies.getLearningEnrollment ?? (async () => (await readInteractiveBrowserRequest())?.learningEnrollment);
   return async (request: Request, params: Record<string, string> = {}): Promise<Response> => {
     let requestId = safeIntegrationRequestId();
     try {
       const url = new URL(request.url);
-      if (request.method !== (["record-progress", "free-enrollment", "submit-quiz-attempt"].includes(operation) ? "POST" : "GET")) throw new IntegrationServiceError("invalid_request", 405);
+      if (request.method !== (["record-progress", "legacy-progress", "free-enrollment", "submit-quiz-attempt"].includes(operation) ? "POST" : "GET")) throw new IntegrationServiceError("invalid_request", 405);
       if (request.method === "POST" && hasStalledPlaybackRenewalPermit(request)) throw new IntegrationServiceError("forbidden", 403);
       const query: Record<string, string | number> = Object.create(null);
       for (const [name, value] of url.searchParams) {
@@ -56,6 +58,18 @@ export function createAcademyHandler(operation: AcademyOperation, dependencies: 
           break;
         }
         case "submit-quiz-attempt": result = await course.submitQuizAttempt(params.lessonId, await readSameOriginJson(request, origin(), 65_536) as Parameters<Client["submitQuizAttempt"]>[1]); break;
+        case "legacy-progress": {
+          if (!(dependencies.legacyProgressEnabled ?? legacyProgressImportEnabled)()) throw new IntegrationServiceError("feature_disabled", 404);
+          const actor = await (dependencies.getCustomer ?? getCustomerActor)();
+          if (!actor) throw new IntegrationServiceError("sign_in_required", 401);
+          const body = await readSameOriginJson(request, origin(), 131_072) as Parameters<Client["importLegacyPracticeProgress"]>[1];
+          if (typeof body?.sourceId !== "string" || !/^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$/u.test(body.sourceId)) {
+            throw new IntegrationServiceError("invalid_request", 400);
+          }
+          if (!await (dependencies.getLegacyAccess ?? readCourseAccess)(body.sourceId)) throw new IntegrationServiceError("forbidden", 403);
+          result = await course.importLegacyPracticeProgress(params.courseId, body);
+          break;
+        }
         case "record-progress": {
           const body = await readSameOriginJson(request, origin(), 16_384);
           result = await course.recordProgress(params.lessonId, body as Parameters<Client["recordProgress"]>[1]); break;

@@ -130,6 +130,11 @@
     "auth": "application"
   },
   {
+    "method": "POST",
+    "path": "/v1/student/courses/{courseId}/legacy-progress",
+    "auth": "application"
+  },
+  {
     "method": "GET",
     "path": "/v1/student/progress",
     "auth": "application"

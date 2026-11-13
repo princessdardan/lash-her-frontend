@@ -35,6 +35,8 @@ test("gateway exposes exact reviewed service methods; enrollment/authority traff
     "/course/v1//courses", "/course/v1/courses/", "https://gateway.test/course/v1/courses",
     "//gateway.test/course/v1/courses", "/course/v1/courses\\anything", "/course/v1/courses#fragment",
   ]) assert.equal(matchRoute("GET", path), null, path);
+  assert.equal(matchRoute("POST", "/course/v1/student/courses/a/legacy-progress")?.auth, "application");
+  assert.equal(matchRoute("GET", "/course/v1/student/courses/a/legacy-progress"), null);
   assert.equal(matchRoute("HEAD", "/course/v1/courses"), null);
   assert.equal(matchRoute("OPTIONS", "/course/v1/courses"), null);
   assert.ok(matchRoute("GET", "/course/v1/courses?cursor=abc%2Fdef"));
