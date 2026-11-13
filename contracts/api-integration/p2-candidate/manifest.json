@@ -5,7 +5,7 @@
   "artifacts": {
     "course": {
       "repository": "lash-her-course-api",
-      "revision": "5a28442727149b286ee6a8427559fd52b52431c6",
+      "revision": "a408c1dea9e86bec60577810e2240f218f8d23a3",
       "sourcePath": "openapi/course-api.json",
       "file": "course-api.json",
       "sha256": "40b4c0e5347b9dfb1c2a008a829ac470460802ae19b2de526c9eacadbd8dc280"

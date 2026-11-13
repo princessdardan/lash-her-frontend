@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { parse } from "yaml";
+import { P2_OWNED_FRONTEND_REVISION } from "./harness/p2-native-unit-fixture.mjs";
 import { P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS, p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2ForwardRecoveryPostgres18Receipt, parseP2IdentityProbeTap, parseP2LifecyclePersistencePostgres18Receipt,
   parseP2LifecycleReceiversPostgres18Receipt, buildP2InterruptedRestorationExpected, parseP2InterruptedRestorationPostgres18Receipt, parseP2InterruptedNegativesPostgres18Receipt,
@@ -25,8 +26,10 @@ const contents = { course: Buffer.from('{"openapi":"3.1.0","info":{"title":"cour
   enrollmentEvent: Buffer.from('{"$schema":"https://json-schema.org/draft/2020-12/schema"}\n') };
 const sourceReadToken = "fixture-source-token-value-not-secret";
 
-test("current lifecycle producers match the actual selected candidate API revisions", () => {
-  const manifest = JSON.parse(readFileSync(new URL("../../contracts/api-integration/p2-candidate/manifest.json", import.meta.url)));
+test("owned lifecycle producers match the API revisions in the reviewed P2 source", () => {
+  const manifest = JSON.parse(execFileSync("git", ["--no-replace-objects", "show",
+    `${P2_OWNED_FRONTEND_REVISION}:contracts/api-integration/p2-candidate/manifest.json`],
+  { cwd: new URL("../..", import.meta.url) }));
   const selected = Object.fromEntries(["course", "community"].map(service => [service, manifest.artifacts[service].revision]));
   assert.deepEqual(P2_LIFECYCLE_OWNED_API_REVISIONS, revisions);
   assert.deepEqual(P2_LIFECYCLE_OWNED_FINAL_API_REVISIONS, finalRevisions);
@@ -903,10 +906,13 @@ Promise.reject(error)${source.harnessCatch}`;
 
 test("operator CI installs exact gateway dependencies and retains the fifth-stage aggregate on success and failure", () => {
   const job = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")).jobs["frontend-operator-migrations"];
-  const gateway = job.steps.findIndex(step => step.run === "npm ci --ignore-scripts --prefix ops/gateway"),
-    fixture = job.steps.findIndex(step => step.run?.includes("prepare-p2-identity-probe-fixtures.mjs"));
-  assert.ok(gateway >= 0 && gateway < fixture); assert.equal(job["timeout-minutes"], 30);
-  assert.match(job.steps[fixture].run, /--recovery-postgres18 --lifecycle-postgres18\s+> "\$RUNNER_TEMP\/p2-identity-recovery-lifecycle-postgres18.json"/u);
+  const preparation = job.steps.findIndex(step => step.env?.P2_OWNED_FRONTEND_REVISION === P2_OWNED_FRONTEND_REVISION);
+  const fixture = job.steps.findIndex(step => step.run?.includes("prepare-p2-identity-probe-fixtures.mjs"));
+  assert.equal(job["timeout-minutes"], 30);
+  assert.ok(preparation >= 0 && preparation < fixture);
+  assert.match(job.steps[preparation].run, /git checkout --detach "\$P2_OWNED_FRONTEND_REVISION"\s+npm ci\s+npm ci --ignore-scripts --prefix ops\/gateway/u);
+  assert.match(job.steps[fixture].run, /cd "\$RUNNER_TEMP\/p2-owned-source"\s+node /u);
+  assert.match(job.steps[fixture].run, /--recovery-postgres18 --lifecycle-postgres18 \\\s+> "\$RUNNER_TEMP\/p2-identity-recovery-lifecycle-postgres18.json"/u);
   const success = job.steps.find(step => step.with?.name === "frontend-operator-schema-summary"),
     failure = job.steps.find(step => step.name === "Retain private owned fixture failure diagnostics");
   for (const step of [success, failure]) assert.ok(step.with.path.trim().split(/\r?\n/u).includes("${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json"));
