@@ -21,7 +21,7 @@ function fixture() {
     VERCEL_GIT_COMMIT_SHA: manifest.source.approvedCommit, VERCEL_GIT_COMMIT_REF: "staging",
     NEXT_PUBLIC_SITE_URL: manifest.origin, NEXT_PUBLIC_SANITY_DATASET: manifest.sanity.dataset,
     NEXT_PUBLIC_SANITY_PROJECT_ID: manifest.sanity.projectId,
-    DATABASE_URL: `postgres://lash_her_frontend_staging_runtime:test@${manifest.frontendDatabase.pooledHost}/neondb?sslmode=verify-full`,
+    DATABASE_URL: `postgres://${manifest.frontendDatabase.runtimeRole}:test@${manifest.frontendDatabase.pooledHost}/${manifest.frontendDatabase.database}?sslmode=verify-full`,
     KV_REST_API_URL: `https://${manifest.redis.hostname}`, SQUARE_ENVIRONMENT: "sandbox",
     SQUARE_LOCATION_ID: manifest.providers.square.locationId,
     HIGHLEVEL_SYNC_ENABLED: "false", HIGHLEVEL_MARKETING_ENABLED: "false", CHITCHATS_SHIPPING_ENABLED: "false", CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -55,7 +55,7 @@ test("Resend account separation evidence is optional for the reviewed staging co
 test("production project, owner credentials, live payments and recipient escape fail closed", () => {
   const { env, manifest } = fixture();
   const bad = { ...env, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
-    DATABASE_URL: env.DATABASE_URL.replace("lash_her_frontend_staging_runtime", "neondb_owner"),
+    DATABASE_URL: env.DATABASE_URL.replace(manifest.frontendDatabase.runtimeRole, "neondb_owner"),
     SQUARE_ENVIRONMENT: "production", STAGING_EMAIL_RECIPIENT_ALLOWLIST: "customer@example.com", PGPASSWORD: "do-not-echo-this" };
   const errors = checkStagingRelease(bad, manifest);
   assert(errors.some(x => x.includes("runtime role")));
@@ -125,7 +125,11 @@ test("shared administration does not permit different Sanity, database or Redis 
 
 test("runtime database TLS and connection parameters cannot weaken the reviewed target", () => {
   const { env, manifest } = fixture();
-  for (const database of [env.DATABASE_URL.replace("verify-full", "require"), env.DATABASE_URL + "&options=-csearch_path%3Dother"]) {
+  for (const database of [
+    env.DATABASE_URL.replace("verify-full", "require"),
+    env.DATABASE_URL + "&options=-csearch_path%3Dother",
+    env.DATABASE_URL.replace(manifest.frontendDatabase.pooledHost, manifest.frontendDatabase.directHost),
+  ]) {
     assert(checkStagingRelease({ ...env, DATABASE_URL: database }, manifest).some(error => error.includes("runtime role")));
   }
 });
