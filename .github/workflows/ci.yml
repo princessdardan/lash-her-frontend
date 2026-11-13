@@ -123,6 +123,7 @@ jobs:
           git checkout --detach "$P2_OWNED_FRONTEND_REVISION"
           npm ci
           npm ci --ignore-scripts --prefix ops/gateway
+          node --test --test-name-pattern='fixed current certification plan joins' ops/platform/p2-profiled-current-release.test.mjs
       - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}

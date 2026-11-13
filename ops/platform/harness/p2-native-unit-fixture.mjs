@@ -13,8 +13,16 @@ import { frontendAdmissionTargetSha256 } from "../frontend-admission-bootstrap.m
 export const P2_OWNED_FRONTEND_REVISION = "174ae9fe407956ba009e94356a39cc8e5032a904";
 
 export function nativeSourceCommit() {
+  return readSourceCommit(P2_OWNED_FRONTEND_REVISION);
+}
+
+export function ownedCheckoutCommit() {
+  return readSourceCommit("HEAD");
+}
+
+function readSourceCommit(revision) {
   const source = realpathSync(fileURLToPath(new URL("../../..", import.meta.url)));
-  return execFileSync("git", ["--no-pager", "--no-replace-objects", "--no-optional-locks", "-c", `safe.directory=${source}`, "rev-parse", "--verify", `${P2_OWNED_FRONTEND_REVISION}^{commit}`],
+  return execFileSync("git", ["--no-pager", "--no-replace-objects", "--no-optional-locks", "-c", `safe.directory=${source}`, "rev-parse", "--verify", `${revision}^{commit}`],
     { cwd: source, encoding: "utf8", timeout: 10_000, maxBuffer: 4096, stdio: ["ignore", "pipe", "pipe"],
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }).trim();
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { ownedCheckoutCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, installP2PaidRevokeObserver, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths,
@@ -53,8 +54,7 @@ function browserRecord(selected) {
     playbackRemovalAfterSuspensionMs: 567100, nativeInvocationQualified: false, releaseAccepted: false };
 }
 function documents() {
-  const operatorSourceCommit = execFileSync("git", ["--no-replace-objects", "rev-parse", "--verify", "HEAD^{commit}"],
-    { cwd: new URL("../..", import.meta.url), encoding: "utf8" }).trim();
+  const operatorSourceCommit = ownedCheckoutCommit();
   const raw = { version: 1, environment: "staging", releaseId: "owned-browser-release", hostMachineId: "1".repeat(32), candidateSha256: "1".repeat(64),
     configurationSha256: "2".repeat(64), sources: { frontend: operatorSourceCommit, course: "2".repeat(40), community: "3".repeat(40) },
     targets: Object.fromEntries(["frontend", "course", "community"].map(service => {
