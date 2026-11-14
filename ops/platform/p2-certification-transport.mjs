@@ -481,6 +481,16 @@ export function mediaReservationJoinedEvidence(evidence,selected,observed){
     browserResponseSha256:p2NativeHash(browser),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 
+// The supplemental operator is limited to the closed replacement's owner identity windows.
+export function firstOwnerSupplementAllowed(selection, applicationCommit, replacement) {
+  const operator = selection?.supplementalOperatorCommit;
+  const action = selection?.scopedAction;
+  return Boolean(replacement && selection.environment === "staging" && selection.mode === "interactive-browser" &&
+    !selection.successorRuntime && !selection.rotationSuccessor && action?.stage === "identity" &&
+    (validP2FirstOwnerDiscoverySelection(action.firstOwnerDiscovery) || validP2FirstOwnerSelection(action.firstOwner)) &&
+    typeof operator === "string" && /^(?!0{40}$)[a-f0-9]{40}$/u.test(operator) && operator !== applicationCommit);
+}
+
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity',authoring=action?.stage==='authoring',media=action?.stage==='media',learning=action?.stage==='learning';
@@ -1154,7 +1164,9 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
   const interactivePlan=profiled&&initial.certificationPlan.mode==='interactive-browser'?initial.certificationPlan:null;
   const selectedInteractive=interactivePlan?reviewedInteractivePlan(interactivePlan,initial):null;
   if(!interactivePlan)demand(!Object.hasOwn(initial,'interactiveController')&&initial.certificationPlan?.mode!=='interactive-browser');
-  const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,
+  const supplemental=initial.certificationPlan?.supplementalOperatorCommit;
+  if(supplemental!==undefined)demand(profiled&&firstOwnerSupplementAllowed(initial.certificationPlan,initial.sourceCommit,initial.certificationPlan.replacementRelease));
+  const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${supplemental??initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,
     profiled?'--supervisor-profiled-current':'--supervisor'];
   return async task=>{
     if(authorityBearer!==undefined)demand(initial.certificationPlan.mode===certificationMode&&initial.scopedCronSecret===authorityBearer&&

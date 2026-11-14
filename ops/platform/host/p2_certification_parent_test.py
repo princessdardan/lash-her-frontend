@@ -108,6 +108,33 @@ def legacy_source_fixture(source, destination):
     return names
 
 
+class FirstOwnerSupplementTests(unittest.TestCase):
+    def test_supplement_is_first_owner_only_and_compares_the_installed_base(self):
+        candidate, operator = 'a' * 40, 'b' * 40
+        plan = {'mode': 'interactive-browser', 'replacementRelease': {}, 'supplementalOperatorCommit': operator,
+                'scopedAction': {'stage': 'identity', 'firstOwnerDiscovery': {}}}
+        initial = {'environment': 'staging', 'sourceCommit': candidate, 'certificationPlan': plan}
+        self.assertEqual(parent.profiled_certification_operator_commit(initial), operator)
+        for changed in ({'mode': 'native-window'}, {'successorRuntime': {}},
+                        {'scopedAction': {'stage': 'identity', 'identityEnrollment': {}}}):
+            with self.assertRaisesRegex(ValueError, 'FIRST_OWNER_SUPPLEMENT_REFUSED'):
+                parent.profiled_certification_operator_commit({**initial, 'certificationPlan': {**plan, **changed}})
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            guard = 'ops/platform/host/p2_interactive_ingress.py'
+            other = 'ops/gateway/server.mjs'
+            for name in (guard, other):
+                path = root / candidate / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'owned-original')
+            original = migrate.file_hash(b'owned-original')
+            updated = migrate.file_hash(b'owned-updated')
+            with patch.object(parent, 'PROFILED_OPERATOR_ROOT', root):
+                parent._verify_first_owner_supplement({**initial, 'sourceSha256': {guard: updated, other: original}})
+                with self.assertRaisesRegex(ValueError, 'FIRST_OWNER_SUPPLEMENT_SCOPE_REFUSED'):
+                    parent._verify_first_owner_supplement({**initial, 'sourceSha256': {guard: updated, other: updated}})
+
+
 class CertificationScopeTests(unittest.TestCase):
     save=scope_fixture.P2ScopeTests.save
     add_frontend=scope_fixture.P2ScopeTests.add_frontend
@@ -157,6 +184,45 @@ class CertificationProtocolTests(unittest.TestCase):
         self.broker._gateway_current=lambda:self.gateway
         self.broker._native_context=lambda:{};self.broker.vercel=object()
         self.broker._observe_browser_origin=lambda:{'browserOrigin':parent.canonical_browser.ORIGIN}
+
+    def test_physical_observer_is_verified_before_concurrent_heartbeats_can_see_it(self):
+        broker = self.broker
+        broker.observer = None
+        broker.selected, broker.source = {}, self.directory
+        broker.observer_program = self.directory / 'observer.mjs'
+        broker.initial['sourceSha256'] = {parent.OBSERVER: 'a' * 64}
+        broker.initial['credentials'] = {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'owned-fixture'}
+        observer = Mock()
+        broker.observer_type = Mock(return_value=observer)
+        started = False
+
+        def verify():
+            if not started:
+                raise ValueError('PHYSICAL_OBSERVER_NOT_STARTED')
+
+        def heartbeat():
+            if broker.observer is not None:
+                broker.observer.verify()
+
+        def start(_abort):
+            nonlocal started
+            heartbeat()  # Interleave a host check while the initial probe is in flight.
+            started = True
+
+        broker.check = heartbeat
+        observer.start.side_effect = start
+        observer.verify.side_effect = verify
+        broker._start_physical_observer({})
+        self.assertIs(broker.observer, observer)
+        heartbeat()
+        observer.stop.assert_not_called()
+
+        broker.observer = None
+        observer.start.side_effect = ValueError('OWNED_PROBE_FAILURE')
+        with self.assertRaisesRegex(ValueError, 'OWNED_PROBE_FAILURE'):
+            broker._start_physical_observer({})
+        self.assertIsNone(broker.observer)
+        observer.stop.assert_called_once()
 
     def test_authentication_capability_requires_actual_arm_epoch_both_flags_and_native_off(self):
         value={'bindingSha256':parent._sha(parent._canonical(self.broker.initial['browserPlan']))}
@@ -250,6 +316,38 @@ class CertificationProtocolTests(unittest.TestCase):
         broker.initial['certificationPlan']['mode']='contain-native';broker._native_observe=unittest.mock.Mock(side_effect=AssertionError('expired private probe used'))
         with patch.object(parent.runtime,'check_containers',return_value=[]),patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':True}) as metadata:
             broker._verify_boundary();metadata.assert_called_once();broker._native_observe.assert_not_called()
+
+    def test_first_owner_watch_batches_exact_runtime_and_detects_process_or_container_drift(self):
+        broker = self.broker
+        broker.runtime_current = [
+            {'containerId': f'{index:064x}', 'service': service,
+             'image': 'example.invalid/runtime@sha256:' + 'a' * 64,
+             'health': 'none' if service.endswith('-tls') else 'healthy'}
+            for index, service in enumerate(parent.runtime.SERVICES, 1)
+        ]
+        ids = [row['containerId'] for row in broker.runtime_current]
+        def snapshot(pid):
+            return '\n'.join('|'.join((row['containerId'], row['image'], 'sha256:' + 'b' * 64, 'true',
+                row['health'], 'lash-her-staging', row['service'], pid, '2026-11-12T20:00:00Z', 'true', '[]'))
+                for row in broker.runtime_current).encode()
+        def result(data):
+            return SimpleNamespace(stdout=data, stderr=b'')
+        broker.scope = Mock()
+        broker.scope.run.side_effect = [result('\n'.join(ids).encode()), result(snapshot('10'))]
+        broker.first_owner_runtime_snapshot = broker._read_first_owner_runtime_snapshot()
+        self.assertEqual(broker.scope.run.call_count, 2)
+        broker.selected = {}; broker.jobs = {'frontend': {}}; broker.configuration = self.directory
+        broker.last_api_verified = time.monotonic()
+        broker.initial['certificationPlan'].update(mode='interactive-browser')
+        broker.require_scoped_native_off = Mock()
+        broker.scope.run.side_effect = [result('\n'.join(ids).encode()), result(snapshot('10'))]
+        broker._verify_boundary()
+        broker.scope.run.side_effect = [result('\n'.join(ids).encode()), result(snapshot('11'))]
+        with self.assertRaisesRegex(ValueError, 'PROCESS_OR_MOUNT_CHANGED'):
+            broker._verify_boundary()
+        broker.scope.run.side_effect = [result('\n'.join(ids + ['f' * 64]).encode())]
+        with self.assertRaisesRegex(ValueError, 'RUNTIME_CHANGED'):
+            broker._read_first_owner_runtime_snapshot()
 
     def test_direct_worker_stage_dispatch_is_armed_mode_bound_and_retains_exact_source_bytes(self):
         broker=self.broker;broker.initial['certificationPlan'].update(mode='direct-worker',workerPlanSha256='c'*64)

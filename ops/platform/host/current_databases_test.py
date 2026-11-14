@@ -2,6 +2,7 @@ import hashlib
 import copy
 import json
 import subprocess
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -214,6 +215,54 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.assertGreaterEqual(scope.require_frontend.call_count, 4)
         for name, value in raw.items():
             self.assertEqual((path / f"{name}-input/job.json").read_bytes(), value)
+
+    def test_first_owner_policy_is_scoped_to_the_retained_candidate_and_exact_module_bytes(self):
+        ref = self.profiled()
+        scope, _ = self.certification_scope(ref)
+        scope.certification_plan.update(mode="interactive-browser", supplementalOperatorCommit="a" * 40,
+            scopedAction={"stage": "identity", "firstOwnerDiscovery": {}}, replacementRelease={})
+        scope.candidate_sha256 = "eefe3d6e41d94a1d885a1d9198bfbac381d4227ee7dbd5a6dbe7ee74602280ba"
+        scope._profiled_broker = SimpleNamespace(results=self.fixture.runtime.root)
+        directory = scope._profiled_broker.results / "certification-readonly-api-role-policy"
+        directory.mkdir(mode=0o700)
+        selected = {"releaseId": "p1-43067769975-1", "environment": "staging", "sources": {}}
+        pins = {}
+        for name, (image_source, policy_source, _) in checks._FIRST_OWNER_ROLE_POLICIES.items():
+            self.jobs[name]["job"]["sourceCommit"] = image_source
+            selected["sources"][name] = {"commit": image_source}
+            raw = name.encode()
+            (directory / (name + ".mjs")).write_bytes(raw)
+            pins[name] = (image_source, policy_source, migrate.file_hash(raw))
+        with patch.object(checks, "_FIRST_OWNER_ROLE_POLICIES", pins):
+            policies = checks._first_owner_role_policies(scope, selected, self.jobs)
+            self.assertEqual(set(policies), {"course", "community"})
+            self.assertEqual(policies["course"][0], b"course")
+            (directory / "course.mjs").write_bytes(b"modified")
+            with self.assertRaisesRegex(ValueError, "ROLE_POLICY_BYTES_CHANGED"):
+                checks._first_owner_role_policies(scope, selected, self.jobs)
+            self.assertEqual(checks._first_owner_role_policies(scope, {**selected, "releaseId": "other"}, self.jobs), {})
+
+    def test_certification_binds_role_policy_only_in_the_read_only_check_and_retains_its_pin(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        data = b"owned-role-policy"
+        pin = {"sourceCommit": "a" * 40, "sha256": migrate.file_hash(data)}
+        with patch.object(checks, "_first_owner_role_policies", return_value={"course": (data, pin)}):
+            proof = self.execute_certification(scope, raw, ref)
+            path, result = checks.read_certification_api_proof(
+                proof, scope, self.selected, self.jobs, expected_profile=ref)
+            self.assertEqual(result["databases"]["course"]["readOnlyRolePolicy"], pin)
+            self.assertNotIn("readOnlyRolePolicy", result["databases"]["community"])
+            runs = [args for args, _, _ in self.calls if args[1] == "run"]
+            self.assertIn(f"type=bind,src={path}/course-input/operator-role-policy.mjs,"
+                "dst=/app/dist-migration/src/db/operator-migration.js,readonly", runs[0])
+            self.assertIn("--read-only", runs[0])
+            self.assertFalse(any("operator-role-policy.mjs" in arg for arg in runs[1]))
+            policy_path = path / "course-input/operator-role-policy.mjs"
+            policy_path.chmod(0o600)
+            policy_path.write_bytes(b"modified")
+            with self.assertRaisesRegex(ValueError, "ROLE_POLICY_BYTES_CHANGED"):
+                checks.read_certification_api_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
 
     def test_certification_job_bytes_and_scope_refuse_before_process_or_output(self):
         ref = self.profiled()

@@ -1897,7 +1897,8 @@ class IndependentGuardTests(unittest.TestCase):
         broker.worker_done = threading.Event()
         broker.check = lambda: None
         broker._start_boundary_watch = lambda: None
-        broker.observer_type = lambda *_args, **_kwargs: SimpleNamespace(start=lambda _: None)
+        observer = SimpleNamespace(start=lambda _: None, verify=lambda: None, stop=lambda: None)
+        broker.observer_type = lambda *_args, **_kwargs: observer
         broker._runtime_processes = lambda: []
         events = []
 
