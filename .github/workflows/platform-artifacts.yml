@@ -474,6 +474,7 @@ jobs:
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
             --env FRONTEND_MIGRATION_IMAGE_DIGEST \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/staging/first-release.json,dst=/source/ops/staging/first-release.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
@@ -491,6 +492,7 @@ jobs:
             --env P2_PLATFORM_OWNED_TEST=true --env OWNED_POSTGRES_MAJOR=18 \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/.git,dst=/source/.git,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/staging/first-release.json,dst=/source/ops/staging/first-release.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \

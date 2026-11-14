@@ -152,6 +152,7 @@
     "yaml": "2.8.4"
   },
   "overrides": {
+    "@opentelemetry/instrumentation-http": "0.222.0",
     "@babel/core": "7.29.7",
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
