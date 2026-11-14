@@ -1,5 +1,6 @@
 import "server-only";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
+import stagingRelease from "../../../ops/staging/first-release.json" with { type: "json" };
 
 export class WriterAdmissionError extends Error {
   readonly code: "configuration" | "unavailable" | "outcome";
@@ -49,10 +50,20 @@ export function resolveWriterAdmissionConfiguration(
       !Number.isInteger(target.port) || target.port < 1 || target.port > 65535 ||
       !name(target.database) || !name(target.user) || ![16, 18].includes(target.serverMajor) ||
       !digest(target.targetSha256, 64) || !digest(env.FRONTEND_WRITER_PRODUCER_SHA256, 64) || !digest(env.VERCEL_GIT_COMMIT_SHA, 40)) throw new Error();
-    const url = requireTargetUrl(env.FRONTEND_WRITER_ADMISSION_DATABASE_URL, target);
+    const url = new URL(env.FRONTEND_WRITER_ADMISSION_DATABASE_URL ?? "");
+    requireTargetUrl(url, target);
     // Business writes use DATABASE_URL through getPrivateDb(), not this ledger
     // connection. Both must belong to the exact admitted database and login.
-    requireTargetUrl(env.DATABASE_URL, target);
+    const stagingDb = stagingRelease.frontendDatabase;
+    const usesReviewedStagingTarget = environment === "staging" && target.host === stagingDb.directHost &&
+      target.port === 5432 && target.database === stagingDb.database &&
+      target.user === stagingDb.runtimeRole && target.serverMajor === 18;
+    const businessUrl = new URL(env.DATABASE_URL ?? "");
+    if (usesReviewedStagingTarget && businessUrl.hostname === stagingDb.pooledHost) {
+      requireTargetUrl(businessUrl, { ...target, host: stagingDb.pooledHost }, true);
+    } else {
+      requireTargetUrl(businessUrl, target);
+    }
     return {
       target: { environment, host: target.host, port: target.port, database: target.database, user: target.user,
         serverMajor: target.serverMajor, targetSha256: target.targetSha256 },
@@ -67,11 +78,15 @@ export function resolveWriterAdmissionConfiguration(
 }
 
 
-function requireTargetUrl(raw: string | undefined, target: WriterAdmissionTarget): URL {
-  const url = new URL(raw ?? "");
+function requireTargetUrl(url: URL, target: WriterAdmissionTarget, allowChannelBinding = false): void {
+  const keys = [...url.searchParams.keys()];
+  const validTls = url.searchParams.getAll("sslmode").length === 1 &&
+    url.searchParams.get("sslmode") === "verify-full";
+  const channelBinding = url.searchParams.getAll("channel_binding");
+  const validOptions = keys.length === 1 || (allowChannelBinding && keys.length === 2 &&
+    channelBinding.length === 1 && ["require", "prefer"].includes(channelBinding[0]));
   if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== target.host ||
     Number(url.port || 5432) !== target.port || decodeURIComponent(url.pathname) !== `/${target.database}` ||
     decodeURIComponent(url.username) !== target.user || !url.password || url.hash ||
-    [...url.searchParams].length !== 1 || url.searchParams.get("sslmode") !== "verify-full") throw new Error();
-  return url;
+    !validTls || !validOptions) throw new Error();
 }

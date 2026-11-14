@@ -9,6 +9,7 @@ import { createHash, createHmac } from "node:crypto";
 import { P2_FIRST_OWNER_PATH, p2FirstOwnerDiscoveryEmailSha256,
   p2FirstOwnerIdentitySha256 } from "../../../ops/platform/p2-first-owner-identity.mjs";
 import { createWriterAdmissionRunner } from "./runtime";
+import stagingRelease from "../../../ops/staging/first-release.json" with { type: "json" };
 import { attestInteractiveRequest, interactiveRequestHeaders, readInteractiveRequest, withinInteractiveAdminGoogleAction, INTERACTIVE_COOKIE, INTERACTIVE_HEADER, INTERACTIVE_ORIGIN } from "./interactive-proof";
 import { withWriterAdmission } from "./route";
 import { resolveWriterAdmissionConfiguration, WriterAdmissionError } from "./config";
@@ -109,15 +110,15 @@ function environment() {
     DATABASE_URL: "postgresql://protocol_runtime:owned-application-password@db.owned.invalid/owned?sslmode=verify-full",
     FRONTEND_WRITER_ADMISSION_DATABASE_URL: "postgresql://protocol_runtime:owned-private-marker@db.owned.invalid/owned?sslmode=verify-full" };
 }
-function fixture() {
+function fixture(identity = { username: "protocol_runtime", database: "owned" }) {
   const calls: { sql: string; values?: unknown[] }[] = [];
-  const state = { ended: false, epoch: "1", newWork: true, recovery: true, authorized: true, database: "owned", uncertain: false };
+  const state = { ended: false, epoch: "1", newWork: true, recovery: true, authorized: true, database: identity.database, uncertain: false };
   const client = Object.assign(new EventEmitter(), {
     connection: { stream: { encrypted: true, get authorized() { return state.authorized; } } },
     async connect() {}, async end() { state.ended = true; },
     async query(sql: string, values?: unknown[]) {
       calls.push({ sql, values });
-      if (sql.startsWith("SELECT current_user")) return { rows: [{ username: "protocol_runtime", database: state.database, major: 18 }] };
+      if (sql.startsWith("SELECT current_user")) return { rows: [{ username: identity.username, database: state.database, major: 18 }] };
       if (sql.includes("current_policy")) return { rows: [{ epoch: state.epoch, new_work: state.newWork, recovery: state.recovery }] };
       if (sql.includes("finish_operation")) state.uncertain = values?.[1] === "uncertain";
       return { rows: [] };
@@ -1191,4 +1192,53 @@ test("application database must share the admitted direct target, login and stri
     assert.equal(effects, 0);
     assert.equal((await response.text()).includes("application-private-marker"), false);
   }
+});
+
+test("reviewed staging pooler is accepted for business traffic while the ledger stays direct and closed", async () => {
+  const db = stagingRelease.frontendDatabase;
+  const direct = `postgresql://${db.runtimeRole}:owned-test@${db.directHost}/${db.database}?sslmode=verify-full`;
+  const pooled = direct.replace(db.directHost, db.pooledHost);
+  const base = {
+    ...environment(),
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({
+      environment: "staging", host: db.directHost, port: 5432, database: db.database,
+      user: db.runtimeRole, serverMajor: 18, targetSha256: "a".repeat(64),
+    }),
+    FRONTEND_WRITER_ADMISSION_DATABASE_URL: direct,
+  };
+  for (const databaseUrl of [pooled, pooled + "&channel_binding=require"]) {
+    const configuration = resolveWriterAdmissionConfiguration({ ...base, DATABASE_URL: databaseUrl });
+    assert.equal(configuration?.connection.host, db.directHost);
+    assert.equal(configuration?.connection.ssl.rejectUnauthorized, true);
+  }
+  const ledger = fixture({ username: db.runtimeRole, database: db.database });
+  ledger.state.newWork = false;
+  ledger.state.recovery = false;
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration({ ...base, DATABASE_URL: pooled }),
+    createClient: connection => {
+      assert.equal(connection.host, db.directHost);
+      return ledger.client;
+    },
+    getInteractiveWriter: async () => null,
+  });
+  for (const kind of ["new-work", "recovery"] as const) {
+    await assert.rejects(run(kind, async () => assert.fail("closed staging ledger reached business writes")),
+      { name: "WriterAdmissionError", code: "unavailable" });
+  }
+  assert.equal(ledger.calls.filter(call => call.sql.includes("current_policy")).length, 2);
+  assert.ok(ledger.calls.every(call => !call.sql.includes("begin_operation")));
+
+  for (const env of [
+    { ...base, DATABASE_URL: pooled.replace(db.pooledHost, "other-pooler.example.test") },
+    { ...base, DATABASE_URL: pooled.replace(db.runtimeRole, "wrong_role") },
+    { ...base, DATABASE_URL: pooled.replace(`/${db.database}?`, "/wrong?") },
+    { ...base, DATABASE_URL: pooled.replace("verify-full", "require") },
+    { ...base, DATABASE_URL: pooled + "&sslmode=verify-full" },
+    { ...base, DATABASE_URL: pooled + "&channel_binding=disable" },
+    { ...base, DATABASE_URL: pooled + "&options=-csearch_path=other" },
+    { ...base, DATABASE_URL: pooled, FRONTEND_WRITER_ADMISSION_DATABASE_URL: pooled },
+    { ...base, APP_ENV: "production", VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
+      DATABASE_URL: pooled, FRONTEND_WRITER_ADMISSION_TARGET_JSON: base.FRONTEND_WRITER_ADMISSION_TARGET_JSON.replace("staging", "production") },
+  ]) assert.throws(() => resolveWriterAdmissionConfiguration(env), WriterAdmissionError);
 });
