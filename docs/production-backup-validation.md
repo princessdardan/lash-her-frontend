@@ -1,0 +1,13 @@
+# Production backup validation
+
+The production `backup-validation` Schedule runs Mondays at 06:00 UTC. It uses the storefront cron bearer and invokes the dedicated `lash-her-production-backup-runner` Vercel project. The runner has no schedules of its own.
+
+Bind `BACKUP_VALIDATION_RUNNER_SECRET` as a Production Secret on both Vercel projects. Store `NEON_BACKUP_PROJECT_API_KEY` only on the runner as a Production Secret scoped to Neon project `ancient-wave-93726207`. Set `BACKUP_VALIDATION_ENABLED=true` for the storefront Production target after checking the production recovery window or snapshot policy. Redeploy to apply binding changes.
+
+For Neon branch `br-rough-frost-aqtdtxln`, the runner first looks for a snapshot from the last eight days. It restores a snapshot to a disposable branch without finalizing the restore. When the branch has no snapshot policy or recent snapshot, it uses Neon's existing write-ahead-log history to create a disposable branch at a point one hour before the run. It verifies the returned parent and resolved WAL position and requests a read-only Neon compute. A configured snapshot policy with no recent snapshot fails validation. It matches the production source endpoint before and after the restore, assigns the disposable branch a one-hour TTL, checks TLS and read-only transactions, compares the schema and Drizzle journal, checks payment integrity, and verifies the branch was deleted. The storefront claims the UTC schedule slot in Redis before the first call to prevent a second restore when a delivery is repeated.
+
+Run the builder with `node ops/platform/build-production-backup-restore.mjs <linked-runner-directory>`, then deploy that Build Output artifact to the dedicated runner's Production alias. The builder refuses a different project. The runner accepts only authenticated POST requests to that alias from the configured production caller.
+
+Verify the next natural Schedule execution in Vercel. Correlate its execution ID with `Production backup restore verified` on the storefront and `production_backup_restore_verified` on the runner. Confirm the proof has `validationPerformed`, `isolatedRestore`, `sourcePreserved`, `readOnly`, `tlsVerified`, `schemaMatches`, `migrationLineageMatches`, and `cleanupVerified` set to true. The receipt identifies `recoverySource` and `recoveryPointAt`. Investigate failures using the runner's redacted code and review Neon for any remaining validation branches.
+
+For runtime rollback, keep legacy crons disabled and restore the immediately preceding Schedule deployment. Verify the same nine definitions are active after that rollback. If the rollback explicitly restores a legacy deployment, follow the [scheduler rollback procedure](scheduled-jobs-runbook.md).

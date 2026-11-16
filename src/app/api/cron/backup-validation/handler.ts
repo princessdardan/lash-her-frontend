@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { log } from "@/lib/logging/logger";
+import { runProductionBackupValidation } from "@/lib/backup-validation/production-runner";
 import {
   readBackupValidationConfig,
   validateBackupValidationConfig,
@@ -15,6 +16,7 @@ interface BackupValidationDependencies {
   getCronSecret: () => string | null;
   log: typeof log;
   readConfig: () => BackupValidationConfig;
+  runExternalValidation?: typeof runProductionBackupValidation;
   validateConfig: (
     config: BackupValidationConfig,
   ) => BackupValidationConfigResult;
@@ -24,6 +26,7 @@ const defaultDependencies: BackupValidationDependencies = {
   getCronSecret: getConfiguredCronSecret,
   log,
   readConfig: () => readBackupValidationConfig(process.env),
+  runExternalValidation: runProductionBackupValidation,
   validateConfig: (config) =>
     validateBackupValidationConfig(config, {
       DATABASE_URL: process.env.DATABASE_URL,
@@ -52,7 +55,8 @@ export function createBackupValidationGetHandler(
     const config = dependencies.readConfig();
 
     dependencies.log("info", "Backup validation cron started", {
-      validationPerformed: config.enabled,
+      validationEnabled: config.enabled,
+      validationPerformed: false,
     });
 
     if (!config.enabled) {
@@ -61,6 +65,26 @@ export function createBackupValidationGetHandler(
         manualActionRequired: true,
         checkoutOrders: "future_health_check_table",
       });
+    }
+
+
+    try {
+      const proof = await dependencies.runExternalValidation?.(req);
+      if (proof) {
+        if (!proof.validationPerformed) {
+          dependencies.log("info", "Duplicate backup Schedule delivery skipped", proof);
+          return Response.json(proof, { status: 202 });
+        }
+        dependencies.log("info", "Production backup restore verified", proof);
+        return Response.json(proof);
+      }
+    } catch {
+      dependencies.log("error", "Production backup restore failed");
+      return Response.json(
+        { validationPerformed: false, manualActionRequired: true,
+          error: "Production backup restore failed" },
+        { status: 503 },
+      );
     }
 
     const validation = dependencies.validateConfig(config);
