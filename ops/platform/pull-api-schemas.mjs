@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES, isRevision } from "./source-policy.mjs";
@@ -30,12 +30,18 @@ function checkedSchema(bytes, labels, selected) {
     "io.lash-her.ci.run-attempt": String(source.ciAttempt), "io.lash-her.postgres.major": "18" };
   require(Object.entries(expected).every(([key, value]) => labels?.[key] === value) &&
     labels["io.lash-her.operator-schema.sha256"] === hash(bytes));
-  const report = JSON.parse(bytes);
+  let records;
+  try { records = [JSON.parse(bytes)]; }
+  catch { records = bytes.toString("utf8").trim().split(/\r?\n/u).map(line => JSON.parse(line)); }
+  require(records.every(record => record && typeof record === "object" && !Array.isArray(record)) &&
+    records.filter(record => record.status === "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS").length === 1);
+  const report = records.at(-1);
   require(report.status === "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS" && report.providerTouched === false &&
     report.service === selected.repository.split("/")[1] && report.postgresMajor === 18 &&
     report.schemaBaseline?.schemaVersion === 1 && report.schemaBaseline.serverMajor === 18 &&
     /^[a-f0-9]{64}$/u.test(report.schemaBaseline.artifactSha256 ?? "") &&
-    report.schemaBaseline.catalog && typeof report.schemaBaseline.catalog === "object");
+    report.schemaBaseline.catalog && typeof report.schemaBaseline.catalog === "object" && !Array.isArray(report.schemaBaseline.catalog));
+  return report;
 }
 
 export function pullApiSchemas(candidate, destination, run = command) {
@@ -72,7 +78,9 @@ export function pullApiSchemas(candidate, destination, run = command) {
         const info = lstatSync(file);
         require(info.isFile() && !info.isSymbolicLink() && info.size > 0 && info.size <= 2_000_000);
         const bytes = readFileSync(file);
-        checkedSchema(bytes, labels, context);
+        const report = checkedSchema(bytes, labels, context);
+        // CI stdout also contains intermediate checks; the existing bundle preparer consumes the final report.
+        writeFileSync(file, JSON.stringify(report) + "\n", { mode: 0o600 });
         chmodSync(file, 0o600);
         result.push({ service: context.service, sourceCommit: context.source.commit,
           ciRunId: context.source.ciRunId, ciAttempt: context.source.ciAttempt, image });

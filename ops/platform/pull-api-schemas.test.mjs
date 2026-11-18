@@ -20,8 +20,11 @@ function fixture(t, changes = {}) {
     if (args[0] === "pull") {
       current = ["course", "community"].find(service => args.at(-1).includes(`lash-her-${service}-api-schema`));
       const selected = apiSchemaSource(candidate, current);
-      bytes = Buffer.from(JSON.stringify({ status: "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS", service: `lash-her-${current}-api`,
-        providerTouched: false, postgresMajor: 18, schemaBaseline: { schemaVersion: 1, serverMajor: 18, artifactSha256: "b".repeat(64), catalog: {} } }));
+      const report = { status: "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS", service: `lash-her-${current}-api`,
+        providerTouched: false, postgresMajor: 18, schemaBaseline: { schemaVersion: 1, serverMajor: 18, artifactSha256: "b".repeat(64), catalog: {} } };
+      const records = [{ status: "OPERATOR_ROLE_ACL_REFUSALS_PASS", postgresMajor: 18, providerTouched: false },
+        { status: "SOURCE_BOUND_CREATOR_MEMBERSHIP_AND_READONLY_GATE_PASS", postgresMajor: 18, providerTouched: false }, report];
+      bytes = Buffer.from(changes.report?.(records) ?? records.map(record => JSON.stringify(record)).join("\n") + "\n");
       labels = { "org.opencontainers.image.source": "https://github.com/" + selected.repository,
         "org.opencontainers.image.revision": selected.source.commit, "io.lash-her.ci.run-id": "1234", "io.lash-her.ci.run-attempt": "2",
         "io.lash-her.postgres.major": "18", "io.lash-her.operator-schema.sha256": createHash("sha256").update(bytes).digest("hex"),
@@ -80,4 +83,23 @@ test("unsuccessful source CI and existing outputs refuse before pulling", t => {
   writeFileSync(f.destination, "keep existing input");
   assert.throws(() => pullApiSchemas(f.candidate, f.destination, f.run), /Private API schema retrieval refused/u);
   assert.equal(readFileSync(f.destination, "utf8"), "keep existing input");
+});
+
+test("rehearsal parsing requires one final terminal report and preserves preparer JSON compatibility", t => {
+  for (const report of [records => JSON.stringify(records.at(-1), null, 2),
+    records => records.map(record => JSON.stringify(record)).join("\n") + "\n"]) {
+    const f = fixture(t, { report });
+    pullApiSchemas(f.candidate, f.destination, f.run);
+    assert.equal(JSON.parse(readFileSync(join(f.destination, "course/operator-schema-postgres18.json"))).status,
+      "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS");
+  }
+  for (const report of [records => records.map(record => JSON.stringify(record)).join("\n") + "\nmalformed",
+    records => records.concat(records.at(-1)).map(record => JSON.stringify(record)).join("\n"),
+    records => records.concat(records[0]).map(record => JSON.stringify(record)).join("\n"),
+    records => records.slice(0, -1).map(record => JSON.stringify(record)).join("\n")]) {
+    const f = fixture(t, { report });
+    assert.throws(() => pullApiSchemas(f.candidate, f.destination, f.run));
+    assert.equal(existsSync(f.destination), false);
+    assert.equal(f.calls.at(-1)[0], "rm");
+  }
 });
