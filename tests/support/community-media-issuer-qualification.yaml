@@ -52,7 +52,7 @@ Resources:
                 aws:SourceArn: !GetAtt ApiAnchor.TrustAnchorArn
               StringEquals:
                 aws:SourceAccount: !Ref AWS::AccountId
-                sts:SourceIdentity: !Sub 'CN=${Scope}-api'
+                aws:PrincipalTag/x509Subject/CN: !Sub '${Scope}-api'
       Policies:
         - PolicyName: AssumeOnlyApiTarget
           PolicyDocument:
@@ -77,7 +77,7 @@ Resources:
                 aws:SourceArn: !GetAtt WorkerAnchor.TrustAnchorArn
               StringEquals:
                 aws:SourceAccount: !Ref AWS::AccountId
-                sts:SourceIdentity: !Sub 'CN=${Scope}-worker'
+                aws:PrincipalTag/x509Subject/CN: !Sub '${Scope}-worker'
       Policies:
         - PolicyName: AssumeOnlyWorkerTarget
           PolicyDocument:
