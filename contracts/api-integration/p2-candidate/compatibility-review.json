@@ -7,7 +7,7 @@
     "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488"
   },
   "candidate": {
-    "manifestSha256": "c47dfb036c7ac422082538b4adf4b762a7c146d104f4d5aa99272e7344b0d11f"
+    "manifestSha256": "e93fb747a4d65dc8ffa92db95c84014c58de6157c9cb14acfdfcae97fdd40624"
   },
   "changes": [
     {
@@ -424,6 +424,18 @@
       "change": "added",
       "beforeSha256": null,
       "afterSha256": "84641872bc69166f2b4148f3f87e9604e4e6dfbd0adbb35fa33e9b0fbb51a890"
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "get /v1/internal/checkout-offer",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "e7705f2735e614943ce08dc6a644f1e6c774f2048cf13e9910e2c3cf978d0995",
+      "requirementIds": [
+        "P4-05"
+      ],
+      "reason": "Expose a service-authenticated read-only snapshot of a published paid CAD offer and effective access for the identified buyer."
     },
     {
       "document": "course",
