@@ -25,9 +25,10 @@ interface SquareConfigResponse {
  */
 export async function fetchSquareCommerceConfig(
   fetcher?: typeof fetch,
+  url = "/api/checkout/square/config",
 ): Promise<SquareConfigResponse | null> {
   const f = fetcher ?? fetch;
-  const response = await f("/api/checkout/square/config", {
+  const response = await f(url, {
     cache: "no-store",
   });
 
@@ -52,6 +53,11 @@ export interface SquareCommerceBuyerDetails {
   email: string;
   fullName: string;
   phone?: string;
+  country?: string;
+  postalCode?: string;
+  line1?: string;
+  city?: string;
+  region?: string;
 }
 
 export interface SquareCommerceTokenResult {
@@ -60,6 +66,7 @@ export interface SquareCommerceTokenResult {
 }
 
 interface SquareCommerceCardFormProps {
+  configUrl?: string;
   buyer: SquareCommerceBuyerDetails | null;
   disabled: boolean;
   onError: (message: string) => void;
@@ -97,6 +104,10 @@ interface SquareVerificationDetails {
     email: string;
     phone?: string;
     countryCode: string;
+    addressLines?: string[];
+    city?: string;
+    state?: string;
+    postalCode?: string;
   };
 }
 
@@ -118,7 +129,7 @@ export const SquareCommerceCardForm = forwardRef<
   SquareCommerceCardFormHandle,
   SquareCommerceCardFormProps
 >(function SquareCommerceCardForm(
-  { buyer, disabled, onError, onReadyChange, onConfigUnavailable, onTokenized },
+  { buyer, disabled, onError, onReadyChange, onConfigUnavailable, onTokenized, configUrl },
   ref,
 ) {
   const reactId = useId();
@@ -139,7 +150,7 @@ export const SquareCommerceCardForm = forwardRef<
 
     async function loadConfig() {
       try {
-        const configData = await fetchSquareCommerceConfig();
+        const configData = await fetchSquareCommerceConfig(undefined, configUrl);
 
         if (configData === null) {
           if (isMountedRef.current) {
@@ -174,7 +185,7 @@ export const SquareCommerceCardForm = forwardRef<
     return () => {
       isMountedRef.current = false;
     };
-  }, [onError, onConfigUnavailable]);
+  }, [onError, onConfigUnavailable, configUrl]);
 
   useEffect(() => {
     const currentConfig = config;
@@ -278,7 +289,11 @@ export const SquareCommerceCardForm = forwardRef<
             familyName,
             email: buyer.email,
             ...(buyer.phone ? { phone: buyer.phone } : {}),
-            countryCode: "CA",
+            countryCode: buyer.country ?? "CA",
+            ...(buyer.line1 ? { addressLines: [buyer.line1] } : {}),
+            ...(buyer.city ? { city: buyer.city } : {}),
+            ...(buyer.region ? { state: buyer.region } : {}),
+            ...(buyer.postalCode ? { postalCode: buyer.postalCode } : {}),
           },
         };
 

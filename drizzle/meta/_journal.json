@@ -582,6 +582,13 @@
       "when": 1793910009844,
       "tag": "0082_customer_account_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795026926654,
+      "tag": "0083_course_purchases",
+      "breakpoints": true
     }
   ]
 }

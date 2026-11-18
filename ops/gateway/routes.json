@@ -239,5 +239,10 @@
     "method": "GET",
     "path": "/v1/admin/courses/{courseId}/publication-readiness",
     "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/internal/checkout-offer",
+    "auth": "application"
   }
 ]

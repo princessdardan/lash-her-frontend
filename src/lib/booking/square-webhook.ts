@@ -11,6 +11,7 @@ export interface VerifiedSquareWebhookEvent {
   merchantId?: string;
   orderId?: string;
   paymentId?: string;
+  referenceId?: string;
   refund?: VerifiedSquareRefund;
   payloadSanitized: Record<string, unknown>;
 }
@@ -123,6 +124,7 @@ export function parseVerifiedSquareWebhook(
     (eventType === "order.updated" ? getText(data?.id) : null);
   const verifiedRefund = parseRefund(eventType, refund, createdAt);
   const paymentId = verifiedRefund?.paymentId ?? getText(payment?.id);
+  const referenceId = getText(payment?.reference_id);
 
   return {
     ...(createdAt ? { createdAt } : {}),
@@ -131,6 +133,7 @@ export function parseVerifiedSquareWebhook(
     ...(merchantId ? { merchantId } : {}),
     ...(orderId ? { orderId } : {}),
     ...(paymentId ? { paymentId } : {}),
+    ...(referenceId ? { referenceId } : {}),
     ...(verifiedRefund ? { refund: verifiedRefund } : {}),
     payloadSanitized: sanitizeSquarePayload(payload),
   };

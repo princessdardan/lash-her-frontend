@@ -12,6 +12,7 @@ import { coursePrice, customerSignInHref, lessonHref } from "@/lib/learning/pres
 import { CourseCover } from "./course-cover";
 import { LegacyProgressImport } from "./legacy-progress-import";
 import { FreeEnrollment } from "./free-enrollment";
+import { courseCheckoutEnabled } from "@/lib/course-purchases/policy";
 import { LearningFailure, LearningNavigation, LearningShell, learningAction } from "./shared";
 
 export const readCourseCatalogDetail = cache((slug: string) => getCourseClient().getCatalogCourse(slug));
@@ -62,7 +63,7 @@ export async function ApiCourseDetail({ slug }: { slug: string }) {
           <p className="my-5 leading-relaxed text-lh-muted">Learn at your own pace. Resume your lessons on any device when you sign in.</p>
           {accessFailure ? <LearningFailure error={accessFailure} returnTo={path} retryHref={path} headingLevel={2} /> : enrolled ? <Link className={learningAction} href={`/academy/courses/${course.id}`}>Open course</Link> : !customer ?
             <Link className={learningAction} href={customerSignInHref(path)}>Sign in to {course.accessMode === "free" ? "enroll" : "continue"}</Link> : course.accessMode === "free" && course.priceCents === 0 && course.currency === "CAD" ? <FreeEnrollment courseId={course.id} reviewedIdempotencyKey={reviewedIdempotencyKey} /> :
-              <p role="status" className="leading-relaxed">Enrollment for this course is not open yet.</p>}
+              course.accessMode === "paid" && courseCheckoutEnabled() ? <Link className={learningAction} href={`/courses/${course.slug}/checkout`}>Enroll in course</Link> : <p role="status" className="leading-relaxed">Enrollment for this course is not open yet.</p>}
           {legacyGrant && <LegacyProgressImport courseId={course.id} grant={legacyGrant} />}
         </section>
       </div>

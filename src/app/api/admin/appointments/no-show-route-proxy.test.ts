@@ -14,4 +14,4 @@
 //
 // ESM module caching ensures the tests are registered exactly once even when
 // both this proxy and the original file are discovered during a full run.
-import "./[id]/no-show/route.test.ts";
+import "./[id]/no-show/route.test";

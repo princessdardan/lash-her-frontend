@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import vercel
+import p4_05_candidate
 
 
 class VercelControlTests(unittest.TestCase):
@@ -124,6 +125,150 @@ class VercelControlTests(unittest.TestCase):
 
     def enqueue(self, *bodies):
         self.responses.extend((200, body, {}) for body in bodies)
+
+    def p4_05_inputs(self):
+        plan = {
+            "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40, "releaseId": "staging-fixture",
+            "database": {"runtimeHost": "p4-test-pool.example.net", "verificationHost": "p4-test.example.net",
+                         "name": "candidate_db", "runtimeRole": "candidate_role"},
+            "redisOrigin": "https://candidate-redis.example.net",
+            "gatewayOrigin": "https://candidate-gateway.example.net",
+            "square": {"applicationId": "sandbox-qualification", "locationId": "SANDBOXLOC1",
+                       "notificationUrl": "https://candidate-hooks.example.net/api/webhooks/square"},
+            "courseClassification": "paid-fixture",
+            "courseSalesPolicy": {"version": "synthetic-p4-05", "markets": [
+                {"country": "CA", "region": "ON", "behavior": "exclusive", "disclosure": "Synthetic tax fixture.",
+                 "classifications": {"paid-fixture": {"taxCode": "txcd_30011000"}}}
+            ]},
+        }
+        receipt = {"status": "DATABASE_VERIFIED", "service": "frontend", "environment": "staging",
+                   "releaseId": "staging-fixture", "sourceCommit": "a" * 40, "migrationMode": "verify-current-only",
+                   "readOnlyVerified": True, "trafficAuthorized": False,
+                   "target": {"host": "p4-test.example.net", "port": 5432, "database": "candidate_db",
+                              "user": "candidate_verify", "serverMajor": 18}}
+        private = {
+            "P4_05_DATABASE_URL": "postgresql://candidate_role:fixture-db-pass@p4-test-pool.example.net/candidate_db?sslmode=verify-full",
+            "P4_05_KV_REST_API_TOKEN": "fixture-redis-token",
+            "P4_05_INTERNAL_SERVICE_JWT_SECRET": "fixture-isolated-service-key-long-enough",
+            "P4_05_SQUARE_ACCESS_TOKEN": "fixture-square-token",
+            "P4_05_SQUARE_WEBHOOK_SIGNATURE_KEY": "fixture-square-signature",
+            "P4_05_COURSE_STRIPE_TAX_SECRET_KEY": "rk_test_fixtureTestKeyabcdef",
+            "P4_05_COURSE_PURCHASE_RECOVERY_SECRET": "fixture-recovery-key-only-in-private-runtime",
+        }
+        return plan, receipt, private
+
+    def p4_05_deployment(self):
+        deployment = self.deployment()
+        deployment["meta"]["lashQualification"] = "p4-05"
+        deployment["alias"] = []
+        return deployment
+
+    def test_p4_05_private_bindings_are_transmitted_only_on_candidate_creation(self):
+        plan, receipt, private = self.p4_05_inputs()
+        self.enqueue(self.project(), {"id": "dpl_fixture"}, self.p4_05_deployment(), self.project())
+        outcome = p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        self.assertEqual(outcome["status"], "P4_05_FRONTEND_STAGED")
+        self.assertFalse(outcome["promotionAuthorized"])
+        self.assertFalse(outcome["trafficAuthorized"])
+        writes = [call for call in self.calls if call["method"] != "GET"]
+        self.assertEqual([call["path"].split("?")[0] for call in writes], ["/v13/deployments"])
+        payload = writes[0]["body"]
+        self.assertEqual(payload["project"], vercel.PROJECTS["staging"])
+        self.assertFalse(payload["autoAssignCustomDomains"])
+        self.assertEqual(payload["target"], "production")
+        self.assertEqual(payload["gitSource"]["sha"], "a" * 40)
+        self.assertEqual(payload["build"]["env"], {key: value for key, value in payload["env"].items()
+                                                   if key not in p4_05_candidate.RUNTIME_ONLY})
+        self.assertEqual(payload["env"]["SQUARE_ENVIRONMENT"], "sandbox")
+        for key, private_key in p4_05_candidate.PRIVATE_INPUTS.items():
+            self.assertEqual(payload["env"][key], private[private_key])
+        for key, value in p4_05_candidate.HOLD.items():
+            self.assertEqual(payload["env"][key], value)
+        self.assertEqual(outcome["bindingKeys"], sorted(payload["env"]))
+        combined = "".join(path.read_text() for path in self.attempt.iterdir())
+        for secret in (*private.values(), "fixture-private-token", "provider-secret-must-not-escape"):
+            self.assertNotIn(secret, combined)
+        self.assertFalse((self.attempt / "frontend-build-outcome.json").exists())
+        with self.assertRaisesRegex(ValueError, "VERCEL_DEPLOYMENT_BINDING_REFUSED"):
+            self.enqueue(self.p4_05_deployment())
+            vercel.deployment_state(self.client, "dpl_fixture", vercel.PROJECTS["staging"], "a" * 40, "staging-fixture")
+
+    def test_p4_05_rejects_live_key_shared_callback_and_unverified_database_without_requests(self):
+        for alteration, error in (
+            ("live-stripe", "P4_05_STRIPE_TEST_KEY_REQUIRED"),
+            ("shared-callback", "P4_05_ISOLATED_SQUARE_CALLBACK_REQUIRED"),
+            ("wrong-database", "P4_05_FRONTEND_DATABASE_RECEIPT_REFUSED"),
+            ("missing-private-token", "P4_05_PRIVATE_BINDING_REQUIRED_SQUARE_ACCESS_TOKEN"),
+        ):
+            with self.subTest(alteration=alteration):
+                plan, receipt, private = self.p4_05_inputs()
+                if alteration == "live-stripe":
+                    private["P4_05_COURSE_STRIPE_TAX_SECRET_KEY"] = "sk_live_fixtureNeverSend"
+                elif alteration == "shared-callback":
+                    plan["square"]["notificationUrl"] = "https://staging.lashher.com/api/webhooks/square"
+                elif alteration == "wrong-database":
+                    receipt["target"]["database"] = "another_db"
+                else:
+                    del private["P4_05_SQUARE_ACCESS_TOKEN"]
+                with self.assertRaisesRegex(ValueError, error):
+                    p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(list(self.attempt.iterdir()), [])
+
+    def test_p4_05_refuses_enabled_schedules_without_changing_them(self):
+        self.enqueue(self.project(enabled=True))
+        plan, receipt, private = self.p4_05_inputs()
+        with self.assertRaisesRegex(ValueError, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED"):
+            p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        self.assertTrue(self.calls)
+        self.assertTrue(all(call["method"] == "GET" for call in self.calls))
+
+    def test_p4_05_uncertain_create_is_not_retried_and_provider_errors_are_sanitized(self):
+        self.enqueue(self.project())
+        self.responses.append((500, b"fixture-square-token", {}))
+        plan, receipt, private = self.p4_05_inputs()
+        with self.assertRaisesRegex(ValueError, "VERCEL_REQUEST_FAILED_REQUIRES_REVIEW"):
+            p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        combined = "".join(path.read_text() for path in self.attempt.iterdir())
+        self.assertNotIn("fixture-square-token", combined)
+        self.assertEqual(sum(call["method"] == "POST" for call in self.calls), 1)
+
+    def test_p4_05_rejects_candidate_alias_and_preserves_deployment_id(self):
+        found = self.p4_05_deployment()
+        found["alias"] = ["staging.lashher.com"]
+        self.enqueue(self.project(), {"id": "dpl_fixture"}, found)
+        plan, receipt, private = self.p4_05_inputs()
+        with self.assertRaisesRegex(ValueError, "VERCEL_QUALIFICATION_DEPLOYMENT_ALIAS_UNVERIFIED"):
+            p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        result = json.loads((self.attempt / "p4-05-frontend-build-outcome.json").read_text())
+        self.assertEqual(result["deploymentId"], "dpl_fixture")
+        self.assertFalse(result["promotionAuthorized"])
+        self.assertEqual(sum(call["method"] == "POST" for call in self.calls), 1)
+
+    def test_p4_05_review_checks_the_pinned_job_and_lists_keys_without_credentials(self):
+        plan, receipt, _private = self.p4_05_inputs()
+        for key in ("migrationImageDigest", "sqlArtifactSha256", "schemaBaselineSha256", "contractManifestSha256"):
+            receipt[key] = "sha256:" + "b" * 64
+        job = {**receipt, "target": {**receipt["target"], "runtimeRole": "candidate_role", "approvedPendingTags": []}}
+        plan_file = self.attempt / "binding-review.json"
+        receipt_file = self.attempt / "job-outcome.json"
+        plan_file.write_text(json.dumps(plan))
+        receipt_file.write_text(json.dumps(receipt))
+        with patch.object(p4_05_candidate.migrate, "make_plan", return_value=(self.release, {"frontend": {"job": job}})):
+            _release, _plan, _receipt, summary = p4_05_candidate._load_review(self.attempt, plan_file, receipt_file)
+            self.assertEqual(summary["status"], "P4_05_BINDING_PLAN")
+            self.assertEqual(summary["operatorEnvironmentKeys"], sorted(p4_05_candidate.PRIVATE_INPUTS.values()))
+            self.assertIn("COURSE_STRIPE_TAX_SECRET_KEY", summary["bindingKeys"])
+            self.assertNotIn("Synthetic tax fixture", json.dumps(summary))
+            job["target"]["approvedPendingTags"] = ["pending"]
+            with self.assertRaisesRegex(ValueError, "P4_05_PINNED_FRONTEND_VERIFICATION_REQUIRED"):
+                p4_05_candidate._load_review(self.attempt, plan_file, receipt_file)
+            shared = p4_05_candidate.migrate.read_json(Path(__file__).parents[2] / "staging", "first-release.json")
+            plan["database"]["runtimeHost"] = shared["frontendDatabase"]["pooledHost"]
+            plan_file.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError, "P4_05_SHARED_STAGING_TARGET_REFUSED"):
+                p4_05_candidate._load_review(self.attempt, plan_file, receipt_file)
+        self.assertEqual(self.calls, [])
 
     def staged(self):
         value = {"status": "FRONTEND_STAGED", "readyState": "READY", "environment": "staging",
