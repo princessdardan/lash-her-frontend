@@ -429,6 +429,7 @@ export interface TLandingPage {
     heading?: string;
     description?: string;
     submitLabel?: string;
+    mobileDockLabel?: string;
     successMessage?: string;
     privacyPolicySlug?: string;
   };

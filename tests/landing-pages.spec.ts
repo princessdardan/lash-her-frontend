@@ -20,7 +20,10 @@ test.beforeAll(async () => {
           _id: 'landing.founding', title: 'Founding Membership', slug: 'founding-membership',
           eyebrow: 'A new chapter', heading: 'Become a founding member',
           description: 'Our new salon is coming. Join the founding membership interest list.',
+          heroImage: { asset: { _ref: 'image-833f8325d349228c449050cb9f93d9452ca47ecc-1200x800-jpg' }, alt: 'Salon preview' },
           signup: { heading: 'Join the founding list', submitLabel: 'Join the founding list',
+            description: 'Join our email list to get opening updates and learn more about founding membership.',
+            mobileDockLabel: new URLSearchParams(location.search).get('dockLabel'),
             successMessage: "You're on the founding list.", privacyPolicySlug: 'privacy' },
           body: [{ _type: 'block', _key: 'benefits', style: 'normal',
             children: [{ _type: 'span', _key: 'text', text: 'Hear about membership benefits and opening updates.', marks: [] }] }],
@@ -85,23 +88,115 @@ test.beforeAll(async () => {
   ).css;
 });
 
-async function open(page: Page) {
+async function open(page: Page, dockLabel?: string) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("http://landing.test/**", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<style>${css}</style><main id="root"></main>`,
+      body: `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><main id="root"></main>`,
     }),
   );
-  await page.goto(
+  await page.route("https://cdn.sanity.io/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><path fill="#e8e2e9" d="M0 0h3v2H0z"/></svg>',
+    }),
+  );
+  const url = new URL(
     "http://landing.test/founding-membership?utm_campaign=salon-opening",
   );
+  if (dockLabel !== undefined) url.searchParams.set("dockLabel", dockLabel);
+  await page.goto(url.toString());
   await page.addScriptTag({ content: bundle });
   await expect.poll(() => errors).toEqual([]);
   await expect(
     page.getByRole("heading", { name: "Become a founding member" }),
   ).toBeVisible();
+}
+
+test("desktop editorial content shares a column beside a sticky, scrollable signup", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 510 });
+  await open(page);
+
+  const heading = await page.getByRole("heading", { level: 1 }).boundingBox();
+  const intro = await page
+    .getByText("Our new salon is coming.", { exact: false })
+    .boundingBox();
+  const image = await page
+    .getByRole("img", { name: "Salon preview" })
+    .boundingBox();
+  const details = await page
+    .getByText("Hear about membership benefits and opening updates.")
+    .boundingBox();
+  const form = page.locator("#email-signup");
+  const formBox = await form.boundingBox();
+  if (!heading || !intro || !image || !details || !formBox) {
+    throw new Error("Landing page content is missing");
+  }
+
+  expect(image.x).toBe(heading.x);
+  expect(image.width).toBe(heading.width);
+  expect(intro.width).toBe(heading.width);
+  expect(details.width).toBe(heading.width);
+  expect(formBox.x).toBeGreaterThan(image.x + image.width);
+  await expect(page.getByRole("link", { name: "Sign Up!" })).toBeHidden();
+
+  await page.evaluate(() => window.scrollTo(0, 170));
+  await expect.poll(async () => (await form.boundingBox())?.y).toBe(128);
+  await form.hover();
+  await page.mouse.wheel(0, 150);
+  await expect
+    .poll(() => form.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(170);
+  const submit = page.getByRole("button", { name: "Join the founding list" });
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeInViewport();
+});
+
+for (const dockLabel of [undefined, "  ", "Get opening updates"]) {
+  test(`mobile dock jumps to the signup after the page content (${JSON.stringify(dockLabel) ?? "unset"})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 550 });
+    await open(page, dockLabel);
+
+    const details = await page
+      .getByText("Hear about membership benefits and opening updates.")
+      .boundingBox();
+    const form = page.locator("#email-signup");
+    const formBox = await form.boundingBox();
+    const dock = page.getByRole("link", {
+      name: dockLabel?.trim() || "Sign Up!",
+      exact: true,
+    });
+    const dockBox = await dock.boundingBox();
+    if (!details || !formBox || !dockBox) {
+      throw new Error("Landing page content is missing");
+    }
+
+    expect(formBox.y).toBeGreaterThan(details.y + details.height);
+    expect(dockBox.y + dockBox.height).toBeGreaterThan(500);
+    expect(dockBox.y + dockBox.height).toBeLessThan(550);
+    await expect(dock).toHaveAttribute("href", "#email-signup");
+    await dock.click();
+    await expect(page).toHaveURL(/#email-signup$/);
+    await expect(form).toBeFocused();
+    await expect(
+      page.getByRole("heading", { name: "Join the founding list" }),
+    ).toBeInViewport();
+    const dockAfterJump = await dock.boundingBox();
+    const formAfterJump = await form.boundingBox();
+    if (!dockAfterJump || !formAfterJump) {
+      throw new Error("Landing page content is missing after the jump");
+    }
+    expect(dockAfterJump.y + dockAfterJump.height).toBeLessThan(
+      formAfterJump.y,
+    );
+  });
 }
 
 for (const width of [375, 1440]) {

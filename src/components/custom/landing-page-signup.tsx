@@ -57,7 +57,8 @@ export function LandingPageSignup({
     <section
       id="email-signup"
       aria-labelledby="signup-heading"
-      className="rounded-[24px] border border-lh-line bg-lh-white p-6 md:p-10"
+      tabIndex={0}
+      className="scroll-mt-32 rounded-[24px] border border-lh-line bg-lh-white p-6 wrap-anywhere focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lh-primary sm:p-8 lg:sticky lg:top-32 lg:max-h-[calc(100dvh-9.5rem)] lg:overflow-y-auto"
     >
       <h2
         id="signup-heading"
@@ -187,7 +188,11 @@ export function LandingPageSignup({
               </p>
             ) : null}
           </div>
-          <Button type="submit" disabled={pending} className="w-full">
+          <Button
+            type="submit"
+            disabled={pending}
+            className="h-auto min-h-9 w-full whitespace-normal wrap-anywhere text-center"
+          >
             {pending ? "Joining…" : settings?.submitLabel || "Join the list"}
           </Button>
           {settings?.privacyPolicySlug ? (

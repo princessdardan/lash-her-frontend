@@ -4,7 +4,7 @@ After the application and Studio schema are deployed, open **Studio â†’ Pages â†
 
 1. Set the page title, headline, introduction, and URL slug. For example, `founding-membership` publishes at `/founding-membership`. Slugs must be unique among landing pages; existing website sections are reserved.
 2. Optionally add an image, additional details, and search/sharing settings.
-3. In **Email Signup**, edit the form heading, description, button label, and confirmation message. Select the privacy policy to display its link below the form.
+3. In **Email Signup**, edit the form heading, description, button label, and confirmation message. Set **Mobile Dock Button Label** to customize the floating link to the form, or leave it blank to use **Sign Up!**. Select the privacy policy to display its link below the form.
 4. Preview, then publish. Share the full URL; creating a landing page does not add it to site navigation. Add a link through **Navigation Menu** if needed.
 
 The page requires a full name, email address, and phone number. Name and phone sync to HighLevel with the email address. The initially unchecked consent checkbox applies to marketing emails. It does not charge for or activate a membership. The standard site signup popup is suppressed on published landing-page URLs. The landing form works independently of that popup's enabled state and does not issue its discount offer.
