@@ -8,7 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { currentCampaignAttribution } from "@/lib/highlevel/attribution";
 import { EMAIL_CONSENT_TEXT } from "@/lib/highlevel/contract";
-import type { LandingPageSignupResult } from "@/lib/landing-pages/contract";
+import {
+  LANDING_PAGE_NAME_MAX_LENGTH,
+  LANDING_PAGE_PHONE_MAX_LENGTH,
+  type LandingPageSignupResult,
+} from "@/lib/landing-pages/contract";
 import type { TLandingPage } from "@/types";
 
 export function LandingPageSignup({
@@ -31,7 +35,9 @@ export function LandingPageSignup({
       setResult(
         await submitLandingPageSignup({
           slug,
+          name: String(formData.get("name") ?? ""),
           email: String(formData.get("email") ?? ""),
+          phone: String(formData.get("phone") ?? ""),
           company: String(formData.get("company") ?? ""),
           marketingConsent: formData.get("marketingConsent") === "on",
           attribution: currentCampaignAttribution(),
@@ -89,6 +95,26 @@ export function LandingPageSignup({
             </p>
           ) : null}
           <Field>
+            <FieldLabel htmlFor="landing-name">Full name</FieldLabel>
+            <Input
+              id="landing-name"
+              name="name"
+              autoComplete="name"
+              required
+              maxLength={LANDING_PAGE_NAME_MAX_LENGTH}
+              disabled={pending}
+              aria-invalid={!!result?.fieldErrors?.name}
+              aria-describedby={
+                result?.fieldErrors?.name ? "landing-name-error" : undefined
+              }
+            />
+            {result?.fieldErrors?.name ? (
+              <FieldError id="landing-name-error" role="alert">
+                {result.fieldErrors.name}
+              </FieldError>
+            ) : null}
+          </Field>
+          <Field>
             <FieldLabel htmlFor="landing-email">Email address</FieldLabel>
             <Input
               id="landing-email"
@@ -106,6 +132,27 @@ export function LandingPageSignup({
             {result?.fieldErrors?.email ? (
               <FieldError id="landing-email-error" role="alert">
                 {result.fieldErrors.email}
+              </FieldError>
+            ) : null}
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="landing-phone">Phone number</FieldLabel>
+            <Input
+              id="landing-phone"
+              name="phone"
+              type="tel"
+              autoComplete="tel"
+              required
+              maxLength={LANDING_PAGE_PHONE_MAX_LENGTH}
+              disabled={pending}
+              aria-invalid={!!result?.fieldErrors?.phone}
+              aria-describedby={
+                result?.fieldErrors?.phone ? "landing-phone-error" : undefined
+              }
+            />
+            {result?.fieldErrors?.phone ? (
+              <FieldError id="landing-phone-error" role="alert">
+                {result.fieldErrors.phone}
               </FieldError>
             ) : null}
           </Field>

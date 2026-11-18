@@ -105,7 +105,7 @@ async function open(page: Page) {
 }
 
 for (const width of [375, 1440]) {
-  test(`landing signup validates consent, preserves attribution, and confirms success at ${width}px`, async ({
+  test(`landing signup requires contact details and consent, then submits with attribution at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -128,13 +128,25 @@ for (const width of [375, 1440]) {
     expect(requests).toHaveLength(0);
     await page.getByRole("checkbox").check();
     await submit.click();
+    expect(requests).toHaveLength(0);
+    await page.getByLabel("Full name").fill("Jamie O’Neil");
+    await submit.click();
+    expect(requests).toHaveLength(0);
+    await page.getByLabel("Phone number").fill("(416) 555-0123");
+    await page.getByRole("checkbox").uncheck();
+    await submit.click();
+    expect(requests).toHaveLength(0);
+    await page.getByRole("checkbox").check();
+    await submit.click();
     await expect(page.getByRole("status")).toHaveText(
       "You're on the founding list.",
     );
     expect(requests).toEqual([
       {
         slug: "founding-membership",
+        name: "Jamie O’Neil",
         email: "person@example.com",
+        phone: "(416) 555-0123",
         company: "",
         marketingConsent: true,
         attribution: { utm_campaign: "salon-opening" },
@@ -160,12 +172,14 @@ test("server and connection errors leave the form usable for retry", async ({
       return route.fulfill({
         json: {
           success: false,
-          fieldErrors: { email: "Please enter a valid email address." },
+          fieldErrors: { phone: "Enter a valid phone number." },
         },
       });
     await route.fulfill({ json: { success: true } });
   });
+  await page.getByLabel("Full name").fill("Jamie O’Neil");
   await page.getByLabel("Email address").fill("person@example.com");
+  await page.getByLabel("Phone number").fill("123");
   await page.getByRole("checkbox").check();
   const submit = page.getByRole("button", { name: "Join the founding list" });
   await submit.click();
@@ -173,8 +187,9 @@ test("server and connection errors leave the form usable for retry", async ({
   await expect(submit).toBeEnabled();
   await submit.click();
   await expect(page.getByRole("alert")).toHaveText(
-    "Please enter a valid email address.",
+    "Enter a valid phone number.",
   );
+  await page.getByLabel("Phone number").fill("(416) 555-0123");
   await submit.click();
   await expect(page.getByRole("status")).toBeVisible();
 });

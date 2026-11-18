@@ -9,6 +9,7 @@ import {
   recordContactPopupSubmission,
 } from "@/lib/marketing-contact/marketing-contact-store";
 import { claimCustomerEmailById } from "@/lib/commerce/customer-email-outbox";
+import { processLandingPageSignup } from "@/lib/landing-pages/signup";
 import { recordCheckoutConsent } from "./checkout-consent";
 import {
   channelConsent,
@@ -515,6 +516,65 @@ test(
       await channelConsent(address, "sms", "+14165550123"),
       "unknown",
     );
+  },
+);
+
+test(
+  "landing signup sends the full name and normalized phone to HighLevel with email-only consent",
+  { skip },
+  async () => {
+    const address = email("landing-signup");
+    const result = await processLandingPageSignup(
+      {
+        slug: "founding-membership",
+        name: " Jamie O’Neil ",
+        email: address,
+        phone: "(416) 555-0123",
+        marketingConsent: true,
+      },
+      {
+        getPage: async (slug) => ({
+          _id: "landing.founding",
+          title: "Founding Membership",
+          slug,
+        }),
+        record: recordContactPopupSubmission,
+        isRateLimited: () => false,
+        notifyAdmin: async () => {},
+        sendWelcome: async () => {},
+        logError: () => {},
+      },
+    );
+    assert.deepEqual(result, { success: true });
+    const [submission] = (
+      await getPrivateDb().execute<{ id: string }>(
+        sql`select id from marketing_contact_submissions where email_normalized = ${address}`,
+      )
+    ).rows;
+    const job = await submissionJob(submission.id);
+    assert.ok(job);
+
+    // Match a contact that signed up before the additional fields were required.
+    const remote = { id: randomUUID(), locationId: location, email: address };
+    const updates: unknown[] = [];
+    const api: CrmRequest = async <T>(
+      path: string,
+      options?: Parameters<CrmRequest>[1],
+    ) => {
+      if (path.startsWith("/contacts/lookup"))
+        return { contacts: path.includes("email=") ? [remote] : [] } as T;
+      if (path === `/contacts/${remote.id}` && options?.method === "PUT")
+        updates.push(options.body);
+      return { contact: remote } as T;
+    };
+    assert.equal(await syncJob(job, api), "succeeded");
+    assert.equal(updates.length, 1);
+    assert.partialDeepStrictEqual(updates[0], {
+      name: "Jamie O’Neil",
+      phone: "+14165550123",
+    });
+    assert.equal(await channelConsent(address, "email", address), "opted_in");
+    assert.equal(await channelConsent(address, "sms", "+14165550123"), "unknown");
   },
 );
 
