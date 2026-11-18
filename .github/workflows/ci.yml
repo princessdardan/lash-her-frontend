@@ -592,7 +592,7 @@ jobs:
           SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
   browser-tests:
     name: browser (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Each browser owns its server and database. Keep one worker per job because
     # the calendar and commerce scenarios mutate shared fixtures.
