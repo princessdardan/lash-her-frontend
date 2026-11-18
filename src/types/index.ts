@@ -743,6 +743,7 @@ export interface TContactPopupSettings {
   privacyText?: string;
   privacyLinkLabel?: string;
   privacyLinkHref?: string;
+  reopenLabel?: string;
   submitLabel?: string;
   successMessage?: string;
   cookieExpiryDays?: number;

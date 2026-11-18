@@ -446,6 +446,7 @@ async function getGlobalData(): Promise<TGlobalSettings | null> {
       privacyText,
       privacyLinkLabel,
       privacyLinkHref,
+      reopenLabel,
       submitLabel,
       successMessage,
       cookieExpiryDays

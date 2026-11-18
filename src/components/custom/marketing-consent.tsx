@@ -12,17 +12,19 @@ export function MarketingConsent({
   disabled = false,
   includeEmail = true,
   includePhone = false,
+  initialValue,
   onChange,
 }: {
   id: string;
   disabled?: boolean;
   includeEmail?: boolean;
   includePhone?: boolean;
+  initialValue?: CheckoutMarketing;
   onChange?: (value: CheckoutMarketing) => void;
 }) {
-  const [sms, setSms] = useState(false);
-  const [email, setEmail] = useState(false);
-  const [phone, setPhone] = useState("");
+  const [sms, setSms] = useState(initialValue?.smsMarketingConsent ?? false);
+  const [email, setEmail] = useState(initialValue?.marketingConsent ?? false);
+  const [phone, setPhone] = useState(initialValue?.phone ?? "");
   const emit = (values: CheckoutMarketing) =>
     onChange?.({
       marketingConsent: email,
