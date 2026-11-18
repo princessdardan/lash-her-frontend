@@ -60,6 +60,7 @@ function fixture(t) {
     status: "PUBLISHED_APPLICATION_ROLLBACK_AND_DURABLE_RECOVERY_PASS", contractPhase: "p2",
     currentRelease: candidate.releaseId, rollbackRelease: published.releaseId, frontendSource: candidate.sources.frontend.commit,
     cleanupPassed: true, actualStagingChanged: false, applicationVersionOverlapped: false, runnerSha256: testSha,
+    productionChanged: false, nativeSchedulerVerified: false, vmRecreationVerified: false,
     images: images(candidate), rollbackImages: images(published),
     rounds: ["current", "compatible-rollback", "restore-current"].map((phase, index) => {
       const release = index === 1 ? published : candidate;
@@ -70,6 +71,7 @@ function fixture(t) {
         ["community-api", "communityRuntime"], ["community-worker", "communityRuntime"],
       ].map(([service, key], number) => ({service, containerId: String(number).repeat(64), reference: release.artifacts[key].image}));
       return { phase, releaseId: release.releaseId, preservedPriorBusinessRows: true, recoveredPendingEvents: index === 0 ? 0 : 2,
+        records: Array.from({ length: 15 }, (_, id) => ({ name: "fixture-" + id, passed: true })),
         runningImages, gracefulStop: { processes: runningImages.map(instance => ({...instance, running: false, exitCode: 0, oomKilled: false})) } };
     }),
   };

@@ -37,6 +37,8 @@ function platformRoundsAgree(report, current, previous) {
     report.contractPhase === "p2" && report.currentRelease === current.releaseId &&
     report.rollbackRelease === previous.releaseId && report.frontendSource === current.sources.frontend.commit &&
     report.cleanupPassed === true && report.actualStagingChanged === false &&
+    report.productionChanged === false && report.nativeSchedulerVerified === false &&
+    report.vmRecreationVerified === false &&
     report.applicationVersionOverlapped === false && sameImages(report.images, current) &&
     sameImages(report.rollbackImages, previous) && report.rounds?.length === phases.length &&
     report.rounds.every((round, index) => {
@@ -46,6 +48,8 @@ function platformRoundsAgree(report, current, previous) {
       const stopped = round.gracefulStop?.processes;
       return round.phase === phases[index] && round.releaseId === release.releaseId &&
         round.preservedPriorBusinessRows === true && (index === 0 || round.recoveredPendingEvents === 2) &&
+        round.records?.length === 15 && new Set(round.records.map(check => check.name)).size === 15 &&
+        round.records.every(check => check.passed === true) &&
         running?.length === services.length && stopped?.length === services.length &&
         new Set(running.map(({ containerId }) => containerId)).size === services.length &&
         services.every(([service, artifact]) => {

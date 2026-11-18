@@ -383,7 +383,10 @@
           "Statement": [
             {
               "Effect": "Allow",
-              "Action": "sts:AssumeRole",
+              "Action": [
+                "sts:AssumeRole",
+                "sts:SetSourceIdentity"
+              ],
               "Principal": {
                 "AWS": {
                   "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
@@ -438,7 +441,10 @@
           "Statement": [
             {
               "Effect": "Allow",
-              "Action": "sts:AssumeRole",
+              "Action": [
+                "sts:AssumeRole",
+                "sts:SetSourceIdentity"
+              ],
               "Principal": {
                 "AWS": {
                   "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"

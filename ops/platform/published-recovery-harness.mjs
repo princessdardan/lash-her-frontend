@@ -115,10 +115,11 @@ try {
     alias: { "server-only": join(root, "node_modules/server-only/empty.js") },
     banner: { js: 'import { createRequire as harnessCreateRequire } from "node:module"; const require = harnessCreateRequire(import.meta.url);' } });
   const database = (name) => ({ DATABASE_TARGET: "test", TEST_DATABASE_URL: `postgresql://postgres:${password}@postgres:5432/lash_her_${name}_p1_test?sslmode=disable` });
+  const muxEnvironment = "owned-fixture";
   const muxPair = await generateKeyPair("RS256", { extractable: true });
   envFile("course-api.env", { ...database("course"), ...courseHarnessAuth(phase, { frontendSecret, adminSecret: firstPartySecret, learnerSecret }),
     COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret,
-    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: "owned-fixture", MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
+    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: muxEnvironment, MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
     MUX_SIGNING_KEY_ID: "isolated-fixture", MUX_SIGNING_PRIVATE_KEY: Buffer.from(await exportPKCS8(muxPair.privateKey)).toString("base64") });
   envFile("course-publisher.env", { ...database("course"), COMMUNITY_ENROLLMENT_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret });
   envFile("course-snapshot.env", database("course"));
@@ -126,6 +127,7 @@ try {
   envFile("community-api.env", { ...database("community"), COURSE_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret, COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("community-worker.env", { ...database("community"), COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_CONTRACT_PHASE: phase, HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret,
+    ...(phase === "p2" ? { HARNESS_MUX_ENVIRONMENT_ID: muxEnvironment } : {}),
     HARNESS_FIRST_PARTY_SECRET: firstPartySecret, HARNESS_COURSE_ADMIN_SECRET: firstPartySecret, OWNED_RECOVERY_FIXTURE: "1", NODE_ENV: "test" });
   envFile("postgres.env", { POSTGRES_PASSWORD: password });
   const mounts = `      - ${directory}:/test:ro\n      - ${output}:/test/out:rw\n`;

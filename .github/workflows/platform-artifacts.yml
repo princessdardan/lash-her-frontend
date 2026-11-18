@@ -561,7 +561,10 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: candidate-harness-failure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/platform-evidence/container-harness.json
+          path: |
+            ${{ runner.temp }}/platform-evidence/container-harness.json
+            ${{ runner.temp }}/platform-evidence/community-media-rehearsal.txt
+            ${{ runner.temp }}/platform-evidence/media-platform-recovery.json
           if-no-files-found: ignore
           retention-days: 3
       - name: Recheck source revisions and CI after the harness
