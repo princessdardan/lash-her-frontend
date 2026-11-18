@@ -262,8 +262,13 @@ try {
     compose(["stop", "-t", "30", ...services]);
     const statuses = services.map((service) => {
       const id = compose(["ps", "-a", "-q", service], { stdio: ["ignore", "pipe", log] }).stdout.toString().trim();
-      const state = JSON.parse(run("docker", ["inspect", "--format", "{{json .State}}", id], { stdio: ["ignore", "pipe", log] }).stdout);
-      return { service, containerId: id, running: state.Running, exitCode: state.ExitCode, oomKilled: state.OOMKilled,
+      const stopped = JSON.parse(run("docker", ["inspect", "--format",
+        '{"reference":{{json .Config.Image}},"state":{{json .State}}}', id], { stdio: ["ignore", "pipe", log] }).stdout);
+      const state = stopped.state;
+      const running = runningImages.find(instance => instance.service === service);
+      if (stopped.reference !== running.reference || (service !== "gateway" && id !== running.containerId))
+        throw new Error("Published stopping image differs from the reviewed round");
+      return { service, containerId: id, reference: stopped.reference, running: state.Running, exitCode: state.ExitCode, oomKilled: state.OOMKilled,
         startedAt: state.StartedAt, finishedAt: state.FinishedAt };
     });
     rounds.at(-1).gracefulStop = { durationMs: Date.now() - beforeStop, processes: statuses };

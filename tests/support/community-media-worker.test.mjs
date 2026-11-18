@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { test } from "node:test";
@@ -16,6 +16,8 @@ const memberKey = "synthetic-isolated-community-workload-member-key";
 const dbName = "community_media_worker_test";
 const dbPassword = "isolated-workload-postgres";
 const memoryLimit = 384 * 1024 * 1024;
+const restoreFence = "ops/platform/community-media-restore-fence.sql";
+const overlay = "ops/platform/compose.community-media.yaml";
 const authority = `
   import { createServer } from "node:http";
   createServer(async (request, response) => {
@@ -164,6 +166,12 @@ test(
     if (publishedImage) requirePublishedRuntime(publishedImage);
     if (previousImage) requirePublishedRuntime(previousImage);
     assert.notEqual(image, previousImage);
+    const evidencePath = process.env.COMMUNITY_MEDIA_RECOVERY_EVIDENCE;
+    if (evidencePath) {
+      assert.ok(
+        evidencePath.startsWith("/") && publishedImage && previousImage,
+      );
+    }
     const pgContainer = name + "-postgres";
     const storeContainer = name + "-storage";
     const apiContainer = name + "-api";
@@ -175,6 +183,7 @@ test(
     let bindings;
     let networkCreated = false;
     let imageBuilt = false;
+    let evidence;
 
     const start = (container, ...args) => {
       containers.push(container);
@@ -799,6 +808,20 @@ test(
         "Killed the worker after the derivative write. Its replacement waited for the 30s lease and recovered the same object key.",
       );
 
+      const backup = "/tmp/owned-community-pre-deletion.dump";
+      if (bindings) {
+        docker(
+          "exec",
+          pgContainer,
+          "pg_dump",
+          "-U",
+          "postgres",
+          "-Fc",
+          "-f",
+          backup,
+          dbName,
+        );
+      }
       await fixture(`fail-delete?key=${derivative}`);
       await call(owner, `/v1/media/${interrupted}`, 200, "DELETE");
       const scheduledCleanup = await until(
@@ -892,26 +915,29 @@ test(
           "false",
         );
 
-        // Re-create the media row's stale pre-delete metadata independently
-        // of S3, then replay the authoritative deletion before restarting.
+        // Restore the synthetic PostgreSQL snapshot while both runtimes are
+        // stopped. The object store still reflects the later deletion.
+        docker(
+          "exec",
+          pgContainer,
+          "pg_restore",
+          "-U",
+          "postgres",
+          "--dbname",
+          dbName,
+          "--clean",
+          "--if-exists",
+          "--exit-on-error",
+          "--single-transaction",
+          backup,
+        );
+        assert.equal((await asset(interrupted)).status, "ready");
+        assert.ok(
+          !(await objects()).some((object) => object.key === derivative),
+        );
         const restore = await pool.connect();
         try {
           await restore.query("begin");
-          await restore.query(
-            `UPDATE community_discussion_media SET status='ready', checksum=$2,
-                 etag=$3, width=$4, height=$5, derivative_bytes=$6,
-                 original_removed_at=$7, derivative_removed_at=NULL
-               WHERE id=$1`,
-            [
-              interrupted,
-              recovered.checksum,
-              recovered.etag,
-              recovered.width,
-              recovered.height,
-              recovered.derivative_bytes,
-              recovered.original_removed_at,
-            ],
-          );
           await restore.query(
             "CREATE TEMP TABLE community_media_deleted_assets (id uuid PRIMARY KEY) ON COMMIT DROP",
           );
@@ -919,10 +945,7 @@ test(
             "INSERT INTO community_media_deleted_assets VALUES ($1)",
             [interrupted],
           );
-          const fence = readFileSync(
-            "ops/platform/community-media-restore-fence.sql",
-            "utf8",
-          );
+          const fence = readFileSync(restoreFence, "utf8");
           assert.equal((await restore.query(fence)).rowCount, 1);
           assert.equal((await restore.query(fence)).rowCount, 0);
           await restore.query("commit");
@@ -933,8 +956,10 @@ test(
           restore.release();
         }
 
-        startBound(apiContainer + "-returned", "community-api");
-        startBound(name + "-worker-returned", "community-media-worker");
+        const returnedApi = apiContainer + "-returned";
+        const returnedWorker = name + "-worker-returned";
+        startBound(returnedApi, "community-api");
+        startBound(returnedWorker, "community-media-worker");
         await apiReady();
         await ready();
         await call(owner, `/v1/media/${interrupted}/view`, 404);
@@ -952,8 +977,55 @@ test(
             .split("/")[0],
           renewed.api,
         );
+        if (evidencePath) {
+          const localId = docker(
+            "image",
+            "inspect",
+            "--format",
+            "{{.Id}}",
+            publishedImage,
+          );
+          for (const container of [
+            apiContainer,
+            workers[1],
+            returnedApi,
+            returnedWorker,
+          ])
+            assert.equal(
+              docker("inspect", "--format", "{{.Image}}", container),
+              localId,
+            );
+          assert.equal(sampleWorker(returnedWorker).arch, "x64");
+          const hash = (file) =>
+            "sha256:" +
+            createHash("sha256").update(readFileSync(file)).digest("hex");
+          evidence = {
+            version: 1,
+            status: "ISOLATED_COMMUNITY_MEDIA_ROLLBACK_AND_RESTORE_PASS",
+            currentRuntime: publishedImage,
+            predecessorRuntime: previousImage,
+            communitySourceCommit: execFileSync(
+              "git",
+              ["-C", checkout, "rev-parse", "HEAD"],
+              { encoding: "utf8", timeout: 10_000 },
+            ).trim(),
+            runnerSha256: hash("tests/support/community-media-worker.test.mjs"),
+            overlaySha256: hash(overlay),
+            restoreFenceSha256: hash(restoreFence),
+            platform: "linux/amd64",
+            postgresVersion: databaseVersion[0].server_version,
+            applicationVersionOverlapped: false,
+            mediaOffViewDenied: true,
+            renewedSessionsUsed: true,
+            preDeletionDatabaseSnapshotRestored: true,
+            deletionReplayedIdempotently: true,
+            deletedObjectAbsent: true,
+            unrelatedObjectViewable: true,
+            trafficAuthorized: false,
+          };
+        }
         t.diagnostic(
-          "Media-off rollback and return used non-overlapping services, current sessions, and preserved permanent deletion after stale metadata replay.",
+          "Media-off rollback and return used non-overlapping services and current sessions. Deletion replay preserved permanent deletion after a PostgreSQL backup restore.",
         );
       }
     } catch (error) {
@@ -982,6 +1054,25 @@ test(
         if (networkCreated) docker("network", "rm", name);
         if (imageBuilt) docker("image", "rm", image);
       }
+    }
+    if (evidencePath) {
+      assert.ok(evidence);
+      assert.equal(
+        docker(
+          "ps",
+          "-a",
+          "--filter",
+          `name=${name}`,
+          "--format",
+          "{{.Names}}",
+        ),
+        "",
+      );
+      writeFileSync(
+        evidencePath,
+        JSON.stringify({ ...evidence, cleanupPassed: true }) + "\n",
+        { mode: 0o600, flag: "wx" },
+      );
     }
   },
 );

@@ -1,0 +1,530 @@
+{
+  "version": 3,
+  "releaseId": "p1-43537306815-1",
+  "environment": "staging",
+  "sources": {
+    "frontend": {
+      "repository": "https://github.com/princessdardan/lash-her-frontend.git",
+      "repositoryId": "1114139712",
+      "commit": "e8af1f8e1ddbb641e22801da1db52fd6c44cfcac",
+      "requiredChecks": "passed",
+      "branch": "staging",
+      "branchProtected": false,
+      "sourceProtection": "operator-dispatch-and-ci",
+      "ciRunId": "43535598339",
+      "ciAttempt": 1,
+      "ciWorkflowSha256": "sha256:6fef83fe27d9261342c9fc7ff60d2f4f58f19fb828abe49dbe056dce4aed7a1e",
+      "ciUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/43535598339",
+      "qualificationTargetProfile": {
+        "version": 1,
+        "id": "staging-current",
+        "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+      }
+    },
+    "course": {
+      "repository": "https://github.com/princessdardan/lash-her-course-api.git",
+      "repositoryId": "1296925924",
+      "commit": "a408c1dea9e86bec60577810e2240f218f8d23a3",
+      "requiredChecks": "passed",
+      "branch": "main",
+      "branchProtected": false,
+      "sourceProtection": "operator-dispatch-and-ci",
+      "ciRunId": "43370334566",
+      "ciAttempt": 1,
+      "ciWorkflowSha256": "sha256:ab64a235cccf6b3f1a1a5ed20ad527a5d4268da9c3ea6aef17e612f2d3d46424",
+      "ciUrl": "https://github.com/princessdardan/lash-her-course-api/actions/runs/43370334566",
+      "qualificationTargetProfile": {
+        "version": 1,
+        "id": "staging-current",
+        "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+      }
+    },
+    "community": {
+      "repository": "https://github.com/princessdardan/lash-her-community-api.git",
+      "repositoryId": "1332194577",
+      "commit": "8141533249f6c59a59e67e8663907c2f108c1d34",
+      "requiredChecks": "passed",
+      "branch": "main",
+      "branchProtected": false,
+      "sourceProtection": "operator-dispatch-and-ci",
+      "ciRunId": "42855683826",
+      "ciAttempt": 1,
+      "ciWorkflowSha256": "sha256:6c8557f749e3973943210a3d7c0b4573f35a698e67cd24ce3e53b8c608f29108",
+      "ciUrl": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42855683826",
+      "qualificationTargetProfile": {
+        "version": 1,
+        "id": "staging-current",
+        "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+      }
+    }
+  },
+  "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+  "sourceApproval": {
+    "mode": "single-operator-dispatch",
+    "operatorGithubUserId": "8996309",
+    "runId": "43537306815",
+    "runAttempt": 1,
+    "verifiedAt": "2026-11-14T01:06:32.019Z",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    }
+  },
+  "artifacts": {
+    "gateway": {
+      "image": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:cf9558cc071ef47b87b718113b872faebaaebc0c5f05780c1c611bb3c76a87c3",
+      "scan": "passed",
+      "sbomSha256": "sha256:fec966a553f01f7ac82bf0c7648e7e9934c695526ffbfa7a8f47ac80902fb6aa",
+      "provenanceSha256": "sha256:1c0238e9582df48e404d2b555e360ae9f5680a580b288fa396b135defce63c80",
+      "builderProvenanceSha256": "sha256:6e5019d213b127852743f2633ece8f01e8713a59ff511c7dd97b9920ca41c56c",
+      "verificationSha256": "sha256:917400af86bf4d3ac3abfd9394dc9cad5b53b6700ee1900b4eab272e76f35717",
+      "platform": "linux/amd64",
+      "localImageId": "sha256:a94a446aaac3bbe2fff8e3f147ddd33d44d27fce26e7d86c6ff93008bed3ceec"
+    },
+    "frontendMigration": {
+      "image": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:3389c7990712bf5b866f01e6adeb58abaf4d685a0a9bdfaa754529cc4aa40fa8",
+      "scan": "passed",
+      "sbomSha256": "sha256:f8acdeca35c47755a59f919c7c08c95358fda3752791392b7e7b983f04e206e0",
+      "provenanceSha256": "sha256:873d02049dd46b84513f5d748815be0cc1703fe104c72b61ce9ec2f4e4bb220a",
+      "builderProvenanceSha256": "sha256:1c63d231b19369dda92e2e241add7c6ceee00b5b5eb50740d28e4223e3f419a4",
+      "verificationSha256": "sha256:f039608118beada1fff5ecf8e381dbf73aded0457f49369a984ae6960654cd28",
+      "platform": "linux/amd64",
+      "localImageId": "sha256:29307d2f9ba5fd4f1ae62b303081d81b7409228be438419f0f24e528c5c3d60d"
+    },
+    "courseRuntime": {
+      "image": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:314a282be38989625a610d432783859c0f86f9864adff2d6044e9607f9f8eb30",
+      "scan": "passed",
+      "sbomSha256": "sha256:f67842d8a0f39e52e2b5920938e4b51b20d94494db6af12824e877fc8279d827",
+      "provenanceSha256": "sha256:84a995bb034f2ac501ee05624dcaea61a6adcf3931db6647d95501872e075a1d",
+      "builderProvenanceSha256": "sha256:081cb21a0575b0b2fe61165de5b76098d79de18fbce7973d6dbbec1ab203bb5a",
+      "verificationSha256": "sha256:137d6191a47b9260f742d8e7810d0cebb57bbb22032f883f0bd0b24c42a3ef14",
+      "platform": "linux/amd64",
+      "localImageId": "sha256:81a7f5afca86bb4992eb0167044cae5503d54af34863cfdb21fe72a66f485687"
+    },
+    "courseMigration": {
+      "image": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:83d5f3a34ae01fa08eea71904d85b6a90d24c82486521cf24fb1fc4eb1cf9072",
+      "scan": "passed",
+      "sbomSha256": "sha256:f4f6c66121607051e621b3cfb27f40c1f37a0287f7a3bd4c25b2d9db180bb028",
+      "provenanceSha256": "sha256:5e9d3d106af1d405f1930ee95d7d73c60ef4abaccd7493712e9ec9d6ef4be1cd",
+      "builderProvenanceSha256": "sha256:8081a8518e362599c014394f97ebf8ff7ab1f1cdb80b5372cc7d343661b754c1",
+      "verificationSha256": "sha256:3b2aee55168795f902b953351db6809bb59d3e6bc2d7542397fa1f7d532c9f34",
+      "platform": "linux/amd64",
+      "localImageId": "sha256:85859da151cfda660352883a30a261046eb8ef124d61457757715c4408852893"
+    },
+    "communityRuntime": {
+      "image": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:a2d828bb1cabfaf890d94bf4fcd2d67a64df95d12b09c977b0936a2eef9d88a7",
+      "scan": "passed",
+      "sbomSha256": "sha256:526194573ba47d7643b9dacd9d879fefde83c9d5e47f7e5185f58c317d105fce",
+      "provenanceSha256": "sha256:e378cb8d9b01cad3d5e60883aa4eed5eb39d1305cf862c7c4975c814601ec6e4",
+      "builderProvenanceSha256": "sha256:0c35a5687b54b6dc1540ae738b5ba56d8b9d6d716e0129817a726966ed590a31",
+      "verificationSha256": "sha256:02d254edac460782b6d1992d1b924aa3953cc3f37abf9fa0a315aa6f2a9ebd8f",
+      "platform": "linux/amd64",
+      "localImageId": "sha256:592b39a6dbb60f0785a04df2eababee597d568c6e44139e6d6ddb77f3ed2c71b"
+    },
+    "communityMigration": {
+      "image": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:b404a4a425eeadcfbe1a5f62ad4bb5579c01b5fad5b685cb94d39938c3bd23f0",
+      "scan": "passed",
+      "sbomSha256": "sha256:c7edbbb9e82eb08a6937ac289e02ab517cfec16c48846b1989b9819dd9e6179b",
+      "provenanceSha256": "sha256:6f22e42bbb3ff86f2476a924daf685829cae980a1fa00f2fc50ece32168700f5",
+      "builderProvenanceSha256": "sha256:843a471b1525f73183fe934c5b960901bd7c0d9b673012ab71f432b707a5d0c2",
+      "verificationSha256": "sha256:15fd240de4d796a251eb52eabfe3d8d6f3f572e2ff63827be291524017b6eb45",
+      "platform": "linux/amd64",
+      "localImageId": "sha256:b6b2105cfebb36516b0eb436eaf5e4490f606ef0b7fb68ecb3a11e555adc1433"
+    }
+  },
+  "approval": {
+    "state": "pending",
+    "operator": "Dardan",
+    "environment": "staging",
+    "releaseId": "p1-43537306815-1",
+    "approvedAt": null,
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    }
+  },
+  "migrations": {
+    "course": {
+      "state": "held"
+    },
+    "community": {
+      "state": "held"
+    }
+  },
+  "recovery": {
+    "state": "pending"
+  },
+  "workload": {
+    "environment": "production",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    }
+  },
+  "scheduler": {
+    "state": "pending",
+    "cancellation": "pending"
+  },
+  "monitoring": {
+    "state": "deferred",
+    "resume": "after-current-plan-completion",
+    "decisionRef": "docs/api-integration/decisions/2026-10-29-sole-operator-and-monitoring-deferral.md"
+  },
+  "operator": {
+    "name": "Dardan",
+    "mode": "sole-operator",
+    "accessInputs": "runtime credential handoff pending",
+    "sourceProtection": "operator dispatch, exact source revisions and passing CI; native branch protection optional"
+  },
+  "affordability": {
+    "approach": "lowest-practical-operating-overhead",
+    "operator": "Dardan",
+    "operatorManagedMonthlyTargetUsd": 50,
+    "releaseGate": false,
+    "billingAccessRequired": false,
+    "decisionRef": "docs/api-integration/decisions/2026-11-01-affordability-without-billing-gates.md"
+  },
+  "staging": {
+    "state": "pending"
+  },
+  "contractPhase": "p2",
+  "phase2ContractManifestSha256": "sha256:358afb0ea2f414dff4971148228a40c153bf3b00a401755db51ba2b6cb9514db",
+  "runtime": {
+    "composeSha256": "sha256:3f90966fa17ecfd2004e9f797dd89cb5f20639118c4ad1ddd97fb182923707e0",
+    "privateTlsPolicies": {
+      "course": {
+        "upstream": "http://course-api:4000",
+        "keyFile": "/tls/key.pem",
+        "certFile": "/tls/cert.pem",
+        "peers": [
+          {
+            "address": "172.29.10.10",
+            "routes": [
+              {
+                "method": "GET",
+                "path": "/v1/courses"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/courses/{slug}"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/courses"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/courses"
+              },
+              {
+                "method": "PATCH",
+                "path": "/v1/admin/courses/{courseId}"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/courses/{courseId}/modules"
+              },
+              {
+                "method": "PATCH",
+                "path": "/v1/admin/modules/{moduleId}"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/modules/{moduleId}/lessons"
+              },
+              {
+                "method": "PATCH",
+                "path": "/v1/admin/lessons/{lessonId}"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/lessons/{lessonId}/video-upload"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/entitlements/commands"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/entitlements/enrollments"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/entitlements/grants"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/entitlements/grants"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/entitlements/revocations"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/entitlements/revocations"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/internal/entitlements"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/internal/entitlements/grants"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/internal/entitlements/reconcile"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/internal/entitlements/revocations"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/courses"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/courses/{courseId}"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/courses/{courseId}/lessons"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/lessons/{lessonId}"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/lessons/{lessonId}/playback"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/student/lessons/{lessonId}/progress"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/student/courses/{courseId}/legacy-progress"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/progress"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/webhooks/mux"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/courses/{courseId}"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/courses/{courseId}/modules/reorder"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/modules/{moduleId}/lessons/reorder"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/internal/accounts/commands"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/internal/accounts/exports/{commandId}"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/lessons/{lessonId}/quiz"
+              },
+              {
+                "method": "PUT",
+                "path": "/v1/admin/lessons/{lessonId}/quiz"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/lessons/{lessonId}/video"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions"
+              },
+              {
+                "method": "DELETE",
+                "path": "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/student/courses/{courseId}/enrollments"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/lessons/{lessonId}/quiz"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/student/lessons/{lessonId}/quiz/attempts"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/student/lessons/{lessonId}/quiz/attempts"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/admin/courses/{courseId}/publication-readiness"
+              }
+            ]
+          },
+          {
+            "address": "172.29.10.31",
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/v1/internal/community/entitlements/check"
+              }
+            ]
+          },
+          {
+            "address": "172.29.10.32",
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/v1/internal/community/entitlements/check"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/internal/community/enrollment-streams/resolve"
+              },
+              {
+                "method": "POST",
+                "path": "/v1/internal/community/enrollment-snapshots"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/internal/community/enrollment-snapshots/{snapshotId}"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/internal/community/enrollment-snapshots/{snapshotId}/items"
+              }
+            ]
+          },
+          {
+            "address": "172.29.10.60",
+            "routes": [
+              {
+                "method": "GET",
+                "path": "/health"
+              },
+              {
+                "method": "GET",
+                "path": "/ready"
+              },
+              {
+                "method": "GET",
+                "path": "/metrics"
+              }
+            ]
+          }
+        ]
+      },
+      "community": {
+        "upstream": "http://community-api:4100",
+        "keyFile": "/tls/key.pem",
+        "certFile": "/tls/cert.pem",
+        "peers": [
+          {
+            "address": "172.29.10.22",
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/v1/internal/course/enrollment-events"
+              }
+            ]
+          },
+          {
+            "address": "172.29.10.10",
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/v1/internal/accounts/commands"
+              },
+              {
+                "method": "GET",
+                "path": "/v1/internal/accounts/exports/{commandId}"
+              }
+            ]
+          },
+          {
+            "address": "172.29.10.60",
+            "routes": [
+              {
+                "method": "GET",
+                "path": "/health"
+              },
+              {
+                "method": "GET",
+                "path": "/ready"
+              },
+              {
+                "method": "GET",
+                "path": "/metrics"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "frontendMigration": {
+    "sourceCommit": "e8af1f8e1ddbb641e22801da1db52fd6c44cfcac",
+    "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+    "contractPhase": "p2",
+    "phase2ContractManifestSha256": "sha256:358afb0ea2f414dff4971148228a40c153bf3b00a401755db51ba2b6cb9514db",
+    "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+    "schemaBaselines": {
+      "18": "0157a7991480f737b231e870d5f88b12e675eb7ba4da2f55cdeaaf91759c64da"
+    },
+    "ciSummarySha256": "sha256:cbfafdbbe7af6a322fa9bb1816b75e376d930ddc87a7d0b1e000da1f18a40900",
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    }
+  },
+  "buildWorkflow": {
+    "repository": "princessdardan/lash-her-frontend",
+    "commit": "e8af1f8e1ddbb641e22801da1db52fd6c44cfcac",
+    "ref": "refs/heads/staging",
+    "runId": "43537306815",
+    "attempt": "1"
+  },
+  "integration": {
+    "state": "passed",
+    "reportSha256": "sha256:2fe2c3fd15d4baea8ae17759fa687f344e26f007469b6fda37bda3db94d64a2a",
+    "frontendMigrationRehearsalSha256": "sha256:2737aa6b0c4c7873ff4717ffc9eed2d13d19b146bbcf35f1138a612364a9f27d",
+    "workloadProof": "signed-fixture",
+    "realVercelOidcVerified": false,
+    "qualificationTargetProfile": {
+      "version": 1,
+      "id": "staging-current",
+      "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+    }
+  },
+  "qualificationTargetProfile": {
+    "version": 1,
+    "id": "staging-current",
+    "sha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba"
+  }
+}

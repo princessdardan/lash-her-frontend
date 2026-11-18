@@ -31,7 +31,7 @@ concurrency:
 jobs:
   candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.repository == 'princessdardan/lash-her-frontend' &&
@@ -511,6 +511,51 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
             lash-her-community-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
           node sources/lash-her-frontend/ops/platform/local-harness.mjs --phase p2 > "$RUNNER_TEMP/platform-evidence/container-harness.json"
+      - name: Verify and pull the reviewed Community media predecessor
+        id: media-predecessor
+        if: ${{ hashFiles('sources/lash-her-frontend/ops/platform/compose.community-media.yaml') != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          predecessor=sources/lash-her-frontend/ops/platform/community-media-predecessor.json
+          revision=$(jq -er '.buildWorkflow.commit | select(test("^[a-f0-9]{40}$"))' "$predecessor")
+          image=$(jq -er '.artifacts.communityRuntime.image | select(test("^ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:[a-f0-9]{64}$"))' "$predecessor")
+          gh attestation verify "$predecessor" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/platform-artifacts.yml" \
+            --signer-digest "$revision" --source-digest "$revision" --source-ref refs/heads/staging \
+            --deny-self-hosted-runners --format json > "$RUNNER_TEMP/platform-evidence/media-predecessor-attestation.json"
+          cp "$predecessor" "$RUNNER_TEMP/platform-evidence/media-predecessor.candidate.json"
+          jq -er '.artifacts | [.gateway.image,.courseRuntime.image,.communityRuntime.image][] | select(test("^ghcr.io/princessdardan/lash-her-platform-(gateway|course-runtime|community-runtime)@sha256:[a-f0-9]{64}$"))' "$predecessor" > "$RUNNER_TEMP/platform-evidence/media-predecessor-images.txt"
+          test "$(wc -l < "$RUNNER_TEMP/platform-evidence/media-predecessor-images.txt")" -eq 3
+          while IFS= read -r reference; do docker pull --platform linux/amd64 "$reference"; done < "$RUNNER_TEMP/platform-evidence/media-predecessor-images.txt"
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+      - name: Rehearse exact Community media rollback and database restore in isolation
+        if: ${{ steps.media-predecessor.outputs.image != '' }}
+        working-directory: sources/lash-her-frontend
+        env:
+          COMMUNITY_MEDIA_DIGEST: ${{ steps.build-community-runtime.outputs.digest }}
+          COMMUNITY_MEDIA_PREVIOUS_RUNTIME: ${{ steps.media-predecessor.outputs.image }}
+          COMMUNITY_MEDIA_WORKER_USE_COMPOSE: "1"
+          COMMUNITY_MEDIA_WORKER_POSTGRES_IMAGE: postgres:18.6-bookworm
+        run: |-
+          docker pull "$COMMUNITY_MEDIA_WORKER_POSTGRES_IMAGE"
+          export COMMUNITY_E2E_COMMUNITY_ROOT="$GITHUB_WORKSPACE/sources/lash-her-community-api"
+          export COMMUNITY_MEDIA_CURRENT_RUNTIME="ghcr.io/princessdardan/lash-her-platform-community-runtime@$COMMUNITY_MEDIA_DIGEST"
+          export COMMUNITY_MEDIA_RECOVERY_EVIDENCE="$RUNNER_TEMP/platform-evidence/community-media-recovery.json"
+          node --test tests/support/community-media-worker.test.mjs > "$RUNNER_TEMP/platform-evidence/community-media-rehearsal.txt"
+      - name: Verify platform rollback on the same published pair with owned data
+        if: ${{ steps.media-predecessor.outputs.image != '' }}
+        working-directory: sources/lash-her-frontend
+        run: |-
+          evidence="$RUNNER_TEMP/platform-evidence"
+          for leg in release media-predecessor; do
+            jq '{releaseId,contractPhase,sources:{frontend:.sources.frontend.commit},images:(.artifacts | map_values(.image))}' \
+              "$evidence/$leg.candidate.json" > "$evidence/$leg.recovery-input.json"
+          done
+          docker_endpoint=$(docker context inspect "$(docker context show)" --format '{{(index .Endpoints "docker").Host}}')
+          node ops/platform/published-recovery-harness.mjs --source-root "$PWD" \
+            --candidate "$evidence/release.recovery-input.json" --rollback-candidate "$evidence/media-predecessor.recovery-input.json" \
+            --docker-host "$docker_endpoint" --output "$evidence/media-platform-recovery.json" > /dev/null
       - name: Retain the isolated harness report on failure
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

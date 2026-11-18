@@ -7,6 +7,7 @@ import { SOURCE_REPOSITORIES, sourceContextFromEnvironment } from "./release-inp
 import { SOURCE_APPROVAL_MODE, SOURCE_OPERATOR_ID, SOURCE_REPOSITORY_IDS, assertSourceContext, isRevision, sourceBranchFor } from "./source-policy.mjs";
 import { verifySourceCheckouts } from "./source-checkout.mjs";
 import { localImageId } from "./local-images.mjs";
+import { bindCommunityMediaRecovery, communityMediaSourceHashes } from "./community-media-recovery.mjs";
 import { privateTlsPolicies } from "./configuration.mjs";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
@@ -134,7 +135,7 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
   candidate.contractPhase = "p2";
   candidate.phase2ContractManifestSha256 = phase2.phase2ContractManifestSha256;
   candidate.runtime = { composeSha256: hash(readFileSync(join(sourceRoot, "lash-her-frontend/ops/platform/compose.yaml"))),
-    privateTlsPolicies: privateTlsPolicies() };
+    privateTlsPolicies: privateTlsPolicies(), ...communityMediaSourceHashes(join(sourceRoot, "lash-her-frontend")) };
   const frontend = frontendMigrationArtifact(join(sourceRoot, "lash-her-frontend"));
   const frontendEvidence = join(directory, "frontend-schema-evidence"); mkdirSync(frontendEvidence, { mode: 0o700 });
   command("gh", ["run", "download", proof.sources.frontend.ciRunId, "--repo", SOURCE_REPOSITORIES.frontend,
@@ -249,7 +250,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const report = JSON.parse(reportBytes.toString("utf8"));
       const frontendReport = JSON.parse(readFileSync(join(directory, "frontend-migration-rehearsal.json"), "utf8"));
       const qualified = qualifyHarness({ ...candidate, sourceApproval: approval }, report, reportBytes, frontendReport);
-      const publication = bindStagingCandidateProfile(qualified, finalProof.workflowRef);
+      const platformRoot = join(sourceRoot, "lash-her-frontend");
+      const withRecovery = bindCommunityMediaRecovery(qualified, platformRoot, directory);
+      const publication = bindStagingCandidateProfile(withRecovery, finalProof.workflowRef);
       writeFileSync(join(directory, "release.candidate.json"), JSON.stringify(publication, null, 2) + "\n", { mode: 0o600 });
     } else {
       if (process.argv.length !== 4) throw new Error("Usage");
