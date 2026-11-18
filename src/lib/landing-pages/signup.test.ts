@@ -15,7 +15,9 @@ const page: TLandingPage = {
 };
 const input = {
   slug: page.slug,
+  name: "  Jamie O’Neil  ",
   email: " Person@Example.COM ",
+  phone: " (416) 555-0123 ",
   marketingConsent: true,
 };
 
@@ -67,8 +69,10 @@ test("landing signup saves server-resolved campaign identity and explicit email 
   assert.deepEqual(result, { success: true });
   assert.deepEqual(calls, ["page", "record", "admin", "welcome"]);
   assert.deepEqual(records[0], {
+    name: "Jamie O’Neil",
     email: "person@example.com",
-    variant: "emailOnly",
+    phone: "+14165550123",
+    variant: "fullContact",
     marketingConsent: true,
     smsMarketingConsent: false,
     consentText: EMAIL_CONSENT_TEXT,
@@ -76,6 +80,29 @@ test("landing signup saves server-resolved campaign identity and explicit email 
     attribution: { utm_campaign: "founding" },
     landingPage: { id: page._id, title: page.title },
   });
+});
+
+test("landing signup validates required contact details before saving", async () => {
+  for (const [field, value, message] of [
+    ["name", undefined, "Full name is required."],
+    ["name", "   ", "Full name is required."],
+    ["name", "x".repeat(201), "Full name is too long."],
+    ["phone", undefined, "Phone number is required."],
+    ["phone", "   ", "Phone number is required."],
+    ["phone", "1".repeat(41), "Phone number is too long."],
+    [
+      "phone",
+      "123",
+      "Enter a valid phone number. Include the country code for international numbers.",
+    ],
+  ] as const) {
+    const { dependencies, calls } = fixture();
+    assert.deepEqual(
+      await processLandingPageSignup({ ...input, [field]: value }, dependencies),
+      { success: false, fieldErrors: { [field]: message } },
+    );
+    assert.deepEqual(calls, []);
+  }
 });
 
 test("landing signup rejects missing or forged consent and invalid email without side effects", async () => {

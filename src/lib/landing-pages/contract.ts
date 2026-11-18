@@ -31,9 +31,14 @@ export function validateLandingPageSlug(value: unknown): true | string {
     : true;
 }
 
+export const LANDING_PAGE_NAME_MAX_LENGTH = 200;
+export const LANDING_PAGE_PHONE_MAX_LENGTH = 40;
+
 export interface LandingPageSignupInput {
   slug: string;
+  name: string;
   email: string;
+  phone: string;
   marketingConsent: boolean;
   company?: string;
   attribution?: CampaignAttribution;

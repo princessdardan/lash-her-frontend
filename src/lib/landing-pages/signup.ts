@@ -9,13 +9,15 @@ import {
 import { validateForm } from "@/lib/form-validation";
 import { sanitizeAttribution } from "@/lib/highlevel/attribution";
 import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
-import { EMAIL_CONSENT_TEXT } from "@/lib/highlevel/contract";
+import { EMAIL_CONSENT_TEXT, normalizePhone } from "@/lib/highlevel/contract";
 import {
   recordContactPopupSubmission,
   type RecordContactPopupInput,
 } from "@/lib/marketing-contact/marketing-contact-store";
 import type { TLandingPage } from "@/types";
 import {
+  LANDING_PAGE_NAME_MAX_LENGTH,
+  LANDING_PAGE_PHONE_MAX_LENGTH,
   validateLandingPageSlug,
   type LandingPageSignupResult,
 } from "@/lib/landing-pages/contract";
@@ -75,22 +77,44 @@ export async function processLandingPageSignup(
   if (validateLandingPageSlug(data.slug) !== true) {
     return { success: false, error: "This signup page is unavailable." };
   }
+  const name = typeof data.name === "string" ? data.name.trim() : "";
   const email =
     typeof data.email === "string" ? data.email.trim().toLowerCase() : "";
+  const phoneInput = typeof data.phone === "string" ? data.phone.trim() : "";
   const { errors } = validateForm(
-    { email },
+    { name, email, phone: phoneInput },
     {
+      name: [
+        { type: "required", message: "Full name is required." },
+        {
+          type: "maxLength",
+          value: LANDING_PAGE_NAME_MAX_LENGTH,
+          message: "Full name is too long.",
+        },
+      ],
       email: [
         { type: "required", message: "Email is required." },
         { type: "maxLength", value: 254, message: "Email is too long." },
         { type: "email", message: "Please enter a valid email address." },
       ],
+      phone: [
+        { type: "required", message: "Phone number is required." },
+        {
+          type: "maxLength",
+          value: LANDING_PAGE_PHONE_MAX_LENGTH,
+          message: "Phone number is too long.",
+        },
+      ],
     },
   );
+  const phone = errors.phone ? null : normalizePhone(phoneInput);
+  if (!phone && !errors.phone)
+    errors.phone =
+      "Enter a valid phone number. Include the country code for international numbers.";
   if (data.marketingConsent !== true)
     errors.marketingConsent =
       "Please agree to receive emails to join this list.";
-  if (Object.keys(errors).length)
+  if (!phone || Object.keys(errors).length)
     return { success: false, fieldErrors: errors };
 
   try {
@@ -105,8 +129,10 @@ export async function processLandingPageSignup(
     if (!page || page.slug !== data.slug)
       return { success: false, error: "This signup page is unavailable." };
     const signup = {
+      name,
       email,
-      variant: "emailOnly" as const,
+      phone,
+      variant: "fullContact" as const,
       marketingConsent: true,
       smsMarketingConsent: false,
       consentText: EMAIL_CONSENT_TEXT,
