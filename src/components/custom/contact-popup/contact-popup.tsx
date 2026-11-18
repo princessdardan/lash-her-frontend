@@ -4,7 +4,6 @@ import { MarketingConsent } from "@/components/custom/marketing-consent";
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { LashHerLogo } from "@/components/ui/logo";
 import { submitContactPopup } from "@/app/actions/form";
+import type { CheckoutMarketing } from "@/lib/highlevel/contract";
 import type { TContactPopupSettings } from "@/types";
 
 interface ContactPopupProps {
@@ -19,13 +19,79 @@ interface ContactPopupProps {
   excludedPaths?: string[];
 }
 
+const emptyContactDraft = { name: "", email: "", instagram: "" };
+const reopenStorageKey = "lh_contact_popup_reopen";
+const reopenChangedEvent = "lh-contact-popup-reopen-changed";
+type ReopenStatus = "dismissed" | "submitted";
+let reopenWithoutStorage: ReopenStatus | undefined;
+
+function getReopenSnapshot(): ReopenStatus | null {
+  if (reopenWithoutStorage !== undefined) return reopenWithoutStorage;
+  try {
+    const status = window.localStorage.getItem(reopenStorageKey);
+    return status === "dismissed" || status === "submitted" ? status : null;
+  } catch {
+    return null;
+  }
+}
+
+function subscribeToReopen(onChange: () => void) {
+  function handleStorage(event: StorageEvent) {
+    if (event.key === reopenStorageKey || event.key === null) onChange();
+  }
+  window.addEventListener(reopenChangedEvent, onChange);
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener("pageshow", onChange);
+  return () => {
+    window.removeEventListener(reopenChangedEvent, onChange);
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener("pageshow", onChange);
+  };
+}
+
+function setReopenStatus(status: ReopenStatus) {
+  try {
+    window.localStorage.setItem(reopenStorageKey, status);
+    reopenWithoutStorage = undefined;
+  } catch {
+    // The in-memory flag still allows reopening in this document.
+    reopenWithoutStorage = status;
+  }
+  window.dispatchEvent(new Event(reopenChangedEvent));
+}
+
+function migrateReopenStatus() {
+  try {
+    if (window.sessionStorage.getItem(reopenStorageKey) !== "true") return;
+    if (getReopenSnapshot() === null) setReopenStatus("dismissed");
+    window.sessionStorage.removeItem(reopenStorageKey);
+  } catch {
+    // Browsers can block access to session storage.
+  }
+}
+
+function hasDismissCookie() {
+  return document.cookie
+    .split(";")
+    .some((cookie) => cookie.trim() === "lh_contact_popup_dismissed=true");
+}
+
 export function ContactPopup({
   settings,
   excludedPaths = [],
 }: ContactPopupProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const canReopen =
+    React.useSyncExternalStore(
+      subscribeToReopen,
+      getReopenSnapshot,
+      () => null,
+    ) === "dismissed";
   const [isSubmitted, setIsSubmitted] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [contactDraft, setContactDraft] = React.useState(emptyContactDraft);
+  const [marketingDraft, setMarketingDraft] =
+    React.useState<CheckoutMarketing>();
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [generalError, setGeneralError] = React.useState<string | null>(null);
   const pathname = usePathname();
@@ -42,25 +108,29 @@ export function ContactPopup({
     settings?.privacyText ?? "By subscribing, you agree to our";
   const privacyLinkLabel = settings?.privacyLinkLabel ?? "Privacy Policy";
   const privacyLinkHref = settings?.privacyLinkHref ?? "";
+  const reopenLabel = settings?.reopenLabel?.trim() || "Open Offer Sign-up";
   const submitLabel = settings?.submitLabel ?? "Subscribe";
   const successMessage =
     settings?.successMessage ?? "Thank you for subscribing!";
   const cookieExpiryDays = settings?.cookieExpiryDays ?? 30;
   const safePrivacyLinkHref = getSafePrivacyLinkHref(privacyLinkHref);
 
-  React.useEffect(() => {
-    if (!enabled || isExcludedPage) return;
+  React.useEffect(migrateReopenStatus, []);
 
-    const hasDismissed = document.cookie.includes(
-      "lh_contact_popup_dismissed=true",
-    );
-    if (!hasDismissed) {
-      const timer = setTimeout(() => {
-        setIsOpen(true);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [enabled, isExcludedPage]);
+  React.useEffect(() => {
+    if (
+      !enabled ||
+      isExcludedPage ||
+      canReopen ||
+      isSubmitted ||
+      hasDismissCookie()
+    )
+      return;
+    const timer = setTimeout(() => {
+      setIsOpen(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [enabled, canReopen, isExcludedPage, isSubmitted]);
 
   const setDismissCookie = () => {
     const safeExpiryDays = Math.max(1, cookieExpiryDays);
@@ -72,6 +142,13 @@ export function ContactPopup({
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
     if (!open) {
+      // An open dialog in another tab can outlive a successful submission.
+      if (
+        !isSubmitted &&
+        (getReopenSnapshot() !== "submitted" || !hasDismissCookie())
+      ) {
+        setReopenStatus("dismissed");
+      }
       setDismissCookie();
     }
   };
@@ -109,7 +186,10 @@ export function ContactPopup({
 
     if (result.success) {
       setIsSubmitted(true);
+      setContactDraft(emptyContactDraft);
+      setMarketingDraft(undefined);
       setDismissCookie();
+      setReopenStatus("submitted");
     } else {
       if (result.fieldErrors) {
         setErrors(result.fieldErrors);
@@ -125,138 +205,187 @@ export function ContactPopup({
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
+      {canReopen && !isSubmitted && (
+        <Dialog.Trigger asChild>
+          <Button
+            variant="outline"
+            className="fixed right-[max(1rem,env(safe-area-inset-right))] bottom-[calc(3.75rem+env(safe-area-inset-bottom))] z-40 h-auto min-h-11 max-w-[calc(100%-2rem)] border-lh-line bg-lh-white text-center whitespace-normal wrap-anywhere text-lh-primary shadow-md sm:bottom-[max(1rem,env(safe-area-inset-bottom))]"
+          >
+            {reopenLabel}
+          </Button>
+        </Dialog.Trigger>
+      )}
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border bg-white p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg md:w-full">
-          <VisuallyHidden.Root>
-            <Dialog.Title>{heading}</Dialog.Title>
-            <Dialog.Description>{description}</Dialog.Description>
-          </VisuallyHidden.Root>
-          <div className="flex flex-col items-center text-center space-y-4">
-            <LashHerLogo className="h-12 w-auto text-lh-primary" />
-            <h2 className="text-2xl font-serif text-lh-primary">{heading}</h2>
-            <p className="text-sm text-gray-600">{description}</p>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm motion-safe:data-[state=open]:animate-in motion-safe:data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(85dvh,calc(100dvh-2rem))] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-lh-line bg-lh-white shadow-lg duration-200 motion-safe:data-[state=open]:animate-in motion-safe:data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:max-h-[calc(100dvh-2rem)]">
+          <div className="relative flex min-h-15 shrink-0 items-center justify-center px-16 sm:min-h-18">
+            <LashHerLogo
+              aria-hidden="true"
+              className="h-9 w-auto text-lh-primary sm:h-12"
+            />
+            <Dialog.Close
+              aria-label="Close sign-up form"
+              className="absolute right-2 top-2 grid size-11 place-items-center rounded-full bg-lh-neutral-2 text-lh-primary transition-colors hover:bg-lh-neutral focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lh-primary"
+            >
+              <X aria-hidden="true" className="size-5" />
+            </Dialog.Close>
           </div>
 
-          {isSubmitted ? (
-            <div className="py-8 text-center">
-              <p className="text-lg font-medium text-lh-primary">
-                {successMessage}
-              </p>
-              <Button
-                className="mt-6 w-full"
-                onClick={() => handleOpenChange(false)}
-              >
-                Close
-              </Button>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6 sm:pb-6">
+            <div className="space-y-2 text-center sm:space-y-3">
+              <Dialog.Title className="font-serif text-xl text-lh-primary sm:text-2xl">
+                {heading}
+              </Dialog.Title>
+              <Dialog.Description className="text-sm text-lh-muted">
+                {description}
+              </Dialog.Description>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-              <input
-                type="text"
-                name="company"
-                tabIndex={-1}
-                autoComplete="off"
-                className="hidden"
-                aria-hidden="true"
-              />
+            {isSubmitted ? (
+              <div className="py-8 text-center">
+                <p className="text-lg font-medium text-lh-primary">
+                  {successMessage}
+                </p>
+                <Dialog.Close asChild>
+                  <Button className="mt-6 w-full">Close</Button>
+                </Dialog.Close>
+              </div>
+            ) : (
+              <form
+                onSubmit={handleSubmit}
+                className="mt-4 space-y-3 sm:space-y-4"
+              >
+                <input
+                  type="text"
+                  name="company"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  className="hidden"
+                  aria-hidden="true"
+                />
 
-              {generalError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
-                  {generalError}
-                </div>
-              )}
+                {generalError && (
+                  <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
+                    {generalError}
+                  </div>
+                )}
 
-              {variant === "fullContact" && (
+                {variant === "fullContact" && (
+                  <Field>
+                    <FieldLabel htmlFor="popup-name">Name</FieldLabel>
+                    <Input
+                      id="popup-name"
+                      name="name"
+                      placeholder="Your name"
+                      value={contactDraft.name}
+                      onChange={(event) =>
+                        setContactDraft({
+                          ...contactDraft,
+                          name: event.target.value,
+                        })
+                      }
+                      disabled={isSubmitting}
+                      required
+                      aria-invalid={!!errors.name}
+                      aria-describedby={
+                        errors.name ? "popup-name-error" : undefined
+                      }
+                    />
+                    {errors.name && (
+                      <FieldError id="popup-name-error">
+                        {errors.name}
+                      </FieldError>
+                    )}
+                  </Field>
+                )}
+
                 <Field>
-                  <FieldLabel htmlFor="popup-name">Name</FieldLabel>
+                  <FieldLabel htmlFor="popup-email">Email*</FieldLabel>
                   <Input
-                    id="popup-name"
-                    name="name"
-                    placeholder="Your name"
+                    id="popup-email"
+                    name="email"
+                    type="email"
+                    placeholder="Your email address"
+                    value={contactDraft.email}
+                    onChange={(event) =>
+                      setContactDraft({
+                        ...contactDraft,
+                        email: event.target.value,
+                      })
+                    }
                     disabled={isSubmitting}
                     required
-                    aria-invalid={!!errors.name}
+                    aria-invalid={!!errors.email}
                     aria-describedby={
-                      errors.name ? "popup-name-error" : undefined
+                      errors.email ? "popup-email-error" : undefined
                     }
                   />
-                  {errors.name && (
-                    <FieldError id="popup-name-error">{errors.name}</FieldError>
+                  {errors.email && (
+                    <FieldError id="popup-email-error">
+                      {errors.email}
+                    </FieldError>
                   )}
                 </Field>
-              )}
 
-              <Field>
-                <FieldLabel htmlFor="popup-email">Email*</FieldLabel>
-                <Input
-                  id="popup-email"
-                  name="email"
-                  type="email"
-                  placeholder="Your email address"
-                  disabled={isSubmitting}
-                  required
-                  aria-invalid={!!errors.email}
-                  aria-describedby={
-                    errors.email ? "popup-email-error" : undefined
-                  }
-                />
-                {errors.email && (
-                  <FieldError id="popup-email-error">{errors.email}</FieldError>
+                {variant === "fullContact" && (
+                  <Field>
+                    <FieldLabel htmlFor="popup-instagram">
+                      Instagram (Optional)
+                    </FieldLabel>
+                    <Input
+                      id="popup-instagram"
+                      name="instagram"
+                      placeholder="@username"
+                      value={contactDraft.instagram}
+                      onChange={(event) =>
+                        setContactDraft({
+                          ...contactDraft,
+                          instagram: event.target.value,
+                        })
+                      }
+                      disabled={isSubmitting}
+                    />
+                    {errors.instagram && (
+                      <FieldError>{errors.instagram}</FieldError>
+                    )}
+                  </Field>
                 )}
-              </Field>
 
-              {variant === "fullContact" && (
-                <Field>
-                  <FieldLabel htmlFor="popup-instagram">
-                    Instagram (Optional)
-                  </FieldLabel>
-                  <Input
-                    id="popup-instagram"
-                    name="instagram"
-                    placeholder="@username"
-                    disabled={isSubmitting}
-                  />
-                  {errors.instagram && (
-                    <FieldError>{errors.instagram}</FieldError>
-                  )}
-                </Field>
-              )}
+                <MarketingConsent
+                  id="popup"
+                  disabled={isSubmitting}
+                  includePhone
+                  initialValue={marketingDraft}
+                  onChange={setMarketingDraft}
+                />
+                {errors.phone && (
+                  <p role="alert" className="text-sm text-red-800">
+                    {errors.phone}
+                  </p>
+                )}
+                <div className="text-xs text-gray-500 text-center mt-4">
+                  {privacyText}{" "}
+                  {safePrivacyLinkHref ? (
+                    <a
+                      href={safePrivacyLinkHref}
+                      className="underline hover:text-lh-primary"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {privacyLinkLabel}
+                    </a>
+                  ) : null}
+                </div>
 
-              <MarketingConsent
-                id="popup"
-                disabled={isSubmitting}
-                includePhone
-              />
-              {errors.phone && (
-                <p role="alert" className="text-sm text-red-800">
-                  {errors.phone}
-                </p>
-              )}
-              <div className="text-xs text-gray-500 text-center mt-4">
-                {privacyText}{" "}
-                {safePrivacyLinkHref ? (
-                  <a
-                    href={safePrivacyLinkHref}
-                    className="underline hover:text-lh-primary"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {privacyLinkLabel}
-                  </a>
-                ) : null}
-              </div>
-
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : submitLabel}
-              </Button>
-            </form>
-          )}
-
-          <Dialog.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-lh-primary focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500">
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </Dialog.Close>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Submitting..." : submitLabel}
+                </Button>
+              </form>
+            )}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -72,6 +72,7 @@ async function main(): Promise<void> {
     projectId,
     token: sanityToken,
     useCdn: false,
+    requestTagPrefix: "lashher.ops.marketing-backfill",
   });
   const docs = await sanityClient.fetch<BackfillDocument[]>(SUBMISSION_QUERY);
   const records = docs.map(toBackfillRecord).filter((record) => record !== null);

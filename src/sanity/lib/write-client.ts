@@ -9,5 +9,6 @@ export const writeClient = createClient({
   dataset,
   apiVersion,
   useCdn: false,
+  requestTagPrefix: "lashher.write",
   token: process.env.SANITY_WRITE_TOKEN,
 });

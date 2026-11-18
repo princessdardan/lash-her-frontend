@@ -1,10 +1,6 @@
 {
   "git": {
-    "deploymentEnabled": {
-      "main": false,
-      "staging": false,
-      "codex/p1-candidate-registration-20261102": false
-    }
+    "deploymentEnabled": false
   },
   "schedules": {
     "private-data-retention": {

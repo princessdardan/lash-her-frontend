@@ -54,10 +54,10 @@
     "@icons-pack/react-simple-icons": "13.11.1",
     "@mux/mux-player-react": "^3.13.4",
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/auto-instrumentations-node": "^0.79.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
-    "@opentelemetry/resources": "^2.10.0",
-    "@opentelemetry/sdk-node": "^0.221.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.80.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@opentelemetry/winston-transport": "^0.31.0",
     "@portabletext/react": "^6.0.3",
@@ -82,7 +82,7 @@
     "lucide-react": "^0.577.0",
     "motion": "^12.36.0",
     "nanoid": "^3.3.11",
-    "next": "16.3.8",
+    "next": "16.4.6",
     "next-auth": "5.0.0-beta.32",
     "next-sanity": "^11.6.12",
     "parse5": "7.3.0",
@@ -126,7 +126,7 @@
     "dotenv": "^16.6.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.6",
     "groq-js": "^1.30.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
@@ -147,7 +147,7 @@
       "adm-zip": "0.6.1"
     },
     "@sanity/uuid": "3.0.3",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.18",
     "form-data": "4.0.6",
     "load-yaml-file": "$load-yaml-file",
     "markdown-it": "15.0.3",
@@ -157,24 +157,23 @@
     "minimatch@5": {
       "brace-expansion": "2.1.7"
     },
-    "minimatch@9": {
-      "brace-expansion": "2.1.7"
-    },
-    "minimatch@10": {
-      "brace-expansion": "5.0.12"
-    },
     "postcss": "8.5.31",
     "protobufjs": "7.6.5",
     "sharp": "0.35.5",
     "tar": "7.5.21",
-    "undici": "6.28.1",
+    "undici": "6.29.1",
     "valibot": "1.4.2",
     "vite": "7.3.7",
     "source-map-js": "1.2.2",
     "@tailwindcss/typography": {
       "postcss-selector-parser": "7.1.7"
     },
-    "braces": "$braces"
+    "braces": "$braces",
+    "glob@>=9 <15": "14.0.6",
+    "minimatch@>=7 <12": "11.0.9",
+    "qs": "6.17.1",
+    "systeminformation": "5.33.23",
+    "zod": "4.6.7"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,

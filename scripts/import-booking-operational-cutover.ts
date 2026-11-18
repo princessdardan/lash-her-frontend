@@ -66,6 +66,7 @@ async function main(): Promise<void> {
     projectId,
     token: getSanityApiReadToken(),
     useCdn: false,
+    requestTagPrefix: "lashher.ops.booking-cutover",
   });
   const fetched = await sanity.fetch<SanityCutoverResult>(QUERY);
   const source: LegacyOperationalCutoverSource = {

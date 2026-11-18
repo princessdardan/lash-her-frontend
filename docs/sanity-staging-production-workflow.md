@@ -22,6 +22,14 @@ Run app and Sanity commands from the repository root:
 cd /Users/dardan/workspace/lash-her-frontend
 ```
 
+## Isolated Sanity environments and quota monitoring
+
+Hosted Preview, CI builds, and public browser tests use project `7o23yrvk` with dataset `staging-2026-05-10`. Production uses `3auncj84` with dataset `production`. Preview must use credentials scoped to the isolated staging project for authenticated draft reads. Public CI and browser fixtures use the staging CDN without an editorial credential. Older same-project dataset-copy examples below describe the previous setup and are superseded by these project bindings.
+
+Check the [production Usage dashboard](https://www.sanity.io/manage/project/3auncj84) daily. Compare the last completed reporting day in UTC against **6,500 live API requests** and track the month-to-date total against **250,000**. The API CDN has a separate meter. At or above the daily threshold, or when Sanity reports quota enforcement, use Manage → Usage → Request logs to download the latest available archive. Reuse a ready archive for its date range and generate a new one only when needed. Keep raw archives outside Git.
+
+The Free-plan export covers up to seven days, excluding today, and can be regenerated once per 24 hours. Export before the spike exits that window. [Sanity request logs](https://www.sanity.io/docs/platform-management/request-logs)
+
 ## Current Project Findings
 
 - The active application is the root Next.js app.
@@ -556,7 +564,7 @@ Configure separate webhooks for staging and production in the Sanity project man
 | Setting    | Staging Value                                                                                                                                                                                                                            | Production Value                                     |
 | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------- |
 | URL        | `https://staging.lashher.com/api/revalidate`                                                                                                                                                                                             | `https://www.lashher.com/api/revalidate`             |
-| Project    | `3auncj84`                                                                                                                                                                                                                               | `3auncj84`                                           |
+| Project    | `7o23yrvk`                                                                                                                                                                                                                               | `3auncj84`                                           |
 | Dataset    | `staging-2026-05-10`                                                                                                                                                                                                                     | `production`                                         |
 | Trigger    | Published document create, update, and delete events                                                                                                                                                                                     | Published document create, update, and delete events |
 | Filter     | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "productsPage", "servicesPage", "productCollection", "promotionCode", "policyPage", "landingPage", "product", "service", "globalSettings", "mainMenu"]` | Same as staging                                      |

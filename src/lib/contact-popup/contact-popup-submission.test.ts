@@ -63,6 +63,26 @@ const helperScript = String.raw`
   };
 `;
 
+test("signup without email marketing consent saves preferences without fetching the offer", () => {
+  runScenario(`
+    const { calls, dependencies } = createDependencies({
+      resolveOffer: async () => {
+        calls.push({ type: "resolve" });
+        throw new Error("should not fetch Sanity");
+      },
+    });
+    const result = await processContactPopupSubmission(
+      { ...data, marketingConsent: false, smsMarketingConsent: true },
+      dependencies,
+    );
+
+    assert.equal(result.status, "preferences_saved");
+    assert.deepEqual(calls.map((call) => call.type), ["record", "admin"]);
+    assert.equal(calls[0].input.signupOffer, undefined);
+    assert.equal(calls[0].input.smsMarketingConsent, true);
+  `);
+});
+
 test("available signup offer is saved with its snapshot and attempted immediately from the durable outbox", () => {
   runScenario(`
     const { calls, dependencies } = createDependencies();

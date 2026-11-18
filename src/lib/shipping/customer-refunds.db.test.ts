@@ -629,7 +629,7 @@ test(
         env: {
           ...process.env,
           NEXT_PUBLIC_SANITY_PROJECT_ID:
-            process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "3auncj84",
+            process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "7o23yrvk",
           NEXT_PUBLIC_SANITY_DATASET:
             process.env.NEXT_PUBLIC_SANITY_DATASET ?? "staging-2026-05-10",
           NEXT_PUBLIC_SANITY_API_VERSION:

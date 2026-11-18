@@ -59,6 +59,7 @@ const client: SanityClient = createClient({
   apiVersion: "2026-03-24",
   token: SANITY_WRITE_TOKEN,
   useCdn: false,
+  requestTagPrefix: "lashher.ops.strapi-migration",
 });
 
 // ---------------------------------------------------------------------------

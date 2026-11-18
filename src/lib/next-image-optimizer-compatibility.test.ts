@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  detectContentType,
-  getImageSize,
-  optimizeImage,
-} from "next/dist/server/image-optimizer";
+import { detectContentType } from "next/dist/server/image-optimizer/detect-content-type";
+import { getImageSize } from "next/dist/server/image-optimizer/get-image-size";
+import { optimizeImage } from "next/dist/server/image-optimizer/transform";
 
 const twoPixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWM4MqXiPwgzwBgAZAQLPcHL1fcAAAAASUVORK5CYII=",

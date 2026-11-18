@@ -78,6 +78,7 @@ export function getClientConfig(env, apply) {
     apiVersion: "2026-03-24",
     token,
     useCdn: false,
+    requestTagPrefix: "lashher.ops.service-copy",
     perspective: "raw",
     maxRetries: 0,
   };

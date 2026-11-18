@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     projectId,
     token: process.env.SANITY_API_READ_TOKEN,
     useCdn: false,
+    requestTagPrefix: "lashher.ops.booking-bootstrap",
   });
   const source = await sanity.fetch<SanityBootstrapResult>(QUERY);
 

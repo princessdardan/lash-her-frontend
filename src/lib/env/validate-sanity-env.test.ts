@@ -64,7 +64,7 @@ test("loads local public Sanity values from .env.local", () => {
     writeFileSync(
       join(cwd, ".env.local"),
       [
-        "NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84",
+        "NEXT_PUBLIC_SANITY_PROJECT_ID=7o23yrvk",
         "NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10",
         "NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24",
         "",
@@ -84,6 +84,7 @@ test("validates preview launch environment", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   });
 
@@ -91,10 +92,51 @@ test("validates preview launch environment", () => {
   assert.match(result.stdout, /Vercel preview environment validated/);
 });
 
+test("rejects Preview on the production Sanity project even with the staging dataset", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /NEXT_PUBLIC_SANITY_PROJECT_ID.*expected 7o23yrvk/,
+  );
+});
+
+test("CI builds require the isolated staging Sanity pair", () => {
+  const ci = { ...publicSanityEnv, CI: "true" };
+  assert.notEqual(
+    runValidator({ ...ci, NEXT_PUBLIC_SANITY_DATASET: "production" }).status,
+    0,
+  );
+  assert.equal(
+    runValidator({
+      ...ci,
+      NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
+      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    }).status,
+    0,
+  );
+});
+
+test("Preview accepts a staging reader without a Sanity writer", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+  delete env.SANITY_WRITE_TOKEN;
+  assert.equal(runValidator(env).status, 0);
+});
+
 test("validates preview Chit Chats shipping configuration", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "true",
@@ -129,6 +171,7 @@ test("accepts every canonical Chit Chats region", () => {
     const result = runValidator({
       ...launchEnv,
       VERCEL_ENV: "preview",
+      NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
       NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
       CHITCHATS_SHIPPING_ENABLED: "true",
       CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -157,6 +200,7 @@ test("normalizes surrounding whitespace in the configured Chit Chats region", ()
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -184,6 +228,7 @@ test("rejects a Chit Chats region outside the canonical allowlist", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -215,6 +260,7 @@ test("does not accept the obsolete branch ID in place of a region", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -243,6 +289,7 @@ test("fails when Chit Chats checkout is enabled without the shipping worker", ()
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "false",
     CHITCHATS_CHECKOUT_ENABLED: "true",
@@ -259,6 +306,7 @@ test("rejects a malformed independent product checkout admission flag", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     MANUAL_PRODUCT_CHECKOUT_ENABLED: "yes",
   });
@@ -298,6 +346,7 @@ test("fails launch environment when Square service booking flag is blank", () =>
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_SQUARE_ENABLED: "",
   });
@@ -313,6 +362,7 @@ test("validates preview mock payment environment without live payment credential
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     PAYMENT_GATEWAY_MODE: "mock",
     PAYMENT_MOCK_DEFAULT_SCENARIO: "success",
@@ -362,6 +412,7 @@ test("fails launch environment missing a critical variable", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -377,6 +428,7 @@ test("fails launch environment missing the Sanity API read token", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -392,6 +444,7 @@ test("fails launch environment missing the payment reconciliation cron secret", 
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -410,6 +463,7 @@ test("fails launch environment missing the Vercel cron secret", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -425,6 +479,7 @@ test("fails launch environment when Square service booking URL does not use HTTP
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_SQUARE_ENABLED: "true",
     SQUARE_ENVIRONMENT: "sandbox",
@@ -450,6 +505,7 @@ test("fails launch environment when Square service booking webhook URL does not 
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_SQUARE_ENABLED: "true",
     SQUARE_ENVIRONMENT: "sandbox",
@@ -475,6 +531,7 @@ test("treats whitespace-only launch variables as missing", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SANITY_WEBHOOK_SECRET: "   ",
   });
@@ -487,6 +544,7 @@ test("fails malformed checkout encryption key", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHECKOUT_SECRET_ENCRYPTION_KEY: "not-base64",
   });
@@ -499,6 +557,7 @@ test("fails launch environment without Auth.js identity configuration", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -514,6 +573,7 @@ test("fails launch environment with a weak Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     AUTH_SECRET: "too-short",
   });
@@ -529,6 +589,7 @@ test("fails launch environment with a repeated 32-byte Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     AUTH_SECRET: "a".repeat(32),
   });
@@ -541,6 +602,7 @@ test("fails launch environment with a low-diversity Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     AUTH_SECRET: "abcd".repeat(8),
   });
@@ -553,6 +615,7 @@ test("fails an unknown service booking model rollout mode", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_MODEL_MODE: "automatic",
   });
@@ -565,6 +628,7 @@ test("fails malformed booking calendar credential encryption key", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY: "not-base64",
   });
@@ -580,6 +644,7 @@ test("does not print secret values on failure", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SANITY_WRITE_TOKEN: secretValue,
     GOOGLE_REDIRECT_URI: secretValue,

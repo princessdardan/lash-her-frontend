@@ -103,6 +103,13 @@ export const globalSettings = defineType({
           type: "string",
         }),
         defineField({
+          name: "reopenLabel",
+          title: "Reopen Button Label",
+          type: "string",
+          description:
+            "Text on the button that reopens the pop-up. Leave blank to use “Open Offer Sign-up”.",
+        }),
+        defineField({
           name: "submitLabel",
           title: "Submit Button Label",
           type: "string",

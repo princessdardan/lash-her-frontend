@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ContactPopupSignupOfferConfigSource } from "@/data/loaders";
+import {
+  loaders,
+  type ContactPopupSignupOfferConfigSource,
+} from "@/data/loaders";
 
 import {
   resolveContactPopupSignupOffer,
@@ -29,6 +32,40 @@ test("resolves a validated published sitewide signup offer snapshot", async () =
       resolvedAt: NOW.toISOString(),
     },
   });
+});
+
+test("offer checks read the tagged live API each time and see a newly disabled promotion", async (t) => {
+  let requests = 0;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (request: string, options: RequestInit) => {
+      const url = new URL(request);
+      assert.equal(url.hostname.split(".")[1], "api");
+      assert.equal(url.searchParams.get("perspective"), "published");
+      assert.equal(url.searchParams.get("tag"), "lashher.signup-offer");
+      assert.equal(options.cache, "no-store");
+
+      const config = createConfig();
+      config.promotion!.isEnabled = requests++ === 0;
+      return Response.json({ result: config });
+    },
+  );
+
+  const dependencies = {
+    loadConfig: loaders.getContactPopupSignupOfferConfig,
+    now: () => NOW,
+  };
+
+  assert.equal(
+    (await resolveContactPopupSignupOffer(dependencies)).status,
+    "available",
+  );
+  assert.deepEqual(await resolveContactPopupSignupOffer(dependencies), {
+    status: "invalid",
+    reason: "promotion_disabled",
+  });
+  assert.equal(requests, 2);
 });
 
 test("treats an absent or explicitly disabled offer as disabled", async () => {
