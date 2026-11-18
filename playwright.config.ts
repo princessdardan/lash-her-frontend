@@ -108,6 +108,9 @@ export default defineConfig({
     env: {
       BOOKING_ADMIN_E2E_GOOGLE_FIXTURE: "1",
       NODE_ENV: "development",
+      NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
+      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+      NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
       // The Google Calendar fixture must be required LAST so it is the outermost
       // globalThis.fetch wrapper. Both fixtures answer the shared mock Upstash
       // origin (https://e2e-redis.invalid); only the Google fixture returns the
@@ -171,9 +174,6 @@ export default defineConfig({
             ADMIN_EMAIL: "commerce-e2e-owner@example.invalid",
             FROM_EMAIL: "Lash Her E2E <e2e@example.invalid>",
             MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
-            NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
-            NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
-            NEXT_PUBLIC_SANITY_PROJECT_ID: "3auncj84",
             NEXT_PUBLIC_SITE_URL: "https://e2e.lashher.invalid",
             PAYMENT_GATEWAY_MODE: "live",
             RESEND_API_KEY: "re_e2e_deterministic_fixture",

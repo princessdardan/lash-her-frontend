@@ -35,7 +35,7 @@ export default defineConfig({
       COURSE_ACCESS_SIGNING_SECRET:
         "course-mux-test-secret-012345678901234567890123456789",
       NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
-      NEXT_PUBLIC_SANITY_PROJECT_ID: "3auncj84",
+      NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
       SANITY_API_READ_TOKEN: "",
       SANITY_WRITE_TOKEN: "",
       VERCEL_ENV: "",

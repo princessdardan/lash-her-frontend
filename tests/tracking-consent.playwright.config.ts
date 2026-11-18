@@ -44,7 +44,7 @@ export default defineConfig({
       RESEND_API_KEY: "",
       KV_REST_API_URL: "",
       KV_REST_API_TOKEN: "",
-      NEXT_PUBLIC_SANITY_PROJECT_ID: "3auncj84",
+      NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
       NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
       SANITY_API_READ_TOKEN: "",
       SANITY_WRITE_TOKEN: "",

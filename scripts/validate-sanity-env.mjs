@@ -4,10 +4,8 @@ const { loadEnvConfig } = nextEnv;
 
 loadEnvConfig(process.cwd());
 
-const expectedDatasets = {
-  production: "production",
-  preview: "staging-2026-05-10",
-};
+const productionSanity = { projectId: "3auncj84", dataset: "production" };
+const stagingSanity = { projectId: "7o23yrvk", dataset: "staging-2026-05-10" };
 
 const publicSanityEnvVars = [
   "NEXT_PUBLIC_SANITY_PROJECT_ID",
@@ -17,7 +15,6 @@ const publicSanityEnvVars = [
 
 const launchEnvVars = [
   "SANITY_API_READ_TOKEN",
-  "SANITY_WRITE_TOKEN",
   "SANITY_WEBHOOK_SECRET",
   "AUTH_SECRET",
   "AUTH_GOOGLE_ID",
@@ -98,8 +95,15 @@ const urlEnvVars = [
 const emailEnvVars = ["FROM_EMAIL", "ADMIN_EMAIL"];
 
 const vercelEnv = process.env.VERCEL_ENV;
-const expectedDataset = expectedDatasets[vercelEnv];
-const isLaunchEnvironment = expectedDataset !== undefined;
+const isLaunchEnvironment =
+  vercelEnv === "production" || vercelEnv === "preview";
+const expectedSanity =
+  vercelEnv === "production"
+    ? productionSanity
+    : vercelEnv === "preview" || process.env.CI === "true"
+      ? stagingSanity
+      : undefined;
+const configuredDataset = process.env.NEXT_PUBLIC_SANITY_DATASET;
 const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
 const isPaymentMockMode = paymentGatewayMode === "mock";
 const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
@@ -118,6 +122,7 @@ const requiredEnvVars = isLaunchEnvironment
   ? [
       ...publicSanityEnvVars,
       ...launchEnvVars,
+      ...(vercelEnv === "production" ? ["SANITY_WRITE_TOKEN"] : []),
       ...(isSquareServiceBookingEnabled && !isPaymentMockMode
         ? squareLaunchEnvVars
         : []),
@@ -144,12 +149,9 @@ if (hasValue(process.env.NEXT_PUBLIC_SANITY_API_VERSION)) {
   validateApiVersion(process.env.NEXT_PUBLIC_SANITY_API_VERSION);
 }
 
-if (
-  expectedDataset &&
-  process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDataset
-) {
+if (expectedSanity && configuredDataset !== expectedSanity.dataset) {
   errors.push(
-    `Invalid env var: NEXT_PUBLIC_SANITY_DATASET for Vercel ${vercelEnv}; expected ${expectedDataset}`,
+    `Invalid env var: NEXT_PUBLIC_SANITY_DATASET for Vercel ${vercelEnv}; expected ${expectedSanity.dataset}`,
   );
 }
 
@@ -286,7 +288,10 @@ if (isLaunchEnvironment) {
     }
   }
 
-  if (isSquareCommerceEnabled && hasValue(process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL)) {
+  if (
+    isSquareCommerceEnabled &&
+    hasValue(process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL)
+  ) {
     validateHttpsUrl(
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
       process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
@@ -377,9 +382,21 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
-  if (value !== "3auncj84") {
+  const binding =
+    expectedSanity ??
+    [productionSanity, stagingSanity].find(
+      ({ dataset }) => dataset === configuredDataset,
+    );
+  if (binding && value !== binding.projectId) {
     errors.push(
-      "Malformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match launch project ID",
+      `Invalid env var: NEXT_PUBLIC_SANITY_PROJECT_ID for the selected environment; expected ${binding.projectId}`,
+    );
+  } else if (
+    !binding &&
+    ![productionSanity.projectId, stagingSanity.projectId].includes(value)
+  ) {
+    errors.push(
+      "Malformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match a reviewed project ID",
     );
   }
 }
@@ -476,4 +493,3 @@ function validateHttpsUrl(name, value) {
     // validateUrl already records the error.
   }
 }
-

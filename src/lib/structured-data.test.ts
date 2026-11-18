@@ -3,8 +3,8 @@ import test from "node:test";
 
 import type { TServiceEditorial } from "@/types";
 
-process.env.NEXT_PUBLIC_SANITY_DATASET ??= "production";
-process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ??= "3auncj84";
+process.env.NEXT_PUBLIC_SANITY_DATASET ??= "test-dataset";
+process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ??= "test-project";
 
 const service: TServiceEditorial = {
   _id: "service-1",
