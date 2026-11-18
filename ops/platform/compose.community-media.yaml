@@ -1,0 +1,66 @@
+# Opt-in overlay for the Community media release. Keep the base release model
+# and its service inventory usable without any media inputs.
+services:
+  community-api:
+    volumes:
+      - "${COMMUNITY_MEDIA_SESSIONS_DIR:?select environment media sessions}/api:/run/media-session:ro"
+    environment:
+      COMMUNITY_MEDIA_BUCKET: "${COMMUNITY_MEDIA_BUCKET:?select the environment media bucket}"
+      COMMUNITY_MEDIA_REGION: "${COMMUNITY_MEDIA_REGION:?select the environment media region}"
+      AWS_EC2_METADATA_DISABLED: "true"
+      COMMUNITY_MEDIA_SESSION_FILE: /run/media-session/session.json
+
+  community-media-worker:
+    profiles: [community-media]
+    image: ${COMMUNITY_RUNTIME_IMAGE:?require reviewed Community runtime digest}
+    command: [node, dist/media/run-worker.js]
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    stop_grace_period: 30s
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    logging:
+      driver: local
+      options: { max-size: 10m, max-file: "3" }
+    mem_limit: 384m
+    cpus: 0.4
+    env_file:
+      - {
+          path: "${COMMUNITY_MEDIA_BINDINGS_DIR:?select protected media bindings directory}/worker-db.env",
+          format: raw,
+        }
+    environment:
+      NODE_ENV: production
+      HTTP_BIND_ADDRESS: 127.0.0.1
+      WORKER_PORT: "4101"
+      NODE_OPTIONS: --max-old-space-size=256
+      NODE_EXTRA_CA_CERTS: /run/media-db-ca/ca.pem
+      COMMUNITY_MEDIA_BUCKET: "${COMMUNITY_MEDIA_BUCKET:?select the environment media bucket}"
+      COMMUNITY_MEDIA_REGION: "${COMMUNITY_MEDIA_REGION:?select the environment media region}"
+      AWS_EC2_METADATA_DISABLED: "true"
+      COMMUNITY_MEDIA_SESSION_FILE: /run/media-session/session.json
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:'+process.env.WORKER_PORT+'/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 4s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - "${COMMUNITY_MEDIA_BINDINGS_DIR:?select protected media bindings directory}/db-ca.pem:/run/media-db-ca/ca.pem:ro"
+      - "${COMMUNITY_MEDIA_SESSIONS_DIR:?select environment media sessions}/worker:/run/media-session:ro"
+    networks: [community_media_egress, community_media_database]
+
+networks:
+  community_media_egress: {}
+  community_media_database:
+    external: true
+    name: "${COMMUNITY_MEDIA_DATABASE_NETWORK:?select the environment Community database network}"

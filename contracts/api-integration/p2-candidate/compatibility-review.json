@@ -7,20 +7,72 @@
     "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488"
   },
   "candidate": {
-    "manifestSha256": "358afb0ea2f414dff4971148228a40c153bf3b00a401755db51ba2b6cb9514db"
+    "manifestSha256": "c47dfb036c7ac422082538b4adf4b762a7c146d104f4d5aa99272e7344b0d11f"
   },
   "changes": [
+    {
+      "document": "community",
+      "kind": "component",
+      "location": "schemas/def-0",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "00887304411a0c69b62943e7bec392be7cb849ebb5be0238af7eb08f00bee96a"
+    },
     {
       "document": "community",
       "kind": "component",
       "location": "securitySchemes/accountLifecycleBearerAuth",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee",
-      "requirementIds": [
-        "P2-11"
-      ],
-      "reason": "Add a dedicated service-authenticated account lifecycle receiver/export operation or security profile, preserving ordered commands, exact replay and terminal deletion semantics."
+      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee"
+    },
+    {
+      "document": "community",
+      "kind": "component",
+      "location": "securitySchemes/communityAdminBearerAuth",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee"
+    },
+    {
+      "document": "community",
+      "kind": "component",
+      "location": "securitySchemes/communityMemberBearerAuth",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "delete /v1/content/{contentId}",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "1f7694a88bebcad9ff71355b354b533814441f89c980eca4b5f906e0086594c7"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "delete /v1/media/{mediaId}",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "3c906223f48f90443e950f09b239e809c8c6852cfa546aabab6a0c52c5cb7249"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/discussions/{postId}",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "3f1c7eacfe71401415f503dd7e0188dd253f11b18c964302eaea604d1fe82cb5"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/discussions/{postId}/media",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "44b92a9c2f7a65ba771d8b2130fcf0df662ad079a10ec0db89eb10eb5664b7b5"
     },
     {
       "document": "community",
@@ -28,11 +80,119 @@
       "location": "get /v1/internal/accounts/exports/{commandId}",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "13a4401228171fd2271fa6bf0499391fb200a49076bc299a6575e0e72023b862",
-      "requirementIds": [
-        "P2-11"
-      ],
-      "reason": "Add a dedicated service-authenticated account lifecycle receiver/export operation or security profile, preserving ordered commands, exact replay and terminal deletion semantics."
+      "afterSha256": "6324144db9e28e93d62430cc7fd1384cc38f60927fdcf36b723bb20adcd70bd8"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/media/{mediaId}/view",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "d9f335cef326e0704e500da0ae94bd24d613826f7a70b90dc409099982dfb97a"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/moderation/reports",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "3b045f02f671d86aa991d03226fb7567e413f73d3b067de58a939cda5797194c"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/notifications",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "c0ecb9aeb8370665b9f2df8770e8802deee903a504bd6f611d116ab97df281b6"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/notifications/preferences",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "8ea9d534c61cb688f54a4b4b719b9af87c21520aaf57dca27cf61a5d8b73134a"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/notifications/unread",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "dbfb4c27b1d66f7a60e69d3f9212035d3299f3bfd41444c787f089ee71e162f7"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/profile",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "c5d2649f39d11fd39e76d3039be1f67bc8f485fe28c00cb00ecc40e8568574c1"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/spaces",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "2cf1a1601344b45de713b95cb59e2d14b81537d807eaeaace254a49111237602"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/spaces/{courseId}/members",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "f61a92f6dbd3dac0ba1a8a38ee9f957da4069173daf04ac8dad59f9b43af4182"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/spaces/{courseId}/members/{memberId}",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "aad7077ae9eefa281c0e36918cf591a55a8163014d0fb42290ed637cd9dfbeb9"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "get /v1/spaces/{courseId}/posts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "ddae25af844ff78a7b6add0e89c6571c554bcb05613f1f8d8857a72d76e4adb9"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "patch /v1/content/{contentId}",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "2abf6644675132efbe864acd0e499b7827d998a2de69fc4b0572c4797570e9da"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "post /v1/content/{contentId}/reports",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "bc0ee050c78a7cfba2be93096d9544cdf18ca42ba3d8fc08eb2625cb6734280e"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "post /v1/discussions/{postId}/comments",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "95534ca2c97bbf7dd6acf1a5637cc3c7edda084e580962a5e72ae5ba06f83742"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "post /v1/discussions/{postId}/media",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "a6d832cbbc555dc48710360b49334af2e29071d774dca2cd648626e085aee54c"
     },
     {
       "document": "community",
@@ -40,12 +200,71 @@
       "location": "post /v1/internal/accounts/commands",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "771ae9a9a1919631192dcd7821ad71c15e7a6ca4865d967944c7d2a092cdb730",
-      "requirementIds": [
-        "P2-11",
-        "P2-12"
-      ],
-      "reason": "Add a staging-only guarded sequence-gap request alongside the canonical v1 lifecycle command. The receiver verifies the pinned suspended head under its existing locks and cannot persist the proposed command."
+      "afterSha256": "771ae9a9a1919631192dcd7821ad71c15e7a6ca4865d967944c7d2a092cdb730"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "post /v1/media/{mediaId}/complete",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "8723e18d9bcc01d8cd07c0b68a72ad589e2abeafa9ec909f167ca03e5f182708"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "post /v1/moderation/actions",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "f3f70783b239dd8cd387db567648e332d8c016ab168c2d4b163ad462a0ce7a12"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "post /v1/spaces/{courseId}/posts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "8184e6d293bb9d369ca98ee5066d4b56cf2d666cba8f18f0edfda6e6cc71bd4f"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "put /v1/discussions/{postId}/reaction",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "ae70e0c93417da00ef36f8e2220ca3f3f3842fcd6585d8172edd0a36801038be"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "put /v1/moderation/spaces/{courseId}",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "b0c51362a20f22c646af4d4bd9894ea417c0f8b5578a1d90b18c92662ddb11b3"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "put /v1/notifications/preferences",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "813d50728ccc514e22931235d6671e9f459e78054631ee4005a35f0d1a80487a"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "put /v1/notifications/{notificationId}/read",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "727b4721cb3b1ed6926c2907e6bd36ce421a8aa6c2916431f3a10704e0bafacb"
+    },
+    {
+      "document": "community",
+      "kind": "operation",
+      "location": "put /v1/profile",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "03ede97a6e1078b0d27b887a3a1e6f1dcb7f5c55dac25276b49c4b058f302f09"
     },
     {
       "document": "course",
@@ -53,11 +272,7 @@
       "location": "securitySchemes/accountLifecycleBearerAuth",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee",
-      "requirementIds": [
-        "P2-11"
-      ],
-      "reason": "Add a dedicated service-authenticated account lifecycle receiver/export operation or security profile, preserving ordered commands, exact replay and terminal deletion semantics."
+      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee"
     },
     {
       "document": "course",
@@ -65,11 +280,7 @@
       "location": "securitySchemes/adminBearerAuth",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee",
-      "requirementIds": [
-        "P2-02"
-      ],
-      "reason": "Declare the separate strict administrator verification profile used by capability-protected Course operations."
+      "afterSha256": "3e922d755264ee811ea6f0fa44fd312095f6c9837e60fe800fcf2003d325f8ee"
     },
     {
       "document": "course",
@@ -77,14 +288,7 @@
       "location": "delete /v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "00a2d9c69e37e41296b5ac834a47b8bb53e7b07b095d3712dae93f5720c23fc2",
-      "requirementIds": [
-        "P2-06",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "00a2d9c69e37e41296b5ac834a47b8bb53e7b07b095d3712dae93f5720c23fc2"
     },
     {
       "document": "course",
@@ -107,14 +311,7 @@
       "location": "get /v1/admin/courses/{courseId}",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "a6935a4c9ac44a7cd15e3de4285063bbaa29d2edfa2192816eb1edb2ceb10f0e",
-      "requirementIds": [
-        "P2-05",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "a6935a4c9ac44a7cd15e3de4285063bbaa29d2edfa2192816eb1edb2ceb10f0e"
     },
     {
       "document": "course",
@@ -122,14 +319,7 @@
       "location": "get /v1/admin/courses/{courseId}/publication-readiness",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "595f75c966521b5918715f33d0d80d178afc3676567f4e476c57e6f86e468dcf",
-      "requirementIds": [
-        "P2-05",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "595f75c966521b5918715f33d0d80d178afc3676567f4e476c57e6f86e468dcf"
     },
     {
       "document": "course",
@@ -191,14 +381,7 @@
       "location": "get /v1/admin/lessons/{lessonId}/quiz",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "189f7bc3ebbe06bcd345146ca1f9c2dfdea731ec9f9ba75b943a7890abe5035e",
-      "requirementIds": [
-        "P2-07",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "189f7bc3ebbe06bcd345146ca1f9c2dfdea731ec9f9ba75b943a7890abe5035e"
     },
     {
       "document": "course",
@@ -206,14 +389,7 @@
       "location": "get /v1/admin/lessons/{lessonId}/video",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "f45e1776959bfa97fbfb299add4f51b94a42057571a2dd0be03f83ff5482abe4",
-      "requirementIds": [
-        "P2-05",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "f45e1776959bfa97fbfb299add4f51b94a42057571a2dd0be03f83ff5482abe4"
     },
     {
       "document": "course",
@@ -247,11 +423,7 @@
       "location": "get /v1/internal/accounts/exports/{commandId}",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "84641872bc69166f2b4148f3f87e9604e4e6dfbd0adbb35fa33e9b0fbb51a890",
-      "requirementIds": [
-        "P2-11"
-      ],
-      "reason": "Add a dedicated service-authenticated account lifecycle receiver/export operation or security profile, preserving ordered commands, exact replay and terminal deletion semantics."
+      "afterSha256": "84641872bc69166f2b4148f3f87e9604e4e6dfbd0adbb35fa33e9b0fbb51a890"
     },
     {
       "document": "course",
@@ -329,12 +501,7 @@
       "location": "get /v1/student/lessons/{lessonId}/quiz",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "8037b201e5480d96013f9b1bcba875443718f3349879d25b0e60ced56a8dcb3a",
-      "requirementIds": [
-        "P2-07",
-        "P2-09"
-      ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion."
+      "afterSha256": "8037b201e5480d96013f9b1bcba875443718f3349879d25b0e60ced56a8dcb3a"
     },
     {
       "document": "course",
@@ -342,12 +509,7 @@
       "location": "get /v1/student/lessons/{lessonId}/quiz/attempts",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "2289685ad77efd75553063116ea7b8fa0ab2ff253aac750d5977464c295f5a7b",
-      "requirementIds": [
-        "P2-07",
-        "P2-09"
-      ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion."
+      "afterSha256": "2289685ad77efd75553063116ea7b8fa0ab2ff253aac750d5977464c295f5a7b"
     },
     {
       "document": "course",
@@ -444,14 +606,7 @@
       "location": "post /v1/admin/courses/{courseId}/modules/reorder",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "e74f4838ab9f0c68861f5e8ea084575c705dd823ee8c6c4afa4c22d0b1e24305",
-      "requirementIds": [
-        "P2-05",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "e74f4838ab9f0c68861f5e8ea084575c705dd823ee8c6c4afa4c22d0b1e24305"
     },
     {
       "document": "course",
@@ -500,14 +655,7 @@
       "location": "post /v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "8194341f02ebb1b12a7d70dbae68b566889e212069aeb3d1c488c89bf2a7d61a",
-      "requirementIds": [
-        "P2-06",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "8194341f02ebb1b12a7d70dbae68b566889e212069aeb3d1c488c89bf2a7d61a"
     },
     {
       "document": "course",
@@ -515,14 +663,7 @@
       "location": "post /v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "b8d00d949e88c8f663bcda0011fad8620c9887da9dca8845ffb4c81ba31a3dca",
-      "requirementIds": [
-        "P2-06",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "b8d00d949e88c8f663bcda0011fad8620c9887da9dca8845ffb4c81ba31a3dca"
     },
     {
       "document": "course",
@@ -545,14 +686,7 @@
       "location": "post /v1/admin/modules/{moduleId}/lessons/reorder",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "e2bfb43215bddcb6f128375f7ca69639d54241231b723c3a5e7db63497a5e3f1",
-      "requirementIds": [
-        "P2-05",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "e2bfb43215bddcb6f128375f7ca69639d54241231b723c3a5e7db63497a5e3f1"
     },
     {
       "document": "course",
@@ -560,12 +694,7 @@
       "location": "post /v1/internal/accounts/commands",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "974cc020616ad631b6661ccd6fab4fd1850e0bbcc2311ae8c9e10283fa480973",
-      "requirementIds": [
-        "P2-11",
-        "P2-12"
-      ],
-      "reason": "Add a staging-only guarded sequence-gap request alongside the canonical v1 lifecycle command. The receiver verifies the pinned suspended head under its existing locks and cannot persist the proposed command."
+      "afterSha256": "974cc020616ad631b6661ccd6fab4fd1850e0bbcc2311ae8c9e10283fa480973"
     },
     {
       "document": "course",
@@ -573,11 +702,7 @@
       "location": "post /v1/student/courses/{courseId}/enrollments",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "746972ecddfc3af0becb796e39f82e5f1a9c269c2ed3f880f97ceed89d58e442",
-      "requirementIds": [
-        "P2-08"
-      ],
-      "reason": "Add authenticated idempotent orderless free enrollment using the shared grant ledger and transactional Community transitions."
+      "afterSha256": "746972ecddfc3af0becb796e39f82e5f1a9c269c2ed3f880f97ceed89d58e442"
     },
     {
       "document": "course",
@@ -585,11 +710,7 @@
       "location": "post /v1/student/courses/{courseId}/legacy-progress",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "86ce9efcbbaf2662950ea6e731c6ff0a04da9de66ff91b86044a8f140c8cf624",
-      "requirementIds": [
-        "P3-03"
-      ],
-      "reason": "Allow an authenticated enrolled learner to import bounded practice progress from the mapped legacy course."
+      "afterSha256": "86ce9efcbbaf2662950ea6e731c6ff0a04da9de66ff91b86044a8f140c8cf624"
     },
     {
       "document": "course",
@@ -612,12 +733,7 @@
       "location": "post /v1/student/lessons/{lessonId}/quiz/attempts",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "e6199c78be701a61948cd5c4e8ca9c631ea4d598d9bafdde0dbdba6eb236d213",
-      "requirementIds": [
-        "P2-07",
-        "P2-09"
-      ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion."
+      "afterSha256": "e6199c78be701a61948cd5c4e8ca9c631ea4d598d9bafdde0dbdba6eb236d213"
     },
     {
       "document": "course",
@@ -625,14 +741,7 @@
       "location": "put /v1/admin/lessons/{lessonId}/quiz",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "ed7e4ca686c8f915ada7894e7a8f8fbe7c1264a389c7fdd1d4aacc6206dd241e",
-      "requirementIds": [
-        "P2-07",
-        "P2-09",
-        "P2-02",
-        "P2-04"
-      ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+      "afterSha256": "ed7e4ca686c8f915ada7894e7a8f8fbe7c1264a389c7fdd1d4aacc6206dd241e"
     }
   ],
   "versionedDocuments": {
