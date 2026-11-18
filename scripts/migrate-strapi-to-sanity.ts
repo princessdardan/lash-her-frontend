@@ -39,7 +39,9 @@ const REQUIRED_ENV = [
 
 const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
 if (missing.length > 0) {
-  console.error(`[migrate] ERROR: Missing required env vars: ${missing.join(", ")}`);
+  console.error(
+    `[migrate] ERROR: Missing required env vars: ${missing.join(", ")}`,
+  );
   process.exit(1);
 }
 
@@ -59,6 +61,7 @@ const client: SanityClient = createClient({
   apiVersion: "2026-03-24",
   token: SANITY_WRITE_TOKEN,
   useCdn: false,
+  requestTagPrefix: "lashher.ops.strapi-migration",
 });
 
 // ---------------------------------------------------------------------------
@@ -70,7 +73,10 @@ const POPULATE_HOME_PAGE = qs.stringify({
     blocks: {
       on: {
         "layout.hero-section": {
-          populate: { image: { fields: ["url", "alternativeText"] }, link: { populate: true } },
+          populate: {
+            image: { fields: ["url", "alternativeText"] },
+            link: { populate: true },
+          },
         },
         "layout.features-section": {
           populate: { features: { populate: true } },
@@ -97,7 +103,10 @@ const POPULATE_GALLERY_PAGE = qs.stringify({
     blocks: {
       on: {
         "layout.hero-section": {
-          populate: { image: { fields: ["url", "alternativeText"] }, link: { populate: true } },
+          populate: {
+            image: { fields: ["url", "alternativeText"] },
+            link: { populate: true },
+          },
         },
         "layout.photo-gallery": { populate: { image: { populate: true } } },
       },
@@ -139,7 +148,10 @@ const POPULATE_TRAINING_PROGRAMS = qs.stringify({
     blocks: {
       on: {
         "layout.hero-section": {
-          populate: { image: { fields: ["url", "alternativeText"] }, link: { populate: true } },
+          populate: {
+            image: { fields: ["url", "alternativeText"] },
+            link: { populate: true },
+          },
         },
         "layout.info-section": { populate: true },
         "layout.contact-form": { populate: true },
@@ -205,7 +217,10 @@ async function fetchStrapi<T>(path: string): Promise<T> {
   return (json.data ?? json) as T;
 }
 
-async function fetchStrapiPaginated<T>(path: string, populateQs?: string): Promise<T[]> {
+async function fetchStrapiPaginated<T>(
+  path: string,
+  populateQs?: string,
+): Promise<T[]> {
   const allItems: T[] = [];
   let page = 1;
   const pageSize = 100;
@@ -218,7 +233,9 @@ async function fetchStrapiPaginated<T>(path: string, populateQs?: string): Promi
       headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
     });
     if (!res.ok) {
-      throw new Error(`[migrate] ERROR fetching ${path} page ${page}: ${res.status}`);
+      throw new Error(
+        `[migrate] ERROR fetching ${path} page ${page}: ${res.status}`,
+      );
     }
     const json = await res.json();
     const items = (json.data ?? []) as T[];
@@ -242,7 +259,7 @@ const imageCache = new Map<string, string>();
 
 async function uploadImage(
   url: string,
-  strapiId: string | number
+  strapiId: string | number,
 ): Promise<string> {
   if (imageCache.has(url)) {
     return imageCache.get(url)!;
@@ -267,14 +284,14 @@ async function uploadImage(
           id: String(strapiId),
           url,
         },
-      }
+      },
     );
 
     imageCache.set(url, asset._id);
     return asset._id;
   } catch (error) {
     console.error(
-      `[migrate] ERROR uploading image ${filename}: ${(error as Error).message} -- skipping`
+      `[migrate] ERROR uploading image ${filename}: ${(error as Error).message} -- skipping`,
     );
     return "";
   }
@@ -282,7 +299,7 @@ async function uploadImage(
 
 async function uploadVideo(
   url: string,
-  strapiId: string | number
+  strapiId: string | number,
 ): Promise<string> {
   const filename = url.split("/").pop() ?? "video";
   console.log(`[migrate] Uploading video: ${filename}`);
@@ -303,13 +320,13 @@ async function uploadVideo(
           id: String(strapiId),
           url,
         },
-      }
+      },
     );
 
     return asset._id;
   } catch (error) {
     console.error(
-      `[migrate] ERROR uploading video ${filename}: ${(error as Error).message} -- skipping`
+      `[migrate] ERROR uploading video ${filename}: ${(error as Error).message} -- skipping`,
     );
     return "";
   }
@@ -382,7 +399,9 @@ async function collectAndUploadAllImages(): Promise<void> {
       const data = await fetchStrapi<unknown>(endpoint);
       collectImageUrls(data, urls);
     } catch (err) {
-      console.warn(`[migrate] WARN: Could not prefetch ${endpoint}: ${(err as Error).message}`);
+      console.warn(
+        `[migrate] WARN: Could not prefetch ${endpoint}: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -396,7 +415,9 @@ async function collectAndUploadAllImages(): Promise<void> {
         collectImageUrls(json, urls);
       }
     } catch (err) {
-      console.warn(`[migrate] WARN: Could not prefetch ${endpoint}: ${(err as Error).message}`);
+      console.warn(
+        `[migrate] WARN: Could not prefetch ${endpoint}: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -407,7 +428,9 @@ async function collectAndUploadAllImages(): Promise<void> {
     await uploadImage(url, url);
   }
 
-  console.log(`[migrate] Phase 1 complete. ${imageCache.size} images uploaded.`);
+  console.log(
+    `[migrate] Phase 1 complete. ${imageCache.size} images uploaded.`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +439,7 @@ async function collectAndUploadAllImages(): Promise<void> {
 
 function flattenSpans(
   children: Array<StrapiInlineChild | StrapiBlockNode>,
-  markDefs: object[]
+  markDefs: object[],
 ): object[] {
   const spans: object[] = [];
 
@@ -461,7 +484,9 @@ function flattenSpans(
   return spans;
 }
 
-function convertBlocksToPortableText(nodes: StrapiBlockNode[] | null | undefined): object[] {
+function convertBlocksToPortableText(
+  nodes: StrapiBlockNode[] | null | undefined,
+): object[] {
   if (!nodes || nodes.length === 0) return [];
 
   const ptBlocks: object[] = [];
@@ -472,7 +497,7 @@ function convertBlocksToPortableText(nodes: StrapiBlockNode[] | null | undefined
     if (node.type === "paragraph" || node.type === "quote") {
       const spans = flattenSpans(
         (node.children ?? []) as Array<StrapiInlineChild | StrapiBlockNode>,
-        markDefs
+        markDefs,
       );
       ptBlocks.push({
         _type: "block",
@@ -485,7 +510,7 @@ function convertBlocksToPortableText(nodes: StrapiBlockNode[] | null | undefined
       const style = node.level === 2 ? "h2" : "h3";
       const spans = flattenSpans(
         (node.children ?? []) as Array<StrapiInlineChild | StrapiBlockNode>,
-        markDefs
+        markDefs,
       );
       ptBlocks.push({
         _type: "block",
@@ -500,8 +525,10 @@ function convertBlocksToPortableText(nodes: StrapiBlockNode[] | null | undefined
         const itemMarkDefs: object[] = [];
         const childNode = child as StrapiBlockNode;
         const spans = flattenSpans(
-          (childNode.children ?? []) as Array<StrapiInlineChild | StrapiBlockNode>,
-          itemMarkDefs
+          (childNode.children ?? []) as Array<
+            StrapiInlineChild | StrapiBlockNode
+          >,
+          itemMarkDefs,
         );
         ptBlocks.push({
           _type: "block",
@@ -559,10 +586,15 @@ function strapiComponentToSanityType(component: string): string {
   return kebabToCamel(withoutPrefix);
 }
 
-async function transformBlock(block: Record<string, unknown>): Promise<object | null> {
+async function transformBlock(
+  block: Record<string, unknown>,
+): Promise<object | null> {
   const component = block.__component as string | undefined;
   if (!component) {
-    console.warn("[migrate] WARN: Block missing __component:", JSON.stringify(block).slice(0, 100));
+    console.warn(
+      "[migrate] WARN: Block missing __component:",
+      JSON.stringify(block).slice(0, 100),
+    );
     return null;
   }
 
@@ -575,7 +607,10 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
         const img = block.image as Record<string, unknown> | null;
         let imageSanity: object | undefined;
         if (img?.url) {
-          const assetId = await uploadImage(img.url as string, img.id as string | number ?? "");
+          const assetId = await uploadImage(
+            img.url as string,
+            (img.id as string | number) ?? "",
+          );
           if (assetId) {
             imageSanity = {
               ...(imageRef(assetId) as Record<string, unknown>),
@@ -603,7 +638,8 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
       }
 
       case "featuresSection": {
-        const featureItems = (block.features as Record<string, unknown>[] | null) ?? [];
+        const featureItems =
+          (block.features as Record<string, unknown>[] | null) ?? [];
         return {
           _type,
           _key,
@@ -622,7 +658,8 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
       }
 
       case "ctaFeaturesSection": {
-        const ctaFeatureItems = (block.features as Record<string, unknown>[] | null) ?? [];
+        const ctaFeatureItems =
+          (block.features as Record<string, unknown>[] | null) ?? [];
         const transformedFeatures = await Promise.all(
           ctaFeatureItems.map(async (f) => ({
             _type: "ctaFeature",
@@ -636,15 +673,19 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
             link: f.link
               ? {
                   _type: "link",
-                  href: (f.link as Record<string, unknown>).href ?? (f.link as Record<string, unknown>).url ?? "",
+                  href:
+                    (f.link as Record<string, unknown>).href ??
+                    (f.link as Record<string, unknown>).url ??
+                    "",
                   label: (f.link as Record<string, unknown>).label ?? "",
-                  isExternal: (f.link as Record<string, unknown>).isExternal ?? false,
+                  isExternal:
+                    (f.link as Record<string, unknown>).isExternal ?? false,
                 }
               : undefined,
             features: convertBlocksToPortableText(
-              f.features as StrapiBlockNode[] | null
+              f.features as StrapiBlockNode[] | null,
             ),
-          }))
+          })),
         );
         return {
           _type,
@@ -660,7 +701,10 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
         const img2 = block.image as Record<string, unknown> | null;
         let image2Sanity: object | undefined;
         if (img2?.url) {
-          const assetId = await uploadImage(img2.url as string, img2.id as string | number ?? "");
+          const assetId = await uploadImage(
+            img2.url as string,
+            (img2.id as string | number) ?? "",
+          );
           if (assetId) {
             image2Sanity = {
               ...(imageRef(assetId) as Record<string, unknown>),
@@ -677,7 +721,7 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
           orientation: block.orientation ?? "HORIZONTAL_IMAGE_LEFT",
           image: image2Sanity,
           perks: convertBlocksToPortableText(
-            block.perks as StrapiBlockNode[] | null
+            block.perks as StrapiBlockNode[] | null,
           ),
         };
       }
@@ -689,25 +733,30 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
           heading: block.heading ?? "",
           subHeading: block.subHeading ?? block.sub_heading ?? "",
           info: convertBlocksToPortableText(
-            block.info as StrapiBlockNode[] | null
+            block.info as StrapiBlockNode[] | null,
           ),
         };
       }
 
       case "photoGallery": {
-        const galleryImages = (block.image as Record<string, unknown>[] | null) ??
-          (block.images as Record<string, unknown>[] | null) ?? [];
+        const galleryImages =
+          (block.image as Record<string, unknown>[] | null) ??
+          (block.images as Record<string, unknown>[] | null) ??
+          [];
         const uploadedImages = await Promise.all(
           galleryImages.map(async (img) => {
             if (!img.url) return null;
-            const assetId = await uploadImage(img.url as string, img.id as string | number ?? "");
+            const assetId = await uploadImage(
+              img.url as string,
+              (img.id as string | number) ?? "",
+            );
             if (!assetId) return null;
             return {
               ...(imageRef(assetId) as Record<string, unknown>),
               _key: nanoid(12),
               alt: img.alternativeText ?? "",
             };
-          })
+          }),
         );
         return {
           _type,
@@ -720,7 +769,8 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
       }
 
       case "schedule": {
-        const hoursItems = (block.hours as Record<string, unknown>[] | null) ?? [];
+        const hoursItems =
+          (block.hours as Record<string, unknown>[] | null) ?? [];
         return {
           _type,
           _key,
@@ -736,7 +786,8 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
       }
 
       case "contactInfo": {
-        const contactItems = (block.contact as Record<string, unknown>[] | null) ?? [];
+        const contactItems =
+          (block.contact as Record<string, unknown>[] | null) ?? [];
         return {
           _type,
           _key,
@@ -788,7 +839,10 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
         const img3 = block.image as Record<string, unknown> | null;
         let image3Sanity: object | undefined;
         if (img3?.url) {
-          const assetId = await uploadImage(img3.url as string, img3.id as string | number ?? "");
+          const assetId = await uploadImage(
+            img3.url as string,
+            (img3.id as string | number) ?? "",
+          );
           if (assetId) {
             image3Sanity = {
               ...(imageRef(assetId) as Record<string, unknown>),
@@ -796,7 +850,8 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
             };
           }
         }
-        const ctaLinks3 = (block.link as Record<string, unknown>[] | null) ?? [];
+        const ctaLinks3 =
+          (block.link as Record<string, unknown>[] | null) ?? [];
         return {
           _type,
           _key,
@@ -817,12 +872,16 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
         const videoData = block.video as Record<string, unknown> | null;
         let videoSanity: object | undefined;
         if (videoData?.url) {
-          const assetId = await uploadVideo(videoData.url as string, videoData.id as string | number ?? "");
+          const assetId = await uploadVideo(
+            videoData.url as string,
+            (videoData.id as string | number) ?? "",
+          );
           if (assetId) {
             videoSanity = fileRef(assetId);
           }
         }
-        const ctaLinks4 = (block.link as Record<string, unknown>[] | null) ?? [];
+        const ctaLinks4 =
+          (block.link as Record<string, unknown>[] | null) ?? [];
         return {
           _type,
           _key,
@@ -840,11 +899,15 @@ async function transformBlock(block: Record<string, unknown>): Promise<object | 
       }
 
       default:
-        console.warn(`[migrate] WARN: Unrecognized block type: ${_type} (from ${component})`);
+        console.warn(
+          `[migrate] WARN: Unrecognized block type: ${_type} (from ${component})`,
+        );
         return null;
     }
   } catch (err) {
-    console.error(`[migrate] ERROR transforming block ${_type}: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR transforming block ${_type}: ${(err as Error).message}`,
+    );
     return null;
   }
 }
@@ -863,7 +926,7 @@ async function migrateHomePage(): Promise<void> {
   console.log("[migrate] Migrating homePage...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      `/api/home-page?${POPULATE_HOME_PAGE}`
+      `/api/home-page?${POPULATE_HOME_PAGE}`,
     );
     const blocks = (data.blocks as Record<string, unknown>[] | null) ?? [];
     const transformedBlocks = (
@@ -881,7 +944,9 @@ async function migrateHomePage(): Promise<void> {
     migrationCounts["homePage"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] homePage: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing homePage: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing homePage: ${(err as Error).message}`,
+    );
     migrationCounts["homePage"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -890,7 +955,7 @@ async function migrateContactPage(): Promise<void> {
   console.log("[migrate] Migrating contactPage...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      `/api/contact?${POPULATE_CONTACT_PAGE}`
+      `/api/contact?${POPULATE_CONTACT_PAGE}`,
     );
     const blocks = (data.blocks as Record<string, unknown>[] | null) ?? [];
     const transformedBlocks = (
@@ -909,7 +974,9 @@ async function migrateContactPage(): Promise<void> {
     migrationCounts["contactPage"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] contactPage: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing contactPage: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing contactPage: ${(err as Error).message}`,
+    );
     migrationCounts["contactPage"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -918,7 +985,7 @@ async function migrateGalleryPage(): Promise<void> {
   console.log("[migrate] Migrating galleryPage...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      `/api/gallery?${POPULATE_GALLERY_PAGE}`
+      `/api/gallery?${POPULATE_GALLERY_PAGE}`,
     );
     const blocks = (data.blocks as Record<string, unknown>[] | null) ?? [];
     const transformedBlocks = (
@@ -936,7 +1003,9 @@ async function migrateGalleryPage(): Promise<void> {
     migrationCounts["galleryPage"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] galleryPage: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing galleryPage: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing galleryPage: ${(err as Error).message}`,
+    );
     migrationCounts["galleryPage"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -945,7 +1014,7 @@ async function migrateTrainingPage(): Promise<void> {
   console.log("[migrate] Migrating trainingPage...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      `/api/training?${POPULATE_TRAINING_PAGE}`
+      `/api/training?${POPULATE_TRAINING_PAGE}`,
     );
     const blocks = (data.blocks as Record<string, unknown>[] | null) ?? [];
     const transformedBlocks = (
@@ -963,7 +1032,9 @@ async function migrateTrainingPage(): Promise<void> {
     migrationCounts["trainingPage"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] trainingPage: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing trainingPage: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing trainingPage: ${(err as Error).message}`,
+    );
     migrationCounts["trainingPage"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -972,13 +1043,13 @@ async function migrateTrainingProgramsPage(): Promise<void> {
   console.log("[migrate] Migrating trainingProgramsPage...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      `/api/training-programs-page?${POPULATE_TRAINING_PROGRAMS_PAGE}`
+      `/api/training-programs-page?${POPULATE_TRAINING_PROGRAMS_PAGE}`,
     );
 
     // Fetch all training programs to get their documentIds for references
     const programs = await fetchStrapiPaginated<Record<string, unknown>>(
       "/api/training-programs",
-      "fields[0]=documentId&fields[1]=title&fields[2]=slug"
+      "fields[0]=documentId&fields[1]=title&fields[2]=slug",
     );
 
     const trainingProgramRefs = programs.map((p) => ({
@@ -998,7 +1069,9 @@ async function migrateTrainingProgramsPage(): Promise<void> {
     migrationCounts["trainingProgramsPage"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] trainingProgramsPage: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing trainingProgramsPage: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing trainingProgramsPage: ${(err as Error).message}`,
+    );
     migrationCounts["trainingProgramsPage"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -1007,15 +1080,19 @@ async function migrateGlobalSettings(): Promise<void> {
   console.log("[migrate] Migrating globalSettings...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      `/api/global?${POPULATE_GLOBAL}`
+      `/api/global?${POPULATE_GLOBAL}`,
     );
 
     const headerData = (data.header as Record<string, unknown> | null) ?? {};
     const footerData = (data.footer as Record<string, unknown> | null) ?? {};
 
     // Transform header
-    const logoTextHeader = headerData.logoText as Record<string, unknown> | null;
-    const ctaButtonLinks = (headerData.ctaButton as Record<string, unknown>[] | null) ?? [];
+    const logoTextHeader = headerData.logoText as Record<
+      string,
+      unknown
+    > | null;
+    const ctaButtonLinks =
+      (headerData.ctaButton as Record<string, unknown>[] | null) ?? [];
 
     const header = {
       _type: "header",
@@ -1037,8 +1114,12 @@ async function migrateGlobalSettings(): Promise<void> {
     };
 
     // Transform footer
-    const logoTextFooter = footerData.logoText as Record<string, unknown> | null;
-    const socialLinks = (footerData.socialLink as Record<string, unknown>[] | null) ?? [];
+    const logoTextFooter = footerData.logoText as Record<
+      string,
+      unknown
+    > | null;
+    const socialLinks =
+      (footerData.socialLink as Record<string, unknown>[] | null) ?? [];
 
     const footer = {
       _type: "footer",
@@ -1072,7 +1153,9 @@ async function migrateGlobalSettings(): Promise<void> {
     migrationCounts["globalSettings"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] globalSettings: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing globalSettings: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing globalSettings: ${(err as Error).message}`,
+    );
     migrationCounts["globalSettings"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -1081,17 +1164,21 @@ async function migrateMainMenu(): Promise<void> {
   console.log("[migrate] Migrating mainMenu...");
   try {
     const data = await fetchStrapi<Record<string, unknown>>(
-      "/api/main-menu?populate[MainMenuItems][on][menu.dropdown][populate][sections][populate][links]=true&populate[MainMenuItems][on][menu.menu-link][populate]=true"
+      "/api/main-menu?populate[MainMenuItems][on][menu.dropdown][populate][sections][populate][links]=true&populate[MainMenuItems][on][menu.menu-link][populate]=true",
     );
 
     const rawItems =
       (data.MainMenuItems as Record<string, unknown>[] | null) ??
-      (data.items as Record<string, unknown>[] | null) ?? [];
+      (data.items as Record<string, unknown>[] | null) ??
+      [];
 
     const items = rawItems.map((item) => {
       const itemComponent = item.__component as string | undefined;
 
-      if (itemComponent === "menu.menu-link" || itemComponent === "menu.direct-link") {
+      if (
+        itemComponent === "menu.menu-link" ||
+        itemComponent === "menu.direct-link"
+      ) {
         return {
           _type: "menuDirectLink",
           _key: nanoid(12),
@@ -1125,7 +1212,9 @@ async function migrateMainMenu(): Promise<void> {
       }
 
       // Fallback: treat as direct link
-      console.warn(`[migrate] WARN: Unknown menu item component: ${itemComponent}`);
+      console.warn(
+        `[migrate] WARN: Unknown menu item component: ${itemComponent}`,
+      );
       return {
         _type: "menuDirectLink",
         _key: nanoid(12),
@@ -1143,7 +1232,9 @@ async function migrateMainMenu(): Promise<void> {
     migrationCounts["mainMenu"] = { strapi: 1, sanity: 1 };
     console.log("[migrate] mainMenu: OK");
   } catch (err) {
-    console.error(`[migrate] ERROR writing mainMenu: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing mainMenu: ${(err as Error).message}`,
+    );
     migrationCounts["mainMenu"] = { strapi: 1, sanity: 0 };
   }
 }
@@ -1157,7 +1248,7 @@ async function migrateTrainingPrograms(): Promise<void> {
   try {
     const programs = await fetchStrapiPaginated<Record<string, unknown>>(
       "/api/training-programs",
-      POPULATE_TRAINING_PROGRAMS
+      POPULATE_TRAINING_PROGRAMS,
     );
 
     if (programs.length === 0) {
@@ -1169,8 +1260,7 @@ async function migrateTrainingPrograms(): Promise<void> {
     const transaction = client.transaction();
 
     for (const program of programs) {
-      const blocks =
-        (program.blocks as Record<string, unknown>[] | null) ?? [];
+      const blocks = (program.blocks as Record<string, unknown>[] | null) ?? [];
       const transformedBlocks = (
         await Promise.all(blocks.map((b) => transformBlock(b)))
       ).filter(Boolean);
@@ -1195,9 +1285,13 @@ async function migrateTrainingPrograms(): Promise<void> {
       strapi: programs.length,
       sanity: programs.length,
     };
-    console.log(`[migrate] trainingProgram: ${programs.length} records migrated`);
+    console.log(
+      `[migrate] trainingProgram: ${programs.length} records migrated`,
+    );
   } catch (err) {
-    console.error(`[migrate] ERROR writing trainingProgram: ${(err as Error).message}`);
+    console.error(
+      `[migrate] ERROR writing trainingProgram: ${(err as Error).message}`,
+    );
     migrationCounts["trainingProgram"] = { strapi: -1, sanity: 0 };
   }
 }
@@ -1213,10 +1307,9 @@ async function printSummaryReport(): Promise<void> {
     // Query Sanity for actual count
     let sanityCount = 0;
     try {
-      sanityCount = await client.fetch<number>(
-        `count(*[_type == $type])`,
-        { type: docType }
-      );
+      sanityCount = await client.fetch<number>(`count(*[_type == $type])`, {
+        type: docType,
+      });
     } catch {
       sanityCount = counts.sanity;
     }
@@ -1231,11 +1324,13 @@ async function printSummaryReport(): Promise<void> {
             : "MISMATCH";
 
     console.log(
-      `[migrate] ${docType}: ${counts.strapi} Strapi -> ${sanityCount} Sanity (${status})`
+      `[migrate] ${docType}: ${counts.strapi} Strapi -> ${sanityCount} Sanity (${status})`,
     );
   }
 
-  console.log("[migrate] Migration complete. Verify counts above before cleanup.");
+  console.log(
+    "[migrate] Migration complete. Verify counts above before cleanup.",
+  );
 }
 
 // ---------------------------------------------------------------------------

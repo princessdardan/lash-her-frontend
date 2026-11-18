@@ -98,7 +98,10 @@ test("landing signup validates required contact details before saving", async ()
   ] as const) {
     const { dependencies, calls } = fixture();
     assert.deepEqual(
-      await processLandingPageSignup({ ...input, [field]: value }, dependencies),
+      await processLandingPageSignup(
+        { ...input, [field]: value },
+        dependencies,
+      ),
       { success: false, fieldErrors: { [field]: message } },
     );
     assert.deepEqual(calls, []);
@@ -137,40 +140,35 @@ test("missing, unpublished, and stale-slug landing pages cannot collect signups"
   }
 });
 
-test("signup falls back to the published Sanity CDN only when the live API hits its quota", async (t) => {
-  for (const { status, cachedPage, expectedHosts, success } of [
+test("signup reads published campaign identity from the CDN with a tagged cache and no live fallback", async (t) => {
+  for (const { response, success } of [
+    { response: Response.json({ result: page }), success: true },
+    { response: Response.json({ result: null }), success: false },
     {
-      status: 402,
-      cachedPage: page,
-      expectedHosts: ["api", "apicdn"],
-      success: true,
-    },
-    {
-      status: 402,
-      cachedPage: null,
-      expectedHosts: ["api", "apicdn"],
+      response: Response.json({ error: "forbidden" }, { status: 403 }),
       success: false,
     },
-    { status: 403, cachedPage: page, expectedHosts: ["api"], success: false },
   ]) {
     const hosts: string[] = [];
     const fetchMock = t.mock.method(
       globalThis,
       "fetch",
-      async (request: string, options: RequestInit) => {
+      async (
+        request: string,
+        options: RequestInit & {
+          next?: { tags: string[]; revalidate: number };
+        },
+      ) => {
         const url = new URL(request);
-        const host = url.hostname.split(".")[1];
-        hosts.push(host);
+        hosts.push(url.hostname.split(".")[1]);
         assert.equal(url.searchParams.get("perspective"), "published");
         assert.equal(url.searchParams.get("$slug"), JSON.stringify(page.slug));
-        assert.equal(options.cache, "no-store");
+        assert.deepEqual(options.next, {
+          tags: ["landingPage"],
+          revalidate: 60,
+        });
 
-        return host === "apicdn"
-          ? Response.json({ result: cachedPage })
-          : Response.json(
-              { error: status === 402 ? "plan_limit_reached" : "forbidden" },
-              { status },
-            );
+        return response;
       },
     );
     const { dependencies, records } = fixture();
@@ -180,7 +178,7 @@ test("signup falls back to the published Sanity CDN only when the live API hits 
     });
     fetchMock.mock.restore();
 
-    assert.deepEqual(hosts, expectedHosts);
+    assert.deepEqual(hosts, ["apicdn"]);
     assert.equal(result.success, success);
     assert.equal(records.length, success ? 1 : 0);
   }

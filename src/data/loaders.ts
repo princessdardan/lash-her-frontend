@@ -33,10 +33,13 @@ import type {
 
 const isVercelPreview = process.env.VERCEL_ENV === "preview";
 const STUDIO_URL = "/studio";
+const SHARED_CONTENT_REVALIDATE_SECONDS = 300;
+const LANDING_SIGNUP_REVALIDATE_SECONDS = 60;
 
 type SanityFetchOptions = {
   mode?: "auto" | "published";
   stega?: boolean;
+  revalidate?: number;
 };
 
 const CONTROL_STRING_KEYS = new Set([
@@ -181,12 +184,12 @@ const POLICY_PAGE_PROJECTION = groq`{
   }
 }`;
 
-function sanityFetchOptions(tags: string[]) {
+function sanityFetchOptions(tags: string[], revalidate?: number) {
   if (isVercelPreview) {
     return { cache: "no-store" as const };
   }
 
-  return { next: { tags } };
+  return { next: { tags, revalidate } };
 }
 
 async function sanityFetch<T>(
@@ -197,7 +200,7 @@ async function sanityFetch<T>(
 ): Promise<T> {
   if (options.mode === "published") {
     return client
-      .fetch<T>(query, params, sanityFetchOptions(tags))
+      .fetch<T>(query, params, sanityFetchOptions(tags, options.revalidate))
       .then(withFreshaBookingLinks);
   }
 
@@ -214,7 +217,10 @@ async function sanityFetch<T>(
           ? { enabled: true, studioUrl: STUDIO_URL }
           : { enabled: false },
       })
-      .fetch<T>(query, params, { cache: "no-store" as const });
+      .fetch<T>(query, params, {
+        cache: "no-store",
+        tag: "lashher.draft-preview",
+      });
 
     return withFreshaBookingLinks(
       stegaEnabled ? cleanStegaControlStrings(data) : data,
@@ -222,7 +228,7 @@ async function sanityFetch<T>(
   }
 
   return client
-    .fetch<T>(query, params, sanityFetchOptions(tags))
+    .fetch<T>(query, params, sanityFetchOptions(tags, options.revalidate))
     .then(withFreshaBookingLinks);
 }
 
@@ -452,7 +458,9 @@ async function getGlobalData(): Promise<TGlobalSettings | null> {
       cookieExpiryDays
     }
   }`;
-  return sanityFetch<TGlobalSettings | null>(query, {}, ["global"]);
+  return sanityFetch<TGlobalSettings | null>(query, {}, ["global"], {
+    revalidate: SHARED_CONTENT_REVALIDATE_SECONDS,
+  });
 }
 
 /**
@@ -489,7 +497,7 @@ async function getContactPopupSignupOfferConfig(): Promise<ContactPopupSignupOff
   return publishedClient.fetch<ContactPopupSignupOfferConfigSource | null>(
     query,
     {},
-    { cache: "no-store" as const },
+    { cache: "no-store", tag: "lashher.signup-offer" },
   );
 }
 
@@ -503,7 +511,9 @@ async function getMainMenuData(): Promise<TMainMenu | null> {
       sections[]{ _key, heading, links[]{ _key, name, url } }
     }
   }`;
-  return sanityFetch<TMainMenu | null>(query, {}, ["menu"]);
+  return sanityFetch<TMainMenu | null>(query, {}, ["menu"], {
+    revalidate: SHARED_CONTENT_REVALIDATE_SECONDS,
+  });
 }
 
 async function getMetaData(): Promise<TMetaData | null> {
@@ -512,7 +522,10 @@ async function getMetaData(): Promise<TMetaData | null> {
     description,
     "ogImageUrl": ogImage.asset->url
   }`;
-  return sanityFetch<TMetaData | null>(query, {}, ["global"], { stega: false });
+  return sanityFetch<TMetaData | null>(query, {}, ["global"], {
+    stega: false,
+    revalidate: SHARED_CONTENT_REVALIDATE_SECONDS,
+  });
 }
 
 async function getProductsPageData(): Promise<TProductsPage | null> {
@@ -560,6 +573,7 @@ async function getAllLandingPageSlugs(): Promise<Array<{ slug: string }>> {
   const query = groq`*[_type == "landingPage" && defined(slug.current)]{ "slug": slug.current }`;
   return sanityFetch<Array<{ slug: string }>>(query, {}, ["landingPage"], {
     stega: false,
+    revalidate: SHARED_CONTENT_REVALIDATE_SECONDS,
   });
 }
 
@@ -567,25 +581,17 @@ async function getLandingPageSignupDetails(
   slug: string,
 ): Promise<Pick<TLandingPage, "_id" | "title" | "slug"> | null> {
   const query = groq`*[_type == "landingPage" && slug.current == $slug][0]{ _id, title, "slug": slug.current }`;
-  const options = { perspective: "published", cache: "no-store" } as const;
-
-  try {
-    return await client.fetch(query, { slug }, { ...options, useCdn: false });
-  } catch (error) {
-    // Sanity returns 402 when a plan quota is exhausted. The CDN can still
-    // serve published content while the live API is blocked.
-    if (
-      !(
-        error instanceof Error &&
-        "statusCode" in error &&
-        error.statusCode === 402
-      )
-    ) {
-      throw error;
-    }
-
-    return client.fetch(query, { slug }, { ...options, useCdn: true });
-  }
+  return client.fetch(
+    query,
+    { slug },
+    {
+      perspective: "published",
+      next: {
+        tags: ["landingPage"],
+        revalidate: LANDING_SIGNUP_REVALIDATE_SECONDS,
+      },
+    },
+  );
 }
 
 async function getPolicyPageBySlug(

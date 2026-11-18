@@ -22,6 +22,7 @@ const client = createClient({
   apiVersion,
   token,
   useCdn: false,
+  requestTagPrefix: "lashher.ops.home-training-backfill",
 });
 
 const trainingBlock = {

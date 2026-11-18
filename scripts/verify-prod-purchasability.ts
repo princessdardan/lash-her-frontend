@@ -91,6 +91,7 @@ async function fetchPublishedProducts(): Promise<SanityProduct[]> {
     dataset: SANITY_DATASET,
     apiVersion: SANITY_API_VERSION,
     useCdn: false,
+    requestTagPrefix: "lashher.ops.purchasability-check",
     perspective: "published",
   });
   return client.fetch<SanityProduct[]>(

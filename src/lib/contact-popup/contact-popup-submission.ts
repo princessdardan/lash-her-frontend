@@ -80,7 +80,10 @@ export async function processContactPopupSubmission(
   data: ContactPopupData,
   dependencies: ContactPopupSubmissionDependencies = defaultDependencies,
 ): Promise<ContactPopupSubmissionOutcome> {
-  const offerResolution = await dependencies.resolveOffer();
+  const hasMarketingConsent = data.marketingConsent === true;
+  const offerResolution: ContactPopupSignupOfferResolution = hasMarketingConsent
+    ? await dependencies.resolveOffer()
+    : { status: "disabled" };
   const recordResult = await dependencies.recordSubmission({
     variant: data.variant ?? "emailOnly",
     name: data.name || undefined,
@@ -92,14 +95,14 @@ export async function processContactPopupSubmission(
     marketingConsent: data.marketingConsent,
     smsMarketingConsent: data.smsMarketingConsent,
     attribution: data.attribution,
-    ...(offerResolution.status === "available" && data.marketingConsent === true
+    ...(offerResolution.status === "available"
       ? { signupOffer: offerResolution.offer }
       : {}),
   });
 
   const adminEmailPromise = sendAdminEmailNonBlocking(data, dependencies);
 
-  if (data.marketingConsent !== true || highLevelOwnsMarketing()) {
+  if (!hasMarketingConsent || highLevelOwnsMarketing()) {
     await adminEmailPromise;
     return {
       status: "preferences_saved",
