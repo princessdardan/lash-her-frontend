@@ -24,7 +24,7 @@ async function child(){
   const admin=new Client({connectionString:input.url,ssl:{rejectUnauthorized:true}});await admin.connect();
   const checks=[];let sourceProbe;
   try{
-    phase='actual-child-source';const artifact=frontendMigrationArtifact();assert.equal(artifact.migrations.length,83);
+    phase='actual-child-source';const artifact=frontendMigrationArtifact();assert.equal(artifact.migrations[82]?.tag,'0082_customer_account_lifecycle');
     await admin.query('CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations(id serial PRIMARY KEY,hash text NOT NULL,created_at bigint)');
     for(const row of artifact.migrations)await admin.query('INSERT INTO drizzle.__drizzle_migrations(hash,created_at) VALUES($1,$2)',[row.hash,row.folderMillis]);
     assert.match(input.password,/^owned-[a-f0-9-]+$/u);
@@ -49,7 +49,7 @@ async function child(){
     const plan={version:1,mode:'native-window',startState:'already-closed',initialEpoch:'1',sourceCommit,targetSha256,certificationActionId:'owned-certification',candidateSha256:'1'.repeat(64),planSha256:'2'.repeat(64),nativePlan};
     const deps={getUrl:()=>url.href,verifyEnvironment:async()=>{}};
     const current=()=>withP2CertificationFrontendSession(prepared,plan,deps,async({receipt,probe,verify,client})=>{
-      assert.equal(receipt.status,'P2_CERTIFICATION_DATABASE_CURRENT');assert.equal(receipt.after.length,83);await verify();
+      assert.equal(receipt.status,'P2_CERTIFICATION_DATABASE_CURRENT');assert.equal(receipt.after.length,artifact.migrations.length);await verify();
       assert.equal((await observeP2CertificationPhysical({...probe,operation:'verify-schema'},deps)).status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');return{probe,client};
     });
     phase='actual-child-initial-current';await current();checks.push('actual83-current-lineage-schema-prepared-roles-and-old-login-denial');
