@@ -544,7 +544,7 @@ async function getLandingPageBySlug(
     _id, title, "slug": slug.current, eyebrow, heading, description,
     heroImage{ asset, hotspot, crop, alt },
     body[]{ ..., _key },
-    signup{ heading, description, submitLabel, successMessage, "privacyPolicySlug": privacyPolicy->slug.current },
+    signup{ heading, description, submitLabel, mobileDockLabel, successMessage, "privacyPolicySlug": privacyPolicy->slug.current },
     seo{ title, description, noIndex }
   }`;
   return sanityFetch<TLandingPage | null>(

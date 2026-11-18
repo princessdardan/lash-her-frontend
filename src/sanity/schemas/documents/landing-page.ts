@@ -135,6 +135,14 @@ export const landingPage = defineType({
           validation: (rule) => rule.required().max(80),
         }),
         defineField({
+          name: "mobileDockLabel",
+          title: "Mobile Dock Button Label",
+          type: "string",
+          description:
+            'Text for the floating mobile button that jumps to the form. Leave blank to use "Sign Up!".',
+          validation: (rule) => rule.max(80),
+        }),
+        defineField({
           name: "successMessage",
           title: "Success Message",
           type: "text",

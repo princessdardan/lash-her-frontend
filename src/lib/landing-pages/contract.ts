@@ -2,6 +2,7 @@ import type { CampaignAttribution } from "@/lib/highlevel/attribution";
 
 // Keep aligned with top-level app routes and next.config.ts redirects.
 export const RESERVED_LANDING_PAGE_SLUGS = new Set([
+  "account",
   "admin",
   "api",
   "booking",
@@ -13,6 +14,7 @@ export const RESERVED_LANDING_PAGE_SLUGS = new Set([
   "policies",
   "products",
   "services",
+  "sign-in",
   "studio",
   "training",
   "training-programs",
