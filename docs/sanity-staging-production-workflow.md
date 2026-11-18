@@ -561,16 +561,16 @@ The application uses signed Sanity webhooks to trigger immediate Next.js cache r
 
 Configure separate webhooks for staging and production in the Sanity project management panel.
 
-| Setting    | Staging Value                                                                                                                                                                                                                                                           | Production Value                                     |
-| :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------- |
-| URL        | `https://staging.lashher.com/api/revalidate`                                                                                                                                                                                                                            | `https://www.lashher.com/api/revalidate`             |
-| Project    | `3auncj84`                                                                                                                                                                                                                                                              | `3auncj84`                                           |
-| Dataset    | `staging-2026-05-10`                                                                                                                                                                                                                                                    | `production`                                         |
-| Trigger    | Published document create, update, and delete events                                                                                                                                                                                                                    | Published document create, update, and delete events |
+| Setting    | Staging Value                                                                                                                                                                                                                            | Production Value                                     |
+| :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------- |
+| URL        | `https://staging.lashher.com/api/revalidate`                                                                                                                                                                                             | `https://www.lashher.com/api/revalidate`             |
+| Project    | `7o23yrvk`                                                                                                                                                                                                                               | `3auncj84`                                           |
+| Dataset    | `staging-2026-05-10`                                                                                                                                                                                                                     | `production`                                         |
+| Trigger    | Published document create, update, and delete events                                                                                                                                                                                     | Published document create, update, and delete events |
 | Filter     | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "productsPage", "servicesPage", "productCollection", "promotionCode", "policyPage", "landingPage", "product", "service", "globalSettings", "mainMenu"]` | Same as staging                                      |
-| Projection | `{ _id, _type }`                                                                                                                                                                                                                                                        | `{ _id, _type }`                                     |
-| Method     | `POST`                                                                                                                                                                                                                                                                  | `POST`                                               |
-| Secret     | Staging `SANITY_WEBHOOK_SECRET`                                                                                                                                                                                                                                         | Production `SANITY_WEBHOOK_SECRET`                   |
+| Projection | `{ _id, _type }`                                                                                                                                                                                                                         | `{ _id, _type }`                                     |
+| Method     | `POST`                                                                                                                                                                                                                                   | `POST`                                               |
+| Secret     | Staging `SANITY_WEBHOOK_SECRET`                                                                                                                                                                                                          | Production `SANITY_WEBHOOK_SECRET`                   |
 
 Keep staging and production secrets separate. The Sanity webhook secret must exactly match the corresponding Vercel environment value for the target deployment.
 
@@ -580,24 +580,24 @@ Drafts and release versions should not be used for launch smoke evidence. Smoke 
 
 The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader tags in `src/data/loaders.ts` and `TYPE_TAG_MAP` in `src/app/api/revalidate/handler.ts` must be updated together when a public cached document type is added.
 
-| Sanity `_type`         | Cache tag              | Public impact                                                                                         |
-| :--------------------- | :--------------------- | :---------------------------------------------------------------------------------------------------- |
-| `homePage`             | `homePage`             | `/`                                                                                                   |
-| `contactPage`          | `contactPage`          | `/contact`                                                                                            |
-| `galleryPage`          | `galleryPage`          | `/gallery`                                                                                            |
-| `trainingPage`         | `trainingPage`         | Retained content model; `/training` currently redirects to `/training-programs`                       |
-| `trainingProgramsPage` | `trainingProgramsPage` | `/training-programs` page composition                                                                 |
-| `trainingProgram`      | `trainingProgram`      | Home/program cards, `/training-programs/[slug]`, and training checkout reads                          |
-| `productsPage`         | `productsPage`         | `/products` editorial shell                                                                           |
-| `productCollection`    | `productCollection`    | `/products` featured collections and catalog grouping                                                 |
-| `promotionCode`        | `promotionCode`        | Product and training promotion validation reads                                                       |
-| `policyPage`           | `policyPage`           | `/policies/[slug]` and checkout policy reads                                                          |
-| `landingPage`          | `landingPage`          | `/[slug]` campaign pages and global signup-popup exclusions                                           |
-| `product`              | `product`              | `/products`, `/products/[slug]`, checkout reads, and stock set-point synchronization                  |
+| Sanity `_type`         | Cache tag              | Public impact                                                                        |
+| :--------------------- | :--------------------- | :----------------------------------------------------------------------------------- |
+| `homePage`             | `homePage`             | `/`                                                                                  |
+| `contactPage`          | `contactPage`          | `/contact`                                                                           |
+| `galleryPage`          | `galleryPage`          | `/gallery`                                                                           |
+| `trainingPage`         | `trainingPage`         | Retained content model; `/training` currently redirects to `/training-programs`      |
+| `trainingProgramsPage` | `trainingProgramsPage` | `/training-programs` page composition                                                |
+| `trainingProgram`      | `trainingProgram`      | Home/program cards, `/training-programs/[slug]`, and training checkout reads         |
+| `productsPage`         | `productsPage`         | `/products` editorial shell                                                          |
+| `productCollection`    | `productCollection`    | `/products` featured collections and catalog grouping                                |
+| `promotionCode`        | `promotionCode`        | Product and training promotion validation reads                                      |
+| `policyPage`           | `policyPage`           | `/policies/[slug]` and checkout policy reads                                         |
+| `landingPage`          | `landingPage`          | `/[slug]` campaign pages and global signup-popup exclusions                          |
+| `product`              | `product`              | `/products`, `/products/[slug]`, checkout reads, and stock set-point synchronization |
 | `service`              | `service`              | `/services` listing and `/services/[slug]` editorial/media/SEO; not operational booking configuration |
-| `servicesPage`         | `servicesPage`         | `/services` listing/Fresha redirect setting                                                           |
-| `globalSettings`       | `global`               | Header, footer, popup, and metadata                                                                   |
-| `mainMenu`             | `menu`                 | Navigation                                                                                            |
+| `servicesPage`         | `servicesPage`         | `/services` listing/Fresha redirect setting |
+| `globalSettings`       | `global`               | Header, footer, popup, and metadata                                                  |
+| `mainMenu`             | `menu`                 | Navigation                                                                           |
 
 Unknown document types intentionally return 200 without revalidating a tag. Legacy submission or internal tracking types such as `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn` do not drive cached public page rendering, so they are documented no-ops rather than hard failures. Current live form/contact/marketing writes go to PostgreSQL, not Sanity.
 
