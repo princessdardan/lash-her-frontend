@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "scope": "disposable-roles-anywhere-issuer-chain",
+  "accountId": "691588646557",
+  "region": "us-east-1",
+  "sessions": {
+    "api": {
+      "issuer": "arn:aws:sts::691588646557:assumed-role/p503-check-c6f1aa1c-api-issuer/5a9459a9416d34b6ea0f81d665d480c6",
+      "target": "arn:aws:sts::691588646557:assumed-role/p503-check-c6f1aa1c-api-target/p503-check-c6f1aa1c-api",
+      "expiresAt": "2026-11-18T18:31:14+00:00",
+      "oppositeTargetDenied": true
+    },
+    "worker": {
+      "issuer": "arn:aws:sts::691588646557:assumed-role/p503-check-c6f1aa1c-worker-issuer/1ee0c76131eb75615e85d4b767401990",
+      "target": "arn:aws:sts::691588646557:assumed-role/p503-check-c6f1aa1c-worker-target/p503-check-c6f1aa1c-worker",
+      "expiresAt": "2026-11-18T18:31:16+00:00",
+      "oppositeTargetDenied": true
+    }
+  },
+  "teardown": {
+    "scope": "p503-check-c6f1aa1c",
+    "stackStatus": "DELETE_COMPLETE",
+    "resourcesRemoved": 8,
+    "directAbsenceConfirmed": true,
+    "localCertificateKeysRemoved": true
+  },
+  "helperSha256": "ac4b656cd83ffde5a6e9e8f2317ffb90e036c9bb704cc80faa6aee414b55915a",
+  "templateSha256": "21a63f650c107dfc51b701280db65378dc93fbd8f7dd4fa5bee296a42802591e",
+  "probeSha256": "bd6d38dc819399e7054ab9a6f49032722ef74ae3021102b184cf2ce4c2440a52",
+  "liveWorkloadIssuerConfigured": false,
+  "trafficAuthorized": false
+}

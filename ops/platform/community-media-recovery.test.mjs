@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { bindCommunityMediaRecovery, communityMediaSourceHashes } from "./community-media-recovery.mjs";
+import { communityMediaPair } from "./community-media-pair.mjs";
 
 const published = JSON.parse(readFileSync(new URL("./community-media-predecessor.json", import.meta.url)));
 const runtimeImage = "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:" + "4".repeat(64);
@@ -77,7 +78,7 @@ function fixture(t) {
   };
   const savePlatform = value => writeFileSync(join(root, "media-platform-recovery.json"), JSON.stringify(value));
   savePlatform(platform);
-  return { bind, save, report, platform, savePlatform };
+  return { bind, save, report, platform, savePlatform, root, candidate };
 }
 
 test("candidate binds the exact verified predecessor and isolated media restore report", (t) => {
@@ -117,4 +118,39 @@ test("media proof alone cannot substitute for the exact platform rounds", (t) =>
   platform.rounds[1].gracefulStop.processes.pop();
   savePlatform(platform);
   assert.throws(bind, /Exact platform rollback evidence required/u);
+});
+
+test("held pair requires completed issuer teardown and binds both exact manifest bytes", (t) => {
+  const { bind, save, report, root } = fixture(t);
+  save(report);
+  const candidate = bind();
+  writeFileSync(join(root, "release.candidate.json"), JSON.stringify(candidate));
+  for (const file of ["community-media-issuer-qualification.yaml", "community-media-issuer-qualification.py"]) {
+    writeFileSync(join(root, "tests/support", file), "synthetic issuer material");
+  }
+  const probeSha256 = createHash("sha256").update("synthetic issuer material").digest("hex");
+  const scope = "p503-check-0123abcd";
+  const issuer = {
+    version: 1, scope: "disposable-roles-anywhere-issuer-chain", accountId: "691588646557", region: "us-east-1",
+    templateSha256: probeSha256, probeSha256,
+    liveWorkloadIssuerConfigured: false, trafficAuthorized: false,
+    teardown: { scope, stackStatus: "DELETE_COMPLETE", resourcesRemoved: 8, directAbsenceConfirmed: true,
+      localCertificateKeysRemoved: true },
+    sessions: Object.fromEntries(["api", "worker"].map(role => [role, {
+      issuer: "arn:aws:sts::691588646557:assumed-role/" + scope + "-" + role + "-issuer/certificate",
+      target: "arn:aws:sts::691588646557:assumed-role/" + scope + "-" + role + "-target/" + scope + "-" + role,
+      expiresAt: "2026-11-18T18:00:00Z", oppositeTargetDenied: true,
+    }])),
+  };
+  const path = join(root, "ops/platform/community-media-issuer-proof.json");
+  writeFileSync(path, JSON.stringify(issuer));
+  const pair = communityMediaPair(candidate, root, root);
+  assert.equal(pair.status, "ISOLATED_MEDIA_RECOVERY_PAIR_VERIFIED");
+  assert.equal(pair.current.releaseId, candidate.releaseId);
+  assert.equal(pair.predecessor.releaseId, published.releaseId);
+  assert.equal(pair.trafficAuthorized, false);
+  assert.equal(pair.releaseAccepted, false);
+  issuer.teardown.directAbsenceConfirmed = false;
+  writeFileSync(path, JSON.stringify(issuer));
+  assert.throws(() => communityMediaPair(candidate, root, root), /Completed isolated AWS issuer/u);
 });
