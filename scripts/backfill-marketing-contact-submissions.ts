@@ -26,11 +26,7 @@ type BackfillDocument = {
   sourcePath?: string;
   variant?: "fullContact" | "emailOnly";
   bookingType?: string;
-  answers?: Array<{
-    answer?: string;
-    questionId?: string;
-    questionLabel?: string;
-  }>;
+  answers?: Array<{ answer?: string; questionId?: string; questionLabel?: string }>;
 };
 
 type BackfillRecord = {
@@ -79,20 +75,14 @@ async function main(): Promise<void> {
     requestTagPrefix: "lashher.ops.marketing-backfill",
   });
   const docs = await sanityClient.fetch<BackfillDocument[]>(SUBMISSION_QUERY);
-  const records = docs
-    .map(toBackfillRecord)
-    .filter((record) => record !== null);
+  const records = docs.map(toBackfillRecord).filter((record) => record !== null);
 
-  console.log(
-    `[marketing-backfill] Found ${docs.length} Sanity submission docs`,
-  );
+  console.log(`[marketing-backfill] Found ${docs.length} Sanity submission docs`);
   console.log(`[marketing-backfill] Prepared ${records.length} rows`);
   console.table(countBy(records, (record) => record.originalDocumentType));
 
   if (!execute) {
-    console.log(
-      "[marketing-backfill] Dry run only. Re-run with --execute to write to private Postgres.",
-    );
+    console.log("[marketing-backfill] Dry run only. Re-run with --execute to write to private Postgres.");
     return;
   }
 
@@ -103,9 +93,7 @@ async function main(): Promise<void> {
     });
   }
 
-  console.log(
-    `[marketing-backfill] Backfilled ${records.length} marketing/contact submission rows`,
-  );
+  console.log(`[marketing-backfill] Backfilled ${records.length} marketing/contact submission rows`);
 }
 
 function toBackfillRecord(doc: BackfillDocument): BackfillRecord | null {
@@ -181,10 +169,7 @@ function toBackfillRecord(doc: BackfillDocument): BackfillRecord | null {
   return null;
 }
 
-function countBy<T>(
-  records: T[],
-  selectKey: (record: T) => string,
-): Array<{ count: number; type: string }> {
+function countBy<T>(records: T[], selectKey: (record: T) => string): Array<{ count: number; type: string }> {
   const counts = new Map<string, number>();
 
   for (const record of records) {
