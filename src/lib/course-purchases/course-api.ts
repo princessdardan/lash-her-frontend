@@ -2,11 +2,8 @@ import "server-only";
 
 import { mintCourseEntitlementToken } from "./token";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
-import {
-  parseCourseResponse,
-  validateApiResponse,
-} from "@/lib/api-integration/response-validation";
-import type { paths } from "@/lib/api-integration/generated/course-checkout";
+import { validateCandidateResponse, type CandidateSuccess } from "@/lib/api-integration/candidate-validation";
+import { parseCourseResponse } from "@/lib/api-integration/response-validation";
 import type { paths as CoursePaths } from "@/lib/api-integration/generated/course";
 import type { coursePurchaseOrders, coursePurchaseJobs } from "./schema";
 
@@ -16,8 +13,7 @@ const revocations = "/v1/internal/entitlements/revocations";
 const reconciliation = "/v1/internal/entitlements/reconcile";
 type ReconciliationRequest =
   CoursePaths[typeof reconciliation]["post"]["requestBody"]["content"]["application/json"];
-export type CourseOffer =
-  paths[typeof checkoutOffer]["get"]["responses"][200]["content"]["application/json"];
+export type CourseOffer = CandidateSuccess<"course", typeof checkoutOffer, "get">;
 
 export class PurchaseDependencyError extends Error {
   constructor(
@@ -38,8 +34,8 @@ export async function readCourseOffer(
     applicationToken: mintCourseEntitlementToken(),
   });
   const data: unknown = await response.json();
-  validateApiResponse(
-    "course-checkout",
+  validateCandidateResponse(
+    "course",
     checkoutOffer,
     "get",
     response.status,

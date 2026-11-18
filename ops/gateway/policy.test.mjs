@@ -16,14 +16,12 @@ export const config = {
 test("gateway exposes exact reviewed service methods; enrollment/authority traffic stays private", () => {
   const documents = Object.fromEntries(["course", "community"].map(service => [service,
     JSON.parse(readFileSync(new URL(`../../contracts/api-integration/p2-candidate/${service}-api.json`, import.meta.url)))]));
-  const checkout = JSON.parse(readFileSync(new URL("../../contracts/api-integration/course-checkout.json", import.meta.url)));
   for (const route of routes) {
     const service = route.service ?? "course";
     // Course11 reserves these exact aliases against the published lifecycle
     // boundary; it is not enabled by reserving gateway transport here.
     const reservedCourseLifecycle = service === "course" && ["POST /v1/internal/accounts/commands", "GET /v1/internal/accounts/exports/{commandId}"].includes(`${route.method} ${route.path}`);
-    assert.ok(documents[service].paths[route.path]?.[route.method.toLowerCase()] ||
-      (service === "course" && checkout.paths[route.path]?.[route.method.toLowerCase()]) || reservedCourseLifecycle);
+    assert.ok(documents[service].paths[route.path]?.[route.method.toLowerCase()] || reservedCourseLifecycle);
     assert.equal(matchRoute(route.method, `/${service}${route.path.replace(/\{[^}]+\}/gu, "valid-id")}`), route);
   }
   for (const path of [

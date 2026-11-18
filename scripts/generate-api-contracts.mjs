@@ -11,19 +11,11 @@ function option(name) {
     throw new Error(`${name} requires a directory`);
   return resolve(value);
 }
-const selectedBundle = option("--bundle");
-const { documents } = await readContractBundle(selectedBundle);
-const services = ["course", "community", "boundaries"];
-if (!selectedBundle) {
-  services.push("course-checkout");
-  documents["course-checkout"] = JSON.parse(await readFile(
-    new URL("../contracts/api-integration/course-checkout.json", import.meta.url), "utf8",
-  ));
-}
+const { documents } = await readContractBundle(option("--bundle"));
 const outputDirectory =
   option("--output") ??
   resolve(import.meta.dirname, "../src/lib/api-integration/generated");
-for (const service of services) {
+for (const service of ["course", "community", "boundaries"]) {
   const output = resolve(outputDirectory, `${service}.d.ts`);
   const generated =
     "// Generated from the pinned integration bundle. Run npm run contracts:generate.\n" +

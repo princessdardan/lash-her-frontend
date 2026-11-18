@@ -4,7 +4,6 @@ import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import course from "../../../contracts/api-integration/v1/course-api.json";
 import community from "../../../contracts/api-integration/v1/community-api.json";
-import courseCheckout from "../../../contracts/api-integration/course-checkout.json";
 import type { paths as CoursePaths } from "@/lib/api-integration/generated/course";
 import type { paths as CommunityPaths } from "@/lib/api-integration/generated/community";
 import { ApiContractError } from "./api-contract-error";
@@ -19,7 +18,7 @@ type JsonBody<Response> = Response extends {
 }
   ? B
   : never;
-type Service = "course" | "community" | "course-checkout";
+type Service = "course" | "community";
 interface ResponseSchema {
   description?: string;
   content?: Record<string, { schema?: object }>;
@@ -35,7 +34,7 @@ interface Document {
     responses?: Record<string, ResponseSchema>;
   };
 }
-const documents: Record<Service, Document> = { course, community, "course-checkout": courseCheckout };
+const documents: Record<Service, Document> = { course, community };
 const validators = new Map<string, ValidateFunction>();
 const ajv = new Ajv2020({
   strict: false,
