@@ -88,6 +88,7 @@ LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
     'ops/platform/compose.community-media.yaml',
     'ops/platform/host/community_media.py',
     'ops/platform/host/p4_05_candidate.py',
+    'ops/platform/pull-api-schemas.mjs',
 }
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""

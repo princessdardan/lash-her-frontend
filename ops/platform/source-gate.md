@@ -9,6 +9,8 @@ The [single-operator release policy](../../docs/api-integration/release-policy.m
 3. Configure frontend repository Actions secret `PLATFORM_SOURCE_READ_TOKEN` with a fine-grained token limited to these three repositories: Contents read, Actions read, automatic Metadata read. Keep its value private and set an expiry. The existing compatibility workflows also need that same credential stored as `CROSS_REPO_READ_TOKEN` in both API repositories. These are three storage locations for one read-only credential. No cloud/database/package permission is needed. Registry writes use `GITHUB_TOKEN` separately.
 4. Confirm the candidate GHCR packages are scoped correctly and private API images remain private. Native branch protection is useful where supported but is not required to buy or configure additional services.
 
+Private API CI publishes the operator-required PostgreSQL 18 schema report to a private package linked to its own repository in GHCR. CI checks its source/run/attempt labels and verifies retrieval by digest before passing. The existing native image checks and enforced scans remain part of the containers job. The operator retrieves the schema through `ops/platform/pull-api-schemas.mjs` using the selected candidate's passing source CI identities. Frontend CI and candidate artifacts retain their current retrieval path.
+
 ## Each candidate
 
 1. In frontend Actions, manually run **Platform artifact candidate** as `princessdardan`, choosing the frontend coordinator branch (`staging` or `main`; private APIs use `main`) and the exact three reviewed commit IDs. The frontend commit must match the workflow revision. This dispatch is the build approval; there is no second approval click.
