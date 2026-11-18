@@ -243,7 +243,7 @@ async function child(){
     checks.push('actual-composed-lifecycle-preference-and-clean-fences','actual-composed-browser-loss-and-ledger-uncertainty');
     checks.push('actual-composed-owner-identity-held-mapping-and-clean-fences');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
-    return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
+    return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:artifact.migrations.length,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
   }finally{await admin.end();}
 }

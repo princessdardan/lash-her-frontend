@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const hash = value => createHash('sha256').update(value).digest('hex');
 const require = ok => { if (!ok) throw new Error('P2_PLATFORM_OWNED_FIXTURE_REFUSED'); };
 const maximumOutput = 4_000_000;
+const frontendMigrationCount = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.json', import.meta.url))).entries.length;
 const failureStatuses = new Set(['FRONTEND_ROLES_OWNED_FAILED', 'FRONTEND_RELEASE_OWNED_POSTGRES_FAILED',
   'OWNED_ROLE_COMPOSITION_DETAIL', 'P2_LIFECYCLE_NATIVE_OWNED_FAILED', 'P2_NATIVE_OWNED_CHILD_FAILED',
   'P2_CERTIFICATION_CURRENT_OWNED_FAILED', 'P2_CERTIFICATION_REPLACEMENT_OWNED_FAILED']);
@@ -114,7 +115,7 @@ export function validateP2FixtureReceipt(fixture, value, major) {
     const fields = ['version', 'status', 'serverMajor', 'frontendMigrations', 'checks', 'skipped', 'actualTlsPostgres',
       'noSqlReplay', 'providerTouched', 'fixtureOnly'];
     if (certification) fields.push('actualHostDocker', 'browserQualified', 'nativeInvocationQualified');
-    require(JSON.stringify(Object.keys(value).sort()) === JSON.stringify(fields.sort()) && value.version === 1 && value.frontendMigrations === 83 &&
+    require(JSON.stringify(Object.keys(value).sort()) === JSON.stringify(fields.sort()) && value.version === 1 && value.frontendMigrations === frontendMigrationCount &&
       JSON.stringify(value.checks) === JSON.stringify(fixture.required) && value.skipped === 0 && value.actualTlsPostgres === true &&
       value.noSqlReplay === true && value.fixtureOnly === true);
     if (certification) require(value.actualHostDocker === false && value.browserQualified === false && value.nativeInvocationQualified === false);
