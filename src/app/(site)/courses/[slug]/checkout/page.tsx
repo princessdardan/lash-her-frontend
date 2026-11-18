@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { readCourseCatalogDetail } from "@/components/learning/course-detail";
 import { customerSignInHref } from "@/lib/learning/presentation";
-
-const academyId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 import { getCustomerActor } from "@/lib/customer-auth/session";
 import {
   courseCheckoutEnabled,
@@ -14,6 +12,13 @@ import { publicCourseOrder } from "@/lib/course-purchases/checkout";
 import { readCourseOrder } from "@/lib/course-purchases/store";
 import { CoursePurchaseForm } from "@/components/courses/course-purchase-form";
 
+const academyId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
+
+type CheckoutPageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ order?: string | string[] }>;
+};
+
 export const metadata: Metadata = {
   title: "Course checkout",
   robots: { index: false, follow: false },
@@ -22,7 +27,7 @@ export const metadata: Metadata = {
 export default async function CourseCheckoutPage({
   params,
   searchParams,
-}: PageProps<"/courses/[slug]/checkout">) {
+}: CheckoutPageProps) {
   const { slug } = await params;
   const { order: orderId } = await searchParams;
   if (!coursePurchaseAccountEnabled() || !courseRecoveryEnabled()) notFound();
