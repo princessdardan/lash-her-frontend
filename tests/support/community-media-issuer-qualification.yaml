@@ -59,7 +59,7 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: ['sts:AssumeRole', 'sts:SetSourceIdentity']
+                Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
                 Resource: !GetAtt ApiTarget.Arn
   WorkerIssuer:
     Type: AWS::IAM::Role
@@ -84,7 +84,7 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: ['sts:AssumeRole', 'sts:SetSourceIdentity']
+                Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
                 Resource: !GetAtt WorkerTarget.Arn
   ApiTarget:
     Type: AWS::IAM::Role
@@ -96,7 +96,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal: { AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' }
-            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity']
+            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
             Condition:
               ArnEquals:
                 aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/p503-issuer-qualification/${Scope}-api-issuer'
@@ -110,7 +110,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal: { AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' }
-            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity']
+            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
             Condition:
               ArnEquals:
                 aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/p503-issuer-qualification/${Scope}-worker-issuer'

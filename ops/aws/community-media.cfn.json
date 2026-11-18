@@ -385,7 +385,8 @@
               "Effect": "Allow",
               "Action": [
                 "sts:AssumeRole",
-                "sts:SetSourceIdentity"
+                "sts:SetSourceIdentity",
+                "sts:TagSession"
               ],
               "Principal": {
                 "AWS": {
@@ -443,7 +444,8 @@
               "Effect": "Allow",
               "Action": [
                 "sts:AssumeRole",
-                "sts:SetSourceIdentity"
+                "sts:SetSourceIdentity",
+                "sts:TagSession"
               ],
               "Principal": {
                 "AWS": {

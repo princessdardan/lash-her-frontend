@@ -99,7 +99,7 @@ test("API and worker grants are distinct and limited to the same environment's m
     const properties = role.Properties;
     const [trust] = properties.AssumeRolePolicyDocument.Statement;
     assert.equal(properties.AssumeRolePolicyDocument.Statement.length, 1);
-    assert.deepEqual(trust.Action, ["sts:AssumeRole", "sts:SetSourceIdentity"]);
+    assert.deepEqual(trust.Action, ["sts:AssumeRole", "sts:SetSourceIdentity", "sts:TagSession"]);
     assert.deepEqual(trust.Principal, {
       AWS: { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" },
     });
