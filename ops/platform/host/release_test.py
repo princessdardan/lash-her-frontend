@@ -573,6 +573,21 @@ class RuntimeReleaseTests(unittest.TestCase):
             self.assertNotIn("private-fixture", str(failure.exception))
         self.assertEqual(release.environment_values(raw, "staging", "course-api", {name: {"job": job} for name, job in self.fixture.jobs.items()})["INTERNAL_SERVICE_JWT_SECRET"], "literal$VALUE")
 
+    def test_public_admission_directory_is_readable_under_private_operator_umask(self):
+        selected, jobs, _, _ = release.make_plan(self.bundle, self.configuration, self.compose)
+        snapshot = self.root / "private-umask-snapshot"
+        previous_umask = os.umask(0o077)
+        try:
+            release.snapshot_configuration(self.configuration, snapshot, selected, jobs, self.compose.read_bytes())
+        finally:
+            os.umask(previous_umask)
+        self.assertEqual((snapshot / "admission").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((snapshot / "admission").stat().st_uid, os.getuid())
+        self.assertEqual(list((snapshot / "admission").iterdir()), [])
+        self.assertEqual(snapshot.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((snapshot / "course-api.env").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((snapshot / "tls/gateway/key.pem").stat().st_mode & 0o777, 0o400)
+
     def test_cached_preflight_cannot_pull_and_requires_valid_local_image_identity(self):
         selected, jobs, _, _ = release.make_plan(self.bundle, self.configuration, self.compose)
         snapshot = self.root / "preflight-snapshot"

@@ -215,7 +215,11 @@ def snapshot_configuration(source, destination, release, jobs, compose, *, expec
     (destination / "compose.yaml").write_bytes(compose)
     (destination / "compose.yaml").chmod(0o600)
     # Directory binding exposes atomic host admission changes without restart.
-    (destination / "admission").mkdir(mode=0o755)
+    admission = destination / "admission"
+    admission.mkdir(mode=0o755)
+    # The operator runs with umask 077. This directory contains only public
+    # fence state and must be traversable by the non-root gateway bind mount.
+    admission.chmod(0o755)
     # Each container receives only its own TLS directory/config. Env files are
     # read by the host Compose process, never mounted into other services.
     for path in [*(destination / "tls").rglob("*"), *(destination / name for name in CONFIG_FILES)]:
