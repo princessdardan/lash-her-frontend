@@ -59,7 +59,16 @@ let resultReceipt = { status: "PUBLISHED_RECOVERY_HARNESS_FAILED", runId, curren
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, command === "docker" ? ["--host", environment.OWNED_DOCKER_SOCKET, ...args] : args, { cwd: root, env: environment, stdio: ["ignore", log, log], timeout: 180_000, ...options });
-  if (result.status !== 0) throw new Error("Isolated harness command failed");
+  if (result.status !== 0) {
+    const composeCommand = command === "docker" && args[0] === "compose"
+      ? args.find((value) => ["config", "up", "exec", "stop", "rm", "restart", "run", "ps", "down", "logs"].includes(value))
+      : undefined;
+    const operation = composeCommand ? `docker compose ${composeCommand}`
+      : command === "docker" && ["pull", "run", "inspect"].includes(args[0]) ? `docker ${args[0]}`
+        : command === "openssl" ? "openssl" : "command";
+    const status = Number.isInteger(result.status) ? result.status : "unavailable";
+    throw new Error(`Isolated harness command failed (${operation}; exit ${status})`);
+  }
   return result;
 }
 function compose(commandArgs, options) { return run("docker", [...composeArgs.slice(2), ...commandArgs], options); }
@@ -137,6 +146,9 @@ try {
   // Refuse a topology with any host publication before starting a container.
   const config = JSON.parse(compose(["config", "--format", "json"], { stdio: ["ignore", "pipe", log] }).stdout);
   if (Object.values(config.services).some((service) => service.ports?.length)) throw new Error("Owned fixture must publish no host port");
+  // The media fixture uses another PostgreSQL variant; never assume this exact
+  // compatibility-test digest was populated by an earlier workflow step.
+  run("docker", ["pull", "--platform", "linux/amd64", postgresImage]);
   compose(["up", "--pull", "never", "-d", "postgres"]);
   await waitFor("postgres", () => spawnSync("docker", [...composeArgs, "exec", "-T", "postgres", "pg_isready", "-U", "postgres"], { env: environment, stdio: "ignore" }).status === 0);
   const sql = (name, statement) => JSON.parse(compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", `lash_her_${name}_p1_test`, "-v", "ON_ERROR_STOP=1", "-A", "-t", "-c", statement], { stdio: ["ignore", "pipe", log] }).stdout.toString().trim());
