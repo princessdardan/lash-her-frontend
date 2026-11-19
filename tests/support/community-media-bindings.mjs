@@ -174,7 +174,6 @@ host all postgres all scram-sha-256
           "--profile",
           "community-media",
           "config",
-          "--no-env-resolution",
           "--format",
           "json",
         ),
@@ -219,13 +218,13 @@ host all postgres all scram-sha-256
           mount.target === "/run/media-db-ca/ca.pem",
       ),
     );
-    assert.deepEqual(
-      api.env_file.map(({ path }) => path),
-      [join(release, "community-api.env")],
-    );
-    assert.deepEqual(
-      media.env_file.map(({ path }) => path),
-      [join(bindings, "worker-db.env")],
+    assert.equal(api.environment.DATABASE_TARGET, "test");
+    assert.equal(api.environment.TEST_DATABASE_URL, databaseUrl);
+    assert.equal(media.environment.DATABASE_TARGET, "test");
+    assert.equal(media.environment.TEST_DATABASE_URL, workerDatabaseUrl);
+    assert.notEqual(
+      api.environment.TEST_DATABASE_URL,
+      media.environment.TEST_DATABASE_URL,
     );
     for (const [role, service] of [
       ["api", api],
