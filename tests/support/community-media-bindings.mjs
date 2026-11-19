@@ -141,6 +141,21 @@ host all lash_her_community_media_worker all reject
 host all postgres all scram-sha-256
 `,
     );
+    // Compose validates every base service's env_file before selecting the
+    // media fixture services. These files are placeholders for unstarted peers.
+    for (const service of [
+      "course-api",
+      "course-publisher",
+      "course-snapshot",
+      "course-media",
+      "course-export-cleanup",
+      "community-worker",
+    ]) {
+      write(
+        `release/${service}.env`,
+        "# Synthetic Compose model only; this peer is not started.\n",
+      );
+    }
     write("release/community-api.env", database);
     write(
       "bindings/worker-db.env",
