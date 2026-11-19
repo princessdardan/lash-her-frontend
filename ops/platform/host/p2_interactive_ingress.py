@@ -63,9 +63,13 @@ def _protection(project):
            sso["deploymentType"] == "all", "P2_INTERACTIVE_ALL_DEPLOYMENTS_PROTECTION_REQUIRED")
     bypasses = project.get("protectionBypass")
     demand(type(bypasses) is dict and bypasses, "P2_INTERACTIVE_AUTOMATION_BYPASS_REQUIRED")
+    required_fields = {"createdAt", "createdBy", "scope"}
+    allowed_fields = required_fields | {"isEnvVar", "note"}
     for secret, value in bypasses.items():
         demand(type(secret) is str and _BYPASS_SECRET.fullmatch(secret) is not None and
-               type(value) is dict and set(value) == {"createdAt", "createdBy", "scope"} and
+               type(value) is dict and required_fields <= set(value) <= allowed_fields and
+               ("isEnvVar" not in value or type(value["isEnvVar"]) is bool) and
+               ("note" not in value or type(value["note"]) is str) and
                type(value["createdAt"]) is int and value["createdAt"] > 0 and
                type(value["createdBy"]) is str and 0 < len(value["createdBy"]) <= 256 and
                value["scope"] == "automation-bypass",
@@ -95,8 +99,10 @@ class UnauthenticatedIngressClient:
                "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
         flight = any(pattern.fullmatch(path) for pattern in (_LEARNER_COURSE_FLIGHT_PATH, _LEARNER_LESSON_FLIGHT_PATH))
-        headers = {"accept": "text/x-component" if flight else "text/html,application/xhtml+xml",
-                   "cache-control": "no-cache"}
+        # Vercel sends its login redirect for HTML-only requests. Offering JSON
+        # also requests a direct HTTP denial while preserving the tested route mode.
+        accept = "text/x-component,application/json" if flight else "text/html,application/xhtml+xml,application/json"
+        headers = {"accept": accept, "cache-control": "no-cache"}
         if flight:
             headers["RSC"] = "1"
         request = urllib.request.Request(url, method="GET", headers=headers)
