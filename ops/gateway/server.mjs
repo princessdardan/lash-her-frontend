@@ -160,7 +160,8 @@ export function createGateway(input, options = {}) {
         return refuse(503, "release_maintenance", 30);
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
-      const bodyLimit = reviewRequest ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
+      const reviewQuizAttempt = courseReviewRequest && req.method === "POST" && route.path === "/v1/student/lessons/{lessonId}/quiz/attempts";
+      const bodyLimit = reviewQuizAttempt ? 65_536 : reviewRequest ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
       const chunks = [];
       let bytes = 0;
       for await (const chunk of req) {

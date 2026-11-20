@@ -43,8 +43,9 @@ export function checkReviewCourseProof(scope, { method, target, body, authorizat
       expires > Math.min(now + 40, scope.end) || !uuid.test(nonce) || !hex.test(signature)) return false;
   if (!scope.lessons.some((id) => {
     const lesson = `/course/v1/student/lessons/${id}`;
-    return method === "GET" && [lesson, lesson + "/playback", `/course/v1/student/progress?lessonId=${id}`].includes(target) ||
-      method === "POST" && target === lesson + "/progress";
+    return method === "GET" && [lesson, lesson + "/playback", lesson + "/quiz", lesson + "/quiz/attempts",
+      `/course/v1/student/progress?lessonId=${id}`].includes(target) ||
+      method === "POST" && [lesson + "/progress", lesson + "/quiz/attempts"].includes(target);
   })) return false;
   const token = authorization.slice(7);
   const parts = token.split(".");

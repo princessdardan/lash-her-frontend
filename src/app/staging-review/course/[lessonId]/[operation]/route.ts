@@ -26,12 +26,19 @@ async function handle(request: Request, { params }: Context, method: "get" | "po
     if (!subject) throw new IntegrationServiceError("sign_in_required", 401);
     const { lessonId, operation } = await params;
     const config = reviewCourseSettings(lessonId);
-    if (!config || new URL(request.url).search || (operation !== "progress" && !(operation === "playback" && method === "get")))
+    const attempts = "/v1/student/lessons/{lessonId}/quiz/attempts";
+    if (!config || new URL(request.url).search ||
+      (operation !== "progress" && operation !== "quiz-attempts" && !(operation === "playback" && method === "get")))
       throw new IntegrationServiceError("not_found", 404);
     if (method === "post") {
       if (!reviewSameOrigin(request)) throw new IntegrationServiceError("forbidden", 403);
-      const body = await readSameOriginJson(request, new URL(request.url).origin, 1024);
-      // Only viewing progress is part of the protected review.
+      const quizAttempt = operation === "quiz-attempts";
+      const body = await readSameOriginJson(request, new URL(request.url).origin, quizAttempt ? 65_536 : 1024);
+      if (quizAttempt) {
+        const result = await reviewLessonRequest(config, subject, lessonId, attempts, "post", body);
+        return Response.json(result, { headers });
+      }
+      // These assessed lessons complete through the Course quiz transaction.
       if (body && typeof body === "object" && "event" in body && body.event !== "lesson_started")
         throw new IntegrationServiceError("invalid_request", 400);
       const result = await reviewLessonRequest(config, subject, lessonId, "/v1/student/lessons/{lessonId}/progress", "post", body);
@@ -39,7 +46,7 @@ async function handle(request: Request, { params }: Context, method: "get" | "po
     }
     const result = operation === "playback"
       ? await reviewLessonRequest(config, subject, lessonId, "/v1/student/lessons/{lessonId}/playback", "get")
-      : await reviewLessonRequest(config, subject, lessonId, "/v1/student/progress", "get");
+      : await reviewLessonRequest(config, subject, lessonId, operation === "quiz-attempts" ? attempts : "/v1/student/progress", "get");
     return Response.json(result, { headers });
   } catch (error) {
     return integrationErrorResponse(error);

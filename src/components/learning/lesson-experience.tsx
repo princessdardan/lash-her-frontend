@@ -30,7 +30,7 @@ export function LessonExperience({
 }: {
   lesson: LearnerLesson;
   initialProgress: LessonProgress | null;
-  quizState?: LessonQuizState;
+  quizState: LessonQuizState;
   preview?: boolean;
   playbackObservation?: boolean;
   stagingReview?: boolean;
@@ -155,10 +155,11 @@ export function LessonExperience({
           </button>
         </div>
       ) : null}
-      {quizState?.kind === "ready" && writesEnabled ? (
+      {quizState.kind === "ready" && writesEnabled ? (
         <LessonQuiz
           key={`${quizState.quiz.id}-${quizState.quiz.revision}`}
           quiz={quizState.quiz}
+          attemptsPath={stagingReview ? `${lessonApi}/quiz-attempts` : undefined}
           initialAttempts={quizState.attempts}
           onBusy={(busy) => {
             assessmentPending.current = busy;
@@ -175,7 +176,7 @@ export function LessonExperience({
             }
           }}
         />
-      ) : writesEnabled && quizState?.kind === "unavailable" ? (
+      ) : writesEnabled && quizState.kind === "unavailable" ? (
         <div role="status" className="mt-10 border-t border-lh-primary/20 pt-8">
           <h2 className="font-heading text-3xl">Assessment unavailable</h2>
           <p className="mt-3">
@@ -191,7 +192,7 @@ export function LessonExperience({
           </button>
         </div>
       ) : null}
-      {writesEnabled && quizState?.kind === "none" ? (
+      {writesEnabled && quizState.kind === "none" ? (
         <div className="mt-10 border-t border-lh-primary/20 pt-8">
           <button
             type="button"

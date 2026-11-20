@@ -20,7 +20,9 @@ type LessonPath = "/v1/student/lessons/{lessonId}";
 type PlaybackPath = "/v1/student/lessons/{lessonId}/playback";
 type ProgressPath = "/v1/student/progress";
 type SavePath = "/v1/student/lessons/{lessonId}/progress";
-type Operation = LessonPath | PlaybackPath | ProgressPath | SavePath;
+type QuizPath = "/v1/student/lessons/{lessonId}/quiz";
+type AttemptsPath = "/v1/student/lessons/{lessonId}/quiz/attempts";
+type Operation = LessonPath | PlaybackPath | ProgressPath | SavePath | QuizPath | AttemptsPath;
 
 export function reviewCourseSettings(lessonId: string) {
   const config = reviewSettings();
