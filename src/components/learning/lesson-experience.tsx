@@ -26,13 +26,17 @@ export function LessonExperience({
   quizState,
   preview = false,
   playbackObservation = false,
+  stagingReview = false,
 }: {
   lesson: LearnerLesson;
   initialProgress: LessonProgress | null;
-  quizState: LessonQuizState;
+  quizState?: LessonQuizState;
   preview?: boolean;
   playbackObservation?: boolean;
+  stagingReview?: boolean;
 }) {
+  const lessonApi = stagingReview ? `/staging-review/course/${lesson.id}` : `/api/academy/lessons/${lesson.id}`;
+  const progressRead = stagingReview ? `${lessonApi}/progress` : `/api/academy/progress?lessonId=${lesson.id}`;
   const writesEnabled = !preview && !playbackObservation;
   const [progress, setProgress] = useState(initialProgress);
   const [status, setStatus] = useState<ProgressSyncStatus>("ready");
@@ -45,14 +49,14 @@ export function LessonExperience({
       write: async (body, keepalive) =>
         (
           await learningRequest<{ progress: LessonProgress }>(
-            `/api/academy/lessons/${lesson.id}/progress`,
+            `${lessonApi}/progress`,
             { method: "POST", body, keepalive },
           )
         ).progress,
       latest: async () =>
         (
           await learningRequest<{ progress: LessonProgress[] }>(
-            `/api/academy/progress?lessonId=${lesson.id}`,
+            progressRead,
           )
         ).progress[0] ?? null,
       changed: (latest, next, error) => {
@@ -95,6 +99,7 @@ export function LessonExperience({
       )}
       <AuthorizedVideo
         lesson={lesson}
+        playbackPath={`${lessonApi}/playback`}
         resume={initialProgress?.resumePositionSeconds ?? 0}
         flushPositionRef={flushPositionRef}
         onPosition={(resume, watched, keepalive) => {
@@ -118,7 +123,7 @@ export function LessonExperience({
           failure.code === "sign_in_required" ? (
             <a
               className={`${learningSecondaryAction} mt-3`}
-              href="/sign-in?callbackUrl=%2Facademy"
+              href={stagingReview ? "/staging-review" : "/sign-in?callbackUrl=%2Facademy"}
             >
               Sign in again
             </a>
@@ -150,7 +155,7 @@ export function LessonExperience({
           </button>
         </div>
       ) : null}
-      {quizState.kind === "ready" && writesEnabled ? (
+      {quizState?.kind === "ready" && writesEnabled ? (
         <LessonQuiz
           key={`${quizState.quiz.id}-${quizState.quiz.revision}`}
           quiz={quizState.quiz}
@@ -170,7 +175,7 @@ export function LessonExperience({
             }
           }}
         />
-      ) : writesEnabled && quizState.kind === "unavailable" ? (
+      ) : writesEnabled && quizState?.kind === "unavailable" ? (
         <div role="status" className="mt-10 border-t border-lh-primary/20 pt-8">
           <h2 className="font-heading text-3xl">Assessment unavailable</h2>
           <p className="mt-3">
@@ -186,7 +191,7 @@ export function LessonExperience({
           </button>
         </div>
       ) : null}
-      {writesEnabled && quizState.kind === "none" ? (
+      {writesEnabled && quizState?.kind === "none" ? (
         <div className="mt-10 border-t border-lh-primary/20 pt-8">
           <button
             type="button"

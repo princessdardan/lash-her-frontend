@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { reviewCourseSettings } from "@/lib/staging-review/course";
 import { notFound } from "next/navigation";
 import { DiscussionMedia } from "@/components/community/discussion-media";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
@@ -68,7 +70,11 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
           {course.course.modules?.map((module) => (
             <div key={module.id}>
               <h4 className="font-semibold">{module.title}</h4>
-              <ul className="list-inside list-disc">{module.lessons?.map((lesson) => <li key={lesson.id}>{lesson.title}</li>)}</ul>
+              <ul className="list-inside list-disc">{module.lessons?.map((lesson) => <li key={lesson.id}>
+                {reviewCourseSettings(lesson.id)
+                  ? <Link className="underline" href={`${reviewPath}/course/${lesson.id}`}>{lesson.title}</Link>
+                  : lesson.title}
+              </li>)}</ul>
             </div>
           ))}
         </> : <p role="status">Course is temporarily unavailable.</p>}

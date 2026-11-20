@@ -14,6 +14,8 @@ import {
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
 import { checkReviewMediaProof, REVIEW_MEDIA_HEADER, reviewMediaScope } from "./staging-review-media.mjs";
 
+import { checkReviewCourseProof, REVIEW_COURSE_HEADER, reviewCourseScope } from "./staging-review-course.mjs";
+
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
 const MAX_SCOPED_MUX_REQUESTS = 16;
@@ -29,7 +31,9 @@ export function createGateway(input, options = {}) {
   const admissionOptions = options.scopedAdmission ?? options.scopedMuxAdmission;
   const readAdmission = createAdmissionReader(config, admissionOptions);
   const reviewMedia = reviewMediaScope(config);
-  const usedReviewProofs = new Map();
+  const reviewCourse = reviewCourseScope(config);
+  const usedReviewMediaProofs = new Map();
+  const usedReviewCourseProofs = new Map();
   const admissionNow = admissionOptions?.now ?? Date.now;
   const scopedMuxEvidence = new Map();
   const usedOneShotMuxAttempts = new Set();
@@ -123,14 +127,20 @@ export function createGateway(input, options = {}) {
         const retry = budgets.consume(route.path.startsWith("/v1/internal/") ? "service" : "workload");
         if (retry) return refuse(429, "rate_limit_exceeded", retry);
       }
-      const category = admissionClass(route);
+      const playbackIssuance = reviewCourse && service === "course" && route.path === "/v1/student/lessons/{lessonId}/playback";
+      const category = playbackIssuance ? "newWork" : admissionClass(route);
       const admission = currentAdmission();
-      const reviewRequest = route.stagingReviewMedia === true;
+      const courseReviewRequest = req.headers[REVIEW_COURSE_HEADER] !== undefined;
+      const reviewHeader = courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
+      const reviewRequest = courseReviewRequest || route.stagingReviewMedia === true;
       const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
         uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
       if (reviewRequest) {
-        if (!reviewMedia || !closedReview(admission) || typeof req.headers[REVIEW_MEDIA_HEADER] !== "string" ||
+        const scopeAvailable = courseReviewRequest
+          ? reviewCourse && service === "course" && route.auth === "application" && req.headers[REVIEW_MEDIA_HEADER] === undefined
+          : reviewMedia;
+        if (!scopeAvailable || !closedReview(admission) || typeof req.headers[reviewHeader] !== "string" ||
             req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) return refuse(503, "release_maintenance", 30);
       } else if (oneShotMuxFence(admission)) {
         if (!admission.muxCallback || !scopedMuxRoute || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) {
@@ -164,10 +174,13 @@ export function createGateway(input, options = {}) {
       let interactiveSelection, interactiveEvidence;
       if (reviewRequest) {
         const current = currentAdmission();
+        const proof = { method: req.method, target: req.url, body, authorization: req.headers.authorization,
+          proof: req.headers[reviewHeader], now: Math.floor(Date.now() / 1000) };
         if (!closedReview(current) || current.sha256 !== admission.sha256 || res.destroyed ||
-            !checkReviewMediaProof(reviewMedia, { method: req.method, target: req.url, body, authorization: req.headers.authorization,
-              proof: req.headers[REVIEW_MEDIA_HEADER], now: Math.floor(Date.now() / 1000) }, usedReviewProofs))
-          return refuse(403, "staging_media_scope_refused");
+            !(courseReviewRequest
+              ? checkReviewCourseProof(reviewCourse, proof, usedReviewCourseProofs)
+              : checkReviewMediaProof(reviewMedia, proof, usedReviewMediaProofs)))
+          return refuse(403, courseReviewRequest ? "staging_course_scope_refused" : "staging_media_scope_refused");
         if (category) {
           scopedRequest = true;
           accountAdmission(category);

@@ -30,9 +30,11 @@ export function AuthorizedVideo({
   resume,
   onPosition,
   flushPositionRef,
+  playbackPath = `/api/academy/lessons/${lesson.id}/playback`,
 }: {
   lesson: LearnerLesson;
   resume: number;
+  playbackPath?: string;
   onPosition: (resume: number, watched?: number, keepalive?: boolean) => void;
   flushPositionRef?: MutableRefObject<(() => void) | null>;
 }) {
@@ -89,7 +91,7 @@ export function AuthorizedVideo({
       let serverDate: string | null = null;
       try {
         const result = await learningRequest<PlaybackAuthorization>(
-          `/api/academy/lessons/${lesson.id}/playback`,
+          playbackPath,
           {
             signal: AbortSignal.any([controller.signal, activeRequest.signal]),
             onResponse: (response) => {
@@ -159,7 +161,7 @@ export function AuthorizedVideo({
       clearTimeout(expiryTimer);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [lesson.id, attempt]);
+  }, [playbackPath, attempt]);
 
   useEffect(() => {
     const save = () => {
