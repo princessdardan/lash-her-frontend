@@ -16,6 +16,8 @@ import { checkReviewMediaProof, REVIEW_MEDIA_HEADER, reviewMediaScope } from "./
 
 import { checkReviewCourseProof, REVIEW_COURSE_HEADER, reviewCourseScope } from "./staging-review-course.mjs";
 
+import { checkReviewDiscussionsProof, REVIEW_DISCUSSIONS_HEADER, REVIEW_DISCUSSIONS_BODY_LIMIT, reviewDiscussionsScope } from "./staging-review-community.mjs";
+
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
 const MAX_SCOPED_MUX_REQUESTS = 16;
@@ -32,6 +34,8 @@ export function createGateway(input, options = {}) {
   const readAdmission = createAdmissionReader(config, admissionOptions);
   const reviewMedia = reviewMediaScope(config);
   const reviewCourse = reviewCourseScope(config);
+  const reviewDiscussions = reviewDiscussionsScope(config);
+  const usedReviewDiscussionProofs = new Map();
   const usedReviewMediaProofs = new Map();
   const usedReviewCourseProofs = new Map();
   const admissionNow = admissionOptions?.now ?? Date.now;
@@ -131,15 +135,18 @@ export function createGateway(input, options = {}) {
       const category = playbackIssuance ? "newWork" : admissionClass(route);
       const admission = currentAdmission();
       const courseReviewRequest = req.headers[REVIEW_COURSE_HEADER] !== undefined;
-      const reviewHeader = courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
-      const reviewRequest = courseReviewRequest || route.stagingReviewMedia === true;
+      const discussionReviewRequest = route.stagingReviewDiscussions === true;
+      const reviewHeader = discussionReviewRequest ? REVIEW_DISCUSSIONS_HEADER : courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
+      const reviewRequest = discussionReviewRequest || courseReviewRequest || route.stagingReviewMedia === true;
       const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
         uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
       if (reviewRequest) {
-        const scopeAvailable = courseReviewRequest
-          ? reviewCourse && service === "course" && route.auth === "application" && req.headers[REVIEW_MEDIA_HEADER] === undefined
-          : reviewMedia;
+        const scopeAvailable = discussionReviewRequest
+          ? reviewDiscussions && service === "community" && !courseReviewRequest && req.headers[REVIEW_MEDIA_HEADER] === undefined
+          : courseReviewRequest
+            ? reviewCourse && service === "course" && route.auth === "application" && req.headers[REVIEW_MEDIA_HEADER] === undefined
+            : reviewMedia;
         if (!scopeAvailable || !closedReview(admission) || typeof req.headers[reviewHeader] !== "string" ||
             req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) return refuse(503, "release_maintenance", 30);
       } else if (oneShotMuxFence(admission)) {
@@ -161,7 +168,7 @@ export function createGateway(input, options = {}) {
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
       const reviewQuizAttempt = courseReviewRequest && req.method === "POST" && route.path === "/v1/student/lessons/{lessonId}/quiz/attempts";
-      const bodyLimit = reviewQuizAttempt ? 65_536 : reviewRequest ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
+      const bodyLimit = discussionReviewRequest ? REVIEW_DISCUSSIONS_BODY_LIMIT : reviewQuizAttempt ? 65_536 : reviewRequest ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
       const chunks = [];
       let bytes = 0;
       for await (const chunk of req) {
@@ -178,10 +185,12 @@ export function createGateway(input, options = {}) {
         const proof = { method: req.method, target: req.url, body, authorization: req.headers.authorization,
           proof: req.headers[reviewHeader], now: Math.floor(Date.now() / 1000) };
         if (!closedReview(current) || current.sha256 !== admission.sha256 || res.destroyed ||
-            !(courseReviewRequest
+            !(discussionReviewRequest
+              ? checkReviewDiscussionsProof(reviewDiscussions, proof, usedReviewDiscussionProofs)
+              : courseReviewRequest
               ? checkReviewCourseProof(reviewCourse, proof, usedReviewCourseProofs)
               : checkReviewMediaProof(reviewMedia, proof, usedReviewMediaProofs)))
-          return refuse(403, courseReviewRequest ? "staging_course_scope_refused" : "staging_media_scope_refused");
+          return refuse(403, discussionReviewRequest ? "staging_discussion_scope_refused" : courseReviewRequest ? "staging_course_scope_refused" : "staging_media_scope_refused");
         if (category) {
           scopedRequest = true;
           accountAdmission(category);

@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { reviewCourseSettings } from "@/lib/staging-review/course";
 import { notFound } from "next/navigation";
+import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
+import type { CommunityFeed, CommunitySpaces } from "@/lib/community/client";
+import { reviewDiscussionSettings } from "@/lib/staging-review/discussions";
 import { DiscussionMedia } from "@/components/community/discussion-media";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
@@ -11,8 +14,6 @@ export const metadata: Metadata = { title: "Staging review", robots: { index: fa
 export const dynamic = "force-dynamic";
 
 type Course = { course?: { title: string; modules?: { id: string; title: string; lessons?: { id: string; title: string }[] }[] } };
-type Spaces = { spaces: { courseId: string; title: string }[] };
-type Feed = { space: { title: string }; posts: { id: string; body: string; author?: { displayName?: string } }[] };
 
 async function read<T>(service: "course" | "community", path: string, customerId: string): Promise<T | null> {
   try {
@@ -49,9 +50,10 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
   }
   const [course, list, feed] = await Promise.all([
     read<Course>("course", `/v1/student/courses/${reviewCourse}`, subject),
-    read<Spaces>("community", "/v1/spaces", subject),
-    read<Feed>("community", `/v1/spaces/${reviewCourse}/posts`, subject),
+    read<CommunitySpaces>("community", "/v1/spaces", subject),
+    read<CommunityFeed>("community", `/v1/spaces/${reviewCourse}/posts`, subject),
   ]);
+  const discussionsEnabled = Boolean(reviewDiscussionSettings());
   const space = list?.spaces.find((entry) => entry.courseId === reviewCourse);
   return (
     <main className="mx-auto grid max-w-4xl gap-10 px-6 py-12">
@@ -83,10 +85,14 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
         <h2 className="text-2xl">Community</h2>
         {feed && space ? <>
           <h3 className="text-xl">{space.title}</h3>
+          {discussionsEnabled && <ReviewDiscussionForm />}
           {feed.posts.length ? feed.posts.map((post) => (
             <article key={post.id} className="rounded border p-4">
-              {post.author?.displayName && <p className="font-semibold">{post.author.displayName}</p>}
+              <p className="font-semibold">{post.author}</p>
               <p className="whitespace-pre-wrap">{post.body}</p>
+              {discussionsEnabled && post.mine && (
+                <Link className="mt-2 inline-block underline" href={`${reviewPath}/discussions/${post.id}`}>Open discussion</Link>
+              )}
               {post.id === process.env.STAGING_REVIEW_MEDIA_POST && process.env.STAGING_REVIEW_MEDIA_KEY && (
                 <div className="mt-4">
                   <p className="mb-3 text-sm">Use synthetic images for this staging test.</p>

@@ -291,5 +291,26 @@
     "auth": "application",
     "service": "community",
     "stagingReviewMedia": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/spaces/{courseId}/posts",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/discussions/{postId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/discussions/{postId}/comments",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
   }
 ]
