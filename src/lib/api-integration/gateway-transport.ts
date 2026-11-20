@@ -12,6 +12,7 @@ export type GatewayRequest = {
   path: string;
   applicationToken?: string;
   idempotencyKey?: string;
+  stagingReviewMediaProof?: string;
   body?: string;
   signal?: AbortSignal;
 };
@@ -45,6 +46,9 @@ export function createGatewayTransport(config: {
     const route = routes.find((route) => ("service" in route ? route.service : "course") === service && route.auth !== "webhook" && route.method === input.method &&
       new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(pathname));
     if (!route) throw new GatewayTransportError("route");
+    const scopedMedia = "stagingReviewMedia" in route && route.stagingReviewMedia === true;
+    if (scopedMedia !== Boolean(input.stagingReviewMediaProof) ||
+        (scopedMedia && getApplicationEnvironment() !== "staging")) throw new GatewayTransportError("authorization");
     if (route.auth === "application" && !input.applicationToken) throw new GatewayTransportError("authorization");
     if (input.applicationToken && (input.applicationToken.length > 8192 || !/^[A-Za-z0-9._~-]+$/u.test(input.applicationToken))) throw new GatewayTransportError("authorization");
     if (input.idempotencyKey && !/^[A-Za-z0-9._:-]{1,255}$/u.test(input.idempotencyKey)) throw new GatewayTransportError("authorization");
@@ -62,6 +66,7 @@ export function createGatewayTransport(config: {
       const headers: Record<string, string> = {
         accept: "application/json", "x-lash-workload-token": token, "x-request-id": requestId,
       };
+      if (input.stagingReviewMediaProof) headers["x-lash-staging-review-media"] = input.stagingReviewMediaProof;
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;
       if (input.body !== undefined) headers["content-type"] = "application/json";

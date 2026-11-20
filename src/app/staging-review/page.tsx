@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { DiscussionMedia } from "@/components/community/discussion-media";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { getReviewSubject, reviewCourse, reviewPath, reviewSettings } from "@/lib/staging-review/session";
@@ -55,7 +56,7 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl">Staging review</h1>
-          <p>Read-only test account</p>
+          <p>Protected test account</p>
         </div>
         <form action={`${reviewPath}/logout`} method="post"><button className="rounded border px-4 py-2">Sign out</button></form>
       </header>
@@ -80,6 +81,12 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
             <article key={post.id} className="rounded border p-4">
               {post.author?.displayName && <p className="font-semibold">{post.author.displayName}</p>}
               <p className="whitespace-pre-wrap">{post.body}</p>
+              {post.id === process.env.STAGING_REVIEW_MEDIA_POST && process.env.STAGING_REVIEW_MEDIA_KEY && (
+                <div className="mt-4">
+                  <p className="mb-3 text-sm">Use synthetic images for this staging test.</p>
+                  <DiscussionMedia postId={post.id} own writes locked={false} apiBase="/staging-review/community" />
+                </div>
+              )}
             </article>
           )) : <p>No discussions yet.</p>}
         </> : <p role="status">Community is temporarily unavailable.</p>}

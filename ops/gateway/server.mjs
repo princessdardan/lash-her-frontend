@@ -12,6 +12,7 @@ import {
   selectScopedInteractiveRequest, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
+import { checkReviewMediaProof, REVIEW_MEDIA_HEADER, reviewMediaScope } from "./staging-review-media.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
@@ -27,6 +28,8 @@ export function createGateway(input, options = {}) {
   const certification = (options.certificationFault ?? createP2CertificationFault)(config);
   const admissionOptions = options.scopedAdmission ?? options.scopedMuxAdmission;
   const readAdmission = createAdmissionReader(config, admissionOptions);
+  const reviewMedia = reviewMediaScope(config);
+  const usedReviewProofs = new Map();
   const admissionNow = admissionOptions?.now ?? Date.now;
   const scopedMuxEvidence = new Map();
   const usedOneShotMuxAttempts = new Set();
@@ -122,8 +125,14 @@ export function createGateway(input, options = {}) {
       }
       const category = admissionClass(route);
       const admission = currentAdmission();
+      const reviewRequest = route.stagingReviewMedia === true;
+      const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
+        uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
-      if (oneShotMuxFence(admission)) {
+      if (reviewRequest) {
+        if (!reviewMedia || !closedReview(admission) || typeof req.headers[REVIEW_MEDIA_HEADER] !== "string" ||
+            req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) return refuse(503, "release_maintenance", 30);
+      } else if (oneShotMuxFence(admission)) {
         if (!admission.muxCallback || !scopedMuxRoute || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) {
           return refuse(503, "release_maintenance", 30);
         }
@@ -141,7 +150,7 @@ export function createGateway(input, options = {}) {
         return refuse(503, "release_maintenance", 30);
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
-      const bodyLimit = muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
+      const bodyLimit = reviewRequest ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
       const chunks = [];
       let bytes = 0;
       for await (const chunk of req) {
@@ -153,7 +162,17 @@ export function createGateway(input, options = {}) {
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
       let muxSelection, muxEvidence;
       let interactiveSelection, interactiveEvidence;
-      if (interactiveAdmission) {
+      if (reviewRequest) {
+        const current = currentAdmission();
+        if (!closedReview(current) || current.sha256 !== admission.sha256 || res.destroyed ||
+            !checkReviewMediaProof(reviewMedia, { method: req.method, target: req.url, body, authorization: req.headers.authorization,
+              proof: req.headers[REVIEW_MEDIA_HEADER], now: Math.floor(Date.now() / 1000) }, usedReviewProofs))
+          return refuse(403, "staging_media_scope_refused");
+        if (category) {
+          scopedRequest = true;
+          accountAdmission(category);
+        }
+      } else if (interactiveAdmission) {
         const current = currentAdmission();
         if (res.destroyed || uncertain.newWork !== 0 || uncertain.recovery !== 0 || current.sha256 !== interactiveAdmission.sha256) {
           return refuse(503, "release_maintenance", 30);
@@ -221,7 +240,7 @@ export function createGateway(input, options = {}) {
         // callback cannot dirty drain.
         accountAdmission("recovery");
       }
-      const fault = interactiveSelection || oneShotMux ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
+      const fault = reviewRequest || interactiveSelection || oneShotMux ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
       if (certification.beforeUpstream(fault, res, () => refuse(503, "upstream_unavailable", 1))) return;
       const headers = { "x-request-id": requestId, "content-length": String(body.length) };
       for (const [name, value] of Object.entries(req.headers)) {

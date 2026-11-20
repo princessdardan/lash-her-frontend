@@ -256,5 +256,40 @@
     "path": "/v1/spaces/{courseId}/posts",
     "auth": "application",
     "service": "community"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/discussions/{postId}/media",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/discussions/{postId}/media",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/media/{mediaId}/view",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/media/{mediaId}/complete",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/media/{mediaId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
   }
 ]
