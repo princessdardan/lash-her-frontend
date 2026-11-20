@@ -239,5 +239,22 @@
     "method": "GET",
     "path": "/v1/admin/courses/{courseId}/publication-readiness",
     "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/internal/checkout-offer",
+    "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/spaces",
+    "auth": "application",
+    "service": "community"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/spaces/{courseId}/posts",
+    "auth": "application",
+    "service": "community"
   }
 ]
