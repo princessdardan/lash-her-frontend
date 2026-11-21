@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DiscussionMedia } from "@/components/community/discussion-media";
+import { ReviewReaction } from "@/components/community/review-reaction";
 import { ReviewContent } from "@/components/community/review-content";
 import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
@@ -33,6 +34,8 @@ export default async function DiscussionPage({ params }: { params: Promise<{ pos
             <p className="font-semibold">{discussion.post.author}</p>
             <ReviewContent body={discussion.post.body} postId={postId}
               canEdit={!discussion.post.locked} canDelete={postId !== process.env.STAGING_REVIEW_MEDIA_POST} />
+            <ReviewReaction postId={postId} reacted={discussion.post.reacted}
+              count={discussion.post.reactionCount} locked={discussion.post.locked} />
           </article>
           {process.env.STAGING_REVIEW_MEDIA_OWNED_POSTS === "true" &&
             <DiscussionMedia postId={postId} own writes locked={discussion.post.locked}

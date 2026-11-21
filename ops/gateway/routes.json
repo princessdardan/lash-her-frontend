@@ -326,5 +326,12 @@
     "auth": "application",
     "service": "community",
     "stagingReviewDiscussions": true
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/discussions/{postId}/reaction",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
   }
 ]

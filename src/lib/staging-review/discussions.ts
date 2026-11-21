@@ -12,11 +12,12 @@ import { reviewCourse, reviewSameOrigin, reviewSettings } from "./session";
 const uuid = z.string().uuid();
 const inputText = z.string().trim().min(1).max(4000);
 const postInput = z.object({ body: inputText }).strict();
+const reactionInput = z.object({ active: z.boolean() }).strict();
 const replyInput = postInput.extend({ replyId: uuid }).strict();
 const item = z.object({ id: uuid, body: z.string(), author: z.string(), mine: z.boolean() });
 const thread = z.object({
   space: z.object({ courseId: uuid, title: z.string() }),
-  post: item.extend({ locked: z.boolean() }),
+  post: item.extend({ locked: z.boolean(), reacted: z.boolean(), reactionCount: z.number().int().nonnegative() }),
   comments: z.array(item).max(20),
 });
 const outcome = z.object({ id: uuid }).strict();
@@ -30,7 +31,7 @@ export function reviewDiscussionSettings() {
 async function send(
   scope: NonNullable<ReturnType<typeof reviewDiscussionSettings>>,
   subject: string,
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   input?: object,
 ) {
@@ -74,20 +75,26 @@ export async function reviewDiscussionMutation(request: Request, method: string,
     const [, postId, segment, replyId] = parts;
     const create = method === "POST" && parts.length === 1;
     const reply = method === "POST" && parts.length === 3 && segment === "replies";
+    const reaction = method === "PUT" && parts.length === 3 && segment === "reaction";
     const change = (method === "PATCH" || method === "DELETE") &&
       (parts.length === 2 || (parts.length === 4 && segment === "replies" && uuid.safeParse(replyId).success));
-    if (!config || new URL(request.url).search || (!create && !(uuid.safeParse(postId).success && (reply || change))))
+    if (!config || new URL(request.url).search || (!create && !(uuid.safeParse(postId).success && (reply || change || reaction))))
       throw new IntegrationServiceError("not_found", 404);
     if (!reviewSameOrigin(request)) throw new IntegrationServiceError("forbidden", 403);
     const body = await readSameOriginJson(request, new URL(request.url).origin, REVIEW_DISCUSSIONS_BODY_LIMIT);
-    const parsed = (method === "DELETE" ? z.object({}).strict() : reply ? replyInput : postInput).safeParse(body);
+    const input = method === "DELETE" ? z.object({}).strict() : reaction ? reactionInput : reply ? replyInput : postInput;
+    const parsed = input.safeParse(body);
     if (!parsed.success) throw new IntegrationServiceError("invalid_request", 400);
 
     let path = `/v1/spaces/${reviewCourse}/posts`;
     if (!create) {
       const discussion = await getReviewDiscussion(config, subject, postId);
-      if (method !== "DELETE" && discussion.post.locked) throw new IntegrationServiceError("conflict", 409);
-      if (reply) {
+      const removingReaction = reaction && "active" in parsed.data && parsed.data.active === false;
+      if (method !== "DELETE" && !removingReaction && discussion.post.locked)
+        throw new IntegrationServiceError("conflict", 409);
+      if (reaction) {
+        path = `/v1/discussions/${postId}/reaction`;
+      } else if (reply) {
         path = `/v1/discussions/${postId}/comments`;
       } else {
         if (replyId && !discussion.comments.some((comment) => comment.id === replyId && comment.mine))
@@ -97,7 +104,7 @@ export async function reviewDiscussionMutation(request: Request, method: string,
         path = `/v1/content/${replyId ?? postId}`;
       }
     }
-    const verb = method === "DELETE" || method === "PATCH" ? method : "POST";
+    const verb = method === "DELETE" || method === "PATCH" || method === "PUT" ? method : "POST";
     const result = await send(config, subject, verb, path, verb === "DELETE" ? undefined : parsed.data);
     if (result.status !== (verb === "POST" ? 201 : 200)) throw new IntegrationServiceError("service_unavailable", 503);
     return Response.json(outcome.parse(result.data), {

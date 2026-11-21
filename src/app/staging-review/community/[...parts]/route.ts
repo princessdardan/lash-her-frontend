@@ -30,6 +30,10 @@ export function POST(request: Request, context: { params: Promise<{ parts: strin
   return media(request, context, "POST");
 }
 
+export function PUT(request: Request, context: { params: Promise<{ parts: string[] }> }) {
+  return media(request, context, "PUT");
+}
+
 export function PATCH(request: Request, context: { params: Promise<{ parts: string[] }> }) {
   return media(request, context, "PATCH");
 }
@@ -41,7 +45,7 @@ export function DELETE(request: Request, context: { params: Promise<{ parts: str
 async function media(
   request: Request,
   context: { params: Promise<{ parts: string[] }> },
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
 ) {
   const { parts: route } = await context.params;
   const ownedPost = route[0] === "attachments";
@@ -52,7 +56,7 @@ async function media(
     if (!subject) return failure(401, "sign_in_required", "Sign in to the staging review first.");
     return reviewDiscussionMutation(request, method, parts, subject);
   }
-  if (method === "PATCH") return failure(404, "not_found", "This route is unavailable.");
+  if (method === "PATCH" || method === "PUT") return failure(404, "not_found", "This route is unavailable.");
   const config = reviewSettings();
   const { STAGING_REVIEW_MEDIA_POST: fixture, STAGING_REVIEW_MEDIA_KEY: key } = process.env;
   const post = ownedPost ? route[1] : fixture;
