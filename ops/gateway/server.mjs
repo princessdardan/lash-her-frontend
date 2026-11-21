@@ -20,6 +20,8 @@ import { checkReviewDiscussionsProof, REVIEW_DISCUSSIONS_HEADER, REVIEW_DISCUSSI
 
 import { createOwnerAuthoringSequence, OWNER_AUTHORING_HEADER, readOwnerAuthoringScope } from "./staging-owner-authoring.mjs";
 
+import { createReviewNotifications, REVIEW_NOTIFICATIONS_HEADER, reviewNotificationsScope } from "./staging-review-notifications.mjs";
+
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
 const MAX_SCOPED_MUX_REQUESTS = 16;
@@ -37,6 +39,7 @@ export function createGateway(input, options = {}) {
   const reviewMedia = reviewMediaScope(config);
   const reviewCourse = reviewCourseScope(config);
   const reviewDiscussions = reviewDiscussionsScope(config);
+  const reviewNotifications = createReviewNotifications(reviewNotificationsScope(config, reviewDiscussions));
   const ownerAuthoring = createOwnerAuthoringSequence(readOwnerAuthoringScope(config));
   const usedReviewDiscussionProofs = new Map();
   const usedReviewMediaProofs = new Map();
@@ -138,10 +141,11 @@ export function createGateway(input, options = {}) {
       const category = playbackIssuance ? "newWork" : admissionClass(route);
       const admission = currentAdmission();
       const courseReviewRequest = req.headers[REVIEW_COURSE_HEADER] !== undefined;
-      const discussionReviewRequest = route.stagingReviewDiscussions === true;
-      const reviewHeader = discussionReviewRequest ? REVIEW_DISCUSSIONS_HEADER : courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
+      const notificationReviewRequest = route.stagingReviewNotifications === true || req.headers[REVIEW_NOTIFICATIONS_HEADER] !== undefined;
+      const discussionReviewRequest = !notificationReviewRequest && route.stagingReviewDiscussions === true;
+      const reviewHeader = notificationReviewRequest ? REVIEW_NOTIFICATIONS_HEADER : discussionReviewRequest ? REVIEW_DISCUSSIONS_HEADER : courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
       const authoringProof = req.headers[OWNER_AUTHORING_HEADER];
-      const reviewRequest = discussionReviewRequest || courseReviewRequest || route.stagingReviewMedia === true;
+      const reviewRequest = notificationReviewRequest || discussionReviewRequest || courseReviewRequest || route.stagingReviewMedia === true;
       const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
         uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
@@ -151,7 +155,11 @@ export function createGateway(input, options = {}) {
             req.headers["x-idempotency-key"] !== undefined)
           return refuse(503, "release_maintenance", 30);
       } else if (reviewRequest) {
-        const scopeAvailable = discussionReviewRequest
+        const scopeAvailable = notificationReviewRequest
+          ? service === "community" && route.auth === "application" && !courseReviewRequest &&
+            req.headers[REVIEW_MEDIA_HEADER] === undefined && req.headers[REVIEW_DISCUSSIONS_HEADER] === undefined &&
+            req.headers["x-idempotency-key"] === undefined
+          : discussionReviewRequest
           ? reviewDiscussions && service === "community" && !courseReviewRequest && req.headers[REVIEW_MEDIA_HEADER] === undefined
           : courseReviewRequest
             ? reviewCourse && service === "course" && route.auth === "application" && req.headers[REVIEW_MEDIA_HEADER] === undefined
@@ -188,7 +196,7 @@ export function createGateway(input, options = {}) {
       const body = Buffer.concat(chunks);
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
       let muxSelection, muxEvidence;
-      let interactiveSelection, interactiveEvidence;
+      let interactiveSelection, interactiveEvidence, notificationPrincipal;
       if (authoringProof !== undefined) {
         const current = currentAdmission();
         if (res.destroyed || !closedReview(current) || current.sha256 !== admission.sha256 ||
@@ -203,12 +211,14 @@ export function createGateway(input, options = {}) {
         const proof = { method: req.method, target: req.url, body, authorization: req.headers.authorization,
           proof: req.headers[reviewHeader], now: Math.floor(Date.now() / 1000) };
         if (!closedReview(current) || current.sha256 !== admission.sha256 || res.destroyed ||
-            !(discussionReviewRequest
+            !(notificationReviewRequest
+              ? (notificationPrincipal = reviewNotifications.authorize({ ...proof, admissionSha256: current.sha256 }))
+              : discussionReviewRequest
               ? checkReviewDiscussionsProof(reviewDiscussions, proof, usedReviewDiscussionProofs)
               : courseReviewRequest
               ? checkReviewCourseProof(reviewCourse, proof, usedReviewCourseProofs)
               : checkReviewMediaProof(reviewMedia, proof, usedReviewMediaProofs)))
-          return refuse(403, discussionReviewRequest ? "staging_discussion_scope_refused" : courseReviewRequest ? "staging_course_scope_refused" : "staging_media_scope_refused");
+          return refuse(403, notificationReviewRequest ? "staging_notification_scope_refused" : discussionReviewRequest ? "staging_discussion_scope_refused" : courseReviewRequest ? "staging_course_scope_refused" : "staging_media_scope_refused");
         if (category) {
           scopedRequest = true;
           accountAdmission(category);
@@ -306,6 +316,8 @@ export function createGateway(input, options = {}) {
           reply.once("end", () => {
             if (res.destroyed) return resolve();
             const buffered = Buffer.concat(result);
+            if (notificationPrincipal)
+              reviewNotifications.observe(notificationPrincipal, req.method, reply.statusCode, reply.headers["content-type"], buffered);
             if (authoringProof !== undefined &&
                 !ownerAuthoring.acknowledge(reply.statusCode, reply.headers["content-type"], buffered)) {
               markUncertain();

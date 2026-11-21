@@ -1,3 +1,4 @@
+import { notificationSettings, reviewNotificationsPath } from "@/lib/staging-review/notifications";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { reviewCourseSettings } from "@/lib/staging-review/course";
@@ -89,6 +90,7 @@ export default async function StagingReview({ searchParams }: {
         </> : <p role="status">Course is temporarily unavailable.</p>}
       </section>
       <section id="community" className="grid gap-3">
+        {notificationSettings() && <Link className="underline" href={reviewNotificationsPath}>Reply notifications</Link>}
         <h2 className="text-2xl">Community</h2>
         {after && <Link className="underline" href={`${reviewPath}#community`}>Newest discussions</Link>}
         {feed && space && feed.space.courseId === reviewCourse ? <>

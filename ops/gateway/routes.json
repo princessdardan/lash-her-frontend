@@ -347,5 +347,7 @@
     "auth": "application",
     "service": "community",
     "stagingReviewDiscussions": true
-  }
+  },
+  {"method": "GET", "path": "/v1/notifications", "auth": "application", "service": "community", "stagingReviewNotifications": true},
+  {"method": "PUT", "path": "/v1/notifications/{notificationId}/read", "auth": "application", "service": "community", "stagingReviewNotifications": true}
 ]

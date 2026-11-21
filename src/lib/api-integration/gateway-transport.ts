@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { OWNER_AUTHORING_HEADER } from "../../../ops/gateway/staging-owner-authoring.mjs";
+import { REVIEW_NOTIFICATIONS_HEADER } from "../../../ops/gateway/staging-review-notifications.mjs";
 import routes from "../../../ops/gateway/routes.json";
 import { getApplicationEnvironment } from "@/lib/env/application-environment.server";
 import { INTERACTIVE_GATEWAY_PROOF_HEADER, interactiveCourseGatewayProof } from "@/lib/writer-admission/interactive-proof";
@@ -17,6 +18,7 @@ export type GatewayRequest = {
   stagingReviewCourseProof?: string;
   stagingOwnerAuthoringProof?: string;
   stagingReviewDiscussionsProof?: string;
+  stagingReviewNotificationsProof?: string;
   body?: string;
   signal?: AbortSignal;
 };
@@ -54,8 +56,14 @@ export function createGatewayTransport(config: {
     if (scopedMedia !== Boolean(input.stagingReviewMediaProof) ||
         (scopedMedia && getApplicationEnvironment() !== "staging")) throw new GatewayTransportError("authorization");
     const scopedDiscussions = "stagingReviewDiscussions" in route && route.stagingReviewDiscussions === true;
-    if (scopedDiscussions !== Boolean(input.stagingReviewDiscussionsProof) ||
-        (scopedDiscussions && getApplicationEnvironment() !== "staging")) throw new GatewayTransportError("authorization");
+    const scopedNotifications = "stagingReviewNotifications" in route && route.stagingReviewNotifications === true;
+    const notificationProof = Boolean(input.stagingReviewNotificationsProof);
+    if (scopedDiscussions !== Boolean(input.stagingReviewDiscussionsProof || (notificationProof && scopedDiscussions)) ||
+        (scopedNotifications && !notificationProof) ||
+        (notificationProof && (input.stagingReviewDiscussionsProof || service !== "community" || route.auth !== "application" ||
+          (!scopedNotifications && !(scopedDiscussions && input.method === "POST" && pathname.endsWith("/comments"))))) ||
+        ((scopedDiscussions || scopedNotifications) && getApplicationEnvironment() !== "staging"))
+      throw new GatewayTransportError("authorization");
     if (input.stagingReviewCourseProof && (service !== "course" || getApplicationEnvironment() !== "staging"))
       throw new GatewayTransportError("authorization");
     if (input.stagingOwnerAuthoringProof && (service !== "course" || route.auth !== "application" ||
@@ -81,6 +89,7 @@ export function createGatewayTransport(config: {
       if (input.stagingReviewMediaProof) headers["x-lash-staging-review-media"] = input.stagingReviewMediaProof;
       if (input.stagingOwnerAuthoringProof) headers[OWNER_AUTHORING_HEADER] = input.stagingOwnerAuthoringProof;
       if (input.stagingReviewCourseProof) headers["x-lash-staging-review-course"] = input.stagingReviewCourseProof;
+      if (input.stagingReviewNotificationsProof) headers[REVIEW_NOTIFICATIONS_HEADER] = input.stagingReviewNotificationsProof;
       if (input.stagingReviewDiscussionsProof) headers["x-lash-staging-review-discussions"] = input.stagingReviewDiscussionsProof;
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;
