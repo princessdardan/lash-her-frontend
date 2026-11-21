@@ -284,11 +284,14 @@ jobs:
           tags: lash-her-gateway:ci
           sbom: true
           provenance: mode=max
-      - name: Refuse privileged or writable gateway image defaults
+      - name: Verify gateway entrypoint imports in the restricted image
         run: >-
           docker run --rm --network none --read-only --cap-drop ALL
           --security-opt no-new-privileges --entrypoint node lash-her-gateway:ci
-          -e "if(process.getuid()===0)process.exit(1);for(const f of ['server.mjs','private-tls.mjs','routes.json'])require('node:fs').accessSync(f)"
+          --input-type=module -e
+          "if (process.getuid() === 0) process.exit(1);
+          await import('./server.mjs');
+          await import('./private-tls.mjs');"
       - name: Retain raw gateway-runtime scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
