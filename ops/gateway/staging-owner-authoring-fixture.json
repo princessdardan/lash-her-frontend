@@ -1,0 +1,42 @@
+{
+  "course": {
+    "title": "Synthetic owner authoring smoke",
+    "slug": "staging-owner-authoring-smoke-20261121",
+    "description": "Synthetic staging fixture.",
+    "introduction": null,
+    "currency": "CAD",
+    "accessMode": "free",
+    "priceCents": 0,
+    "cover": null,
+    "seo": { "noIndex": true },
+    "taxClassification": null,
+    "status": "draft"
+  },
+  "module": {
+    "expectedCourseRevision": 1,
+    "title": "Synthetic module",
+    "slug": "synthetic-module",
+    "description": null,
+    "position": 1
+  },
+  "lesson": {
+    "expectedCourseRevision": 2,
+    "title": "Synthetic lesson",
+    "slug": "synthetic-lesson",
+    "position": 1,
+    "contentDocument": { "version": 1, "blocks": [] },
+    "transcript": "Initial synthetic transcript.",
+    "isPreview": false,
+    "captions": []
+  },
+  "edit": {
+    "expectedCourseRevision": 3,
+    "title": "Synthetic lesson, revised",
+    "slug": "synthetic-lesson",
+    "position": 1,
+    "contentDocument": { "version": 1, "blocks": [] },
+    "transcript": "Revised synthetic transcript, saved on protected staging.",
+    "isPreview": false,
+    "captions": []
+  }
+}

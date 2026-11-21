@@ -2,7 +2,9 @@ import { PortableText } from "@portabletext/react";
 import type { LearnerLesson } from "@/lib/learning/types";
 import { safeLearningUrl } from "@/lib/learning/presentation";
 
-export function LessonContent({ lesson }: { lesson: LearnerLesson }) {
+type LessonText = Pick<LearnerLesson, "contentDocument" | "content" | "transcript">;
+
+export function LessonContent({ lesson }: { lesson: LessonText }) {
   return <>
     {lesson.contentDocument?.blocks.length ? <div className="prose mt-8 max-w-none prose-headings:font-heading prose-headings:text-lh-shadow prose-a:text-lh-primary">
       <PortableText value={lesson.contentDocument.blocks} components={{

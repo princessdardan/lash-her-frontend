@@ -18,6 +18,7 @@ import { courseCapabilitiesForActor } from "./staff-capabilities";
 import { invalidateCourseCatalog } from "./catalog-invalidation";
 import { runCourseAdminOperation, runCourseAdminReadOperation } from "./course-admin-operation";
 
+import type { StagingOwnerAuthoring } from "./staging-owner-authoring";
 import type { paths } from "./candidate-generated/course";
 type Method = "get" | "post" | "patch" | "put" | "delete";
 type Body<P extends keyof paths, M extends Method> = CandidateBody<"course", P, M>;
@@ -46,6 +47,7 @@ export function createCourseClient(dependencies: {
   mintToken?: (principal: ApplicationPrincipal) => string;
   enabled?: (feature: IntegrationFeature) => boolean;
   run?: WriterAdmissionRunner;
+  stagingOwnerAuthoring?: StagingOwnerAuthoring;
   onResponse?: (requestId: string) => void;
   invalidateCatalog?: () => void | Promise<void>;
 } = {}) {
@@ -67,6 +69,8 @@ export function createCourseClient(dependencies: {
     validateCandidateRequest("course", path, method, input);
     const signedScope = access !== "public" ? await readInteractiveBrowserRequest() : null;
     const rotationAdmin = signedScope?.rotationAdmin;
+    const ownerAuthoring = !signedScope && access === "editor" && method !== "get"
+      ? dependencies.stagingOwnerAuthoring : undefined;
     if (rotationAdmin && (access !== "editor" || method !== "get" || path !== "/v1/admin/courses/{courseId}" ||
       input.params?.courseId !== rotationAdmin.courseId || input.query || input.body !== undefined || input.idempotencyKey !== undefined)) {
       throw new IntegrationServiceError("forbidden", 403);
@@ -137,9 +141,12 @@ export function createCourseClient(dependencies: {
           if (!capabilities.includes(access === "editor" ? "course-editor" : "course-support")) throw new IntegrationServiceError("forbidden", 403);
           applicationToken = mintToken({ profile: "course-admin", adminId: actor.user.id, capabilities });
         }
+        const stagingOwnerAuthoringProof = ownerAuthoring && applicationToken
+          ? ownerAuthoring.prove({ method: requestMethod, route: path, path: target, body: input.body, token: applicationToken })
+          : undefined;
         const transport = getTransport();
         outboundStarted = true;
-        const response = await transport({ service: "course", method: requestMethod, path: target, applicationToken,
+        const response = await transport({ service: "course", method: requestMethod, path: target, applicationToken, ...(stagingOwnerAuthoringProof ? { stagingOwnerAuthoringProof } : {}),
           ...(input.body === undefined ? {} : { body: scopedBody ?? JSON.stringify(input.body) }), ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}) });
         requestId = safeIntegrationRequestId(response.headers.get("x-request-id"));
         dependencies.onResponse?.(requestId);
@@ -183,7 +190,8 @@ export function createCourseClient(dependencies: {
     };
     // Named mutation helpers are admitted even when called directly by actions.
     // Deterministic documented denials settle before they become UI errors.
-    const result = access === "editor" && method === "get" && !rotationAdmin
+    const result = ownerAuthoring ? await execute(ownerAuthoring.owner)
+      : access === "editor" && method === "get" && !rotationAdmin
       ? await runCourseAdminReadOperation(execute, run)
       : (access === "editor" || access === "support") && !rotationAdmin ? await runCourseAdminOperation(execute, run) :
       method === "get" ? await execute() : await run("new-work", execute);

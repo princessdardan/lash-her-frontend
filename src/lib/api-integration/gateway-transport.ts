@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { getVercelOidcToken } from "@vercel/oidc";
+import { OWNER_AUTHORING_HEADER } from "../../../ops/gateway/staging-owner-authoring.mjs";
 import routes from "../../../ops/gateway/routes.json";
 import { getApplicationEnvironment } from "@/lib/env/application-environment.server";
 import { INTERACTIVE_GATEWAY_PROOF_HEADER, interactiveCourseGatewayProof } from "@/lib/writer-admission/interactive-proof";
@@ -14,6 +15,7 @@ export type GatewayRequest = {
   idempotencyKey?: string;
   stagingReviewMediaProof?: string;
   stagingReviewCourseProof?: string;
+  stagingOwnerAuthoringProof?: string;
   stagingReviewDiscussionsProof?: string;
   body?: string;
   signal?: AbortSignal;
@@ -56,6 +58,9 @@ export function createGatewayTransport(config: {
         (scopedDiscussions && getApplicationEnvironment() !== "staging")) throw new GatewayTransportError("authorization");
     if (input.stagingReviewCourseProof && (service !== "course" || getApplicationEnvironment() !== "staging"))
       throw new GatewayTransportError("authorization");
+    if (input.stagingOwnerAuthoringProof && (service !== "course" || route.auth !== "application" ||
+        (input.method !== "POST" && input.method !== "PATCH") || !input.body ||
+        getApplicationEnvironment() !== "staging")) throw new GatewayTransportError("authorization");
     if (route.auth === "application" && !input.applicationToken) throw new GatewayTransportError("authorization");
     if (input.applicationToken && (input.applicationToken.length > 8192 || !/^[A-Za-z0-9._~-]+$/u.test(input.applicationToken))) throw new GatewayTransportError("authorization");
     if (input.idempotencyKey && !/^[A-Za-z0-9._:-]{1,255}$/u.test(input.idempotencyKey)) throw new GatewayTransportError("authorization");
@@ -74,12 +79,13 @@ export function createGatewayTransport(config: {
         accept: "application/json", "x-lash-workload-token": token, "x-request-id": requestId,
       };
       if (input.stagingReviewMediaProof) headers["x-lash-staging-review-media"] = input.stagingReviewMediaProof;
+      if (input.stagingOwnerAuthoringProof) headers[OWNER_AUTHORING_HEADER] = input.stagingOwnerAuthoringProof;
       if (input.stagingReviewCourseProof) headers["x-lash-staging-review-course"] = input.stagingReviewCourseProof;
       if (input.stagingReviewDiscussionsProof) headers["x-lash-staging-review-discussions"] = input.stagingReviewDiscussionsProof;
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;
       if (input.body !== undefined) headers["content-type"] = "application/json";
-      if (service === "course" && !input.stagingReviewCourseProof && !pathname.startsWith("/v1/internal/")) {
+      if (service === "course" && !input.stagingReviewCourseProof && !input.stagingOwnerAuthoringProof && !pathname.startsWith("/v1/internal/")) {
         const proof = await interactiveCourseGatewayProof({ url, requestId, method: input.method, body: input.body,
           applicationToken: input.applicationToken, idempotencyKey: input.idempotencyKey });
         if (proof) headers[INTERACTIVE_GATEWAY_PROOF_HEADER] = proof;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { stagingOwnerAuthoring, type StagingOwnerAuthoring } from "./staging-owner-authoring";
 import { createCourseClient } from "./course-client";
 import { AdminAuthError } from "@/lib/admin/types";
 import { readSameOriginJson } from "./same-origin-json";
@@ -59,9 +60,9 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
       if (rotation && (params.courseId !== rotation.courseId || request.url !== `${INTERACTIVE_ORIGIN}/api/admin/courses/${rotation.courseId}`)) {
         throw new IntegrationServiceError("forbidden", 403);
       }
-      const execute = async () => {
+      const execute = async (scope?: StagingOwnerAuthoring) => {
         try {
-          const course = dependencies.client?.() ?? createCourseClient({ onResponse: value => { requestId = value; } });
+          const course = dependencies.client?.() ?? createCourseClient({ stagingOwnerAuthoring: scope, onResponse: value => { requestId = value; } });
           let result: unknown;
           switch (operation) {
             case "list-courses": result = await course.listAdminCourses(query); break;
@@ -153,8 +154,12 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
         } catch (error) { return integrationErrorResponse(error); }
       };
       if (rotation) return await execute();
+      if (request.method !== "GET" && !dependencies.client) {
+        const scope = await stagingOwnerAuthoring(operation, body);
+        if (scope) return await execute(scope);
+      }
       return request.method === "GET"
-        ? await runCourseAdminReadOperation(execute, dependencies.run)
+        ? await runCourseAdminReadOperation(() => execute(), dependencies.run)
         : await runCourseAdminOperation(execute, dependencies.run);
     } catch (error) {
       if (error instanceof AdminAuthError)

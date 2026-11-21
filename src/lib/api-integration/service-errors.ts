@@ -37,10 +37,11 @@ export function parseGatewayFailure(response: Response, value: unknown): { failu
     Object.keys(value.error).sort().join(",") !== "code,message" || !("code" in value.error) || typeof value.error.code !== "string" || !("message" in value.error)) return null;
   const statuses: Record<string, number[]> = { unavailable: [503], ambiguous_headers: [400], invalid_host: [421], route_not_allowed: [404],
     upstream_unavailable: [502, 503], rate_limit_exceeded: [429], invalid_workload: [401], application_authorization_required: [401],
-    release_maintenance: [503], body_too_large: [413], body_not_allowed: [400], upstream_redirect_refused: [502] };
+    release_maintenance: [503], staging_owner_authoring_scope_refused: [403], body_too_large: [413], body_not_allowed: [400], upstream_redirect_refused: [502] };
   const code = value.error.code;
   if (!Object.hasOwn(statuses, code) || !statuses[code].includes(response.status) || value.error.message !== code.replaceAll("_", " ")) return null;
-  return { failure: code === "rate_limit_exceeded" ? upstreamIntegrationError(429, "", value.requestId, response.headers.get("retry-after")) :
+  return { failure: code === "rate_limit_exceeded" || code === "staging_owner_authoring_scope_refused"
+    ? upstreamIntegrationError(response.status, "", value.requestId, response.headers.get("retry-after")) :
     new IntegrationServiceError(code === "body_too_large" ? "invalid_request" : "service_unavailable", code === "body_too_large" ? 413 : 503, value.requestId, response.headers.get("retry-after") ?? undefined),
     uncertain: response.status === 502 };
 }

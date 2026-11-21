@@ -18,6 +18,8 @@ import { checkReviewCourseProof, REVIEW_COURSE_HEADER, reviewCourseScope } from 
 
 import { checkReviewDiscussionsProof, REVIEW_DISCUSSIONS_HEADER, REVIEW_DISCUSSIONS_BODY_LIMIT, reviewDiscussionsScope } from "./staging-review-community.mjs";
 
+import { createOwnerAuthoringSequence, OWNER_AUTHORING_HEADER, readOwnerAuthoringScope } from "./staging-owner-authoring.mjs";
+
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
 const MAX_SCOPED_MUX_REQUESTS = 16;
@@ -35,6 +37,7 @@ export function createGateway(input, options = {}) {
   const reviewMedia = reviewMediaScope(config);
   const reviewCourse = reviewCourseScope(config);
   const reviewDiscussions = reviewDiscussionsScope(config);
+  const ownerAuthoring = createOwnerAuthoringSequence(readOwnerAuthoringScope(config));
   const usedReviewDiscussionProofs = new Map();
   const usedReviewMediaProofs = new Map();
   const usedReviewCourseProofs = new Map();
@@ -137,11 +140,17 @@ export function createGateway(input, options = {}) {
       const courseReviewRequest = req.headers[REVIEW_COURSE_HEADER] !== undefined;
       const discussionReviewRequest = route.stagingReviewDiscussions === true;
       const reviewHeader = discussionReviewRequest ? REVIEW_DISCUSSIONS_HEADER : courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
+      const authoringProof = req.headers[OWNER_AUTHORING_HEADER];
       const reviewRequest = discussionReviewRequest || courseReviewRequest || route.stagingReviewMedia === true;
       const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
         uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
-      if (reviewRequest) {
+      if (authoringProof !== undefined) {
+        if (reviewRequest || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined || !closedReview(admission) ||
+            service !== "course" || route.auth !== "application" || category !== "newWork" ||
+            req.headers["x-idempotency-key"] !== undefined)
+          return refuse(503, "release_maintenance", 30);
+      } else if (reviewRequest) {
         const scopeAvailable = discussionReviewRequest
           ? reviewDiscussions && service === "community" && !courseReviewRequest && req.headers[REVIEW_MEDIA_HEADER] === undefined
           : courseReviewRequest
@@ -168,7 +177,7 @@ export function createGateway(input, options = {}) {
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
       const reviewQuizAttempt = courseReviewRequest && req.method === "POST" && route.path === "/v1/student/lessons/{lessonId}/quiz/attempts";
-      const bodyLimit = discussionReviewRequest ? REVIEW_DISCUSSIONS_BODY_LIMIT : reviewQuizAttempt ? 65_536 : reviewRequest ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
+      const bodyLimit = discussionReviewRequest ? REVIEW_DISCUSSIONS_BODY_LIMIT : reviewQuizAttempt ? 65_536 : (reviewRequest || authoringProof !== undefined) ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
       const chunks = [];
       let bytes = 0;
       for await (const chunk of req) {
@@ -180,7 +189,16 @@ export function createGateway(input, options = {}) {
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
       let muxSelection, muxEvidence;
       let interactiveSelection, interactiveEvidence;
-      if (reviewRequest) {
+      if (authoringProof !== undefined) {
+        const current = currentAdmission();
+        if (res.destroyed || !closedReview(current) || current.sha256 !== admission.sha256 ||
+            !ownerAuthoring.reserve({ method: req.method, target: req.url, body,
+              authorization: req.headers.authorization, proof: authoringProof, now: Math.floor(Date.now() / 1000),
+              admissionSha256: current.sha256 }))
+          return refuse(403, "staging_owner_authoring_scope_refused");
+        scopedRequest = true;
+        accountAdmission(category);
+      } else if (reviewRequest) {
         const current = currentAdmission();
         const proof = { method: req.method, target: req.url, body, authorization: req.headers.authorization,
           proof: req.headers[reviewHeader], now: Math.floor(Date.now() / 1000) };
@@ -263,7 +281,7 @@ export function createGateway(input, options = {}) {
         // callback cannot dirty drain.
         accountAdmission("recovery");
       }
-      const fault = reviewRequest || interactiveSelection || oneShotMux ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
+      const fault = reviewRequest || authoringProof !== undefined || interactiveSelection || oneShotMux ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
       if (certification.beforeUpstream(fault, res, () => refuse(503, "upstream_unavailable", 1))) return;
       const headers = { "x-request-id": requestId, "content-length": String(body.length) };
       for (const [name, value] of Object.entries(req.headers)) {
@@ -288,6 +306,12 @@ export function createGateway(input, options = {}) {
           reply.once("end", () => {
             if (res.destroyed) return resolve();
             const buffered = Buffer.concat(result);
+            if (authoringProof !== undefined &&
+                !ownerAuthoring.acknowledge(reply.statusCode, reply.headers["content-type"], buffered)) {
+              markUncertain();
+              refuse(502, "upstream_unavailable");
+              return resolve();
+            }
             if (muxSelection) {
               const acknowledged = scopedMuxAcknowledged(muxAdmission.muxCallback, reply.statusCode, buffered) &&
                 (!oneShotMux || reply.headers["content-type"]?.split(";", 1)[0] === "application/json");
