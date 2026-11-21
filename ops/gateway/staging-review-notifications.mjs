@@ -9,12 +9,17 @@ const hex = /^[a-f0-9]{64}$/u;
 const inbox = "/community/v1/notifications";
 
 export function validNotificationScope(value) {
-  return value && Object.keys(value).sort().join(",") === "admissionSha256,end,key,post,recipient,replier,reply" &&
-    [value.post, value.recipient, value.replier, value.reply].every(isId) &&
+  if (!value || ![value.post, value.recipient].every(isId) || value.post === value.recipient ||
+      typeof value.key !== "string" || !hex.test(value.key) ||
+      typeof value.admissionSha256 !== "string" || !hex.test(value.admissionSha256) ||
+      !Number.isSafeInteger(value.end)) return false;
+  const keys = Object.keys(value).sort().join(",");
+  if (value.mode === "recipient")
+    return keys === "admissionSha256,end,key,mode,post,recipient";
+  return keys === "admissionSha256,end,key,post,recipient,replier,reply" &&
+    [value.replier, value.reply].every(isId) &&
     new Set([value.post, value.recipient, value.replier, value.reply]).size === 4 &&
-    typeof value.key === "string" && hex.test(value.key) &&
-    typeof value.admissionSha256 === "string" && hex.test(value.admissionSha256) &&
-    Number.isSafeInteger(value.end) && value.end <= Math.floor(Date.now() / 1000) + 5400;
+    value.end <= Math.floor(Date.now() / 1000) + 5400;
 }
 
 export function reviewNotificationsScope(config, discussion) {
@@ -53,7 +58,8 @@ export function createReviewNotifications(scope) {
         const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
         if (claims.iss !== "lash-her-frontend" || claims.aud !== "lash-her-community-api:member" ||
             !Number.isSafeInteger(claims.exp) || claims.exp <= now) return undefined;
-        principal = claims.sub === scope.recipient ? "recipient" : claims.sub === scope.replier ? "replier" : undefined;
+        principal = claims.sub === scope.recipient ? "recipient" :
+          scope.mode !== "recipient" && claims.sub === scope.replier ? "replier" : undefined;
         if (!principal) return undefined;
         const payload = body.toString("utf8");
         const allowed = method === "GET" && target === inbox && !payload ||

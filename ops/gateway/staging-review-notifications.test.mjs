@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createReviewNotifications, reviewReplyBody } from "./staging-review-notifications.mjs";
+import { createReviewNotifications, reviewReplyBody, validNotificationScope } from "./staging-review-notifications.mjs";
 import { reviewDiscussionsSignature } from "./staging-review-community.mjs";
 
 const ids = Array.from({ length: 6 }, (_, i) => `12345678-1234-4234-8234-12345678900${i}`);
@@ -53,4 +53,28 @@ test("read changes require the recipient and the API-confirmed notification for 
   assert.equal(stage.authorize(request(recipient, "PUT", read.replace(notice, outsider), { read: true })), undefined);
   assert.equal(stage.authorize(request(recipient, "PUT", read, { read: false })), undefined);
   assert.equal(stage.authorize(readRequest()), "recipient");
+});
+
+test("a recipient-only release cannot authorize the expired replier or create a notification", () => {
+  const scoped = {
+    mode: "recipient", recipient, post, key: scope.key,
+    admissionSha256: scope.admissionSha256, end: scope.end,
+  };
+  assert.equal(validNotificationScope(scoped), true);
+  assert.equal(validNotificationScope({ ...scoped, replier, reply }), false);
+  const stage = createReviewNotifications(scoped);
+  const data = { body: reviewReplyBody, replyId: reply };
+  assert.equal(stage.authorize(request(recipient, "POST", thread, data)), undefined);
+  assert.equal(stage.authorize(request(replier, "POST", thread, data)), undefined);
+  assert.equal(stage.authorize(request(replier, "GET", inbox)), undefined);
+  assert.equal(stage.authorize(request(undefined, "GET", inbox)), undefined);
+  assert.equal(stage.authorize(request(outsider, "GET", inbox)), undefined);
+  assert.equal(stage.authorize({ ...request(recipient, "GET", inbox), now: scope.end }), undefined);
+  assert.equal(stage.authorize({ ...request(recipient, "GET", inbox), admissionSha256: outsider }), undefined);
+  assert.equal(stage.authorize(request(recipient, "GET", inbox)), "recipient");
+  stage.observe("recipient", "GET", 200, "application/json", Buffer.from(JSON.stringify({
+    notifications: [{ postId: post, id: notice, kind: "reply" }],
+  })));
+  assert.equal(stage.authorize(request(recipient, "PUT", read, { read: false })), undefined);
+  assert.equal(stage.authorize(request(recipient, "PUT", read, { read: true })), "recipient");
 });
