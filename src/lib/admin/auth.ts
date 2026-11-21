@@ -20,6 +20,8 @@ import {
   requirePermissionWithAudit,
 } from "./authorization-policy";
 import { getAdminDeveloperActor } from "./developer-mode";
+import { requireStagingOwnerActor } from "./staging-owner-actor";
+import { stagingOwnerRequest } from "./staging-owner-auth";
 import type { AdminPermissionAction } from "./permissions";
 import { AdminAuthError, type AdminActor, type AdminIdentity } from "./types";
 import {
@@ -41,12 +43,17 @@ export function getAdminAuth(): AdminAuthService {
     userStore: getAdminUserStore(),
   });
   return {
-    requireActor: () => runAdminAuthorizationOperation(() => service.requireActor()),
-    requirePermission: (action, context) => runAdminAuthorizationOperation(() => service.requirePermission(action, context)),
+    requireActor: async () => await stagingOwnerRequest()
+      ? getStagingRequestActor()
+      : runAdminAuthorizationOperation(() => service.requireActor()),
+    requirePermission: async (action, context) => action === "admin:view" && await stagingOwnerRequest()
+      ? requireStagingDashboardPermission(context)
+      : runAdminAuthorizationOperation(() => service.requirePermission(action, context)),
   };
 }
 
 export async function requireAdminActor(): Promise<AdminActor> {
+  if (await stagingOwnerRequest()) return getStagingRequestActor();
   return runAdminAuthorizationOperation(getRequestActor);
 }
 
@@ -65,6 +72,9 @@ export async function requirePermission(
   action: AdminPermissionAction,
   context: AdminPermissionContext = {},
 ): Promise<AdminActor> {
+  if (action === "admin:view" && await stagingOwnerRequest()) {
+    return requireStagingDashboardPermission(context);
+  }
   return runAdminAuthorizationOperation(() => requirePermissionWithAudit({
     action,
     context,
@@ -115,6 +125,16 @@ export async function requireRecentAdminAuthentication(input: {
   } finally {
     cookieStore.delete(ADMIN_STEP_UP_PROOF_COOKIE);
   }
+}
+
+async function getStagingRequestActor(): Promise<AdminActor> {
+  return requireStagingOwnerActor(await getAuthJsIdentity());
+}
+
+async function requireStagingDashboardPermission(context?: AdminPermissionContext): Promise<AdminActor> {
+  const actor = await getStagingRequestActor();
+  assertAdminPermission(actor, "admin:view", context);
+  return actor;
 }
 
 async function getRequestActor(): Promise<AdminActor> {

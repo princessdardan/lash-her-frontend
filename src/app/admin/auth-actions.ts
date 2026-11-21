@@ -1,5 +1,6 @@
 "use server";
 
+import { stagingOwnerRequest, STAGING_OWNER_ORIGIN } from "@/lib/admin/staging-owner-auth";
 import { completeAdminSignOut } from "@/lib/admin/sign-out";
 import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { withinInteractiveAdminGoogleAction } from "@/lib/writer-admission/interactive-proof";
@@ -28,6 +29,10 @@ export async function signInWithGoogleAction(
   formData: FormData,
 ): Promise<void> {
   const returnTo = getSafeAdminReturnTo(formData.get("returnTo"));
+  if (await stagingOwnerRequest()) {
+    const url = await signIn("google", { redirectTo: new URL(returnTo, STAGING_OWNER_ORIGIN).href, redirect: false });
+    redirect(url);
+  }
 
   const url = await withinInteractiveAdminGoogleAction(() => runAdminIdentityWriter("new-work", () => {
     const redirectTo = currentWriterFirstOwner() ? P2_FIRST_OWNER_PATH :
@@ -78,6 +83,10 @@ export async function stepUpWithGoogleAction(
 }
 
 export async function signOutAdminAction(): Promise<void> {
+  if (await stagingOwnerRequest()) {
+    const url = await signOut({ redirectTo: "/admin/sign-in", redirect: false });
+    redirect(url);
+  }
   const url = await runAdminIdentityWriter("recovery", () =>
     completeAdminSignOut({
       hasDeveloperSession: hasAdminDeveloperSession,
