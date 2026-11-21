@@ -4,7 +4,7 @@ import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { readSameOriginJson } from "@/lib/api-integration/same-origin-json";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
-import { reviewDiscussionMutation } from "@/lib/staging-review/discussions";
+import { getReviewDiscussion, reviewDiscussionMutation, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
 import { getReviewSubject, reviewSameOrigin, reviewSettings } from "@/lib/staging-review/session";
 import { reviewMediaSignature } from "../../../../../ops/gateway/staging-review-media.mjs";
 
@@ -43,17 +43,22 @@ async function media(
   context: { params: Promise<{ parts: string[] }> },
   method: "GET" | "POST" | "PATCH" | "DELETE",
 ) {
-  const { parts } = await context.params;
+  const { parts: route } = await context.params;
+  const ownedPost = route[0] === "attachments";
+  const parts = ownedPost ? route.slice(2) : route;
   const [area, id, operation] = parts;
-  if (area === "posts") {
+  if (!ownedPost && area === "posts") {
     const subject = await getReviewSubject();
     if (!subject) return failure(401, "sign_in_required", "Sign in to the staging review first.");
     return reviewDiscussionMutation(request, method, parts, subject);
   }
   if (method === "PATCH") return failure(404, "not_found", "This route is unavailable.");
   const config = reviewSettings();
-  const { STAGING_REVIEW_MEDIA_POST: post, STAGING_REVIEW_MEDIA_KEY: key } = process.env;
-  if (!config || !post || !uuid.test(post) || !key || !/^[0-9a-f]{64}$/u.test(key))
+  const { STAGING_REVIEW_MEDIA_POST: fixture, STAGING_REVIEW_MEDIA_KEY: key } = process.env;
+  const post = ownedPost ? route[1] : fixture;
+  const discussionScope = ownedPost && process.env.STAGING_REVIEW_MEDIA_OWNED_POSTS === "true"
+    ? reviewDiscussionSettings() : null;
+  if (!config || (ownedPost && !discussionScope) || !post || !uuid.test(post) || !key || !/^[0-9a-f]{64}$/u.test(key))
     return failure(404, "feature_disabled", "Staging image access is unavailable.");
   const subject = await getReviewSubject();
   if (!subject) return failure(401, "sign_in_required", "Sign in to the staging review first.");
@@ -74,6 +79,7 @@ async function media(
       if (!parsed.success) return failure(400, "invalid_request", "The image request is invalid.");
       body = method === "DELETE" ? undefined : JSON.stringify(parsed.data);
     }
+    if (discussionScope) await getReviewDiscussion(discussionScope, subject, post);
     const transport = getGatewayTransport();
     const token = mintApplicationToken({ profile: "community-member", customerId: subject });
     function send(verb: "GET" | "POST" | "DELETE", path: string, payload?: string) {

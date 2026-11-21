@@ -5,6 +5,7 @@ export const REVIEW_MEDIA_HEADER = "x-lash-staging-review-media";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const asset = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const assetPath = new RegExp(`^/community/v1/media/${asset}(?:/(complete|view))?$`, "u");
+const listPath = new RegExp(`^/community/v1/discussions/(${asset})/media$`, "u");
 const hex = /^[0-9a-f]{64}$/u;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -28,7 +29,7 @@ export function reviewMediaScope(config) {
   } finally { closeSync(fd); }
   if (!uuid.test(scope.subject) || !uuid.test(scope.post) || !hex.test(scope.key) || !Number.isSafeInteger(scope.end))
     throw new Error("Invalid staging media account binding");
-  return scope;
+  return { ...scope, ownedPosts: config.stagingReviewMediaOwnedPosts === true };
 }
 
 export function checkReviewMediaProof(scope, { method, target, body, authorization, proof, now }, used) {
@@ -40,7 +41,9 @@ export function checkReviewMediaProof(scope, { method, target, body, authorizati
   const expires = Number(stamp);
   if (version !== "1" || !/^\d{10}$/u.test(stamp) || expires <= now ||
       expires > Math.min(now + 40, scope.end) || !uuid.test(nonce) || !hex.test(signature)) return false;
-  const list = target === `/community/v1/discussions/${scope.post}/media`;
+  // For additional posts, the staging frontend verifies course and ownership before signing.
+  const list = target === `/community/v1/discussions/${scope.post}/media` ||
+    scope.ownedPosts === true && listPath.test(target);
   const match = target.match(assetPath);
   if (list ? method !== "GET" && method !== "POST" :
       !match || method !== (match[1] === "complete" ? "POST" : match[1] === "view" ? "GET" : "DELETE")) return false;

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { DiscussionMedia } from "@/components/community/discussion-media";
 import { ReviewContent } from "@/components/community/review-content";
 import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
@@ -33,6 +34,9 @@ export default async function DiscussionPage({ params }: { params: Promise<{ pos
             <ReviewContent body={discussion.post.body} postId={postId}
               canEdit={!discussion.post.locked} canDelete={postId !== process.env.STAGING_REVIEW_MEDIA_POST} />
           </article>
+          {process.env.STAGING_REVIEW_MEDIA_OWNED_POSTS === "true" &&
+            <DiscussionMedia postId={postId} own writes locked={discussion.post.locked}
+              apiBase={`${reviewPath}/community/attachments/${postId}`} />}
           <section className="grid gap-4" aria-labelledby="discussion-replies">
             <h2 id="discussion-replies" className="text-xl">Replies</h2>
             {discussion.comments.length ? (
