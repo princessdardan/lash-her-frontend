@@ -478,6 +478,10 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-owner-authoring.mjs,dst=/source/ops/gateway/staging-owner-authoring.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-owner-authoring-fixture.json,dst=/source/ops/gateway/staging-owner-authoring-fixture.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-review-community.mjs,dst=/source/ops/gateway/staging-review-community.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-review-notifications.mjs,dst=/source/ops/gateway/staging-review-notifications.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \
@@ -496,6 +500,10 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-owner-authoring.mjs,dst=/source/ops/gateway/staging-owner-authoring.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-owner-authoring-fixture.json,dst=/source/ops/gateway/staging-owner-authoring-fixture.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-review-community.mjs,dst=/source/ops/gateway/staging-review-community.mjs,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/staging-review-notifications.mjs,dst=/source/ops/gateway/staging-review-notifications.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \
