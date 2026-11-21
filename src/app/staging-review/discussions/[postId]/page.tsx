@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { ReviewContent } from "@/components/community/review-content";
 import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
 import { getReviewDiscussion, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
@@ -29,7 +30,8 @@ export default async function DiscussionPage({ params }: { params: Promise<{ pos
           <h1 className="text-3xl">Discussion</h1>
           <article className="rounded border p-4">
             <p className="font-semibold">{discussion.post.author}</p>
-            <p className="whitespace-pre-wrap">{discussion.post.body}</p>
+            <ReviewContent body={discussion.post.body} postId={postId}
+              canEdit={!discussion.post.locked} canDelete={postId !== process.env.STAGING_REVIEW_MEDIA_POST} />
           </article>
           <section className="grid gap-4" aria-labelledby="discussion-replies">
             <h2 id="discussion-replies" className="text-xl">Replies</h2>
@@ -38,7 +40,8 @@ export default async function DiscussionPage({ params }: { params: Promise<{ pos
                 {discussion.comments.map((comment) => (
                   <li className="rounded border p-4" key={comment.id}>
                     <p className="font-semibold">{comment.author}</p>
-                    <p className="whitespace-pre-wrap">{comment.body}</p>
+                    <ReviewContent body={comment.body} postId={postId} replyId={comment.id}
+                      canEdit={comment.mine && !discussion.post.locked} canDelete={comment.mine} />
                   </li>
                 ))}
               </ul>

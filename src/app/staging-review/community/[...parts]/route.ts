@@ -30,6 +30,10 @@ export function POST(request: Request, context: { params: Promise<{ parts: strin
   return media(request, context, "POST");
 }
 
+export function PATCH(request: Request, context: { params: Promise<{ parts: string[] }> }) {
+  return media(request, context, "PATCH");
+}
+
 export function DELETE(request: Request, context: { params: Promise<{ parts: string[] }> }) {
   return media(request, context, "DELETE");
 }
@@ -37,7 +41,7 @@ export function DELETE(request: Request, context: { params: Promise<{ parts: str
 async function media(
   request: Request,
   context: { params: Promise<{ parts: string[] }> },
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
 ) {
   const { parts } = await context.params;
   const [area, id, operation] = parts;
@@ -46,6 +50,7 @@ async function media(
     if (!subject) return failure(401, "sign_in_required", "Sign in to the staging review first.");
     return reviewDiscussionMutation(request, method, parts, subject);
   }
+  if (method === "PATCH") return failure(404, "not_found", "This route is unavailable.");
   const config = reviewSettings();
   const { STAGING_REVIEW_MEDIA_POST: post, STAGING_REVIEW_MEDIA_KEY: key } = process.env;
   if (!config || !post || !uuid.test(post) || !key || !/^[0-9a-f]{64}$/u.test(key))

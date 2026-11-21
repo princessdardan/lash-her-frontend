@@ -30,7 +30,7 @@ export function reviewDiscussionSettings() {
 async function send(
   scope: NonNullable<ReturnType<typeof reviewDiscussionSettings>>,
   subject: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   input?: z.infer<typeof replyInput> | z.infer<typeof postInput>,
 ) {
@@ -71,24 +71,37 @@ export async function getReviewDiscussion(
 export async function reviewDiscussionMutation(request: Request, method: string, parts: string[], subject: string) {
   try {
     const config = reviewDiscussionSettings();
-    const create = parts.length === 1;
-    const postId = parts[1];
-    const reply = parts.length === 3 && parts[2] === "replies" && uuid.safeParse(postId).success;
-    if (!config || method !== "POST" || new URL(request.url).search || (!create && !reply))
+    const [, postId, segment, replyId] = parts;
+    const create = method === "POST" && parts.length === 1;
+    const reply = method === "POST" && parts.length === 3 && segment === "replies";
+    const change = (method === "PATCH" || method === "DELETE") &&
+      (parts.length === 2 || (parts.length === 4 && segment === "replies" && uuid.safeParse(replyId).success));
+    if (!config || new URL(request.url).search || (!create && !(uuid.safeParse(postId).success && (reply || change))))
       throw new IntegrationServiceError("not_found", 404);
     if (!reviewSameOrigin(request)) throw new IntegrationServiceError("forbidden", 403);
     const body = await readSameOriginJson(request, new URL(request.url).origin, REVIEW_DISCUSSIONS_BODY_LIMIT);
-    const parsed = (create ? postInput : replyInput).safeParse(body);
+    const parsed = (method === "DELETE" ? z.object({}).strict() : reply ? replyInput : postInput).safeParse(body);
     if (!parsed.success) throw new IntegrationServiceError("invalid_request", 400);
-    const path = create ? `/v1/spaces/${reviewCourse}/posts` : `/v1/discussions/${postId}/comments`;
-    if (reply) {
+
+    let path = `/v1/spaces/${reviewCourse}/posts`;
+    if (!create) {
       const discussion = await getReviewDiscussion(config, subject, postId);
-      if (discussion.post.locked) throw new IntegrationServiceError("conflict", 409);
+      if (method !== "DELETE" && discussion.post.locked) throw new IntegrationServiceError("conflict", 409);
+      if (reply) {
+        path = `/v1/discussions/${postId}/comments`;
+      } else {
+        if (replyId && !discussion.comments.some((comment) => comment.id === replyId && comment.mine))
+          throw new IntegrationServiceError("not_found", 404);
+        if (!replyId && method === "DELETE" && postId === process.env.STAGING_REVIEW_MEDIA_POST)
+          throw new IntegrationServiceError("forbidden", 403);
+        path = `/v1/content/${replyId ?? postId}`;
+      }
     }
-    const result = await send(config, subject, "POST", path, parsed.data);
-    if (result.status !== 201) throw new IntegrationServiceError("service_unavailable", 503);
+    const verb = method === "DELETE" || method === "PATCH" ? method : "POST";
+    const result = await send(config, subject, verb, path, verb === "DELETE" ? undefined : parsed.data as z.infer<typeof postInput>);
+    if (result.status !== (verb === "POST" ? 201 : 200)) throw new IntegrationServiceError("service_unavailable", 503);
     return Response.json(outcome.parse(result.data), {
-      status: 201, headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
+      status: result.status, headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
     });
   } catch (error) {
     return integrationErrorResponse(error);

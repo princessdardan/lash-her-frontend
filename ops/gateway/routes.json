@@ -312,5 +312,19 @@
     "auth": "application",
     "service": "community",
     "stagingReviewDiscussions": true
+  },
+  {
+    "method": "PATCH",
+    "path": "/v1/content/{contentId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/content/{contentId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
   }
 ]

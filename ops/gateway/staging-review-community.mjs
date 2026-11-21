@@ -6,6 +6,7 @@ const scopeFile = "/config/staging-review-discussions.json";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 export const REVIEW_DISCUSSIONS_BODY_LIMIT = 32768;
 const thread = /^\/community\/v1\/discussions\/([0-9a-f-]{36})(\/comments)?$/u;
+const contentPath = /^\/community\/v1\/content\/([0-9a-f-]{36})$/u;
 const hex = /^[0-9a-f]{64}$/u;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -44,7 +45,11 @@ export function checkReviewDiscussionsProof(scope, { method, target, body, autho
       expires > Math.min(now + 40, scope.end) || !uuid.test(nonce) || !hex.test(signature)) return false;
   const create = target === `/community/v1/spaces/${scope.course}/posts`;
   const match = target.match(thread);
-  if (create ? method !== "POST" : !match || !uuid.test(match[1]) || method !== (match[2] ? "POST" : "GET")) return false;
+  const content = target.match(contentPath);
+  const allowed = create && method === "POST" ||
+    match && uuid.test(match[1]) && method === (match[2] ? "POST" : "GET") ||
+    content && uuid.test(content[1]) && (method === "PATCH" || method === "DELETE");
+  if (!allowed) return false;
   const token = authorization.slice(7);
   const parts = token.split(".");
   if (!authorization.startsWith("Bearer ") || parts.length !== 3) return false;
