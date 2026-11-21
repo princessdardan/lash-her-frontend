@@ -57,6 +57,13 @@ export async function requireAdminActor(): Promise<AdminActor> {
   return runAdminAuthorizationOperation(getRequestActor);
 }
 
+// Course editor GETs can reuse the existing staging owner's read-only lookup.
+export async function requireStagingOwnerCourseReader(): Promise<AdminActor> {
+  const actor = await getStagingRequestActor();
+  assertAdminPermission(actor, "courses:edit");
+  return actor;
+}
+
 // Only the separately verified rotation Course GET may use this lookup.
 export async function requireRotationAdminCourseEditor(selectedId: string): Promise<AdminActor> {
   const identity = await getAuthJsIdentity();

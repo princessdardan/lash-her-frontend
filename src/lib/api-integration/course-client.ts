@@ -1,7 +1,7 @@
 import "server-only";
 
 import { requirePermission, requireRotationAdminCourseEditor } from "@/lib/admin/auth";
-import { AdminAuthError } from "@/lib/admin/types";
+import { AdminAuthError, type AdminActor } from "@/lib/admin/types";
 import type { AdminPermissionAction } from "@/lib/admin/permissions";
 import { getCustomerActor, issueCustomerApplicationToken } from "@/lib/customer-auth/session";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
@@ -16,7 +16,7 @@ import { isIntegrationFeatureEnabled, type IntegrationFeature } from "./rollout-
 import { IntegrationServiceError, parseGatewayFailure, safeIntegrationRequestId, upstreamIntegrationError } from "./service-errors";
 import { courseCapabilitiesForActor } from "./staff-capabilities";
 import { invalidateCourseCatalog } from "./catalog-invalidation";
-import { runCourseAdminOperation } from "./course-admin-operation";
+import { runCourseAdminOperation, runCourseAdminReadOperation } from "./course-admin-operation";
 
 import type { paths } from "./candidate-generated/course";
 type Method = "get" | "post" | "patch" | "put" | "delete";
@@ -111,7 +111,7 @@ export function createCourseClient(dependencies: {
       (stalledPlaybackRenewal && !permitsLessonDenialCourseRequest(stalledPlaybackRenewal, scopedRequest))) {
       throw new IntegrationServiceError("forbidden", 403);
     }
-    const execute = async (): Promise<{ value: Success<P, M> } | { failure: IntegrationServiceError }> => {
+    const execute = async (owner?: AdminActor | null): Promise<{ value: Success<P, M> } | { failure: IntegrationServiceError }> => {
       let outboundStarted = false;
       let requestId: string | undefined;
       try {
@@ -131,7 +131,7 @@ export function createCourseClient(dependencies: {
           applicationToken = issued.token;
         } else if (access === "editor" || access === "support") {
           const permission: AdminPermissionAction = access === "editor" ? "courses:edit" : "courses:support";
-          const actor = rotationAdmin ? await (dependencies.getRotationAdmin ?? requireRotationAdminCourseEditor)(rotationAdmin.actorId) : await getAdmin(permission);
+          const actor = rotationAdmin ? await (dependencies.getRotationAdmin ?? requireRotationAdminCourseEditor)(rotationAdmin.actorId) : owner ?? await getAdmin(permission);
           if (rotationAdmin && actor.user.id !== rotationAdmin.actorId) throw new IntegrationServiceError("forbidden", 403);
           const capabilities = courseCapabilitiesForActor(actor);
           if (!capabilities.includes(access === "editor" ? "course-editor" : "course-support")) throw new IntegrationServiceError("forbidden", 403);
@@ -183,7 +183,9 @@ export function createCourseClient(dependencies: {
     };
     // Named mutation helpers are admitted even when called directly by actions.
     // Deterministic documented denials settle before they become UI errors.
-    const result = (access === "editor" || access === "support") && !rotationAdmin ? await runCourseAdminOperation(execute, run) :
+    const result = access === "editor" && method === "get" && !rotationAdmin
+      ? await runCourseAdminReadOperation(execute, run)
+      : (access === "editor" || access === "support") && !rotationAdmin ? await runCourseAdminOperation(execute, run) :
       method === "get" ? await execute() : await run("new-work", execute);
     if ("failure" in result) throw result.failure;
     return result.value;

@@ -1,9 +1,10 @@
 import "server-only";
 
 import { createCourseClient } from "./course-client";
+import { AdminAuthError } from "@/lib/admin/types";
 import { readSameOriginJson } from "./same-origin-json";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
-import { runCourseAdminOperation } from "./course-admin-operation";
+import { runCourseAdminOperation, runCourseAdminReadOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
 import { validateCandidateRequest } from "./candidate-validation";
 import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
@@ -151,7 +152,16 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
           return Response.json(result, { headers: { "cache-control": "private, no-store", "x-request-id": requestId, "x-content-type-options": "nosniff" } });
         } catch (error) { return integrationErrorResponse(error); }
       };
-      return rotation ? await execute() : await runCourseAdminOperation(execute, dependencies.run);
-    } catch (error) { return integrationErrorResponse(error); }
+      if (rotation) return await execute();
+      return request.method === "GET"
+        ? await runCourseAdminReadOperation(execute, dependencies.run)
+        : await runCourseAdminOperation(execute, dependencies.run);
+    } catch (error) {
+      if (error instanceof AdminAuthError)
+        return integrationErrorResponse(error.code === "unauthenticated"
+          ? new IntegrationServiceError("sign_in_required", 401)
+          : new IntegrationServiceError("forbidden", 403));
+      return integrationErrorResponse(error);
+    }
   };
 }
