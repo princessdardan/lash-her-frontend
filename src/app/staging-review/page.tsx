@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { ReviewProfileForm } from "@/components/community/review-profile-form";
 import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
 import type { CommunityFeed, CommunitySpaces } from "@/lib/community/client";
-import { getReviewProfile, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
+import { getReviewProfile, isReviewDiscussionCursor, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
 import { DiscussionMedia } from "@/components/community/discussion-media";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
@@ -32,7 +32,9 @@ async function read<T>(service: "course" | "community", path: string, customerId
   }
 }
 
-export default async function StagingReview({ searchParams }: { searchParams: Promise<{ signIn?: string }> }) {
+export default async function StagingReview({ searchParams }: {
+  searchParams: Promise<{ signIn?: string; after?: string | string[] }>;
+}) {
   if (!reviewSettings()) notFound();
   const subject = await getReviewSubject();
   if (!subject) {
@@ -49,11 +51,13 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
       </main>
     );
   }
+  const { after } = await searchParams;
+  if (after !== undefined && (typeof after !== "string" || !isReviewDiscussionCursor(after))) notFound();
   const discussionSettings = reviewDiscussionSettings();
   const [course, list, feed, profile] = await Promise.all([
     read<Course>("course", `/v1/student/courses/${reviewCourse}`, subject),
     read<CommunitySpaces>("community", "/v1/spaces", subject),
-    read<CommunityFeed>("community", `/v1/spaces/${reviewCourse}/posts`, subject),
+    read<CommunityFeed>("community", `/v1/spaces/${reviewCourse}/posts${after ? `?after=${after}` : ""}`, subject),
     discussionSettings ? getReviewProfile(discussionSettings, subject).catch(() => null) : null,
   ]);
   const discussionsEnabled = Boolean(discussionSettings);
@@ -86,7 +90,8 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
       </section>
       <section id="community" className="grid gap-3">
         <h2 className="text-2xl">Community</h2>
-        {feed && space ? <>
+        {after && <Link className="underline" href={`${reviewPath}#community`}>Newest discussions</Link>}
+        {feed && space && feed.space.courseId === reviewCourse ? <>
           <h3 className="text-xl">{space.title}</h3>
           {profile && <ReviewProfileForm key={profile.profile?.displayName} currentName={profile.profile?.displayName ?? ""} />}
           {discussionsEnabled && <ReviewDiscussionForm />}
@@ -104,8 +109,11 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
                 </div>
               )}
             </article>
-          )) : <p>No discussions yet.</p>}
-        </> : <p role="status">Community is temporarily unavailable.</p>}
+          )) : <p>{after ? "No older discussions." : "No discussions yet."}</p>}
+          {isReviewDiscussionCursor(feed.next) && (
+            <Link className="underline" href={`${reviewPath}?after=${feed.next}#community`}>Older discussions</Link>
+          )}
+        </> : <p role="status">{after ? "This page of discussions could not be loaded." : "Community is temporarily unavailable."}</p>}
       </section>
     </main>
   );

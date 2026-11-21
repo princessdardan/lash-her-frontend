@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { communityFetch, CommunityRequestError } from "@/lib/community/client";
 
-export function ReviewDiscussionForm({ postId }: { postId?: string }) {
+export function ReviewDiscussionForm({ postId, returnToNewest }: { postId?: string; returnToNewest?: boolean }) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -34,7 +34,8 @@ export function ReviewDiscussionForm({ postId }: { postId?: string }) {
       setText("");
       if (postId) {
         setMessage("Reply posted.");
-        router.refresh();
+        if (returnToNewest) router.push(`/staging-review/discussions/${postId}#discussion-replies`);
+        else router.refresh();
       } else {
         router.push(`/staging-review/discussions/${result.id}`);
       }

@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { communityFetch } from "@/lib/community/client";
 
 export function ReviewContent({
-  body, postId, replyId, canEdit, canDelete,
+  body, postId, replyId, after, canEdit, canDelete,
 }: {
-  body: string; postId: string; replyId?: string; canEdit: boolean; canDelete: boolean;
+  body: string; postId: string; replyId?: string; after?: string; canEdit: boolean; canDelete: boolean;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"read" | "edit" | "delete">("read");
@@ -15,7 +15,10 @@ export function ReviewContent({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const label = replyId ? "reply" : "discussion";
-  const path = `/staging-review/community/posts/${postId}${replyId ? `/replies/${replyId}` : ""}`;
+  const postPath = `/staging-review/community/posts/${postId}`;
+  const path = replyId
+    ? `${postPath}/replies/${replyId}${after ? `?after=${encodeURIComponent(after)}` : ""}`
+    : postPath;
   const buttonStyle = "min-h-11 rounded border px-4 py-2 disabled:opacity-50";
 
   async function save(verb: "PATCH" | "DELETE") {

@@ -10,6 +10,10 @@ const contentPath = /^\/community\/v1\/content\/([0-9a-f-]{36})$/u;
 const hex = /^[0-9a-f]{64}$/u;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
+export function isReviewDiscussionCursor(value) {
+  return typeof value === "string" && value.length === 36 && uuid.test(value);
+}
+
 export function reviewDiscussionsSignature(key, { method, target, body, token, expires, nonce }) {
   return createHmac("sha256", Buffer.from(key, "hex")).update(JSON.stringify([
     "staging-review-discussions-v1", method, target, digest(body), digest(token), expires, nonce,
@@ -44,12 +48,16 @@ export function checkReviewDiscussionsProof(scope, { method, target, body, autho
   if (version !== "1" || !/^\d{10}$/u.test(stamp) || expires <= now ||
       expires > Math.min(now + 40, scope.end) || !uuid.test(nonce) || !hex.test(signature)) return false;
   const create = target === `/community/v1/spaces/${scope.course}/posts`;
-  const match = target.match(thread);
+  const queryStart = target.indexOf("?");
+  const match = (queryStart < 0 ? target : target.slice(0, queryStart)).match(thread);
+  const query = queryStart < 0 ? "" : target.slice(queryStart);
+  const allowedQuery = !query || method === "GET" && query.startsWith("?after=") &&
+    isReviewDiscussionCursor(query.slice("?after=".length));
   const content = target.match(contentPath);
   const discussionMethod = match?.[2] === "/reaction" ? "PUT" : match?.[2] === "/comments" ? "POST" : "GET";
   const profile = target === "/community/v1/profile" && (method === "GET" || method === "PUT");
   const allowed = profile || create && method === "POST" ||
-    match && uuid.test(match[1]) && method === discussionMethod ||
+    match && uuid.test(match[1]) && method === discussionMethod && allowedQuery ||
     content && uuid.test(content[1]) && (method === "PATCH" || method === "DELETE");
   if (!allowed) return false;
   const token = authorization.slice(7);

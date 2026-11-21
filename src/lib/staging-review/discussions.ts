@@ -6,8 +6,10 @@ import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { readSameOriginJson } from "@/lib/api-integration/same-origin-json";
 import { IntegrationServiceError, integrationErrorResponse, upstreamIntegrationError } from "@/lib/api-integration/service-errors";
-import { REVIEW_DISCUSSIONS_BODY_LIMIT, reviewDiscussionsSignature } from "../../../ops/gateway/staging-review-community.mjs";
+import { isReviewDiscussionCursor, REVIEW_DISCUSSIONS_BODY_LIMIT, reviewDiscussionsSignature } from "../../../ops/gateway/staging-review-community.mjs";
 import { reviewCourse, reviewSameOrigin, reviewSettings } from "./session";
+
+export { isReviewDiscussionCursor };
 
 const uuid = z.string().uuid();
 const inputText = z.string().trim().min(1).max(4000);
@@ -21,6 +23,7 @@ const thread = z.object({
   space: z.object({ courseId: uuid, title: z.string() }),
   post: item.extend({ locked: z.boolean(), reacted: z.boolean(), reactionCount: z.number().int().nonnegative() }),
   comments: z.array(item).max(20),
+  next: z.string().refine(isReviewDiscussionCursor).nullable(),
 });
 const outcome = z.object({ id: uuid }).strict();
 
@@ -62,9 +65,11 @@ export async function getReviewDiscussion(
   scope: NonNullable<ReturnType<typeof reviewDiscussionSettings>>,
   subject: string,
   postId: string,
+  after?: string,
 ) {
-  if (!uuid.safeParse(postId).success) throw new IntegrationServiceError("not_found", 404);
-  const { data } = await send(scope, subject, "GET", `/v1/discussions/${postId}`);
+  if (!uuid.safeParse(postId).success || (after !== undefined && !isReviewDiscussionCursor(after)))
+    throw new IntegrationServiceError("not_found", 404);
+  const { data } = await send(scope, subject, "GET", `/v1/discussions/${postId}${after ? `?after=${after}` : ""}`);
   const result = thread.parse(data);
   if (result.space.courseId !== reviewCourse || result.post.id !== postId || !result.post.mine)
     throw new IntegrationServiceError("not_found", 404);
@@ -80,7 +85,11 @@ export async function reviewDiscussionMutation(request: Request, method: string,
     const reaction = method === "PUT" && parts.length === 3 && segment === "reaction";
     const change = (method === "PATCH" || method === "DELETE") &&
       (parts.length === 2 || (parts.length === 4 && segment === "replies" && uuid.safeParse(replyId).success));
-    if (!config || new URL(request.url).search || (!create && !(uuid.safeParse(postId).success && (reply || change || reaction))))
+    const query = new URL(request.url).search;
+    // An older reply is authorized against its page of the same owned thread.
+    const after = change && replyId && query.startsWith("?after=") ? query.slice("?after=".length) : undefined;
+    if (!config || (query && !isReviewDiscussionCursor(after)) ||
+        (!create && !(uuid.safeParse(postId).success && (reply || change || reaction))))
       throw new IntegrationServiceError("not_found", 404);
     if (!reviewSameOrigin(request)) throw new IntegrationServiceError("forbidden", 403);
     const body = await readSameOriginJson(request, new URL(request.url).origin, REVIEW_DISCUSSIONS_BODY_LIMIT);
@@ -90,7 +99,7 @@ export async function reviewDiscussionMutation(request: Request, method: string,
 
     let path = `/v1/spaces/${reviewCourse}/posts`;
     if (!create) {
-      const discussion = await getReviewDiscussion(config, subject, postId);
+      const discussion = await getReviewDiscussion(config, subject, postId, after);
       const removingReaction = reaction && "active" in parsed.data && parsed.data.active === false;
       if (method !== "DELETE" && !removingReaction && discussion.post.locked)
         throw new IntegrationServiceError("conflict", 409);

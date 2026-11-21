@@ -5,21 +5,27 @@ import { ReviewReaction } from "@/components/community/review-reaction";
 import { ReviewContent } from "@/components/community/review-content";
 import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
-import { getReviewDiscussion, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
+import { getReviewDiscussion, isReviewDiscussionCursor, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
 import { getReviewSubject, reviewPath } from "@/lib/staging-review/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Staging discussion", robots: { index: false, follow: false } };
 
-export default async function DiscussionPage({ params }: { params: Promise<{ postId: string }> }) {
+export default async function DiscussionPage({ params, searchParams }: {
+  params: Promise<{ postId: string }>;
+  searchParams: Promise<{ after?: string | string[] }>;
+}) {
   const settings = reviewDiscussionSettings();
   if (!settings) notFound();
   const subject = await getReviewSubject();
   if (!subject) redirect(reviewPath);
   const { postId } = await params;
+  const { after } = await searchParams;
+  if (after !== undefined && (typeof after !== "string" || !isReviewDiscussionCursor(after))) notFound();
+  const discussionPath = `${reviewPath}/discussions/${postId}`;
   let discussion;
   try {
-    discussion = await getReviewDiscussion(settings, subject, postId);
+    discussion = await getReviewDiscussion(settings, subject, postId, after);
   } catch (error) {
     if (error instanceof IntegrationServiceError && error.status < 500) notFound();
   }
@@ -42,18 +48,23 @@ export default async function DiscussionPage({ params }: { params: Promise<{ pos
               apiBase={`${reviewPath}/community/attachments/${postId}`} />}
           <section className="grid gap-4" aria-labelledby="discussion-replies">
             <h2 id="discussion-replies" className="text-xl">Replies</h2>
+            {after && <Link className="underline" href={`${discussionPath}#discussion-replies`}>Newest replies</Link>}
             {discussion.comments.length ? (
               <ul className="grid gap-3">
                 {discussion.comments.map((comment) => (
                   <li className="rounded border p-4" key={comment.id}>
                     <p className="font-semibold">{comment.author}</p>
-                    <ReviewContent body={comment.body} postId={postId} replyId={comment.id}
+                    <ReviewContent body={comment.body} postId={postId} replyId={comment.id} after={after}
                       canEdit={comment.mine && !discussion.post.locked} canDelete={comment.mine} />
                   </li>
                 ))}
               </ul>
-            ) : <p>No replies yet.</p>}
-            {discussion.post.locked ? <p>This discussion is locked.</p> : <ReviewDiscussionForm postId={postId} />}
+            ) : <p>{after ? "No older replies." : "No replies yet."}</p>}
+            {discussion.next && (
+              <Link className="underline" href={`${discussionPath}?after=${discussion.next}#discussion-replies`}>Older replies</Link>
+            )}
+            {discussion.post.locked ? <p>This discussion is locked.</p> :
+              <ReviewDiscussionForm postId={postId} returnToNewest={Boolean(after)} />}
           </section>
         </>
       ) : <p role="status">This discussion is temporarily unavailable. Reload to try again.</p>}
