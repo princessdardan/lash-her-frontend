@@ -47,7 +47,8 @@ export function checkReviewDiscussionsProof(scope, { method, target, body, autho
   const match = target.match(thread);
   const content = target.match(contentPath);
   const discussionMethod = match?.[2] === "/reaction" ? "PUT" : match?.[2] === "/comments" ? "POST" : "GET";
-  const allowed = create && method === "POST" ||
+  const profile = target === "/community/v1/profile" && (method === "GET" || method === "PUT");
+  const allowed = profile || create && method === "POST" ||
     match && uuid.test(match[1]) && method === discussionMethod ||
     content && uuid.test(content[1]) && (method === "PATCH" || method === "DELETE");
   if (!allowed) return false;

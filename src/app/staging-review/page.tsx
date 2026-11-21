@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { reviewCourseSettings } from "@/lib/staging-review/course";
 import { notFound } from "next/navigation";
+import { ReviewProfileForm } from "@/components/community/review-profile-form";
 import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
 import type { CommunityFeed, CommunitySpaces } from "@/lib/community/client";
-import { reviewDiscussionSettings } from "@/lib/staging-review/discussions";
+import { getReviewProfile, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
 import { DiscussionMedia } from "@/components/community/discussion-media";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
@@ -48,12 +49,14 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
       </main>
     );
   }
-  const [course, list, feed] = await Promise.all([
+  const discussionSettings = reviewDiscussionSettings();
+  const [course, list, feed, profile] = await Promise.all([
     read<Course>("course", `/v1/student/courses/${reviewCourse}`, subject),
     read<CommunitySpaces>("community", "/v1/spaces", subject),
     read<CommunityFeed>("community", `/v1/spaces/${reviewCourse}/posts`, subject),
+    discussionSettings ? getReviewProfile(discussionSettings, subject).catch(() => null) : null,
   ]);
-  const discussionsEnabled = Boolean(reviewDiscussionSettings());
+  const discussionsEnabled = Boolean(discussionSettings);
   const space = list?.spaces.find((entry) => entry.courseId === reviewCourse);
   return (
     <main className="mx-auto grid max-w-4xl gap-10 px-6 py-12">
@@ -85,6 +88,7 @@ export default async function StagingReview({ searchParams }: { searchParams: Pr
         <h2 className="text-2xl">Community</h2>
         {feed && space ? <>
           <h3 className="text-xl">{space.title}</h3>
+          {profile && <ReviewProfileForm key={profile.profile?.displayName} currentName={profile.profile?.displayName ?? ""} />}
           {discussionsEnabled && <ReviewDiscussionForm />}
           {feed.posts.length ? feed.posts.map((post) => (
             <article key={post.id} className="rounded border p-4">

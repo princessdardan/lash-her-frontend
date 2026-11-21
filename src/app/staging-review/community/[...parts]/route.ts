@@ -4,7 +4,7 @@ import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { mintApplicationToken } from "@/lib/api-integration/application-jwt";
 import { readSameOriginJson } from "@/lib/api-integration/same-origin-json";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
-import { getReviewDiscussion, reviewDiscussionMutation, reviewDiscussionSettings } from "@/lib/staging-review/discussions";
+import { getReviewDiscussion, reviewDiscussionMutation, reviewDiscussionSettings, reviewProfileResource } from "@/lib/staging-review/discussions";
 import { getReviewSubject, reviewSameOrigin, reviewSettings } from "@/lib/staging-review/session";
 import { reviewMediaSignature } from "../../../../../ops/gateway/staging-review-media.mjs";
 
@@ -51,10 +51,12 @@ async function media(
   const ownedPost = route[0] === "attachments";
   const parts = ownedPost ? route.slice(2) : route;
   const [area, id, operation] = parts;
-  if (!ownedPost && area === "posts") {
+  if (!ownedPost && (area === "posts" || (area === "profile" && parts.length === 1))) {
     const subject = await getReviewSubject();
     if (!subject) return failure(401, "sign_in_required", "Sign in to the staging review first.");
-    return reviewDiscussionMutation(request, method, parts, subject);
+    return area === "posts"
+      ? reviewDiscussionMutation(request, method, parts, subject)
+      : reviewProfileResource(request, method, subject);
   }
   if (method === "PATCH" || method === "PUT") return failure(404, "not_found", "This route is unavailable.");
   const config = reviewSettings();

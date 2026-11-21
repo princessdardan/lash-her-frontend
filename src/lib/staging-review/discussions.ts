@@ -12,6 +12,8 @@ import { reviewCourse, reviewSameOrigin, reviewSettings } from "./session";
 const uuid = z.string().uuid();
 const inputText = z.string().trim().min(1).max(4000);
 const postInput = z.object({ body: inputText }).strict();
+const profileInput = z.object({ displayName: z.string().trim().min(1).max(60) }).strict();
+const ownProfile = z.object({ profile: profileInput.nullable() });
 const reactionInput = z.object({ active: z.boolean() }).strict();
 const replyInput = postInput.extend({ replyId: uuid }).strict();
 const item = z.object({ id: uuid, body: z.string(), author: z.string(), mine: z.boolean() });
@@ -110,6 +112,33 @@ export async function reviewDiscussionMutation(request: Request, method: string,
     return Response.json(outcome.parse(result.data), {
       status: result.status, headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
     });
+  } catch (error) {
+    return integrationErrorResponse(error);
+  }
+}
+
+export async function getReviewProfile(
+  scope: NonNullable<ReturnType<typeof reviewDiscussionSettings>>,
+  subject: string,
+) {
+  const { data } = await send(scope, subject, "GET", "/v1/profile");
+  return ownProfile.parse(data);
+}
+
+export async function reviewProfileResource(request: Request, method: string, subject: string) {
+  const headers = { "cache-control": "private, no-store" };
+  try {
+    const config = reviewDiscussionSettings();
+    if (!config || new URL(request.url).search || (method !== "GET" && method !== "PUT"))
+      throw new IntegrationServiceError("not_found", 404);
+    if (method === "GET") return Response.json(await getReviewProfile(config, subject), { headers });
+    if (!reviewSameOrigin(request)) throw new IntegrationServiceError("forbidden", 403);
+    const input = await readSameOriginJson(request, new URL(request.url).origin, 1024);
+    const parsed = profileInput.safeParse(input);
+    if (!parsed.success) throw new IntegrationServiceError("invalid_request", 400);
+    const result = await send(config, subject, "PUT", "/v1/profile", parsed.data);
+    if (result.status !== 200) throw new IntegrationServiceError("service_unavailable", 503);
+    return Response.json(outcome.parse(result.data), { headers });
   } catch (error) {
     return integrationErrorResponse(error);
   }

@@ -333,5 +333,19 @@
     "auth": "application",
     "service": "community",
     "stagingReviewDiscussions": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/profile",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/profile",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
   }
 ]
