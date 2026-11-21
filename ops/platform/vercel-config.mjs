@@ -22,6 +22,13 @@ export function createVercelConfiguration(env, now = Date.now()) {
   if (mode !== undefined && mode !== "false" && mode !== "true") {
     throw new Error("Invalid release scheduler qualification mode");
   }
+  const profile = env.LASH_RELEASE_SCHEDULER_PROFILE;
+  if (profile !== undefined && profile !== "off" && profile !== "business") {
+    throw new Error("Invalid release scheduler profile");
+  }
+  if (profile === "off" && mode !== "true") {
+    return { crons: [], git: { deploymentEnabled: false } };
+  }
   let crons = ordinaryCrons.map((job) => ({ ...job }));
   const lifecycleSchedule = { path: "/api/cron/account-lifecycle", schedule: "* * * * *" };
   if (env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED === "true") crons.push(lifecycleSchedule);

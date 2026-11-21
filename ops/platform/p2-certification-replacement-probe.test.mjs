@@ -712,7 +712,7 @@ async function verifyOwnedReplacementCertification() {
     await verifyRotationGuardContainment({ admin, selected, dependencies, command, hold });
     await verifyKnownAckRecovery({ admin, selected, dependencies, command, hold, observer });
     assert.deepEqual((await admin.query(journalSql)).rows, expectedJournal);
-    assert.equal(expectedJournal.length, 83);
+    assert.equal(artifact.migrations[82]?.tag, '0082_customer_account_lifecycle');
     return { version: 1, status: "P2_CERTIFICATION_REPLACEMENT_OWNED_PASS", serverMajor, frontendMigrations: expectedJournal.length,
       checks: ["pinned-original-replacement-full-journal-and-reviewed-role-boundary",
         "fresh-two-lock-witness-and-independent-read-only-closure",

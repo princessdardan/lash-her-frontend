@@ -2,6 +2,14 @@
 
 Accepted November 1, 2026; clarified November 2. Dardan is the sole developer and operator. This is the authoritative staging and production release policy. It supersedes the external signed source gate, separate external migration executor and October 29 Course bootstrap signing requirement. Earlier evidence remains historical.
 
+## Delivery priorities for November 2026
+
+Target working staging by November 22 and production readiness by November 30. Implement the affected feature flows and run their existing automated checks. Keep migration correctness, payment and data recovery, target isolation and the operator's release action on the critical path. Use the normal CI results and maintained release inputs as the verification record, and repeat checks when the changed behavior needs them. Optional hardening follows working staging.
+
+Private API CI stores its required PostgreSQL 18 schema baseline in a private GHCR package linked to that API repository. The source commit, run ID and attempt identify the upload, and CI verifies a pull by immutable digest and the report's original byte hash. Existing image scans remain enforced. Frontend CI and candidate publication keep their existing operator inputs and automated outputs.
+
+All existing holds and both admission gates remain in place. The delivery targets describe readiness and preserve the existing operator approval for each environment release.
+
 ## Staging: review, release, verify
 
 1. **Review one candidate.** Select the exact committed frontend, Course and Community revisions with passing required CI. The candidate workflow builds and checks immutable API, gateway and migration images and records their source and contract identities. Reuse that candidate for deployment; never select `latest`.

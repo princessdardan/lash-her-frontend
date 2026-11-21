@@ -5,13 +5,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { P2_OWNED_FIXTURES, p2OwnedFixtureEnvironment, validateP2FixtureReceipt, p2OwnedFixtureFailure } from './test-p2-platform-local.mjs';
 
+const frontendMigrationCount = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.json', import.meta.url))).entries.length;
+
 function receipt(fixture, major = 18) {
   const common = { status: fixture.status, postgresMajor: major, providerTouched: false, checks: [...fixture.required] };
   if (fixture.id === 'roles') return { ...common, fixtureOnly: true, skipped: 0, actualTls: true, actualScram: true,
     actualFlockContention: true, actualPhysicalLockContention: true, executedChecks: common.checks.length, migrationAuthorized: false };
   if (fixture.id === 'release') return { ...common, liveAdapterQualified: false, migrationAuthorized: false, trafficAuthorized: false };
   if (['certification', 'replacement-certification'].includes(fixture.id)) return { version: 1, status: common.status, serverMajor: major,
-    frontendMigrations: 83, checks: common.checks, skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, fixtureOnly: true,
+    frontendMigrations: frontendMigrationCount, checks: common.checks, skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, fixtureOnly: true,
     ...(fixture.id === 'certification' ? { actualHostDocker: false, browserQualified: false, nativeInvocationQualified: false } : {}) };
   return { ...common, fixtureOnly: true, skipped: 0, executedChecks: common.checks.length, actualTlsPostgres: true, actualTlsReceivers: true,
     actualAppCron: true, actualRuntimeTrace: true, actualProvider: false, actualVercelNativeEvidence: false, modeledProviderNativeClassification: true,
@@ -48,7 +50,7 @@ test('receipt must prove the selected actual major, every required physical scen
 
 test('certification fixture requires every current and physical case and cannot claim deployed qualification', () => {
   const fixture = P2_OWNED_FIXTURES.find(value => value.id === 'certification'), actual = receipt(fixture);
-  for (const change of [value => { value.frontendMigrations = 82; }, value => { value.actualTlsPostgres = false; },
+  for (const change of [value => { value.frontendMigrations = frontendMigrationCount - 1; }, value => { value.actualTlsPostgres = false; },
     value => { value.noSqlReplay = false; }, value => { value.browserQualified = true; }, value => { value.nativeInvocationQualified = true; },
     value => { value.actualHostDocker = true; }, value => { value.postgresMajor = 18; }, value => { value.checks.reverse(); }]) {
     const changed = structuredClone(actual); change(changed); assert.throws(() => validateP2FixtureReceipt(fixture, changed, 18));

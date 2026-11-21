@@ -1,5 +1,7 @@
 # Unified Course and Community Platform Integration Plan
 
+Current delivery priority (November 18, 2026): **Target working staging by Sunday, November 22, and production readiness by Monday, November 30.** Prioritize working feature flows, migration correctness, affected recovery and the existing operator approval. Use automated test results and maintained release inputs for verification. Store the operator-required private API schema baseline in private GHCR storage, bind it to the exact source and CI run/attempt, and verify retrieval by digest. Defer optional hardening until staging works. All existing holds and both admission gates remain in place.
+
 ## Current P2Q resource-reuse decision — November 6, 2026
 
 Dardan removed the requirement that P2Q be completely separate. P2Q/G2-Q remains the named qualification track; existing staging accounts, projects, provider scopes, hosts and databases may be selected and reused. Separate administrators, credentials, MFA/recovery paths, control planes, new-only resources and exhaustive historical administrative-credential exclusion are not prerequisites. The same trusted sole developer may administer staging and production. Existing staging Google administration and its project are eligible; a new Google account/project is not required. See the [superseding owner decision](https://github.com/princessdardan/lash-her-frontend/blob/codex/phase2-integration/docs/api-integration/decisions/2026-11-06-p2q-resource-reuse.md).

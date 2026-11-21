@@ -59,7 +59,16 @@ let resultReceipt = { status: "PUBLISHED_RECOVERY_HARNESS_FAILED", runId, curren
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, command === "docker" ? ["--host", environment.OWNED_DOCKER_SOCKET, ...args] : args, { cwd: root, env: environment, stdio: ["ignore", log, log], timeout: 180_000, ...options });
-  if (result.status !== 0) throw new Error("Isolated harness command failed");
+  if (result.status !== 0) {
+    const composeCommand = command === "docker" && args[0] === "compose"
+      ? args.find((value) => ["config", "up", "exec", "stop", "rm", "restart", "run", "ps", "down", "logs"].includes(value))
+      : undefined;
+    const operation = composeCommand ? `docker compose ${composeCommand}`
+      : command === "docker" && ["pull", "run", "inspect"].includes(args[0]) ? `docker ${args[0]}`
+        : command === "openssl" ? "openssl" : "command";
+    const status = Number.isInteger(result.status) ? result.status : "unavailable";
+    throw new Error(`Isolated harness command failed (${operation}; exit ${status})`);
+  }
   return result;
 }
 function compose(commandArgs, options) { return run("docker", [...composeArgs.slice(2), ...commandArgs], options); }
@@ -115,10 +124,11 @@ try {
     alias: { "server-only": join(root, "node_modules/server-only/empty.js") },
     banner: { js: 'import { createRequire as harnessCreateRequire } from "node:module"; const require = harnessCreateRequire(import.meta.url);' } });
   const database = (name) => ({ DATABASE_TARGET: "test", TEST_DATABASE_URL: `postgresql://postgres:${password}@postgres:5432/lash_her_${name}_p1_test?sslmode=disable` });
+  const muxEnvironment = "owned-fixture";
   const muxPair = await generateKeyPair("RS256", { extractable: true });
   envFile("course-api.env", { ...database("course"), ...courseHarnessAuth(phase, { frontendSecret, adminSecret: firstPartySecret, learnerSecret }),
     COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret,
-    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: "owned-fixture", MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
+    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: muxEnvironment, MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
     MUX_SIGNING_KEY_ID: "isolated-fixture", MUX_SIGNING_PRIVATE_KEY: Buffer.from(await exportPKCS8(muxPair.privateKey)).toString("base64") });
   envFile("course-publisher.env", { ...database("course"), COMMUNITY_ENROLLMENT_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret });
   envFile("course-snapshot.env", database("course"));
@@ -126,6 +136,7 @@ try {
   envFile("community-api.env", { ...database("community"), COURSE_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret, COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("community-worker.env", { ...database("community"), COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_CONTRACT_PHASE: phase, HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret,
+    ...(phase === "p2" ? { HARNESS_MUX_ENVIRONMENT_ID: muxEnvironment } : {}),
     HARNESS_FIRST_PARTY_SECRET: firstPartySecret, HARNESS_COURSE_ADMIN_SECRET: firstPartySecret, OWNED_RECOVERY_FIXTURE: "1", NODE_ENV: "test" });
   envFile("postgres.env", { POSTGRES_PASSWORD: password });
   const mounts = `      - ${directory}:/test:ro\n      - ${output}:/test/out:rw\n`;
@@ -135,6 +146,9 @@ try {
   // Refuse a topology with any host publication before starting a container.
   const config = JSON.parse(compose(["config", "--format", "json"], { stdio: ["ignore", "pipe", log] }).stdout);
   if (Object.values(config.services).some((service) => service.ports?.length)) throw new Error("Owned fixture must publish no host port");
+  // The media fixture uses another PostgreSQL variant; never assume this exact
+  // compatibility-test digest was populated by an earlier workflow step.
+  run("docker", ["pull", "--platform", "linux/amd64", postgresImage]);
   compose(["up", "--pull", "never", "-d", "postgres"]);
   await waitFor("postgres", () => spawnSync("docker", [...composeArgs, "exec", "-T", "postgres", "pg_isready", "-U", "postgres"], { env: environment, stdio: "ignore" }).status === 0);
   const sql = (name, statement) => JSON.parse(compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", `lash_her_${name}_p1_test`, "-v", "ON_ERROR_STOP=1", "-A", "-t", "-c", statement], { stdio: ["ignore", "pipe", log] }).stdout.toString().trim());
@@ -262,8 +276,13 @@ try {
     compose(["stop", "-t", "30", ...services]);
     const statuses = services.map((service) => {
       const id = compose(["ps", "-a", "-q", service], { stdio: ["ignore", "pipe", log] }).stdout.toString().trim();
-      const state = JSON.parse(run("docker", ["inspect", "--format", "{{json .State}}", id], { stdio: ["ignore", "pipe", log] }).stdout);
-      return { service, containerId: id, running: state.Running, exitCode: state.ExitCode, oomKilled: state.OOMKilled,
+      const stopped = JSON.parse(run("docker", ["inspect", "--format",
+        '{"reference":{{json .Config.Image}},"state":{{json .State}}}', id], { stdio: ["ignore", "pipe", log] }).stdout);
+      const state = stopped.state;
+      const running = runningImages.find(instance => instance.service === service);
+      if (stopped.reference !== running.reference || (service !== "gateway" && id !== running.containerId))
+        throw new Error("Published stopping image differs from the reviewed round");
+      return { service, containerId: id, reference: stopped.reference, running: state.Running, exitCode: state.ExitCode, oomKilled: state.OOMKilled,
         startedAt: state.StartedAt, finishedAt: state.FinishedAt };
     });
     rounds.at(-1).gracefulStop = { durationMs: Date.now() - beforeStop, processes: statuses };

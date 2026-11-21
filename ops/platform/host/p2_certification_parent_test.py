@@ -78,6 +78,17 @@ LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
 ) | {
     'ops/platform/harness/owned-frontend-identity-admission.mjs',
     'ops/platform/harness/owned-p2-lifecycle-receivers.mjs',
+    # P5 media preparation runs in its own isolated qualification. The v1
+    # source projection keeps its reviewed 512-file boundary.
+    'ops/aws/community-media.cfn.json',
+    'ops/platform/community-media-issuer-proof.json',
+    'ops/platform/community-media-pair.mjs',
+    'ops/platform/community-media-predecessor.json',
+    'ops/platform/community-media-recovery.mjs',
+    'ops/platform/compose.community-media.yaml',
+    'ops/platform/host/community_media.py',
+    'ops/platform/host/p4_05_candidate.py',
+    'ops/platform/pull-api-schemas.mjs',
 }
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""

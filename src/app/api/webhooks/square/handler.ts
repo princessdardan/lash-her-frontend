@@ -84,6 +84,7 @@ type TrainingSquareInvoiceModuleFinalizer = (input: {
 }>;
 
 interface SquareWebhookDependencies {
+  handleCoursePayment?: (event: VerifiedSquareWebhookEvent) => Promise<boolean>;
   alerts: ServicePaymentAlertLogger;
   claimSquareInvoiceWebhookEvent: (
     input: SquareInvoiceWebhookEventInput,
@@ -153,6 +154,10 @@ interface TrainingSquareInvoiceWebhookRuntimeEnv {
 }
 
 export const defaultDependencies: SquareWebhookDependencies = {
+  async handleCoursePayment(event) {
+    const { handleCourseSquareEvent } = await import("@/lib/course-purchases/webhook");
+    return handleCourseSquareEvent(event);
+  },
   alerts: createServicePaymentAlertLogger({}),
   async claimSquareInvoiceWebhookEvent(input) {
     const { claimSquareInvoiceWebhookEvent } =
@@ -284,6 +289,8 @@ export const defaultDependencies: SquareWebhookDependencies = {
       serviceBookingEnv: getSquareServiceBookingRuntimeEnv(),
       trainingInvoiceWebhookEnv: getTrainingAfterpaySquareInvoiceWebhookEnv(),
       commerceWebhookEnv: getSquareCommerceWebhookEnv(),
+      courseWebhookEnv: (await import("@/lib/course-purchases/policy")).courseRecoveryEnabled()
+        ? getSquareCommerceWebhookEnv(true) : null,
     });
   },
   async recordSquareInvoiceWebhookEventProcessed(input) {
@@ -430,6 +437,16 @@ export function createSquareWebhookPostHandler(
     } catch (error) {
       console.warn("[square-webhook] Invalid payload", error);
       return new Response(null, { status: 400 });
+    }
+
+    if (dependencies.handleCoursePayment) {
+      try {
+        if (await dependencies.handleCoursePayment(event))
+          return new Response(null, { status: 200 });
+      } catch {
+        markWriterOperationUncertain();
+        return new Response(null, { status: 503 });
+      }
     }
 
     if (event.refund !== undefined) {
@@ -970,6 +987,7 @@ function classifySquareCommerceCardOrder(
 export function resolveSquareWebhookEnv(input: {
   serviceBookingEnv: SquareWebhookRuntimeEnv | null;
   trainingInvoiceWebhookEnv: TrainingSquareInvoiceWebhookRuntimeEnv | null;
+  courseWebhookEnv?: { notificationUrl: string; webhookSignatureKey: string } | null;
   commerceWebhookEnv?: {
     notificationUrl: string;
     webhookSignatureKey: string;
@@ -1006,7 +1024,11 @@ export function resolveSquareWebhookEnv(input: {
     };
   }
 
-  return null;
+  return input.courseWebhookEnv ? {
+    ...input.courseWebhookEnv,
+    serviceBookingEnabled: false,
+    commerceEnabled: false,
+  } : null;
 }
 
 async function finalizeTrainingSquareInvoicePayment(

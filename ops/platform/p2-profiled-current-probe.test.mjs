@@ -45,7 +45,7 @@ function fixture(major = 16) {
 }
 
 test('fixed probe accepts exact source current lineage and rejects mixed/pending/false receipts before credential access', async () => {
-  const f = fixture(); assert.equal(validateP2ProfiledCurrentProbe(f.input).artifact.migrations.length, 83);
+  const f = fixture(); assert.equal(validateP2ProfiledCurrentProbe(f.input).artifact.migrations.length, f.artifact.migrations.length);
   for (const mutate of [
     value => { delete value.qualificationTargetProfile; }, value => { value.version = 1; },
     value => { value.job.version = 1; }, value => { delete value.job.target.qualificationTargetProfile; },

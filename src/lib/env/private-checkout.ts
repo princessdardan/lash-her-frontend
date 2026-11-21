@@ -104,8 +104,8 @@ export function isSquareCommerceCheckoutEnabled(): boolean {
  * checkout. Never returns the access token or webhook key. Mirrors
  * {@link getSquareCardOnFileServiceBookingConfig} but is commerce-scoped.
  */
-export function getSquareCommerceConfig(): SquareCommerceConfig | null {
-  if (!isSquareCommerceCheckoutEnabled()) return null;
+export function getSquareCommerceConfig(enabled = isSquareCommerceCheckoutEnabled()): SquareCommerceConfig | null {
+  if (!enabled) return null;
 
   const environment = assertSquareEnvironment();
 
@@ -136,8 +136,8 @@ export function getSquareCommerceConfig(): SquareCommerceConfig | null {
  * Reuses the single Square webhook endpoint URL + signature key that all Square
  * flows share (Square posts every event to one notification URL).
  */
-export function getSquareCommerceWebhookEnv(): SquareCommerceWebhookEnv | null {
-  if (!isSquareCommerceCheckoutEnabled()) return null;
+export function getSquareCommerceWebhookEnv(enabled = isSquareCommerceCheckoutEnabled()): SquareCommerceWebhookEnv | null {
+  if (!enabled) return null;
 
   return {
     notificationUrl: assertUrlValue(
@@ -165,8 +165,8 @@ export function getSquarePaymentReadEnv(): Pick<SquareCommerceEnv, "environment"
 /**
  * Server-only Square credentials for product and primary-training checkout.
  */
-export function getSquareCommerceEnv(): SquareCommerceEnv | null {
-  if (!isSquareCommerceCheckoutEnabled()) return null;
+export function getSquareCommerceEnv(enabled = isSquareCommerceCheckoutEnabled()): SquareCommerceEnv | null {
+  if (!enabled) return null;
 
   return {
     ...getSquarePaymentReadEnv(),

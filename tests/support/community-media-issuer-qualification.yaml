@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Disposable Community media issuer qualification with no storage or application permissions.
+Parameters:
+  Scope:
+    Type: String
+    AllowedPattern: 'p503-check-[a-f0-9]{8}'
+  ApiCa:
+    Type: String
+    MinLength: 200
+    MaxLength: 4096
+  WorkerCa:
+    Type: String
+    MinLength: 200
+    MaxLength: 4096
+Rules:
+  DistinctAnchors:
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ApiCa, !Ref WorkerCa]]
+        AssertDescription: Separate API and worker certificate authorities are required.
+Resources:
+  ApiAnchor:
+    Type: AWS::RolesAnywhere::TrustAnchor
+    Properties:
+      Enabled: true
+      Name: !Sub '${Scope}-api'
+      Source:
+        SourceType: CERTIFICATE_BUNDLE
+        SourceData:
+          X509CertificateData: !Ref ApiCa
+  WorkerAnchor:
+    Type: AWS::RolesAnywhere::TrustAnchor
+    Properties:
+      Enabled: true
+      Name: !Sub '${Scope}-worker'
+      Source:
+        SourceType: CERTIFICATE_BUNDLE
+        SourceData:
+          X509CertificateData: !Ref WorkerCa
+  ApiIssuer:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /p503-issuer-qualification/
+      RoleName: !Sub '${Scope}-api-issuer'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: rolesanywhere.amazonaws.com }
+            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt ApiAnchor.TrustAnchorArn
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                aws:PrincipalTag/x509Subject/CN: !Sub '${Scope}-api'
+      Policies:
+        - PolicyName: AssumeOnlyApiTarget
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
+                Resource: !GetAtt ApiTarget.Arn
+  WorkerIssuer:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /p503-issuer-qualification/
+      RoleName: !Sub '${Scope}-worker-issuer'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: rolesanywhere.amazonaws.com }
+            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt WorkerAnchor.TrustAnchorArn
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                aws:PrincipalTag/x509Subject/CN: !Sub '${Scope}-worker'
+      Policies:
+        - PolicyName: AssumeOnlyWorkerTarget
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
+                Resource: !GetAtt WorkerTarget.Arn
+  ApiTarget:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /p503-issuer-qualification/
+      RoleName: !Sub '${Scope}-api-target'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' }
+            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
+            Condition:
+              ArnEquals:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/p503-issuer-qualification/${Scope}-api-issuer'
+  WorkerTarget:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /p503-issuer-qualification/
+      RoleName: !Sub '${Scope}-worker-target'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' }
+            Action: ['sts:AssumeRole', 'sts:SetSourceIdentity', 'sts:TagSession']
+            Condition:
+              ArnEquals:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/p503-issuer-qualification/${Scope}-worker-issuer'
+  ApiProfile:
+    Type: AWS::RolesAnywhere::Profile
+    Properties:
+      Enabled: true
+      Name: !Sub '${Scope}-api'
+      DurationSeconds: 900
+      RoleArns: [!GetAtt ApiIssuer.Arn]
+  WorkerProfile:
+    Type: AWS::RolesAnywhere::Profile
+    Properties:
+      Enabled: true
+      Name: !Sub '${Scope}-worker'
+      DurationSeconds: 900
+      RoleArns: [!GetAtt WorkerIssuer.Arn]
+Outputs:
+  Scope: { Value: !Ref Scope }
+  ApiAnchorArn: { Value: !GetAtt ApiAnchor.TrustAnchorArn }
+  WorkerAnchorArn: { Value: !GetAtt WorkerAnchor.TrustAnchorArn }
+  ApiIssuerArn: { Value: !GetAtt ApiIssuer.Arn }
+  WorkerIssuerArn: { Value: !GetAtt WorkerIssuer.Arn }
+  ApiTargetArn: { Value: !GetAtt ApiTarget.Arn }
+  WorkerTargetArn: { Value: !GetAtt WorkerTarget.Arn }
+  ApiProfileArn: { Value: !GetAtt ApiProfile.ProfileArn }
+  WorkerProfileArn: { Value: !GetAtt WorkerProfile.ProfileArn }

@@ -35,6 +35,9 @@ export interface SquarePayment {
   status: string;
   order_id?: string;
   reference_id?: string;
+  location_id?: string;
+  updated_at?: string;
+  refunded_money?: SquareMoney;
   customer_id?: string;
   source_type?: string;
   team_member_id?: string;
@@ -55,6 +58,8 @@ export interface SquareRefund {
   id: string;
   status: string;
   payment_id?: string;
+  location_id?: string;
+  updated_at?: string;
   order_id?: string;
   amount_money: SquareMoney;
 }
@@ -248,6 +253,29 @@ export async function createSquareCommercePayment(
   return createSquarePaymentsClient(env).createCardOnFilePayment(request);
 }
 
+export function createSquareCoursePayment(env: SquarePaymentsClientEnv, request: SquareCreatePaymentRequest) {
+  return postSquareWithStatus(env, "/v2/payments", request, isSquareCreatePaymentResponse, 10_000);
+}
+
+export function getSquareCoursePayment(env: SquarePaymentsClientEnv, paymentId: string) {
+  return getSquare(env, `/v2/payments/${encodeURIComponent(paymentId)}`, isSquareGetPaymentResponse, 10_000);
+}
+
+export function getSquareCourseRefund(env: SquarePaymentsClientEnv, refundId: string) {
+  return getSquare(env, `/v2/refunds/${encodeURIComponent(refundId)}`, isSquareRefundPaymentResponse, 10_000);
+}
+
+export function completeSquareCoursePayment(env: SquarePaymentsClientEnv, payment: SquarePayment) {
+  return postSquareWithStatus(env, `/v2/payments/${encodeURIComponent(payment.id)}/complete`, {
+    ...(payment.version_token ? { version_token: payment.version_token } : {}),
+  }, isSquareGetPaymentResponse, 10_000);
+}
+
+export function cancelSquareCoursePayment(env: SquarePaymentsClientEnv, paymentId: string) {
+  return postSquareWithStatus(env, `/v2/payments/${encodeURIComponent(paymentId)}/cancel`, {},
+    isSquareGetPaymentResponse, 10_000);
+}
+
 async function postSquare<TRequest, TResponse>(
   env: SquarePaymentsClientEnv,
   path: string,
@@ -302,6 +330,7 @@ async function postSquareWithStatus<TRequest, TResponse>(
   path: string,
   request: TRequest,
   validateResponse: (value: unknown) => value is TResponse,
+  timeoutMs?: number,
 ): Promise<TResponse> {
   let response: Response;
 
@@ -316,6 +345,7 @@ async function postSquareWithStatus<TRequest, TResponse>(
       },
       body: JSON.stringify(request),
       cache: "no-store",
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
   } catch {
     throw new Error("Square API request failed before receiving a response");
@@ -358,6 +388,7 @@ async function getSquare<TResponse>(
   env: SquarePaymentsClientEnv,
   path: string,
   validateResponse: (value: unknown) => value is TResponse,
+  timeoutMs?: number,
 ): Promise<TResponse> {
   let response: Response;
 
@@ -370,6 +401,7 @@ async function getSquare<TResponse>(
         "square-version": SQUARE_VERSION,
       },
       cache: "no-store",
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
   } catch {
     throw new Error("Square API request failed before receiving a response");

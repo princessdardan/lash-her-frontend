@@ -58,3 +58,15 @@ test("Phase 2 certification schedules only lifecycle recovery on the reviewed st
   ]) assert.throws(() => createVercelConfiguration({ ...input, ...changed }, now));
   assert.equal(createVercelConfiguration({ LASH_P2_CERTIFICATION_SCHEDULES: "off" }).crons.length, 9);
 });
+
+test("explicit candidate hold emits an empty scheduler list", () => {
+  const selected = createVercelConfiguration({
+    LASH_RELEASE_SCHEDULER_PROFILE: "off",
+    LASH_RELEASE_SCHEDULER_QUALIFICATION: "false",
+    CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED: "true",
+  }, now);
+  assert.deepEqual(selected.crons, []);
+  assert.equal(selected.git.deploymentEnabled, false);
+  assert.equal(createVercelConfiguration({}).crons.length, 9);
+  assert.throws(() => createVercelConfiguration({ LASH_RELEASE_SCHEDULER_PROFILE: "unknown" }));
+});

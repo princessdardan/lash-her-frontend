@@ -1,0 +1,531 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Private Community media and request logs with separate API and worker access.",
+  "Metadata": {
+    "AWSToolsMetrics": {
+      "AWSAgentToolkit": "aws-cloudformation@3"
+    },
+    "com.aws.cloudformation.Context": {
+      "must": [
+        "Use a fresh media bucket for each environment. Keep versioning, replication and Object Lock disabled for physical deletion with the current worker.",
+        "Apply the approved one-day quarantine backstop and 30-day Ops-only access-log retention."
+      ]
+    }
+  },
+  "Parameters": {
+    "DeploymentEnvironment": {
+      "Type": "String",
+      "AllowedValues": [
+        "staging",
+        "production"
+      ]
+    },
+    "BrowserOrigin": {
+      "Type": "String",
+      "AllowedPattern": "https://[a-z0-9]+(?:[.-][a-z0-9]+)*\\.[a-z0-9]+",
+      "Description": "Exact HTTPS application origin for this environment."
+    },
+    "ApiCallerRolePath": {
+      "Type": "String",
+      "AllowedPattern": "(?:[A-Za-z0-9+=,.@_-]+/)*[A-Za-z0-9+=,.@_-]+",
+      "Description": "Same-account API credential supplier role path and name, without the leading slash."
+    },
+    "WorkerCallerRolePath": {
+      "Type": "String",
+      "AllowedPattern": "(?:[A-Za-z0-9+=,.@_-]+/)*[A-Za-z0-9+=,.@_-]+",
+      "Description": "Same-account worker credential supplier role path and name, without the leading slash."
+    },
+    "OpsReaderRolePath": {
+      "Type": "String",
+      "AllowedPattern": "(?:[A-Za-z0-9+=,.@_-]+/)*[A-Za-z0-9+=,.@_-]+",
+      "Description": "Same-account Ops log reader role path and name, without the leading slash."
+    }
+  },
+  "Rules": {
+    "SeparateCallerRoles": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "ApiCallerRolePath"
+                  },
+                  {
+                    "Ref": "WorkerCallerRolePath"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "The Community API and media worker require distinct caller roles."
+        },
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "OpsReaderRolePath"
+                  },
+                  {
+                    "Ref": "ApiCallerRolePath"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "The Ops log reader role is separate from the media credential suppliers."
+        },
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "OpsReaderRolePath"
+                  },
+                  {
+                    "Ref": "WorkerCallerRolePath"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "The Ops log reader role is separate from the media credential suppliers."
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "AccessLogs": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Keep media request logs in a separate private bucket."
+        }
+      },
+      "Properties": {
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+              "Prefix": "access/",
+              "ExpirationInDays": 30
+            }
+          ]
+        }
+      }
+    },
+    "AccessLogsPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "AccessLogs"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AcceptLogsFromMediaBucket",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "logging.s3.amazonaws.com"
+              },
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "${AccessLogs.Arn}/access/*"
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::lash-community-${DeploymentEnvironment}-${AWS::AccountId}-${AWS::Region}"
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "RequireHTTPS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AccessLogs",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${AccessLogs.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                  "aws:PrincipalIsAWSService": "false"
+                }
+              }
+            },
+            {
+              "Sid": "AllowOpsLogReads",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AccessLogs",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${AccessLogs.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "aws:PrincipalArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OpsReaderRolePath}"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyNonOpsLogReads",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": [
+                "s3:GetObject*",
+                "s3:ListBucket*",
+                "s3:GetBucketLocation"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AccessLogs",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${AccessLogs.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "ArnNotEquals": {
+                  "aws:PrincipalArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OpsReaderRolePath}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Media": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Use a fresh unversioned bucket. The worker deletes objects by key."
+        }
+      },
+      "Properties": {
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "BucketName": {
+          "Fn::Sub": "lash-community-${DeploymentEnvironment}-${AWS::AccountId}-${AWS::Region}"
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedOrigins": [
+                {
+                  "Ref": "BrowserOrigin"
+                }
+              ],
+              "AllowedMethods": [
+                "PUT",
+                "GET"
+              ],
+              "AllowedHeaders": [
+                "content-type",
+                "if-none-match",
+                "x-amz-checksum-sha256"
+              ]
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "QuarantineBackstop",
+              "Status": "Enabled",
+              "Prefix": "quarantine/",
+              "ExpirationInDays": 1,
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1
+              }
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogs"
+          },
+          "LogFilePrefix": "access/"
+        }
+      },
+      "DependsOn": "AccessLogsPolicy"
+    },
+    "MediaPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "Media"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "RequireHTTPS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "Media",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${Media.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                  "aws:PrincipalIsAWSService": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ApiMediaRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "sts:AssumeRole",
+                "sts:SetSourceIdentity",
+                "sts:TagSession"
+              ],
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:PrincipalArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiCallerRolePath}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "CommunityMediaObjects",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${Media.Arn}/quarantine/*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${Media.Arn}/processed/*"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "WorkerMediaRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "sts:AssumeRole",
+                "sts:SetSourceIdentity",
+                "sts:TagSession"
+              ],
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:PrincipalArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkerCallerRolePath}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "CommunityMediaObjects",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${Media.Arn}/quarantine/*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:PutObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${Media.Arn}/processed/*"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "MediaBucket": {
+      "Value": {
+        "Ref": "Media"
+      }
+    },
+    "MediaRegion": {
+      "Value": {
+        "Ref": "AWS::Region"
+      }
+    },
+    "AccessLogBucket": {
+      "Value": {
+        "Ref": "AccessLogs"
+      }
+    },
+    "ApiMediaRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ApiMediaRole",
+          "Arn"
+        ]
+      }
+    },
+    "WorkerMediaRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "WorkerMediaRole",
+          "Arn"
+        ]
+      }
+    }
+  }
+}
