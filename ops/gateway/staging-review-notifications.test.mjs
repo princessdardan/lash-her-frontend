@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createReviewNotifications, reviewReplyBody, validNotificationScope } from "./staging-review-notifications.mjs";
+import { createReviewNotifications, recipientNotificationProofKey, reviewReplyBody, validNotificationScope } from "./staging-review-notifications.mjs";
 import { reviewDiscussionsSignature } from "./staging-review-community.mjs";
 
 const ids = Array.from({ length: 6 }, (_, i) => `12345678-1234-4234-8234-12345678900${i}`);
@@ -77,4 +77,18 @@ test("a recipient-only release cannot authorize the expired replier or create a 
   })));
   assert.equal(stage.authorize(request(recipient, "PUT", read, { read: false })), undefined);
   assert.equal(stage.authorize(request(recipient, "PUT", read, { read: true })), "recipient");
+});
+
+test("existing discussion credentials derive a scoped notification key without a transported key", () => {
+  const config = {
+    mode: "recipient", recipient, post, end: scope.end, admissionSha256: scope.admissionSha256,
+  };
+  const key = recipientNotificationProofKey(config, scope.key);
+  assert.equal(validNotificationScope({ ...config, key }), true);
+  assert.notEqual(key, scope.key);
+  assert.equal(recipientNotificationProofKey({ ...config }, scope.key), key);
+  assert.notEqual(recipientNotificationProofKey({ ...config, post: outsider }, scope.key), key);
+  assert.equal(recipientNotificationProofKey({ ...config, key: scope.key }, scope.key), undefined);
+  assert.equal(recipientNotificationProofKey({ ...config, replier }, scope.key), undefined);
+  assert.equal(recipientNotificationProofKey(config, "invalid"), undefined);
 });

@@ -1,5 +1,5 @@
 import { constants, closeSync, fstatSync, openSync, readFileSync } from "node:fs";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { reviewDiscussionsSignature, isReviewDiscussionCursor as isId } from "./staging-review-community.mjs";
 
 export const REVIEW_NOTIFICATIONS_HEADER = "x-lash-staging-review-notifications";
@@ -7,6 +7,16 @@ export const reviewReplyBody = "Synthetic reply for the staging notification che
 const scopeFile = "/config/staging-review-notifications.json";
 const hex = /^[a-f0-9]{64}$/u;
 const inbox = "/community/v1/notifications";
+
+export function recipientNotificationProofKey(value, discussionKey) {
+  if (!value || value.mode !== "recipient" ||
+      Object.keys(value).sort().join(",") !== "admissionSha256,end,mode,post,recipient" ||
+      typeof discussionKey !== "string" || !hex.test(discussionKey)) return undefined;
+  return createHmac("sha256", Buffer.from(discussionKey, "hex"))
+    .update(JSON.stringify(["staging-review-notification-recipient-v1",
+      value.recipient, value.post, value.end, value.admissionSha256]))
+    .digest("hex");
+}
 
 export function validNotificationScope(value) {
   if (!value || ![value.post, value.recipient].every(isId) || value.post === value.recipient ||
@@ -31,7 +41,10 @@ export function reviewNotificationsScope(config, discussion) {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > 2048 || stat.uid !== 0 || stat.mode & 0o027)
       throw new Error("Invalid staging notification mount");
-    const scope = JSON.parse(readFileSync(fd, "utf8"));
+    const input = JSON.parse(readFileSync(fd, "utf8"));
+    const scope = input?.mode === "recipient"
+      ? { ...input, key: recipientNotificationProofKey(input, discussion.key) }
+      : input;
     if (!validNotificationScope(scope) || discussion.subject !== scope.recipient || discussion.key === scope.key ||
         scope.end > discussion.end) throw new Error("Invalid staging notification scope");
     return scope;

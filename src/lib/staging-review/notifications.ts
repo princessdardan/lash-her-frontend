@@ -10,6 +10,7 @@ import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
 import { reviewDiscussionsSignature } from "../../../ops/gateway/staging-review-community.mjs";
 import {
+  recipientNotificationProofKey,
   reviewReplyBody,
   validNotificationScope,
 } from "../../../ops/gateway/staging-review-notifications.mjs";
@@ -19,14 +20,17 @@ export const reviewNotificationsPath = "/staging-review/notifications";
 const sharedScope = z.object({
   recipient: z.string().uuid(),
   post: z.string().uuid(),
-  key: z.string(),
   end: z.number(),
   admissionSha256: z.string(),
 });
 const scopeSchema = z.union([
   sharedScope.extend({ mode: z.literal("recipient") }).strict(),
   sharedScope
-    .extend({ replier: z.string().uuid(), reply: z.string().uuid() })
+    .extend({
+      key: z.string(),
+      replier: z.string().uuid(),
+      reply: z.string().uuid(),
+    })
     .strict(),
 ]);
 
@@ -35,10 +39,21 @@ export function notificationSettings() {
   if (!parent || !process.env.STAGING_REVIEW_NOTIFICATIONS_SETTINGS)
     return null;
   try {
-    const scope = scopeSchema.parse(
+    const config = scopeSchema.parse(
       JSON.parse(process.env.STAGING_REVIEW_NOTIFICATIONS_SETTINGS),
     );
+    const scope =
+      "mode" in config
+        ? {
+            ...config,
+            key: recipientNotificationProofKey(
+              config,
+              process.env.STAGING_REVIEW_DISCUSSIONS_KEY,
+            ),
+          }
+        : config;
     return validNotificationScope(scope) &&
+      typeof scope.key === "string" &&
       scope.recipient === parent.subject &&
       scope.end <= parent.end &&
       scope.end > Date.now() / 1000
@@ -89,6 +104,8 @@ async function send(
   if (expires <= now)
     throw new IntegrationServiceError("feature_disabled", 404);
   const nonce = randomUUID();
+  if (typeof scope.key !== "string")
+    throw new IntegrationServiceError("feature_disabled", 404);
   const signature = reviewDiscussionsSignature(scope.key, {
     method,
     target: "/community" + path,
