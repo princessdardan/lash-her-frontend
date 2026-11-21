@@ -32,7 +32,7 @@ async function send(
   subject: string,
   method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
-  input?: z.infer<typeof replyInput> | z.infer<typeof postInput>,
+  input?: object,
 ) {
   if (subject !== scope.subject) throw new IntegrationServiceError("forbidden", 403);
   const body = input === undefined ? undefined : JSON.stringify(input);
@@ -98,7 +98,7 @@ export async function reviewDiscussionMutation(request: Request, method: string,
       }
     }
     const verb = method === "DELETE" || method === "PATCH" ? method : "POST";
-    const result = await send(config, subject, verb, path, verb === "DELETE" ? undefined : parsed.data as z.infer<typeof postInput>);
+    const result = await send(config, subject, verb, path, verb === "DELETE" ? undefined : parsed.data);
     if (result.status !== (verb === "POST" ? 201 : 200)) throw new IntegrationServiceError("service_unavailable", 503);
     return Response.json(outcome.parse(result.data), {
       status: result.status, headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
