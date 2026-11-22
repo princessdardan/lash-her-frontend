@@ -1,6 +1,14 @@
-# Patched zlib runtime
+# Native runtime verification
 
 Both frontend-owned distroless Node images use this build. No image is deployed by these scripts.
+
+## OpenSSL CVE-2026-124709
+
+The gateway and frontend migration images use the digest-pinned Debian 13 Distroless base without system OpenSSL. `build-node.sh` builds Node 24 from the official source archive using the exact [upstream OpenSSL fix](https://github.com/openssl/openssl/commit/f3acb0a3328046741479482c51cec815839e1b05) for the bundled copy. The lock pins the archive, patch, and resulting source file hashes. The image retains the Node license, the C++ runtime package records, and the Node executable hash. The verifier checks that executable against its receipt and source lock, verifies TLS initialization, and checks the filesystem, SBOM, and raw scan for the Debian OpenSSL package.
+
+The OpenSSL repair needs no VEX statement. The existing package and digest verification for the zlib backport still applies. Replace the custom Node build once a maintained, digest-pinned Distroless Node image includes a fixed bundled OpenSSL and a fixed system OpenSSL package. Qualify both images with the normal exact-image scan before removing the build and its verification.
+
+## zlib backport
 
 Debian's pinned zlib 1.3.1 source contains the stale caller-input pointer after a failed gzip write described by CVE-2026-76844. `upstream.patch` records upstream commit `df84af25dc1942490e1d1c899a07619152a46148` (also referenced for CVE-2026-85091). `backport.patch` adapts that pointer/input reset to 1.3.1's direct-input branch without importing later nonblocking-write behavior. Both patch hashes, the Debian descriptor/source/packaging hashes and the compiler image digest are in `inputs.lock.json`.
 

@@ -31,7 +31,7 @@ concurrency:
 jobs:
   candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 150
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.repository == 'princessdardan/lash-her-frontend' &&

@@ -119,7 +119,7 @@ test("candidate collection and final qualification bind the operator dispatch, s
 const apiVerifierFixture = `
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateQualifiedRuntimeScan } from ${JSON.stringify(new URL("../gateway/runtime/verify.mjs", import.meta.url).href)};

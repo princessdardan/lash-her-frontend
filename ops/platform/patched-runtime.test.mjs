@@ -8,6 +8,7 @@ import { validateRuntimeEvidence, runtimeVex, verifyRuntimeImage, validateQualif
 
 const lockBytes = readFileSync(new URL('../gateway/runtime/inputs.lock.json', import.meta.url));
 const lock = JSON.parse(lockBytes), digest = 'a'.repeat(64);
+const nodeLock = JSON.parse(readFileSync(new URL('../gateway/runtime/node-inputs.lock.json', import.meta.url)));
 const id = `sha256:${digest}`, ref = `example.invalid/runtime@${id}`;
 const product = `pkg:oci/runtime@sha256%3A${digest}?arch=amd64&repository_url=example.invalid%2Fruntime`;
 const component = `pkg:deb/debian/zlib1g@${encodeURIComponent(lock.packageVersion)}?arch=amd64&distro=debian-13.7`;
@@ -15,8 +16,11 @@ function fixture() {
   const build = { inputsLockSha256: createHash('sha256').update(lockBytes).digest('hex'), inputs: structuredClone(lock),
     librarySha256: digest, packageSha256: digest, regressionBinarySha256: digest,
     regression: { unpatched: 'EXPECTED_ASSERTION_FAILURE', patched: 'PASS', shared: 'PASS', upstreamTests: 'PASS' } };
-  return { lock: structuredClone(lock), lockSha256: build.inputsLockSha256, build,
+  return { lock: structuredClone(lock), lockSha256: build.inputsLockSha256, build, nodeLock,
     observed: { evidence: structuredClone(build), librarySha256: digest, regressionBinarySha256: digest,
+      nodeRuntime: { evidence: { version: 1, inputs: structuredClone(nodeLock), nodeSha256: digest },
+        executableSha256: digest, nodeVersion: `v${nodeLock.nodeVersion}`, opensslVersion: nodeLock.opensslVersion,
+        sharedOpenSSL: false, quic: false },
       regressionStatus: 0, uid: 65532, architecture: 'amd64', packageStatus: `Status: install ok installed\nVersion: ${lock.packageVersion}\n` },
     image: { Id: id, RepoDigests: [ref], Architecture: 'amd64', Os: 'linux' },
     scan: { Metadata: { ImageID: id, RepoDigests: [ref], OS: { Family: 'debian', Name: '13.7' } },
@@ -36,6 +40,11 @@ test('runtime fixed statements bind the proven image and exact custom package on
 });
 
 for (const [name, change] of Object.entries({
+  'unexpected Debian OpenSSL package': f => { f.scan.Results[0].Packages.push({ Name: 'libssl3t64' }); },
+  'changed patched Node binary': f => { f.observed.nodeRuntime.executableSha256 = 'b'.repeat(64); },
+  'changed OpenSSL fix commit': f => { f.observed.nodeRuntime.evidence.inputs.opensslFix = 'b'.repeat(40); },
+  'shared OpenSSL': f => { f.observed.nodeRuntime.sharedOpenSSL = true; },
+  'experimental Node QUIC': f => { f.observed.nodeRuntime.quic = true; },
   'changed library': f => { f.observed.librarySha256 = 'b'.repeat(64); },
   'changed test executable': f => { f.observed.regressionBinarySha256 = 'b'.repeat(64); },
   'missing backport': f => { delete f.build.inputs.patches['backport.patch']; },
@@ -97,7 +106,7 @@ function qualified() {
     PkgIdentifier: { PURL: component }, Severity: 'HIGH' };
   const rawScan = { ...f.scan, ArtifactName: ref,
     Results: [{ ...f.scan.Results[0], Vulnerabilities: [finding] }] };
-  return { lock: f.lock, lockSha256: f.lockSha256, expectedImage: ref, sbom: f.sbom,
+  return { lock: f.lock, nodeLock, lockSha256: f.lockSha256, expectedImage: ref, sbom: f.sbom,
     record: { status: 'PATCHED_RUNTIME_VERIFIED', image: f.image, build: f.build, observed: f.observed, binding },
     rawScan, vex: runtimeVex(binding, lock), filteredScan: { ...rawScan,
       Results: [{ ExperimentalModifiedFindings: [{ Type: 'vulnerability', Status: 'fixed', Finding: finding }] }] } };

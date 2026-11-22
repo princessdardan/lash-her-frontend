@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -9,7 +9,22 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const sha = value => /^[a-f0-9]{64}$/u.test(value ?? '');
 const runtime = dirname(fileURLToPath(import.meta.url));
 
-export function validateRuntimeEvidence({ lock, lockSha256, build, observed, image, scan, sbom }) {
+function validatePatchedNode({ lock, observed, scan, sbom }) {
+  const { evidence, executableSha256, nodeVersion, opensslVersion, sharedOpenSSL, quic } = observed;
+  assert.equal(evidence.version, 1);
+  assert.deepEqual(evidence.inputs, lock);
+  assert.ok(sha(executableSha256));
+  assert.equal(executableSha256, evidence.nodeSha256);
+  assert.equal(nodeVersion, `v${lock.nodeVersion}`);
+  assert.equal(opensslVersion, lock.opensslVersion);
+  assert.equal(sharedOpenSSL, false);
+  assert.equal(quic, false);
+  const packages = [...sbom.components.map(component => component.name),
+    ...(scan.Results ?? []).flatMap(result => (result.Packages ?? []).map(pkg => pkg.Name))];
+  assert.ok(!packages.some(name => /^libssl3(?:t64)?$/u.test(name)), 'Unexpected Debian OpenSSL runtime package');
+}
+
+export function validateRuntimeEvidence({ lock, lockSha256, build, observed, image, scan, sbom, nodeLock }) {
   assert.equal(lock.version, 1);
   assert.equal(lock.upstreamCommit, 'df84af25dc1942490e1d1c899a07619152a46148');
   assert.deepEqual(lock.vulnerabilities, ['CVE-2026-76844', 'CVE-2026-85091']);
@@ -42,6 +57,7 @@ export function validateRuntimeEvidence({ lock, lockSha256, build, observed, ima
   assert.equal(scanned.length, 1);
   assert.equal(scanned[0].ID, `zlib1g@${lock.packageVersion}`);
   assert.equal(scanned[0].Identifier.PURL, pkg.purl);
+  if (nodeLock) validatePatchedNode({ lock: nodeLock, observed: observed.nodeRuntime, scan, sbom });
   return { product, component: pkg.purl };
 }
 
@@ -53,13 +69,13 @@ export function runtimeVex(binding, lock, timestamp = new Date().toISOString()) 
       status: 'fixed', action_statement: `Verified Debian 1.3.1 backport of ${lock.upstreamCommit}; original failed-write regression fails, installed replacement passes.` })) };
 }
 
-export function validateQualifiedRuntimeScan({ lock, lockSha256, record, rawScan, sbom, vex, filteredScan, expectedImage }) {
+export function validateQualifiedRuntimeScan({ lock, lockSha256, record, rawScan, sbom, vex, filteredScan, expectedImage, nodeLock }) {
   assert.equal(record.status, 'PATCHED_RUNTIME_VERIFIED');
   assert.equal(rawScan.ArtifactName, expectedImage);
   assert.equal(filteredScan.ArtifactName, expectedImage);
   assert.equal(filteredScan.Metadata.ImageID, record.image.Id);
   const binding = validateRuntimeEvidence({ lock, lockSha256, build: record.build, observed: record.observed,
-    image: record.image, scan: rawScan, sbom });
+    image: record.image, scan: rawScan, sbom, nodeLock });
   assert.deepEqual(record.binding, binding);
   assert.deepEqual(vex, runtimeVex(binding, lock, vex.timestamp));
   const isPatched = v => lock.vulnerabilities.includes(v.VulnerabilityID) && v.PkgName === 'zlib1g' &&
@@ -87,7 +103,9 @@ export function verifyRecordedRuntime(directory, prefix, expectedImage, sourceDi
   for (const [path, expected] of [[rawPath, record.rawScanSha256], [sbomPath, record.sbomSha256],
     [vexPath, record.vexSha256], [scanPath, record.scanSha256]]) assert.equal(hash(readFileSync(path)), expected);
   const lockBytes = readFileSync(join(sourceDirectory, 'ops/gateway/runtime/inputs.lock.json'));
-  return validateQualifiedRuntimeScan({ lock: JSON.parse(lockBytes), lockSha256: hash(lockBytes), record,
+  const nodeLockPath = join(sourceDirectory, 'ops/gateway/runtime/node-inputs.lock.json');
+  const nodeLock = existsSync(nodeLockPath) ? load(nodeLockPath) : undefined;
+  return validateQualifiedRuntimeScan({ nodeLock, lock: JSON.parse(lockBytes), lockSha256: hash(lockBytes), record,
     rawScan: load(rawPath), sbom: load(sbomPath), vex: load(vexPath), filteredScan: load(scanPath), expectedImage });
 }
 
@@ -95,6 +113,14 @@ const imageProbe = String.raw`
 const fs=require('node:fs'),crypto=require('node:crypto'),cp=require('node:child_process'),zlib=require('node:zlib');
 const digest=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const evidence=JSON.parse(fs.readFileSync('/usr/share/lash-runtime/zlib.json'));
+const nodeEvidence=JSON.parse(fs.readFileSync('/usr/share/lash-runtime/node.json'));
+const libdir=require('node:path').dirname(evidence.library);
+for(const dir of new Set([libdir,'/usr/lib','/nodejs/lib','/var/lib/dpkg/status.d'])) {
+  if(fs.existsSync(dir)&&fs.readdirSync(dir).some(name=>/^lib(?:ssl|crypto)(?:3|\.so)/u.test(name)))process.exit(1);
+}
+const nodeRuntime={evidence:nodeEvidence,executableSha256:digest(process.execPath),
+ nodeVersion:process.version,opensslVersion:process.versions.openssl,
+ sharedOpenSSL:process.config.variables.node_shared_openssl,quic:process.features.quic};
 const libraryAlias=require('node:path').join(require('node:path').dirname(evidence.library),'libz.so.1');
 if(fs.realpathSync(libraryAlias)!==evidence.library)process.exit(1);
 const text='runtime compression smoke';if(zlib.gunzipSync(zlib.gzipSync(text)).toString()!==text)process.exit(1);
@@ -103,13 +129,14 @@ for(const p of ['/bin/sh','/bin/bash','/usr/bin/gcc','/usr/bin/make','/runtime']
 const regression='/usr/libexec/lash-her/zlib-regression';
 const r=cp.spawnSync(regression,[],{encoding:'utf8'});if(r.error||r.status!==0)process.exit(1);
 console.log(JSON.stringify({evidence,librarySha256:digest(evidence.library),regressionBinarySha256:digest(regression),
- packageStatus:fs.readFileSync('/var/lib/dpkg/status.d/zlib1g','utf8'),regressionStatus:r.status,uid:process.getuid(),
+ packageStatus:fs.readFileSync('/var/lib/dpkg/status.d/zlib1g','utf8'),regressionStatus:r.status,nodeRuntime,uid:process.getuid(),
  architecture:process.arch==='x64'?'amd64':process.arch==='arm64'?'arm64':process.arch}));
 `;
 
 export function verifyRuntimeImage({ imageRef, rawScan, output, execute = execFileSync }) {
   const run = (command, args) => execute(command, args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   const lockBytes = readFileSync(join(runtime, 'inputs.lock.json')), lock = JSON.parse(lockBytes);
+  const nodeLock = JSON.parse(readFileSync(join(runtime, 'node-inputs.lock.json')));
   for (const [file, digest] of Object.entries({ ...lock.patches, ...lock.implementation })) assert.equal(hash(readFileSync(join(runtime, file))), digest);
   mkdirSync(output, { mode: 0o700 });
   // Build an independent reference from the reviewed source, never from the image being assessed.
@@ -129,7 +156,7 @@ export function verifyRuntimeImage({ imageRef, rawScan, output, execute = execFi
   const sbomPath = join(output, 'sbom.json');
   run('trivy', ['image', '--format', 'cyclonedx', '--output', sbomPath, immutable]);
   const scan = JSON.parse(readFileSync(rawScan)), sbom = JSON.parse(readFileSync(sbomPath));
-  const binding = validateRuntimeEvidence({ lock, lockSha256: hash(lockBytes), build, observed, image, scan, sbom });
+  const binding = validateRuntimeEvidence({ lock, lockSha256: hash(lockBytes), build, observed, image, scan, sbom, nodeLock });
   const vex = runtimeVex(binding, lock), vexPath = join(output, 'fixed.vex.json');
   writeFileSync(vexPath, JSON.stringify(vex, null, 2) + '\n', { flag: 'wx' });
   // Unknown or unrelated HIGH/CRITICAL findings retain their ordinary failing exit status.
@@ -140,7 +167,7 @@ export function verifyRuntimeImage({ imageRef, rawScan, output, execute = execFi
     binding, build, observed, rawScanSha256: hash(readFileSync(rawScan)), sbomSha256: hash(readFileSync(sbomPath)),
     vexSha256: hash(readFileSync(vexPath)), scanSha256: hash(readFileSync(join(output, 'scan.json'))) };
   // Also validate the raw/filtered finding correspondence before retaining qualification.
-  validateQualifiedRuntimeScan({ lock, lockSha256: hash(lockBytes), record,
+  validateQualifiedRuntimeScan({ nodeLock, lock, lockSha256: hash(lockBytes), record,
     rawScan: { ...scan, ArtifactName: immutable }, sbom, vex,
     filteredScan: JSON.parse(readFileSync(join(output, 'scan.json'))), expectedImage: immutable });
   writeFileSync(join(output, 'verification.json'), JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
