@@ -34,6 +34,7 @@ jobs:
             {"features":{"containerd-snapshotter":true}}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build the immutable frontend migration image without publishing
+        timeout-minutes: 65
         id: build-frontend-migration
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
@@ -135,6 +136,7 @@ jobs:
           npm ci --ignore-scripts --prefix ops/gateway
           node --test --test-name-pattern='fixed current certification plan joins' ops/platform/p2-profiled-current-release.test.mjs
       - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
+        timeout-minutes: 30
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
         run: |
@@ -276,6 +278,7 @@ jobs:
       - run: npm audit --audit-level=moderate --prefix ops/gateway
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact
+        timeout-minutes: 65
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ops/gateway

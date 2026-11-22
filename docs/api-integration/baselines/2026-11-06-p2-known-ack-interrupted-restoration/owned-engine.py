@@ -40,6 +40,10 @@ from p2_source_closure import REQUIRED, TYPES
 INTERRUPTED_RESTORATION_UNRELATED_HARNESS = frozenset({
     'ops/platform/harness/owned-frontend-identity-admission.mjs',
 })
+IMAGE_BUILD_ONLY = frozenset({
+    'ops/gateway/runtime/build-node.sh',
+    'ops/gateway/runtime/node-inputs.lock.json',
+})
 
 
 def write(directory,name,value):
@@ -76,8 +80,9 @@ def archive_operator_sources(root,commit,source):
     if not (PROFILED_CURRENT_SOURCE_ONLY | INTERRUPTED_RESTORATION_UNRELATED_HARNESS).issubset(paths):
         raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
     # Match the v1 fixture's source projection, excluding unrelated tests,
-    # evidence and the separately executed identity-admission harness.
-    excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY | INTERRUPTED_RESTORATION_UNRELATED_HARNESS
+    # evidence, the separately executed identity-admission harness, and image build inputs.
+    excluded = (PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY
+                | INTERRUPTED_RESTORATION_UNRELATED_HARNESS | IMAGE_BUILD_ONLY)
     for name in list(paths):
         if name in excluded or (name not in REQUIRED and name.endswith(('_test.py','.test.mjs','.test.ts','.test.mts'))):
             paths.pop(name).unlink()
