@@ -12,8 +12,11 @@ const MAX_RELAY_FRAME_BYTES = 256 * 1024;
 export const P407_POSTGRES_DATABASE = "lash_her_p407_frontend";
 export const P407_POSTGRES_ROLE = "lash_her_p407_frontend_runtime";
 
-function relayFailure() {
-  return new Error("P4-07 PostgreSQL relay unavailable");
+function relayFailure(cause?: NodeJS.ErrnoException) {
+  const error = new Error("P4-07 PostgreSQL relay unavailable") as NodeJS.ErrnoException;
+  // pg distinguishes a reset during deliberate shutdown from a live failure.
+  if (cause?.code === "ECONNRESET" || cause?.code === "EPIPE") error.code = cause.code;
+  return error;
 }
 
 export function readP407PostgresRelay(
@@ -69,7 +72,7 @@ export function createP407PostgresStream(
       const send = (offset: number) => {
         const end = offset + MAX_RELAY_FRAME_BYTES;
         connection.write(chunk.subarray(offset, end), (error) => {
-          if (error) callback(relayFailure());
+          if (error) callback(relayFailure(error));
           else if (end >= chunk.length) callback();
           else send(end);
         });
@@ -115,7 +118,7 @@ export function createP407PostgresStream(
       if (!socket.destroyed && !socket.push(data)) wire?.pause();
     });
     wire.on("end", () => socket.push(null));
-    wire.on("error", () => socket.destroy(relayFailure()));
+    wire.on("error", (error) => socket.destroy(relayFailure(error)));
     wire.on("close", () => socket.destroy());
   }
 
