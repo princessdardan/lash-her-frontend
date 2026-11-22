@@ -68,6 +68,8 @@ test('build inputs and patches remain bound to the reviewed lock', () => {
   for (const [file, expected] of Object.entries({ ...lock.patches, ...lock.implementation })) {
     assert.equal(createHash('sha256').update(readFileSync(new URL(`../gateway/runtime/${file}`, import.meta.url))).digest('hex'), expected);
   }
+  const opensslPatch = readFileSync(new URL('../gateway/runtime/openssl-cve-2026-124709.patch', import.meta.url));
+  assert.equal(createHash('sha256').update(opensslPatch).digest('hex'), nodeLock.opensslPatchSha256);
 });
 
 test('an unresolved HIGH finding still fails the verified-runtime scan', () => {

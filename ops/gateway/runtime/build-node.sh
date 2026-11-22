@@ -12,21 +12,23 @@ import subprocess
 from pathlib import Path
 
 lock = json.loads(Path('/node-runtime/node-inputs.lock.json').read_text())
-version, commit = lock['nodeVersion'], lock['opensslFix']
-for url, name, digest in (
-    (f'https://nodejs.org/dist/v{version}/node-v{version}.tar.xz', 'node.tar.xz', lock['nodeSourceSha256']),
-    (f'https://github.com/openssl/openssl/commit/{commit}.patch', 'openssl.patch', lock['opensslPatchSha256']),
+version = lock['nodeVersion']
+source = f'https://nodejs.org/dist/v{version}/node-v{version}.tar.xz'
+subprocess.run(['curl', '--fail', '--silent', '--show-error', '--location', '--retry', '3',
+                '--proto', '=https', '--proto-redir', '=https', source, '-o', 'node.tar.xz'], check=True)
+for path, digest in (
+    ('node.tar.xz', lock['nodeSourceSha256']),
+    ('/node-runtime/openssl-cve-2026-124709.patch', lock['opensslPatchSha256']),
 ):
-    subprocess.run(['curl', '--fail', '--silent', '--show-error', '--location', '--retry', '3',
-                    '--proto', '=https', '--proto-redir', '=https', url, '-o', name], check=True)
-    if hashlib.file_digest(Path(name).open('rb'), 'sha256').hexdigest() != digest:
-        raise SystemExit(f'Unexpected hash for {name}')
+    with Path(path).open('rb') as source_file:
+        if hashlib.file_digest(source_file, 'sha256').hexdigest() != digest:
+            raise SystemExit(f'Unexpected hash for {path}')
 PY
 
 mkdir source
 tar -xJf node.tar.xz -C source --strip-components=1
 cd source
-patch --batch --forward --fuzz=0 -p1 -d deps/openssl/openssl -i /node-build/openssl.patch
+patch --batch --forward --fuzz=0 -p1 -d deps/openssl/openssl -i /node-runtime/openssl-cve-2026-124709.patch
 python3 - <<'PY'
 import hashlib
 import json

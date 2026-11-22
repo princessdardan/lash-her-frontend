@@ -9,7 +9,7 @@ RUN ulimit -c 0; sh /runtime/build.sh
 
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a AS distroless-node
 FROM buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b AS node-runtime
-COPY runtime/build-node.sh runtime/node-inputs.lock.json /node-runtime/
+COPY runtime/build-node.sh runtime/node-inputs.lock.json runtime/openssl-cve-2026-124709.patch /node-runtime/
 RUN --mount=from=distroless-node,target=/distroless,ro sh /node-runtime/build-node.sh
 
 FROM gcr.io/distroless/base-nossl-debian13:nonroot@sha256:89815d620ac01d8de13cdaf04d19ed874447ca2296d4985b14b818f6e5e47854
