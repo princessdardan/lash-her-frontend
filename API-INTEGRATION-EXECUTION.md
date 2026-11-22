@@ -1,6 +1,6 @@
 # API integration execution tracker
 
-**Last updated:** November 21, 2026 (America/Toronto). **Canonical location:** frontend repository. [Integration index](docs/api-integration/README.md) · [scope](API-INTEGRATION-PLAN.md) · [current checkpoint](docs/api-integration/current-state.md) · [P1 criteria](docs/api-integration/p1-qualification-coverage.md).
+**Last updated:** November 22, 2026 (America/Toronto). **Canonical location:** frontend repository. [Integration index](docs/api-integration/README.md) · [scope](API-INTEGRATION-PLAN.md) · [current checkpoint](docs/api-integration/current-state.md) · [P1 criteria](docs/api-integration/p1-qualification-coverage.md).
 
 ## Student portal frontend
 
@@ -22,6 +22,8 @@ Both `linux/amd64` images rebuild Node.js 24.22.3 from its signed release source
 | Frontend migration | `sha256:dd04e930abd8a3fe69ec5f4dff6edd63da7944eaa3e03e9291b2a4b2341fef16` | [Frontend migration qualification receipt and scans](https://github.com/princessdardan/lash-her-frontend/actions/runs/44973799378/artifacts/14737700826) |
 
 The digests identify CI builds. Protected staging continues to serve the approved synthetic learner at `d29fb50` with both admission gates closed. All release holds remain in place. [Draft PR #116](https://github.com/princessdardan/lash-her-frontend/pull/116)
+
+All 10 jobs also passed on documentation-only commit `0610819d91ab68af4e33b9305d2afdfeb71e15aa`. [Documentation CI run 44983268459](https://github.com/princessdardan/lash-her-frontend/actions/runs/44983268459)
 
 ## Current execution position
 
