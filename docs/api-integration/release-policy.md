@@ -14,6 +14,8 @@ All existing holds and both admission gates remain in place. The delivery target
 
 1. **Review one candidate.** Select the exact committed frontend, Course and Community revisions with passing required CI. The candidate workflow builds and checks immutable API, gateway and migration images and records their source and contract identities. Reuse that candidate for deployment; never select `latest`.
 
+   Pull-request CI runs quality, database, audit, build and browser checks. The frontend migration and gateway/platform jobs run on pushes to `staging` or `main` and on manual CI dispatches. Both jobs must pass for release source qualification.
+
    When the exact frontend source CI skipped image qualification or its schema artifact expired, run `gh workflow run ci.yml --ref staging` (or `--ref main` for that release source). Wait for the run for that exact commit to pass and retain `frontend-operator-schema-summary` before dispatching Platform artifact candidate. The candidate workflow separately scans, attests, and rehearses the published image digests.
 
 2. **Start the staging release.** Review the displayed staging targets, changes and pending migrations, then explicitly start the reviewed release command. This action is Dardan's deployment approval. Use staging-only databases, credentials and safe provider settings. Candidate publication is build-only and does not itself authorize deployment.
