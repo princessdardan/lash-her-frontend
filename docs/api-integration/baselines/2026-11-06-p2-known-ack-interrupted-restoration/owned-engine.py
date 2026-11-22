@@ -33,16 +33,12 @@ import p2_known_ack_interrupted_restoration as c
 import p2_release_broker as shared
 import p2_prior_gateway as prior
 import frontend_gateway_observation
-from p2_certification_parent_test import LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_CURRENT_SOURCE_ONLY
+from p2_certification_parent_test import IMAGE_BUILD_ONLY, LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_CURRENT_SOURCE_ONLY
 from p2_source_closure import REQUIRED, TYPES
 
 
 INTERRUPTED_RESTORATION_UNRELATED_HARNESS = frozenset({
     'ops/platform/harness/owned-frontend-identity-admission.mjs',
-})
-IMAGE_BUILD_ONLY = frozenset({
-    'ops/gateway/runtime/build-node.sh',
-    'ops/gateway/runtime/node-inputs.lock.json',
 })
 
 

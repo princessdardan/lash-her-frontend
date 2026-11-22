@@ -90,6 +90,12 @@ LEGACY_FIXTURE_EVIDENCE_ONLY = frozenset(
     'ops/platform/host/p4_05_candidate.py',
     'ops/platform/pull-api-schemas.mjs',
 }
+IMAGE_BUILD_ONLY = frozenset({
+    'ops/gateway/runtime/build-node.sh',
+    'ops/gateway/runtime/node-inputs.lock.json',
+})
+
+
 def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
@@ -112,8 +118,8 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
 
 def legacy_source_fixture(source, destination):
     """Install the v1 fixture with all production and required source files."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY,
-                                   include_tests=False)
+    excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY | IMAGE_BUILD_ONLY
+    names = tracked_source_fixture(source, destination, exclude=excluded, include_tests=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
     return names
@@ -407,6 +413,9 @@ class ActualCertificationEntryTests(unittest.TestCase):
         omitted='ops/platform/harness/owned-frontend-identity-admission.mjs'
         self.assertIn(omitted,LEGACY_FIXTURE_EVIDENCE_ONLY)
         self.assertNotIn(omitted,self.source_names);self.assertFalse((self.source/omitted).exists())
+        self.assertTrue(IMAGE_BUILD_ONLY.isdisjoint(self.source_names))
+        for name in IMAGE_BUILD_ONLY:
+            self.assertFalse((self.source / name).exists())
         self.assertTrue(REQUIRED.issubset(self.source_names));self.assertLessEqual(len(self.source_names),512)
         self.assertLessEqual(sum((self.source/name).stat().st_size for name in self.source_names),41_000_000)
 
