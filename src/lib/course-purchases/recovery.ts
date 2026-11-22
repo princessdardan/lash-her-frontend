@@ -11,7 +11,7 @@ import {
   type CourseOrder,
 } from "./store";
 import { courseRecoveryEnabled } from "./policy";
-import { recordCourseTax, reverseCourseTax } from "./tax";
+import { rateTableTaxReference, recordCourseTax, reverseCourseTax } from "./tax";
 
 async function sendReceipt(order: CourseOrder, job: CourseJob) {
   const dollars = (amount: number) =>
@@ -40,8 +40,17 @@ async function dispatch(order: CourseOrder, job: CourseJob) {
       return { receipt: receipt.grantId, access } as const;
     }
     case "tax_sale":
-      return { receipt: await recordCourseTax(order.taxCalculation, job.id) };
+      return {
+        receipt: order.taxCalculation === rateTableTaxReference(order.id)
+          ? order.taxCalculation
+          : await recordCourseTax(order.taxCalculation, job.id),
+      };
     case "tax_refund": {
+      if (order.taxCalculation === rateTableTaxReference(order.id)) {
+        if (order.taxTransactionId !== order.taxCalculation)
+          throw new PurchaseDependencyError(409);
+        return {};
+      }
       const refund = job.refundId
         ? await readCourseRefund(job.refundId)
         : undefined;

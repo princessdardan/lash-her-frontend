@@ -21,11 +21,11 @@ PRIVATE_INPUTS = {
     key: "P4_05_" + key for key in (
         "DATABASE_URL", "KV_REST_API_TOKEN", "INTERNAL_SERVICE_JWT_SECRET",
         "SQUARE_ACCESS_TOKEN", "SQUARE_WEBHOOK_SIGNATURE_KEY",
-        "COURSE_STRIPE_TAX_SECRET_KEY", "COURSE_PURCHASE_RECOVERY_SECRET",
+        "COURSE_PURCHASE_RECOVERY_SECRET",
     )
 }
 RUNTIME_ONLY = {
-    "INTERNAL_SERVICE_JWT_SECRET", "COURSE_STRIPE_TAX_SECRET_KEY", "COURSE_PURCHASE_RECOVERY_SECRET",
+    "INTERNAL_SERVICE_JWT_SECRET", "COURSE_PURCHASE_RECOVERY_SECRET",
 }
 HOLD = {
     "LASH_RELEASE_SCHEDULER_PROFILE": "off",
@@ -94,12 +94,13 @@ def _policy(plan):
     classification, rule = next(iter(market["classifications"].items()))
     demand(classification == plan.get("courseClassification")
            and _matches(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", classification)
-           and isinstance(rule, dict) and set(rule) in ({"taxCode"}, {"taxCode", "zeroReasons"})
-           and _matches(r"txcd_[0-9]{8}", rule.get("taxCode")), code)
-    if "zeroReasons" in rule:
-        reasons = rule["zeroReasons"]
-        demand(isinstance(reasons, list) and len(reasons) <= 3
-               and all(reason in ("product_exempt", "zero_rated", "reduced_rated") for reason in reasons), code)
+           and isinstance(rule, dict) and set(rule) in ({"taxCode", "rateBasisPoints"},
+                                                        {"taxCode", "rateBasisPoints", "zeroReason"})
+           and _matches(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", rule.get("taxCode"))
+           and type(rule.get("rateBasisPoints")) is int and 0 <= rule["rateBasisPoints"] <= 10000
+           and (rule["rateBasisPoints"] == 0) == ("zeroReason" in rule), code)
+    if "zeroReason" in rule:
+        demand(rule["zeroReason"] in ("product_exempt", "zero_rated", "reduced_rated"), code)
     return json.dumps(policy, sort_keys=True, separators=(",", ":"))
 
 
@@ -154,8 +155,6 @@ def deployment_bindings(release, plan, database_receipt, private_environment):
                and all(32 < ord(c) < 127 for c in value) and not value.startswith("{{resolve:"),
                "P4_05_PRIVATE_BINDING_REQUIRED_" + key)
         binding[key] = value
-    demand(_matches(r"(?:sk|rk)_test_[A-Za-z0-9_-]{16,}", binding["COURSE_STRIPE_TAX_SECRET_KEY"]),
-           "P4_05_STRIPE_TEST_KEY_REQUIRED")
     demand(len(binding["COURSE_PURCHASE_RECOVERY_SECRET"]) >= 32
            and len(binding["INTERNAL_SERVICE_JWT_SECRET"]) >= 32, "P4_05_CANDIDATE_AUTH_REQUIRED")
     database_code = "P4_05_FRONTEND_DATABASE_RECEIPT_REFUSED"

@@ -15,6 +15,19 @@ const boundedText = (limit: number) =>
   );
 const country = v.pipe(v.string(), v.regex(/^[A-Z]{2}$/u));
 const region = v.pipe(v.string(), v.regex(/^[A-Z0-9-]{1,12}$/u));
+const taxCode = v.pipe(
+  v.string(),
+  v.regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/u),
+);
+const zeroReason = v.picklist(["product_exempt", "zero_rated", "reduced_rated"]);
+const rateRule = v.pipe(
+  v.strictObject({
+    taxCode,
+    rateBasisPoints: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(10000)),
+    zeroReason: v.optional(zeroReason),
+  }),
+  v.check((rule) => (rule.rateBasisPoints === 0) === (rule.zeroReason !== undefined)),
+);
 export const courseBillingSchema = v.strictObject({
   name: boundedText(160),
   line1: boundedText(200),
@@ -32,16 +45,18 @@ const policySchema = v.strictObject({
         region,
         disclosure: boundedText(2000),
         behavior: v.picklist(["inclusive", "exclusive"]),
-        classifications: v.record(
-          v.pipe(v.string(), v.regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/u)),
-          v.strictObject({
-            taxCode: v.pipe(v.string(), v.regex(/^txcd_[0-9]{8}$/u)),
-            zeroReasons: v.optional(
-              v.array(
-                v.picklist(["product_exempt", "zero_rated", "reduced_rated"]),
-              ),
-            ),
-          }),
+        classifications: v.pipe(
+          v.record(
+            v.pipe(v.string(), v.regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/u)),
+            v.union([
+              rateRule,
+              v.strictObject({
+                taxCode: v.pipe(v.string(), v.regex(/^txcd_[0-9]{8}$/u)),
+                zeroReasons: v.optional(v.array(zeroReason)),
+              }),
+            ]),
+          ),
+          v.check((entries) => Object.keys(entries).length > 0),
         ),
       }),
     ),
@@ -49,10 +64,7 @@ const policySchema = v.strictObject({
   ),
 });
 
-export function getCourseSalesPolicy(
-  billing: CourseBilling,
-  classification: string,
-) {
+function readCourseSalesPolicy() {
   const value = process.env.COURSE_SALES_POLICY;
   if (!value) throw new PurchaseDependencyError(503);
   let policy: v.InferOutput<typeof policySchema>;
@@ -61,6 +73,22 @@ export function getCourseSalesPolicy(
   } catch {
     throw new PurchaseDependencyError(503);
   }
+  const classifications = policy.markets.flatMap((market) =>
+    Object.values(market.classifications),
+  );
+  if (
+    process.env.SQUARE_ENVIRONMENT !== "sandbox" &&
+    classifications.some((rule) => "rateBasisPoints" in rule)
+  )
+    throw new PurchaseDependencyError(503);
+  return { policy, classifications };
+}
+
+export function getCourseSalesPolicy(
+  billing: CourseBilling,
+  classification: string,
+) {
+  const { policy } = readCourseSalesPolicy();
   const matches = policy.markets.filter(
     (item) =>
       item.country === billing.country && item.region === billing.region,
@@ -95,9 +123,45 @@ export function getCourseSalesPolicy(
 }
 
 export function courseTaxReady() {
-  return Boolean(
-    process.env.COURSE_SALES_POLICY && process.env.COURSE_STRIPE_TAX_SECRET_KEY,
+  try {
+    const { classifications } = readCourseSalesPolicy();
+    return (
+      classifications.every((rule) => "rateBasisPoints" in rule) ||
+      Boolean(process.env.COURSE_STRIPE_TAX_SECRET_KEY)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export const rateTableTaxReference = (orderId: string) => `rate-table:${orderId}`;
+
+function roundRatio(amount: number, numerator: number, denominator: number) {
+  const divisor = BigInt(denominator);
+  const twice = BigInt(2);
+  return Number(
+    (BigInt(amount) * BigInt(numerator) * twice + divisor) / (divisor * twice),
   );
+}
+
+export function rateTableRefundTax(
+  taxCents: number,
+  totalCents: number,
+  previousRefunds: number,
+  currentRefund: number,
+) {
+  const refunded = previousRefunds + currentRefund;
+  if (
+    totalCents <= 0 ||
+    taxCents < 0 ||
+    taxCents > totalCents ||
+    previousRefunds < 0 ||
+    currentRefund <= 0 ||
+    refunded > totalCents
+  )
+    throw new PurchaseDependencyError(502);
+  return roundRatio(refunded, taxCents, totalCents) -
+    roundRatio(previousRefunds, taxCents, totalCents);
 }
 
 const cents = v.pipe(
@@ -163,6 +227,35 @@ export async function calculateCourseTax(
   billing: CourseBilling,
   policy: ReturnType<typeof getCourseSalesPolicy>,
 ) {
+  if ("rateBasisPoints" in policy) {
+    const taxCents = roundRatio(
+      priceCents,
+      policy.rateBasisPoints,
+      policy.behavior === "inclusive" ? 10000 + policy.rateBasisPoints : 10000,
+    );
+    const totalCents =
+      policy.behavior === "exclusive" ? priceCents + taxCents : priceCents;
+    if (totalCents > 2_147_483_647)
+      throw new PurchaseDependencyError(
+        422,
+        "Tax could not be confirmed for this order.",
+      );
+    return {
+      totalCents,
+      taxCents,
+      taxBreakdown: [
+        {
+          amount: taxCents,
+          taxability_reason: policy.zeroReason ?? "standard_rated",
+          jurisdiction: { country: billing.country, state: billing.region },
+          rate_basis_points: policy.rateBasisPoints,
+        },
+      ],
+      taxCalculation: rateTableTaxReference(orderId),
+      quoteExpiresAt: new Date(Date.now() + 10 * 60_000),
+    };
+  }
+
   const calculation = v.parse(
     calculationSchema,
     await stripeTax(
