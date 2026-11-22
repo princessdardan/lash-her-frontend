@@ -908,7 +908,7 @@ test("operator CI installs exact gateway dependencies and retains the fifth-stag
   const job = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")).jobs["frontend-operator-migrations"];
   const preparation = job.steps.findIndex(step => step.env?.P2_OWNED_FRONTEND_REVISION === P2_OWNED_FRONTEND_REVISION);
   const fixture = job.steps.findIndex(step => step.run?.includes("prepare-p2-identity-probe-fixtures.mjs"));
-  assert.equal(job["timeout-minutes"], 90);
+  assert.equal(job["timeout-minutes"], 140);
   assert.ok(preparation >= 0 && preparation < fixture);
   assert.equal(job.steps[fixture]["timeout-minutes"], 30);
   assert.match(job.steps[preparation].run, /git checkout --detach "\$P2_OWNED_FRONTEND_REVISION"\s+npm ci\s+npm ci --ignore-scripts --prefix ops\/gateway/u);

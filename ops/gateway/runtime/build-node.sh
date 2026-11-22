@@ -70,3 +70,7 @@ with (rootfs / 'nodejs/bin/node').open('rb') as binary:
 receipt = {'version': 1, 'inputs': lock, 'nodeSha256': digest}
 (rootfs / 'usr/share/lash-runtime/node.json').write_text(json.dumps(receipt, sort_keys=True) + '\n')
 PY
+
+# Keep the cached image layer limited to the installed runtime and evidence.
+cd /
+rm -rf /node-build
