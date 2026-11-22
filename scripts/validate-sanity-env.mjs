@@ -409,7 +409,7 @@ function validateProjectId(value) {
   if (value === "898r3c4e" && process.env.P4_07_SANITY_CLONE === "1") {
     const isolatedCi = appEnv === "local" && !isLaunchEnvironment &&
       process.env.GITHUB_ACTIONS === "true" &&
-      process.env.GITHUB_REF === "refs/tags/p4-07-isolated-sanity-898r3c4e" &&
+      process.env.GITHUB_REF === "refs/tags/p4-07-isolated-sanity-898r3c4e-r2" &&
       ["push", "workflow_dispatch"].includes(process.env.GITHUB_EVENT_NAME);
     const isolatedDeployment = appEnv === "staging" && vercelEnv === "production" &&
       process.env.SQUARE_ENVIRONMENT === "sandbox" &&

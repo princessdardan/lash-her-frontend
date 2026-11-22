@@ -2,7 +2,7 @@ name: CI
 on:
   push:
     branches: [main, staging]
-    tags: [p4-07-isolated-sanity-898r3c4e]
+    tags: [p4-07-isolated-sanity-898r3c4e-r2]
   pull_request:
   # A release can request fresh schema and image evidence for its exact source.
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  P4_07_SANITY_CLONE: ${{ github.ref == 'refs/tags/p4-07-isolated-sanity-898r3c4e' && '1' || '0' }}
+  P4_07_SANITY_CLONE: ${{ github.ref == 'refs/tags/p4-07-isolated-sanity-898r3c4e-r2' && '1' || '0' }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

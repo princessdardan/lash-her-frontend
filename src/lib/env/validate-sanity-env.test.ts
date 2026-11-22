@@ -112,7 +112,7 @@ test("the disposable Sanity clone is limited to the isolated CI tag and pinned S
     ...publicSanityEnv,
     ...clone,
     GITHUB_ACTIONS: "true",
-    GITHUB_REF: "refs/tags/p4-07-isolated-sanity-898r3c4e",
+    GITHUB_REF: "refs/tags/p4-07-isolated-sanity-898r3c4e-r2",
     GITHUB_EVENT_NAME: "push",
   };
   const commit = "a".repeat(40);

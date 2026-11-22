@@ -173,7 +173,11 @@ export default defineConfig({
             MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
             NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
             NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
-            NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
+            NEXT_PUBLIC_SANITY_PROJECT_ID:
+              process.env.P4_07_SANITY_CLONE === "1" &&
+              process.env.NEXT_PUBLIC_SANITY_PROJECT_ID === "898r3c4e"
+                ? "898r3c4e"
+                : "7o23yrvk",
             NEXT_PUBLIC_SITE_URL: "https://e2e.lashher.invalid",
             PAYMENT_GATEWAY_MODE: "live",
             RESEND_API_KEY: "re_e2e_deterministic_fixture",
