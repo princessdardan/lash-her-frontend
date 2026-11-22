@@ -244,5 +244,110 @@
     "method": "GET",
     "path": "/v1/internal/checkout-offer",
     "auth": "application"
-  }
+  },
+  {
+    "method": "GET",
+    "path": "/v1/spaces",
+    "auth": "application",
+    "service": "community"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/spaces/{courseId}/posts",
+    "auth": "application",
+    "service": "community"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/discussions/{postId}/media",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/discussions/{postId}/media",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/media/{mediaId}/view",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/media/{mediaId}/complete",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/media/{mediaId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewMedia": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/spaces/{courseId}/posts",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/discussions/{postId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/discussions/{postId}/comments",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "PATCH",
+    "path": "/v1/content/{contentId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/content/{contentId}",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/discussions/{postId}/reaction",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/profile",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/profile",
+    "auth": "application",
+    "service": "community",
+    "stagingReviewDiscussions": true
+  },
+  {"method": "GET", "path": "/v1/notifications", "auth": "application", "service": "community", "stagingReviewNotifications": true},
+  {"method": "PUT", "path": "/v1/notifications/{notificationId}/read", "auth": "application", "service": "community", "stagingReviewNotifications": true}
 ]

@@ -12,6 +12,15 @@ import {
   selectScopedInteractiveRequest, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
+import { checkReviewMediaProof, REVIEW_MEDIA_HEADER, reviewMediaScope } from "./staging-review-media.mjs";
+
+import { checkReviewCourseProof, REVIEW_COURSE_HEADER, reviewCourseScope } from "./staging-review-course.mjs";
+
+import { checkReviewDiscussionsProof, REVIEW_DISCUSSIONS_HEADER, REVIEW_DISCUSSIONS_BODY_LIMIT, reviewDiscussionsScope } from "./staging-review-community.mjs";
+
+import { createOwnerAuthoringSequence, OWNER_AUTHORING_HEADER, readOwnerAuthoringScope } from "./staging-owner-authoring.mjs";
+
+import { createReviewNotifications, REVIEW_NOTIFICATIONS_HEADER, reviewNotificationsScope } from "./staging-review-notifications.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
@@ -27,6 +36,14 @@ export function createGateway(input, options = {}) {
   const certification = (options.certificationFault ?? createP2CertificationFault)(config);
   const admissionOptions = options.scopedAdmission ?? options.scopedMuxAdmission;
   const readAdmission = createAdmissionReader(config, admissionOptions);
+  const reviewMedia = reviewMediaScope(config);
+  const reviewCourse = reviewCourseScope(config);
+  const reviewDiscussions = reviewDiscussionsScope(config);
+  const reviewNotifications = createReviewNotifications(reviewNotificationsScope(config, reviewDiscussions));
+  const ownerAuthoring = createOwnerAuthoringSequence(readOwnerAuthoringScope(config));
+  const usedReviewDiscussionProofs = new Map();
+  const usedReviewMediaProofs = new Map();
+  const usedReviewCourseProofs = new Map();
   const admissionNow = admissionOptions?.now ?? Date.now;
   const scopedMuxEvidence = new Map();
   const usedOneShotMuxAttempts = new Set();
@@ -120,10 +137,36 @@ export function createGateway(input, options = {}) {
         const retry = budgets.consume(route.path.startsWith("/v1/internal/") ? "service" : "workload");
         if (retry) return refuse(429, "rate_limit_exceeded", retry);
       }
-      const category = admissionClass(route);
+      const playbackIssuance = reviewCourse && service === "course" && route.path === "/v1/student/lessons/{lessonId}/playback";
+      const category = playbackIssuance ? "newWork" : admissionClass(route);
       const admission = currentAdmission();
+      const courseReviewRequest = req.headers[REVIEW_COURSE_HEADER] !== undefined;
+      const notificationReviewRequest = route.stagingReviewNotifications === true || req.headers[REVIEW_NOTIFICATIONS_HEADER] !== undefined;
+      const discussionReviewRequest = !notificationReviewRequest && route.stagingReviewDiscussions === true;
+      const reviewHeader = notificationReviewRequest ? REVIEW_NOTIFICATIONS_HEADER : discussionReviewRequest ? REVIEW_DISCUSSIONS_HEADER : courseReviewRequest ? REVIEW_COURSE_HEADER : REVIEW_MEDIA_HEADER;
+      const authoringProof = req.headers[OWNER_AUTHORING_HEADER];
+      const reviewRequest = notificationReviewRequest || discussionReviewRequest || courseReviewRequest || route.stagingReviewMedia === true;
+      const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
+        uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
-      if (oneShotMuxFence(admission)) {
+      if (authoringProof !== undefined) {
+        if (reviewRequest || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined || !closedReview(admission) ||
+            service !== "course" || route.auth !== "application" || category !== "newWork" ||
+            req.headers["x-idempotency-key"] !== undefined)
+          return refuse(503, "release_maintenance", 30);
+      } else if (reviewRequest) {
+        const scopeAvailable = notificationReviewRequest
+          ? service === "community" && route.auth === "application" && !courseReviewRequest &&
+            req.headers[REVIEW_MEDIA_HEADER] === undefined && req.headers[REVIEW_DISCUSSIONS_HEADER] === undefined &&
+            req.headers["x-idempotency-key"] === undefined
+          : discussionReviewRequest
+          ? reviewDiscussions && service === "community" && !courseReviewRequest && req.headers[REVIEW_MEDIA_HEADER] === undefined
+          : courseReviewRequest
+            ? reviewCourse && service === "course" && route.auth === "application" && req.headers[REVIEW_MEDIA_HEADER] === undefined
+            : reviewMedia;
+        if (!scopeAvailable || !closedReview(admission) || typeof req.headers[reviewHeader] !== "string" ||
+            req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) return refuse(503, "release_maintenance", 30);
+      } else if (oneShotMuxFence(admission)) {
         if (!admission.muxCallback || !scopedMuxRoute || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined) {
           return refuse(503, "release_maintenance", 30);
         }
@@ -141,7 +184,8 @@ export function createGateway(input, options = {}) {
         return refuse(503, "release_maintenance", 30);
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
-      const bodyLimit = muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
+      const reviewQuizAttempt = courseReviewRequest && req.method === "POST" && route.path === "/v1/student/lessons/{lessonId}/quiz/attempts";
+      const bodyLimit = discussionReviewRequest ? REVIEW_DISCUSSIONS_BODY_LIMIT : reviewQuizAttempt ? 65_536 : (reviewRequest || authoringProof !== undefined) ? 2048 : muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
       const chunks = [];
       let bytes = 0;
       for await (const chunk of req) {
@@ -152,8 +196,34 @@ export function createGateway(input, options = {}) {
       const body = Buffer.concat(chunks);
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
       let muxSelection, muxEvidence;
-      let interactiveSelection, interactiveEvidence;
-      if (interactiveAdmission) {
+      let interactiveSelection, interactiveEvidence, notificationPrincipal;
+      if (authoringProof !== undefined) {
+        const current = currentAdmission();
+        if (res.destroyed || !closedReview(current) || current.sha256 !== admission.sha256 ||
+            !ownerAuthoring.reserve({ method: req.method, target: req.url, body,
+              authorization: req.headers.authorization, proof: authoringProof, now: Math.floor(Date.now() / 1000),
+              admissionSha256: current.sha256 }))
+          return refuse(403, "staging_owner_authoring_scope_refused");
+        scopedRequest = true;
+        accountAdmission(category);
+      } else if (reviewRequest) {
+        const current = currentAdmission();
+        const proof = { method: req.method, target: req.url, body, authorization: req.headers.authorization,
+          proof: req.headers[reviewHeader], now: Math.floor(Date.now() / 1000) };
+        if (!closedReview(current) || current.sha256 !== admission.sha256 || res.destroyed ||
+            !(notificationReviewRequest
+              ? (notificationPrincipal = reviewNotifications.authorize({ ...proof, admissionSha256: current.sha256 }))
+              : discussionReviewRequest
+              ? checkReviewDiscussionsProof(reviewDiscussions, proof, usedReviewDiscussionProofs)
+              : courseReviewRequest
+              ? checkReviewCourseProof(reviewCourse, proof, usedReviewCourseProofs)
+              : checkReviewMediaProof(reviewMedia, proof, usedReviewMediaProofs)))
+          return refuse(403, notificationReviewRequest ? "staging_notification_scope_refused" : discussionReviewRequest ? "staging_discussion_scope_refused" : courseReviewRequest ? "staging_course_scope_refused" : "staging_media_scope_refused");
+        if (category) {
+          scopedRequest = true;
+          accountAdmission(category);
+        }
+      } else if (interactiveAdmission) {
         const current = currentAdmission();
         if (res.destroyed || uncertain.newWork !== 0 || uncertain.recovery !== 0 || current.sha256 !== interactiveAdmission.sha256) {
           return refuse(503, "release_maintenance", 30);
@@ -221,7 +291,7 @@ export function createGateway(input, options = {}) {
         // callback cannot dirty drain.
         accountAdmission("recovery");
       }
-      const fault = interactiveSelection || oneShotMux ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
+      const fault = reviewRequest || authoringProof !== undefined || interactiveSelection || oneShotMux ? undefined : certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
       if (certification.beforeUpstream(fault, res, () => refuse(503, "upstream_unavailable", 1))) return;
       const headers = { "x-request-id": requestId, "content-length": String(body.length) };
       for (const [name, value] of Object.entries(req.headers)) {
@@ -246,6 +316,14 @@ export function createGateway(input, options = {}) {
           reply.once("end", () => {
             if (res.destroyed) return resolve();
             const buffered = Buffer.concat(result);
+            if (notificationPrincipal)
+              reviewNotifications.observe(notificationPrincipal, req.method, reply.statusCode, reply.headers["content-type"], buffered);
+            if (authoringProof !== undefined &&
+                !ownerAuthoring.acknowledge(reply.statusCode, reply.headers["content-type"], buffered)) {
+              markUncertain();
+              refuse(502, "upstream_unavailable");
+              return resolve();
+            }
             if (muxSelection) {
               const acknowledged = scopedMuxAcknowledged(muxAdmission.muxCallback, reply.statusCode, buffered) &&
                 (!oneShotMux || reply.headers["content-type"]?.split(";", 1)[0] === "application/json");

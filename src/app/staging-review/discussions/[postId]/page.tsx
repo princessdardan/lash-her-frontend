@@ -1,0 +1,142 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { DiscussionMedia } from "@/components/community/discussion-media";
+import { ReviewReaction } from "@/components/community/review-reaction";
+import { ReviewContent } from "@/components/community/review-content";
+import { ReviewDiscussionForm } from "@/components/community/review-discussion-form";
+import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
+import {
+  getReviewDiscussion,
+  isReviewDiscussionCursor,
+  reviewDiscussionSettings,
+} from "@/lib/staging-review/discussions";
+import { getReviewSubject, reviewPath } from "@/lib/staging-review/session";
+
+export const dynamic = "force-dynamic";
+export const metadata = {
+  title: "Staging discussion",
+  robots: { index: false, follow: false },
+};
+
+export default async function DiscussionPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ postId: string }>;
+  searchParams: Promise<{ after?: string | string[] }>;
+}) {
+  const settings = reviewDiscussionSettings();
+  if (!settings) notFound();
+  const subject = await getReviewSubject();
+  if (!subject) redirect(reviewPath);
+  const { postId } = await params;
+  const { after } = await searchParams;
+  if (
+    after !== undefined &&
+    (typeof after !== "string" || !isReviewDiscussionCursor(after))
+  )
+    notFound();
+  const discussionPath = `${reviewPath}/discussions/${postId}`;
+  let discussion;
+  try {
+    discussion = await getReviewDiscussion(settings, subject, postId, after);
+  } catch (error) {
+    if (error instanceof IntegrationServiceError && error.status < 500)
+      notFound();
+  }
+
+  return (
+    <main className="mx-auto grid max-w-4xl gap-6 px-6 py-10 text-lh-shadow sm:px-8">
+      <Link
+        className="inline-flex min-h-11 items-center justify-self-start underline underline-offset-4"
+        href={`${reviewPath}#community`}
+      >
+        Back to Community
+      </Link>
+      {discussion ? (
+        <>
+          <h1 className="font-heading text-4xl">Discussion</h1>
+          <article className="space-y-2 rounded-2xl border border-lh-line p-4 sm:p-5">
+            <p className="font-semibold">{discussion.post.author}</p>
+            <ReviewContent
+              body={discussion.post.body}
+              postId={postId}
+              canEdit={!discussion.post.locked}
+              canDelete={postId !== process.env.STAGING_REVIEW_MEDIA_POST}
+            />
+            <ReviewReaction
+              postId={postId}
+              reacted={discussion.post.reacted}
+              count={discussion.post.reactionCount}
+              locked={discussion.post.locked}
+            />
+          </article>
+          {process.env.STAGING_REVIEW_MEDIA_OWNED_POSTS === "true" && (
+            <DiscussionMedia
+              postId={postId}
+              own
+              writes
+              locked={discussion.post.locked}
+              apiBase={`${reviewPath}/community/attachments/${postId}`}
+            />
+          )}
+          <section className="grid gap-4" aria-labelledby="discussion-replies">
+            <h2 id="discussion-replies" className="font-heading text-3xl">
+              Replies
+            </h2>
+            {after && (
+              <Link
+                className="underline"
+                href={`${discussionPath}#discussion-replies`}
+              >
+                Newest replies
+              </Link>
+            )}
+            {discussion.comments.length ? (
+              <ul className="grid gap-3">
+                {discussion.comments.map((comment) => (
+                  <li
+                    className="space-y-2 rounded-2xl border border-lh-line p-4 sm:p-5"
+                    key={comment.id}
+                  >
+                    <p className="font-semibold">{comment.author}</p>
+                    <ReviewContent
+                      body={comment.body}
+                      postId={postId}
+                      replyId={comment.id}
+                      after={after}
+                      canEdit={comment.mine && !discussion.post.locked}
+                      canDelete={comment.mine}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>{after ? "No older replies." : "No replies yet."}</p>
+            )}
+            {discussion.next && (
+              <Link
+                className="underline"
+                href={`${discussionPath}?after=${discussion.next}#discussion-replies`}
+              >
+                Older replies
+              </Link>
+            )}
+            {discussion.post.locked ? (
+              <p>This discussion is locked.</p>
+            ) : (
+              <ReviewDiscussionForm
+                postId={postId}
+                returnToNewest={Boolean(after)}
+              />
+            )}
+          </section>
+        </>
+      ) : (
+        <p role="status">
+          This discussion is temporarily unavailable. Reload to try again.
+        </p>
+      )}
+    </main>
+  );
+}

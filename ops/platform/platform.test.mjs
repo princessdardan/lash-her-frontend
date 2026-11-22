@@ -100,6 +100,23 @@ test("private policies isolate workload, publisher, authority and operational pe
   assert.deepEqual(community.peers.find(peer => peer.address === "172.29.10.10").routes, [
     { method: "POST", path: "/v1/internal/accounts/commands" },
     { method: "GET", path: "/v1/internal/accounts/exports/{commandId}" },
+    { method: "GET", path: "/v1/spaces" },
+    { method: "GET", path: "/v1/spaces/{courseId}/posts" },
+    { method: "GET", path: "/v1/discussions/{postId}/media" },
+    { method: "POST", path: "/v1/discussions/{postId}/media" },
+    { method: "GET", path: "/v1/media/{mediaId}/view" },
+    { method: "POST", path: "/v1/media/{mediaId}/complete" },
+    { method: "DELETE", path: "/v1/media/{mediaId}" },
+    { method: "POST", path: "/v1/spaces/{courseId}/posts" },
+    { method: "GET", path: "/v1/discussions/{postId}" },
+    { method: "POST", path: "/v1/discussions/{postId}/comments" },
+    { method: "PATCH", path: "/v1/content/{contentId}" },
+    { method: "DELETE", path: "/v1/content/{contentId}" },
+    { method: "PUT", path: "/v1/discussions/{postId}/reaction" },
+    { method: "GET", path: "/v1/profile" },
+    { method: "PUT", path: "/v1/profile" },
+    { method: "GET", path: "/v1/notifications" },
+    { method: "PUT", path: "/v1/notifications/{notificationId}/read" },
   ]);
   assert.equal(course.peers.find((peer) => peer.address === "172.29.10.31").routes.length, 1);
   for (const budget of Object.values(databaseConnectionBudgets)) {

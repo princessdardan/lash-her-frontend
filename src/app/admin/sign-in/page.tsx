@@ -10,6 +10,9 @@ import {
   listAdminDeveloperUserOptions,
 } from "@/lib/admin/developer-mode";
 import { isAdminDeveloperModeEnabled } from "@/lib/admin/developer-mode-config";
+import { requireAdminActor } from "@/lib/admin/auth";
+import { AdminAuthError } from "@/lib/admin/types";
+import { stagingOwnerRequest } from "@/lib/admin/staging-owner-auth";
 import { getAdminRoleLabel } from "@/lib/admin/presentation";
 import { getSafeAdminReturnTo } from "@/lib/admin/redirects";
 import { redirect } from "next/navigation";
@@ -39,7 +42,13 @@ export default async function AdminSignInPage({
   );
 
   if (session?.user && !developerModeEnabled) {
-    redirect(returnTo);
+    if (!await stagingOwnerRequest()) redirect(returnTo);
+    // A session from before first-owner setup can still need a fresh OAuth callback.
+    const actor = await requireAdminActor().catch((error: unknown) => {
+      if (error instanceof AdminAuthError) return null;
+      throw error;
+    });
+    if (actor) redirect(returnTo);
   }
 
   const hasError =

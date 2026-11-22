@@ -13,6 +13,7 @@ import { learningAction, learningSecondaryAction } from "./shared";
 export function LessonQuiz({
   quiz,
   initialAttempts,
+  attemptsPath = `/api/academy/lessons/${quiz.lessonId}/quiz/attempts`,
   beforeAttempt,
   afterAttempt,
   beforeRefresh,
@@ -20,6 +21,7 @@ export function LessonQuiz({
 }: {
   quiz: LearnerQuiz;
   initialAttempts: QuizAttempt[];
+  attemptsPath?: string;
   beforeAttempt: () => Promise<void>;
   afterAttempt: () => Promise<void>;
   beforeRefresh: () => Promise<boolean>;
@@ -70,7 +72,7 @@ export function LessonQuiz({
     try {
       await beforeAttempt();
       const result = await learningRequest<{ attempt: QuizAttempt }>(
-        `/api/academy/lessons/${quiz.lessonId}/quiz/attempts`,
+        attemptsPath,
         {
           method: "POST",
           body: {

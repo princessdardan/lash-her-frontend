@@ -3,6 +3,7 @@ import Google from "next-auth/providers/google";
 import type { NextRequest } from "next/server";
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 import { getAdminUserStore } from "@/lib/admin/admin-user-store";
+import { isAllowedStagingOwner, stagingOwnerRequest } from "@/lib/admin/staging-owner-auth";
 import { readSelectedAdminGoogleUser } from "@/lib/admin/auth-service";
 import { currentWriterFirstOwner, currentWriterFirstOwnerDiscovery, currentWriterIdentityRotation, markWriterOperationUncertain,
   matchesWriterFirstOwner, matchesWriterFirstOwnerDiscovery, writerFirstOwnerDiscoveryWindowSha256,
@@ -98,7 +99,18 @@ const adminAuthConfig: NextAuthConfig = {
       const email = googleProfile.email.trim().toLowerCase();
       if (firstOwner) return getAdminOwnerEmails().has(email) && matchesWriterFirstOwner(firstOwner, email, googleProfile.sub);
       const firstOwnerDiscovery = currentWriterFirstOwnerDiscovery();
-      return !firstOwnerDiscovery || getAdminOwnerEmails().has(email) && matchesWriterFirstOwnerDiscovery(firstOwnerDiscovery, email);
+      if (firstOwnerDiscovery) return getAdminOwnerEmails().has(email) && matchesWriterFirstOwnerDiscovery(firstOwnerDiscovery, email);
+      if (!await stagingOwnerRequest()) return true;
+      if (account.providerAccountId !== googleProfile.sub || !isAllowedStagingOwner(email)) return false;
+      const { establishStagingOwner } = await import("@/lib/admin/staging-owner-actor");
+      const accepted = await establishStagingOwner({
+        email: googleProfile.email,
+        emailVerified: true,
+        providerUserId: googleProfile.sub,
+        displayName: typeof profile?.name === "string" && profile.name.trim() ? profile.name.trim() : null,
+      });
+      if (accepted) console.info("Protected staging owner Google sign-in verified.");
+      return accepted;
     },
   },
   pages: {

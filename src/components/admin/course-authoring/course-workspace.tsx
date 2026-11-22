@@ -1,4 +1,6 @@
 "use client";
+
+import { LessonContent } from "@/components/learning/lesson-content";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import {
@@ -507,6 +509,10 @@ export function CourseWorkspace({
                         {lesson.title}
                         {lesson.archivedAt ? " (archived)" : ""}
                       </h4>
+                      <details>
+                        <summary className="cursor-pointer text-sm">Preview saved lesson</summary>
+                        <LessonContent lesson={lesson} />
+                      </details>
                       <div className="flex flex-wrap gap-2">
                         <button
                           className={secondaryClass}

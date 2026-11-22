@@ -14,7 +14,7 @@ concurrency:
 jobs:
   frontend-operator-migrations:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 140
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -34,6 +34,7 @@ jobs:
             {"features":{"containerd-snapshotter":true}}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build the immutable frontend migration image without publishing
+        timeout-minutes: 110
         id: build-frontend-migration
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
@@ -74,6 +75,10 @@ jobs:
             --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-owner-authoring.mjs,dst=/source/ops/gateway/staging-owner-authoring.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-owner-authoring-fixture.json,dst=/source/ops/gateway/staging-owner-authoring-fixture.json,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-review-community.mjs,dst=/source/ops/gateway/staging-review-community.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-review-notifications.mjs,dst=/source/ops/gateway/staging-review-notifications.mjs,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
@@ -104,6 +109,10 @@ jobs:
             --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/lesson-resume-position.mjs,dst=/source/ops/gateway/lesson-resume-position.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-owner-authoring.mjs,dst=/source/ops/gateway/staging-owner-authoring.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-owner-authoring-fixture.json,dst=/source/ops/gateway/staging-owner-authoring-fixture.json,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-review-community.mjs,dst=/source/ops/gateway/staging-review-community.mjs,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/staging-review-notifications.mjs,dst=/source/ops/gateway/staging-review-notifications.mjs,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
@@ -127,6 +136,7 @@ jobs:
           npm ci --ignore-scripts --prefix ops/gateway
           node --test --test-name-pattern='fixed current certification plan joins' ops/platform/p2-profiled-current-release.test.mjs
       - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
+        timeout-minutes: 30
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
         run: |
@@ -200,7 +210,7 @@ jobs:
           retention-days: 10
   gateway-and-platform:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 140
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -268,6 +278,7 @@ jobs:
       - run: npm audit --audit-level=moderate --prefix ops/gateway
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact
+        timeout-minutes: 110
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ops/gateway
@@ -276,11 +287,16 @@ jobs:
           tags: lash-her-gateway:ci
           sbom: true
           provenance: mode=max
-      - name: Refuse privileged or writable gateway image defaults
+          cache-from: type=gha,scope=ci-platform-gateway
+          cache-to: type=gha,scope=ci-platform-gateway,mode=max
+      - name: Verify gateway entrypoint imports in the restricted image
         run: >-
           docker run --rm --network none --read-only --cap-drop ALL
           --security-opt no-new-privileges --entrypoint node lash-her-gateway:ci
-          -e "if(process.getuid()===0)process.exit(1);for(const f of ['server.mjs','private-tls.mjs','routes.json'])require('node:fs').accessSync(f)"
+          --input-type=module -e
+          "if (process.getuid() === 0) process.exit(1);
+          await import('./server.mjs');
+          await import('./private-tls.mjs');"
       - name: Retain raw gateway-runtime scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:

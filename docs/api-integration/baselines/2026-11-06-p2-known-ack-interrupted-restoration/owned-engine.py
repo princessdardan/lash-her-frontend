@@ -33,7 +33,7 @@ import p2_known_ack_interrupted_restoration as c
 import p2_release_broker as shared
 import p2_prior_gateway as prior
 import frontend_gateway_observation
-from p2_certification_parent_test import LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_CURRENT_SOURCE_ONLY
+from p2_certification_parent_test import IMAGE_BUILD_ONLY, LEGACY_FIXTURE_EVIDENCE_ONLY, PROFILED_CURRENT_SOURCE_ONLY
 from p2_source_closure import REQUIRED, TYPES
 
 
@@ -76,8 +76,9 @@ def archive_operator_sources(root,commit,source):
     if not (PROFILED_CURRENT_SOURCE_ONLY | INTERRUPTED_RESTORATION_UNRELATED_HARNESS).issubset(paths):
         raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
     # Match the v1 fixture's source projection, excluding unrelated tests,
-    # evidence and the separately executed identity-admission harness.
-    excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY | INTERRUPTED_RESTORATION_UNRELATED_HARNESS
+    # evidence, the separately executed identity-admission harness, and image build inputs.
+    excluded = (PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY
+                | INTERRUPTED_RESTORATION_UNRELATED_HARNESS | IMAGE_BUILD_ONLY)
     for name in list(paths):
         if name in excluded or (name not in REQUIRED and name.endswith(('_test.py','.test.mjs','.test.ts','.test.mts'))):
             paths.pop(name).unlink()
