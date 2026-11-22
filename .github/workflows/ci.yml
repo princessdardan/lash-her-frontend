@@ -3,7 +3,8 @@ on:
   push:
     branches: [main, staging]
   pull_request:
-    branches: [main, staging]
+  # A release can request fresh schema and image evidence for its exact source.
+  workflow_dispatch:
 permissions:
   contents: read
 
@@ -26,14 +27,20 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Detect frontend image qualification inputs
+        id: image-inputs
+        run: node scripts/ci-image-inputs.mjs frontend
       - name: Enable the containerd image store for attested local builds
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
         with:
           version: v29.4.0
           daemon-config: |
             {"features":{"containerd-snapshotter":true}}
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - if: ${{ steps.image-inputs.outputs.changed == 'true' }}
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build the immutable frontend migration image without publishing
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         timeout-minutes: 110
         id: build-frontend-migration
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
@@ -49,6 +56,7 @@ jobs:
           cache-from: type=gha,scope=frontend-migration
           cache-to: type=gha,scope=frontend-migration,mode=max
       - name: Verify migration-only image boundaries offline
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --entrypoint node lash-her-frontend-migration:ci ops/platform/frontend-image.mjs --manifest-only
@@ -59,11 +67,13 @@ jobs:
                 if(fs.existsSync(p))process.exit(1);
             '
       - name: Build owned frontend PostgreSQL 18 fixture
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: >-
           docker build --builder "$(docker context show)" -f ops/platform/Dockerfile.frontend-migration-test
           --build-arg MIGRATION_IMAGE=lash-her-frontend-migration:ci
           -t lash-her-frontend-migration:postgres18-test ops/platform
       - name: Exercise the operator CLI without provider access
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: |
           umask 077
           mkdir -m 700 "$RUNNER_TEMP/frontend-schema"
@@ -99,6 +109,7 @@ jobs:
           FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
           FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
       - name: Qualify Phase 2 roles, release failure and certification scopes on owned PostgreSQL 18
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
@@ -124,6 +135,7 @@ jobs:
             --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
       - name: Prepare the reviewed P2 source for owned HTTP fixtures
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         env:
           P2_OWNED_FRONTEND_REVISION: 174ae9fe407956ba009e94356a39cc8e5032a904
         run: |
@@ -136,6 +148,7 @@ jobs:
           npm ci --ignore-scripts --prefix ops/gateway
           node --test --test-name-pattern='fixed current certification plan joins' ops/platform/p2-profiled-current-release.test.mjs
       - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         timeout-minutes: 30
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
@@ -155,6 +168,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - name: Verify initial Course logins on owned PostgreSQL 18
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 512m --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
@@ -165,6 +179,7 @@ jobs:
             --workdir /source --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/staging/tests/course-initial-logins.integration.mjs
       - name: Verify Community runtime credential handoff on owned PostgreSQL 18
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 512m --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
@@ -175,6 +190,7 @@ jobs:
             --workdir /source --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/staging/tests/community-runtime-login.integration.mjs
       - name: Retain source-bound digest summary without private schema definitions
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: frontend-operator-schema-summary
@@ -185,6 +201,7 @@ jobs:
           if-no-files-found: error
           retention-days: 10
       - name: Retain raw frontend-runtime scan
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
@@ -195,11 +212,12 @@ jobs:
         env:
           TRIVY_LIST_ALL_PKGS: "true"
       - name: Scan frontend migration image against verified backport evidence
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: >-
           node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci
           "$RUNNER_TEMP/frontend-runtime-raw.json" "$RUNNER_TEMP/frontend-runtime"
       - name: Retain frontend-runtime qualification
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.image-inputs.outputs.changed == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: frontend-runtime-qualification
@@ -276,8 +294,13 @@ jobs:
           --image-id "$(docker image ls --quiet --no-trunc lash-her-firewall-test:ci)"
           --output "$RUNNER_TEMP/lash-owned-docker-inspection.json"
       - run: npm audit --audit-level=moderate --prefix ops/gateway
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Detect gateway image qualification inputs
+        id: image-inputs
+        run: node scripts/ci-image-inputs.mjs gateway
+      - if: ${{ steps.image-inputs.outputs.changed == 'true' }}
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         timeout-minutes: 110
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
@@ -290,6 +313,7 @@ jobs:
           cache-from: type=gha,scope=ci-platform-gateway
           cache-to: type=gha,scope=ci-platform-gateway,mode=max
       - name: Verify gateway entrypoint imports in the restricted image
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: >-
           docker run --rm --network none --read-only --cap-drop ALL
           --security-opt no-new-privileges --entrypoint node lash-her-gateway:ci
@@ -298,6 +322,7 @@ jobs:
           await import('./server.mjs');
           await import('./private-tls.mjs');"
       - name: Retain raw gateway-runtime scan
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
@@ -308,11 +333,12 @@ jobs:
         env:
           TRIVY_LIST_ALL_PKGS: "true"
       - name: Scan gateway image against verified backport evidence
+        if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: >-
           node ops/gateway/runtime/verify.mjs lash-her-gateway:ci
           "$RUNNER_TEMP/gateway-runtime-raw.json" "$RUNNER_TEMP/gateway-runtime"
       - name: Retain gateway-runtime qualification
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.image-inputs.outputs.changed == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: gateway-runtime-qualification
@@ -345,6 +371,7 @@ jobs:
             if (bundle.manifest.status === "released") verifyPublishedPhase2Contracts(process.cwd(), process.env.FRONTEND_SOURCE_REVISION);
           '
       - run: npm run test:staging-release
+      - run: node --test scripts/ci-image-inputs.test.mjs
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run test:unit
