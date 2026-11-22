@@ -109,7 +109,18 @@ admission and scheduler registration stay disabled on the new deployment.
 The receipts retain names and IDs; the normal promotion path refuses this
 candidate. [Vercel build and runtime environment flags](https://vercel.com/docs/cli/deploy#build-env)
 
-### P4-07 Lightsail relay runtime handoff
+After an explicit approval for the hosted build, start it with the same
+arguments plus `--attempt /path/to/private-attempt --apply --confirm
+staging/<reviewed-release-id>`. A lost acknowledgement requires inspecting
+the attempt and provider inventory before another create.
+
+The loopback TLS fixture verifies the outgoing request, secret redaction,
+and the unchanged production target and schedule inventory. The hosted
+Git-source build must still demonstrate that Vercel applies the override
+and that the resulting deployment is unaliased with its hold profile
+effective before provider-backed qualification.
+
+## P4-07 Lightsail relay runtime handoff
 
 After reviewing a frontend revision with the relay transport, supply
 `P407_POSTGRES_RELAY_URL=wss://api-p407.lashher.com/internal/p4-07/postgres`
@@ -127,14 +138,3 @@ With release-probe authentication and a fresh challenge, use
 The probe checks the held feature controls and opens a PostgreSQL read-only
 transaction that verifies the runtime identity, TLS and the relay's fixed
 database-side address.
-
-After an explicit approval for the hosted build, start it with the same
-arguments plus `--attempt /path/to/private-attempt --apply --confirm
-staging/<reviewed-release-id>`. A lost acknowledgement requires inspecting
-the attempt and provider inventory before another create.
-
-The loopback TLS fixture verifies the outgoing request, secret redaction,
-and the unchanged production target and schedule inventory. The hosted
-Git-source build must still demonstrate that Vercel applies the override
-and that the resulting deployment is unaliased with its hold profile
-effective before provider-backed qualification.

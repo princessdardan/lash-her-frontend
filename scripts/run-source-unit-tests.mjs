@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/private-db/p407-postgres-relay.test.ts",
   "src/lib/security/checkout-abuse-control.test.ts",
   "src/lib/course-purchases/tax.test.ts",
   "src/app/api/internal/release-probe/handler.test.ts",
