@@ -16,6 +16,27 @@ const REQUIRED_CREDENTIALS = [
   "PAYMENT_RECONCILIATION_CRON_SECRET", "CRON_SECRET",
 ];
 
+function isolatedBuildPins(env, manifest) {
+  const pins = JSON.parse(env.STAGING_P4_07_BUILD_PINS);
+  const dnsName = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u;
+  const databaseName = /^[A-Za-z_][A-Za-z0-9_-]{0,62}$/u;
+  const redis = new URL(pins.redisOrigin);
+  if (
+    typeof pins.commit !== "string" || !/^[a-f0-9]{40}$/u.test(pins.commit) ||
+    pins.commit !== env.STAGING_RELEASE_COMMIT ||
+    pins.commit !== env.STAGING_MIGRATION_VERIFIED_COMMIT ||
+    typeof pins.databaseHost !== "string" || !dnsName.test(pins.databaseHost) ||
+    [manifest.frontendDatabase.pooledHost, manifest.frontendDatabase.directHost].includes(pins.databaseHost) ||
+    typeof pins.databaseName !== "string" || !databaseName.test(pins.databaseName) ||
+    typeof pins.databaseRole !== "string" || !databaseName.test(pins.databaseRole) ||
+    !dnsName.test(redis.hostname) || pins.redisOrigin !== `https://${redis.hostname}` ||
+    redis.hostname === manifest.redis.hostname ||
+    typeof pins.squareLocationId !== "string" || !/^[A-Za-z0-9]{8,64}$/u.test(pins.squareLocationId) ||
+    pins.squareLocationId === manifest.providers.square.locationId
+  ) throw new Error();
+  return pins;
+}
+
 /** Returns configuration errors without including credential values or URLs. */
 export function checkStagingRelease(env, manifest) {
   const errors = [];
@@ -26,6 +47,25 @@ export function checkStagingRelease(env, manifest) {
     try { return new URL(env[name]); }
     catch { errors.push(`${name} must be a configured staging URL`); return null; }
   };
+  let isolated;
+  if (env.STAGING_P4_07_BUILD_PINS !== undefined) {
+    try {
+      isolated = isolatedBuildPins(env, manifest);
+    } catch {
+      errors.push("The isolated P4-07 source, migration and provider pins are invalid");
+    }
+    for (const [name, expected] of Object.entries({
+      CUSTOMER_AUTH_ENABLED: "false",
+      INTEGRATION_CHECKOUT_ENABLED: "false",
+      INTEGRATION_CUSTOMER_ACCESS_ENABLED: "false",
+      INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED: "false",
+      INTEGRATION_LEGACY_PROGRESS_IMPORT_ENABLED: "false",
+      LASH_RELEASE_SCHEDULER_PROFILE: "off",
+      LASH_RELEASE_SCHEDULER_QUALIFICATION: "false",
+      FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+      FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
+    })) requireValue(name, expected);
+  }
   try {
     if (resolveApplicationEnvironment(env) !== "staging") errors.push("A verified business staging deployment is required");
   } catch { errors.push("The Vercel project, target, APP_ENV and team binding must be verified"); }
@@ -60,30 +100,36 @@ export function checkStagingRelease(env, manifest) {
   }
   // Set release pins in protected deployment configuration after source review.
   // Committing a file containing its own Git SHA would create a circular pin.
-  const commit = manifest.source.approvedCommit ?? env.STAGING_RELEASE_COMMIT;
+  const commit = isolated?.commit ?? manifest.source.approvedCommit ?? env.STAGING_RELEASE_COMMIT;
   if (!commit || !/^[a-f0-9]{40}$/.test(commit)) errors.push("An approved source commit must be pinned");
   else requireValue("VERCEL_GIT_COMMIT_SHA", commit);
-  if (env.VERCEL_GIT_COMMIT_REF !== manifest.source.branch) errors.push("The reviewed staging Git branch is required");
-  const migratedCommit = manifest.frontendDatabase.migrationVerifiedCommit ?? env.STAGING_MIGRATION_VERIFIED_COMMIT;
+  if (env.VERCEL_GIT_COMMIT_REF !== manifest.source.branch &&
+    (!isolated || env.VERCEL_GIT_COMMIT_REF !== isolated.commit)) {
+    errors.push("The reviewed staging Git branch is required");
+  }
+  const migratedCommit = isolated?.commit ?? manifest.frontendDatabase.migrationVerifiedCommit ?? env.STAGING_MIGRATION_VERIFIED_COMMIT;
   if (!commit || migratedCommit !== commit) errors.push("Frontend migration evidence must match the approved source commit");
   if (!manifest.frontendDatabase.postgres18CompatibilityVerified) errors.push("PostgreSQL 18 compatibility evidence is required");
   if (!manifest.frontendDatabase.runtimeRoleConfigured) errors.push("Separate frontend runtime and migration roles are required");
   const database = readUrl("DATABASE_URL");
   if (database && (!["postgres:", "postgresql:"].includes(database.protocol) ||
-    (database.port && database.port !== "5432") || database.hostname !== manifest.frontendDatabase.pooledHost ||
-    database.pathname !== `/${manifest.frontendDatabase.database}` ||
-    decodeURIComponent(database.username) !== manifest.frontendDatabase.runtimeRole ||
+    (database.port && database.port !== "5432") || database.hostname !== (isolated?.databaseHost ?? manifest.frontendDatabase.pooledHost) ||
+    database.pathname !== `/${isolated?.databaseName ?? manifest.frontendDatabase.database}` ||
+    decodeURIComponent(database.username) !== (isolated?.databaseRole ?? manifest.frontendDatabase.runtimeRole) ||
     database.searchParams.get("sslmode") !== "verify-full" ||
     [...database.searchParams.keys()].some(key => !["sslmode", "channel_binding"].includes(key)))) {
     errors.push("DATABASE_URL must use the reviewed pooled staging runtime role with TLS");
   }
   const redis = readUrl("KV_REST_API_URL");
-  if (redis && (redis.protocol !== "https:" || redis.hostname !== manifest.redis.hostname || redis.username || redis.password)) errors.push("KV_REST_API_URL must match the selected staging Redis resource");
+  if (redis && (isolated ? env.KV_REST_API_URL !== isolated.redisOrigin :
+    redis.protocol !== "https:" || redis.hostname !== manifest.redis.hostname || redis.username || redis.password)) {
+    errors.push("KV_REST_API_URL must match the selected staging Redis resource");
+  }
   for (const name of ["DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL_NO_SSL", "PGPASSWORD", "POSTGRES_PASSWORD", "COMMUNITY_DATABASE_URL", "COURSE_DATABASE_URL"]) {
     if (env[name]) errors.push(`${name} must not be delivered to the frontend runtime`);
   }
   requireValue("SQUARE_ENVIRONMENT", "sandbox");
-  requireValue("SQUARE_LOCATION_ID", manifest.providers.square.locationId);
+  requireValue("SQUARE_LOCATION_ID", isolated?.squareLocationId ?? manifest.providers.square.locationId);
   for (const name of ["HIGHLEVEL_SYNC_ENABLED", "HIGHLEVEL_MARKETING_ENABLED", "CHITCHATS_SHIPPING_ENABLED", "CHITCHATS_CHECKOUT_ENABLED"]) requireValue(name, "false");
   if (env.PAYMENT_GATEWAY_MODE === "mock") errors.push("The Production target must not use payment mock mode");
   const recipients = (env.STAGING_EMAIL_RECIPIENT_ALLOWLIST ?? "").split(",").map(x => x.trim().toLowerCase()).filter(Boolean);

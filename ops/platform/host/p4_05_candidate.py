@@ -30,7 +30,8 @@ RUNTIME_ONLY = {
 HOLD = {
     "LASH_RELEASE_SCHEDULER_PROFILE": "off",
     "LASH_RELEASE_SCHEDULER_QUALIFICATION": "false",
-    "FRONTEND_WRITER_ADMISSION_MODE": "off",
+    "FRONTEND_WRITER_ADMISSION_MODE": "enforce",
+    "FRONTEND_WRITER_ADMISSION_TARGET_JSON": "{}",
     "CUSTOMER_AUTH_ENABLED": "false",
     "INTEGRATION_CHECKOUT_ENABLED": "false",
     "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED": "false",
@@ -142,6 +143,14 @@ def _reviewed_bindings(release, plan, database_receipt):
         "SQUARE_SERVICE_BOOKING_WEBHOOK_URL": _https(square.get("notificationUrl"), "/api/webhooks/square",
                                                    "P4_05_ISOLATED_SQUARE_CALLBACK_REQUIRED"),
         "COURSE_SALES_POLICY": _policy(plan),
+        "STAGING_P4_07_BUILD_PINS": json.dumps({
+            "commit": commit,
+            "databaseHost": target["runtimeHost"],
+            "databaseName": target["name"],
+            "databaseRole": target["runtimeRole"],
+            "redisOrigin": plan["redisOrigin"],
+            "squareLocationId": square["locationId"],
+        }, sort_keys=True, separators=(",", ":")),
     }
 
 
@@ -182,7 +191,8 @@ def _load_review(bundle, plan_file, receipt_file):
     shared_hosts = {shared["frontendDatabase"]["pooledHost"], shared["frontendDatabase"]["directHost"]}
     database = plan["database"]
     demand(not shared_hosts.intersection((database["runtimeHost"], database["verificationHost"]))
-           and urlsplit(public["KV_REST_API_URL"]).hostname != shared["redis"]["hostname"],
+           and urlsplit(public["KV_REST_API_URL"]).hostname != shared["redis"]["hostname"]
+           and public["SQUARE_LOCATION_ID"] != shared["providers"]["square"]["locationId"],
            "P4_05_SHARED_STAGING_TARGET_REFUSED")
     frontend = jobs.get("frontend", {}).get("job", {})
     wanted = frontend.get("target", {})

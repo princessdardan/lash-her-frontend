@@ -12,11 +12,11 @@ separate release controls.
 - Use a qualified release bundle and the frontend migration job's
   `job-outcome.json` for the isolated database. The receipt must verify the
   exact source and lineage in read-only mode with zero pending migrations.
-- Use an isolated candidate commit whose `ops/staging/first-release.json`
-  names the reviewed frontend runtime database host, database and role,
-  isolated Redis host, and Square Sandbox location. The build's existing
-  staging validator checks these pins. Keep the shared staging manifest and
-  project settings in place.
+- Use the current qualified staging commit. The candidate wrapper sends
+  `STAGING_P4_07_BUILD_PINS` with the reviewed database, Redis, and Sandbox
+  location bindings from the plan and receipt. The staging build validates
+  the exact commit and those deployment-level pins. The ordinary staging
+  build continues to use `ops/staging/first-release.json`.
 - Reserve a candidate-only HTTPS Square notification URL before staging
   the build. If the deployment requires protection or only receives its
   unique hostname after creation, use an isolated ingress whose downstream
@@ -101,11 +101,12 @@ shell arguments, the review plan, logs and retained receipts.
 
 The operator's existing `VERCEL_TOKEN` authorizes the deployment request.
 Use the reviewed operator host and an empty private attempt directory. The
-build operation checks that schedules are already paused and refuses to
-change them. It sends the bindings as deployment runtime and build
+build operation requires paused schedules and Vercel Authentication for
+all deployments before creating the candidate. It checks both again while
+observing the build. It sends the bindings as deployment runtime and build
 environment variables in one creation request. The service JWT and runner
 bearer are included only in the runtime bindings. Checkout, recovery, writer
-admission and scheduler registration stay disabled on the new deployment.
+admission gates and scheduler registration stay closed on the new deployment.
 The receipts retain names and IDs; the normal promotion path refuses this
 candidate. [Vercel build and runtime environment flags](https://vercel.com/docs/cli/deploy#build-env)
 
@@ -113,6 +114,11 @@ After an explicit approval for the hosted build, start it with the same
 arguments plus `--attempt /path/to/private-attempt --apply --confirm
 staging/<reviewed-release-id>`. A lost acknowledgement requires inspecting
 the attempt and provider inventory before another create.
+
+The held build enforces writer admission with an empty target. Both writer
+classes are refused before a database connection. An isolated recovery
+rehearsal needs a separate reviewed deployment with a registered producer for
+that source and target.
 
 The loopback TLS fixture verifies the outgoing request, secret redaction,
 and the unchanged production target and schedule inventory. The hosted

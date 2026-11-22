@@ -111,10 +111,11 @@ class VercelControlTests(unittest.TestCase):
                 self.client.request("DELETE", path, body)
         self.assertEqual(self.calls, [])
 
-    def project(self, enabled=False, deployment="dpl_previous"):
+    def project(self, enabled=False, deployment="dpl_previous", protection="all"):
         return {"id": vercel.PROJECTS["staging"], "accountId": vercel.TEAM,
                 "link": {"type": "github", "repoId": vercel.REPOSITORY_ID},
                 "targets": {"production": {"id": deployment}}, "crons": {"disabledAt": None if enabled else 123},
+                "ssoProtection": {"deploymentType": protection},
                 "env": [{"value": "provider-secret-must-not-escape"}], "protectionBypass": "private-provider-bypass"}
 
     def deployment(self, state="READY"):
@@ -181,6 +182,13 @@ class VercelControlTests(unittest.TestCase):
         self.assertEqual(payload["env"]["SQUARE_ENVIRONMENT"], "sandbox")
         self.assertNotIn("COURSE_STRIPE_TAX_SECRET_KEY", payload["env"])
         self.assertEqual(json.loads(payload["env"]["COURSE_SALES_POLICY"]), plan["courseSalesPolicy"])
+        self.assertEqual(json.loads(payload["build"]["env"]["STAGING_P4_07_BUILD_PINS"]), {
+            "commit": plan["sourceCommit"], "databaseHost": plan["database"]["runtimeHost"],
+            "databaseName": plan["database"]["name"], "databaseRole": plan["database"]["runtimeRole"],
+            "redisOrigin": plan["redisOrigin"], "squareLocationId": plan["square"]["locationId"],
+        })
+        self.assertEqual(payload["env"]["FRONTEND_WRITER_ADMISSION_MODE"], "enforce")
+        self.assertEqual(payload["env"]["FRONTEND_WRITER_ADMISSION_TARGET_JSON"], "{}")
         for key, private_key in p4_05_candidate.PRIVATE_INPUTS.items():
             self.assertEqual(payload["env"][key], private[private_key])
         for key, value in p4_05_candidate.HOLD.items():
@@ -223,6 +231,24 @@ class VercelControlTests(unittest.TestCase):
             p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
         self.assertTrue(self.calls)
         self.assertTrue(all(call["method"] == "GET" for call in self.calls))
+
+    def test_p4_05_requires_protection_for_all_deployments_before_create(self):
+        self.enqueue(self.project(protection=None))
+        plan, receipt, private = self.p4_05_inputs()
+        with self.assertRaisesRegex(ValueError, "VERCEL_QUALIFICATION_PROTECTION_REQUIRED"):
+            p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        self.assertEqual([call["method"] for call in self.calls], ["GET"])
+        self.assertEqual(list(self.attempt.iterdir()), [])
+
+    def test_p4_05_refuses_ready_outcome_if_protection_drifts_during_build(self):
+        self.enqueue(self.project(), {"id": "dpl_fixture"}, self.p4_05_deployment(), self.project(protection=None))
+        plan, receipt, private = self.p4_05_inputs()
+        with self.assertRaisesRegex(ValueError, "VERCEL_QUALIFICATION_PROTECTION_REQUIRED"):
+            p4_05_candidate.stage_candidate(self.client, self.release, plan, receipt, private, self.attempt)
+        outcome = json.loads((self.attempt / "p4-05-frontend-build-outcome.json").read_text())
+        self.assertEqual(outcome["status"], "FRONTEND_BUILD_FAILED_REQUIRES_REVIEW")
+        self.assertFalse(outcome["trafficAuthorized"])
+        self.assertFalse(outcome["promotionAuthorized"])
 
     def test_p4_05_uncertain_create_is_not_retried_and_provider_errors_are_sanitized(self):
         self.enqueue(self.project())
