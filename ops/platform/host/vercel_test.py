@@ -216,6 +216,22 @@ class VercelControlTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(list(self.attempt.iterdir()), [])
 
+    def test_p4_07_sanity_binding_only_accepts_the_disposable_clone(self):
+        plan, receipt, private = self.p4_05_inputs()
+        original = p4_05_candidate.deployment_bindings(self.release, plan, receipt, private)
+        self.assertNotIn("P4_07_SANITY_CLONE", original)
+        plan["sanityProjectId"] = "898r3c4e"
+        isolated = p4_05_candidate.deployment_bindings(self.release, plan, receipt, private)
+        self.assertEqual(isolated["P4_07_SANITY_CLONE"], "1")
+        self.assertEqual(isolated["NEXT_PUBLIC_SANITY_PROJECT_ID"], "898r3c4e")
+        self.assertEqual(isolated["SANITY_API_READ_TOKEN"], "synthetic-unused-preview-build-fixture")
+        self.assertEqual(isolated["SANITY_WRITE_TOKEN"], "synthetic-unused-write-fixture")
+        self.assertEqual(isolated["INTEGRATION_CHECKOUT_ENABLED"], "false")
+        self.assertEqual(isolated["INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED"], "false")
+        plan["sanityProjectId"] = "3auncj84"
+        with self.assertRaisesRegex(ValueError, "P4_07_SANITY_CLONE_REQUIRED"):
+            p4_05_candidate.deployment_bindings(self.release, plan, receipt, private)
+
     def test_p4_05_refuses_enabled_schedules_without_changing_them(self):
         self.enqueue(self.project(enabled=True))
         plan, receipt, private = self.p4_05_inputs()

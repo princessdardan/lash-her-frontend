@@ -17,6 +17,7 @@ HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-
 DB_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]{0,62}")
 SITE_HOSTS = {"lashher.com", "www.lashher.com", "staging.lashher.com",
               "api.lashher.com", "api-staging.lashher.com"}
+P4_07_SANITY_CLONE = "898r3c4e"
 PRIVATE_INPUTS = {
     key: "P4_05_" + key for key in (
         "DATABASE_URL", "KV_REST_API_TOKEN", "INTERNAL_SERVICE_JWT_SECRET",
@@ -130,8 +131,19 @@ def _reviewed_bindings(release, plan, database_receipt):
     square = plan.get("square")
     demand(isinstance(square, dict) and _matches(r"sandbox-[A-Za-z0-9_-]{8,120}", square.get("applicationId"))
            and _matches(r"[A-Za-z0-9]{8,64}", square.get("locationId")), "P4_05_SQUARE_SANDBOX_REQUIRED")
+    sanity = {}
+    if "sanityProjectId" in plan:
+        demand(plan["sanityProjectId"] == P4_07_SANITY_CLONE, "P4_07_SANITY_CLONE_REQUIRED")
+        sanity = {
+            "P4_07_SANITY_CLONE": "1",
+            "NEXT_PUBLIC_SANITY_PROJECT_ID": P4_07_SANITY_CLONE,
+            "NEXT_PUBLIC_SANITY_DATASET": "staging-2026-05-10",
+            "SANITY_API_READ_TOKEN": "synthetic-unused-preview-build-fixture",
+            "SANITY_WRITE_TOKEN": "synthetic-unused-write-fixture",
+        }
     return {
         **HOLD,
+        **sanity,
         "STAGING_RELEASE_COMMIT": commit,
         "STAGING_MIGRATION_VERIFIED_COMMIT": commit,
         "API_GATEWAY_STAGING_ORIGIN": _https(plan.get("gatewayOrigin"), "", "P4_05_ISOLATED_GATEWAY_REQUIRED"),

@@ -2,11 +2,15 @@ name: CI
 on:
   push:
     branches: [main, staging]
+    tags: [p4-07-isolated-sanity-898r3c4e]
   pull_request:
   # A release can request fresh schema and image evidence for its exact source.
   workflow_dispatch:
 permissions:
   contents: read
+
+env:
+  P4_07_SANITY_CLONE: ${{ github.ref == 'refs/tags/p4-07-isolated-sanity-898r3c4e' && '1' || '0' }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -955,10 +959,10 @@ jobs:
           CHITCHATS_US_SHIPPING_ENABLED: "false"
           MANUAL_PRODUCT_CHECKOUT_ENABLED: "false"
           SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "false"
-          NEXT_PUBLIC_SANITY_PROJECT_ID: 7o23yrvk
+          NEXT_PUBLIC_SANITY_PROJECT_ID: ${{ env.P4_07_SANITY_CLONE == '1' && '898r3c4e' || '7o23yrvk' }}
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
-          SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
+          SANITY_API_READ_TOKEN: ${{ env.P4_07_SANITY_CLONE == '1' && 'synthetic-unused-preview-build-fixture' || secrets.SANITY_API_READ_TOKEN }}
   browser-tests:
     name: browser (${{ matrix.browser }})
     # The locked Playwright 1.59.1 distribution has no Ubuntu 26.04 browsers.
@@ -1040,10 +1044,10 @@ jobs:
           SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce"
           SQUARE_COMMERCE_ENABLED: "true"
           SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "true"
-          NEXT_PUBLIC_SANITY_PROJECT_ID: 7o23yrvk
+          NEXT_PUBLIC_SANITY_PROJECT_ID: ${{ env.P4_07_SANITY_CLONE == '1' && '898r3c4e' || '7o23yrvk' }}
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
-          SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
+          SANITY_API_READ_TOKEN: ${{ env.P4_07_SANITY_CLONE == '1' && 'synthetic-unused-preview-build-fixture' || secrets.SANITY_API_READ_TOKEN }}
       - name: Upload browser report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

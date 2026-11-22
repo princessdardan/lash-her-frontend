@@ -102,6 +102,61 @@ test("existing local production-project datasets remain supported", () => {
   }
 });
 
+test("the disposable Sanity clone is limited to the isolated CI tag and pinned Sandbox build", () => {
+  const clone = {
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "898r3c4e",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    P4_07_SANITY_CLONE: "1",
+  };
+  const ci = {
+    ...publicSanityEnv,
+    ...clone,
+    GITHUB_ACTIONS: "true",
+    GITHUB_REF: "refs/tags/p4-07-isolated-sanity-898r3c4e",
+    GITHUB_EVENT_NAME: "push",
+  };
+  const commit = "a".repeat(40);
+  const hosted = {
+    ...launchEnv,
+    ...clone,
+    APP_ENV: "staging",
+    VERCEL_ENV: "production",
+    VERCEL_TARGET_ENV: "production",
+    VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SITE_URL: "https://staging.lashher.com",
+    SQUARE_ENVIRONMENT: "sandbox",
+    LASH_RELEASE_SCHEDULER_PROFILE: "off",
+    STAGING_RELEASE_COMMIT: commit,
+    VERCEL_GIT_COMMIT_SHA: commit,
+  };
+  for (const env of [ci, hosted]) {
+    const result = runValidator(env);
+    assert.equal(result.status, 0, result.combinedOutput);
+  }
+  for (const env of [
+    { ...ci, GITHUB_REF: "refs/heads/staging" },
+    { ...ci, GITHUB_EVENT_NAME: "pull_request" },
+    { ...ci, P4_07_SANITY_CLONE: "0" },
+    { ...ci, NEXT_PUBLIC_SANITY_PROJECT_ID: "unreviewed" },
+    { ...ci, NEXT_PUBLIC_SANITY_DATASET: "production" },
+    { ...hosted, VERCEL_GIT_COMMIT_SHA: "b".repeat(40) },
+    { ...hosted, SQUARE_ENVIRONMENT: "production" },
+    { ...hosted, LASH_RELEASE_SCHEDULER_PROFILE: "qualification" },
+    {
+      ...hosted,
+      APP_ENV: "production",
+      VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
+    },
+  ]) {
+    const result = runValidator(env);
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.combinedOutput,
+      /NEXT_PUBLIC_SANITY_PROJECT_ID|NEXT_PUBLIC_SANITY_DATASET/,
+    );
+  }
+});
+
 test("the local staging CMS pair cannot authorize the actual gateway transport", () => {
   const script = `
     const { resolveApplicationEnvironment } = await import(${JSON.stringify(join(process.cwd(), "src/lib/env/application-environment.mjs"))});
