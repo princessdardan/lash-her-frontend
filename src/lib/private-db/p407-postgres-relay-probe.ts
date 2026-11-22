@@ -16,6 +16,7 @@ export async function runP407PostgresRelayProbe(): Promise<void> {
         and current_user = ${P407_POSTGRES_ROLE}
         and current_setting('server_version_num')::int / 10000 = 18
         and current_setting('transaction_read_only') = 'on'
+        and inet_client_addr() = '172.29.40.10'::inet
         and (select ssl from pg_stat_ssl where pid = pg_backend_pid()),
         false
       ) as allowed

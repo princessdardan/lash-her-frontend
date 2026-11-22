@@ -109,6 +109,25 @@ admission and scheduler registration stay disabled on the new deployment.
 The receipts retain names and IDs; the normal promotion path refuses this
 candidate. [Vercel build and runtime environment flags](https://vercel.com/docs/cli/deploy#build-env)
 
+### P4-07 Lightsail relay runtime handoff
+
+After reviewing a frontend revision with the relay transport, supply
+`P407_POSTGRES_RELAY_URL=wss://api-p407.lashher.com/internal/p4-07/postgres`
+and `P407_POSTGRES_RELAY_DEPLOYMENT_PROOF` only in that held, unaliased
+deployment's runtime bindings. Resolve the proof from the protected operator
+store and include neither binding in build environment variables or project
+defaults. Keep `DATABASE_URL` pinned to the isolated Frontend runtime role at
+`p4-07-db.lashher.com:5432` with `sslmode=verify-full`. The separate operator
+migration connection continues to use its reviewed private SSH path.
+
+With release-probe authentication and a fresh challenge, use
+`x-lash-release-mode: p407-postgres-relay` on
+`GET /api/internal/release-probe`. Confirm
+`FRONTEND_P407_POSTGRES_RELAY_PROBE_PASS` for the exact candidate source.
+The probe checks the held feature controls and opens a PostgreSQL read-only
+transaction that verifies the runtime identity, TLS and the relay's fixed
+database-side address.
+
 After an explicit approval for the hosted build, start it with the same
 arguments plus `--attempt /path/to/private-attempt --apply --confirm
 staging/<reviewed-release-id>`. A lost acknowledgement requires inspecting
