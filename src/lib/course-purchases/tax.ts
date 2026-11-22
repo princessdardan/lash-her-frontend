@@ -67,18 +67,28 @@ const policySchema = v.strictObject({
 function readCourseSalesPolicy() {
   const value = process.env.COURSE_SALES_POLICY;
   if (!value) throw new PurchaseDependencyError(503);
+  let policy: v.InferOutput<typeof policySchema>;
   try {
-    return v.parse(policySchema, JSON.parse(value));
+    policy = v.parse(policySchema, JSON.parse(value));
   } catch {
     throw new PurchaseDependencyError(503);
   }
+  const classifications = policy.markets.flatMap((market) =>
+    Object.values(market.classifications),
+  );
+  if (
+    process.env.SQUARE_ENVIRONMENT !== "sandbox" &&
+    classifications.some((rule) => "rateBasisPoints" in rule)
+  )
+    throw new PurchaseDependencyError(503);
+  return { policy, classifications };
 }
 
 export function getCourseSalesPolicy(
   billing: CourseBilling,
   classification: string,
 ) {
-  const policy = readCourseSalesPolicy();
+  const { policy } = readCourseSalesPolicy();
   const matches = policy.markets.filter(
     (item) =>
       item.country === billing.country && item.region === billing.region,
@@ -114,13 +124,10 @@ export function getCourseSalesPolicy(
 
 export function courseTaxReady() {
   try {
-    const policy = readCourseSalesPolicy();
+    const { classifications } = readCourseSalesPolicy();
     return (
-      policy.markets.every((market) =>
-        Object.values(market.classifications).every(
-          (rule) => "rateBasisPoints" in rule,
-        ),
-      ) || Boolean(process.env.COURSE_STRIPE_TAX_SECRET_KEY)
+      classifications.every((rule) => "rateBasisPoints" in rule) ||
+      Boolean(process.env.COURSE_STRIPE_TAX_SECRET_KEY)
     );
   } catch {
     return false;

@@ -65,7 +65,8 @@ pins and tax values for local verification.
 
 The rate is a test-only Ontario value for a single synthetic classification.
 The candidate accepts one Canadian market and classification. Rates are
-integer basis points. A zero rate requires an explicit `zeroReason` of
+integer basis points. The rate table requires `SQUARE_ENVIRONMENT=sandbox`.
+A zero rate requires an explicit `zeroReason` of
 `product_exempt`, `zero_rated`, or `reduced_rated`. Checkout records the
 policy version, selected rate and tax on the quote. Square captures the CAD
 total and verifies refunds. The purchase ledger records each refund's tax

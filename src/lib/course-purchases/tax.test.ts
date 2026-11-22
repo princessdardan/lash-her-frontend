@@ -37,13 +37,17 @@ test("the rate table quotes and snapshots inclusive or exclusive CAD tax without
   t.mock.method(globalThis, "fetch", () => assert.fail("Unexpected tax API call"));
   const salesPolicy = process.env.COURSE_SALES_POLICY;
   const stripeKey = process.env.COURSE_STRIPE_TAX_SECRET_KEY;
+  const squareEnvironment = process.env.SQUARE_ENVIRONMENT;
   t.after(() => {
     if (salesPolicy === undefined) delete process.env.COURSE_SALES_POLICY;
     else process.env.COURSE_SALES_POLICY = salesPolicy;
     if (stripeKey === undefined) delete process.env.COURSE_STRIPE_TAX_SECRET_KEY;
     else process.env.COURSE_STRIPE_TAX_SECRET_KEY = stripeKey;
+    if (squareEnvironment === undefined) delete process.env.SQUARE_ENVIRONMENT;
+    else process.env.SQUARE_ENVIRONMENT = squareEnvironment;
   });
   delete process.env.COURSE_STRIPE_TAX_SECRET_KEY;
+  process.env.SQUARE_ENVIRONMENT = "sandbox";
   setTable(standard);
   assert.equal(courseTaxReady(), true);
   const exclusive = getCourseSalesPolicy(billing, classification);
@@ -92,6 +96,20 @@ test("the rate table quotes and snapshots inclusive or exclusive CAD tax without
   );
   assert.equal(zero.taxCents, 0);
   assert.equal(zero.taxBreakdown[0].taxability_reason, "zero_rated");
+
+  setTable(standard);
+  delete process.env.SQUARE_ENVIRONMENT;
+  assert.equal(courseTaxReady(), false);
+  process.env.SQUARE_ENVIRONMENT = "production";
+  process.env.COURSE_STRIPE_TAX_SECRET_KEY = "fixture-stripe-key";
+  assert.equal(courseTaxReady(), false);
+  assert.throws(() => getCourseSalesPolicy(billing, classification), {
+    status: 503,
+  });
+
+  setTable({ taxCode: "txcd_30011000" });
+  assert.equal(courseTaxReady(), true);
+  assert.equal(getCourseSalesPolicy(billing, classification).taxCode, "txcd_30011000");
 });
 
 test("partial refunds reverse exactly the original tax at the final refund", () => {
