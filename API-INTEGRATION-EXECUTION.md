@@ -10,6 +10,19 @@
 - **November 21 protected portal release.** [The student portal](https://staging.lashher.com/staging-review) serves deployment `dpl_8rtiFLjKCo33jFpqsjFmJwNaQE9c` from source `d29fb50`. The approved synthetic account and Free Mini Course scope expire November 27 at 2:41 p.m. Toronto time. The gateway uses the existing Course, Community, and media bindings and admits inbox access for the recipient only. Both admission gates stayed closed with the original file. The predecessor deployment `dpl_3GgTBtdLFeRXe8GMaLcGie9oxpBb` and gateway `83ccfdc0ece4` remain available for rollback. No shared database migration was required. Vercel Deployment Protection and the public access, legacy import, scheduling, paid checkout, and production holds remain in effect.
 - **Promoted portal Chromium verification.** The dashboard opened the next lesson, previous and next links worked, and signed Mux resumed the second lesson at 16 seconds after reload. The second practice quiz completed the lesson, its attempt persisted after reload, and Academy showed 2 of 2 complete. The synthetic discussion, edited reply, reaction, and signed WebP remained visible after reload. Discussion and reply cursors worked. The test removed the image, reply, and discussion. The existing inbox item remained read after reload and accepted an idempotent mark-read. Anonymous, unlisted-lesson, missing-CSRF, legacy-import, and second-learner actions were refused. At a 393-pixel viewport, keyboard navigation through the dashboard, outline, Community, and inbox passed without horizontal overflow. Postflight confirmed the staging alias, protected access, disabled Vercel schedules, unchanged closed admission, and a ready media worker.
 
+### CI and OpenSSL qualification
+
+All 10 jobs passed on November 21 at 10:54 p.m. Toronto time for revision `431de6c4d6268db546d5c548980e0ef702ed973a`, including Chromium, Firefox, WebKit, and the aggregate browser check. [CI run 44973799378](https://github.com/princessdardan/lash-her-frontend/actions/runs/44973799378)
+
+Both `linux/amd64` images rebuild Node.js 24.22.3 from its signed release source with OpenSSL fix `f3acb0a3328046741479482c51cec815839e1b05` applied to the bundled OpenSSL. Each qualification receipt binds the patched source to the installed Node executable's SHA-256. The raw scans found zero instances of CVE-2026-124709, and the enforced scans reported zero unresolved High or Critical findings. Both images omit the vulnerable Debian `libssl3t64` package. [Upstream OpenSSL fix](https://github.com/openssl/openssl/commit/f3acb0a3328046741479482c51cec815839e1b05)
+
+| CI image | Verified image digest | Evidence |
+| --- | --- | --- |
+| Gateway | `sha256:60dbce762cc74c2ea89d184a63e6b1a3ef40943b35774941a9fb030eff6b5795` | [Gateway qualification receipt and scans](https://github.com/princessdardan/lash-her-frontend/actions/runs/44973799378/artifacts/14738446971) |
+| Frontend migration | `sha256:dd04e930abd8a3fe69ec5f4dff6edd63da7944eaa3e03e9291b2a4b2341fef16` | [Frontend migration qualification receipt and scans](https://github.com/princessdardan/lash-her-frontend/actions/runs/44973799378/artifacts/14737700826) |
+
+The digests identify CI builds. Protected staging continues to serve the approved synthetic learner at `d29fb50` with both admission gates closed. All release holds remain in place. [Draft PR #116](https://github.com/princessdardan/lash-her-frontend/pull/116)
+
 ## Current execution position
 
 | Field                  | Current recorded state                                                                                                                                                                                                                                                                                |
