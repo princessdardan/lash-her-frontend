@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   frontend-operator-migrations:
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 140
     steps:
@@ -227,6 +228,7 @@ jobs:
           if-no-files-found: error
           retention-days: 10
   gateway-and-platform:
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 140
     steps:
@@ -1108,8 +1110,14 @@ jobs:
             test-results/playwright-results.json
           if-no-files-found: error
           retention-days: 7
-      - name: Require all CI dependencies to pass
+      - name: Require expected CI dependency results
         if: ${{ !cancelled() }}
-        run: test "$DEPENDENCIES_PASSED" = "true"
+        run: |
+          test "$DEPENDENCIES_PASSED" = "true"
+          test "$MIGRATION_RESULT" = "$EXPECTED_PLATFORM_RESULT"
+          test "$PLATFORM_RESULT" = "$EXPECTED_PLATFORM_RESULT"
         env:
-          DEPENDENCIES_PASSED: ${{ needs.frontend-operator-migrations.result == 'success' && needs.gateway-and-platform.result == 'success' && needs.audit.result == 'success' && needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}
+          DEPENDENCIES_PASSED: ${{ needs.audit.result == 'success' && needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}
+          EXPECTED_PLATFORM_RESULT: ${{ github.event_name == 'pull_request' && 'skipped' || 'success' }}
+          MIGRATION_RESULT: ${{ needs.frontend-operator-migrations.result }}
+          PLATFORM_RESULT: ${{ needs.gateway-and-platform.result }}
