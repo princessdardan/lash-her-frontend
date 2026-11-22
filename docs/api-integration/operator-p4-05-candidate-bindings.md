@@ -54,12 +54,22 @@ pins and tax values for local verification.
         "region": "ON",
         "behavior": "exclusive",
         "disclosure": "Synthetic tax fixture.",
-        "classifications": { "paid-fixture": { "taxCode": "txcd_30011000" } }
+        "classifications": {
+          "paid-fixture": { "taxCode": "ca-on-hst", "rateBasisPoints": 1300 }
+        }
       }
     ]
   }
 }
 ```
+
+The rate is a test-only Ontario value for a single synthetic classification.
+The candidate accepts one Canadian market and classification. Rates are
+integer basis points. A zero rate requires an explicit `zeroReason` of
+`product_exempt`, `zero_rated`, or `reduced_rated`. Checkout records the
+policy version, selected rate and tax on the quote. Square captures the CAD
+total and verifies refunds. The purchase ledger records each refund's tax
+reversal against the original quote.
 
 Review the plan before acquiring credentials. Run the entry point from the
 operator checkout with the existing shared staging manifest. The default
@@ -86,15 +96,14 @@ shell arguments, the review plan, logs and retained receipts.
 | `P4_05_INTERNAL_SERVICE_JWT_SECRET` | `INTERNAL_SERVICE_JWT_SECRET` |
 | `P4_05_SQUARE_ACCESS_TOKEN` | `SQUARE_ACCESS_TOKEN` |
 | `P4_05_SQUARE_WEBHOOK_SIGNATURE_KEY` | `SQUARE_WEBHOOK_SIGNATURE_KEY` |
-| `P4_05_COURSE_STRIPE_TAX_SECRET_KEY` | `COURSE_STRIPE_TAX_SECRET_KEY` |
 | `P4_05_COURSE_PURCHASE_RECOVERY_SECRET` | `COURSE_PURCHASE_RECOVERY_SECRET` |
 
 The operator's existing `VERCEL_TOKEN` authorizes the deployment request.
 Use the reviewed operator host and an empty private attempt directory. The
 build operation checks that schedules are already paused and refuses to
 change them. It sends the bindings as deployment runtime and build
-environment variables in one creation request. The service JWT, Stripe Tax
-key, and runner bearer are included only in the runtime bindings. Checkout, recovery, writer
+environment variables in one creation request. The service JWT and runner
+bearer are included only in the runtime bindings. Checkout, recovery, writer
 admission and scheduler registration stay disabled on the new deployment.
 The receipts retain names and IDs; the normal promotion path refuses this
 candidate. [Vercel build and runtime environment flags](https://vercel.com/docs/cli/deploy#build-env)

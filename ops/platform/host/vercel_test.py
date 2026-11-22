@@ -138,7 +138,7 @@ class VercelControlTests(unittest.TestCase):
             "courseClassification": "paid-fixture",
             "courseSalesPolicy": {"version": "synthetic-p4-05", "markets": [
                 {"country": "CA", "region": "ON", "behavior": "exclusive", "disclosure": "Synthetic tax fixture.",
-                 "classifications": {"paid-fixture": {"taxCode": "txcd_30011000"}}}
+                 "classifications": {"paid-fixture": {"taxCode": "ca-on-hst", "rateBasisPoints": 1300}}}
             ]},
         }
         receipt = {"status": "DATABASE_VERIFIED", "service": "frontend", "environment": "staging",
@@ -152,7 +152,6 @@ class VercelControlTests(unittest.TestCase):
             "P4_05_INTERNAL_SERVICE_JWT_SECRET": "fixture-isolated-service-key-long-enough",
             "P4_05_SQUARE_ACCESS_TOKEN": "fixture-square-token",
             "P4_05_SQUARE_WEBHOOK_SIGNATURE_KEY": "fixture-square-signature",
-            "P4_05_COURSE_STRIPE_TAX_SECRET_KEY": "rk_test_fixtureTestKeyabcdef",
             "P4_05_COURSE_PURCHASE_RECOVERY_SECRET": "fixture-recovery-key-only-in-private-runtime",
         }
         return plan, receipt, private
@@ -180,6 +179,8 @@ class VercelControlTests(unittest.TestCase):
         self.assertEqual(payload["build"]["env"], {key: value for key, value in payload["env"].items()
                                                    if key not in p4_05_candidate.RUNTIME_ONLY})
         self.assertEqual(payload["env"]["SQUARE_ENVIRONMENT"], "sandbox")
+        self.assertNotIn("COURSE_STRIPE_TAX_SECRET_KEY", payload["env"])
+        self.assertEqual(json.loads(payload["env"]["COURSE_SALES_POLICY"]), plan["courseSalesPolicy"])
         for key, private_key in p4_05_candidate.PRIVATE_INPUTS.items():
             self.assertEqual(payload["env"][key], private[private_key])
         for key, value in p4_05_candidate.HOLD.items():
@@ -193,17 +194,17 @@ class VercelControlTests(unittest.TestCase):
             self.enqueue(self.p4_05_deployment())
             vercel.deployment_state(self.client, "dpl_fixture", vercel.PROJECTS["staging"], "a" * 40, "staging-fixture")
 
-    def test_p4_05_rejects_live_key_shared_callback_and_unverified_database_without_requests(self):
+    def test_p4_05_rejects_invalid_tax_rate_shared_callback_and_unverified_database_without_requests(self):
         for alteration, error in (
-            ("live-stripe", "P4_05_STRIPE_TEST_KEY_REQUIRED"),
+            ("invalid-rate", "P4_05_SINGLE_TEST_TAX_POLICY_REQUIRED"),
             ("shared-callback", "P4_05_ISOLATED_SQUARE_CALLBACK_REQUIRED"),
             ("wrong-database", "P4_05_FRONTEND_DATABASE_RECEIPT_REFUSED"),
             ("missing-private-token", "P4_05_PRIVATE_BINDING_REQUIRED_SQUARE_ACCESS_TOKEN"),
         ):
             with self.subTest(alteration=alteration):
                 plan, receipt, private = self.p4_05_inputs()
-                if alteration == "live-stripe":
-                    private["P4_05_COURSE_STRIPE_TAX_SECRET_KEY"] = "sk_live_fixtureNeverSend"
+                if alteration == "invalid-rate":
+                    plan["courseSalesPolicy"]["markets"][0]["classifications"]["paid-fixture"]["rateBasisPoints"] = -1
                 elif alteration == "shared-callback":
                     plan["square"]["notificationUrl"] = "https://staging.lashher.com/api/webhooks/square"
                 elif alteration == "wrong-database":
@@ -258,7 +259,7 @@ class VercelControlTests(unittest.TestCase):
             _release, _plan, _receipt, summary = p4_05_candidate._load_review(self.attempt, plan_file, receipt_file)
             self.assertEqual(summary["status"], "P4_05_BINDING_PLAN")
             self.assertEqual(summary["operatorEnvironmentKeys"], sorted(p4_05_candidate.PRIVATE_INPUTS.values()))
-            self.assertIn("COURSE_STRIPE_TAX_SECRET_KEY", summary["bindingKeys"])
+            self.assertIn("COURSE_SALES_POLICY", summary["bindingKeys"])
             self.assertNotIn("Synthetic tax fixture", json.dumps(summary))
             job["target"]["approvedPendingTags"] = ["pending"]
             with self.assertRaisesRegex(ValueError, "P4_05_PINNED_FRONTEND_VERIFICATION_REQUIRED"):

@@ -20,6 +20,7 @@ import type {
   SquareRefund,
 } from "@/lib/payments/square/payments-client";
 import { PurchaseDependencyError } from "./course-api";
+import { rateTableRefundTax, rateTableTaxReference } from "./tax";
 import {
   coursePurchaseOrders as orders,
   coursePurchaseJobs as jobs,
@@ -485,6 +486,43 @@ export async function claimCourseJob(orderId?: string) {
   }
 }
 
+async function rateTableRefundReceipt(
+  tx: Transaction,
+  order: CourseOrder,
+  job: CourseJob,
+) {
+  if (!job.refundId) throw new PurchaseDependencyError(409);
+  const [refund] = await tx
+    .select({ amount: refunds.amountCents })
+    .from(refunds)
+    .where(and(eq(refunds.id, job.refundId), eq(refunds.orderId, order.id)));
+  if (!refund) throw new PurchaseDependencyError(409);
+
+  // The order lock serializes allocations, so cumulative rounding reverses
+  // exactly the original tax when all verified refunds have been settled.
+  const [previous] = await tx
+    .select({ amount: sql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
+    .from(jobs)
+    .innerJoin(
+      refunds,
+      and(eq(refunds.id, jobs.refundId), eq(refunds.orderId, jobs.orderId)),
+    )
+    .where(
+      and(
+        eq(jobs.orderId, order.id),
+        eq(jobs.kind, "tax_refund"),
+        eq(jobs.status, "done"),
+      ),
+    );
+  const taxCents = rateTableRefundTax(
+    order.taxCents,
+    order.totalCents,
+    previous.amount,
+    refund.amount,
+  );
+  return `${rateTableTaxReference(order.id)}:refund:${job.refundId}:${taxCents}`;
+}
+
 export async function finishCourseJob(
   job: CourseJob,
   result: {
@@ -499,6 +537,19 @@ export async function finishCourseJob(
     const order = await lockOrder(tx, job.orderId);
     if (!order) return;
     const canceled = job.kind === "grant" && order.status === "refunded";
+    let receipt = result.receipt;
+    if (
+      !result.failure &&
+      job.kind === "tax_refund" &&
+      order.taxTransactionId === rateTableTaxReference(order.id)
+    ) {
+      const [leased] = await tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.id, job.id), eq(jobs.lease, job.lease!)));
+      if (!leased) return;
+      receipt = await rateTableRefundReceipt(tx, order, job);
+    }
     const [updated] = await tx
       .update(jobs)
       .set({
@@ -510,7 +561,7 @@ export async function finishCourseJob(
               ? "pending"
               : "dead",
         lastFailure: result.failure ?? null,
-        destinationReceipt: result.receipt,
+        destinationReceipt: receipt,
         availableAt: result.failure
           ? new Date(Date.now() + Math.min(3_600_000, 5000 * 2 ** job.attempts))
           : new Date(),
@@ -520,10 +571,10 @@ export async function finishCourseJob(
       .where(and(eq(jobs.id, job.id), eq(jobs.lease, job.lease!)))
       .returning();
     if (!updated || result.failure || canceled) return;
-    if (job.kind === "tax_sale" && result.receipt)
+    if (job.kind === "tax_sale" && receipt)
       await tx
         .update(orders)
-        .set({ taxTransactionId: result.receipt })
+        .set({ taxTransactionId: receipt })
         .where(eq(orders.id, job.orderId));
     if (entitledKinds.some((kind) => kind === job.kind) && result.access)
       await tx
