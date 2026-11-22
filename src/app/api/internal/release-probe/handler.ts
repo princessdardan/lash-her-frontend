@@ -126,6 +126,7 @@ export function createReleaseProbeHandler(deps: {
   admission?(source: { environment: string; sourceCommit: string }): Promise<FrontendBootstrapProbe>;
   square?(source: { environment: string; sourceCommit: string }): Promise<FrontendSquareBindingProbe>;
   resend?(source: { environment: string; sourceCommit: string }): Promise<FrontendResendBindingProbe>;
+  p407PostgresRelay?(): Promise<void>;
   google?(source: { environment: string; sourceCommit: string }, challenge: string): Promise<FrontendGoogleBindingProbe>;
 }) {
   return async (request: Request): Promise<Response> => {
@@ -136,6 +137,13 @@ export function createReleaseProbeHandler(deps: {
       const challenge = request.headers.get("x-lash-release-challenge") ?? "";
       if (!/^[a-f0-9]{64}$/u.test(challenge)) return reply(400, { error: "Invalid challenge" });
       const mode = request.headers.get("x-lash-release-mode");
+      if (mode === "p407-postgres-relay") {
+        if (config.environment !== "staging" || !deps.p407PostgresRelay ||
+          Object.values(config.featureControls).some(Boolean)) return reply(404, { error: "Not found" });
+        await deps.p407PostgresRelay();
+        return reply(200, { version: 1, status: "FRONTEND_P407_POSTGRES_RELAY_PROBE_PASS", challenge,
+          environment: config.environment, projectId: config.projectId, sourceCommit: config.sourceCommit }, true);
+      }
       const phase2 = mode === "phase2" || mode === "phase2-auth-origins";
       const authenticationOrigins = mode === "phase2-auth-origins" ? config.authenticationOrigins : undefined;
       if (mode !== null && mode !== "admission-bootstrap" && mode !== "resend-binding" && mode !== "square-binding" && mode !== "google-binding" && !phase2) return reply(400, { error: "Invalid mode" });

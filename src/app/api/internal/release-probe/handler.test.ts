@@ -437,3 +437,32 @@ test("Google binding requires staging bootstrap and issues transient runtime pro
   assert.equal((await createReleaseProbeHandler({ ...dependencies, configuration: () => ({ ...configuration()!, environment: "production" }) })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
   assert.equal(calls, 1);
 });
+
+test("P4-07 PostgreSQL relay probe is private and only runs while staging features are held", async () => {
+  const mode = { "x-lash-release-mode": "p407-postgres-relay" };
+  let fields: Record<string, string> = environment();
+  let probes = 0;
+  const handler = createReleaseProbeHandler({
+    configuration: () => readReleaseProbeConfiguration(fields, now),
+    run: async () => assert.fail("The relay probe does not call the Course gateway"),
+    p407PostgresRelay: async () => { probes++; },
+  });
+
+  assert.equal((await handler(request({ ...mode, authorization: "Bearer wrong" }))).status, 401);
+  assert.equal((await handler(request({ ...mode, "x-lash-release-challenge": "wrong" }))).status, 400);
+  fields = { ...fields, INTEGRATION_CHECKOUT_ENABLED: "true" };
+  assert.equal((await handler(request(mode))).status, 404);
+  fields = { ...environment(), APP_ENV: "production",
+    VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId, API_GATEWAY_PRODUCTION_ORIGIN: "https://gateway.example.invalid" };
+  assert.equal((await handler(request(mode))).status, 404);
+  assert.equal(probes, 0);
+
+  fields = environment();
+  const response = await handler(request(mode));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await response.json(), { version: 1, status: "FRONTEND_P407_POSTGRES_RELAY_PROBE_PASS",
+    challenge, environment: "staging", projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    sourceCommit: fields.VERCEL_GIT_COMMIT_SHA });
+  assert.equal(probes, 1);
+});

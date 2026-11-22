@@ -3,6 +3,7 @@ import { createPhase2DayTwoWorkloadHandler, createReleaseProbeHandler, PHASE2_DA
 import { runGatewaySmoke } from "@/lib/api-integration/gateway-smoke";
 import { runPhase2GatewaySmoke } from "@/lib/api-integration/phase2-gateway-smoke";
 import { createGatewayTransport } from "@/lib/api-integration/gateway-transport";
+import { runP407PostgresRelayProbe } from "@/lib/private-db/p407-postgres-relay-probe";
 import { runFrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 import { runFrontendSquareBindingProbe } from "@/lib/writer-admission/square-binding-probe";
 import { runFrontendResendBindingProbe } from "@/lib/writer-admission/resend-binding-probe";
@@ -19,6 +20,7 @@ const releaseProbe = createReleaseProbeHandler({
   run: (origin) => runGatewaySmoke(createGatewayTransport({ origin })),
   phase2,
   admission: runFrontendBootstrapProbe,
+  p407PostgresRelay: runP407PostgresRelayProbe,
   resend: runFrontendResendBindingProbe,
   square: runFrontendSquareBindingProbe,
   google: runFrontendGoogleBindingProbe,

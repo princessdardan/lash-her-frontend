@@ -109,7 +109,8 @@
     "styled-components": "^6.1.18",
     "tailwind-merge": "^3.5.0",
     "@vercel/oidc": "4.0.5",
-    "@auth/core": "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz"
+    "@auth/core": "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz",
+    "ws": "8.21.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -133,6 +134,7 @@
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@types/sanitize-html": "^2.16.1",
+    "@types/ws": "8.18.1",
     "babel-plugin-react-compiler": "1.0.0",
     "baseline-browser-mapping": "^2.10.8",
     "c8": "^10.1.3",

@@ -1,5 +1,6 @@
 import "server-only";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
+import { readP407PostgresRelay } from "@/lib/private-db/p407-postgres-relay";
 import stagingRelease from "../../../ops/staging/first-release.json" with { type: "json" };
 
 export class WriterAdmissionError extends Error {
@@ -28,6 +29,7 @@ export type WriterAdmissionConfiguration = {
     ssl: { rejectUnauthorized: true }; enableChannelBinding: true;
     connectionTimeoutMillis: number; statement_timeout: number; lock_timeout: number;
     application_name: string;
+    stream?: NonNullable<ReturnType<typeof readP407PostgresRelay>>["stream"];
   };
 };
 const digest = (value: unknown, length: number): value is string =>
@@ -64,6 +66,7 @@ export function resolveWriterAdmissionConfiguration(
     } else {
       requireTargetUrl(businessUrl, target);
     }
+    const relay = readP407PostgresRelay(url.href, env);
     return {
       target: { environment, host: target.host, port: target.port, database: target.database, user: target.user,
         serverMajor: target.serverMajor, targetSha256: target.targetSha256 },
@@ -72,7 +75,7 @@ export function resolveWriterAdmissionConfiguration(
       connection: { host: target.host, port: target.port, database: target.database, user: target.user,
         password: decodeURIComponent(url.password), ssl: { rejectUnauthorized: true }, enableChannelBinding: true,
         connectionTimeoutMillis: 5_000, statement_timeout: 10_000, lock_timeout: 1_000,
-        application_name: "lash-her-frontend-writer-admission" },
+        application_name: "lash-her-frontend-writer-admission", ...relay },
     };
   } catch { throw new WriterAdmissionError("configuration"); }
 }
