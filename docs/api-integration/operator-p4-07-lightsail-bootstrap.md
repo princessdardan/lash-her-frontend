@@ -14,8 +14,11 @@ operator. The launcher runs with `--pull never`.
 ## Inputs
 
 Place the reviewed inputs in owner-only directories outside Git. Use two
-bundles from `prepare-migrations.mjs --prepare-profiled-current` for the same
-P4-07 staging release ID, beginning `p4-07-`. Qualify the bootstrap operator
+Frontend-only bundles for the same P4-07 staging release ID, beginning
+`p4-07-`. Use the existing profiled `prepareFrontendMigrationJob` to create
+`jobs/frontend.json` and `schema/frontend.json` from each qualified
+`release.candidate.json` and its tested PostgreSQL 18 schema export. No API
+database target or credential is selected. Qualify the bootstrap operator
 image and the Vercel candidate migration image independently. Use the exact
 source and digest for each image. Both bundles must bind identical SQL,
 schema, target, recovery reference and contract. The bootstrap job allows an

@@ -50,10 +50,26 @@ def private_path(path):
     migrate.private_directory(path)
 
 
+def frontend_bundle(bundle):
+    release = migrate.read_json(bundle, "release.candidate.json", expected_profile=PROFILE)
+    approval = release["sourceApproval"]
+    expect(release["environment"] == "staging" and
+           re.fullmatch(r"p4-07-[a-z0-9-]{1,58}", release["releaseId"]) and
+           release["integration"]["state"] == "passed" and
+           approval["mode"] == "single-operator-dispatch" and approval["operatorGithubUserId"] == "8996309")
+    for service, repository in (("frontend", "lash-her-frontend"), ("course", "lash-her-course-api"),
+                                ("community", "lash-her-community-api")):
+        source = release["sources"][service]
+        expect(source["repository"] == f"https://github.com/princessdardan/{repository}.git" and
+               migrate.source_commit(source["commit"]) and source["requiredChecks"] == "passed")
+    # Only Frontend is selected. API artifact identities stay in the reviewed
+    # candidate, but neither API database is addressed by these bundles.
+    return release, migrate.frontend_plan(bundle, release, expected_profile=PROFILE)
+
+
 def checked_inputs(bootstrap_bundle, current_bundle, backup_sha):
-    release, jobs = migrate.make_plan(bootstrap_bundle, expected_profile=PROFILE)
-    current_release, current_jobs = migrate.make_plan(current_bundle, expected_profile=PROFILE)
-    bootstrap, current = jobs["frontend"], current_jobs["frontend"]
+    release, bootstrap = frontend_bundle(bootstrap_bundle)
+    current_release, current = frontend_bundle(current_bundle)
     job, read_job = bootstrap["job"], current["job"]
     target, read_target = job["target"], read_job["target"]
     expect(release["releaseId"] == current_release["releaseId"] and

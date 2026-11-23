@@ -18,32 +18,52 @@ class BootstrapTest(unittest.TestCase):
         after["image"] = "current"
         after["job"].update(sourceCommit="3" * 40, migrationImageDigest="sha256:" + "4" * 64)
         after["job"]["target"].update(allowEmptyBootstrap=False, approvedPendingTags=[])
-        return [(copy.deepcopy(release), {"frontend": before}), (copy.deepcopy(release), {"frontend": after})]
+        return [(copy.deepcopy(release), before), (copy.deepcopy(release), after)]
 
     def test_bundles_must_bind_the_same_release_image_and_target(self):
         cases = [
             lambda _: None,
             lambda plans: plans[1][0].update(releaseId="p4-07-other"),
-            lambda plans: plans[1][1]["frontend"].update(image="bootstrap"),
-            lambda plans: plans[1][1]["frontend"]["job"].update(sourceCommit="1" * 40),
-            lambda plans: plans[1][1]["frontend"]["job"].update(schemaBaselineSha256="drift"),
-            lambda plans: plans[1][1]["frontend"]["job"]["target"].update(approvedPendingTags=["0000_test"]),
-            lambda plans: plans[0][1]["frontend"]["job"]["target"].update(database="lash_her_p407_course"),
-            lambda plans: plans[0][1]["frontend"]["job"].update(recoveryRef="staging/shared"),
+            lambda plans: plans[1][1].update(image="bootstrap"),
+            lambda plans: plans[1][1]["job"].update(sourceCommit="1" * 40),
+            lambda plans: plans[1][1]["job"].update(schemaBaselineSha256="drift"),
+            lambda plans: plans[1][1]["job"]["target"].update(approvedPendingTags=["0000_test"]),
+            lambda plans: plans[0][1]["job"]["target"].update(database="lash_her_p407_course"),
+            lambda plans: plans[0][1]["job"].update(recoveryRef="staging/shared"),
         ]
         for index, change in enumerate(cases):
             plans = self.plans()
             change(plans)
-            with self.subTest(index=index), patch.object(bootstrap.migrate, "make_plan", side_effect=plans):
+            with self.subTest(index=index), patch.object(bootstrap, "frontend_bundle", side_effect=plans):
                 if index:
                     with self.assertRaisesRegex(ValueError, bootstrap.REFUSED):
                         bootstrap.checked_inputs(Path("/bootstrap"), Path("/verify"), "a" * 64)
                 else:
                     bootstrap.checked_inputs(Path("/bootstrap"), Path("/verify"), "a" * 64)
 
+    def test_frontend_only_bundle_still_requires_the_qualified_profile_and_source(self):
+        release = {"releaseId": "p4-07-test", "environment": "staging",
+                   "integration": {"state": "passed"},
+                   "sourceApproval": {"mode": "single-operator-dispatch", "operatorGithubUserId": "8996309"},
+                   "sources": {name: {"repository": "https://github.com/princessdardan/" + repo + ".git",
+                                      "commit": "1" * 40, "requiredChecks": "passed"}
+                               for name, repo in (("frontend", "lash-her-frontend"), ("course", "lash-her-course-api"),
+                                                  ("community", "lash-her-community-api"))}}
+        for state in ("passed", "pending"):
+            release["integration"]["state"] = state
+            with self.subTest(state=state), patch.object(bootstrap.migrate, "read_json", return_value=release), \
+                 patch.object(bootstrap.migrate, "frontend_plan", return_value={"job": "reviewed"}) as plan:
+                if state == "passed":
+                    self.assertEqual(bootstrap.frontend_bundle(Path("/bundle")), (release, {"job": "reviewed"}))
+                    plan.assert_called_once_with(Path("/bundle"), release, expected_profile=bootstrap.PROFILE)
+                else:
+                    with self.assertRaisesRegex(ValueError, bootstrap.REFUSED):
+                        bootstrap.frontend_bundle(Path("/bundle"))
+                    plan.assert_not_called()
+
     def test_verify_current_receipt_cannot_admit_or_omit_the_terminal(self):
-        _, jobs = self.plans()[1]
-        job = jobs["frontend"]["job"] | {
+        _, info = self.plans()[1]
+        job = info["job"] | {
             "releaseId": "p4-07-test", "environment": "staging", "sourceCommit": "1" * 40,
             "migrationImageDigest": "sha256:" + "2" * 64, "sqlArtifactSha256": "3" * 64,
             "schemaBaselineSha256": "4" * 64, "contractManifestSha256": "sha256:" + "5" * 64,
