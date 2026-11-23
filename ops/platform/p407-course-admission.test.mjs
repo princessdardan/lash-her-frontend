@@ -88,6 +88,16 @@ test("PostgreSQL rejects cross-order admission and retires the one-order produce
         effects++;
         await migration.query("INSERT INTO public.course_purchase_orders VALUES($1,$2,$3)", [review.orderId, review.customerId, review.courseId]);
       });
+      const uncertainCheckout = operation(checkout.epoch, "new-work", review.orderId);
+      await assert.rejects(run(uncertainCheckout, () => { throw new Error("simulated uncertain checkout result"); }),
+        /FRONTEND_OPERATION_OUTCOME_REQUIRES_REVIEW/u);
+      const uncertain = await observeP407CourseAdmission(direct, review);
+      assert.equal(uncertain.active, 0);
+      assert.equal(uncertain.uncertain, 1);
+      await assert.rejects(change(checkout.epoch, "recovery"), /P407_ADMISSION_OPERATION_REQUIRES_REVIEW/u);
+      assert.deepEqual(await observeP407CourseAdmission(direct, review), uncertain);
+      // Remove the injected fault from this disposable fixture before testing recovery.
+      await observer.query("DELETE FROM frontend_admission.operations WHERE id=$1", [uncertainCheckout.id]);
       const recovery = await change(checkout.epoch, "recovery");
       await assert.rejects(run(operation(recovery.epoch, "new-work", review.orderId)));
       await assert.rejects(run(operation(recovery.epoch, "recovery", randomUUID())));

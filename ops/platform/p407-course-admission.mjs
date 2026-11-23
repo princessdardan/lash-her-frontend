@@ -153,9 +153,10 @@ export async function changeP407CourseAdmission(client, review, expectedEpoch, n
     ["checkout", "recovery", "closed"].includes(nextPhase));
   return withAdmissionOwner(client, async (runtimeOid) => {
     const previous = await readState(client, plan, runtimeOid, true);
-    demand(previous.epoch === expectedEpoch && (nextPhase === "closed" ||
-      nextPhase === "checkout" && previous.phase === "held" && previous.active === 0 && previous.uncertain === 0 ||
-      nextPhase === "recovery" && previous.phase === "checkout" && previous.active === 0));
+    const drained = previous.active === 0 && previous.uncertain === 0;
+    const advances = nextPhase === "checkout" && previous.phase === "held" ||
+      nextPhase === "recovery" && previous.phase === "checkout";
+    demand(previous.epoch === expectedEpoch && (nextPhase === "closed" || (drained && advances)));
     if (nextPhase === "closed" && previous.phase === "closed") return previous;
     if (nextPhase !== "closed") {
       const { rows: [clock] } = await client.query("SELECT $1::timestamptz > clock_timestamp() AS valid", [plan.expiresAt]);
