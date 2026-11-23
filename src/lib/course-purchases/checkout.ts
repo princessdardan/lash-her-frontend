@@ -11,7 +11,7 @@ import {
 } from "@/lib/payments/square/payments-client";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { readCourseOffer, PurchaseDependencyError } from "./course-api";
-import { calculateCourseTax, getCourseSalesPolicy } from "./tax";
+import { calculateCourseTax, getCourseSalesPolicy, readCourseTaxComponents } from "./tax";
 import type { CourseBilling } from "./schema";
 import {
   hasLiveCourseOrder,
@@ -40,10 +40,15 @@ export function publicCourseOrder(order: CourseOrder) {
     currency: "CAD" as const,
     priceCents: order.priceCents,
     taxCents: order.taxCents,
+    taxComponents: readCourseTaxComponents(order.taxBreakdown).map(
+      ({ taxCode, label, amount }) => ({ taxCode, label, amount }),
+    ),
     taxBehavior: order.taxBehavior,
     totalCents: order.totalCents,
     refundedCents: order.refundedCents,
     disclosure: order.disclosure,
+    purchaseTerms: order.purchaseTerms,
+    seller: order.receiptSeller,
     expiresAt: order.quoteExpiresAt.toISOString(),
   };
 }
@@ -66,6 +71,9 @@ export async function quoteCourse(
   const policy = getCourseSalesPolicy(billing, offer.taxClassification);
   const id = scopedOrderId ?? randomUUID();
   const tax = await calculateCourseTax(id, offer.priceCents, billing, policy);
+  // Ontario's covered internet agreements require a supplier telephone number.
+  if (square.environment === "production" && tax.totalCents > 5_000 && !policy.receiptSeller?.phone)
+    throw new PurchaseDependencyError(503);
   return saveCourseQuote({
     id,
     customerId: actor.id,
@@ -79,6 +87,8 @@ export async function quoteCourse(
     policyHash: policy.hash,
     policyVersion: policy.version,
     disclosure: policy.disclosure,
+    receiptSeller: policy.receiptSeller,
+    purchaseTerms: policy.purchaseTerms,
     taxBehavior: policy.behavior,
     taxCode: policy.taxCode,
     priceCents: offer.priceCents,
@@ -103,6 +113,7 @@ export async function payForCourse(
     orderId: string;
     sourceId: string;
     verificationToken?: string;
+    acceptedTermsVersion?: string;
   },
   scopedCourseId?: string,
 ) {
@@ -149,6 +160,7 @@ export async function payForCourse(
     current.id,
     actor.id,
     fingerprint,
+    input.acceptedTermsVersion,
   );
   if (!send) {
     if (order.status === "quoted")

@@ -1,9 +1,8 @@
 import "server-only";
 
-import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
+import { sendTransactionalEmail } from "@/lib/transactional-email";
 import { getSquareCoursePayment } from "@/lib/payments/square/payments-client";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
-import { readP407CourseCheckoutScope } from "@/lib/writer-admission/p407-course";
 import { deliverEntitlement, PurchaseDependencyError } from "./course-api";
 import {
   claimCourseJob,
@@ -12,11 +11,14 @@ import {
   observeCoursePayment,
   readCourseOrder,
   readCourseRefund,
+  readCourseRefundConfirmation,
   withCurrentCourseRegrant,
   type CourseJob,
   type CourseOrder,
 } from "./store";
 import { courseRecoveryEnabled } from "./policy";
+import { renderCourseReceipt, renderCourseRefundReceipt } from "./receipt";
+import { resolveCourseReceiptDestination } from "./receipt-destination";
 import { rateTableTaxReference, recordCourseTax, reverseCourseTax } from "./tax";
 
 export async function recoverCourseCapture(
@@ -57,26 +59,17 @@ export async function recoverCourseCapture(
   return observed.status === "charging" ? "pending" : "settled";
 }
 
-async function sendReceipt(order: CourseOrder, job: CourseJob) {
-  const scope = readP407CourseCheckoutScope();
-  if (scope) {
-    if (order.id !== scope.orderId || order.customerId !== scope.customerId || order.courseId !== scope.courseId)
-      throw new PurchaseDependencyError(403);
-    // The isolated checkout is authorized to exercise Square and Course only.
-    return `p407-synthetic-receipt:${job.id}`;
-  }
-  const dollars = (amount: number) =>
-    Intl.NumberFormat("en-CA", {
-      style: "currency",
-      currency: "CAD",
-      currencyDisplay: "code",
-    }).format(amount / 100);
-  // The receipt always describes the original payment, even when it is delivered after a refund.
+async function sendCourseDocument(
+  order: CourseOrder,
+  job: CourseJob,
+  render: () => { subject: string; html: string } | Promise<{ subject: string; html: string }>,
+) {
+  const to = resolveCourseReceiptDestination(order, job.kind);
+  if (to === null) return `p407-synthetic-receipt:${job.id}`;
   const result = await sendTransactionalEmail({
-    to: order.email,
-    subject: "Your Lash Her course payment receipt",
+    to,
     idempotencyKey: job.id,
-    html: `<h1>Course payment receipt</h1><p>${escapeHtml(order.courseTitle)}</p><p>Order ${order.id}</p><p>Paid ${dollars(order.totalCents)} including tax of ${dollars(order.taxCents)}.</p><p>${escapeHtml(order.disclosure)}</p>`,
+    ...await render(),
   });
   if (!result.id) throw new PurchaseDependencyError(502);
   return result.id;
@@ -116,11 +109,22 @@ async function dispatch(order: CourseOrder, job: CourseJob) {
       };
     }
     case "receipt":
+    case "refund_receipt":
       // Resend keys expire after 24 hours. A late automatic retry requires a
       // reviewed destination check rather than risking duplicate receipt mail.
       if (Date.now() - job.createdAt.getTime() > 23 * 3600_000)
         throw new PurchaseDependencyError(409);
-      return { receipt: await sendReceipt(order, job) };
+      return { receipt: await sendCourseDocument(order, job, async () => {
+        if (job.kind === "receipt")
+          return { subject: "Your Lash Her course payment receipt", html: renderCourseReceipt(order) };
+        if (!job.refundId) throw new PurchaseDependencyError(409);
+        const confirmation = await readCourseRefundConfirmation(order.id, job.refundId);
+        if (!confirmation?.taxReceipt) throw new PurchaseDependencyError(502);
+        return {
+          subject: `Your Lash Her Academy refund for order ${order.id}`,
+          html: renderCourseRefundReceipt(order, confirmation.refund, confirmation.taxReceipt, job.createdAt),
+        };
+      }) };
   }
 }
 

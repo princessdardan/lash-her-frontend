@@ -24,7 +24,7 @@ import {
   type SquareRefund,
 } from "@/lib/payments/square/payments-client";
 import { PurchaseDependencyError } from "./course-api";
-import { rateTableRefundTax, rateTableTaxReference } from "./tax";
+import { rateTableRefundTax, rateTableTaxReference, readCourseTaxComponents } from "./tax";
 import { purchaseJobKey, type JobDetails } from "./job-key";
 import {
   coursePurchaseDisputes as disputes,
@@ -133,6 +133,7 @@ export async function reserveCourseCharge(
   id: string,
   customerId: string,
   fingerprint: string,
+  acceptedTermsVersion?: string,
 ) {
   try {
     return await getPrivateDb().transaction(async (tx) => {
@@ -149,9 +150,15 @@ export async function reserveCourseCharge(
         order.status === "quoted" &&
         order.quoteExpiresAt.getTime() > Date.now()
       ) {
+        if (order.purchaseTerms && order.purchaseTerms.version !== acceptedTermsVersion)
+          throw new PurchaseDependencyError(422, "Accept the Course Purchase Terms before paying.");
         const [reserved] = await tx
           .update(orders)
-          .set({ status: "charging", sourceFingerprint: fingerprint })
+          .set({
+            status: "charging",
+            sourceFingerprint: fingerprint,
+            termsAcceptedAt: order.purchaseTerms ? new Date() : null,
+          })
           .where(eq(orders.id, id))
           .returning();
         return { order: reserved, send: true };
@@ -799,6 +806,61 @@ export async function withCurrentCourseRegrant<T>(
   });
 }
 
+export function formatRateTableRefundReceipt(
+  order: Pick<CourseOrder, "id" | "receiptSeller" | "taxBreakdown" | "taxCents" | "totalCents">,
+  refundId: string,
+  previousRefunds: number,
+  currentRefund: number,
+) {
+  const taxTransactionId = rateTableTaxReference(order.id);
+  const components = readCourseTaxComponents(order.taxBreakdown);
+  const taxCents = rateTableRefundTax(
+    order.taxCents,
+    order.totalCents,
+    previousRefunds,
+    currentRefund,
+  );
+  if (components.length === 0) {
+    if (order.receiptSeller) throw new PurchaseDependencyError(502);
+    return `${taxTransactionId}:refund:${refundId}:${taxCents}`;
+  }
+
+  const originalTax = components.reduce((sum, { amount }) => sum + amount, 0);
+  if (originalTax !== order.taxCents)
+    throw new PurchaseDependencyError(502);
+
+  // Allocate both cumulative totals in snapshot order. Rounding each share
+  // of the remaining tax keeps the per-refund tax within the refund amount.
+  let previousRemaining =
+    previousRefunds === 0
+      ? 0
+      : rateTableRefundTax(order.taxCents, order.totalCents, 0, previousRefunds);
+  let currentRemaining = previousRemaining + taxCents;
+  let originalRemaining = originalTax;
+  const reversal = components.map(({ taxCode, amount }) => {
+    const previousShare =
+      previousRemaining === 0
+        ? 0
+        : rateTableRefundTax(amount, originalRemaining, 0, previousRemaining);
+    const currentShare =
+      currentRemaining === 0
+        ? 0
+        : rateTableRefundTax(amount, originalRemaining, 0, currentRemaining);
+    originalRemaining -= amount;
+    previousRemaining -= previousShare;
+    currentRemaining -= currentShare;
+    return { taxCode, taxCents: currentShare - previousShare };
+  });
+  return JSON.stringify({
+    version: 1,
+    taxTransactionId,
+    refundId,
+    taxCents,
+    fullyRefunded: previousRefunds + currentRefund === order.totalCents,
+    components: reversal,
+  });
+}
+
 async function rateTableRefundReceipt(
   tx: Transaction,
   order: CourseOrder,
@@ -827,13 +889,7 @@ async function rateTableRefundReceipt(
         eq(jobs.status, "done"),
       ),
     );
-  const taxCents = rateTableRefundTax(
-    order.taxCents,
-    order.totalCents,
-    previous.amount,
-    refund.amount,
-  );
-  return `${rateTableTaxReference(order.id)}:refund:${job.refundId}:${taxCents}`;
+  return formatRateTableRefundReceipt(order, job.refundId, previous.amount, refund.amount);
 }
 
 export async function finishCourseJob(
@@ -884,6 +940,13 @@ export async function finishCourseJob(
       .where(and(eq(jobs.id, job.id), eq(jobs.lease, job.lease!)))
       .returning();
     if (!updated || result.failure || canceled) return;
+    // Created after the tax allocation commits, with a stable refund-scoped key.
+    // Legacy purchases have no agreement snapshot and retain their existing delivery behavior.
+    if (
+      job.kind === "tax_refund" && job.refundId && order.purchaseTerms &&
+      order.taxTransactionId === rateTableTaxReference(order.id)
+    )
+      await queueJob(tx, order.id, "refund_receipt", job.effectiveAt, { refundId: job.refundId });
     if (job.kind === "tax_sale" && receipt)
       await tx
         .update(orders)
@@ -909,6 +972,21 @@ export async function readCourseRefund(id: string) {
     .from(refunds)
     .where(eq(refunds.id, id));
   return refund;
+}
+
+export async function readCourseRefundConfirmation(orderId: string, refundId: string) {
+  const [confirmation] = await getPrivateDb()
+    .select({ refund: refunds, taxReceipt: jobs.destinationReceipt })
+    .from(refunds)
+    .innerJoin(jobs, and(eq(jobs.orderId, refunds.orderId), eq(jobs.refundId, refunds.id)))
+    .where(and(
+      eq(refunds.orderId, orderId),
+      eq(refunds.id, refundId),
+      eq(jobs.id, purchaseJobKey("tax_refund", orderId, { refundId })),
+      eq(jobs.kind, "tax_refund"),
+      eq(jobs.status, "done"),
+    ));
+  return confirmation;
 }
 
 export async function replayCourseJob(

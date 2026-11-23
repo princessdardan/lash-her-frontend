@@ -19,7 +19,7 @@ const replayInput = v.strictObject({
   jobId: v.pipe(
     v.string(),
     v.regex(
-      /^course-(?:grant|revoke|tax_sale|tax_refund|receipt)-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?:-[a-f0-9]{32}|-g[1-9][0-9]{0,9})?(?:-dispute)?$/u,
+      /^course-(?:grant|revoke|tax_sale|tax_refund|receipt|refund_receipt)-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?:-[a-f0-9]{32}|-g[1-9][0-9]{0,9})?(?:-dispute)?$/u,
     ),
   ),
   orderReference: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(39))),

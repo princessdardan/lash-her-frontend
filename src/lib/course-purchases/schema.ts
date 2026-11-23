@@ -22,6 +22,18 @@ export type CourseBilling = {
   country: string;
 };
 
+type CourseReceiptSeller = {
+  name: string;
+  address: string;
+  email: string;
+  phone?: string;
+};
+
+export type CoursePurchaseTerms = {
+  version: string;
+  text: string;
+};
+
 export const coursePurchaseOrders = pgTable(
   "course_purchase_orders",
   {
@@ -39,6 +51,9 @@ export const coursePurchaseOrders = pgTable(
     policyHash: text("policy_hash").notNull(),
     policyVersion: text("policy_version").notNull(),
     disclosure: text("disclosure").notNull(),
+    receiptSeller: jsonb("receipt_seller").$type<CourseReceiptSeller>(),
+    purchaseTerms: jsonb("purchase_terms").$type<CoursePurchaseTerms>(),
+    termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
     taxCode: text("tax_code").notNull(),
     taxBehavior: text("tax_behavior", {
       enum: ["inclusive", "exclusive"],
@@ -94,6 +109,11 @@ export const coursePurchaseOrders = pgTable(
       (${table.taxBehavior} = 'inclusive' and ${table.totalCents} = ${table.priceCents} and ${table.taxCents} <= ${table.priceCents}))
     and ${table.refundedCents} between 0 and ${table.totalCents}`,
     ),
+    check(
+      "course_purchase_terms_acceptance",
+      sql`(${table.termsAcceptedAt} is null and (${table.purchaseTerms} is null or ${table.status} = 'quoted')) or
+      (${table.termsAcceptedAt} is not null and ${table.purchaseTerms} is not null and ${table.status} <> 'quoted')`,
+    ),
   ],
 );
 
@@ -124,7 +144,7 @@ export const coursePurchaseJobs = pgTable(
     accessGeneration: integer("access_generation").notNull().default(0),
     revokeReason: text("revoke_reason", { enum: ["refund", "dispute"] }),
     kind: text("kind", {
-      enum: ["grant", "revoke", "tax_sale", "tax_refund", "receipt"],
+      enum: ["grant", "revoke", "tax_sale", "tax_refund", "receipt", "refund_receipt"],
     }).notNull(),
     status: text("status", {
       enum: ["pending", "processing", "done", "dead", "canceled"],
@@ -149,7 +169,11 @@ export const coursePurchaseJobs = pgTable(
     index("course_purchase_jobs_order").on(table.orderId, table.createdAt),
     check(
       "course_purchase_job_kind",
-      sql`${table.kind} in ('grant','revoke','tax_sale','tax_refund','receipt')`,
+      sql`${table.kind} in ('grant','revoke','tax_sale','tax_refund','receipt','refund_receipt')`,
+    ),
+    check(
+      "course_purchase_refund_receipt_has_refund",
+      sql`${table.kind} <> 'refund_receipt' or ${table.refundId} is not null`,
     ),
     check(
       "course_purchase_job_status",

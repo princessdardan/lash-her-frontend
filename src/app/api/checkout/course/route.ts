@@ -43,6 +43,7 @@ const checkoutInput = v.variant("operation", [
     orderId: id,
     sourceId: token,
     verificationToken: v.optional(token),
+    acceptedTermsVersion: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(100))),
   }),
 ]);
 

@@ -20,6 +20,47 @@ const taxCode = v.pipe(
   v.regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/u),
 );
 const zeroReason = v.picklist(["product_exempt", "zero_rated", "reduced_rated"]);
+const cents = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(0),
+  v.maxValue(2_147_483_647),
+);
+const partsPerMillion = 1_000_000;
+const componentFields = {
+  taxCode,
+  label: boundedText(80),
+  ratePartsPerMillion: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(0),
+    v.maxValue(partsPerMillion),
+  ),
+  registrationNumber: v.optional(boundedText(80)),
+};
+const componentSnapshot = v.object({ ...componentFields, amount: cents });
+const componentRule = v.pipe(
+  v.strictObject({ ...componentFields, zeroReason: v.optional(zeroReason) }),
+  v.check((rule) =>
+    rule.ratePartsPerMillion === 0
+      ? rule.zeroReason !== undefined
+      : rule.zeroReason === undefined && rule.registrationNumber !== undefined,
+  ),
+);
+const uniqueTaxCodes = (components: { taxCode: string }[]) =>
+  new Set(components.map(({ taxCode }) => taxCode)).size === components.length;
+
+export function readCourseTaxComponents(taxBreakdown: unknown[]) {
+  const result = v.safeParse(
+    v.pipe(
+      v.array(componentSnapshot),
+      v.check((components) => uniqueTaxCodes(components)),
+    ),
+    taxBreakdown,
+  );
+  return result.success ? result.output : [];
+}
+
 const rateRule = v.pipe(
   v.strictObject({
     taxCode,
@@ -36,7 +77,7 @@ export const courseBillingSchema = v.strictObject({
   postalCode: boundedText(20),
   country,
 });
-const policySchema = v.strictObject({
+const legacyPolicySchema = v.strictObject({
   version: boundedText(100),
   markets: v.pipe(
     v.array(
@@ -64,31 +105,132 @@ const policySchema = v.strictObject({
   ),
 });
 
+// Canada Post's Forward Sortation Areas. The two territories that share X
+// use distinct three-character prefixes.
+const canadianPostalRegions: Record<string, RegExp | undefined> = {
+  AB: /^T/u,
+  BC: /^V/u,
+  MB: /^R/u,
+  NB: /^E/u,
+  NL: /^A/u,
+  NS: /^B/u,
+  NT: /^(?:X0[EG]|X1A)/u,
+  NU: /^X0[ABC]/u,
+  ON: /^[KLMNP]/u,
+  PE: /^C/u,
+  QC: /^[GHJ]/u,
+  SK: /^S/u,
+  YT: /^Y/u,
+};
+const purchaseTermsSchema = v.strictObject({
+  version: boundedText(100),
+  text: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(12_000),
+    v.regex(/^[^\u0000-\u0009\u000b-\u001f\u007f]+$/u),
+  ),
+});
+const componentPolicySchema = v.strictObject({
+  formatVersion: v.literal(2),
+  version: boundedText(100),
+  effectiveAt: v.pipe(
+    v.string(),
+    v.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u),
+    v.check((value) => {
+      const instant = new Date(value);
+      return (
+        Number.isFinite(instant.getTime()) &&
+        instant.toISOString() === value.replace("Z", ".000Z")
+      );
+    }),
+  ),
+  square: v.strictObject({
+    environment: v.picklist(["sandbox", "production"]),
+    applicationId: boundedText(100),
+    locationId: boundedText(100),
+  }),
+  seller: v.strictObject({
+    name: boundedText(160),
+    address: boundedText(300),
+    email: v.pipe(boundedText(254), v.email()),
+    phone: v.optional(v.pipe(
+      v.string(),
+      v.trim(),
+      v.maxLength(33),
+      v.regex(/^(?:\+?\d|\(\d{3}\))[() .\d-]*$/u),
+      v.check((value) => value.replace(/\D/gu, "").length >= 7),
+    )),
+  }),
+  markets: v.pipe(
+    v.array(v.strictObject({
+      country: v.literal("CA"),
+      region: v.picklist(Object.keys(canadianPostalRegions)),
+      behavior: v.literal("exclusive"),
+      disclosure: boundedText(2000),
+      terms: v.optional(purchaseTermsSchema),
+      classifications: v.pipe(
+        v.record(taxCode, v.strictObject({
+          taxCode,
+          components: v.pipe(
+            v.array(componentRule),
+            v.minLength(1),
+            v.maxLength(10),
+            v.check((components) => uniqueTaxCodes(components)),
+          ),
+        })),
+        v.check((entries) => Object.keys(entries).length > 0),
+      ),
+    })),
+    v.minLength(1),
+    v.check((markets) =>
+      new Set(markets.map(({ region }) => region)).size === markets.length,
+    ),
+  ),
+});
+
 function readCourseSalesPolicy() {
   const value = process.env.COURSE_SALES_POLICY;
   if (!value) throw new PurchaseDependencyError(503);
-  let policy: v.InferOutput<typeof policySchema>;
   try {
-    policy = v.parse(policySchema, JSON.parse(value));
+    const policy = v.parse(
+      v.union([componentPolicySchema, legacyPolicySchema]),
+      JSON.parse(value),
+    );
+    if ("formatVersion" in policy) {
+      if (
+        Date.parse(policy.effectiveAt) > Date.now() ||
+        policy.square.environment !== process.env.SQUARE_ENVIRONMENT ||
+        policy.square.applicationId !== process.env.SQUARE_APPLICATION_ID ||
+        policy.square.locationId !== process.env.SQUARE_LOCATION_ID
+      )
+        throw new PurchaseDependencyError(503);
+      // D1 includes conditional Québec. Keep it closed on this candidate until
+      // the approved Québec evidence and agreement presentation are implemented.
+      if (policy.square.environment === "production" &&
+        policy.markets.some((market) => market.region !== "ON" || !market.terms))
+        throw new PurchaseDependencyError(503);
+    } else if (
+      process.env.SQUARE_ENVIRONMENT === "production" ||
+      (process.env.SQUARE_ENVIRONMENT !== "sandbox" &&
+        policy.markets.some((market) =>
+          Object.values(market.classifications).some((rule) => "rateBasisPoints" in rule),
+        ))
+    ) {
+      throw new PurchaseDependencyError(503);
+    }
+    return policy;
   } catch {
     throw new PurchaseDependencyError(503);
   }
-  const classifications = policy.markets.flatMap((market) =>
-    Object.values(market.classifications),
-  );
-  if (
-    process.env.SQUARE_ENVIRONMENT !== "sandbox" &&
-    classifications.some((rule) => "rateBasisPoints" in rule)
-  )
-    throw new PurchaseDependencyError(503);
-  return { policy, classifications };
 }
 
 export function getCourseSalesPolicy(
   billing: CourseBilling,
   classification: string,
 ) {
-  const { policy } = readCourseSalesPolicy();
+  const policy = readCourseSalesPolicy();
   const matches = policy.markets.filter(
     (item) =>
       item.country === billing.country && item.region === billing.region,
@@ -113,21 +255,35 @@ export function getCourseSalesPolicy(
       422,
       "Enter a valid billing postal code.",
     );
+  if (
+    "formatVersion" in policy &&
+    !canadianPostalRegions[market.region]?.test(postal)
+  )
+    throw new PurchaseDependencyError(
+      422,
+      "Check that the billing postal code matches your province or territory.",
+    );
   return {
     version: policy.version,
     hash: createHash("sha256").update(JSON.stringify(policy)).digest("hex"),
     disclosure: market.disclosure,
     behavior: market.behavior,
+    receiptSeller: "seller" in policy ? policy.seller : undefined,
+    purchaseTerms: "terms" in market ? market.terms : undefined,
     ...market.classifications[classification],
   };
 }
 
 export function courseTaxReady() {
   try {
-    const { classifications } = readCourseSalesPolicy();
+    const policy = readCourseSalesPolicy();
     return (
-      classifications.every((rule) => "rateBasisPoints" in rule) ||
-      Boolean(process.env.COURSE_STRIPE_TAX_SECRET_KEY)
+      "formatVersion" in policy ||
+      policy.markets.every((market) =>
+        Object.values(market.classifications).every(
+          (rule) => "rateBasisPoints" in rule,
+        ),
+      ) || Boolean(process.env.COURSE_STRIPE_TAX_SECRET_KEY)
     );
   } catch {
     return false;
@@ -164,12 +320,6 @@ export function rateTableRefundTax(
     roundRatio(previousRefunds, taxCents, totalCents);
 }
 
-const cents = v.pipe(
-  v.number(),
-  v.integer(),
-  v.minValue(0),
-  v.maxValue(2_147_483_647),
-);
 const calculationSchema = v.object({
   id: v.pipe(v.string(), v.regex(/^taxcalc_[A-Za-z0-9_-]+$/u)),
   currency: v.literal("cad"),
@@ -227,6 +377,31 @@ export async function calculateCourseTax(
   billing: CourseBilling,
   policy: ReturnType<typeof getCourseSalesPolicy>,
 ) {
+  if ("components" in policy) {
+    const taxBreakdown = policy.components.map(
+      ({ zeroReason, ...component }) => ({
+        ...component,
+        amount: roundRatio(priceCents, component.ratePartsPerMillion, partsPerMillion),
+        taxability_reason: zeroReason ?? "standard_rated",
+        jurisdiction: { country: billing.country, state: billing.region },
+      }),
+    );
+    const taxCents = taxBreakdown.reduce((sum, { amount }) => sum + amount, 0);
+    const totalCents = priceCents + taxCents;
+    if (totalCents > 2_147_483_647)
+      throw new PurchaseDependencyError(
+        422,
+        "Tax could not be confirmed for this order.",
+      );
+    return {
+      totalCents,
+      taxCents,
+      taxBreakdown,
+      taxCalculation: rateTableTaxReference(orderId),
+      quoteExpiresAt: new Date(Date.now() + 10 * 60_000),
+    };
+  }
+
   if ("rateBasisPoints" in policy) {
     const taxCents = roundRatio(
       priceCents,

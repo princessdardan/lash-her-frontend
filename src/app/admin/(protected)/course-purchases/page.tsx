@@ -42,6 +42,7 @@ const jobKind = {
   tax_sale: "Record sale tax",
   tax_refund: "Record refund tax",
   receipt: "Send receipt",
+  refund_receipt: "Send refund confirmation",
 };
 const jobStatus = {
   pending: "Queued",

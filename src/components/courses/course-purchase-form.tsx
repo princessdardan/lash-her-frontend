@@ -77,6 +77,7 @@ export function CoursePurchaseForm({
   const [error, setError] = useState<string>();
   const [ready, setReady] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [acceptedTermsOrderId, setAcceptedTermsOrderId] = useState<string>();
   const hydrated = useSyncExternalStore(
     subscribeHydration,
     clientHydrated,
@@ -131,6 +132,7 @@ export function CoursePurchaseForm({
       const next = await requestCourseOrder({
         operation: "charge",
         orderId: order.id,
+        acceptedTermsVersion: acceptedTermsOrderId === order.id ? order.purchaseTerms?.version : undefined,
         ...token,
       });
       setOrder(next);
@@ -229,10 +231,19 @@ export function CoursePurchaseForm({
               <dt>Course</dt>
               <dd>{money(order.priceCents)}</dd>
             </div>
-            <div className="flex justify-between">
-              <dt>{order.taxBehavior === "inclusive" ? "Tax included" : "Tax"}</dt>
-              <dd>{money(order.taxCents)}</dd>
-            </div>
+            {order.taxComponents?.length ? (
+              order.taxComponents.map(({ taxCode, label, amount }) => (
+                <div key={taxCode} className="flex justify-between">
+                  <dt>{label}</dt>
+                  <dd>{money(amount)}</dd>
+                </div>
+              ))
+            ) : (
+              <div className="flex justify-between">
+                <dt>{order.taxBehavior === "inclusive" ? "Tax included" : "Tax"}</dt>
+                <dd>{money(order.taxCents)}</dd>
+              </div>
+            )}
             <div className="flex justify-between font-semibold">
               <dt>Total</dt>
               <dd>{money(order.totalCents)}</dd>
@@ -248,6 +259,36 @@ export function CoursePurchaseForm({
           <p>{order.disclosure}</p>
           {salesOpen && order.status === "quoted" && billing && !checking && (
             <>
+              {order.purchaseTerms && (
+                <section aria-labelledby="course-purchase-terms" className="space-y-3">
+                  <dl>
+                    <dt className="font-medium">Billing details</dt>
+                    <dd>{billing.name}</dd>
+                    <dd>{billing.line1}</dd>
+                    <dd>{billing.city}, {billing.region} {billing.postalCode}, {billing.country}</dd>
+                    <dd>{email}</dd>
+                  </dl>
+                  <h3 id="course-purchase-terms" className="font-heading text-xl">Course Purchase Terms</h3>
+                  {order.seller && (
+                    <p>
+                      {order.seller.name} · {order.seller.address} · {order.seller.email}
+                      {order.seller.phone ? ` · ${order.seller.phone}` : ""}
+                    </p>
+                  )}
+                  <p className="whitespace-pre-line">{order.purchaseTerms.text}</p>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      aria-required="true"
+                      className="mt-1"
+                      checked={acceptedTermsOrderId === order.id}
+                      disabled={busy}
+                      onChange={(event) => setAcceptedTermsOrderId(event.target.checked ? order.id : undefined)}
+                    />
+                    I agree to the Course Purchase Terms.
+                  </label>
+                </section>
+              )}
               <SquareCommerceCardForm
                 key={order.id}
                 configUrl={`${path}?config=square`}
@@ -265,7 +306,7 @@ export function CoursePurchaseForm({
               />
               <Button
                 type="button"
-                disabled={busy || !ready}
+                disabled={busy || !ready || Boolean(order.purchaseTerms && acceptedTermsOrderId !== order.id)}
                 onClick={async () => {
                   setBusy(true);
                   setError(undefined);
