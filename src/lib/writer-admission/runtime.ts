@@ -11,7 +11,7 @@ import {
   type WriterAdmissionConfiguration,
 } from "@/lib/writer-admission/config";
 
-import { readP407CourseCheckoutScope } from "./p407-course";
+import { readP407CourseCheckoutScope } from "@/lib/writer-admission/p407-course";
 
 export type WriterOperationKind = "new-work" | "recovery";
 export type WriterAdmissionClient = {
