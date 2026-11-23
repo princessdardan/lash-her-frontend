@@ -9,6 +9,8 @@ import { buildExpectedPrivateDbMigrationLineage, assertAppliedMigrationLineage }
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
 import { phase2ContractManifestBinding } from "./release.mjs";
+import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
+import { prepareP407FrontendScope, verifyP407FrontendSession } from "./p407-frontend-bootstrap.mjs";
 import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile, resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 
 export const FRONTEND_MIGRATION_LOCK = "lash-her:private-db:migrations";
@@ -217,7 +219,7 @@ export async function runFrontendMigration(prepared, dependencies, expectedProfi
   return runFrontendMigrationCore(prepared, dependencies, expectedProfile);
 }
 
-async function runFrontendMigrationCore(prepared, dependencies, expectedProfile, ownedReplacement) {
+async function runFrontendMigrationCore(prepared, dependencies, expectedProfile, ownedReplacement, p407Scope) {
   if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
   const profile = profileContext(expectedProfile, prepared, prepared?.candidate, prepared?.candidate?.frontendMigration, prepared?.job, prepared?.job?.target);
   if (profile) prepared = prepareFrontendMigration(prepared.candidate, prepared.job, prepared.baseline,
@@ -226,7 +228,7 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
   const readOnlyExpected = target.approvedPendingTags.length === 0;
   // The profiled coordinating parent does not yet have an independently
   // source-issued, unforgeable authority. Callback presence is not authority.
-  if (profile && !readOnlyExpected && !ownedReplacement) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  if (profile && !readOnlyExpected && !ownedReplacement && !p407Scope) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   demand(dependencies.afterDatabaseVerified === undefined || typeof dependencies.afterDatabaseVerified === "function",
     "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
@@ -259,6 +261,7 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
     demand(locked, "FRONTEND_RELEASE_LOCK_CONTENDED");
     const verifySession = async () => {
       if (ownedReplacement) await ownedReplacement.verifyEnvironment();
+      if (p407Scope) await verifyP407FrontendSession(client, p407Scope);
       demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
       const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
       demand(same?.pid === identity.pid && same.current_user === target.user && same.database === target.database &&
@@ -278,6 +281,7 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
       await verifySession();
     }
     phase = "lineage-preflight";
+    if (p407Scope) await verifyP407FrontendSession(client, p407Scope, !readOnlyExpected);
     const present = (await client.query("select to_regclass('drizzle.__drizzle_migrations') is not null as present")).rows[0].present;
     const before = present ? await journal(client) : [];
     const latest = assertAppliedMigrationLineage(artifact.expected, before);
@@ -289,23 +293,23 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
     await verifyRuntime(client, target, false);
     if (pending.length) {
       phase = "journal-initialization";
-      if (ownedReplacement) await verifySession();
+      if (ownedReplacement || p407Scope) await verifySession();
       await client.query("begin");
       try {
         await client.query("create schema if not exists drizzle");
         await client.query("create table if not exists drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");
-        if (ownedReplacement) await verifySession();
+        if (ownedReplacement || p407Scope) await verifySession();
         await client.query("commit");
       } catch (error) { await client.query("rollback"); throw error; }
     }
     phase = "forward-apply";
     for (const migration of pending) {
-      if (ownedReplacement) await verifySession();
+      if (ownedReplacement || p407Scope) await verifySession();
       await client.query("begin");
       try {
         for (const statement of migration.sql) await client.query(statement);
         await client.query("insert into drizzle.__drizzle_migrations(hash,created_at) values($1,$2)", [migration.hash, migration.folderMillis]);
-        if (ownedReplacement) await verifySession();
+        if (ownedReplacement || p407Scope) await verifySession();
         await client.query("commit");
       } catch { await client.query("rollback"); throw new Error("FRONTEND_APPLY_FAILED_OUTCOME_REQUIRES_REVIEW"); }
     }
@@ -327,6 +331,7 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
       phase = "replacement-admission-postflight";
       await ownedReplacement.verifyClosed(client, verifySession, databaseResult);
     }
+    if (p407Scope) await verifySession();
     phase = "database-receipt"; await dependencies.record("database-receipt.json", databaseResult);
     if (dependencies.afterDatabaseVerified) {
       // The parent still owns its environment flock. Retain this physical
@@ -374,8 +379,8 @@ async function runFrontendMigrationCore(prepared, dependencies, expectedProfile,
   finally {
     try {
       if (locked) {
-        const result = await client.query("select pg_advisory_unlock(hashtext($1))" + (ownedReplacement ? " as unlocked" : ""), [FRONTEND_MIGRATION_LOCK]);
-        if (ownedReplacement) demand(result.rows[0]?.unlocked === true, "FRONTEND_UNLOCK_UNVERIFIED");
+        const result = await client.query("select pg_advisory_unlock(hashtext($1))" + (ownedReplacement || p407Scope ? " as unlocked" : ""), [FRONTEND_MIGRATION_LOCK]);
+        if (ownedReplacement || p407Scope) demand(result.rows[0]?.unlocked === true, "FRONTEND_UNLOCK_UNVERIFIED");
       }
     }
     catch { failure ??= new Error("FRONTEND_UNLOCK_UNVERIFIED"); }
@@ -674,22 +679,26 @@ async function runFrontendReplacementBootstrap(input, migration, dependencies, a
 
 export async function frontendMigrationCli(argv, options = {}) {
   let receipts, profile;
+  const isolated = argv[0] === "--execute-p407-bootstrap";
   try {
-    if (["--check-profiled-current", "--execute-profiled-current"].includes(argv[0])) {
+    if (isolated || ["--check-profiled-current", "--execute-profiled-current"].includes(argv[0])) {
       profile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE; resolveQualificationTargetProfile(profile);
     }
     demand(process.versions.node.split(".")[0] === "24", "NODE24_REQUIRED");
-    const [mode, candidateFile, jobFile, schemaFile, flag, confirmation, output] = argv;
+    const [mode, candidateFile, jobFile, schemaFile, flag, confirmation, output, witnessFile] = argv;
     if (mode === "--manifest-only") {
       demand(argv.length === 1, "ARGUMENTS_REFUSED"); const artifact = frontendMigrationArtifact();
       console.log(JSON.stringify({ ...artifact.manifest, sqlArtifactSha256: artifact.sqlArtifactSha256, contractManifestSha256: artifact.contractManifestSha256,
         ...(artifact.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 } : {}) }));
     }
     else {
-      const check = mode === "--check" || mode === "--check-profiled-current", execute = mode === "--execute" || mode === "--execute-profiled-current";
-      demand((check && argv.length === 4) || (execute && argv.length === 7 && flag === "--confirm"), "ARGUMENTS_REFUSED");
+      const check = mode === "--check" || mode === "--check-profiled-current", execute = isolated || mode === "--execute" || mode === "--execute-profiled-current";
+      demand((check && argv.length === 4) || (execute && argv.length === (isolated ? 8 : 7) && flag === "--confirm"), "ARGUMENTS_REFUSED");
       const prepared = prepareFrontendMigration(decodeQualificationTargetJson(read(candidateFile), "carrier"), decodeQualificationTargetJson(read(jobFile), "carrier"), decodeQualificationTargetJson(read(schemaFile), "carrier"), undefined, profile);
-      if (profile && execute && prepared.job.target.approvedPendingTags.length > 0) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+      if (profile && execute && !isolated && prepared.job.target.approvedPendingTags.length > 0) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+      const p407Scope = isolated ? prepareP407FrontendScope(prepared,
+        decodeQualificationTargetJson(read(witnessFile), "carrier")) : undefined;
+      if (isolated) verifyPackagedFrontendSource(root, prepared.job.sourceCommit);
       if (options.assertSource) options.assertSource(root, prepared.job.sourceCommit);
       if (check) console.log(JSON.stringify({ ...(profile ? { qualificationTargetProfile: profile } : {}), status: "FRONTEND_INPUTS_CHECKED", credentialsRead: false, migrationAuthorized: false, sqlArtifactSha256: prepared.artifact.sqlArtifactSha256 }));
       else {
@@ -702,9 +711,25 @@ export async function frontendMigrationCli(argv, options = {}) {
         const deadline = setTimeout(stop, 20 * 60_000);
         process.once("SIGTERM", stop); process.once("SIGINT", stop);
         try {
-          await runFrontendMigration(prepared, { confirmation, ...(options.assertSource ? { assertSource: options.assertSource } : {}),
+          const dependencies = { confirmation, ...(options.assertSource ? { assertSource: options.assertSource } : {}),
             getUrl: () => process.env[prepared.job.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL"],
-            record: (name, value) => writeFrontendReceipt(receipts, name, value) }, profile);
+            record: (name, value) => writeFrontendReceipt(receipts, name, value) };
+          if (p407Scope) {
+            await runFrontendMigrationCore(prepared, { ...dependencies, assertSource: verifyPackagedFrontendSource,
+              getUrl: () => {
+                // Only the locked host launcher provides this input. Keep it
+                // out of container configuration, arguments and receipts.
+                const buffer = Buffer.alloc(4097);
+                let used = 0;
+                while (used < buffer.length) {
+                  const length = readSync(0, buffer, used, buffer.length - used);
+                  if (!length) break;
+                  used += length;
+                }
+                demand(used > 0 && used < buffer.length, "P407_CREDENTIAL_REFUSED");
+                return buffer.subarray(0, used).toString("utf8");
+              } }, profile, undefined, p407Scope);
+          } else await runFrontendMigration(prepared, dependencies, profile);
           console.log(profile ? JSON.stringify({ qualificationTargetProfile: profile, status: "DATABASE_VERIFIED", trafficAuthorized: false }) : '{"status":"DATABASE_VERIFIED","trafficAuthorized":false}');
         } finally { clearTimeout(deadline); process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop); }
       }
