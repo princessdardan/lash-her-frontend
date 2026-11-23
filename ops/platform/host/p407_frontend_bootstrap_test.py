@@ -69,18 +69,18 @@ class BootstrapTest(unittest.TestCase):
             "schemaBaselineSha256": "4" * 64, "contractManifestSha256": "sha256:" + "5" * 64,
         }
         record = {key: value for key, value in job.items() if key != "target"}
-        record.update(qualificationTargetProfile=dict(bootstrap.PROFILE),
+        record.update(version=2, qualificationTargetProfile=dict(bootstrap.PROFILE),
                       target={key: bootstrap.TARGET[key] for key in ("host", "port", "database", "user", "serverMajor")},
                       status="DATABASE_VERIFIED", service="frontend", trafficAuthorized=False,
                       readOnlyVerified=True, migrationMode="verify-current-only")
         receipt = record | {"schemaVerified": True, "runtimeRoleVerified": True,
                             "before": [{"hash": "6" * 64}], "after": [{"hash": "6" * 64}], "applied": []}
-        for terminal in (record, record | {"trafficAuthorized": True}, record | {"sourceCommit": "7" * 40}):
+        for terminal in (record, record | {"trafficAuthorized": True}, record | {"sourceCommit": "7" * 40}, record | {"version": 1}):
             with self.subTest(terminal=terminal), patch.object(bootstrap.migrate, "read_json", side_effect=[receipt, terminal]):
                 if terminal == record:
                     self.assertEqual(bootstrap.verify_receipts(Path("/receipt"), job, True), receipt)
                 else:
-                    with self.assertRaisesRegex(ValueError, bootstrap.REFUSED):
+                    with self.assertRaisesRegex(ValueError, "P407_ISOLATED_FRONTEND_REFUSED|QUALIFICATION_TARGET_PROFILE_REQUIRED"):
                         bootstrap.verify_receipts(Path("/receipt"), job, True)
 
     def test_host_denies_an_attached_relay_and_non_loopback_postgres(self):

@@ -164,7 +164,7 @@ def stage_inputs(directory, bundle, release, job, witness):
 def verify_receipts(directory, job, read_only):
     receipt = migrate.read_json(directory, "database-receipt.json", expected_profile=PROFILE)
     outcome = migrate.read_json(directory, "job-outcome.json", expected_profile=PROFILE)
-    migrate.require_profile(PROFILE, receipt, outcome)
+    migrate.require_receipt_profile(PROFILE, "frontend", receipt, outcome)
     keys = ("releaseId", "environment", "sourceCommit", "migrationImageDigest", "sqlArtifactSha256",
             "schemaBaselineSha256", "contractManifestSha256", "recoveryRef")
     expected_target = {key: job["target"][key] for key in ("host", "port", "database", "user", "serverMajor")}
