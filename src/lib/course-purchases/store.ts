@@ -46,6 +46,13 @@ export const lookupReference = (reference?: string) =>
     ? reference.slice(3)
     : undefined;
 
+export function lookupSupportOrderId(reference: string) {
+  const normalized = reference.trim().toLowerCase();
+  return lookupReference(
+    normalized.startsWith("co-") ? normalized : orderReference(normalized),
+  );
+}
+
 export async function readCourseOrder(id: string, customerId?: string) {
   const [order] = await getPrivateDb()
     .select()
@@ -908,9 +915,13 @@ export async function replayCourseJob(
   jobId: string,
   adminId: string,
   reason: string,
+  orderId?: string,
 ) {
   return getPrivateDb().transaction(async (tx) => {
-    const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId));
+    const [job] = await tx
+      .select({ orderId: jobs.orderId })
+      .from(jobs)
+      .where(and(eq(jobs.id, jobId), orderId ? eq(jobs.orderId, orderId) : undefined));
     if (!job) return false;
     await lockOrder(tx, job.orderId);
     const [updated] = await tx

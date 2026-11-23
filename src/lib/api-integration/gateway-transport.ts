@@ -7,6 +7,7 @@ import { REVIEW_NOTIFICATIONS_HEADER } from "../../../ops/gateway/staging-review
 import routes from "../../../ops/gateway/routes.json";
 import { getApplicationEnvironment } from "@/lib/env/application-environment.server";
 import { INTERACTIVE_GATEWAY_PROOF_HEADER, interactiveCourseGatewayProof } from "@/lib/writer-admission/interactive-proof";
+import { p406LearnerReadProof } from "@/lib/writer-admission/p406-learner-read";
 
 export type GatewayRequest = {
   service?: "course" | "community";
@@ -53,6 +54,9 @@ export function createGatewayTransport(config: {
     const route = routes.find((route) => ("service" in route ? route.service : "course") === service && route.auth !== "webhook" && route.method === input.method &&
       new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(pathname));
     if (!route) throw new GatewayTransportError("route");
+    const learnerReadProof = service === "course" && input.method === "GET" &&
+      origin.origin === "https://api-p407.lashher.com" ? p406LearnerReadProof(input.path) : undefined;
+    const isolatedCourseProof = input.p407CourseProof ?? learnerReadProof;
     if (input.p407CourseProof && (
       origin.origin !== "https://api-p407.lashher.com" || service !== "course" ||
       !/^[a-f0-9]{64}$/u.test(input.p407CourseProof) ||
@@ -97,7 +101,7 @@ export function createGatewayTransport(config: {
       if (input.stagingOwnerAuthoringProof) headers[OWNER_AUTHORING_HEADER] = input.stagingOwnerAuthoringProof;
       if (input.stagingReviewCourseProof) headers["x-lash-staging-review-course"] = input.stagingReviewCourseProof;
       if (input.stagingReviewNotificationsProof) headers[REVIEW_NOTIFICATIONS_HEADER] = input.stagingReviewNotificationsProof;
-      if (input.p407CourseProof) headers["x-lash-p407-course-proof"] = input.p407CourseProof;
+      if (isolatedCourseProof) headers["x-lash-p407-course-proof"] = isolatedCourseProof;
       if (input.stagingReviewDiscussionsProof) headers["x-lash-staging-review-discussions"] = input.stagingReviewDiscussionsProof;
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;

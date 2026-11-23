@@ -10,30 +10,61 @@ const grant = `${prefix}entitlements/grants`;
 const revoke = `${prefix}entitlements/revocations`;
 const maxBody = 4096;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const learnerAudience = "lash-her-course-api:learner";
 
-// Forward only the three candidate Course operations, keeping gateway OIDC,
-// application authorization and TLS verification in their established paths.
+function matchesLearnerScope(authorization, customerId) {
+  const match = /^Bearer [A-Za-z0-9_-]+\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+$/u.exec(authorization);
+  if (!match) return false;
+  try {
+    // This is a scope check. Course verifies the original token's signature.
+    const claims = JSON.parse(Buffer.from(match[1], "base64url").toString("utf8"));
+    return claims?.sub === customerId && claims?.aud === learnerAudience;
+  } catch {
+    return false;
+  }
+}
+
+// Keep gateway OIDC, Course token verification and TLS in their established paths.
 export function createP407CourseIngress(scope, upstream = requestTls, now = Date.now) {
   if (!scope || ![scope.customerId, scope.courseId, scope.orderId].every(id => typeof id === "string" && uuid.test(id)) ||
       !/^[0-9a-f]{64}$/u.test(scope.proofSha256 ?? "") || /^0+$/u.test(scope.proofSha256) ||
       typeof scope.expiresAt !== "string" || new Date(scope.expiresAt).toISOString() !== scope.expiresAt)
     throw new Error("P4-07 Course ingress binding refused");
+  const { customerId, courseId, orderId, learnerRead } = scope;
+  if (learnerRead !== undefined &&
+      (!learnerRead || typeof learnerRead !== "object" ||
+        Object.keys(learnerRead).sort().join(",") !== "courseSlug,lessonId" ||
+        typeof learnerRead.courseSlug !== "string" || !slug.test(learnerRead.courseSlug) ||
+        typeof learnerRead.lessonId !== "string" || !uuid.test(learnerRead.lessonId)))
+    throw new Error("P4-07 Course learner ingress binding refused");
   const proofDigest = Buffer.from(scope.proofSha256, "hex");
   const expiresAt = Date.parse(scope.expiresAt);
-  const offer = `${prefix}checkout-offer?userId=${scope.customerId}&courseId=${scope.courseId}`;
+  const offer = `${prefix}checkout-offer?userId=${customerId}&courseId=${courseId}`;
+  const catalogCourse = learnerRead && `/course/v1/courses/${learnerRead.courseSlug}`;
+  const learnerRoutes = new Set(learnerRead ? [
+    `/course/v1/student/courses/${courseId}`,
+    `/course/v1/student/progress?courseId=${courseId}`,
+    `/course/v1/student/lessons/${learnerRead.lessonId}`,
+    `/course/v1/student/progress?lessonId=${learnerRead.lessonId}`,
+  ] : []);
   return createServer({ maxHeaderSize: 32 * 1024, requestTimeout: 8_000 }, async (req, res) => {
     const finish = status => res.writeHead(status, { "cache-control": "no-store" }).end();
-    const isOffer = req.method === "GET" && req.url === offer;
+    const isGet = req.method === "GET";
+    const isCatalog = isGet && req.url === catalogCourse;
+    const isLearner = isGet && learnerRoutes.has(req.url);
+    const isOffer = isGet && req.url === offer;
     const isWrite = req.method === "POST" && (req.url === grant || req.url === revoke);
-    if (req.headers.host !== host || !(isOffer || isWrite)) return finish(404);
+    if (req.headers.host !== host || !(isOffer || isWrite || isCatalog || isLearner)) return finish(404);
     const presented = req.headersDistinct[proofHeader];
     if (now() >= expiresAt || presented?.length !== 1 ||
         !/^[0-9a-f]{64}$/u.test(presented[0]) ||
         !timingSafeEqual(createHash("sha256").update(presented[0]).digest(), proofDigest))
       return finish(401);
+    const authorization = req.headersDistinct.authorization;
     if (req.headersDistinct["x-lash-workload-token"]?.length !== 1 ||
-        req.headersDistinct.authorization?.length !== 1)
-      return finish(401);
+        (!isCatalog && authorization?.length !== 1)) return finish(401);
+    if (isLearner && !matchesLearnerScope(authorization[0], customerId)) return finish(401);
 
     let body;
     try {
@@ -44,14 +75,14 @@ export function createP407CourseIngress(scope, upstream = requestTls, now = Date
         if (bytes > maxBody) return finish(413);
         chunks.push(chunk);
       }
-      if (isOffer && bytes !== 0) return finish(400);
+      if (isGet && bytes !== 0) return finish(400);
       if (isWrite) {
         if (req.headers["content-type"] !== "application/json" ||
             req.headersDistinct["x-idempotency-key"]?.length !== 1)
           return finish(400);
         const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        if (!payload || Array.isArray(payload) || payload.orderId !== scope.orderId ||
-            payload.userId !== scope.customerId || payload.courseId !== scope.courseId ||
+        if (!payload || Array.isArray(payload) || payload.orderId !== orderId ||
+            payload.userId !== customerId || payload.courseId !== courseId ||
             payload.idempotencyKey !== req.headers["x-idempotency-key"])
           return finish(404);
         body = JSON.stringify(payload);
@@ -61,9 +92,9 @@ export function createP407CourseIngress(scope, upstream = requestTls, now = Date
     const headers = {
       host,
       accept: "application/json",
-      authorization: req.headers.authorization,
       "x-lash-workload-token": req.headers["x-lash-workload-token"],
     };
+    if (!isCatalog) headers.authorization = authorization[0];
     if (req.headers["x-request-id"]) headers["x-request-id"] = req.headers["x-request-id"];
     if (isWrite) {
       headers["content-type"] = "application/json";

@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   SquareCommerceCardForm,
@@ -10,11 +17,13 @@ import {
 } from "@/components/commerce/square-commerce-card-form";
 import type { publicCourseOrder } from "@/lib/course-purchases/checkout";
 import type { CourseBilling } from "@/lib/course-purchases/schema";
-
-const courseHref = (courseId: string) => `/academy/courses/${courseId}`;
+const academyCourseHref = (courseId: string) => `/academy/courses/${courseId}`;
 
 type Purchase = ReturnType<typeof publicCourseOrder>;
 const path = "/api/checkout/course";
+const subscribeHydration = () => () => {};
+const clientHydrated = () => true;
+const serverHydrated = () => false;
 const money = (amount: number) =>
   Intl.NumberFormat("en-CA", {
     style: "currency",
@@ -68,6 +77,14 @@ export function CoursePurchaseForm({
   const [error, setError] = useState<string>();
   const [ready, setReady] = useState(false);
   const [checking, setChecking] = useState(false);
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    clientHydrated,
+    serverHydrated,
+  );
+  const billingHeading = useRef<HTMLHeadingElement>(null);
+  const summaryHeading = useRef<HTMLHeadingElement>(null);
+  const focusAfterBillingChange = useRef(false);
   const card = useRef<SquareCommerceCardFormHandle>(null);
   const pendingToken = useRef<SquareCommerceTokenResult | null>(null);
   const showError = useCallback((message: string) => setError(message), []);
@@ -92,6 +109,7 @@ export function CoursePurchaseForm({
         courseId,
         billing: contact,
       });
+      focusAfterBillingChange.current = true;
       setBilling(contact);
       setOrder(next);
       window.history.replaceState(null, "", `?order=${next.id}`);
@@ -151,6 +169,13 @@ export function CoursePurchaseForm({
     (!order ||
       order.status === "failed" ||
       (order.status === "quoted" && !billing));
+
+  useEffect(() => {
+    if (!focusAfterBillingChange.current) return;
+    focusAfterBillingChange.current = false;
+    (quoteForm ? billingHeading : summaryHeading).current?.focus();
+  }, [quoteForm]);
+
   return (
     <section className="mx-auto max-w-2xl space-y-6 px-6 py-14">
       <h1 className="font-heading text-4xl">{title} checkout</h1>
@@ -161,9 +186,14 @@ export function CoursePurchaseForm({
         </p>
       )}
       {quoteForm && (
-        <form onSubmit={quote} className="space-y-4">
-          <h2 className="font-heading text-2xl">Billing address</h2>
-          <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
+        <form method="post" onSubmit={quote} className="space-y-4">
+          <h2 ref={billingHeading} tabIndex={-1} className="font-heading text-2xl">
+            Billing address
+          </h2>
+          <fieldset
+            disabled={busy || !hydrated}
+            className="grid gap-4 sm:grid-cols-2"
+          >
             {[
               ["name", "Full name", "name", prefilledName],
               ["line1", "Street address", "address-line1", ""],
@@ -184,22 +214,23 @@ export function CoursePurchaseForm({
               </label>
             ))}
           </fieldset>
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || !hydrated}>
             Calculate total
           </Button>
         </form>
       )}
       {order && order.status !== "failed" && (
         <div className="space-y-4 rounded-md border p-5">
+          <h2 ref={summaryHeading} tabIndex={-1} className="font-heading text-2xl">
+            Order summary
+          </h2>
           <dl className="space-y-2">
             <div className="flex justify-between">
               <dt>Course</dt>
               <dd>{money(order.priceCents)}</dd>
             </div>
             <div className="flex justify-between">
-              <dt>
-                {order.taxBehavior === "inclusive" ? "Tax included" : "Tax"}
-              </dt>
+              <dt>{order.taxBehavior === "inclusive" ? "Tax included" : "Tax"}</dt>
               <dd>{money(order.taxCents)}</dd>
             </div>
             <div className="flex justify-between font-semibold">
@@ -213,6 +244,7 @@ export function CoursePurchaseForm({
               </div>
             )}
           </dl>
+          <p className="break-all text-sm">Order reference: {order.id}</p>
           <p>{order.disclosure}</p>
           {salesOpen && order.status === "quoted" && billing && !checking && (
             <>
@@ -258,6 +290,7 @@ export function CoursePurchaseForm({
                 disabled={busy}
                 onClick={() => {
                   pendingToken.current = null;
+                  focusAfterBillingChange.current = true;
                   setBilling(undefined);
                   setReady(false);
                 }}
@@ -271,12 +304,16 @@ export function CoursePurchaseForm({
           )}
           {order.status === "paid" && order.access !== "active" && (
             <p role="status">
-              Payment received. Course access is being prepared.
+              {order.access === "revoked"
+                ? "Course access has been removed."
+                : order.access === "revocation_pending"
+                  ? "Course access removal is pending."
+                  : "Payment received. Course access is being prepared."}
             </p>
           )}
           {order.status === "paid" && order.access === "active" && (
             <Button asChild>
-              <Link href={courseHref(order.courseId)}>
+              <Link href={academyCourseHref(order.courseId)}>
                 Open course in Academy
               </Link>
             </Button>
@@ -295,7 +332,7 @@ export function CoursePurchaseForm({
             <Button
               type="button"
               variant="outline"
-              disabled={busy}
+              disabled={busy || !hydrated}
               onClick={refresh}
             >
               Check order status

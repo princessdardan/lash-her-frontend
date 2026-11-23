@@ -6,17 +6,23 @@ import {
   integrationErrorResponse,
 } from "@/lib/api-integration/service-errors";
 import { readSameOriginJson } from "@/lib/api-integration/same-origin-json";
-import { hasP407CheckoutBinding } from "@/lib/writer-admission/p407-course";
 import { courseRecoveryEnabled } from "@/lib/course-purchases/policy";
-import { replayCourseJob } from "@/lib/course-purchases/store";
+import {
+  lookupSupportOrderId,
+  replayCourseJob,
+} from "@/lib/course-purchases/store";
+import { hasP407CheckoutBinding } from "@/lib/writer-admission/p407-course";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 
 export const runtime = "nodejs";
 const replayInput = v.strictObject({
   jobId: v.pipe(
     v.string(),
-    v.regex(/^course-[a-z_-]+-[a-f0-9-]{36}(?:-[a-f0-9]{32})?$/u),
+    v.regex(
+      /^course-(?:grant|revoke|tax_sale|tax_refund|receipt)-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?:-[a-f0-9]{32}|-g[1-9][0-9]{0,9})?(?:-dispute)?$/u,
+    ),
   ),
+  orderReference: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(39))),
   reason: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(300)),
 });
 
@@ -29,7 +35,7 @@ export async function POST(request: Request) {
     const actor = await requirePermission("payments:refund");
     if (actor.developerMode)
       throw new IntegrationServiceError("forbidden", 403);
-    const { jobId, reason } = v.parse(
+    const { jobId, reason, orderReference } = v.parse(
       replayInput,
       await readSameOriginJson(
         request,
@@ -39,8 +45,14 @@ export async function POST(request: Request) {
         2048,
       ),
     );
+    const orderId =
+      orderReference === undefined
+        ? undefined
+        : lookupSupportOrderId(orderReference);
+    if (orderReference !== undefined && !orderId)
+      throw new IntegrationServiceError("invalid_request", 400);
     const replayed = await runWriterAdmission("recovery", () =>
-      replayCourseJob(jobId, actor.user.id, reason),
+      replayCourseJob(jobId, actor.user.id, reason, orderId),
     );
     if (!replayed) throw new IntegrationServiceError("conflict", 409);
     return Response.json(

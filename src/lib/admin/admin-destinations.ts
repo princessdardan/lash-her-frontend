@@ -126,6 +126,15 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
   },
   {
     action: "payments:view",
+    description: "Look up Course payments, enrollments, and recovery jobs by order reference.",
+    group: "Daily work",
+    href: "/admin/course-purchases",
+    keywords: ["course purchase", "order reference", "enrollment", "recovery"],
+    label: "Course purchases",
+    navigation: true,
+  },
+  {
+    action: "payments:view",
     description: "Review checkout payments and completed Square refunds.",
     group: "Daily work",
     href: "/admin/payments",
@@ -592,6 +601,7 @@ export function getVisibleAdminDestinations(
   return ADMIN_DESTINATION_DEFINITIONS.filter(
     (destination) =>
       (destination.feature === undefined || features[destination.feature] === true) &&
+      (destination.href !== "/admin/course-purchases" || !actor.developerMode) &&
       (destination.roles === undefined ||
         destination.roles.includes(actor.user.role)) &&
       canAdmin({ action: destination.action, ...permissionContext }),

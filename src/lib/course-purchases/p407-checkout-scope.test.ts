@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { resolveCustomerAuthConfiguration } from "@/lib/customer-auth/policy";
+import { p406LearnerReadProof } from "@/lib/writer-admission/p406-learner-read";
 import { resolveP407CheckoutScope, selectCourseRecoveryOrder } from "./p407-checkout-scope";
 
 const now = Date.parse("2026-11-23T19:00:00.000Z");
@@ -37,6 +38,31 @@ test("binds the exact protected staging source, generated origin and synthetic o
     orderId: config.orderId,
   });
   assert.equal(resolveP407CheckoutScope({ APP_ENV: "local" }, now), undefined);
+});
+
+test("candidate learner reads attach proof only for the reviewed catalog and lesson", () => {
+  const lessonId = "28971354-37e1-4d2f-8e52-478c403e6a35";
+  const courseSlug = "fixture-course";
+  const learnerEnv = { ...env, P406_LEARNER_READ_SCOPE_JSON: JSON.stringify({ lessonId, courseSlug }) };
+  for (const path of [
+    `/v1/courses/${courseSlug}`,
+    `/v1/student/courses/${config.courseId}`,
+    `/v1/student/lessons/${lessonId}`,
+    `/v1/student/progress?courseId=${config.courseId}`,
+    `/v1/student/progress?lessonId=${lessonId}`,
+  ]) {
+    assert.equal(p406LearnerReadProof(path, learnerEnv, now), env.P407_POSTGRES_RELAY_DEPLOYMENT_PROOF);
+    assert.equal(p406LearnerReadProof(path, learnerEnv, now + 60_000), undefined);
+    assert.equal(p406LearnerReadProof(path, env, now), undefined);
+  }
+  for (const path of [
+    "/v1/courses/unrelated-course",
+    "/v1/student/courses",
+    `/v1/student/courses/${lessonId}`,
+    `/v1/student/lessons/${config.courseId}`,
+    `/v1/student/progress?courseId=${config.courseId}&lessonId=${lessonId}`,
+    `/v1/student/lessons/${lessonId}/playback`,
+  ]) assert.equal(p406LearnerReadProof(path, learnerEnv, now), undefined);
 });
 
 test("refuses partial, expired, cross-project and non-Sandbox bindings", () => {
