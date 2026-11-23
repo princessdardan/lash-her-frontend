@@ -1,0 +1,262 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Course Dispute Resolution and Purchase Fence",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/internal/entitlements/grants": {
+      "post": {
+        "operationId": "post_v1_internal_entitlements_grants",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "courseId": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "disputeStartedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "externalPaymentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "grantedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "grantReason": {
+                    "enum": [
+                      "dispute_resolution"
+                    ],
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "orderId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "helcim"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "square"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "purchaseCapturedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "userId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userId",
+                  "courseId",
+                  "orderId",
+                  "idempotencyKey",
+                  "grantedAt",
+                  "grantReason",
+                  "externalPaymentId",
+                  "provider",
+                  "purchaseCapturedAt",
+                  "disputeStartedAt"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/internal/entitlements/revocations": {
+      "post": {
+        "operationId": "post_v1_internal_entitlements_revocations",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "courseId": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "financialReason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "refund"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "dispute"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "grantIdempotencyKey": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "orderId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revokedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "revokeReason": {
+                    "enum": [
+                      "purchase_fence"
+                    ],
+                    "type": "string"
+                  },
+                  "userId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userId",
+                  "courseId",
+                  "orderId",
+                  "idempotencyKey",
+                  "revokedAt",
+                  "revokeReason",
+                  "financialReason",
+                  "grantIdempotencyKey"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Purchase grant fence committed",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "headers": {
+      "RequestId": {
+        "description": "Effective request identifier. A valid caller value is echoed; otherwise a UUID is generated.",
+        "schema": {
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

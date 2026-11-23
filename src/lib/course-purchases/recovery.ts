@@ -1,18 +1,61 @@
 import "server-only";
 
 import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
+import { getSquareCoursePayment } from "@/lib/payments/square/payments-client";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 import { readP407CourseCheckoutScope } from "@/lib/writer-admission/p407-course";
 import { deliverEntitlement, PurchaseDependencyError } from "./course-api";
 import {
   claimCourseJob,
+  findCoursePayment,
   finishCourseJob,
+  observeCoursePayment,
+  readCourseOrder,
   readCourseRefund,
+  withCurrentCourseRegrant,
   type CourseJob,
   type CourseOrder,
 } from "./store";
 import { courseRecoveryEnabled } from "./policy";
 import { rateTableTaxReference, recordCourseTax, reverseCourseTax } from "./tax";
+
+export async function recoverCourseCapture(
+  scope: { orderId: string; customerId: string; courseId: string },
+  candidatePaymentId?: string,
+) {
+  const order = await readCourseOrder(scope.orderId, scope.customerId);
+  if (!order || order.courseId !== scope.courseId) return "missing";
+  if (candidatePaymentId && order.squarePaymentId && order.squarePaymentId !== candidatePaymentId)
+    return "conflict";
+  if (order.status !== "charging" || order.chargedAt)
+    return candidatePaymentId && !order.squarePaymentId ? "conflict" : "skipped";
+  const paymentId = candidatePaymentId ?? order.squarePaymentId;
+  if (!paymentId) return "skipped";
+
+  let unboundFingerprint: string | undefined;
+  if (!order.squarePaymentId) {
+    if (
+      !order.sourceFingerprint ||
+      !/^[a-f0-9]{64}$/u.test(order.sourceFingerprint)
+    )
+      return "skipped";
+    unboundFingerprint = order.sourceFingerprint;
+    if (await findCoursePayment(paymentId)) return "conflict";
+  }
+  const { requireCourseSquare } = await import("./checkout");
+  const square = requireCourseSquare();
+  if (square.locationId !== order.squareLocationId) throw new PurchaseDependencyError(502);
+  const { payment } = await getSquareCoursePayment(square, paymentId);
+  const observed = await observeCoursePayment(
+    scope.orderId,
+    payment,
+    undefined,
+    undefined,
+    { paymentId, unboundFingerprint, customerId: scope.customerId, courseId: scope.courseId },
+  );
+  if (!observed) return "skipped";
+  return observed.status === "charging" ? "pending" : "settled";
+}
 
 async function sendReceipt(order: CourseOrder, job: CourseJob) {
   const scope = readP407CourseCheckoutScope();
@@ -44,8 +87,8 @@ async function dispatch(order: CourseOrder, job: CourseJob) {
     case "grant":
     case "revoke": {
       const receipt = await deliverEntitlement(order, job);
-      const access = receipt.status === "active" ? "active" : "revoked";
-      return { receipt: receipt.grantId, access } as const;
+      const access = receipt?.status === "active" ? "active" : "revoked";
+      return { receipt: receipt?.grantId, access } as const;
     }
     case "tax_sale":
       return {
@@ -90,7 +133,11 @@ export async function drainCourseJobs(orderId?: string, limit = 4) {
     if (!claim) break;
     const { order, job } = claim;
     try {
-      await finishCourseJob(job, await dispatch(order, job));
+      const result =
+        job.kind === "grant" && job.accessGeneration > 0
+          ? await withCurrentCourseRegrant(order.customerId, job, dispatch)
+          : await dispatch(order, job);
+      await finishCourseJob(job, result ?? {});
       completed++;
     } catch (error) {
       const status =

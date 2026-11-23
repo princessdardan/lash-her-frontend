@@ -49,12 +49,17 @@ function migrationClient(raw) {
     connectionTimeoutMillis: 6_000, query_timeout: 20_000, application_name: "lash-her-p407-admission-operator" });
 }
 
-async function main([mode, filename, confirmation, directory, epoch]) {
+async function main([mode, filename, confirmation, directory, epoch, operationId, evidenceSha256, ...extra]) {
+  const settlement = mode === "recover-reviewed" ? { operationId, evidenceSha256 } : undefined;
+  demand(extra.length === 0 && (settlement === undefined
+    ? operationId === undefined && evidenceSha256 === undefined
+    : operationId !== undefined && evidenceSha256 !== undefined));
   const operation = {
     bootstrap: bootstrapP407CourseAdmission,
     observe: observeP407CourseAdmission,
     checkout: (client, review) => changeP407CourseAdmission(client, review, epoch, "checkout"),
     recovery: (client, review) => changeP407CourseAdmission(client, review, epoch, "recovery"),
+    "recover-reviewed": (client, review) => changeP407CourseAdmission(client, review, epoch, "recovery", settlement),
     close: (client, review) => changeP407CourseAdmission(client, review, epoch, "closed"),
   };
   demand(filename && (mode === "plan" || Object.hasOwn(operation, mode)));
@@ -69,7 +74,7 @@ async function main([mode, filename, confirmation, directory, epoch]) {
   demand(mode === "bootstrap" || mode === "observe" ? epoch === undefined : /^[1-9][0-9]{0,17}$/u.test(epoch ?? ""));
   approvalDirectory(directory);
   const client = migrationClient(process.env.P407_ADMISSION_DATABASE_URL);
-  const base = { ...plan, mode, expectedEpoch: epoch ?? null, sharedTrafficAuthorized: false };
+  const base = { ...plan, mode, expectedEpoch: epoch ?? null, ...(settlement && { settlement }), sharedTrafficAuthorized: false };
   receipt(directory, "admission-started.json", { ...base, startedAt: new Date().toISOString() });
   try {
     await client.connect();

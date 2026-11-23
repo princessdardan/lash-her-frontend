@@ -27,9 +27,13 @@ export function resolveP407CheckoutScope(
 export function selectCourseRecoveryOrder(
   requestUrl: URL,
   scope: P407CheckoutScope | undefined,
-): { orderId?: string } | null {
+): { orderId?: string; paymentId?: string } | null {
   if (!scope) return requestUrl.search ? null : {};
-  return requestUrl.origin === scope.origin && requestUrl.search === `?orderId=${scope.orderId}`
-    ? { orderId: scope.orderId }
-    : null;
+  if (requestUrl.origin !== scope.origin) return null;
+  const order = `?orderId=${scope.orderId}`;
+  if (requestUrl.search === order) return { orderId: scope.orderId };
+  const prefix = `${order}&paymentId=`;
+  if (!requestUrl.search.startsWith(prefix)) return null;
+  const paymentId = requestUrl.search.slice(prefix.length);
+  return /^[A-Za-z0-9_-]{1,192}$/u.test(paymentId) ? { orderId: scope.orderId, paymentId } : null;
 }

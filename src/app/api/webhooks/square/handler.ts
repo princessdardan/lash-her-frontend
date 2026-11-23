@@ -451,6 +451,7 @@ export function createSquareWebhookPostHandler(
       }
     }
     if (courseOnly) return new Response(null, { status: 503 });
+    if (event.dispute) return new Response(null, { status: 200 });
 
     if (event.refund !== undefined) {
       const refund = event.refund;

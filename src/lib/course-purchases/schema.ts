@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -65,6 +66,9 @@ export const coursePurchaseOrders = pgTable(
     squarePaymentId: text("square_payment_id"),
     chargedAt: timestamp("charged_at", { withTimezone: true }),
     refundedCents: integer("refunded_cents").notNull().default(0),
+    disputeBlocked: boolean("dispute_blocked").notNull().default(false),
+    disputeStartedAt: timestamp("dispute_started_at", { withTimezone: true }),
+    accessGeneration: integer("access_generation").notNull().default(0),
     taxTransactionId: text("tax_transaction_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -117,6 +121,8 @@ export const coursePurchaseJobs = pgTable(
       .notNull()
       .references(() => coursePurchaseOrders.id),
     refundId: text("refund_id").references(() => coursePurchaseRefunds.id),
+    accessGeneration: integer("access_generation").notNull().default(0),
+    revokeReason: text("revoke_reason", { enum: ["refund", "dispute"] }),
     kind: text("kind", {
       enum: ["grant", "revoke", "tax_sale", "tax_refund", "receipt"],
     }).notNull(),
@@ -150,10 +156,33 @@ export const coursePurchaseJobs = pgTable(
       sql`${table.status} in ('pending','processing','done','dead','canceled')`,
     ),
     check(
+      "course_purchase_job_revoke_reason",
+      sql`${table.revokeReason} is null or
+        (${table.kind} = 'revoke' and ${table.revokeReason} in ('refund', 'dispute'))`,
+    ),
+    check(
       "course_purchase_job_lease",
       sql`(${table.status} = 'processing' and ${table.lease} is not null and ${table.leaseUntil} is not null) or
     (${table.status} <> 'processing' and ${table.lease} is null and ${table.leaseUntil} is null)`,
     ),
+  ],
+);
+
+export const coursePurchaseDisputes = pgTable(
+  "course_purchase_disputes",
+  {
+    id: text("id").primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => coursePurchaseOrders.id),
+    amountCents: integer("amount_cents").notNull(),
+    state: text("state").notNull(),
+    version: integer("version"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("course_purchase_disputes_order").on(table.orderId),
+    check("course_purchase_dispute_amount", sql`${table.amountCents} > 0`),
   ],
 );
 

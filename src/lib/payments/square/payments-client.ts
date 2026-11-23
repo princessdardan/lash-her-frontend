@@ -36,6 +36,7 @@ export interface SquarePayment {
   order_id?: string;
   reference_id?: string;
   location_id?: string;
+  created_at?: string;
   updated_at?: string;
   refunded_money?: SquareMoney;
   customer_id?: string;
@@ -62,6 +63,38 @@ export interface SquareRefund {
   updated_at?: string;
   order_id?: string;
   amount_money: SquareMoney;
+}
+
+const disputeStates = [
+  "INQUIRY_EVIDENCE_REQUIRED",
+  "INQUIRY_PROCESSING",
+  "INQUIRY_CLOSED",
+  "EVIDENCE_REQUIRED",
+  "PROCESSING",
+  "WON",
+  "LOST",
+  "ACCEPTED",
+] as const;
+
+export interface SquareDispute {
+  id: string;
+  disputed_payment: { payment_id: string };
+  location_id: string;
+  amount_money: SquareMoney;
+  state: (typeof disputeStates)[number];
+  updated_at: string;
+  version?: number;
+}
+
+type DisputeRevision = { version?: number | null; updatedAt: string | Date };
+
+export function compareSquareDisputeRevisions(
+  a: DisputeRevision,
+  b: DisputeRevision,
+) {
+  return a.version != null && b.version != null
+    ? a.version - b.version
+    : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
 }
 
 export interface SquareRefundPaymentRequest {
@@ -263,6 +296,18 @@ export function getSquareCoursePayment(env: SquarePaymentsClientEnv, paymentId: 
 
 export function getSquareCourseRefund(env: SquarePaymentsClientEnv, refundId: string) {
   return getSquare(env, `/v2/refunds/${encodeURIComponent(refundId)}`, isSquareRefundPaymentResponse, 10_000);
+}
+
+export function getSquareCourseDispute(
+  env: SquarePaymentsClientEnv,
+  disputeId: string,
+) {
+  return getSquare(
+    env,
+    `/v2/disputes/${encodeURIComponent(disputeId)}`,
+    isSquareDisputeResponse,
+    10_000,
+  );
 }
 
 export function completeSquareCoursePayment(env: SquarePaymentsClientEnv, payment: SquarePayment) {
@@ -521,6 +566,30 @@ function isSquarePaymentResponse(
   value: unknown,
 ): value is { payment: SquarePayment } {
   return isRecord(value) && isSquarePayment(value.payment);
+}
+
+function isSquareDisputeResponse(
+  value: unknown,
+): value is { dispute: SquareDispute } {
+  if (!isRecord(value) || !isRecord(value.dispute)) return false;
+  const dispute = value.dispute;
+  return (
+    typeof dispute.id === "string" &&
+    typeof dispute.location_id === "string" &&
+    isRecord(dispute.disputed_payment) &&
+    typeof dispute.disputed_payment.payment_id === "string" &&
+    isRecord(dispute.amount_money) &&
+    typeof dispute.amount_money.amount === "number" &&
+    typeof dispute.amount_money.currency === "string" &&
+    disputeStates.some((state) => state === dispute.state) &&
+    typeof dispute.updated_at === "string" &&
+    Number.isFinite(Date.parse(dispute.updated_at)) &&
+    (dispute.version === undefined ||
+      (typeof dispute.version === "number" &&
+        Number.isInteger(dispute.version) &&
+        dispute.version >= 0 &&
+        dispute.version <= 2147483647))
+  );
 }
 
 function isSquarePayment(value: unknown): value is SquarePayment {

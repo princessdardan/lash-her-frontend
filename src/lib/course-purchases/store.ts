@@ -1,27 +1,33 @@
 import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  desc,
   eq,
   inArray,
   isNotNull,
   lte,
   ne,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getPrivateDb } from "@/lib/private-db/client";
 import { customerUsers } from "@/lib/customer-auth/schema";
-import type {
-  SquarePayment,
-  SquareRefund,
+import {
+  compareSquareDisputeRevisions,
+  type SquareDispute,
+  type SquarePayment,
+  type SquareRefund,
 } from "@/lib/payments/square/payments-client";
 import { PurchaseDependencyError } from "./course-api";
 import { rateTableRefundTax, rateTableTaxReference } from "./tax";
+import { purchaseJobKey, type JobDetails } from "./job-key";
 import {
+  coursePurchaseDisputes as disputes,
   coursePurchaseOrders as orders,
   coursePurchaseJobs as jobs,
   coursePurchaseRefunds as refunds,
@@ -185,29 +191,21 @@ export async function recordDecline(id: string) {
 
 const entitledKinds = ["grant", "revoke"] as const;
 
-function purchaseJobKey(
-  kind: CourseJob["kind"],
-  orderId: string,
-  refundId?: string,
-) {
-  return `course-${kind}-${orderId}${refundId ? `-${createHash("sha256").update(refundId).digest("hex").slice(0, 32)}` : ""}`;
-}
-
 async function queueJob(
   tx: Transaction,
   orderId: string,
   kind: CourseJob["kind"],
   effectiveAt: Date,
-  refundId?: string,
+  details: JobDetails = {},
 ) {
   await tx
     .insert(jobs)
     .values({
-      id: purchaseJobKey(kind, orderId, refundId),
+      id: purchaseJobKey(kind, orderId, details),
       orderId,
       kind,
       effectiveAt,
-      refundId,
+      ...details,
     })
     .onConflictDoNothing();
 }
@@ -236,13 +234,187 @@ function verifiedAt(timestamp?: string) {
   return parsed;
 }
 
+const blockingDisputeStates = [
+  "EVIDENCE_REQUIRED",
+  "PROCESSING",
+  "LOST",
+  "ACCEPTED",
+];
+
+async function recordCourseDispute(
+  tx: Transaction,
+  order: CourseOrder,
+  payment: SquarePayment,
+  dispute: SquareDispute,
+) {
+  const captureUnconfirmed =
+    !order.chargedAt && ["APPROVED", "PENDING"].includes(payment.status);
+  if (
+    !dispute.id ||
+    dispute.location_id !== order.squareLocationId ||
+    dispute.disputed_payment.payment_id !== payment.id ||
+    (dispute.state === "WON" &&
+      payment.status !== "COMPLETED" &&
+      !captureUnconfirmed)
+  )
+    throw new PurchaseDependencyError(502);
+  const observed = {
+    amountCents: checkMoney(
+      dispute.amount_money.amount,
+      dispute.amount_money.currency,
+      order.totalCents,
+      1,
+    ),
+    state: dispute.state,
+    version: dispute.version ?? null,
+    updatedAt: verifiedAt(dispute.updated_at),
+  };
+  const [previous] = await tx
+    .select()
+    .from(disputes)
+    .where(eq(disputes.id, dispute.id));
+  if (previous) {
+    if (
+      previous.orderId !== order.id ||
+      previous.amountCents !== observed.amountCents
+    )
+      throw new PurchaseDependencyError(502);
+    const revision = compareSquareDisputeRevisions(observed, previous);
+    if (revision === 0 && previous.state !== observed.state)
+      throw new PurchaseDependencyError(502);
+    if (revision <= 0) return order.disputeBlocked;
+    if (
+      blockingDisputeStates.includes(previous.state) &&
+      !blockingDisputeStates.includes(observed.state) &&
+      observed.state !== "WON"
+    )
+      throw new PurchaseDependencyError(502);
+    await tx.update(disputes).set(observed).where(eq(disputes.id, dispute.id));
+  } else {
+    await tx
+      .insert(disputes)
+      .values({ ...observed, id: dispute.id, orderId: order.id });
+  }
+  const [blocking] = await tx
+    .select({ id: disputes.id })
+    .from(disputes)
+    .where(
+      and(
+        eq(disputes.orderId, order.id),
+        inArray(disputes.state, blockingDisputeStates),
+      ),
+    )
+    .limit(1);
+  return Boolean(blocking);
+}
+
+async function retireCourseGrant(
+  tx: Transaction,
+  order: CourseOrder,
+  reason: "dispute" | "refund",
+  effectiveAt: Date,
+): Promise<CourseOrder["access"]> {
+  const details = { accessGeneration: order.accessGeneration };
+  const [grant] = await tx
+    .select()
+    .from(jobs)
+    .where(eq(jobs.id, purchaseJobKey("grant", order.id, details)))
+    .for("update");
+  if (grant && grant.status !== "processing" && grant.status !== "done")
+    await tx
+      .update(jobs)
+      .set({ status: "canceled" })
+      .where(eq(jobs.id, grant.id));
+  // Audited replay resets the attempts counter, even after an uncertain delivery.
+  const replayed =
+    grant && grant.attempts === 0
+      ? await tx
+          .select({ id: replays.id })
+          .from(replays)
+          .where(eq(replays.jobId, grant.id))
+          .limit(1)
+      : [];
+  if (grant && (grant.attempts > 0 || replayed.length > 0))
+    await queueJob(tx, order.id, "revoke", effectiveAt, {
+      ...details,
+      revokeReason:
+        reason === "dispute" ||
+        order.disputeStartedAt ||
+        order.accessGeneration > 0
+          ? reason
+          : null,
+    });
+  const [unsettled] = await unsettledCourseRevocations(tx, order.id);
+  return unsettled ? "revocation_pending" : "revoked";
+}
+
+type CaptureRecoveryBinding = {
+  paymentId: string;
+  unboundFingerprint?: string;
+  customerId: string;
+  courseId: string;
+};
+
+function captureTimestamp(value: unknown) {
+  const rfc3339 =
+    /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+  if (typeof value !== "string" || !rfc3339.test(value))
+    throw new PurchaseDependencyError(502);
+  const day = value.slice(0, 10);
+  if (verifiedAt(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day)
+    throw new PurchaseDependencyError(502);
+  return verifiedAt(value);
+}
+
+function verifyInitialCaptureTimes(order: CourseOrder, payment: SquarePayment) {
+  const createdAt = captureTimestamp(payment.created_at);
+  const updatedAt = captureTimestamp(payment.updated_at);
+  // CreatePayment is sent only while the stored quote is valid. Capture and
+  // subsequent processor updates may occur after the quote expires.
+  if (
+    createdAt < order.createdAt ||
+    createdAt > order.quoteExpiresAt ||
+    updatedAt < createdAt ||
+    updatedAt.getTime() > Date.now()
+  )
+    throw new PurchaseDependencyError(502);
+}
+
+export function observeCoursePayment(
+  id: string,
+  payment: SquarePayment,
+  refund?: SquareRefund,
+  dispute?: SquareDispute,
+): Promise<CourseOrder>;
+export function observeCoursePayment(
+  id: string,
+  payment: SquarePayment,
+  refund: undefined,
+  dispute: undefined,
+  captureBinding: CaptureRecoveryBinding,
+): Promise<CourseOrder | undefined>;
 export async function observeCoursePayment(
   id: string,
   payment: SquarePayment,
   refund?: SquareRefund,
+  dispute?: SquareDispute,
+  captureBinding?: CaptureRecoveryBinding,
 ) {
   return getPrivateDb().transaction(async (tx) => {
     const order = await lockOrder(tx, id);
+    if (
+      captureBinding !== undefined &&
+      (!order ||
+        order.customerId !== captureBinding.customerId ||
+        order.courseId !== captureBinding.courseId ||
+        order.status !== "charging" ||
+        order.chargedAt ||
+        (captureBinding.unboundFingerprint !== undefined
+          ? order.squarePaymentId !== null ||
+            order.sourceFingerprint !== captureBinding.unboundFingerprint
+          : order.squarePaymentId !== captureBinding.paymentId))
+    )
+      return;
     if (
       !order ||
       order.status === "quoted" ||
@@ -258,24 +430,56 @@ export async function observeCoursePayment(
     )
       throw new PurchaseDependencyError(502);
 
-    if (payment.status !== "COMPLETED") {
-      if (order.status !== "charging") return order;
-      const failed =
-        payment.status === "CANCELED" || payment.status === "FAILED";
-      const [updated] = await tx
-        .update(orders)
-        .set({
-          squarePaymentId: payment.id,
-          status: failed ? "failed" : "charging",
-          ...(failed ? { sourceFingerprint: null } : {}),
-        })
-        .where(eq(orders.id, id))
-        .returning();
-      return updated;
+    if (captureBinding !== undefined) {
+      const pending = payment.status === "APPROVED" || payment.status === "PENDING";
+      if (
+        payment.id !== captureBinding.paymentId ||
+        payment.source_type !== "CARD" ||
+        (!pending && !["COMPLETED", "CANCELED", "FAILED"].includes(payment.status))
+      )
+        throw new PurchaseDependencyError(502);
+      if (captureBinding.unboundFingerprint !== undefined) {
+        verifyInitialCaptureTimes(order, payment);
+      } else {
+        if (pending) return order;
+        verifiedAt(payment.updated_at);
+      }
     }
-    if (payment.source_type !== "CARD") throw new PurchaseDependencyError(502);
+    const completed = payment.status === "COMPLETED";
+    if (!completed && !refund && !dispute && order.status !== "charging")
+      return order;
+    if ((completed || refund || dispute) && payment.source_type !== "CARD")
+      throw new PurchaseDependencyError(502);
+    const disputeBlocked = dispute
+      ? await recordCourseDispute(tx, order, payment, dispute)
+      : order.disputeBlocked;
+    // Square can report a dispute win before its payment read confirms
+    // capture. The later payment event can rely on the recorded win.
+    const [firstDeliveryWin] =
+      !disputeBlocked &&
+      !order.disputeBlocked &&
+      order.accessGeneration === 0 &&
+      (!order.chargedAt || order.access === "pending") &&
+      (dispute?.state === "WON" || order.disputeStartedAt !== null)
+        ? await tx
+            .select({ updatedAt: disputes.updatedAt })
+            .from(disputes)
+            .where(and(eq(disputes.orderId, id), eq(disputes.state, "WON")))
+            .orderBy(desc(disputes.updatedAt))
+            .limit(1)
+        : [];
+    const firstWonAt = firstDeliveryWin?.updatedAt;
+    const disputeStartedAt =
+      order.disputeStartedAt ??
+      (dispute && disputeBlocked
+        ? verifiedAt(dispute.updated_at)
+        : firstWonAt
+          // The order start bounds administrator decisions when the dispute
+          // has already resolved by the first authoritative observation.
+          ? order.createdAt
+          : null);
 
-    const chargedAt = order.chargedAt ?? verifiedAt(payment.updated_at);
+    // Square can return a completed refund before its payment read reflects capture.
     if (refund) {
       if (
         !refund.id ||
@@ -301,7 +505,9 @@ export async function observeCoursePayment(
         .where(eq(refunds.id, refund.id));
       if (record?.orderId !== id || record.amountCents !== amountCents)
         throw new PurchaseDependencyError(502);
-      await queueJob(tx, id, "tax_refund", record.confirmedAt, record.id);
+      await queueJob(tx, id, "tax_refund", record.confirmedAt, {
+        refundId: record.id,
+      });
     }
     const [sum] = await tx
       .select({
@@ -312,7 +518,7 @@ export async function observeCoursePayment(
     const refunded = Math.max(
       order.refundedCents,
       sum.amount,
-      payment.refunded_money
+      completed && payment.refunded_money
         ? checkMoney(
             payment.refunded_money.amount,
             payment.refunded_money.currency,
@@ -321,42 +527,66 @@ export async function observeCoursePayment(
         : 0,
     );
     if (refunded > order.totalCents) throw new PurchaseDependencyError(502);
+    if (!completed && !order.chargedAt) {
+      const failed =
+        order.status === "charging" &&
+        refunded === 0 &&
+        !disputeBlocked &&
+        (payment.status === "CANCELED" || payment.status === "FAILED");
+      const [updated] = await tx
+        .update(orders)
+        .set({
+          squarePaymentId: payment.id,
+          status: failed ? "failed" : order.status,
+          refundedCents: refunded,
+          disputeBlocked,
+          disputeStartedAt,
+          ...(failed ? { sourceFingerprint: null } : {}),
+        })
+        .where(eq(orders.id, id))
+        .returning();
+      return updated;
+    }
+
+    const chargedAt = order.chargedAt ?? verifiedAt(payment.updated_at);
     const fullRefund = refunded === order.totalCents;
     let access = order.access;
-    // A refund before the first attempt must never create an access grant.
+    let accessGeneration = order.accessGeneration;
     if (fullRefund && order.status !== "refunded") {
-      const [grant] = await tx
-        .select()
-        .from(jobs)
-        .where(eq(jobs.id, purchaseJobKey("grant", id)))
-        .for("update");
-      if (grant && grant.status !== "processing" && grant.status !== "done")
-        await tx
-          .update(jobs)
-          .set({ status: "canceled" })
-          .where(eq(jobs.id, grant.id));
-      const replayed =
-        grant && grant.attempts === 0
-          ? await tx
-              .select({ id: replays.id })
-              .from(replays)
-              .where(eq(replays.jobId, grant.id))
-              .limit(1)
-          : [];
-      access =
-        grant && (grant.attempts > 0 || replayed.length > 0)
-          ? "revocation_pending"
-          : "revoked";
-      if (access === "revocation_pending")
-        await queueJob(
-          tx,
-          id,
-          "revoke",
-          verifiedAt(refund?.updated_at ?? payment.updated_at),
-        );
-    } else if (!fullRefund && !order.chargedAt) {
+      access = await retireCourseGrant(
+        tx,
+        order,
+        "refund",
+        verifiedAt(refund?.updated_at ?? payment.updated_at),
+      );
+    } else if (
+      !fullRefund &&
+      disputeBlocked &&
+      (!order.disputeBlocked || !order.chargedAt)
+    ) {
+      access = await retireCourseGrant(
+        tx,
+        order,
+        "dispute",
+        verifiedAt(dispute?.updated_at ?? payment.updated_at),
+      );
+    } else if (
+      !fullRefund &&
+      !disputeBlocked &&
+      (!order.chargedAt || order.disputeBlocked || firstWonAt)
+    ) {
+      if (firstWonAt && order.chargedAt)
+        await retireCourseGrant(tx, order, "dispute", firstWonAt);
       access = "pending";
-      await queueJob(tx, id, "grant", chargedAt);
+      if (order.disputeBlocked || firstWonAt) accessGeneration++;
+      await queueJob(
+        tx,
+        id,
+        "grant",
+        firstWonAt ??
+          (accessGeneration > 0 ? verifiedAt(dispute?.updated_at) : chargedAt),
+        { accessGeneration },
+      );
     }
     await queueJob(tx, id, "tax_sale", chargedAt);
     await queueJob(tx, id, "receipt", chargedAt);
@@ -369,6 +599,9 @@ export async function observeCoursePayment(
         sourceFingerprint: null,
         squarePaymentId: payment.id,
         refundedCents: refunded,
+        disputeBlocked,
+        disputeStartedAt,
+        accessGeneration,
       })
       .where(eq(orders.id, id))
       .returning();
@@ -384,6 +617,32 @@ function due(now: Date) {
 }
 
 const unsettledRefunds = alias(jobs, "unsettled_refunds");
+const unsettledRevokes = alias(jobs, "unsettled_revokes");
+
+function unsettledCourseRevocations(
+  database: Pick<ReturnType<typeof getPrivateDb>, "select">,
+  orderId: string | typeof orders.id,
+) {
+  return database
+    .select({ id: unsettledRevokes.id })
+    .from(unsettledRevokes)
+    .where(
+      and(
+        eq(unsettledRevokes.orderId, orderId),
+        eq(unsettledRevokes.kind, "revoke"),
+        inArray(unsettledRevokes.status, ["pending", "processing", "dead"]),
+      ),
+    )
+    .limit(1);
+}
+
+function isCurrentGrant(order: CourseOrder, job: CourseJob) {
+  return (
+    order.status === "paid" &&
+    !order.disputeBlocked &&
+    order.accessGeneration === job.accessGeneration
+  );
+}
 
 function firstUnsettledTaxRefund(
   database: Pick<ReturnType<typeof getPrivateDb>, "select">,
@@ -414,6 +673,10 @@ export async function claimCourseJob(orderId?: string) {
       and(
         due(now),
         orderId ? eq(jobs.orderId, orderId) : undefined,
+        or(
+          ne(jobs.kind, "grant"),
+          notExists(unsettledCourseRevocations(database, orders.id)),
+        ),
         // A blocked reversal must not take a slot from runnable work. Recheck
         // under the order lock before claiming the candidate.
         or(
@@ -436,7 +699,7 @@ export async function claimCourseJob(orderId?: string) {
         .where(and(eq(jobs.id, row.id), due(now)))
         .for("update");
       if (!order || !job) return;
-      if (job.kind === "grant" && order.status === "refunded") {
+      if (job.kind === "grant" && !isCurrentGrant(order, job)) {
         await tx
           .update(jobs)
           .set({ status: "canceled", lease: null, leaseUntil: null })
@@ -444,6 +707,8 @@ export async function claimCourseJob(orderId?: string) {
         return;
       }
       if (job.kind === "grant") {
+        const [revocation] = await unsettledCourseRevocations(tx, order.id);
+        if (revocation) return;
         const [actor] = await tx
           .select({ status: customerUsers.status })
           .from(customerUsers)
@@ -465,7 +730,14 @@ export async function claimCourseJob(orderId?: string) {
         const [grant] = await tx
           .select()
           .from(jobs)
-          .where(eq(jobs.id, purchaseJobKey("grant", order.id)));
+          .where(
+            eq(
+              jobs.id,
+              purchaseJobKey("grant", order.id, {
+                accessGeneration: job.accessGeneration,
+              }),
+            ),
+          );
         if (
           grant?.status === "processing" &&
           (grant.leaseUntil?.getTime() ?? 0) > now.getTime()
@@ -491,6 +763,33 @@ export async function claimCourseJob(orderId?: string) {
     });
     if (claim) return claim;
   }
+}
+
+// A full refund and the send of a resolution grant share the order lock.
+// A claim by itself does not authorize sending a superseded grant.
+export async function withCurrentCourseRegrant<T>(
+  customerId: string,
+  job: CourseJob,
+  send: (order: CourseOrder, job: CourseJob) => Promise<T>,
+): Promise<T | undefined> {
+  if (!job.lease) return;
+  const lease = job.lease;
+  return getPrivateDb().transaction(async (tx) => {
+    const [actor] = await tx
+      .select({ status: customerUsers.status })
+      .from(customerUsers)
+      .where(eq(customerUsers.id, customerId))
+      .for("share");
+    const order = await lockOrder(tx, job.orderId);
+    if (!order || !isCurrentGrant(order, job)) return;
+    const [held] = await tx
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.id, job.id), eq(jobs.lease, lease)));
+    if (!held) return;
+    if (actor?.status !== "active") throw new PurchaseDependencyError(403);
+    return send(order, job);
+  });
 }
 
 async function rateTableRefundReceipt(
@@ -543,7 +842,7 @@ export async function finishCourseJob(
   await getPrivateDb().transaction(async (tx) => {
     const order = await lockOrder(tx, job.orderId);
     if (!order) return;
-    const canceled = job.kind === "grant" && order.status === "refunded";
+    const canceled = job.kind === "grant" && !isCurrentGrant(order, job);
     let receipt = result.receipt;
     if (
       !result.failure &&
@@ -583,7 +882,13 @@ export async function finishCourseJob(
         .update(orders)
         .set({ taxTransactionId: receipt })
         .where(eq(orders.id, job.orderId));
-    if (entitledKinds.some((kind) => kind === job.kind) && result.access)
+    if (
+      result.access &&
+      entitledKinds.some((kind) => kind === job.kind) &&
+      (job.kind === "grant" ||
+        order.disputeBlocked ||
+        order.status === "refunded")
+    )
       await tx
         .update(orders)
         .set({ access: result.access })

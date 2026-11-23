@@ -11,15 +11,33 @@ function option(name) {
     throw new Error(`${name} requires a directory`);
   return resolve(value);
 }
-const { documents } = await readContractBundle(option("--bundle"));
+const bundle = option("--bundle");
+const { documents } = await readContractBundle(bundle);
 const outputDirectory =
   option("--output") ??
   resolve(import.meta.dirname, "../src/lib/api-integration/generated");
-for (const service of ["course", "community", "boundaries"]) {
+const sourceDocuments = {
+  course: documents.course,
+  community: documents.community,
+  boundaries: documents.boundaries,
+};
+if (!bundle) {
+  const projection = new URL(
+    "../contracts/api-integration/course-dispute-resolution.json",
+    import.meta.url,
+  );
+  sourceDocuments["course-dispute-resolution"] = JSON.parse(
+    await readFile(projection, "utf8"),
+  );
+}
+for (const [service, document] of Object.entries(sourceDocuments)) {
   const output = resolve(outputDirectory, `${service}.d.ts`);
+  const source = service === "course-dispute-resolution"
+    ? "the Course dispute resolution projection"
+    : "the pinned integration bundle";
   const generated =
-    "// Generated from the pinned integration bundle. Run npm run contracts:generate.\n" +
-    astToString(await openapiTS(documents[service], { alphabetize: true }));
+    `// Generated from ${source}. Run npm run contracts:generate.\n` +
+    astToString(await openapiTS(document, { alphabetize: true }));
   if (process.argv.includes("--check")) {
     if ((await readFile(output, "utf8")) !== generated)
       throw new Error(`Generated contract drift: ${service}`);

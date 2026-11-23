@@ -11,9 +11,19 @@ export interface VerifiedSquareWebhookEvent {
   merchantId?: string;
   orderId?: string;
   paymentId?: string;
+  paymentStatus?: string;
   referenceId?: string;
   refund?: VerifiedSquareRefund;
+  dispute?: VerifiedSquareDispute;
   payloadSanitized: Record<string, unknown>;
+}
+
+interface VerifiedSquareDispute {
+  id: string;
+  paymentId: string;
+  state: string;
+  updatedAt: string;
+  version?: number;
 }
 
 export interface VerifiedSquareRefund {
@@ -117,13 +127,19 @@ export function parseVerifiedSquareWebhook(
 
   const createdAt = getText(payload.created_at);
   const merchantId = getText(payload.merchant_id);
+  const dispute = parseDispute(eventType, getObject(object?.dispute), data);
   const orderId =
     getText(payment?.order_id) ??
     getText(order?.id) ??
     getText(orderUpdated?.order_id) ??
     (eventType === "order.updated" ? getText(data?.id) : null);
   const verifiedRefund = parseRefund(eventType, refund, createdAt);
-  const paymentId = verifiedRefund?.paymentId ?? getText(payment?.id);
+  const paymentId =
+    dispute?.paymentId ?? verifiedRefund?.paymentId ?? getText(payment?.id);
+  const paymentStatus =
+    eventType === "payment.created" || eventType === "payment.updated"
+      ? getText(payment?.status)
+      : null;
   const referenceId = getText(payment?.reference_id);
 
   return {
@@ -133,10 +149,41 @@ export function parseVerifiedSquareWebhook(
     ...(merchantId ? { merchantId } : {}),
     ...(orderId ? { orderId } : {}),
     ...(paymentId ? { paymentId } : {}),
+    ...(paymentStatus ? { paymentStatus } : {}),
     ...(referenceId ? { referenceId } : {}),
     ...(verifiedRefund ? { refund: verifiedRefund } : {}),
+    ...(dispute ? { dispute } : {}),
     payloadSanitized: sanitizeSquarePayload(payload),
   };
+}
+
+function parseDispute(
+  eventType: string,
+  dispute: SquareWebhookPayload | null,
+  data: SquareWebhookPayload | null,
+): VerifiedSquareDispute | null {
+  if (eventType !== "dispute.created" && eventType !== "dispute.state.updated")
+    return null;
+  const id = getText(dispute?.id);
+  const paymentId = getText(getObject(dispute?.disputed_payment)?.payment_id);
+  const state = getText(dispute?.state);
+  const updatedAt = getText(dispute?.updated_at);
+  const version = dispute?.version;
+  if (
+    !id ||
+    !paymentId ||
+    !state ||
+    !updatedAt ||
+    !isValidTimestamp(updatedAt) ||
+    (data?.id !== undefined && data.id !== id) ||
+    (version !== undefined &&
+      (typeof version !== "number" ||
+        !Number.isInteger(version) ||
+        version < 0 ||
+        version > 2147483647))
+  )
+    throw new Error("Square dispute webhook is malformed");
+  return { id, paymentId, state, updatedAt, version };
 }
 
 function parseRefund(

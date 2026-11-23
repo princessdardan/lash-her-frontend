@@ -51,7 +51,9 @@ test("PostgreSQL rejects cross-order admission and retires the one-order produce
         CREATE ROLE ${P407_ADMISSION_RUNTIME} LOGIN NOINHERIT PASSWORD '${password}'`);
       await admin.query(`CREATE DATABASE ${P407_ADMISSION_TARGET.database} OWNER ${P407_ADMISSION_TARGET.user}`);
       const migration = await connect(P407_ADMISSION_TARGET.user);
-      await migration.query("CREATE TABLE public.course_purchase_orders (id uuid PRIMARY KEY,customer_id uuid NOT NULL,course_id uuid NOT NULL)");
+      await migration.query(`CREATE TABLE public.course_purchase_orders (
+        id uuid PRIMARY KEY, customer_id uuid NOT NULL, course_id uuid NOT NULL, status text NOT NULL,
+        square_payment_id text, source_fingerprint text, charged_at timestamptz)`);
       const runtime = await connect(P407_ADMISSION_RUNTIME);
       const observer = await connect("postgres");
       const provision = readFileSync(new URL("./p407-course-admission-roles.sql", import.meta.url), "utf8")
@@ -86,7 +88,8 @@ test("PostgreSQL rejects cross-order admission and retires the one-order produce
       assert.equal(effects, 0);
       await run(operation(checkout.epoch, "new-work", review.orderId), async () => {
         effects++;
-        await migration.query("INSERT INTO public.course_purchase_orders VALUES($1,$2,$3)", [review.orderId, review.customerId, review.courseId]);
+        await migration.query(`INSERT INTO public.course_purchase_orders(id,customer_id,course_id,status)
+          VALUES($1,$2,$3,'quoted')`, [review.orderId, review.customerId, review.courseId]);
       });
       const uncertainCheckout = operation(checkout.epoch, "new-work", review.orderId);
       await assert.rejects(run(uncertainCheckout, () => { throw new Error("simulated uncertain checkout result"); }),
@@ -96,9 +99,25 @@ test("PostgreSQL rejects cross-order admission and retires the one-order produce
       assert.equal(uncertain.uncertain, 1);
       await assert.rejects(change(checkout.epoch, "recovery"), /P407_ADMISSION_OPERATION_REQUIRES_REVIEW/u);
       assert.deepEqual(await observeP407CourseAdmission(direct, review), uncertain);
-      // Remove the injected fault from this disposable fixture before testing recovery.
-      await observer.query("DELETE FROM frontend_admission.operations WHERE id=$1", [uncertainCheckout.id]);
-      const recovery = await change(checkout.epoch, "recovery");
+      await assert.rejects(run(operation(checkout.epoch, "new-work", review.orderId)));
+      const settlement = { operationId: uncertainCheckout.id, evidenceSha256: "8".repeat(64) };
+      const resume = (evidence, epoch = checkout.epoch) =>
+        changeP407CourseAdmission(direct, review, epoch, "recovery", evidence);
+      await assert.rejects(resume({ ...settlement, operationId: randomUUID() }));
+      await assert.rejects(resume({ ...settlement, evidenceSha256: "0".repeat(64) }));
+      await assert.rejects(resume(settlement, "1"));
+      await assert.rejects(resume(settlement));
+      assert.deepEqual(await observeP407CourseAdmission(direct, review), uncertain);
+      await migration.query(`UPDATE public.course_purchase_orders
+        SET status='charging',square_payment_id='owned-payment' WHERE id=$1`, [review.orderId]);
+      const recovery = await resume(settlement);
+      assert.equal(recovery.uncertain, 0);
+      assert.equal(recovery.newWork, false);
+      assert.equal(recovery.recovery, true);
+      assert.deepEqual((await observer.query(`SELECT state,reconciliation_sha256
+        FROM frontend_admission.operations WHERE id=$1`, [uncertainCheckout.id])).rows,
+      [{ state: "completed", reconciliation_sha256: settlement.evidenceSha256 }]);
+      await assert.rejects(resume(settlement));
       await assert.rejects(run(operation(recovery.epoch, "new-work", review.orderId)));
       await assert.rejects(run(operation(recovery.epoch, "recovery", randomUUID())));
       await observer.query("UPDATE frontend_admission.p407_window SET expires_at=clock_timestamp()-interval '1 second'");

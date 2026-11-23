@@ -1,9 +1,8 @@
-import { drainCourseJobs } from "@/lib/course-purchases/recovery";
+import { drainCourseJobs, recoverCourseCapture } from "@/lib/course-purchases/recovery";
 import {
   resolveP407CheckoutScope,
   selectCourseRecoveryOrder,
 } from "@/lib/course-purchases/p407-checkout-scope";
-import { readCourseOrder } from "@/lib/course-purchases/store";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 import { readBoundedTextBody } from "@/lib/security/bounded-text-body";
 import {
@@ -12,6 +11,7 @@ import {
 } from "../authorization";
 
 export const runtime = "nodejs";
+const retryHeaders = { ...headers, "retry-after": "60" };
 
 /** Manually invoked by the recovery runner. Scheduling is independent. */
 export async function POST(request: Request) {
@@ -23,15 +23,18 @@ export async function POST(request: Request) {
     const body = await readBoundedTextBody(request, 1);
     if (!target || !body.ok || body.value)
       return new Response(null, { status: 400, headers });
-    return await runWriterAdmission("recovery", async () => {
-      if (scope) {
-        const order = await readCourseOrder(scope.orderId, scope.customerId);
-        if (order?.courseId !== scope.courseId)
-          return new Response(null, { status: 404, headers });
-      }
-      return Response.json(await drainCourseJobs(target.orderId, 4), { headers });
+    const result = await runWriterAdmission("recovery", async () => {
+      if (!scope) return { jobs: await drainCourseJobs(undefined, 4) };
+      const capture = await recoverCourseCapture(scope, target.paymentId);
+      if (capture === "missing" || capture === "conflict" || capture === "pending")
+        return { capture };
+      return { capture, jobs: await drainCourseJobs(scope.orderId, 4) };
     }, scope && { p407CourseOrderId: scope.orderId });
+    if (result.capture === "missing") return new Response(null, { status: 404, headers });
+    if (result.capture === "conflict") return new Response(null, { status: 409, headers });
+    if (result.capture === "pending") return new Response(null, { status: 503, headers: retryHeaders });
+    return Response.json(result.jobs, { headers });
   } catch {
-    return new Response(null, { status: 503, headers });
+    return new Response(null, { status: 503, headers: retryHeaders });
   }
 }

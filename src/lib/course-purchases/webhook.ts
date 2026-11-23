@@ -2,8 +2,11 @@ import "server-only";
 
 import type { VerifiedSquareWebhookEvent } from "@/lib/booking/square-webhook";
 import {
+  compareSquareDisputeRevisions,
+  getSquareCourseDispute,
   getSquareCoursePayment,
   getSquareCourseRefund,
+  type SquareDispute,
 } from "@/lib/payments/square/payments-client";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 import { requireCourseSquare } from "./checkout";
@@ -26,6 +29,7 @@ export async function handleCourseSquareEvent(
   if (
     !event.paymentId ||
     (!event.refund &&
+      !event.dispute &&
       !["payment.created", "payment.updated"].includes(event.eventType))
   )
     return false;
@@ -48,7 +52,7 @@ export async function handleCourseSquareEvent(
   if (
     !scope && !signedReference &&
     !binding &&
-    (!event.refund || !(await unresolvedCoursePaymentExists()))
+    (!(event.refund || event.dispute) || !(await unresolvedCoursePaymentExists()))
   )
     return false;
   const square = requireCourseSquare();
@@ -63,6 +67,8 @@ export async function handleCourseSquareEvent(
     payment.id !== event.paymentId
   )
     throw new Error("Square observation does not match the Course order");
+  if (event.paymentStatus === "COMPLETED" && payment.status !== "COMPLETED")
+    throw new Error("Square payment read has not confirmed the reported capture");
   const refund = event.refund
     ? (await getSquareCourseRefund(square, event.refund.refundId)).refund
     : undefined;
@@ -71,11 +77,29 @@ export async function handleCourseSquareEvent(
     (refund.id !== event.refund?.refundId || refund.payment_id !== payment.id)
   )
     throw new Error("Square observation does not match the Course refund");
+  let dispute: SquareDispute | undefined;
+  if (event.dispute) {
+    ({ dispute } = await getSquareCourseDispute(square, event.dispute.id));
+    const revision = compareSquareDisputeRevisions(
+      { version: dispute.version, updatedAt: dispute.updated_at },
+      event.dispute,
+    );
+    if (
+      dispute.id !== event.dispute.id ||
+      dispute.disputed_payment.payment_id !== payment.id ||
+      revision < 0 ||
+      (revision === 0 && dispute.state !== event.dispute.state)
+    )
+      throw new Error(
+        "Square dispute observation is inconsistent with the event",
+      );
+  }
   await runWriterAdmission("recovery", async () => {
     await observeCoursePayment(
       id,
       payment,
       refund?.status === "COMPLETED" ? refund : undefined,
+      dispute,
     );
     await drainCourseJobs(id, 1);
   }, scope && { p407CourseOrderId: scope.orderId });

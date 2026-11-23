@@ -3,10 +3,15 @@ import "server-only";
 import { mintCourseEntitlementToken } from "./token";
 import { getGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { validateCandidateResponse, type CandidateSuccess } from "@/lib/api-integration/candidate-validation";
-import { parseCourseResponse } from "@/lib/api-integration/response-validation";
+import {
+  isCourseDisputeGrant,
+  isCoursePurchaseFence,
+  parseCourseResponse,
+} from "@/lib/api-integration/response-validation";
 import type { paths as CoursePaths } from "@/lib/api-integration/generated/course";
 import type { coursePurchaseOrders, coursePurchaseJobs } from "./schema";
 import { resolveP407CheckoutScope } from "./p407-checkout-scope";
+import { purchaseJobKey } from "./job-key";
 
 const checkoutOffer = "/v1/internal/checkout-offer";
 const grants = "/v1/internal/entitlements/grants";
@@ -42,8 +47,8 @@ export async function readCourseOffer(
   const response = await getGatewayTransport()({
     method: "GET",
     path: `${checkoutOffer}?${new URLSearchParams({ userId, courseId })}`,
-    applicationToken: mintCourseEntitlementToken(),
     p407CourseProof: candidateProof(userId, courseId),
+    applicationToken: mintCourseEntitlementToken(),
   });
   const data: unknown = await response.json();
   validateCandidateResponse(
@@ -86,6 +91,8 @@ type Job = typeof coursePurchaseJobs.$inferSelect;
 
 export async function deliverEntitlement(order: Order, job: Job) {
   const grant = job.kind === "grant";
+  const disputeResolution = grant && job.accessGeneration > 0;
+  const purchaseFence = job.kind === "revoke" && job.revokeReason !== null;
   const scope = {
     userId: order.customerId,
     courseId: order.courseId,
@@ -97,14 +104,33 @@ export async function deliverEntitlement(order: Order, job: Job) {
         ...scope,
         externalPaymentId: order.squarePaymentId,
         provider: "square",
-        grantReason: "purchase",
+        ...(disputeResolution
+          ? {
+              grantReason: "dispute_resolution",
+              purchaseCapturedAt: order.chargedAt?.toISOString(),
+              disputeStartedAt: order.disputeStartedAt?.toISOString(),
+            }
+          : { grantReason: "purchase" }),
         grantedAt: job.effectiveAt.toISOString(),
       }
     : {
         ...scope,
-        revokeReason: "refund",
+        ...(purchaseFence
+          ? {
+              revokeReason: "purchase_fence",
+              financialReason: job.revokeReason,
+              grantIdempotencyKey: purchaseJobKey("grant", order.id, {
+                accessGeneration: job.accessGeneration,
+              }),
+            }
+          : { revokeReason: "refund" }),
         revokedAt: job.effectiveAt.toISOString(),
       };
+  if (
+    (disputeResolution && !isCourseDisputeGrant(body)) ||
+    (purchaseFence && !isCoursePurchaseFence(body))
+  )
+    throw new PurchaseDependencyError(409);
   const response = await getGatewayTransport()({
     method: "POST",
     path: grant ? grants : revocations,
@@ -113,7 +139,20 @@ export async function deliverEntitlement(order: Order, job: Job) {
     idempotencyKey: job.id,
     body: JSON.stringify(body),
   });
+  if (disputeResolution && response.status === 409) {
+    const conflict = parseCourseResponse(
+      grants,
+      "post",
+      409,
+      await response.json(),
+    );
+    if (conflict.error.code === "ADMIN_ENTITLEMENT_OVERRIDE") return null;
+  }
   if (!response.ok) throw new PurchaseDependencyError(response.status);
+  if (purchaseFence) {
+    if (response.status !== 204) throw new PurchaseDependencyError(502);
+    return null;
+  }
   const data: unknown = await response.json();
   const receipt = grant
     ? parseCourseResponse(

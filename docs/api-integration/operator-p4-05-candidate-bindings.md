@@ -138,3 +138,30 @@ With release-probe authentication and a fresh challenge, use
 The probe checks the held feature controls and opens a PostgreSQL read-only
 transaction that verifies the runtime identity, TLS and the relay's fixed
 database-side address.
+
+### Recover the scoped order when the callback is missing
+
+Use the existing candidate-specific bearer from the protected deployment
+origin. Send an empty POST to
+`/api/internal/course-purchases/recover?orderId=<reviewed-order-id>`.
+With no stored payment ID, append `&paymentId=<independently-verified-id>`.
+The runner reads the selected Sandbox payment, checks its immutable order
+binding and drains only that order's jobs. A pending or unavailable read
+returns a retryable response. The runner never submits a capture.
+
+If the checkout operation is uncertain, first review independent evidence for
+the exact admitted operation, pinned order and Sandbox payment. Retain the
+evidence privately and use its nonzero SHA-256 with the isolated admission
+operator. The action takes `recover-reviewed REVIEW CONFIRMATION RECEIPTS
+EPOCH OPERATION_ID EVIDENCE_SHA256`. It records the digest, settles exactly
+one matching uncertain checkout operation and closes new work before allowing
+candidate-only recovery, all in one transaction. Active operations, stale
+epochs, a different operation or additional uncertainty require review. The
+shared gates stay closed. Use `close` after the recovery window.
+
+The successor pairs Frontend migration `0084_course_purchase_disputes` with
+Course migration `0023_purchase_grant_fences`. Its signed dispute handler
+requires an authoritative read for the exact Sandbox payment and dispute.
+Qualify the pair using the isolated fixture while the provider callback is
+detached. A hosted dispute rehearsal needs separate authorization and a
+reviewed Sandbox credential and subscription scope.

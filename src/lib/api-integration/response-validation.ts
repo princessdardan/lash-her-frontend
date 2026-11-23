@@ -2,8 +2,10 @@ import "server-only";
 
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormats from "ajv-formats";
+import disputeResolution from "../../../contracts/api-integration/course-dispute-resolution.json";
 import course from "../../../contracts/api-integration/v1/course-api.json";
 import community from "../../../contracts/api-integration/v1/community-api.json";
+import type { paths as CourseDisputePaths } from "./generated/course-dispute-resolution";
 import type { paths as CoursePaths } from "@/lib/api-integration/generated/course";
 import type { paths as CommunityPaths } from "@/lib/api-integration/generated/community";
 import { ApiContractError } from "./api-contract-error";
@@ -43,6 +45,29 @@ const ajv = new Ajv2020({
   useDefaults: false,
 });
 addFormats(ajv);
+const grantPath = "/v1/internal/entitlements/grants";
+const revokePath = "/v1/internal/entitlements/revocations";
+type CourseDisputeGrant =
+  CourseDisputePaths[typeof grantPath]["post"]["requestBody"]["content"]["application/json"];
+type CoursePurchaseFence =
+  CourseDisputePaths[typeof revokePath]["post"]["requestBody"]["content"]["application/json"];
+let validateDisputeGrant: ValidateFunction<CourseDisputeGrant> | undefined;
+let validatePurchaseFence: ValidateFunction<CoursePurchaseFence> | undefined;
+
+export function isCourseDisputeGrant(value: unknown): value is CourseDisputeGrant {
+  validateDisputeGrant ??= ajv.compile<CourseDisputeGrant>(
+    disputeResolution.paths[grantPath].post.requestBody.content["application/json"].schema,
+  );
+  return validateDisputeGrant(value);
+}
+
+export function isCoursePurchaseFence(value: unknown): value is CoursePurchaseFence {
+  validatePurchaseFence ??= ajv.compile<CoursePurchaseFence>(
+    disputeResolution.paths[revokePath].post.requestBody.content["application/json"].schema,
+  );
+  return validatePurchaseFence(value);
+}
+
 for (const service of ["course", "community"] as const) {
   ajv.addSchema(documents[service], `urn:lash-her:${service}`);
 }

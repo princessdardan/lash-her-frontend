@@ -88,13 +88,17 @@ async function withAdmissionOwner(client, operation) {
   }
 }
 
-async function readOrders(client, plan) {
+async function readOrders(client, plan, reviewedCheckout = false) {
   // Only the migration login can read application tables. The ledger owner
   // sees them through this locked operator transaction, with no standing grant.
   await client.query("RESET ROLE");
   const { rows: [order] } = await client.query(`SELECT count(*)::int AS count,
-    count(*) FILTER (WHERE id=$1 AND customer_id=$2 AND course_id=$3)::int AS selected
-    FROM public.course_purchase_orders`, [plan.orderId, plan.customerId, plan.courseId]);
+    count(*) FILTER (WHERE id=$1 AND customer_id=$2 AND course_id=$3
+      AND (NOT $4::boolean OR (
+        status='charging' AND (square_payment_id IS NOT NULL OR source_fingerprint ~ '^[a-f0-9]{64}$')
+        OR status='paid' AND square_payment_id IS NOT NULL AND charged_at IS NOT NULL
+      )))::int AS selected
+    FROM public.course_purchase_orders`, [plan.orderId, plan.customerId, plan.courseId, reviewedCheckout]);
   await client.query(`SET LOCAL ROLE ${P407_ADMISSION_OWNER}`);
   return order;
 }
@@ -147,21 +151,35 @@ export async function bootstrapP407CourseAdmission(client, review) {
   });
 }
 
-export async function changeP407CourseAdmission(client, review, expectedEpoch, nextPhase) {
+export async function changeP407CourseAdmission(client, review, expectedEpoch, nextPhase, settlement) {
   const plan = planP407CourseAdmission(review);
   demand(typeof expectedEpoch === "string" && /^[1-9][0-9]{0,17}$/u.test(expectedEpoch) &&
     ["checkout", "recovery", "closed"].includes(nextPhase));
+  if (settlement !== undefined)
+    demand(nextPhase === "recovery" && uuid.test(settlement.operationId ?? "") &&
+      /^[a-f0-9]{64}$/u.test(settlement.evidenceSha256 ?? "") && !/^0+$/u.test(settlement.evidenceSha256));
   return withAdmissionOwner(client, async (runtimeOid) => {
     const previous = await readState(client, plan, runtimeOid, true);
-    const drained = previous.active === 0 && previous.uncertain === 0;
+    const expectedUncertain = settlement === undefined ? 0 : 1;
+    const drained = previous.active === 0 && previous.uncertain === expectedUncertain;
     const advances = nextPhase === "checkout" && previous.phase === "held" ||
       nextPhase === "recovery" && previous.phase === "checkout";
     demand(previous.epoch === expectedEpoch && (nextPhase === "closed" || (drained && advances)));
     if (nextPhase === "closed" && previous.phase === "closed") return previous;
     if (nextPhase !== "closed") {
       const { rows: [clock] } = await client.query("SELECT $1::timestamptz > clock_timestamp() AS valid", [plan.expiresAt]);
-      const order = await readOrders(client, plan);
+      const order = await readOrders(client, plan, settlement !== undefined);
       demand(clock?.valid && (nextPhase === "checkout" ? order.count === 0 : order.count === 1 && order.selected === 1));
+    }
+    if (settlement !== undefined) {
+      // There is one registered producer and one admitted order. Use operator
+      // evidence to settle only that producer's uncertain checkout operation.
+      const result = await client.query(`UPDATE frontend_admission.operations
+        SET state='completed',completed_at=clock_timestamp(),reconciliation_sha256=$6
+        WHERE id=$1 AND epoch=$2 AND kind='new-work' AND state='uncertain'
+          AND producer_sha256=$3 AND source_sha=$4 AND database_role=$5::oid RETURNING id`,
+      [settlement.operationId, expectedEpoch, plan.producer, plan.sourceCommit, runtimeOid, settlement.evidenceSha256]);
+      demand(result.rowCount === 1);
     }
     const newWork = nextPhase === "checkout";
     const recovery = nextPhase === "recovery";

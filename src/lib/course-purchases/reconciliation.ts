@@ -21,6 +21,7 @@ export async function reconcileCoursePurchasePage(
           userId: orders.customerId,
           courseId: orders.courseId,
           status: orders.status,
+          disputeBlocked: orders.disputeBlocked,
         })
         .from(orders)
         .where(
@@ -34,10 +35,10 @@ export async function reconcileCoursePurchasePage(
     },
     { accessMode: "read only" },
   );
-  const grants = rows.slice(0, pageSize).map(({ status, ...scope }) => ({
+  const grants = rows.slice(0, pageSize).map(({ status, disputeBlocked, ...scope }) => ({
     ...scope,
     expectedStatus:
-      status === "paid" ? ("active" as const) : ("revoked" as const),
+      status === "paid" && !disputeBlocked ? ("active" as const) : ("revoked" as const),
   }));
 
   const result = grants.length

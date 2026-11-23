@@ -87,11 +87,16 @@ test("candidate recovery selects a single exact order, ordinary recovery keeps i
   assert.deepEqual(selectCourseRecoveryOrder(url(""), undefined), {});
   assert.equal(selectCourseRecoveryOrder(url(`?orderId=${scope.orderId}`), undefined), null);
   assert.deepEqual(selectCourseRecoveryOrder(url(`?orderId=${scope.orderId}`), scope), { orderId: scope.orderId });
+  assert.deepEqual(selectCourseRecoveryOrder(url(`?orderId=${scope.orderId}&paymentId=fixture_A-1`), scope),
+    { orderId: scope.orderId, paymentId: "fixture_A-1" });
   for (const suffix of [
     "",
     `?orderId=${scope.courseId}`,
     `?orderId=${scope.orderId}&orderId=${scope.orderId}`,
     `?orderId=${scope.orderId}&limit=4`,
+    `?orderId=${scope.orderId}&paymentId=`,
+    `?orderId=${scope.orderId}&paymentId=one&paymentId=two`,
+    `?orderId=${scope.orderId}&paymentId=one%2Ftwo`,
     `?%6frderId=${scope.orderId}`,
   ]) {
     assert.equal(selectCourseRecoveryOrder(url(suffix), scope), null);

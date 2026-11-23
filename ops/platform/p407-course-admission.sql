@@ -14,6 +14,11 @@ SET search_path = pg_catalog, frontend_admission AS $$
 BEGIN
   -- Serialize the expiry and order check with operator transitions and admission.
   PERFORM 1 FROM frontend_admission.control WHERE singleton FOR UPDATE NOWAIT;
+  IF operation_kind = 'new-work' AND EXISTS (
+    SELECT 1 FROM frontend_admission.operations WHERE state = 'uncertain'
+  ) THEN
+    RAISE EXCEPTION 'P407_ADMISSION_REFUSED';
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM frontend_admission.p407_window w
     WHERE w.singleton AND w.order_id = admit_p407.order_id
