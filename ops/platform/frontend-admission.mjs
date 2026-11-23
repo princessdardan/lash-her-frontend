@@ -206,8 +206,13 @@ export async function runFrontendWriterOperation(client, target, operation, task
   try {
     // The procedure commits before any effect and refuses an outer transaction. A lost
     // admission acknowledgement never invokes task or retries admission.
-    await client.query("CALL frontend_admission.begin_operation($1,$2,$3,$4,$5,$6,$7)",
-      [operation.id, operation.kind, ...expected, operation.epoch, operation.producerSha256, operation.sourceSha]);
+    const values = [operation.id, operation.kind, ...expected, operation.epoch, operation.producerSha256, operation.sourceSha];
+    if (operation.p407CourseOrderId === undefined) {
+      await client.query("CALL frontend_admission.begin_operation($1,$2,$3,$4,$5,$6,$7)", values);
+    } else {
+      await client.query("CALL frontend_admission.begin_p407_operation($1,$2,$3,$4,$5,$6,$7,$8)",
+        [...values, operation.p407CourseOrderId]);
+    }
   } catch { throw new Error("FRONTEND_ADMISSION_REFUSED"); }
   const pending = new Set(); let failed = false, accepting = true, result;
   const defer = (work) => {

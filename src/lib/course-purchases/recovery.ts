@@ -2,6 +2,7 @@ import "server-only";
 
 import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
+import { readP407CourseCheckoutScope } from "@/lib/writer-admission/p407-course";
 import { deliverEntitlement, PurchaseDependencyError } from "./course-api";
 import {
   claimCourseJob,
@@ -14,6 +15,13 @@ import { courseRecoveryEnabled } from "./policy";
 import { rateTableTaxReference, recordCourseTax, reverseCourseTax } from "./tax";
 
 async function sendReceipt(order: CourseOrder, job: CourseJob) {
+  const scope = readP407CourseCheckoutScope();
+  if (scope) {
+    if (order.id !== scope.orderId || order.customerId !== scope.customerId || order.courseId !== scope.courseId)
+      throw new PurchaseDependencyError(403);
+    // The isolated checkout is authorized to exercise Square and Course only.
+    return `p407-synthetic-receipt:${job.id}`;
+  }
   const dollars = (amount: number) =>
     Intl.NumberFormat("en-CA", {
       style: "currency",
@@ -103,7 +111,7 @@ export async function drainCourseJobs(orderId?: string, limit = 4) {
 export async function attemptCourseRecovery(id: string) {
   if (!courseRecoveryEnabled()) return;
   try {
-    await runWriterAdmission("recovery", () => drainCourseJobs(id, 1));
+    await runWriterAdmission("recovery", () => drainCourseJobs(id, 1), { p407CourseOrderId: id });
   } catch {
     // Financial state and the jobs were already committed. Manual recovery
     // owns the next try if the gate or a dependency denied this attempt.

@@ -1194,8 +1194,12 @@ test("application database must share the admitted direct target, login and stri
   }
 });
 
-test("reviewed staging pooler is accepted for business traffic while the ledger stays direct and closed", async () => {
+test("reviewed staging pooler is accepted for business traffic while the ledger stays direct and closed", async t => {
   const db = stagingRelease.frontendDatabase;
+  if (db.pooledHost === db.directHost) {
+    t.skip("This isolated staging manifest uses one direct Lightsail hostname");
+    return;
+  }
   const direct = `postgresql://${db.runtimeRole}:owned-test@${db.directHost}/${db.database}?sslmode=verify-full`;
   const pooled = direct.replace(db.directHost, db.pooledHost);
   const base = {

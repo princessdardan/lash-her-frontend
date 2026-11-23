@@ -6,6 +6,7 @@ import { validateCandidateResponse, type CandidateSuccess } from "@/lib/api-inte
 import { parseCourseResponse } from "@/lib/api-integration/response-validation";
 import type { paths as CoursePaths } from "@/lib/api-integration/generated/course";
 import type { coursePurchaseOrders, coursePurchaseJobs } from "./schema";
+import { resolveP407CheckoutScope } from "./p407-checkout-scope";
 
 const checkoutOffer = "/v1/internal/checkout-offer";
 const grants = "/v1/internal/entitlements/grants";
@@ -24,6 +25,16 @@ export class PurchaseDependencyError extends Error {
   }
 }
 
+function candidateProof(userId: string, courseId: string, orderId?: string) {
+  const scope = resolveP407CheckoutScope();
+  if (!scope) return undefined;
+  if (
+    userId !== scope.customerId || courseId !== scope.courseId ||
+    (orderId !== undefined && orderId !== scope.orderId)
+  ) throw new PurchaseDependencyError(403);
+  return process.env.P407_POSTGRES_RELAY_DEPLOYMENT_PROOF;
+}
+
 export async function readCourseOffer(
   userId: string,
   courseId: string,
@@ -32,6 +43,7 @@ export async function readCourseOffer(
     method: "GET",
     path: `${checkoutOffer}?${new URLSearchParams({ userId, courseId })}`,
     applicationToken: mintCourseEntitlementToken(),
+    p407CourseProof: candidateProof(userId, courseId),
   });
   const data: unknown = await response.json();
   validateCandidateResponse(
@@ -96,6 +108,7 @@ export async function deliverEntitlement(order: Order, job: Job) {
   const response = await getGatewayTransport()({
     method: "POST",
     path: grant ? grants : revocations,
+    p407CourseProof: candidateProof(order.customerId, order.courseId, order.id),
     applicationToken: mintCourseEntitlementToken(),
     idempotencyKey: job.id,
     body: JSON.stringify(body),

@@ -1,4 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
+import { resolveP407CheckoutScope } from "@/lib/course-purchases/p407-checkout-scope";
 
 export const CUSTOMER_AUTH_BASE_PATH = "/api/customer-auth";
 export const CUSTOMER_SESSION_MAX_AGE = 30 * 24 * 60 * 60;
@@ -47,7 +48,9 @@ export interface CustomerAuthConfiguration {
 
 export function resolveCustomerAuthConfiguration(env: Record<string, string | undefined> = process.env): CustomerAuthConfiguration | null {
   if (env.CUSTOMER_AUTH_ENABLED !== "true" || env.INTEGRATION_CUSTOMER_ACCESS_ENABLED !== "true") return null;
-  const { CUSTOMER_AUTH_URL: url, CUSTOMER_AUTH_SECRET: secret, CUSTOMER_AUTH_GOOGLE_ID: googleId,
+  const scope = resolveP407CheckoutScope(env);
+  const url = scope?.origin ?? env.CUSTOMER_AUTH_URL;
+  const { CUSTOMER_AUTH_SECRET: secret, CUSTOMER_AUTH_GOOGLE_ID: googleId,
     CUSTOMER_AUTH_GOOGLE_SECRET: googleSecret, CUSTOMER_AUTH_RESEND_KEY: resendKey, CUSTOMER_AUTH_EMAIL_FROM: emailFrom } = env;
   if (!url || !secret || Buffer.byteLength(secret) < 32 || !googleId || !googleSecret || !resendKey || !emailFrom || /[\r\n]/u.test(emailFrom)) throw new Error("CUSTOMER_AUTH_CONFIGURATION");
   const parsed = new URL(url);

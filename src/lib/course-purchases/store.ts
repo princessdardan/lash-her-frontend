@@ -95,8 +95,15 @@ export async function hasLiveCourseOrder(
   return rows.length > 0;
 }
 
-export async function saveCourseQuote(input: typeof orders.$inferInsert) {
-  const [order] = await getPrivateDb().insert(orders).values(input).returning();
+export async function saveCourseQuote(input: typeof orders.$inferInsert, singleOrder = false) {
+  const insert = getPrivateDb().insert(orders).values(input);
+  if (!singleOrder) {
+    const [order] = await insert.returning();
+    return order;
+  }
+  const [order] = await insert.onConflictDoNothing({ target: orders.id }).returning();
+  if (!order)
+    throw new PurchaseDependencyError(409, "This checkout already has an order.");
   return order;
 }
 

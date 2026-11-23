@@ -52,8 +52,11 @@ export async function quoteCourse(
   actor: CustomerActor,
   courseId: string,
   billing: CourseBilling,
+  scopedOrderId?: string,
 ) {
   const square = requireCourseSquare();
+  if (scopedOrderId && await readCourseOrder(scopedOrderId))
+    throw new PurchaseDependencyError(409, "This checkout already has an order.");
   const offer = await readCourseOffer(actor.id, courseId);
   if (offer.hasAccess || (await hasLiveCourseOrder(actor.id, courseId)))
     throw new PurchaseDependencyError(
@@ -61,7 +64,7 @@ export async function quoteCourse(
       "Access or a purchase already exists for this course.",
     );
   const policy = getCourseSalesPolicy(billing, offer.taxClassification);
-  const id = randomUUID();
+  const id = scopedOrderId ?? randomUUID();
   const tax = await calculateCourseTax(id, offer.priceCents, billing, policy);
   return saveCourseQuote({
     id,
@@ -81,7 +84,7 @@ export async function quoteCourse(
     priceCents: offer.priceCents,
     squareLocationId: square.locationId,
     ...tax,
-  });
+  }, scopedOrderId !== undefined);
 }
 
 const cardDeclines = new Set([
@@ -101,10 +104,12 @@ export async function payForCourse(
     sourceId: string;
     verificationToken?: string;
   },
+  scopedCourseId?: string,
 ) {
   const square = requireCourseSquare();
   const current = await readCourseOrder(input.orderId, actor.id);
-  if (!current) throw new PurchaseDependencyError(404);
+  if (!current || (scopedCourseId && current.courseId !== scopedCourseId))
+    throw new PurchaseDependencyError(404);
   if (
     current.status !== "quoted" &&
     (current.status !== "charging" || current.squarePaymentId)

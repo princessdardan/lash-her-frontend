@@ -11,6 +11,8 @@ import {
   type WriterAdmissionConfiguration,
 } from "@/lib/writer-admission/config";
 
+import { readP407CourseCheckoutScope } from "./p407-course";
+
 export type WriterOperationKind = "new-work" | "recovery";
 export type WriterAdmissionClient = {
   connect(): Promise<unknown>;
@@ -20,7 +22,12 @@ export type WriterAdmissionClient = {
   connection?: { stream?: { encrypted?: boolean; authorized?: boolean } };
 };
 export type WriterAdmissionRunner = <T>(kind: WriterOperationKind, task: () => Promise<T>,
-  options?: { uncertainResult?: (value: T) => boolean }) => Promise<T>;
+  options?: WriterAdmissionOptions<T>) => Promise<T>;
+
+type WriterAdmissionOptions<T> = {
+  uncertainResult?: (value: T) => boolean;
+  p407CourseOrderId?: string;
+};
 
 async function interactiveWriter(configuration: WriterAdmissionConfiguration) {
   return configuration.target.environment === "staging" ? readInteractiveBrowserRequest() : null;
@@ -34,8 +41,16 @@ export function createWriterAdmissionRunner(dependencies: {
   const getConfiguration = dependencies.getConfiguration ?? (() => resolveWriterAdmissionConfiguration(process.env));
   const createClient = dependencies.createClient ?? (configuration => new Client(configuration) as unknown as WriterAdmissionClient);
   const getInteractiveWriter = dependencies.getInteractiveWriter ?? interactiveWriter;
-  return async <T>(kind: WriterOperationKind, task: () => Promise<T>, options?: { uncertainResult?: (value: T) => boolean }): Promise<T> => {
+  return async <T>(kind: WriterOperationKind, task: () => Promise<T>, options?: WriterAdmissionOptions<T>): Promise<T> => {
     const configuration = getConfiguration();
+    let p407CourseOrderId: string | undefined;
+    try {
+      const scope = readP407CourseCheckoutScope();
+      if (scope) {
+        if (!configuration || options?.p407CourseOrderId !== scope.orderId) throw new Error();
+        p407CourseOrderId = scope.orderId;
+      }
+    } catch { throw new WriterAdmissionError("configuration"); }
     if (!configuration) return task();
     if (kind !== "new-work" && kind !== "recovery") throw new WriterAdmissionError("configuration");
     let client: WriterAdmissionClient | undefined, failure = false, connectionLost = false;
@@ -75,7 +90,7 @@ export function createWriterAdmissionRunner(dependencies: {
       const operationId = randomUUID();
       const epoch = policy.epoch;
       output = await runFrontendWriterOperation(client, target, { id: operationId, kind, epoch,
-        producerSha256, sourceSha: configuration.sourceSha }, async () => {
+        producerSha256, sourceSha: configuration.sourceSha, p407CourseOrderId }, async () => {
         if (connectionLost) throw new Error();
         const result = await withWriterOperationContext(task, { operationId, kind, epoch,
           producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 },

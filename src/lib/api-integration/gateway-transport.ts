@@ -19,6 +19,7 @@ export type GatewayRequest = {
   stagingOwnerAuthoringProof?: string;
   stagingReviewDiscussionsProof?: string;
   stagingReviewNotificationsProof?: string;
+  p407CourseProof?: string;
   body?: string;
   signal?: AbortSignal;
 };
@@ -52,6 +53,12 @@ export function createGatewayTransport(config: {
     const route = routes.find((route) => ("service" in route ? route.service : "course") === service && route.auth !== "webhook" && route.method === input.method &&
       new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(pathname));
     if (!route) throw new GatewayTransportError("route");
+    if (input.p407CourseProof && (
+      origin.origin !== "https://api-p407.lashher.com" || service !== "course" ||
+      !/^[a-f0-9]{64}$/u.test(input.p407CourseProof) ||
+      !["GET /v1/internal/checkout-offer", "POST /v1/internal/entitlements/grants",
+        "POST /v1/internal/entitlements/revocations"].includes(`${input.method} ${pathname}`)
+    )) throw new GatewayTransportError("authorization");
     const scopedMedia = "stagingReviewMedia" in route && route.stagingReviewMedia === true;
     if (scopedMedia !== Boolean(input.stagingReviewMediaProof) ||
         (scopedMedia && getApplicationEnvironment() !== "staging")) throw new GatewayTransportError("authorization");
@@ -90,6 +97,7 @@ export function createGatewayTransport(config: {
       if (input.stagingOwnerAuthoringProof) headers[OWNER_AUTHORING_HEADER] = input.stagingOwnerAuthoringProof;
       if (input.stagingReviewCourseProof) headers["x-lash-staging-review-course"] = input.stagingReviewCourseProof;
       if (input.stagingReviewNotificationsProof) headers[REVIEW_NOTIFICATIONS_HEADER] = input.stagingReviewNotificationsProof;
+      if (input.p407CourseProof) headers["x-lash-p407-course-proof"] = input.p407CourseProof;
       if (input.stagingReviewDiscussionsProof) headers["x-lash-staging-review-discussions"] = input.stagingReviewDiscussionsProof;
       if (input.applicationToken) headers.authorization = `Bearer ${input.applicationToken}`;
       if (input.idempotencyKey) headers["x-idempotency-key"] = input.idempotencyKey;

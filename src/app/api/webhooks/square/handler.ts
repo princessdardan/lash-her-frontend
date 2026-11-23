@@ -26,6 +26,7 @@ import type {
   SquareCommerceRecoveryResult,
 } from "@/lib/commerce/square-commerce-webhook-recovery";
 import { readBoundedTextBody } from "@/lib/security/bounded-text-body";
+import { hasP407CheckoutBinding } from "@/lib/writer-admission/p407-course";
 
 export const runtime = "nodejs";
 
@@ -439,15 +440,17 @@ export function createSquareWebhookPostHandler(
       return new Response(null, { status: 400 });
     }
 
+    const courseOnly = hasP407CheckoutBinding();
     if (dependencies.handleCoursePayment) {
       try {
-        if (await dependencies.handleCoursePayment(event))
+        if (await dependencies.handleCoursePayment(event) || courseOnly)
           return new Response(null, { status: 200 });
       } catch {
         markWriterOperationUncertain();
         return new Response(null, { status: 503 });
       }
     }
+    if (courseOnly) return new Response(null, { status: 503 });
 
     if (event.refund !== undefined) {
       const refund = event.refund;

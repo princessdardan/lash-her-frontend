@@ -6,6 +6,7 @@ import {
   integrationErrorResponse,
 } from "@/lib/api-integration/service-errors";
 import { readSameOriginJson } from "@/lib/api-integration/same-origin-json";
+import { hasP407CheckoutBinding } from "@/lib/writer-admission/p407-course";
 import { courseRecoveryEnabled } from "@/lib/course-purchases/policy";
 import { replayCourseJob } from "@/lib/course-purchases/store";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
@@ -21,7 +22,7 @@ const replayInput = v.strictObject({
 
 export async function POST(request: Request) {
   try {
-    if (!courseRecoveryEnabled())
+    if (hasP407CheckoutBinding() || !courseRecoveryEnabled())
       throw new IntegrationServiceError("feature_disabled", 404);
     if (new URL(request.url).search)
       throw new IntegrationServiceError("invalid_request", 400);

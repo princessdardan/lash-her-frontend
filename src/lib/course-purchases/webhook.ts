@@ -7,12 +7,14 @@ import {
 } from "@/lib/payments/square/payments-client";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 import { requireCourseSquare } from "./checkout";
+import { resolveP407CheckoutScope } from "./p407-checkout-scope";
 import { courseRecoveryEnabled } from "./policy";
 import { drainCourseJobs } from "./recovery";
 import {
   findCoursePayment,
   lookupReference,
   observeCoursePayment,
+  readCourseOrder,
   unresolvedCoursePaymentExists,
 } from "./store";
 
@@ -20,6 +22,7 @@ import {
 export async function handleCourseSquareEvent(
   event: VerifiedSquareWebhookEvent,
 ) {
+  const scope = resolveP407CheckoutScope();
   if (
     !event.paymentId ||
     (!event.refund &&
@@ -31,11 +34,19 @@ export async function handleCourseSquareEvent(
     if (signedReference) throw new Error("Course reconciliation is disabled");
     return false;
   }
-  const binding = signedReference
+  const scopedOrder = scope
+    ? await readCourseOrder(scope.orderId, scope.customerId)
+    : undefined;
+  if (scope && (
+    scopedOrder?.courseId !== scope.courseId || scopedOrder.status === "quoted" ||
+    (signedReference && signedReference !== scope.orderId) ||
+    (scopedOrder.squarePaymentId && event.paymentId !== scopedOrder.squarePaymentId)
+  )) return false;
+  const binding = signedReference || scope
     ? undefined
     : await findCoursePayment(event.paymentId);
   if (
-    !signedReference &&
+    !scope && !signedReference &&
     !binding &&
     (!event.refund || !(await unresolvedCoursePaymentExists()))
   )
@@ -43,6 +54,7 @@ export async function handleCourseSquareEvent(
   const square = requireCourseSquare();
   const { payment } = await getSquareCoursePayment(square, event.paymentId);
   const id = lookupReference(payment.reference_id);
+  if (scope && id !== scope.orderId) return false;
   if (!id && !signedReference && !binding) return false;
   if (
     !id ||
@@ -66,6 +78,6 @@ export async function handleCourseSquareEvent(
       refund?.status === "COMPLETED" ? refund : undefined,
     );
     await drainCourseJobs(id, 1);
-  });
+  }, scope && { p407CourseOrderId: scope.orderId });
   return true;
 }

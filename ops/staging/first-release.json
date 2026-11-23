@@ -9,14 +9,14 @@
   "source": {
     "repository": "princessdardan/lash-her-frontend",
     "repositoryId": 1114139712,
-    "branch": "codex/p4-07-protected-relay",
+    "branch": "codex/p4-07-checkout-acceptance",
     "observedRemoteCommit": "914e026201357490a0336a59e0ced95b786eef7c",
     "approvedCommit": null,
     "approvalPinEnvironmentVariable": "STAGING_RELEASE_COMMIT"
   },
   "frontendDatabase": {
     "provider": "lightsail",
-    "instanceName": "lash-her-p4-07-gateway-host",
+    "instanceName": "lash-her-api-staging-host",
     "pooledHost": "p4-07-db.lashher.com",
     "directHost": "p4-07-db.lashher.com",
     "database": "lash_her_p407_frontend",

@@ -1,4 +1,5 @@
 import { reconcileCoursePurchasePage } from "@/lib/course-purchases/reconciliation";
+import { hasP407CheckoutBinding } from "@/lib/writer-admission/p407-course";
 import { readBoundedTextBody } from "@/lib/security/bounded-text-body";
 import {
   coursePurchaseInternalDenial,
@@ -10,6 +11,8 @@ export const runtime = "nodejs";
 const orderId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 
 export async function POST(request: Request) {
+  if (hasP407CheckoutBinding())
+    return new Response(null, { status: 404, headers });
   const denial = coursePurchaseInternalDenial(request);
   if (denial) return denial;
 

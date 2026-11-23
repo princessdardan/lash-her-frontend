@@ -1,0 +1,35 @@
+# Overlay for the existing staging P4-07 candidate ingress only.
+services:
+  postgres-ingress:
+    volumes:
+      - type: bind
+        source: ./nginx.p407-course-ingress.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind: {create_host_path: false}
+  course-checkout-guard:
+    profiles: [postgres-ingress]
+    image: ghcr.io/princessdardan/lash-her-platform-gateway@sha256:8e23ae51033e0165014401094fff8e8b4574206cb5c2398d2b3e0050c6fe0a11
+    platform: linux/amd64
+    command: ["node", "/config/p407-course-ingress.mjs"]
+    user: nonroot:nonroot
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 96m
+    environment:
+      P407_COURSE_INGRESS_SCOPE_JSON: ${P407_COURSE_INGRESS_SCOPE_JSON:?select the reviewed exact order and proof digest}
+    volumes:
+      - type: bind
+        source: ./p407-course-ingress.mjs
+        target: /config/p407-course-ingress.mjs
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [workload_egress, p407_course_gateway]
+
+networks:
+  p407_course_gateway:
+    name: lash-her-p4-07-course_gateway_egress
+    external: true
