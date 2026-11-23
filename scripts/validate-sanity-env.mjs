@@ -406,6 +406,24 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
+  if (value === "898r3c4e" && process.env.P4_07_SANITY_CLONE === "1") {
+    const isolatedCi = appEnv === "local" && !isLaunchEnvironment &&
+      process.env.GITHUB_ACTIONS === "true" &&
+      process.env.GITHUB_REF === "refs/tags/p4-07-isolated-sanity-898r3c4e" &&
+      ["push", "workflow_dispatch"].includes(process.env.GITHUB_EVENT_NAME);
+    const isolatedDeployment = appEnv === "staging" && vercelEnv === "production" &&
+      process.env.SQUARE_ENVIRONMENT === "sandbox" &&
+      process.env.LASH_RELEASE_SCHEDULER_PROFILE === "off" &&
+      /^[a-f0-9]{40}$/u.test(process.env.STAGING_RELEASE_COMMIT ?? "") &&
+      process.env.VERCEL_GIT_COMMIT_SHA === process.env.STAGING_RELEASE_COMMIT;
+    if (isolatedCi || isolatedDeployment) {
+      if (process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDatasets.staging) {
+        errors.push("Invalid env var: NEXT_PUBLIC_SANITY_DATASET for P4-07 Sanity clone");
+      }
+      return;
+    }
+  }
+
   // Non-hosted builds may read the reviewed staging CMS without claiming a
   // hosted application environment or a Vercel/gateway identity.
   if (

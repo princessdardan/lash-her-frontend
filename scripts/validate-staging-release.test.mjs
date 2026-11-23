@@ -18,7 +18,7 @@ function fixture() {
   const env = {
     VERCEL: "1", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production", APP_ENV: "staging",
     APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId, VERCEL_PROJECT_ID: manifest.projectId,
-    VERCEL_GIT_COMMIT_SHA: manifest.source.approvedCommit, VERCEL_GIT_COMMIT_REF: "staging",
+    VERCEL_GIT_COMMIT_SHA: manifest.source.approvedCommit, VERCEL_GIT_COMMIT_REF: manifest.source.branch,
     NEXT_PUBLIC_SITE_URL: manifest.origin, NEXT_PUBLIC_SANITY_DATASET: manifest.sanity.dataset,
     NEXT_PUBLIC_SANITY_PROJECT_ID: manifest.sanity.projectId,
     DATABASE_URL: `postgres://${manifest.frontendDatabase.runtimeRole}:test@${manifest.frontendDatabase.pooledHost}/${manifest.frontendDatabase.database}?sslmode=verify-full`,
@@ -128,7 +128,7 @@ test("runtime database TLS and connection parameters cannot weaken the reviewed 
   for (const database of [
     env.DATABASE_URL.replace("verify-full", "require"),
     env.DATABASE_URL + "&options=-csearch_path%3Dother",
-    env.DATABASE_URL.replace(manifest.frontendDatabase.pooledHost, manifest.frontendDatabase.directHost),
+    env.DATABASE_URL.replace(manifest.frontendDatabase.pooledHost, "unreviewed-db.example.test"),
   ]) {
     assert(checkStagingRelease({ ...env, DATABASE_URL: database }, manifest).some(error => error.includes("runtime role")));
   }
