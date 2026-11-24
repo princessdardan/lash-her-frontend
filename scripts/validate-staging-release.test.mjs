@@ -133,3 +133,74 @@ test("runtime database TLS and connection parameters cannot weaken the reviewed 
     assert(checkStagingRelease({ ...env, DATABASE_URL: database }, manifest).some(error => error.includes("runtime role")));
   }
 });
+
+function isolatedFixture() {
+  const { env, manifest } = fixture();
+  const pins = {
+    commit: "b".repeat(40),
+    databaseHost: "p4-07-db.example.test",
+    databaseName: "isolated_checkout",
+    databaseRole: "isolated_checkout_runtime",
+    redisOrigin: "https://p4-07-redis.example.test",
+    squareLocationId: "LISOLATED9876",
+  };
+  Object.assign(env, {
+    STAGING_RELEASE_COMMIT: pins.commit,
+    STAGING_MIGRATION_VERIFIED_COMMIT: pins.commit,
+    VERCEL_GIT_COMMIT_SHA: pins.commit,
+    VERCEL_GIT_COMMIT_REF: pins.commit,
+    STAGING_P4_07_BUILD_PINS: JSON.stringify(pins),
+    DATABASE_URL: `postgres://${pins.databaseRole}:fixture@${pins.databaseHost}/${pins.databaseName}?sslmode=verify-full`,
+    KV_REST_API_URL: pins.redisOrigin,
+    SQUARE_LOCATION_ID: pins.squareLocationId,
+    CUSTOMER_AUTH_ENABLED: "false",
+    INTEGRATION_CHECKOUT_ENABLED: "false",
+    INTEGRATION_CUSTOMER_ACCESS_ENABLED: "false",
+    INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED: "false",
+    INTEGRATION_LEGACY_PROGRESS_IMPORT_ENABLED: "false",
+    LASH_RELEASE_SCHEDULER_PROFILE: "off",
+    LASH_RELEASE_SCHEDULER_QUALIFICATION: "false",
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
+  });
+  return { env, manifest, pins };
+}
+
+test("an isolated P4-07 build validates against its exact source and deployment pins", () => {
+  const { env, manifest } = isolatedFixture();
+  assert.deepEqual(checkStagingRelease(env, manifest), []);
+  const ordinary = { ...env };
+  delete ordinary.STAGING_P4_07_BUILD_PINS;
+  assert(checkStagingRelease(ordinary, manifest).some(error => error.includes("runtime role")));
+  assert.deepEqual(checkStagingRelease(fixture().env, manifest), []);
+});
+
+test("isolated build pins refuse shared resources, source drift and open release controls", () => {
+  const { env, manifest, pins } = isolatedFixture();
+  for (const change of [
+    { databaseHost: manifest.frontendDatabase.pooledHost },
+    { redisOrigin: `https://${manifest.redis.hostname}` },
+    { squareLocationId: manifest.providers.square.locationId },
+    { commit: "c".repeat(40) },
+  ]) {
+    const errors = checkStagingRelease({
+      ...env, STAGING_P4_07_BUILD_PINS: JSON.stringify({ ...pins, ...change }),
+    }, manifest);
+    assert(errors.some(error => error.includes("isolated P4-07")));
+  }
+  for (const [name, value] of [
+    ["SQUARE_ENVIRONMENT", "production"],
+    ["INTEGRATION_CHECKOUT_ENABLED", "true"],
+    ["INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "true"],
+    ["LASH_RELEASE_SCHEDULER_PROFILE", "full"],
+    ["FRONTEND_WRITER_ADMISSION_MODE", "off"],
+    ["FRONTEND_WRITER_ADMISSION_TARGET_JSON", '{"environment":"staging"}'],
+  ]) {
+    const errors = checkStagingRelease({ ...env, [name]: value }, manifest);
+    assert(errors.some(error => error.includes(name)), name);
+  }
+  const errors = checkStagingRelease({
+    ...env, DATABASE_URL: env.DATABASE_URL.replace("verify-full", "require"),
+  }, manifest);
+  assert(errors.some(error => error.includes("runtime role")));
+});

@@ -128,8 +128,12 @@ def _project(client, project_id, rollback_info=False):
     return value
 
 
-def project_state(client, project_id):
+def project_state(client, project_id, *, require_protection=False):
     value = _project(client, project_id)
+    if require_protection:
+        protection = value.get("ssoProtection")
+        demand(isinstance(protection, dict) and protection.get("deploymentType") == "all",
+               "VERCEL_QUALIFICATION_PROTECTION_REQUIRED")
     current = (value.get("targets") or {}).get("production")
     disabled = (value.get("crons") or {}).get("disabledAt")
     # Deliberately omit env, protection bypasses, git credentials and provider
@@ -190,7 +194,7 @@ def _stage_frontend(client, release, attempt, timeout, *, p4_05_bindings=None, e
         demand(environment == "staging", "VERCEL_QUALIFICATION_REQUIRES_STAGING")
     record = "p4-05-frontend-build" if qualification else "frontend-build"
     migrate.private_directory(attempt)
-    before = project_state(client, project_id)
+    before = project_state(client, project_id, require_protection=qualification is not None)
     demand(before["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
     intent = {**profile_fields(release, expected_profile), "environment": environment, "projectId": project_id, "sourceCommit": commit,
               "releaseId": release["releaseId"], "previousDeploymentId": before["productionDeploymentId"],
@@ -226,7 +230,7 @@ def _stage_frontend(client, release, attempt, timeout, *, p4_05_bindings=None, e
             demand(state["readyState"] not in ("ERROR", "CANCELED"), "VERCEL_BUILD_FAILED_REQUIRES_REVIEW")
             # Detect provider drift or an unrelated promotion before declaring
             # this build staged. Never silently roll back somebody else's work.
-            current = project_state(client, project_id)
+            current = project_state(client, project_id, require_protection=qualification is not None)
             demand(current == before, "VERCEL_PROJECT_CHANGED_DURING_BUILD")
             if state["readyState"] == "READY":
                 outcome.update(state)
