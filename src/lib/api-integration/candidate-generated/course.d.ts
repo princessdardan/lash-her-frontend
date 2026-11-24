@@ -6433,6 +6433,23 @@ export interface operations {
                     provider?: "helcim" | "square";
                     /** Format: uuid */
                     userId: string;
+                } | {
+                    /** Format: uuid */
+                    courseId: string;
+                    /** Format: date-time */
+                    disputeStartedAt: string;
+                    externalPaymentId: string;
+                    /** Format: date-time */
+                    grantedAt: string;
+                    /** @enum {string} */
+                    grantReason: "dispute_resolution";
+                    idempotencyKey: string;
+                    orderId: string;
+                    provider: "helcim" | "square";
+                    /** Format: date-time */
+                    purchaseCapturedAt: string;
+                    /** Format: uuid */
+                    userId: string;
                 };
             };
         };
@@ -6730,6 +6747,19 @@ export interface operations {
                     revokeReason: "refund" | "dispute" | "expiry";
                     /** Format: uuid */
                     userId: string;
+                } | {
+                    /** Format: uuid */
+                    courseId: string;
+                    financialReason: "refund" | "dispute";
+                    grantIdempotencyKey: string;
+                    idempotencyKey: string;
+                    orderId: string;
+                    /** Format: date-time */
+                    revokedAt: string;
+                    /** @enum {string} */
+                    revokeReason: "purchase_fence";
+                    /** Format: uuid */
+                    userId: string;
                 };
             };
         };
@@ -6755,6 +6785,14 @@ export interface operations {
                         userId: string;
                     };
                 };
+            };
+            /** @description Purchase grant fence committed */
+            204: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Default Response */
             400: {
