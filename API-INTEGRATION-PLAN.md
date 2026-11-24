@@ -23,7 +23,7 @@ The agreed launch scope is:
 - Unified free and paid courses, replacing the current Sanity short-course implementation.
 - Google and passwordless email-link sign-in.
 - Free enrollment with optional, separate marketing consent.
-- International paid-course sales through Square, charged in CAD, with eligible Afterpay transactions.
+- International paid-course sales by card through Square, charged in CAD in approved markets. Dardan deferred Afterpay from the first paid Course release on November 23, 2026. [P4-08 decision](docs/api-integration/p4-08-production-commerce-preflight.md#payment-scope)
 - A versioned tax rate table for approved course markets and classifications, with tax recorded in the purchase ledger.
 - Practice and graded quizzes.
 - Course communities with profiles, posts, comments, reactions, images, reporting, moderation, and in-app notifications.
@@ -181,10 +181,10 @@ The frontend owns the shared tracker. Keep these three copies of the product sco
 - Add an explicit international sales-policy configuration containing supported destinations, approved course tax classifications, registrations, and price-display treatment. Unknown or unapproved cases block checkout.
 - Store the approved tax treatment for each explicit zero-rate rule. Reject checkout for a destination or classification with no approved rule.
 - Include billing-address validation, supported tax-ID validation, appropriate invoice information, and country-specific checkout disclosures.
-- Preserve Afterpay’s server-validated amount and eligibility checks. Production merchant eligibility must be verified because sandbox behavior does not prove eligibility. [Square Afterpay integration](https://developer.squareup.com/docs/web-payments/add-afterpay)
+- Before adding Course Afterpay in a later release, verify production location and course eligibility and enforce server-side limits on the final checkout amount. [Square Afterpay integration](https://developer.squareup.com/docs/web-payments/add-afterpay)
 - Extend the existing single Square webhook to handle online-course payments, refunds, and disputes. Validate signatures and provider state before applying financial transitions.
 - Grant access only after confirmed completed payment. Never grant from browser success messages or authorization-only states.
-- On a fully refunded course item, revoke its purchase grant. Monetary goodwill refunds retain access unless an explicit audited access-removal action accompanies them. Disputes revoke the affected purchase grant; verified resolution can issue a new grant command when the purchase remains valid.
+- On a fully refunded course item, revoke its purchase grant, including for full-value goodwill. Partial goodwill preserves access unless an explicit audited access-removal action accompanies it. Disputes revoke the affected purchase grant. Verified resolution can issue a new grant command when the purchase remains valid.
 - Preserve independent administrator grants and unrelated course purchases.
 
 ### Durable entitlement, tax, and receipt delivery
@@ -213,7 +213,7 @@ The frontend owns the shared tracker. Keep these three copies of the product sco
 - Existing courses remain practice-based; new graded quizzes default to 80%.
 - No guest checkout, subscriptions, bundles, certificates, direct messaging, member video uploads, or community email digests in this release.
 - Existing bookings, product commerce, and in-person training retain their current ownership and behavior.
-- Tax classifications, registrations, destination policies, and required disclosures are business inputs recorded before enabling sales in each market. The implementation must not invent them or silently treat missing configuration as zero tax.
+- The business owns tax classifications, registrations, destination policies and required disclosures. Engineering applies the owner-approved configuration, including applicable receipt fields, before enabling each market. Checkout blocks cases with missing or unsupported tax treatment.
 
 ### Dependencies
 
@@ -473,7 +473,7 @@ Use the [task briefs](../lash-her-frontend/docs/api-integration/briefs/README.md
 
 - P2 identity/lifecycle: define outstanding-token/in-flight denial and outage recovery, export expiry and record-specific retention. Preserve v1 command ordering/tombstones and the 300-second user-token/30-second skew limits; existing video tokens may last 600 seconds. Frontend session revocation alone is not immediate downstream revocation.
 - P2/P3 learning/migration: define versioned content/quiz/progress/media mappings and repeatable import and hash checks. Record archive consequences for existing paid learners/history/community and support/refunds before paid publication; retain the existing archive access rule unless explicitly amended.
-- P4 commerce: specify quote version/expiry, concurrent purchase prevention, uncertain capture recovery and completed/refund/dispute ordering; assign distinct semantic regrant commands after verified dispute resolution. Financial state and entitlement/tax/receipt jobs stay atomic and independently idempotent. Resolve initial Afterpay feasibility early and refresh at P4-08; tax/legal/retention inputs are business supplied.
+- P4 commerce: specify quote version/expiry, concurrent purchase prevention, uncertain capture recovery and completed/refund/dispute ordering. Assign distinct semantic regrant commands after verified dispute resolution. Financial state and entitlement/tax/receipt jobs stay atomic and independently idempotent. Resolve Afterpay feasibility before a later release includes that method. Tax, legal and retention inputs are business supplied.
 - P5 media: supplement five images/10 MB compressed limits with measured decoded dimensions/pixels, CPU/memory/time/concurrency, queue/storage admission, upload finalization/ownership, orphan retention and signed-URL lifetime/revocation behavior before uploads are enabled.
 - P1-09/P2-00/P4/P6 release/recovery: define bounded stop of new work even when redeployment is unavailable, including historical deployment URLs, while preserving safe financial recovery and admitted work. Environment rollout flags alone do not prove immediate writer suspension.
 - P6 restore: define authority, restore/replay order/horizons/watermarks and tombstone/stream-version recovery across all three DBs, including acknowledged downstream work lost by restore and frontend history behind actual provider payments. Independent database restores alone do not establish platform consistency.

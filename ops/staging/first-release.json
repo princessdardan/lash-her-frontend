@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "p4-07-isolated-protected-candidate",
+  "status": "replacement-source-candidate-prepared-deployed-acceptance-pending",
   "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
   "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
   "target": "production",
@@ -9,25 +9,27 @@
   "source": {
     "repository": "princessdardan/lash-her-frontend",
     "repositoryId": 1114139712,
-    "branch": "codex/p4-07-checkout-acceptance",
-    "observedRemoteCommit": "914e026201357490a0336a59e0ced95b786eef7c",
+    "branch": "staging",
+    "observedRemoteCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
     "approvedCommit": null,
     "approvalPinEnvironmentVariable": "STAGING_RELEASE_COMMIT"
   },
   "frontendDatabase": {
-    "provider": "lightsail",
-    "instanceName": "lash-her-api-staging-host",
-    "pooledHost": "p4-07-db.lashher.com",
-    "directHost": "p4-07-db.lashher.com",
-    "database": "lash_her_p407_frontend",
-    "observedVersion": "18.7",
-    "runtimeRole": "lash_her_p407_frontend_runtime",
+    "storeId": "store_YoqkleCjDhncT64H",
+    "projectId": "noisy-river-83285109",
+    "pooledHost": "ep-lingering-meadow-bc80gyj9-pooler.c-16.us-east-1.aws.neon.tech",
+    "directHost": "ep-lingering-meadow-bc80gyj9.c-16.us-east-1.aws.neon.tech",
+    "database": "neondb",
+    "observedVersion": "18.6 (fd34222)",
+    "runtimeRole": "lash_her_frontend_staging_runtime_p2",
     "runtimeRoleConfigured": true,
     "migrationVerifiedCommit": null,
     "postgres18CompatibilityVerified": true,
+    "ownerEnvironmentBindingRemoved": true,
+    "compatibilityEvidence": "docs/api-integration/baselines/2026-10-24-p1-02-candidate-4.json",
+    "compatibilityScope": "Candidate .4 dependency remediation; unchanged 80 migrations through 0079 and 188 DB tests pass on disposable PostgreSQL 18. Exact replacement cloud verification pending.",
     "migrationPinEnvironmentVariable": "STAGING_MIGRATION_VERIFIED_COMMIT",
-    "compatibilityEvidence": "sha256:d7648187d97774d38f308cedf8d647256091f9e22c1f3745fe01b738776199d0",
-    "compatibilityScope": "Owned PostgreSQL 18 schema rehearsal. Exact hosted verification is required by the migration pin."
+    "protectedMigrationStore": "ops/staging/release-store.json"
   },
   "courseDatabase": {
     "directHost": "ep-ancient-shadow-axzksq4b.c-4.us-east-2.aws.neon.tech",
@@ -60,29 +62,41 @@
     "runtimeRoleVerificationEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-release-handoff.json"
   },
   "redis": {
-    "storeId": "store_T9DslGgsJxSFWulZ",
-    "providerDatabaseId": null,
-    "hostname": "modest-humpback-164904.upstash.io",
-    "plan": "free",
+    "storeId": "store_9ROJsD2RHvSMBe5d",
+    "providerDatabaseId": "a404310a-a11e-4d9c-8464-2e311dc84efb",
+    "hostname": "tidy-monarch-236694.upstash.io",
+    "plan": "paid",
     "automaticUpgradeRequested": false,
     "readOnlyPingVerified": true
   },
   "sanity": {
-    "projectId": "898r3c4e",
+    "projectId": "7o23yrvk",
     "dataset": "staging-2026-05-10",
-    "sourceProjectId": "7o23yrvk"
+    "existingProjectId": "3auncj84",
+    "datasetScopedRoles": "blocked-by-missing-advancedRolesManagement",
+    "separateProjectApproval": "approved-and-created",
+    "publishedEditorialDocumentsCopied": 44,
+    "referencedAssetsCopied": 54,
+    "draftsCopied": 0,
+    "unresolvedReferences": 0,
+    "originalProjectAssetUrls": 0,
+    "schemaDeployed": true,
+    "isolatedTokensCreated": true,
+    "stagingCorsConfigured": true,
+    "webhookId": "5a1KWQjkVBYLeAU3",
+    "webhookDisabled": true
   },
   "providers": {
     "square": {
       "environment": "sandbox",
-      "locationId": "LCW972G6NQNSE",
+      "locationId": "LE2H76M5V90AM",
       "sandboxReadVerified": true,
       "stagingCredentialsConfigured": true,
       "webhookRegistered": true,
-      "webhookId": null,
-      "webhookEnabled": true,
-      "webhookSigningKeyConfigured": true,
-      "webhookDownstreamAttached": false
+      "webhookId": "wbhk_b8cf77ce0a5142b38b93715c05ede7d5",
+      "webhookEnabled": false,
+      "legacySandboxCallbackReviewPending": true,
+      "webhookSigningKeyConfigured": true
     },
     "resend": {
       "dedicatedKeyConfigured": true,

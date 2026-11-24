@@ -1,5 +1,38 @@
 # Current integration checkpoint
 
+## November 24 staging consolidation
+
+The protected learner portal and Ontario card checkout share one frontend staging baseline. Course staging contains the purchase and lifecycle fixes through `cbe6fd1`. Community staging contains the authorization, media, notification and export fixes through `27541ef`. Both API branches include the November 23 product scope. The shared staging manifest continues to identify the shared database. Isolated checkout and bootstrap revisions retain their own manifests in Git.
+
+| Work | Status at consolidation |
+| --- | --- |
+| Free Mini Course migration (G3) | Done for revision 7 on staging. Production migration is held. |
+| P4-05 through P4-08 | Done within the recorded held-staging scope. Protected runs covered recovery, checkout, capture, receipt delivery, refunds and grant revocation. Provider-backed disputes and payment-to-access latency were deferred. [Ontario qualification](p4-08-production-commerce-preflight.md) |
+| P4-01 through P4-04 and G4 | The first four tasks remain in progress in the register. Reconcile each remaining criterion against the scoped P4-05 through P4-08 evidence before deciding G4. |
+| Community | P5-01 through P5-05 are done. The protected reply smoke passed for recipient isolation, read state and exact replay. P5-06 and P5-07 remain in progress. G5 is open. |
+| P2-00 and P6 | Shared pending SQL is blocked on a verified writer fence and drain. PostgreSQL 17 and 18 recovery rehearsals were recorded against the separate release candidate. The staged application has no production cutover approval. G6 is open. |
+
+### Which frontend owns each route
+
+The qualified staging implementation owns Academy, the course catalog and Course checkout. The alternate source is preserved locally on `codex/integration-workspace-source-20261124` at `6d100359`.
+
+| Area | Qualified staging | Alternate source |
+| --- | --- | --- |
+| Academy and catalog | Pages under `(site)` use the learning client and an explicit legacy fallback list. The protected review portal provides a scoped path for staging checks. | Pages under `(course-site)` use separate Academy and public-course adapters. The Academy page requires a customer session. |
+| Community | The protected portal exercises learner discussions, media, reactions and inbox behavior. | Customer-facing `/community` pages and an administrator moderation workspace include member discovery, reports and preferences. |
+| Checkout | The Ontario candidate records agreement acceptance and an itemized Square order, links to the Square receipt, and qualifies refunds and purchase-grant recovery. | The same checkout URL uses a different catalog adapter. The alternate migration journal ends with the receipt-seller change. Both implementations check the signed-in buyer and order ownership. |
+| Database | `0082` introduces account lifecycle, `0083` introduces purchases, and `0084` through `0086` add disputes, launch terms and the Square order reference. | `0082` introduces purchases and `0083` adds receipt-seller fields. These numbers identify different SQL. |
+
+The November 20 decision prioritized protected staging flows. The November 23 decision narrowed the first paid release to Ontario card sales and deferred Afterpay. The route-group and adapter differences show parallel implementations. The plan retains the wider Community scope. Any missing feature selected for delivery should be ported to the staging routes and migration lineage. The PostgreSQL 17 release-package changes need the same reconciliation against the staging image.
+
+The branch consolidation ran no migrations, changed no admission controls and promoted no deployment. The November 23 smoke results apply to their recorded candidates. A smoke of the consolidated revision requires a separate protected release.
+
+## November 20 Lightsail staging update
+
+Protected staging ran Course `cbe6fd13` and Community `27541ef0`. The synthetic learner exercised course playback, progress and quizzes, and used images, discussions and replies in the Free Mini Course space. The protected portal and the November 23 notification smoke subsequently extended that verification. The latest recorded shared state kept public admission and schedules held.
+
+## Earlier checkpoints
+
 Source checkpoint updated November 9, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status. The [release policy](release-policy.md) governs future releases.
 
 **November 21 protected student portal qualification.** Draft PR #116 passed all 10 CI jobs at `431de6c4`. Both CI images verified the OpenSSL fix for CVE-2026-124709 and reported zero unresolved High or Critical findings. Protected staging remains on `d29fb50` with both admission gates closed and all release holds in place. [CI run](https://github.com/princessdardan/lash-her-frontend/actions/runs/44973799378) · [Image digests and qualification evidence](../../API-INTEGRATION-EXECUTION.md#ci-and-openssl-qualification)
