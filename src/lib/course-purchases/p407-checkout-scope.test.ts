@@ -3,7 +3,7 @@ import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { resolveCustomerAuthConfiguration } from "@/lib/customer-auth/policy";
 import { p406LearnerReadProof } from "@/lib/writer-admission/p406-learner-read";
-import { resolveP407CheckoutScope, selectCourseRecoveryOrder } from "./p407-checkout-scope";
+import { resolveP407CheckoutScope, selectCourseRecoveryOrder, selectSandboxCourseRefund } from "./p407-checkout-scope";
 
 const now = Date.parse("2026-11-23T19:00:00.000Z");
 const config = {
@@ -128,4 +128,18 @@ test("candidate recovery selects a single exact order, ordinary recovery keeps i
     assert.equal(selectCourseRecoveryOrder(url(suffix), scope), null);
   }
   assert.equal(selectCourseRecoveryOrder(new URL(`https://shared.example.com/?orderId=${scope.orderId}`), scope), null);
+});
+
+
+test("accepts only a refund reference on the exact refund qualification order", () => {
+  const scope = resolveP407CheckoutScope(env, now);
+  assert.ok(scope);
+  const base = scope.origin + "/api/internal/course-purchases/recover";
+  const exact = base + "?orderId=" + scope.orderId + "&refundId=refund-123";
+  assert.equal(selectSandboxCourseRefund(new URL(exact), scope, "refund"), "refund-123");
+  assert.equal(selectSandboxCourseRefund(new URL(exact), scope, "enabled"), undefined);
+  assert.equal(selectSandboxCourseRefund(new URL(exact), undefined, "refund"), undefined);
+  assert.equal(selectSandboxCourseRefund(new URL(exact.replace(scope.origin, "https://example.invalid")), scope, "refund"), undefined);
+  assert.equal(selectSandboxCourseRefund(new URL(exact.replace(scope.orderId, config.courseId)), scope, "refund"), undefined);
+  assert.equal(selectSandboxCourseRefund(new URL(exact + "&paymentId=extra"), scope, "refund"), undefined);
 });

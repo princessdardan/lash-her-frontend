@@ -162,17 +162,25 @@ const qualificationEnv = {
   STAGING_EMAIL_RECIPIENT_ALLOWLIST: "delivered@resend.dev",
 };
 
-test("the protected qualification routes only its purchase receipt to the Resend simulator", () => {
-  const destination = (kind: "receipt" | "refund_receipt", env = qualificationEnv) =>
+test("the protected qualification routes only the selected document to the Resend simulator", () => {
+  const destination = (
+    kind: "receipt" | "refund_receipt",
+    env: Record<string, string | undefined> = qualificationEnv,
+  ) =>
     resolveCourseReceiptDestination(qualificationOrder, kind, env, qualificationTime);
   assert.equal(destination("receipt"), "delivered@resend.dev");
   assert.equal(destination("refund_receipt"), null);
+  const refundScope = { ...qualificationEnv, P408_COURSE_RECEIPT_TEST: "refund" };
+  assert.equal(destination("receipt", refundScope), null);
+  assert.equal(destination("refund_receipt", refundScope), "delivered@resend.dev");
   const previousScope = { ...qualificationEnv, P408_COURSE_RECEIPT_TEST: undefined };
-  assert.equal(resolveCourseReceiptDestination(qualificationOrder, "receipt", previousScope, qualificationTime), null);
-  assert.equal(resolveCourseReceiptDestination(qualificationOrder, "receipt", {}, qualificationTime), qualificationOrder.email);
+  for (const kind of ["receipt", "refund_receipt"] as const) {
+    assert.equal(destination(kind, previousScope), null);
+    assert.equal(resolveCourseReceiptDestination(qualificationOrder, kind, {}, qualificationTime), qualificationOrder.email);
+  }
 });
 
-test("the purchase receipt opt-in rejects invalid scope, sender, recipient, and fixture identity", () => {
+test("receipt qualification rejects invalid scope, sender, recipient, and fixture identity", () => {
   for (const override of [
     { P408_COURSE_RECEIPT_TEST: "false" },
     { P407_CHECKOUT_SCOPE_JSON: undefined },
@@ -187,6 +195,9 @@ test("the purchase receipt opt-in rejects invalid scope, sender, recipient, and 
   ]) {
     assert.throws(() => resolveCourseReceiptDestination(
       qualificationOrder, "receipt", { ...qualificationEnv, ...override }, qualificationTime,
+    ));
+    assert.throws(() => resolveCourseReceiptDestination(
+      qualificationOrder, "refund_receipt", { ...qualificationEnv, P408_COURSE_RECEIPT_TEST: "refund", ...override }, qualificationTime,
     ));
   }
   assert.throws(() => resolveCourseReceiptDestination(
@@ -203,6 +214,9 @@ test("the purchase receipt opt-in rejects invalid scope, sender, recipient, and 
   ]) {
     assert.throws(() => resolveCourseReceiptDestination(
       { ...qualificationOrder, ...override }, "receipt", qualificationEnv, qualificationTime,
+    ));
+    assert.throws(() => resolveCourseReceiptDestination(
+      { ...qualificationOrder, ...override }, "refund_receipt", { ...qualificationEnv, P408_COURSE_RECEIPT_TEST: "refund" }, qualificationTime,
     ));
   }
 });

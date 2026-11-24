@@ -8,23 +8,31 @@ import type { CourseJob, CourseOrder } from "./store";
 const testRecipient = "delivered@resend.dev";
 const stagingSender = "Lash Her Staging <staging@mail.staging.lashher.com>";
 
+export function readCourseReceiptQualificationKind(env: Record<string, string | undefined> = process.env) {
+  switch (env.P408_COURSE_RECEIPT_TEST) {
+    case "enabled": return "receipt";
+    case "refund": return "refund_receipt";
+  }
+}
+
 export function resolveCourseReceiptDestination(
   order: Pick<CourseOrder, "id" | "customerId" | "courseId" | "email">,
   kind: CourseJob["kind"],
   env: Record<string, string | undefined> = process.env,
   now = Date.now(),
 ): string | null {
-  const qualification = env.P408_COURSE_RECEIPT_TEST;
-  const scope = qualification === undefined
-    ? readP407CourseCheckoutScope(env, now)
-    : resolveP407CheckoutScope(env, now);
+  const hasQualification = env.P408_COURSE_RECEIPT_TEST !== undefined;
+  const qualificationKind = readCourseReceiptQualificationKind(env);
+  const scope = hasQualification
+    ? resolveP407CheckoutScope(env, now)
+    : readP407CourseCheckoutScope(env, now);
 
-  if (qualification !== undefined && (qualification !== "enabled" || !scope))
+  if (hasQualification && (!qualificationKind || !scope))
     throw new PurchaseDependencyError(403);
   if (!scope) return order.email;
   if (order.id !== scope.orderId || order.customerId !== scope.customerId || order.courseId !== scope.courseId)
     throw new PurchaseDependencyError(403);
-  if (qualification === undefined || kind !== "receipt") return null;
+  if (kind !== qualificationKind) return null;
 
   if (order.email !== `p408-sandbox-${scope.customerId}@example.invalid`)
     throw new PurchaseDependencyError(403);

@@ -7,6 +7,7 @@ import process from "node:process";
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/private-db/p407-postgres-relay.test.ts",
   "src/lib/security/checkout-abuse-control.test.ts",
+  "src/lib/course-purchases/approved-receipt.test.ts",
   "src/lib/course-purchases/receipt.test.ts",
   "src/lib/course-purchases/refund-tax.test.ts",
   "src/lib/course-purchases/tax.test.ts",

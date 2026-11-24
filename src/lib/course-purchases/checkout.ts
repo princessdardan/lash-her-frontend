@@ -88,7 +88,10 @@ export async function quoteCourse(
     policyVersion: policy.version,
     disclosure: policy.disclosure,
     receiptSeller: policy.receiptSeller,
-    purchaseTerms: policy.purchaseTerms,
+    purchaseTerms: policy.purchaseTerms && {
+      version: policy.purchaseTerms.version,
+      text: policy.purchaseTerms.text.replaceAll("[course title]", () => offer.title),
+    },
     taxBehavior: policy.behavior,
     taxCode: policy.taxCode,
     priceCents: offer.priceCents,

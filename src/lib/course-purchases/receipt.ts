@@ -1,3 +1,4 @@
+import { customerSignInHref, safeLearningUrl } from "@/lib/learning/presentation";
 import { escapeHtml } from "@/lib/transactional-email";
 import * as v from "valibot";
 import type { CourseOrder } from "./store";
@@ -36,6 +37,12 @@ const torontoDateTime = Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Toronto",
 });
 
+export const COURSE_RECEIPT_AND_TERMS_SUBJECT = "Your Lash Her course receipt and purchase terms";
+
+export function courseRefundReceiptSubject(orderId: string) {
+  return `Your Lash Her Academy refund for order ${orderId}`;
+}
+
 export function renderCourseReceipt(order: ReceiptOrder) {
   const heading = `<h1>Course payment receipt</h1><p>${escapeHtml(order.courseTitle)}</p>`;
   const disclosure = `<p>${escapeHtml(order.disclosure)}</p>`;
@@ -61,7 +68,9 @@ export function renderCourseReceipt(order: ReceiptOrder) {
 
   // Capture and quote fields describe the original sale even after a refund.
   const saleReceipt = [
-    heading,
+    order.purchaseTerms
+      ? `<h1>Your receipt</h1><p>${escapeHtml(order.courseTitle)}</p>`
+      : heading,
     `<p>Order ${escapeHtml(order.id)}</p>`,
     `<p>Payment date: ${torontoDate.format(order.chargedAt)}</p>`,
     `<p>Subtotal: ${dollars(order.totalCents - order.taxCents)}</p>`,
@@ -73,12 +82,20 @@ export function renderCourseReceipt(order: ReceiptOrder) {
   if (!order.purchaseTerms) return saleReceipt;
   if (!order.termsAcceptedAt) throw new Error("Course agreement requires an acceptance time");
   const { name, line1, city, region, postalCode, country } = order.billing;
+  const firstName = name.trim().split(/\s+/u)[0];
+  const academySignInUrl = new URL(
+    customerSignInHref("/academy"),
+    safeLearningUrl(process.env.NEXT_PUBLIC_SITE_URL) ?? "https://lashher.com",
+  );
   return [
+    `<p>Hi ${escapeHtml(firstName)},</p>`,
+    `<p>We received your payment for <strong>${escapeHtml(order.courseTitle)}</strong>. <a href="${escapeHtml(academySignInUrl.href)}">Sign in to Lash Her Academy</a> with the email address you used at checkout. Once your enrolment is active, you’ll see the course in your account.</p>`,
     saleReceipt,
     "<h2>Course Purchase Terms</h2>",
     `<p>Buyer: ${[name, line1, `${city}, ${region} ${postalCode}`, country].map(escapeHtml).join("<br>")}</p>`,
     `<p>Version ${escapeHtml(order.purchaseTerms.version)}<br>Accepted ${torontoDateTime.format(order.termsAcceptedAt)} (Toronto time)</p>`,
     `<p>${escapeHtml(order.purchaseTerms.text).replaceAll("\n", "<br>")}</p>`,
+    `<p>For help with access or this purchase, email ${escapeHtml(seller.email)} and include your order number.</p>`,
   ].join("");
 }
 

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { sendTransactionalEmail } from "@/lib/transactional-email";
-import { getSquareCoursePayment } from "@/lib/payments/square/payments-client";
+import { getSquareCoursePayment, getSquareCourseRefund } from "@/lib/payments/square/payments-client";
 import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 import { deliverEntitlement, PurchaseDependencyError } from "./course-api";
 import {
@@ -17,7 +17,12 @@ import {
   type CourseOrder,
 } from "./store";
 import { courseRecoveryEnabled } from "./policy";
-import { renderCourseReceipt, renderCourseRefundReceipt } from "./receipt";
+import {
+  COURSE_RECEIPT_AND_TERMS_SUBJECT,
+  courseRefundReceiptSubject,
+  renderCourseReceipt,
+  renderCourseRefundReceipt,
+} from "./receipt";
 import { resolveCourseReceiptDestination } from "./receipt-destination";
 import { rateTableTaxReference, recordCourseTax, reverseCourseTax } from "./tax";
 
@@ -57,6 +62,36 @@ export async function recoverCourseCapture(
   );
   if (!observed) return "skipped";
   return observed.status === "charging" ? "pending" : "settled";
+}
+
+/** Reconcile a completed refund for the protected qualification's one paid order. */
+export async function recoverSandboxCourseRefund(
+  scope: { orderId: string; customerId: string; courseId: string },
+  refundId: string,
+) {
+  const order = await readCourseOrder(scope.orderId, scope.customerId);
+  if (!order || order.courseId !== scope.courseId) return "missing";
+  if (
+    process.env.P408_COURSE_RECEIPT_TEST !== "refund" ||
+    !order.squarePaymentId || !order.chargedAt ||
+    (order.status !== "paid" && order.status !== "refunded") ||
+    (order.refundedCents !== 0 && order.refundedCents !== order.totalCents)
+  ) return "conflict";
+  const { requireCourseSquare } = await import("./checkout");
+  const square = requireCourseSquare();
+  if (square.environment !== "sandbox" || square.locationId !== order.squareLocationId)
+    return "conflict";
+  const { refund } = await getSquareCourseRefund(square, refundId);
+  if (
+    refund.id !== refundId || refund.payment_id !== order.squarePaymentId ||
+    refund.amount_money.currency !== "CAD" || refund.amount_money.amount !== order.totalCents
+  ) return "conflict";
+  if (refund.status === "PENDING") return "pending";
+  if (refund.status !== "COMPLETED") return "conflict";
+  const { payment } = await getSquareCoursePayment(square, order.squarePaymentId);
+  if (payment.id !== order.squarePaymentId || payment.status !== "COMPLETED") return "conflict";
+  await observeCoursePayment(order.id, payment, refund);
+  return "settled";
 }
 
 async function sendCourseDocument(
@@ -116,12 +151,15 @@ async function dispatch(order: CourseOrder, job: CourseJob) {
         throw new PurchaseDependencyError(409);
       return { receipt: await sendCourseDocument(order, job, async () => {
         if (job.kind === "receipt")
-          return { subject: "Your Lash Her course payment receipt", html: renderCourseReceipt(order) };
+          return {
+            subject: order.purchaseTerms ? COURSE_RECEIPT_AND_TERMS_SUBJECT : "Your Lash Her course payment receipt",
+            html: renderCourseReceipt(order),
+          };
         if (!job.refundId) throw new PurchaseDependencyError(409);
         const confirmation = await readCourseRefundConfirmation(order.id, job.refundId);
         if (!confirmation?.taxReceipt) throw new PurchaseDependencyError(502);
         return {
-          subject: `Your Lash Her Academy refund for order ${order.id}`,
+          subject: courseRefundReceiptSubject(order.id),
           html: renderCourseRefundReceipt(order, confirmation.refund, confirmation.taxReceipt, job.createdAt),
         };
       }) };

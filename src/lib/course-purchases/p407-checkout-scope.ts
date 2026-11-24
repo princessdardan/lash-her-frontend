@@ -37,3 +37,16 @@ export function selectCourseRecoveryOrder(
   const paymentId = requestUrl.search.slice(prefix.length);
   return /^[A-Za-z0-9_-]{1,192}$/u.test(paymentId) ? { orderId: scope.orderId, paymentId } : null;
 }
+
+export function selectSandboxCourseRefund(
+  requestUrl: URL,
+  scope: P407CheckoutScope | undefined,
+  qualification: string | undefined,
+): string | undefined {
+  if (qualification !== "refund" || !scope || requestUrl.origin !== scope.origin)
+    return undefined;
+  const prefix = `?orderId=${scope.orderId}&refundId=`;
+  if (!requestUrl.search.startsWith(prefix)) return undefined;
+  const id = requestUrl.search.slice(prefix.length);
+  return /^[A-Za-z0-9_-]{1,192}$/u.test(id) ? id : undefined;
+}
