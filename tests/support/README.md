@@ -65,3 +65,33 @@ hosts, non-HTTPS remote origins, and remote hosts that are not explicitly named
 for `e2e`, `test`, or `sandbox` use. The declared isolated origin must match the
 browser target exactly. The live flag, isolated-target confirmation, employee
 and owner storage states, and fixture identifiers remain separate opt-ins.
+
+## Community customer and moderator browser coverage
+
+Run the five P5-06 Chromium cases from a disposable frontend checkout with no
+local `.env` files. Install each repository's locked dependencies first. The
+runner needs Node.js 24, Google Chrome, OpenSSL, and PostgreSQL 16 tools on `PATH`.
+Use Course `48dbb00f6e5be5061e044e145b0de166dfde231d` and Community
+`2799fe45539530a2fdbff8cbbc1c9886e4e0d3a8` to reproduce the November 24 API
+baseline. The required loopback ports are 3120 and 4107–4113.
+
+```sh
+COMMUNITY_E2E_COURSE_ROOT=/path/to/disposable-course-checkout \
+COMMUNITY_E2E_COMMUNITY_ROOT=/path/to/disposable-community-checkout \
+  sh tests/support/community-browser.sh
+```
+
+The runner migrates and seeds three databases in a disposable loopback
+PostgreSQL cluster. It starts both API implementations, the real gateway and
+private TLS proxy, and one Next.js server through the local launcher. Chromium
+runs serially with one worker. The fixture uses seeded customer and Auth.js
+sessions, a synthetic workload proof, local storage that checks signed object
+requests, and a fresh gateway admission file. It exercises ordinary `/community`
+and `/admin/community` routes with an active owner and verifies both other staff
+roles are denied. The fixture also injects a malformed Community feed response
+and a Course outage. It leaves service and browser logs in the printed temporary
+path and stops its processes and PostgreSQL cluster at exit.
+
+These local results apply to the pinned source and isolated fixture. Protected
+staging requires its own verification of hosted identity, deployment bindings,
+provider storage, and release admission.
