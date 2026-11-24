@@ -96,7 +96,11 @@ IMAGE_BUILD_ONLY = frozenset({
 })
 
 
-def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
+HISTORICAL_SOURCE_INVENTORY = 'ops/platform/profiles/frontend-historical-sources/'
+
+
+def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True,
+                           include_historical_inventories=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
         'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull,'GIT_NO_REPLACE_OBJECTS':'1'}
@@ -105,8 +109,12 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
     selected={name for name in result.stdout.decode('utf-8').split('\0') if name and Path(name).suffix in TYPES}
     if not exclude.issubset(selected):
         raise ValueError('OWNED_TRACKED_SOURCE_PROJECTION_REQUIRED')
-    names=sorted(name for name in selected-exclude if include_tests or name in REQUIRED or
-                 not name.endswith(('_test.py', '.test.mjs', '.test.ts', '.test.mts')))
+    names=sorted(
+        name for name in selected-exclude if name in REQUIRED or (
+            (include_tests or not name.endswith(('_test.py', '.test.mjs', '.test.ts', '.test.mts')))
+            and (include_historical_inventories or not name.startswith(HISTORICAL_SOURCE_INVENTORY))
+        )
+    )
     for name in names:
         path=Path(name)
         if path.is_absolute() or '..' in path.parts or path.parts[0]!='ops' or (source/path).is_symlink():
@@ -117,9 +125,11 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_
 
 
 def legacy_source_fixture(source, destination):
-    """Install the v1 fixture with all production and required source files."""
+    """Install the v1 fixture with its required source closure."""
     excluded = PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY | IMAGE_BUILD_ONLY
-    names = tracked_source_fixture(source, destination, exclude=excluded, include_tests=False)
+    # These certification and identity fixtures do not evaluate historical deployments.
+    names = tracked_source_fixture(source, destination, exclude=excluded, include_tests=False,
+                                   include_historical_inventories=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
     return names
@@ -414,6 +424,7 @@ class ActualCertificationEntryTests(unittest.TestCase):
         self.assertIn(omitted,LEGACY_FIXTURE_EVIDENCE_ONLY)
         self.assertNotIn(omitted,self.source_names);self.assertFalse((self.source/omitted).exists())
         self.assertTrue(IMAGE_BUILD_ONLY.isdisjoint(self.source_names))
+        self.assertFalse(any(name.startswith(HISTORICAL_SOURCE_INVENTORY) for name in self.source_names))
         for name in IMAGE_BUILD_ONLY:
             self.assertFalse((self.source / name).exists())
         self.assertTrue(REQUIRED.issubset(self.source_names));self.assertLessEqual(len(self.source_names),512)

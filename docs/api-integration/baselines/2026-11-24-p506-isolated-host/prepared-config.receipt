@@ -1,0 +1,6 @@
+path=/var/lib/lash-her/p5-06/prepared-3ed2c130
+manifest_sha256=19ebb7ce9d76ebad68f17766ab5a351762cf7fc3954f259bfdccf229652712e6
+files_verified=14
+prior_identical_bundle=true
+candidate_running=0 candidate_ports=0 candidate_internal_bridges=2
+shared_postgres=healthy shared_course=healthy shared_community=healthy p407_course=healthy
