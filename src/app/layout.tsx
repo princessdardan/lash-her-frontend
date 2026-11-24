@@ -2,22 +2,22 @@ import type { Metadata } from "next";
 import { draftMode } from "next/headers";
 import type { ReactNode } from "react";
 import { loaders } from "@/data/loaders";
-import { Bebas_Neue, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import { VisualEditing } from "next-sanity/visual-editing";
 import "./globals.css";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-const inter = Inter({
+const inter = localFont({
+  src: "./fonts/inter-variable.woff2",
   variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "100 900",
   display: "swap",
 });
 
-const bebasNeue = Bebas_Neue({
+const bebasNeue = localFont({
+  src: "./fonts/bebas-neue-regular.ttf",
   variable: "--font-bebas-neue",
-  subsets: ["latin"],
-  weight: ["400"],
+  weight: "400",
   display: "swap",
 });
 
