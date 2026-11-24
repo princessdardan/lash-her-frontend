@@ -3,7 +3,8 @@
     "deploymentEnabled": {
       "main": false,
       "staging": false,
-      "codex/p1-candidate-registration-20261102": false
+      "codex/p1-candidate-registration-20261102": false,
+      "codex/training-program-mux-preview": false
     }
   },
   "schedules": {

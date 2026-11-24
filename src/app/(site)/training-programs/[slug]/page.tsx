@@ -5,6 +5,10 @@ import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { TrainingEditorialHero } from "@/components/custom/training-editorial-hero";
 import { TrainingEditorialDetails } from "@/components/custom/training-editorial-details";
+import {
+  TRAINING_PROGRAM_PREVIEW_ID,
+  TrainingProgramPreview,
+} from "@/components/custom/training-program-preview";
 import { TrainingEnrollmentToggle } from "@/components/custom/training-enrollment-toggle";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
 import { TrainingPurchaseCard, TrainingMobileTray } from "@/components/commerce/training-purchase-card";
@@ -77,6 +81,9 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
 
   if (!data) notFound();
 
+  const previewPlaybackId = data.previewVideo?.isReady
+    ? data.previewVideo.playbackId?.trim()
+    : undefined;
   const hasStructuredDetails = Boolean(
     data.heroSubtitle ||
       data.heroImage ||
@@ -109,29 +116,44 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
           </div>
         </div>
       )}
-      {hasStructuredDetails && (
+      {(hasStructuredDetails || previewPlaybackId) && (
         <section className="bg-lh-neutral-2" data-structured-details="true">
-          <TrainingEditorialHero data={data} hasPurchaseUi={showPurchaseUi} />
+          <TrainingEditorialHero
+            data={data}
+            hasPurchaseUi={showPurchaseUi}
+            previewHref={previewPlaybackId ? `#${TRAINING_PROGRAM_PREVIEW_ID}` : undefined}
+          />
 
           <div className="mx-auto w-full max-w-[1380px] px-4 py-10 sm:px-5 md:py-14 lg:px-4 lg:py-16 xl:px-6">
             <div className={showPurchaseUi ? "grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:gap-10" : ""}>
               <div className="min-w-0">
-                <TrainingEditorialDetails data={data} />
-                <TrainingEnrollmentToggle
-                  data={data}
-                  contactData={data.trainingContact}
-                  programSlug={data.slug}
-                  programTitle={data.title}
-                  hasPurchaseUi={showPurchaseUi}
-                />
-
-                {legacyBlocks.length > 0 && (
-                  <div className="mt-8" data-training-legacy-blocks="true">
-                    <BlockRenderer blocks={legacyBlocks} />
-                  </div>
+                {previewPlaybackId && (
+                  <TrainingProgramPreview
+                    playbackId={previewPlaybackId}
+                    programTitle={data.title}
+                    thumbTime={data.previewVideo?.thumbTime ?? undefined}
+                  />
                 )}
+                {hasStructuredDetails && (
+                  <>
+                    <TrainingEditorialDetails data={data} />
+                    <TrainingEnrollmentToggle
+                      data={data}
+                      contactData={data.trainingContact}
+                      programSlug={data.slug}
+                      programTitle={data.title}
+                      hasPurchaseUi={showPurchaseUi}
+                    />
 
-                {!showPurchaseUi && cta && cta.label && isCtaSafe && renderTrainingCta(cta)}
+                    {legacyBlocks.length > 0 && (
+                      <div className="mt-8" data-training-legacy-blocks="true">
+                        <BlockRenderer blocks={legacyBlocks} />
+                      </div>
+                    )}
+
+                    {!showPurchaseUi && cta && cta.label && isCtaSafe && renderTrainingCta(cta)}
+                  </>
+                )}
               </div>
 
               {showPurchaseUi && (

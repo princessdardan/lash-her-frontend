@@ -1,4 +1,9 @@
 import nextEnv from "@next/env";
+import {
+  resolveApplicationEnvironment,
+  SANITY_PROJECT_BINDINGS,
+  VERCEL_PROJECT_BINDINGS,
+} from "../src/lib/env/application-environment.mjs";
 
 const { loadEnvConfig } = nextEnv;
 
@@ -98,7 +103,25 @@ const urlEnvVars = [
 const emailEnvVars = ["FROM_EMAIL", "ADMIN_EMAIL"];
 
 const vercelEnv = process.env.VERCEL_ENV;
-const expectedDataset = expectedDatasets[vercelEnv];
+const errors = [];
+let isDedicatedStaging = false;
+if (
+  process.env.APP_ENV === "staging" ||
+  process.env.VERCEL_PROJECT_ID === VERCEL_PROJECT_BINDINGS.stagingProjectId
+) {
+  try {
+    isDedicatedStaging =
+      resolveApplicationEnvironment(process.env) === "staging" &&
+      process.env.VERCEL_PROJECT_ID === VERCEL_PROJECT_BINDINGS.stagingProjectId &&
+      vercelEnv === "production";
+    if (!isDedicatedStaging) errors.push("Expected the dedicated staging Production target");
+  } catch (error) {
+    errors.push(error.message);
+  }
+}
+const expectedDataset = isDedicatedStaging
+  ? expectedDatasets.preview
+  : expectedDatasets[vercelEnv];
 const isLaunchEnvironment = expectedDataset !== undefined;
 const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
 const isPaymentMockMode = paymentGatewayMode === "mock";
@@ -127,8 +150,6 @@ const requiredEnvVars = isLaunchEnvironment
       ...(isChitchatsShippingEnabled ? chitchatsLaunchEnvVars : []),
     ]
   : publicSanityEnvVars;
-
-const errors = [];
 
 for (const name of new Set(requiredEnvVars)) {
   if (!hasValue(process.env[name])) {
@@ -203,6 +224,9 @@ if (
 }
 
 if (isLaunchEnvironment) {
+  if (isDedicatedStaging && process.env.NEXT_PUBLIC_SITE_URL !== "https://staging.lashher.com") {
+    errors.push("Invalid env var: dedicated staging requires NEXT_PUBLIC_SITE_URL=https://staging.lashher.com");
+  }
   for (const name of urlEnvVars) {
     if (hasValue(process.env[name])) {
       validateUrl(name, process.env[name]);
@@ -267,11 +291,11 @@ if (isLaunchEnvironment) {
     if (
       !isPaymentMockMode &&
       vercelEnv === "production" &&
-      process.env.SQUARE_ENVIRONMENT !== "production"
+      process.env.SQUARE_ENVIRONMENT !== (isDedicatedStaging ? "sandbox" : "production")
     ) {
-      errors.push(
-        "Invalid env var: production deployment requires SQUARE_ENVIRONMENT=production",
-      );
+      errors.push(isDedicatedStaging
+        ? "Invalid env var: dedicated staging requires SQUARE_ENVIRONMENT=sandbox"
+        : "Invalid env var: production deployment requires SQUARE_ENVIRONMENT=production");
     }
   }
 
@@ -304,11 +328,11 @@ if (isLaunchEnvironment) {
     }
     if (
       vercelEnv === "production" &&
-      process.env.CHITCHATS_ENVIRONMENT !== "production"
+      process.env.CHITCHATS_ENVIRONMENT !== (isDedicatedStaging ? "staging" : "production")
     ) {
-      errors.push(
-        "Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production",
-      );
+      errors.push(isDedicatedStaging
+        ? "Invalid env var: dedicated staging requires CHITCHATS_ENVIRONMENT=staging"
+        : "Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production");
     }
     if (
       hasValue(process.env.CHITCHATS_REGION) &&
@@ -377,7 +401,10 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
-  if (value !== "3auncj84") {
+  const expectedProjectId = isDedicatedStaging
+    ? SANITY_PROJECT_BINDINGS.stagingProjectId
+    : SANITY_PROJECT_BINDINGS.productionProjectId;
+  if (value !== expectedProjectId) {
     errors.push(
       "Malformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match launch project ID",
     );

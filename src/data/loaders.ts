@@ -48,6 +48,7 @@ const CONTROL_STRING_KEYS = new Set([
   "heroSize",
   "layout",
   "orientation",
+  "playbackId",
   "sku",
   "value",
 ]);
@@ -612,6 +613,11 @@ async function getTrainingProgramBySlug(
     heroSubtitle,
     heroImage{ asset, hotspot, crop, alt },
     heroBadges,
+    "previewVideo": previewVideo.asset->{
+      "isReady": _type == "mux.videoAsset" && status == "ready",
+      "playbackId": data.playback_ids[policy == "public"][0].id,
+      thumbTime
+    },
     detailHeading,
     detailEyebrow,
     detailDescription,
@@ -679,7 +685,7 @@ async function getTrainingProgramBySlug(
   return sanityFetch<TTrainingProgram | null>(
     query,
     { slug },
-    ["trainingProgram"],
+    ["trainingProgram", "trainingProgramPreviewVideo"],
     options,
   );
 }

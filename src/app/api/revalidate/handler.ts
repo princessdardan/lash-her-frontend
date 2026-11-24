@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 
 import { log } from "@/lib/logging/logger";
 
-// Map Sanity document _type to cache tag (per D-01, D-05, D-06, D-07)
-const TYPE_TAG_MAP: Record<string, string> = {
+// Map Sanity document types to the cache tags of queries that depend on them.
+const TYPE_TAG_MAP: Record<string, string | string[]> = {
   homePage: "homePage",
   contactPage: "contactPage",
   galleryPage: "galleryPage",
@@ -11,7 +11,7 @@ const TYPE_TAG_MAP: Record<string, string> = {
   trainingProgramsPage: "trainingProgramsPage",
   trainingProgram: "trainingProgram",
   shortCourse: "shortCourse",
-  "mux.videoAsset": "shortCourse",
+  "mux.videoAsset": ["shortCourse", "trainingProgramPreviewVideo"],
   productsPage: "productsPage",
   servicesPage: "servicesPage",
   productCollection: "productCollection",
@@ -113,9 +113,9 @@ export function createRevalidatePostHandler(
       return new Response(null, { status: 400 });
     }
 
-    const tag = TYPE_TAG_MAP[body._type];
+    const tags = TYPE_TAG_MAP[body._type];
 
-    if (!tag) {
+    if (!tags) {
       // Unknown type — not an error, just nothing to revalidate (per D-09)
       log("info", `[revalidate] Unhandled _type: ${body._type} — no-op`);
       return new Response(null, { status: 200 });
@@ -123,8 +123,10 @@ export function createRevalidatePostHandler(
 
     // Per research: Next.js 16 requires { expire: 0 } for immediate expiry
     // Single-arg revalidateTag(tag) is deprecated in Next.js 16
-    dependencies.revalidateTag(tag, { expire: 0 });
-    log("info", `[revalidate] tag='${tag}' _type='${body._type}'`);
+    for (const tag of Array.isArray(tags) ? tags : [tags]) {
+      dependencies.revalidateTag(tag, { expire: 0 });
+      log("info", `[revalidate] tag='${tag}' _type='${body._type}'`);
+    }
 
     // Fold-in: a product publish also reconciles that product's stock. Only a
     // changed set-point resets the live count, so ordinary edits are no-ops.

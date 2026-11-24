@@ -367,6 +367,11 @@ export interface TTrainingProgram {
   heroImage?: TSanityImage;
   heroBadges?: string[];
   slug: string;
+  previewVideo?: {
+    isReady: boolean;
+    playbackId: string | null;
+    thumbTime: number | null;
+  } | null;
   detailHeading?: string;
   detailEyebrow?: string;
   detailDescription?: string;
