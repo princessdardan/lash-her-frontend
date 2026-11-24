@@ -167,6 +167,30 @@ test("actual profiled leaf execute cannot apply pending SQL or create a migratio
   } finally { rmSync(folder, { recursive: true, force: true }); }
 });
 
+test("isolated bootstrap refuses a checkout invocation before creating an intent", () => {
+  const folder = mkdtempSync(join(tmpdir(), "p407-bootstrap-checkout-"));
+  try {
+    const f = profiledFixture();
+    Object.assign(f.job.target, { host: "p4-07-db.lashher.com", port: 5432, serverMajor: 18,
+      database: "lash_her_p407_frontend", user: "lash_her_p407_frontend_migration", runtimeRole: "lash_her_p407_frontend_runtime",
+      allowEmptyBootstrap: true, approvedPendingTags: f.artifact.migrations.map(({ tag }) => tag) });
+    f.job.recoveryRef = "p4-07/lightsail/empty-schema/" + "a".repeat(64);
+    const files = [f.candidate, f.job, f.baseline,
+      { version: 1, databaseOid: "100", migrationRoleOid: "101", runtimeRoleOid: "102", systemIdentifier: "103" }].map((value, index) => {
+      const path = join(folder, index + ".json"); writeFileSync(path, JSON.stringify(value)); return path;
+    });
+    const output = mkdtempSync(join(tmpdir(), "p407-bootstrap-intent-"));
+    try {
+      const result = spawnSync(process.execPath, ["--import", "tsx", "ops/platform/frontend-migration.mjs", "--execute-p407-bootstrap",
+        ...files.slice(0, 3), "--confirm", "staging/" + f.job.releaseId, output, files[3]],
+        { input: "fixture-only", encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000 });
+      assert.equal(result.status, 1);
+      assert.deepEqual(JSON.parse(result.stderr).qualificationTargetProfile, current);
+      assert.deepEqual(readdirSync(output), []);
+    } finally { rmSync(output, { recursive: true, force: true }); }
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
+
 test("frontend preparation binds exact source, target and reviewed SQL/schema without credentials", () => {
   const f = fixture(), prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact);
   assert.equal(prepared.artifact.migrations.length, f.artifact.manifest.entries.length);
