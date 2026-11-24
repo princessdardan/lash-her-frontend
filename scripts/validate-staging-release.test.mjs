@@ -204,3 +204,109 @@ test("isolated build pins refuse shared resources, source drift and open release
   }, manifest);
   assert(errors.some(error => error.includes("runtime role")));
 });
+
+function p506Fixture() {
+  const { env, manifest } = fixture();
+  const commit = "c".repeat(40);
+  const migrationReceiptSha256 = "d".repeat(64);
+  const database = "postgresql://lash_her_p506_frontend_runtime:p506-inactive-build-fixture@p506-frontend-db.lashher.com:5432/lash_her_p506_frontend?sslmode=verify-full&channel_binding=require";
+  const inactiveProviders = [
+    "AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "ADMIN_OWNER_EMAILS",
+    "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI",
+    "SANITY_WRITE_TOKEN", "SANITY_WEBHOOK_SECRET",
+    "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "RESEND_SEGMENT_MARKETING_ID",
+    "FROM_EMAIL", "ADMIN_EMAIL", "KV_REST_API_TOKEN", "SQUARE_ACCESS_TOKEN",
+    "SQUARE_APPLICATION_ID", "SQUARE_LOCATION_ID", "SQUARE_WEBHOOK_SIGNATURE_KEY",
+    "CHECKOUT_SECRET_ENCRYPTION_KEY", "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
+    "PAYMENT_RECONCILIATION_CRON_SECRET", "CRON_SECRET",
+    "CUSTOMER_AUTH_GOOGLE_ID", "CUSTOMER_AUTH_GOOGLE_SECRET", "CUSTOMER_AUTH_RESEND_KEY",
+    "CUSTOMER_AUTH_EMAIL_FROM", "CUSTOMER_AUTH_SECRET",
+  ];
+  Object.assign(env, Object.fromEntries(inactiveProviders.map(name => [name, ""])), {
+    STAGING_P5_06_BUILD_PINS: JSON.stringify({ commit, migrationReceiptSha256 }),
+    STAGING_P5_06_MIGRATION_RECEIPT_SHA256: migrationReceiptSha256,
+    STAGING_RELEASE_COMMIT: commit,
+    STAGING_MIGRATION_VERIFIED_COMMIT: commit,
+    VERCEL_GIT_COMMIT_SHA: commit,
+    VERCEL_GIT_COMMIT_REF: commit,
+    DATABASE_URL: database,
+    FRONTEND_WRITER_ADMISSION_DATABASE_URL: database,
+    API_GATEWAY_STAGING_ORIGIN: "https://api-p506.lashher.com",
+    P506_POSTGRES_RELAY_URL: "wss://api-p506.lashher.com/internal/p5-06/postgres",
+    KV_REST_API_URL: "https://p506-inactive-build.invalid",
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
+    LASH_RELEASE_SCHEDULER_PROFILE: "off",
+    LASH_RELEASE_SCHEDULER_QUALIFICATION: "false",
+    API_GATEWAY_SMOKE_ENABLED: "false",
+    CUSTOMER_AUTH_ENABLED: "false",
+    CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED: "false",
+    CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED: "false",
+    INTEGRATION_CUSTOMER_ACCESS_ENABLED: "false",
+    INTEGRATION_LEARNING_ROUTES_ENABLED: "false",
+    INTEGRATION_COURSE_READS_ENABLED: "false",
+    INTEGRATION_COURSE_AUTHORING_ENABLED: "false",
+    INTEGRATION_CHECKOUT_ENABLED: "false",
+    INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED: "false",
+    INTEGRATION_LEGACY_PROGRESS_IMPORT_ENABLED: "false",
+    INTEGRATION_COMMUNITY_READS_ENABLED: "false",
+    INTEGRATION_COMMUNITY_WRITES_ENABLED: "false",
+    INTEGRATION_COMMUNITY_MEDIA_ENABLED: "false",
+    MANUAL_PRODUCT_CHECKOUT_ENABLED: "false",
+    SQUARE_COMMERCE_ENABLED: "false",
+    SERVICE_BOOKING_SQUARE_ENABLED: "false",
+    SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED: "false",
+    SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED: "false",
+    TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED: "false",
+  });
+  return { env, manifest };
+}
+
+test("P5-06 accepts only an exact isolated held build", () => {
+  const { env, manifest } = p506Fixture();
+  assert.deepEqual(checkStagingRelease(env, manifest), []);
+  for (const [name, value, error] of [
+    ["VERCEL_PROJECT_ID", VERCEL_PROJECT_BINDINGS.productionProjectId, "VERCEL_PROJECT_ID"],
+    ["VERCEL_TARGET_ENV", "preview", "VERCEL_TARGET_ENV"],
+    ["STAGING_P5_06_BUILD_PINS", undefined, "source and migration receipt"],
+    ["STAGING_P5_06_MIGRATION_RECEIPT_SHA256", "e".repeat(64), "source and migration receipt"],
+    ["STAGING_MIGRATION_VERIFIED_COMMIT", "e".repeat(40), "source and migration receipt"],
+    ["VERCEL_GIT_COMMIT_REF", "staging", "source and migration receipt"],
+    ["P407_POSTGRES_RELAY_URL", "wss://api-p407.lashher.com/internal/p4-07/postgres", "P407_POSTGRES_RELAY_URL"],
+    ["P506_POSTGRES_RELAY_URL", env.P506_POSTGRES_RELAY_URL + "?target=other", "P506_POSTGRES_RELAY_URL"],
+    ["API_GATEWAY_STAGING_ORIGIN", "https://api-staging.lashher.com", "API_GATEWAY_STAGING_ORIGIN"],
+    ["LASH_RELEASE_SCHEDULER_PROFILE", "business", "LASH_RELEASE_SCHEDULER_PROFILE"],
+    ["SQUARE_COMMERCE_ENABLED", "true", "SQUARE_COMMERCE_ENABLED"],
+    ["INTEGRATION_CHECKOUT_ENABLED", "true", "INTEGRATION_CHECKOUT_ENABLED"],
+    ["CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED", "true", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED"],
+    ["P506_POSTGRES_RELAY_DEPLOYMENT_PROOF", "do-not-echo-this", "P506_POSTGRES_RELAY_DEPLOYMENT_PROOF"],
+    ["RESEND_API_KEY", "do-not-echo-this", "RESEND_API_KEY"],
+  ]) {
+    const errors = checkStagingRelease({ ...env, [name]: value }, manifest);
+    assert(errors.some(message => message.includes(error)), name);
+    assert(!errors.join(" ").includes("do-not-echo-this"));
+  }
+});
+
+test("P5-06 validates the exact build-only target on both database drivers", () => {
+  const { env, manifest } = p506Fixture();
+  for (const name of ["DATABASE_URL", "FRONTEND_WRITER_ADMISSION_DATABASE_URL"]) {
+    for (const value of [
+      env[name].replace("postgresql:", "https:"),
+      env[name].replace("p506-frontend-db.lashher.com", manifest.frontendDatabase.pooledHost),
+      env[name].replace("5432", "6432"),
+      env[name].replace("lash_her_p506_frontend_runtime", "migration_role"),
+      env[name].replace("/lash_her_p506_frontend", "/unrelated_database"),
+      env[name].replace("p506-inactive-build-fixture", "do-not-echo-this"),
+      env[name].replace("verify-full", "require"),
+      env[name].replace("channel_binding=require", "channel_binding=disable"),
+      env[name] + "&sslmode=require",
+      env[name] + "&options=unsafe",
+      env[name] + "#fragment",
+    ]) {
+      const errors = checkStagingRelease({ ...env, [name]: value }, manifest);
+      assert(errors.some(message => message.includes(name)), name);
+      assert(!errors.join(" ").includes("do-not-echo-this"));
+    }
+  }
+});

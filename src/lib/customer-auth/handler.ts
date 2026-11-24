@@ -9,6 +9,7 @@ import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { runWriterAdmission, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { createCustomerAuthConfig } from "./config";
 import { withCustomerWriterContext } from "./context";
+import { permitsP506CandidateRequest } from "@/lib/env/p506-candidate-origin";
 import { CUSTOMER_AUTH_BASE_PATH, customerSessionCookieName, customerThrottleKey, normalizeCustomerEmail, resolveCustomerAuthConfiguration, type CustomerAuthConfiguration } from "./policy";
 import { createCustomerAuthStore, customerEnrollmentScopeId, type CustomerAuthStore } from "./store";
 
@@ -124,7 +125,7 @@ export function createCustomerAuthHandler(dependencies: {
       const url = new URL(request.url);
       const action = url.pathname.slice(CUSTOMER_AUTH_BASE_PATH.length);
       const allowed = request.method === "GET" ? ["/csrf", "/providers", "/session", "/callback/google", "/callback/resend"] : ["/signin/google", "/signin/resend", "/signout"];
-      if (!hasConfiguredRequestOrigin(request, configuration.origin) || !url.pathname.startsWith(`${CUSTOMER_AUTH_BASE_PATH}/`) || !allowed.includes(action)) return noStore(Response.json({ error: "Invalid request." }, { status: 404 }));
+      if (!permitsP506CandidateRequest(request) || !hasConfiguredRequestOrigin(request, configuration.origin) || !url.pathname.startsWith(`${CUSTOMER_AUTH_BASE_PATH}/`) || !allowed.includes(action)) return noStore(Response.json({ error: "Invalid request." }, { status: 404 }));
       if (request.method === "POST" && request.headers.get("origin") !== configuration.origin) return noStore(Response.json({ error: "Invalid request." }, { status: 403 }));
       return noStore(await admitted(request, configuration));
     } catch { return unavailable(); }

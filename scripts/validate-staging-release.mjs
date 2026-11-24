@@ -5,6 +5,17 @@ import { pathToFileURL } from "node:url";
 import dotenv from "dotenv";
 import { resolveApplicationEnvironment } from "../src/lib/env/application-environment.mjs";
 
+import {
+  P506_RELAY_URL, P506_POSTGRES_HOST, P506_POSTGRES_PORT,
+  P506_POSTGRES_DATABASE, P506_POSTGRES_ROLE,
+} from "../src/lib/private-db/p506-postgres-relay-pins.mjs";
+
+const FORBIDDEN_DATABASE_BINDINGS = [
+  "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL",
+  "POSTGRES_PRISMA_URL", "POSTGRES_URL_NO_SSL", "PGPASSWORD", "POSTGRES_PASSWORD",
+  "COMMUNITY_DATABASE_URL", "COURSE_DATABASE_URL",
+];
+
 const REQUIRED_CREDENTIALS = [
   "AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "ADMIN_OWNER_EMAILS",
   "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI",
@@ -37,8 +48,120 @@ function isolatedBuildPins(env, manifest) {
   return pins;
 }
 
+const P506_HELD_FEATURES = [
+  "API_GATEWAY_SMOKE_ENABLED",
+  "CUSTOMER_AUTH_ENABLED",
+  "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED",
+  "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED",
+  "INTEGRATION_CUSTOMER_ACCESS_ENABLED",
+  "INTEGRATION_LEARNING_ROUTES_ENABLED",
+  "INTEGRATION_COURSE_READS_ENABLED",
+  "INTEGRATION_COURSE_AUTHORING_ENABLED",
+  "INTEGRATION_CHECKOUT_ENABLED",
+  "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED",
+  "INTEGRATION_LEGACY_PROGRESS_IMPORT_ENABLED",
+  "INTEGRATION_COMMUNITY_READS_ENABLED",
+  "INTEGRATION_COMMUNITY_WRITES_ENABLED",
+  "INTEGRATION_COMMUNITY_MEDIA_ENABLED",
+  "HIGHLEVEL_SYNC_ENABLED",
+  "HIGHLEVEL_MARKETING_ENABLED",
+  "CHITCHATS_SHIPPING_ENABLED",
+  "CHITCHATS_CHECKOUT_ENABLED",
+  "MANUAL_PRODUCT_CHECKOUT_ENABLED",
+  "SQUARE_COMMERCE_ENABLED",
+  "SERVICE_BOOKING_SQUARE_ENABLED",
+  "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED",
+  "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED",
+  "TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED",
+];
+
+const P506_BUILD_INPUT = "p506-inactive-build-fixture";
+
+function checkP506Database(value) {
+  try {
+    const url = new URL(value);
+    const channelBinding = url.searchParams.getAll("channel_binding");
+    return ["postgres:", "postgresql:"].includes(url.protocol) &&
+      url.hostname === P506_POSTGRES_HOST && Number(url.port || 5432) === P506_POSTGRES_PORT &&
+      decodeURIComponent(url.pathname) === `/${P506_POSTGRES_DATABASE}` &&
+      decodeURIComponent(url.username) === P506_POSTGRES_ROLE && url.password === P506_BUILD_INPUT && !url.hash &&
+      url.searchParams.getAll("sslmode").length === 1 && url.searchParams.get("sslmode") === "verify-full" &&
+      [...url.searchParams.keys()].every(key => key === "sslmode" || key === "channel_binding") &&
+      (channelBinding.length === 0 || channelBinding.length === 1 && channelBinding[0] === "require");
+  } catch { return false; }
+}
+
+function checkP506Build(env, manifest) {
+  const errors = [];
+  const requireValue = (name, expected) => {
+    if (env[name] !== expected) errors.push(`${name} must match the isolated P5-06 build configuration`);
+  };
+  const requireEmpty = (name) => {
+    if (env[name]) errors.push(`${name} must be absent from the isolated P5-06 build`);
+  };
+  try {
+    if (resolveApplicationEnvironment(env) !== "staging") throw new Error();
+  } catch { errors.push("The verified Vercel staging project and team are required for P5-06"); }
+
+  for (const [name, value] of Object.entries({
+    VERCEL: "1",
+    VERCEL_PROJECT_ID: manifest.projectId,
+    VERCEL_ENV: "production",
+    VERCEL_TARGET_ENV: "production",
+    NEXT_PUBLIC_SITE_URL: manifest.origin,
+    NEXT_PUBLIC_SANITY_PROJECT_ID: manifest.sanity.projectId,
+    NEXT_PUBLIC_SANITY_DATASET: manifest.sanity.dataset,
+    API_GATEWAY_STAGING_ORIGIN: new URL(P506_RELAY_URL).origin.replace(/^wss:/u, "https:"),
+    P506_POSTGRES_RELAY_URL: P506_RELAY_URL,
+    LASH_RELEASE_SCHEDULER_PROFILE: "off",
+    LASH_RELEASE_SCHEDULER_QUALIFICATION: "false",
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
+    SQUARE_ENVIRONMENT: "sandbox",
+    KV_REST_API_URL: "https://p506-inactive-build.invalid",
+  })) requireValue(name, value);
+  if (!manifest.sanity.projectId) errors.push("A selected staging Sanity project must be recorded");
+  for (const feature of P506_HELD_FEATURES) requireValue(feature, "false");
+  for (const name of [
+    ...FORBIDDEN_DATABASE_BINDINGS,
+    "STAGING_P4_07_BUILD_PINS", "P407_POSTGRES_RELAY_URL", "P407_POSTGRES_RELAY_DEPLOYMENT_PROOF",
+    "P506_POSTGRES_RELAY_DEPLOYMENT_PROOF", "P506_POSTGRES_RELAY_PROOF_SHA256", "P506_POSTGRES_RELAY_PROOF_EXPIRES_AT",
+    "FRONTEND_WRITER_PRODUCER_SHA256", "API_GATEWAY_PRODUCTION_ORIGIN",
+  ]) requireEmpty(name);
+  if (env.PAYMENT_GATEWAY_MODE === "mock") errors.push("The Production target must not use payment mock mode");
+
+  // The operator validates the read-only migration receipt, then pins its digest
+  // and source in deployment build metadata. A build does not contact the DB.
+  try {
+    const { commit, migrationReceiptSha256 } = JSON.parse(env.STAGING_P5_06_BUILD_PINS);
+    const sha = (value, size) => typeof value === "string" &&
+      new RegExp(`^(?!0+$)[a-f0-9]{${size}}$`, "u").test(value);
+    if (!sha(commit, 40) || !sha(migrationReceiptSha256, 64) ||
+        migrationReceiptSha256 !== env.STAGING_P5_06_MIGRATION_RECEIPT_SHA256 ||
+        commit !== env.STAGING_RELEASE_COMMIT || commit !== env.STAGING_MIGRATION_VERIFIED_COMMIT ||
+        commit !== env.VERCEL_GIT_COMMIT_SHA || commit !== env.VERCEL_GIT_COMMIT_REF) throw new Error();
+  } catch { errors.push("The isolated P5-06 source and migration receipt pins are invalid"); }
+
+  for (const name of ["DATABASE_URL", "FRONTEND_WRITER_ADMISSION_DATABASE_URL"]) {
+    if (!checkP506Database(env[name])) errors.push(`${name} must use the isolated P5-06 database identity and TLS policy`);
+  }
+  for (const name of [
+    ...REQUIRED_CREDENTIALS.filter(name => name !== "SANITY_API_READ_TOKEN"),
+    "SQUARE_LOCATION_ID", "CUSTOMER_AUTH_GOOGLE_ID", "CUSTOMER_AUTH_GOOGLE_SECRET",
+    "CUSTOMER_AUTH_RESEND_KEY", "CUSTOMER_AUTH_EMAIL_FROM", "CUSTOMER_AUTH_SECRET",
+  ]) {
+    // Explicit blank or known synthetic input removes inherited provider credentials.
+    if (env[name] !== "" && env[name] !== P506_BUILD_INPUT) requireValue(name, P506_BUILD_INPUT);
+  }
+  return errors;
+}
+
 /** Returns configuration errors without including credential values or URLs. */
 export function checkStagingRelease(env, manifest) {
+  if (env.STAGING_P5_06_BUILD_PINS !== undefined ||
+      Object.keys(env).some(name => name.startsWith("P506_POSTGRES_RELAY_"))) {
+    return checkP506Build(env, manifest);
+  }
   const errors = [];
   const requireValue = (name, expected) => {
     if (env[name] !== expected) errors.push(`${name} does not match the staging release manifest`);
@@ -125,7 +248,7 @@ export function checkStagingRelease(env, manifest) {
     redis.protocol !== "https:" || redis.hostname !== manifest.redis.hostname || redis.username || redis.password)) {
     errors.push("KV_REST_API_URL must match the selected staging Redis resource");
   }
-  for (const name of ["DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL_NO_SSL", "PGPASSWORD", "POSTGRES_PASSWORD", "COMMUNITY_DATABASE_URL", "COURSE_DATABASE_URL"]) {
+  for (const name of FORBIDDEN_DATABASE_BINDINGS) {
     if (env[name]) errors.push(`${name} must not be delivered to the frontend runtime`);
   }
   requireValue("SQUARE_ENVIRONMENT", "sandbox");

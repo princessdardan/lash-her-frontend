@@ -10,6 +10,7 @@ import {
 } from "@/lib/booking/fresha";
 
 import { auth } from "@/auth";
+import { permitsP506CandidateRequest } from "@/lib/env/p506-candidate-origin";
 import {
   ADMIN_DEVELOPER_MODE_COOKIE,
   isAdminDeveloperModeEnabled,
@@ -57,6 +58,8 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
     request.nextUrl.pathname === "/admin" ||
     request.nextUrl.pathname.startsWith("/admin/")
   ) {
+    if (!permitsP506CandidateRequest(request))
+      return new Response(null, { status: 403, headers: { "cache-control": "private, no-store" } });
     return adminProxy(request, event);
   }
   const headers = interactiveRequestHeaders(request);

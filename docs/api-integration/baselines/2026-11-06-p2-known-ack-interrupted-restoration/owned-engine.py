@@ -80,7 +80,10 @@ def archive_operator_sources(root,commit,source):
     excluded = (PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_EVIDENCE_ONLY
                 | INTERRUPTED_RESTORATION_UNRELATED_HARNESS | IMAGE_BUILD_ONLY)
     for name in list(paths):
-        if name in excluded or (name not in REQUIRED and name.endswith(('_test.py','.test.mjs','.test.ts','.test.mts'))):
+        # This model has no historical login inputs. Keep the independently
+        # qualified historical source inventories out of its owned projection.
+        unrelated_fixture_input = name.startswith('ops/platform/profiles/frontend-historical-sources/') or name.endswith(('_test.py','.test.mjs','.test.ts','.test.mts'))
+        if name in excluded or (name not in REQUIRED and unrelated_fixture_input):
             paths.pop(name).unlink()
     if not REQUIRED.issubset(paths) or len(paths)>512 or sum(path.stat().st_size for path in paths.values())>41_000_000:
         raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')

@@ -1,6 +1,6 @@
 import "server-only";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import { readP407PostgresRelay } from "@/lib/private-db/p407-postgres-relay";
+import { hasP506PostgresRelayBinding, readPostgresRelay } from "@/lib/private-db/postgres-relay";
 import stagingRelease from "../../../ops/staging/first-release.json" with { type: "json" };
 
 export class WriterAdmissionError extends Error {
@@ -29,7 +29,7 @@ export type WriterAdmissionConfiguration = {
     ssl: { rejectUnauthorized: true }; enableChannelBinding: true;
     connectionTimeoutMillis: number; statement_timeout: number; lock_timeout: number;
     application_name: string;
-    stream?: NonNullable<ReturnType<typeof readP407PostgresRelay>>["stream"];
+    stream?: NonNullable<ReturnType<typeof readPostgresRelay>>["stream"];
   };
 };
 const digest = (value: unknown, length: number): value is string =>
@@ -39,7 +39,10 @@ const name = (value: unknown): value is string => typeof value === "string" && /
 export function resolveWriterAdmissionConfiguration(
   env: Record<string, string | undefined>,
 ): WriterAdmissionConfiguration | null {
-  if (env.FRONTEND_WRITER_ADMISSION_MODE === undefined || env.FRONTEND_WRITER_ADMISSION_MODE === "off") return null;
+  if (env.FRONTEND_WRITER_ADMISSION_MODE === undefined || env.FRONTEND_WRITER_ADMISSION_MODE === "off") {
+    if (hasP506PostgresRelayBinding(env)) throw new WriterAdmissionError("configuration");
+    return null;
+  }
   try {
     if (env.FRONTEND_WRITER_ADMISSION_MODE !== "enforce" || env.VERCEL_ENV !== "production" || env.VERCEL_TARGET_ENV !== "production") throw new Error();
     const environment = resolveApplicationEnvironment(env);
@@ -53,7 +56,9 @@ export function resolveWriterAdmissionConfiguration(
       !name(target.database) || !name(target.user) || ![16, 18].includes(target.serverMajor) ||
       !digest(target.targetSha256, 64) || !digest(env.FRONTEND_WRITER_PRODUCER_SHA256, 64) || !digest(env.VERCEL_GIT_COMMIT_SHA, 40)) throw new Error();
     const url = new URL(env.FRONTEND_WRITER_ADMISSION_DATABASE_URL ?? "");
-    requireTargetUrl(url, target);
+    const relay = readPostgresRelay(url.href, env);
+    const isP506 = relay?.qualification === "P5-06";
+    requireTargetUrl(url, target, isP506);
     // Business writes use DATABASE_URL through getPrivateDb(), not this ledger
     // connection. Both must belong to the exact admitted database and login.
     const stagingDb = stagingRelease.frontendDatabase;
@@ -64,9 +69,9 @@ export function resolveWriterAdmissionConfiguration(
     if (usesReviewedStagingTarget && businessUrl.hostname === stagingDb.pooledHost) {
       requireTargetUrl(businessUrl, { ...target, host: stagingDb.pooledHost }, true);
     } else {
-      requireTargetUrl(businessUrl, target);
+      requireTargetUrl(businessUrl, target, isP506);
     }
-    const relay = readP407PostgresRelay(url.href, env);
+    if (isP506) readPostgresRelay(businessUrl.href, env);
     return {
       target: { environment, host: target.host, port: target.port, database: target.database, user: target.user,
         serverMajor: target.serverMajor, targetSha256: target.targetSha256 },
@@ -75,7 +80,7 @@ export function resolveWriterAdmissionConfiguration(
       connection: { host: target.host, port: target.port, database: target.database, user: target.user,
         password: decodeURIComponent(url.password), ssl: { rejectUnauthorized: true }, enableChannelBinding: true,
         connectionTimeoutMillis: 5_000, statement_timeout: 10_000, lock_timeout: 1_000,
-        application_name: "lash-her-frontend-writer-admission", ...relay },
+        application_name: "lash-her-frontend-writer-admission", ...(relay && { stream: relay.stream }) },
     };
   } catch { throw new WriterAdmissionError("configuration"); }
 }

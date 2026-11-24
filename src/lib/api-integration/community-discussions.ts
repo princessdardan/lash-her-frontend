@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { requirePermission } from "@/lib/admin/auth";
+import { matchesP506OriginHeaders, resolveP506CandidateOrigin } from "@/lib/env/p506-candidate-origin";
 import { AdminAuthError } from "@/lib/admin/types";
 import {
   customerSessionCookieName,
@@ -130,6 +131,10 @@ export async function communityRequest(
       resourceIds.some((id) => !canonicalUuid(id))
     )
       throw new IntegrationServiceError("not_found", 404);
+    const candidateOrigin = resolveP506CandidateOrigin();
+    if (candidateOrigin && (new URL(request.url).origin !== candidateOrigin ||
+        !matchesP506OriginHeaders(request.headers, candidateOrigin)))
+      throw new IntegrationServiceError("forbidden", 403);
     const configuration = admin
       ? undefined
       : resolveCustomerAuthConfiguration();
@@ -152,7 +157,7 @@ export async function communityRequest(
     if (write) {
       const input = await readSameOriginJson(
         request,
-        admin ? adminBrowserOrigin() : configuration?.origin,
+        admin ? candidateOrigin ?? adminBrowserOrigin() : configuration?.origin,
         24_576,
       );
       if (method === "delete") {

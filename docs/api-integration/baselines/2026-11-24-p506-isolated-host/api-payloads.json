@@ -1,0 +1,54 @@
+{
+  "course": {
+    "revision": "48dbb00f6e5be5061e044e145b0de166dfde231d",
+    "payloadSha256": "2748c9e8fabbd927a204430cd4d6c6bb2d308e98b79d99549761da378314417f",
+    "labels": {
+      "com.lashher.source.revision": "48dbb00f6e5be5061e044e145b0de166dfde231d",
+      "com.lashher.environment": "staging",
+      "com.lashher.payload.sha256": "2748c9e8fabbd927a204430cd4d6c6bb2d308e98b79d99549761da378314417f"
+    },
+    "targets": {
+      "runtime": {
+        "image": "sha256:b9bc042c31ce1f87f9b2e31376d8f023ef10b307dc8e23e48bcce86d6e6dc33d",
+        "imageReference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:b9bc042c31ce1f87f9b2e31376d8f023ef10b307dc8e23e48bcce86d6e6dc33d",
+        "mounts": [
+          "/var/lib/lash-her/p5-06/api-pack/course/dist:/app/dist:ro"
+        ]
+      },
+      "migration": {
+        "image": "sha256:0e41a3d2fe25320599155d2506cb4c45d9b14b0f7da862ca5e481c9d9c835b44",
+        "imageReference": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:0e41a3d2fe25320599155d2506cb4c45d9b14b0f7da862ca5e481c9d9c835b44",
+        "mounts": [
+          "/var/lib/lash-her/p5-06/api-pack/course/dist-migration:/app/dist-migration:ro",
+          "/var/lib/lash-her/p5-06/api-pack/course/drizzle:/app/drizzle:ro"
+        ]
+      }
+    }
+  },
+  "community": {
+    "revision": "2799fe45539530a2fdbff8cbbc1c9886e4e0d3a8",
+    "payloadSha256": "94a5ab88aa2894ba465a40ca84bd7399e6f7e2e5abb6d448aa777de06ce472ff",
+    "labels": {
+      "com.lashher.source.revision": "2799fe45539530a2fdbff8cbbc1c9886e4e0d3a8",
+      "com.lashher.environment": "staging",
+      "com.lashher.payload.sha256": "94a5ab88aa2894ba465a40ca84bd7399e6f7e2e5abb6d448aa777de06ce472ff"
+    },
+    "targets": {
+      "runtime": {
+        "image": "sha256:adbde59eb3604959ddfc5c79fb5f8428714670ea6c538790cb495eba8ea3e635",
+        "imageReference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:adbde59eb3604959ddfc5c79fb5f8428714670ea6c538790cb495eba8ea3e635",
+        "mounts": [
+          "/var/lib/lash-her/p5-06/api-pack/community/dist:/app/dist:ro"
+        ]
+      },
+      "migration": {
+        "image": "sha256:fa6d7538931431697a8040a21db5bbcad09cd5d503b411061b1693708bb9b6bc",
+        "imageReference": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:fa6d7538931431697a8040a21db5bbcad09cd5d503b411061b1693708bb9b6bc",
+        "mounts": [
+          "/var/lib/lash-her/p5-06/api-pack/community/dist-migration:/app/dist-migration:ro",
+          "/var/lib/lash-her/p5-06/api-pack/community/drizzle:/app/drizzle:ro"
+        ]
+      }
+    }
+  }
+}

@@ -490,6 +490,7 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/package.json,dst=/source/package.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/course-dispute-resolution.json,dst=/source/contracts/api-integration/course-dispute-resolution.json,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/platform-evidence/frontend-migration-rehearsal.json"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
@@ -512,6 +513,7 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/package.json,dst=/source/package.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/course-dispute-resolution.json,dst=/source/contracts/api-integration/course-dispute-resolution.json,readonly" \
             --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/platform-evidence/p2-platform-postgres18.json"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \

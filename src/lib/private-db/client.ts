@@ -6,7 +6,7 @@ import { Pool } from "pg";
 import { getCheckoutDatabaseUrl } from "@/lib/env/private-checkout";
 
 import { createPrivateDbPoolConfig } from "./pool-config";
-import { readP407PostgresRelay } from "./p407-postgres-relay";
+import { readPostgresRelay } from "./postgres-relay";
 import * as schema from "./schema";
 
 let pool: Pool | null = null;
@@ -23,10 +23,10 @@ function getPool(): Pool {
 
   const databaseUrl = getCheckoutDatabaseUrl();
   const config = createPrivateDbPoolConfig(databaseUrl);
-  const relay = readP407PostgresRelay(databaseUrl);
+  const relay = readPostgresRelay(databaseUrl);
   pool = new Pool(relay ? {
     ...config,
-    ...relay,
+    stream: relay.stream,
     enableChannelBinding: true,
     max: 3,
     maxLifetimeSeconds: 120,
@@ -35,7 +35,7 @@ function getPool(): Pool {
   } : config);
   if (relay) pool.on("error", () => {
     // An expired relay closes idle clients. pg removes them before emitting.
-    console.error("P4-07 PostgreSQL relay idle connection closed");
+    console.error(`${relay.qualification} PostgreSQL relay idle connection closed`);
   });
 
   return pool;

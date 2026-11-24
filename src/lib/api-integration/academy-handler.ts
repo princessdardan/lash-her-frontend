@@ -2,6 +2,7 @@ import "server-only";
 
 import { readCourseAccess } from "@/lib/courses/access";
 import { legacyProgressImportEnabled } from "@/lib/learning/rollout";
+import { resolveP506CandidateOrigin } from "@/lib/env/p506-candidate-origin";
 import { getCustomerActor } from "@/lib/customer-auth/session";
 import { hasStalledPlaybackRenewalPermit, readInteractiveBrowserRequest, type LearningEnrollmentSelection } from "@/lib/writer-admission/interactive-proof";
 import { createCourseClient } from "./course-client";
@@ -13,7 +14,7 @@ export type AcademyOperation = "catalog" | "catalog-course" | "my-courses" | "my
 
 export function createAcademyHandler(operation: AcademyOperation, dependencies: { client?: () => Client; origin?: () => string | undefined;
   getCustomer?: typeof getCustomerActor; getLegacyAccess?: typeof readCourseAccess; legacyProgressEnabled?: () => boolean; getLearningEnrollment?: () => Promise<LearningEnrollmentSelection | undefined> } = {}) {
-  const origin = dependencies.origin ?? (() => process.env.CUSTOMER_AUTH_URL);
+  const origin = dependencies.origin ?? (() => resolveP506CandidateOrigin() ?? process.env.CUSTOMER_AUTH_URL);
   const getLearningEnrollment = dependencies.getLearningEnrollment ?? (async () => (await readInteractiveBrowserRequest())?.learningEnrollment);
   return async (request: Request, params: Record<string, string> = {}): Promise<Response> => {
     let requestId = safeIntegrationRequestId();

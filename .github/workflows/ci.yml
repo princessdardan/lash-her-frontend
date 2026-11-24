@@ -98,6 +98,7 @@ jobs:
             --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/course-dispute-resolution.json,dst=/source/contracts/api-integration/course-dispute-resolution.json,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/frontend-schema/postgres18.json"
           node --input-type=module -e '
             import {readFileSync,writeFileSync} from "node:fs";
@@ -133,6 +134,7 @@ jobs:
             --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/course-dispute-resolution.json,dst=/source/contracts/api-integration/course-dispute-resolution.json,readonly" \
             --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
       - name: Prepare the reviewed P2 source for owned HTTP fixtures

@@ -1,6 +1,8 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import type { NextRequest } from "next/server";
+import { headers } from "next/headers";
+import { matchesP506OriginHeaders, resolveP506CandidateOrigin } from "@/lib/env/p506-candidate-origin";
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 import { getAdminUserStore } from "@/lib/admin/admin-user-store";
 import { isAllowedStagingOwner, stagingOwnerRequest } from "@/lib/admin/staging-owner-auth";
@@ -26,7 +28,17 @@ async function isSelectedRotationAdmin(actorId: string, email: unknown, emailVer
 }
 
 const googleAuthorization = { params: { scope: "openid profile email" } };
+function hasVerifiedCandidateAuthOrigin() {
+  try {
+    return resolveP506CandidateOrigin() !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 const adminAuthConfig: NextAuthConfig = {
+  // An explicitly cleared inherited AUTH_URL masks Auth.js's Vercel default.
+  trustHost: hasVerifiedCandidateAuthOrigin() ? true : undefined,
   callbacks: {
     async jwt({ account, profile, token }) {
       if (account?.provider === "google") {
@@ -124,8 +136,23 @@ const adminAuthConfig: NextAuthConfig = {
   },
 };
 
-const { auth, handlers: defaultHandlers, signIn, signOut } = NextAuth(adminAuthConfig);
-export { auth, signIn, signOut };
+const { auth, handlers: defaultHandlers, signIn: startSignIn, signOut: endSession } = NextAuth(adminAuthConfig);
+export { auth };
+
+async function requireCandidateAuthActionOrigin() {
+  const origin = resolveP506CandidateOrigin();
+  if (origin && !matchesP506OriginHeaders(await headers(), origin))
+    throw new Error("P5-06 candidate auth request origin refused");
+}
+
+export const signIn: typeof startSignIn = async (...args) => {
+  await requireCandidateAuthActionOrigin();
+  return startSignIn(...args);
+};
+export const signOut: typeof endSession = async (...args) => {
+  await requireCandidateAuthActionOrigin();
+  return endSession(...args);
+};
 
 function adminAuthHandlers(request: NextRequest): typeof defaultHandlers {
   const callbackAdmission = createGoogleCallbackAdmission(request.nextUrl.pathname === "/api/auth/callback/google");
