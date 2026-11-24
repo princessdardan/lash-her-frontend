@@ -1,8 +1,8 @@
 import "server-only";
 
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import { readP407PostgresRelay } from "./p407-postgres-relay";
-import { createPostgresRelayStream } from "./postgres-relay-stream";
+import { readP407PostgresRelay } from "@/lib/private-db/p407-postgres-relay";
+import { createPostgresRelayStream } from "@/lib/private-db/postgres-relay-stream";
 
 import {
   P506_RELAY_URL,

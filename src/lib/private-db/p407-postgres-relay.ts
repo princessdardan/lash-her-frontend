@@ -1,7 +1,7 @@
 import "server-only";
 
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import { createPostgresRelayStream, type PostgresRelaySocketConfig } from "./postgres-relay-stream";
+import { createPostgresRelayStream, type PostgresRelaySocketConfig } from "@/lib/private-db/postgres-relay-stream";
 
 const RELAY_URL = "wss://api-p407.lashher.com/internal/p4-07/postgres";
 const POSTGRES_HOST = "p4-07-db.lashher.com";
