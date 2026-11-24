@@ -603,6 +603,13 @@
       "when": 1795475653448,
       "tag": "0085_p408_course_launch_terms",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795483273854,
+      "tag": "0086_p408_square_course_order",
+      "breakpoints": true
     }
   ]
 }

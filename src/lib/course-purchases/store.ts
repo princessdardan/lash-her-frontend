@@ -134,6 +134,7 @@ export async function reserveCourseCharge(
   customerId: string,
   fingerprint: string,
   acceptedTermsVersion?: string,
+  squareOrderId?: string,
 ) {
   try {
     return await getPrivateDb().transaction(async (tx) => {
@@ -158,6 +159,7 @@ export async function reserveCourseCharge(
             status: "charging",
             sourceFingerprint: fingerprint,
             termsAcceptedAt: order.purchaseTerms ? new Date() : null,
+            squareOrderId,
           })
           .where(eq(orders.id, id))
           .returning();
@@ -434,6 +436,7 @@ export async function observeCoursePayment(
       order.status === "quoted" ||
       orderReference(id) !== payment.reference_id ||
       payment.location_id !== order.squareLocationId ||
+      (order.squareOrderId && payment.order_id !== order.squareOrderId) ||
       !payment.id ||
       (order.squarePaymentId && order.squarePaymentId !== payment.id) ||
       checkMoney(

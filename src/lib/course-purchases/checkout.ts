@@ -6,6 +6,7 @@ import { getSquareCommerceEnv } from "@/lib/env/private-checkout";
 import {
   cancelSquareCoursePayment,
   completeSquareCoursePayment,
+  createSquareCourseOrder,
   createSquareCoursePayment,
   SquareApiError,
 } from "@/lib/payments/square/payments-client";
@@ -156,6 +157,28 @@ export async function payForCourse(
       409,
       "Access or a purchase already exists for this course.",
     );
+  let squareOrderId: string | undefined;
+  if (current.status === "quoted" && current.purchaseTerms) {
+    if (current.purchaseTerms.version !== input.acceptedTermsVersion)
+      throw new PurchaseDependencyError(422, "Accept the Course Purchase Terms before paying.");
+    const components = readCourseTaxComponents(current.taxBreakdown);
+    if (!components.length || components.reduce((sum, { amount }) => sum + amount, 0) !== current.taxCents)
+      throw new PurchaseDependencyError(502);
+    try {
+      squareOrderId = await createSquareCourseOrder(square, {
+        reference: orderReference(current.id),
+        title: current.courseTitle,
+        priceCents: current.priceCents,
+        taxCents: current.taxCents,
+        totalCents: current.totalCents,
+        taxBehavior: current.taxBehavior,
+        components,
+      });
+    } catch {
+      // No payment has been sent. Retrying this quote reuses its Square order key.
+      throw new PurchaseDependencyError(502);
+    }
+  }
   const fingerprint = createHash("sha256")
     .update(JSON.stringify([input.sourceId, input.verificationToken ?? null]))
     .digest("hex");
@@ -164,6 +187,7 @@ export async function payForCourse(
     actor.id,
     fingerprint,
     input.acceptedTermsVersion,
+    squareOrderId,
   );
   if (!send) {
     if (order.status === "quoted")
@@ -176,6 +200,7 @@ export async function payForCourse(
   try {
     const { payment } = await createSquareCoursePayment(square, {
       location_id: order.squareLocationId,
+      ...(order.squareOrderId ? { order_id: order.squareOrderId } : {}),
       reference_id: orderReference(order.id),
       idempotency_key: `cp-${order.id}`,
       source_id: input.sourceId,

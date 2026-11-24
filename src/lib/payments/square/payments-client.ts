@@ -35,6 +35,7 @@ export interface SquarePayment {
   status: string;
   order_id?: string;
   reference_id?: string;
+  receipt_url?: string;
   location_id?: string;
   created_at?: string;
   updated_at?: string;
@@ -284,6 +285,76 @@ export async function createSquareCommercePayment(
   request: SquareCreatePaymentRequest,
 ): Promise<SquareCreatePaymentResponse> {
   return createSquarePaymentsClient(env).createCardOnFilePayment(request);
+}
+
+type SquareCourseTax = { taxCode: string; label: string; amount: number; ratePartsPerMillion: number };
+type SquareCourseOrderResponse = { order: { id: string; [key: string]: unknown } };
+
+export async function createSquareCourseOrder(
+  env: SquarePaymentsClientEnv,
+  order: {
+    reference: string;
+    title: string;
+    priceCents: number;
+    taxCents: number;
+    totalCents: number;
+    taxBehavior: "inclusive" | "exclusive";
+    components: SquareCourseTax[];
+  },
+) {
+  const components = order.components.filter(({ ratePartsPerMillion }) => ratePartsPerMillion > 0);
+  const [tax] = components;
+  // Square rounds an exact half-cent down when the lower cent is even.
+  // For a single tax at that boundary, give Square the gross price with
+  // included tax so it preserves both the accepted amount and the exact rate.
+  const squareRoundsTaxDown = order.taxBehavior === "exclusive" && components.length === 1 &&
+    (BigInt(order.priceCents) * BigInt(tax.ratePartsPerMillion)) % BigInt(2_000_000) === BigInt(500_000);
+  const inclusive = order.taxBehavior === "inclusive" || squareRoundsTaxDown;
+  const linePrice = squareRoundsTaxDown ? order.totalCents : order.priceCents;
+
+  // Square permits only alphanumeric IDs on applied taxes. The quote's
+  // component order is stable for retries with the same idempotency key.
+  const taxes = components.map(({ label, ratePartsPerMillion }, index) => ({
+    uid: `tax${index + 1}`,
+    name: label,
+    percentage: String(ratePartsPerMillion / 10_000),
+    type: inclusive ? "INCLUSIVE" : "ADDITIVE",
+    scope: "ORDER",
+  }));
+  const validate = (value: unknown): value is SquareCourseOrderResponse =>
+    isRecord(value) && isRecord(value.order) &&
+    typeof value.order.id === "string" && value.order.id.length > 0;
+  const { order: created } = await postSquareWithStatus(env, "/v2/orders", {
+    idempotency_key: order.reference,
+    order: {
+      location_id: env.locationId,
+      reference_id: order.reference,
+      line_items: [{
+        name: order.title,
+        quantity: "1",
+        base_price_money: { amount: linePrice, currency: "CAD" },
+      }],
+      taxes,
+    },
+  }, validate, 10_000);
+
+  const matchesCad = (money: unknown, amount: number) =>
+    isRecord(money) && money.currency === "CAD" && money.amount === amount;
+  const returnedTaxes = created.taxes ?? [];
+  if (
+    created.location_id !== env.locationId || created.reference_id !== order.reference ||
+    !matchesCad(created.total_money, order.totalCents) ||
+    !(created.total_tax_money == null && order.taxCents === 0 ||
+      matchesCad(created.total_tax_money, order.taxCents)) ||
+    !Array.isArray(returnedTaxes) || returnedTaxes.length !== taxes.length ||
+    !taxes.every(({ uid, name, type }, index) =>
+      returnedTaxes.some((tax: unknown) =>
+        isRecord(tax) && tax.uid === uid && tax.name === name && tax.type === type &&
+        matchesCad(tax.applied_money, components[index].amount),
+      ),
+    )
+  ) throw new Error("Square Course order does not match the accepted quote");
+  return created.id;
 }
 
 export function createSquareCoursePayment(env: SquarePaymentsClientEnv, request: SquareCreatePaymentRequest) {
@@ -633,6 +704,10 @@ function isSquarePayment(value: unknown): value is SquarePayment {
     value.reference_id !== undefined &&
     typeof value.reference_id !== "string"
   ) {
+    return false;
+  }
+
+  if (value.receipt_url !== undefined && typeof value.receipt_url !== "string") {
     return false;
   }
 

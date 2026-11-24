@@ -38,48 +38,64 @@ const torontoDateTime = Intl.DateTimeFormat("en-CA", {
 });
 
 export const COURSE_RECEIPT_AND_TERMS_SUBJECT = "Your Lash Her course receipt and purchase terms";
+export const COURSE_AGREEMENT_SUBJECT = "Your Lash Her course purchase confirmation";
 
 export function courseRefundReceiptSubject(orderId: string) {
   return `Your Lash Her Academy refund for order ${orderId}`;
 }
 
-export function renderCourseReceipt(order: ReceiptOrder) {
-  const heading = `<h1>Course payment receipt</h1><p>${escapeHtml(order.courseTitle)}</p>`;
-  const disclosure = `<p>${escapeHtml(order.disclosure)}</p>`;
+function renderCourseOrderDetails(order: ReceiptOrder, includeRegistration: boolean) {
   const seller = order.receiptSeller;
-
-  // Preserve the body for legacy outbox jobs that may already have used their
-  // Resend idempotency key.
-  if (seller === null) {
-    return `${heading}<p>Order ${order.id}</p><p>Paid ${dollars(order.totalCents)} including tax of ${dollars(order.taxCents)}.</p>${disclosure}`;
-  }
-
-  if (!order.chargedAt) throw new Error("Course receipt requires a capture date");
+  if (!seller || !order.chargedAt) throw new Error("Course order requires a seller and capture date");
 
   const components = readCourseTaxComponents(order.taxBreakdown);
   if (!components.length || components.reduce((sum, { amount }) => sum + amount, 0) !== order.taxCents)
-    throw new Error("Course receipt requires a consistent tax snapshot");
+    throw new Error("Course order requires a consistent tax snapshot");
   const taxDetails = components.map(({ label, amount, registrationNumber }) => {
-    const registration = registrationNumber
+    const registration = includeRegistration && registrationNumber
       ? ` (registration number ${escapeHtml(registrationNumber)})`
       : "";
     return `<p>${escapeHtml(label)}: ${dollars(amount)}${registration}</p>`;
   });
 
   // Capture and quote fields describe the original sale even after a refund.
-  const saleReceipt = [
-    order.purchaseTerms
-      ? `<h1>Your receipt</h1><p>${escapeHtml(order.courseTitle)}</p>`
-      : heading,
+  return [
     `<p>Order ${escapeHtml(order.id)}</p>`,
     `<p>Payment date: ${torontoDate.format(order.chargedAt)}</p>`,
     `<p>Subtotal: ${dollars(order.totalCents - order.taxCents)}</p>`,
     ...taxDetails,
     `<p>Total paid: ${dollars(order.totalCents)}</p>`,
     `<p>${[seller.name, seller.address, seller.email, seller.phone].filter((line): line is string => Boolean(line)).map(escapeHtml).join("<br>")}</p>`,
-    disclosure,
+    `<p>${escapeHtml(order.disclosure)}</p>`,
   ].join("");
-  if (!order.purchaseTerms) return saleReceipt;
+}
+
+export function renderCourseReceipt(order: ReceiptOrder) {
+  const heading = `<h1>Course payment receipt</h1><p>${escapeHtml(order.courseTitle)}</p>`;
+  // Preserve the body for legacy outbox jobs that may already have used their
+  // Resend idempotency key.
+  if (order.receiptSeller === null) {
+    return `${heading}<p>Order ${order.id}</p><p>Paid ${dollars(order.totalCents)} including tax of ${dollars(order.taxCents)}.</p><p>${escapeHtml(order.disclosure)}</p>`;
+  }
+
+  const title = order.purchaseTerms
+    ? `<h1>Your receipt</h1><p>${escapeHtml(order.courseTitle)}</p>`
+    : heading;
+  const receipt = title + renderCourseOrderDetails(order, true);
+  return order.purchaseTerms ? renderCoursePurchaseConfirmation(order, receipt) : receipt;
+}
+
+export function renderCourseAgreement(order: ReceiptOrder, receiptUrl: string | null) {
+  const orderDetails = "<h2>Your order</h2>" + renderCourseOrderDetails(order, false);
+  const receiptLink = receiptUrl
+    ? `<p><a href="${escapeHtml(receiptUrl)}">View your Square receipt</a></p>`
+    : "";
+  return renderCoursePurchaseConfirmation(order, orderDetails + receiptLink);
+}
+
+function renderCoursePurchaseConfirmation(order: ReceiptOrder, orderDetails: string) {
+  const seller = order.receiptSeller;
+  if (!order.purchaseTerms || !seller) throw new Error("Course agreement requires a seller and terms");
   if (!order.termsAcceptedAt) throw new Error("Course agreement requires an acceptance time");
   const { name, line1, city, region, postalCode, country } = order.billing;
   const firstName = name.trim().split(/\s+/u)[0];
@@ -90,7 +106,7 @@ export function renderCourseReceipt(order: ReceiptOrder) {
   return [
     `<p>Hi ${escapeHtml(firstName)},</p>`,
     `<p>We received your payment for <strong>${escapeHtml(order.courseTitle)}</strong>. <a href="${escapeHtml(academySignInUrl.href)}">Sign in to Lash Her Academy</a> with the email address you used at checkout. Once your enrolment is active, you’ll see the course in your account.</p>`,
-    saleReceipt,
+    orderDetails,
     "<h2>Course Purchase Terms</h2>",
     `<p>Buyer: ${[name, line1, `${city}, ${region} ${postalCode}`, country].map(escapeHtml).join("<br>")}</p>`,
     `<p>Version ${escapeHtml(order.purchaseTerms.version)}<br>Accepted ${torontoDateTime.format(order.termsAcceptedAt)} (Toronto time)</p>`,

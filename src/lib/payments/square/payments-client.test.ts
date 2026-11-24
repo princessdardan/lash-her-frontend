@@ -8,6 +8,7 @@ const helperScript = String.raw`
     createSquarePaymentsClient,
     createSquareSplitOrdersClient,
     createSquareCardOnFilePayment,
+    createSquareCourseOrder,
   } from "./src/lib/payments/square/payments-client.ts";
 
   function createPaymentRequest() {
@@ -22,6 +23,61 @@ const helperScript = String.raw`
     };
   }
 `;
+
+test("createSquareCourseOrder itemizes HST and refuses a different Square total", () => {
+  runPaymentsClientScenario(`
+    const price = { amount: 10_000, currency: "CAD" };
+    const tax = { amount: 1_300, currency: "CAD" };
+    const total = { amount: 11_300, currency: "CAD" };
+    const reference = "co-fixture";
+    let totalMoney = total;
+    globalThis.fetch = async (url, init) => {
+      assert.equal(url, "https://connect.squareupsandbox.com/v2/orders");
+      assert.equal(init.method, "POST");
+      const { idempotency_key, order } = JSON.parse(init.body);
+      assert.equal(idempotency_key, reference);
+      assert.equal(order.reference_id, reference);
+      assert.deepEqual(order.line_items, [{ name: "Fixture Course", quantity: "1", base_price_money: price }]);
+      assert.deepEqual(order.taxes, [{ uid: "tax1", name: "HST", percentage: "13", type: "ADDITIVE", scope: "ORDER" }]);
+      return Response.json({ order: {
+        ...order, id: "square-order", total_money: totalMoney,
+        total_tax_money: tax, taxes: order.taxes.map((line) => ({ ...line, applied_money: tax })),
+      } });
+    };
+    const env = { environment: "sandbox", accessToken: "synthetic", locationId: "square-location" };
+    const order = {
+      reference, title: "Fixture Course", priceCents: 10_000, taxCents: 1_300,
+      totalCents: 11_300, taxBehavior: "exclusive",
+      components: [{ taxCode: "hst", label: "HST", amount: 1_300, ratePartsPerMillion: 130_000 }],
+    };
+    assert.equal(await createSquareCourseOrder(env, order), "square-order");
+    totalMoney = { amount: 11_299, currency: "CAD" };
+    await assert.rejects(createSquareCourseOrder(env, order), /does not match the accepted quote/);
+  `);
+});
+
+test("createSquareCourseOrder preserves half-cent Ontario HST via inclusive Square itemization", () => {
+  runPaymentsClientScenario(`
+    const env = { environment: "sandbox", accessToken: "synthetic", locationId: "square-location" };
+    const tax = { amount: 1_307, currency: "CAD" };
+    const total = { amount: 11_357, currency: "CAD" };
+    globalThis.fetch = async (_url, init) => {
+      const { order } = JSON.parse(init.body);
+      assert.deepEqual(order.line_items[0].base_price_money, total);
+      assert.equal(order.taxes[0].type, "INCLUSIVE");
+      assert.equal(order.taxes[0].percentage, "13");
+      return Response.json({ order: {
+        ...order, id: "square-order", total_money: total,
+        total_tax_money: tax, taxes: [{ ...order.taxes[0], applied_money: tax }],
+      } });
+    };
+    assert.equal(await createSquareCourseOrder(env, {
+      reference: "co-half-cent", title: "Fixture Course", priceCents: 10_050, taxCents: 1_307,
+      totalCents: 11_357, taxBehavior: "exclusive",
+      components: [{ taxCode: "hst", label: "HST", amount: 1_307, ratePartsPerMillion: 130_000 }],
+    }), "square-order");
+  `);
+});
 
 test("createSquareCardOnFilePayment posts to /v2/payments with card-on-file source and customer", () => {
   runPaymentsClientScenario(`

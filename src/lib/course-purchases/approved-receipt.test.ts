@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COURSE_RECEIPT_AND_TERMS_SUBJECT, renderCourseReceipt } from "./receipt";
+import { COURSE_RECEIPT_AND_TERMS_SUBJECT, renderCourseAgreement, renderCourseReceipt } from "./receipt";
 
 test("the sale confirmation uses the approved wording and a protected Academy link", (t) => {
   const previousOrigin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -11,7 +11,7 @@ test("the sale confirmation uses the approved wording and a protected Academy li
   });
 
   const date = new Date("2026-11-23T14:00:00Z");
-  const html = renderCourseReceipt({
+  const order = {
     id: "order-1",
     courseTitle: "Lash & Brow <Basics>",
     billing: {
@@ -37,7 +37,8 @@ test("the sale confirmation uses the approved wording and a protected Academy li
     taxCents: 1300,
     totalCents: 11300,
     disclosure: "Prices are in Canadian dollars before tax.",
-  });
+  };
+  const html = renderCourseReceipt(order);
 
   assert.equal(COURSE_RECEIPT_AND_TERMS_SUBJECT, "Your Lash Her course receipt and purchase terms");
   assert.match(html, /^<p>Hi A&amp;B,<\/p>/);
@@ -46,4 +47,12 @@ test("the sale confirmation uses the approved wording and a protected Academy li
   assert.ok(html.includes("Once your enrolment is active, you’ll see the course in your account."));
   assert.ok(html.includes("You are buying access to Lash &amp; Brow &lt;Basics&gt;."));
   assert.ok(html.includes("For help with access or this purchase, email lashher@lashher.com and include your order number."));
+
+  const agreement = renderCourseAgreement(order, "https://squareup.com/receipt/preview/example?a=1&b=2");
+  assert.match(agreement, /<h2>Your order<\/h2>/);
+  assert.match(agreement, /<p>HST: CAD\s13\.00<\/p>/);
+  assert.match(agreement, /<h2>Course Purchase Terms<\/h2>/);
+  assert.match(agreement, /href="https:\/\/squareup\.com\/receipt\/preview\/example\?a=1&amp;b=2">View your Square receipt/);
+  assert.doesNotMatch(agreement, /<h1>Your receipt<\/h1>/);
+  assert.doesNotMatch(renderCourseAgreement(order, null), /View your Square receipt/);
 });

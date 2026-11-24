@@ -78,6 +78,7 @@ export const coursePurchaseOrders = pgTable(
       .notNull()
       .default("none"),
     sourceFingerprint: text("source_fingerprint"),
+    squareOrderId: text("square_order_id"),
     squarePaymentId: text("square_payment_id"),
     chargedAt: timestamp("charged_at", { withTimezone: true }),
     refundedCents: integer("refunded_cents").notNull().default(0),

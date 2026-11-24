@@ -18,12 +18,11 @@ import {
 } from "./store";
 import { courseRecoveryEnabled } from "./policy";
 import {
-  COURSE_RECEIPT_AND_TERMS_SUBJECT,
   courseRefundReceiptSubject,
-  renderCourseReceipt,
   renderCourseRefundReceipt,
 } from "./receipt";
 import { resolveCourseReceiptDestination } from "./receipt-destination";
+import { courseSaleDocument } from "./sale-document";
 import { rateTableTaxReference, recordCourseTax, reverseCourseTax } from "./tax";
 
 export async function recoverCourseCapture(
@@ -150,11 +149,7 @@ async function dispatch(order: CourseOrder, job: CourseJob) {
       if (Date.now() - job.createdAt.getTime() > 23 * 3600_000)
         throw new PurchaseDependencyError(409);
       return { receipt: await sendCourseDocument(order, job, async () => {
-        if (job.kind === "receipt")
-          return {
-            subject: order.purchaseTerms ? COURSE_RECEIPT_AND_TERMS_SUBJECT : "Your Lash Her course payment receipt",
-            html: renderCourseReceipt(order),
-          };
+        if (job.kind === "receipt") return courseSaleDocument(order);
         if (!job.refundId) throw new PurchaseDependencyError(409);
         const confirmation = await readCourseRefundConfirmation(order.id, job.refundId);
         if (!confirmation?.taxReceipt) throw new PurchaseDependencyError(502);

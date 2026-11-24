@@ -1,0 +1,1 @@
+ALTER TABLE "course_purchase_orders" ADD COLUMN "square_order_id" text;

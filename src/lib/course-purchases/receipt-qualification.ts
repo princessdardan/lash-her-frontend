@@ -5,12 +5,11 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import { getResendClient } from "@/lib/transactional-email";
 import type { resolveP407CheckoutScope } from "./p407-checkout-scope";
 import {
-  COURSE_RECEIPT_AND_TERMS_SUBJECT,
   courseRefundReceiptSubject,
-  renderCourseReceipt,
   renderCourseRefundReceipt,
 } from "./receipt";
 import { resolveCourseReceiptDestination } from "./receipt-destination";
+import { courseSaleDocument } from "./sale-document";
 import { coursePurchaseJobs } from "./schema";
 import { readCourseOrder, readCourseRefundConfirmation } from "./store";
 
@@ -57,8 +56,7 @@ export async function readCourseReceiptQualification(
     subject = courseRefundReceiptSubject(order.id);
     html = renderCourseRefundReceipt(order, confirmation.refund, confirmation.taxReceipt, job.createdAt);
   } else {
-    subject = COURSE_RECEIPT_AND_TERMS_SUBJECT;
-    html = renderCourseReceipt(order);
+    ({ subject, html } = await courseSaleDocument(order));
   }
 
   const { data, error } = await getResendClient().emails.get(job.receipt);
