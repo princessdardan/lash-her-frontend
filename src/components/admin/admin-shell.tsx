@@ -32,7 +32,11 @@ export function AdminShell({
   developerUsers = [],
   environmentLabel,
 }: AdminShellProps) {
-  const visibleDestinations = getVisibleAdminDestinations(actor, { courseAuthoring: isIntegrationFeatureEnabled("courseReads"), customerLifecycle: process.env.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED === "true" });
+  const visibleDestinations = getVisibleAdminDestinations(actor, {
+    courseAuthoring: isIntegrationFeatureEnabled("courseReads"),
+    customerLifecycle: process.env.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED === "true",
+    communityModeration: isIntegrationFeatureEnabled("communityReads"),
+  });
   const visibleNavGroups: AdminNavigationGroup[] = ADMIN_DESTINATION_GROUPS.map(
     (group) => ({
       label: group,

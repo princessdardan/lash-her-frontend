@@ -12,6 +12,7 @@ import { createHash, createHmac } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
 import { createAdmissionReader, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_HEADER } from "./admission.mjs";
 import { interactiveCourseOperation, interactiveCourseStagePermits } from "./operations.mjs";
+import { COMMUNITY_APPLICATION_HEADER } from "./policy.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
@@ -3000,6 +3001,73 @@ test("missing optional Community upstream fails closed without forwarding to Cou
   const f = await fixture(t, (_req, res) => { calls++; res.end("{}"); });
   assert.equal((await f.send({ path: "/community/v1/internal/accounts/exports/a", headers: { authorization: "Bearer lifecycle" } })).status, 503);
   assert.equal(calls, 0);
+});
+
+test("ordinary Community reads and writes require affirmative new-work admission and both identities", async t => {
+  const file = join(folder, "community-application-admission.json");
+  const candidateSha256 = "a".repeat(64), releaseId = "community-fixture";
+  const state = { version: 1, environment: "staging", candidateSha256, releaseId,
+    actionId: "p5-06-fixture", newWork: false, recovery: true };
+  const calls = [];
+  let holdRead, reachedRead;
+  const readEntered = new Promise(resolve => { reachedRead = resolve; });
+  const community = createServer({ key, cert }, (req, res) => {
+    calls.push({ method: req.method, path: req.url, headers: req.headers });
+    if (req.headers.authorization !== "Bearer community.application.jwt") {
+      res.writeHead(401).end("{}");
+    } else if (req.url === "/v1/profile") {
+      holdRead = () => res.end("{}");
+      reachedRead();
+    } else {
+      res.end("{}");
+    }
+  });
+  await new Promise(resolve => community.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => { community.close(resolve); community.closeAllConnections(); }));
+  const communityOrigin = `https://127.0.0.1:${community.address().port}`;
+  const course = (_req, res) => res.writeHead(500).end();
+  const f = await fixture(t, course, { communityOrigin, admission: { file, candidateSha256, releaseId } });
+  const unbound = await fixture(t, course, { communityOrigin });
+  const headers = { [COMMUNITY_APPLICATION_HEADER]: "1", authorization: "Bearer community.application.jwt" };
+  const profile = { path: "/community/v1/profile", headers };
+  const reports = { path: "/community/v1/moderation/reports?limit=2", headers };
+  const report = { path: "/community/v1/content/content-id/reports", method: "POST", headers, body: "{}" };
+
+  assert.equal((await unbound.send(profile)).status, 503);
+  assert.equal((await f.send(profile)).status, 503);
+  writeFileSync(file, JSON.stringify(state));
+  for (const request of [profile, reports, report]) assert.equal((await f.send(request)).status, 503);
+  writeFileSync(file, JSON.stringify({ ...state, newWork: true, candidateSha256: "b".repeat(64) }));
+  assert.equal((await f.send(profile)).status, 503);
+  writeFileSync(file, JSON.stringify({ ...state, newWork: true, recovery: false }));
+  assert.equal((await f.send({ ...reports, headers: { authorization: headers.authorization } })).status, 404);
+  assert.equal((await f.send({ ...profile, headers: { authorization: headers.authorization } })).status, 503);
+  assert.equal((await f.send({ ...reports, headers: { ...headers, [COMMUNITY_APPLICATION_HEADER]: "other" } })).status, 400);
+  assert.equal((await f.send({ ...reports, headers: { ...headers, "x-lash-workload-token": "unverified" } })).status, 401);
+  assert.equal((await f.send({ ...reports, headers: { [COMMUNITY_APPLICATION_HEADER]: "1" } })).status, 401);
+  assert.equal((await f.send({ ...reports, path: "/community/v1/internal/accounts/exports/command" })).status, 404);
+  for (const proof of ["x-lash-staging-review-discussions", "x-lash-staging-review-media", "x-lash-staging-review-notifications",
+    "x-lash-staging-review-course", SCOPED_INTERACTIVE_HEADER]) {
+    assert.equal((await f.send({ ...profile, headers: { ...headers, [proof]: "scope" } })).status, 503);
+  }
+  assert.equal(calls.length, 0);
+
+  assert.equal((await f.send({ ...reports, headers: { ...headers, authorization: "Bearer invalid.application.jwt" } })).status, 401);
+  assert.equal((await f.send(report)).status, 200);
+  const pending = f.send(profile);
+  await readEntered;
+  assert.deepEqual(f.admissionState().active, { newWork: 1, recovery: 0 });
+  writeFileSync(file, JSON.stringify(state));
+  assert.equal((await f.send(reports)).status, 503);
+  holdRead();
+  assert.equal((await pending).status, 200);
+  for (const call of calls) {
+    assert.equal(call.headers[COMMUNITY_APPLICATION_HEADER], undefined);
+    assert.equal(call.headers["x-lash-workload-token"], undefined);
+  }
+  assert.deepEqual(calls.map(({ method, path }) => [method, path]), [
+    ["GET", "/v1/moderation/reports?limit=2"], ["POST", "/v1/content/content-id/reports"], ["GET", "/v1/profile"],
+  ]);
 });
 
 test("host fence changes immediately for historical callers while recovery remains independent", async (t) => {

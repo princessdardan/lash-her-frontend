@@ -11,6 +11,7 @@ import { p406LearnerReadProof } from "@/lib/writer-admission/p406-learner-read";
 
 export type GatewayRequest = {
   service?: "course" | "community";
+  communityApplication?: boolean;
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   path: string;
   applicationToken?: string;
@@ -51,7 +52,9 @@ export function createGatewayTransport(config: {
     if (!/^\/v1\/[A-Za-z0-9/_-]+(?:\?[^#\s\\]*)?$/u.test(input.path) ||
         input.path.length > 4089 || input.path.split("?", 1)[0].includes("//")) throw new GatewayTransportError("route");
     const pathname = input.path.split("?", 1)[0];
+    const communityApplication = input.communityApplication === true;
     const route = routes.find((route) => ("service" in route ? route.service : "course") === service && route.auth !== "webhook" && route.method === input.method &&
+      ("communityApplication" in route && route.communityApplication === true) === communityApplication &&
       new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(pathname));
     if (!route) throw new GatewayTransportError("route");
     const learnerReadProof = service === "course" && input.method === "GET" &&
@@ -97,6 +100,7 @@ export function createGatewayTransport(config: {
       const headers: Record<string, string> = {
         accept: "application/json", "x-lash-workload-token": token, "x-request-id": requestId,
       };
+      if (communityApplication) headers["x-lash-community-application"] = "1";
       if (input.stagingReviewMediaProof) headers["x-lash-staging-review-media"] = input.stagingReviewMediaProof;
       if (input.stagingOwnerAuthoringProof) headers[OWNER_AUTHORING_HEADER] = input.stagingOwnerAuthoringProof;
       if (input.stagingReviewCourseProof) headers["x-lash-staging-review-course"] = input.stagingReviewCourseProof;

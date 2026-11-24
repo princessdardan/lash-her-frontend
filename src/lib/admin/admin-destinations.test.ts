@@ -206,3 +206,19 @@ test("course and lifecycle navigation require their feature flags and permitted 
     assert.equal(getVisibleAdminDestinations(actor, { customerLifecycle: true }).some(d => d.href === "/admin/courses"), false);
   }
 });
+
+test("Community moderation navigation requires a real owner and the Community read flag", () => {
+  const href = "/admin/community";
+  const enabled = { communityModeration: true };
+  const owner = createActor("owner");
+  assert.equal(getVisibleAdminDestinations(owner).some(item => item.href === href), false);
+  assert.equal(getVisibleAdminDestinations(owner, enabled).some(item => item.href === href), true);
+  for (const role of ["admin", "employee"] as const) {
+    assert.equal(getVisibleAdminDestinations(createActor(role), enabled).some(item => item.href === href), false);
+  }
+  const developer: AdminActor = {
+    ...owner,
+    developerMode: { accountRole: "employee", permissionRole: "owner" },
+  };
+  assert.equal(getVisibleAdminDestinations(developer, enabled).some(item => item.href === href), false);
+});

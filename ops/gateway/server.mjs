@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer, request as httpsRequest, Agent } from "node:https";
 import { pathToFileURL } from "node:url";
 import { createWorkloadVerifier } from "./oidc.mjs";
-import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
+import { COMMUNITY_APPLICATION_HEADER, matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
   admissionClass, createAdmissionReader, isScopedMuxRoute, lessonAssessmentPhasePermits, lessonResumePhasePermits, scopedLessonPositionPhasePermits,
@@ -28,6 +28,7 @@ const MAX_SCOPED_MUX_REQUESTS = 16;
 const REQUEST_HEADERS = new Set(["accept", "authorization", "content-type", "x-idempotency-key", "mux-signature"]);
 const RESPONSE_HEADERS = new Set(["content-type", "retry-after"]);
 const oneShotMuxFence = admission => admission?.muxCallback?.oneShot === true || admission?.muxCallbackActive === false;
+const admitsCommunityApplication = admission => admission?.valid === true && admission.version === 1 && admission.newWork === true;
 const emptyMuxEvidence = () => ({ admitted: 0, managedAcks: [] });
 
 export function createGateway(input, options = {}) {
@@ -122,7 +123,10 @@ export function createGateway(input, options = {}) {
         names.add(name);
       }
       if (req.headers.host !== config.publicHost || (req.socket.servername && req.socket.servername !== config.publicHost.split(":")[0])) return refuse(421, "invalid_host");
-      const route = matchRoute(req.method, req.url);
+      const applicationSelection = req.headers[COMMUNITY_APPLICATION_HEADER];
+      if (applicationSelection !== undefined && applicationSelection !== "1") return refuse(400, "invalid_route_selection");
+      const communityApplication = applicationSelection === "1";
+      const route = matchRoute(req.method, req.url, communityApplication);
       if (!route) return refuse(404, "route_not_allowed");
       const service = route.service ?? "course";
       const scopedMuxRoute = isScopedMuxRoute(route, req.url);
@@ -149,7 +153,11 @@ export function createGateway(input, options = {}) {
       const closedReview = (state) => state?.valid && state.version === 1 && !state.newWork && !state.recovery &&
         uncertain.newWork === 0 && uncertain.recovery === 0;
       let muxAdmission, interactiveAdmission;
-      if (authoringProof !== undefined) {
+      if (communityApplication) {
+        if (reviewRequest || authoringProof !== undefined || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined ||
+            req.headers[REVIEW_MEDIA_HEADER] !== undefined || req.headers[REVIEW_DISCUSSIONS_HEADER] !== undefined ||
+            !admitsCommunityApplication(admission)) return refuse(503, "release_maintenance", 30);
+      } else if (authoringProof !== undefined) {
         if (reviewRequest || req.headers[SCOPED_INTERACTIVE_HEADER] !== undefined || !closedReview(admission) ||
             service !== "course" || route.auth !== "application" || category !== "newWork" ||
             req.headers["x-idempotency-key"] !== undefined)
@@ -197,7 +205,13 @@ export function createGateway(input, options = {}) {
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
       let muxSelection, muxEvidence;
       let interactiveSelection, interactiveEvidence, notificationPrincipal;
-      if (authoringProof !== undefined) {
+      if (communityApplication) {
+        const current = currentAdmission();
+        if (res.destroyed || !admitsCommunityApplication(current) || current.sha256 !== admission.sha256) {
+          return refuse(503, "release_maintenance", 30);
+        }
+        accountAdmission(category);
+      } else if (authoringProof !== undefined) {
         const current = currentAdmission();
         if (res.destroyed || !closedReview(current) || current.sha256 !== admission.sha256 ||
             !ownerAuthoring.reserve({ method: req.method, target: req.url, body,

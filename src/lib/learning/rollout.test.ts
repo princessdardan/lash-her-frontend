@@ -11,5 +11,5 @@ test("new learning routes require both explicit migration switch and independent
     process.env.INTEGRATION_LEARNING_ROUTES_ENABLED = migration; process.env.INTEGRATION_COURSE_READS_ENABLED = reads;
     assert.equal(learningRoutesEnabled(), migration === "true" && reads === "true");
   }
-  assert.equal(Object.keys(INTEGRATION_ROLLOUT_FLAGS).length, 6, "presentation switch does not collapse the six independent controls");
+  assert.ok(Object.values(INTEGRATION_ROLLOUT_FLAGS).every(name => String(name) !== names[0]), "presentation switch is separate from the integration controls");
 });

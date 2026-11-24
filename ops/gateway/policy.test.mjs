@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import routes from "./routes.json" with { type: "json" };
+import { admissionClass } from "./admission.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 
 export const config = {
@@ -22,7 +23,14 @@ test("gateway exposes exact reviewed service methods; enrollment/authority traff
     // boundary; it is not enabled by reserving gateway transport here.
     const reservedCourseLifecycle = service === "course" && ["POST /v1/internal/accounts/commands", "GET /v1/internal/accounts/exports/{commandId}"].includes(`${route.method} ${route.path}`);
     assert.ok(documents[service].paths[route.path]?.[route.method.toLowerCase()] || reservedCourseLifecycle);
-    assert.equal(matchRoute(route.method, `/${service}${route.path.replace(/\{[^}]+\}/gu, "valid-id")}`), route);
+    const application = route.communityApplication === true;
+    assert.equal(matchRoute(route.method, `/${service}${route.path.replace(/\{[^}]+\}/gu, "valid-id")}`, application), route);
+    if (application) {
+      assert.equal(service, "community");
+      assert.equal(route.auth, "application");
+      assert.equal(admissionClass(route), "newWork");
+      assert.ok(!route.path.startsWith("/v1/internal/"));
+    }
   }
   for (const path of [
     "/metrics", "/ready", "/health", "/course/health", "/course/metrics", "/course/ready",
@@ -41,6 +49,23 @@ test("gateway exposes exact reviewed service methods; enrollment/authority traff
   assert.equal(matchRoute("OPTIONS", "/course/v1/courses"), null);
   assert.ok(matchRoute("GET", "/course/v1/courses?cursor=abc%2Fdef"));
   assert.equal(routes.filter((route) => route.auth === "webhook").length, 1);
+});
+
+test("ordinary Community matching separates overlapping review routes and denies private aliases", () => {
+  const profile = "/community/v1/profile";
+  assert.equal(matchRoute("GET", profile)?.stagingReviewDiscussions, true);
+  assert.equal(matchRoute("GET", profile, true)?.communityApplication, true);
+  assert.equal(matchRoute("GET", profile, true)?.stagingReviewDiscussions, undefined);
+  assert.equal(matchRoute("GET", "/community/v1/moderation/reports"), null);
+  for (const [method, path] of [
+    ["GET", "/course/v1/courses"],
+    ["POST", "/community/v1/internal/accounts/commands"],
+    ["GET", "/community/v1/internal/accounts/exports/command"],
+    ["POST", "/community/v1/internal/course/enrollment-events"],
+    ["HEAD", profile],
+    ["POST", profile],
+    ["GET", "/community/v1/discussions/post%2Fmedia"],
+  ]) assert.equal(matchRoute(method, path, true), null);
 });
 
 test("configuration pins Vercel identity, production target and TLS upstream", () => {

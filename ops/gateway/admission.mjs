@@ -709,6 +709,7 @@ const RECOVERY_ROUTES = new Set([
 ]);
 
 export function admissionClass(route) {
+  if (route.communityApplication === true) return "newWork";
   if (route.admission === "recovery") return "recovery";
   if (route.method === "GET") return null;
   // Service-authorized durable financial commands and signed media callbacks

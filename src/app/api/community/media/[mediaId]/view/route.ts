@@ -1,0 +1,10 @@
+import { communityRequest } from "@/lib/api-integration/community-discussions";
+
+export const runtime = "nodejs";
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ mediaId: string }> },
+) {
+  return communityRequest(request, "viewImage", (await context.params).mediaId);
+}

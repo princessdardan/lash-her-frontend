@@ -22,13 +22,23 @@ export type AdminCalendarManagementHref =
   | "/admin/my-calendar";
 
 interface AdminDestinationDefinition extends AdminDestination {
-  feature?: "courseAuthoring" | "customerLifecycle";
+  feature?: "courseAuthoring" | "customerLifecycle" | "communityModeration";
   action: AdminPermissionAction;
   roles?: readonly AdminRole[];
 }
 
 const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
   { action: "courses:edit", feature: "courseAuthoring", description: "Author course curriculum, assessments and learning media.", group: "Manage business", href: "/admin/courses", keywords: ["courses", "curriculum", "academy", "lessons", "quizzes"], label: "Courses", navigation: true },
+  {
+    action: "community:moderate",
+    description: "Review reports and manage course discussions.",
+    feature: "communityModeration",
+    group: "Manage business",
+    href: "/admin/community",
+    keywords: ["community", "discussions", "moderation", "reports"],
+    label: "Community moderation",
+    navigation: true,
+  },
   { action: "admin:view", roles: ["owner"], feature: "customerLifecycle", description: "Manage customer account access, exports and deletion.", group: "Manage business", href: "/admin/customer-accounts", keywords: ["customers", "accounts", "suspension", "exports", "deletion"], label: "Customer accounts", navigation: true },
   {
     action: "admin:view",
@@ -590,7 +600,11 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
 
 export function getVisibleAdminDestinations(
   actor: AdminActor,
-  features: { courseAuthoring?: boolean; customerLifecycle?: boolean } = {},
+  features: {
+    courseAuthoring?: boolean;
+    customerLifecycle?: boolean;
+    communityModeration?: boolean;
+  } = {},
 ): AdminDestination[] {
   const permissionContext = {
     bookingProviderResourceIds: actor.bookingProviderResourceIds,
@@ -601,7 +615,9 @@ export function getVisibleAdminDestinations(
   return ADMIN_DESTINATION_DEFINITIONS.filter(
     (destination) =>
       (destination.feature === undefined || features[destination.feature] === true) &&
-      (destination.href !== "/admin/course-purchases" || !actor.developerMode) &&
+      (!actor.developerMode ||
+        (destination.href !== "/admin/course-purchases" &&
+          destination.feature !== "communityModeration")) &&
       (destination.roles === undefined ||
         destination.roles.includes(actor.user.role)) &&
       canAdmin({ action: destination.action, ...permissionContext }),

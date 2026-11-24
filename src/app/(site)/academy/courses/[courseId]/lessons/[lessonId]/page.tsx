@@ -2,6 +2,8 @@ import Link from "next/link";
 import { readLearningPage } from "@/lib/learning/page-result";
 import { notFound } from "next/navigation";
 import { getCourseClient } from "@/lib/api-integration/course-client";
+import { communityHref } from "@/lib/community/client";
+import { communityPagesEnabled } from "@/lib/community/session";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
 import { learningRoutesEnabled } from "@/lib/learning/rollout";
 import {
@@ -165,15 +167,24 @@ export default async function LessonPage({
   return (
     <LearningShell>
       <LearningNavigation />
-      <Link
-        href={
-          preview ? `/courses/${course.slug}` : `/academy/courses/${courseId}`
-        }
-        prefetch={prefetch}
-        className="text-sm underline underline-offset-4"
-      >
-        {course.title}
-      </Link>
+      <div className="flex flex-wrap gap-4 text-sm">
+        <Link
+          href={preview ? `/courses/${course.slug}` : `/academy/courses/${courseId}`}
+          prefetch={prefetch}
+          className="underline underline-offset-4"
+        >
+          {course.title}
+        </Link>
+        {!preview && communityPagesEnabled() && (
+          <Link
+            href={communityHref(courseId)}
+            prefetch={prefetch}
+            className="underline underline-offset-4"
+          >
+            Course discussions
+          </Link>
+        )}
+      </div>
       <div className="mt-7 grid gap-10 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <article className="min-w-0">
           <p className="eyebrow-label text-lh-primary">

@@ -9,6 +9,12 @@ export function privateTlsPolicies() {
     { method: "GET", path: "/v1/internal/community/enrollment-snapshots/{snapshotId}" },
     { method: "GET", path: "/v1/internal/community/enrollment-snapshots/{snapshotId}/items" },
   ];
+  // The gateway can authorize the same Community endpoint through two modes.
+  // The private TLS peer policy only needs a single entry per method and path.
+  const communityRoutes = new Map();
+  for (const { service, method, path } of routes) {
+    if (service === "community") communityRoutes.set(`${method} ${path}`, { method, path });
+  }
   return {
     course: {
       upstream: "http://course-api:4000", keyFile: "/tls/key.pem", certFile: "/tls/cert.pem",
@@ -23,7 +29,7 @@ export function privateTlsPolicies() {
       upstream: "http://community-api:4100", keyFile: "/tls/key.pem", certFile: "/tls/cert.pem",
       peers: [
         { address: "172.29.10.22", routes: [{ method: "POST", path: "/v1/internal/course/enrollment-events" }] },
-        { address: "172.29.10.10", routes: routes.filter(route => route.service === "community").map(({ method, path }) => ({ method, path })) },
+        { address: "172.29.10.10", routes: [...communityRoutes.values()] },
         { address: "172.29.10.60", routes: operations },
       ],
     },

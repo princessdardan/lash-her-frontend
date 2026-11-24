@@ -67,6 +67,34 @@ test("transport selects only declared service aliases and sanitizes correlation 
   await assert.rejects(transport({ service: "community", method: "POST", path: "/v1/internal/course/enrollment-events", applicationToken: "wrong" }), { code: "route" });
 });
 
+test("ordinary Community transport selects its own allowlist and requires application authorization", async () => {
+  let tokens = 0;
+  const transport = createGatewayTransport({
+    origin: "https://gateway.example.test",
+    getWorkloadToken: async () => `proof-${++tokens}`,
+    fetch: async (url, options) => {
+      const headers = new Headers(options?.headers);
+      assert.match(String(url), /^https:\/\/gateway\.example\.test\/community\/v1\/(profile|moderation\/reports\?limit=2)$/u);
+      assert.equal(headers.get("x-lash-community-application"), "1");
+      assert.equal(headers.get("x-lash-workload-token"), `proof-${tokens}`);
+      assert.equal(headers.get("authorization"), "Bearer community.application.jwt");
+      assert.equal(headers.get("x-lash-staging-review-discussions"), null);
+      return Response.json({});
+    },
+  });
+  const input = { service: "community", method: "GET", path: "/v1/profile", applicationToken: "community.application.jwt" } as const;
+  await assert.rejects(transport(input), { code: "authorization" });
+  await assert.rejects(transport({ ...input, path: "/v1/moderation/reports" }), { code: "route" });
+  await assert.rejects(transport({ ...input, communityApplication: true, applicationToken: undefined }), { code: "authorization" });
+  await assert.rejects(transport({ ...input, communityApplication: true, stagingReviewDiscussionsProof: "review-proof" }), { code: "authorization" });
+  await assert.rejects(transport({ ...input, communityApplication: true, service: "course", path: "/v1/courses" }), { code: "route" });
+  await assert.rejects(transport({ ...input, communityApplication: true, path: "/v1/internal/accounts/exports/command" }), { code: "route" });
+  assert.equal(tokens, 0);
+  assert.equal((await transport({ ...input, communityApplication: true })).status, 200);
+  assert.equal((await transport({ ...input, communityApplication: true, path: "/v1/moderation/reports?limit=2" })).status, 200);
+  assert.equal(tokens, 2);
+});
+
 test("the ordinary transport signs exact staging Course bytes only with a verified browser permit and proxy proof", async (t) => {
   Object.assign(globalThis, { AsyncLocalStorage });
   const { NextRequest } = await import("next/server");

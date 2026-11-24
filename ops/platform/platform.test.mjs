@@ -117,6 +117,15 @@ test("private policies isolate workload, publisher, authority and operational pe
     { method: "PUT", path: "/v1/profile" },
     { method: "GET", path: "/v1/notifications" },
     { method: "PUT", path: "/v1/notifications/{notificationId}/read" },
+    { method: "POST", path: "/v1/content/{contentId}/reports" },
+    { method: "POST", path: "/v1/moderation/actions" },
+    { method: "GET", path: "/v1/moderation/reports" },
+    { method: "PUT", path: "/v1/moderation/spaces/{courseId}" },
+    { method: "GET", path: "/v1/notifications/preferences" },
+    { method: "PUT", path: "/v1/notifications/preferences" },
+    { method: "GET", path: "/v1/notifications/unread" },
+    { method: "GET", path: "/v1/spaces/{courseId}/members" },
+    { method: "GET", path: "/v1/spaces/{courseId}/members/{memberId}" },
   ]);
   assert.equal(course.peers.find((peer) => peer.address === "172.29.10.31").routes.length, 1);
   for (const budget of Object.values(databaseConnectionBudgets)) {

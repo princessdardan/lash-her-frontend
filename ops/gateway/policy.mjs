@@ -1,7 +1,9 @@
 import routes from "./routes.json" with { type: "json" };
 
+export const COMMUNITY_APPLICATION_HEADER = "x-lash-community-application";
+
 // Raw request targets are checked before URL parsing can normalize dot segments.
-export function matchRoute(method, target) {
+export function matchRoute(method, target, communityApplication = false) {
   if (typeof target !== "string" || target.length > 4096 ||
       !/^\/(?:course|community)\/[A-Za-z0-9/_-]+(?:\?[^#\s\\]*)?$/u.test(target)) return null;
   const [pathname] = target.split("?", 1);
@@ -9,6 +11,7 @@ export function matchRoute(method, target) {
   const service = pathname.split("/", 3)[1];
   const path = pathname.slice(service.length + 1);
   return routes.find((route) => (route.service ?? "course") === service && route.method === method &&
+    (route.communityApplication === true) === communityApplication &&
     new RegExp(`^${route.path.replace(/\{[^}]+\}/gu, "[A-Za-z0-9_-]+")}$`, "u").test(path)) ?? null;
 }
 

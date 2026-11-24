@@ -2,11 +2,12 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-export type IntegrationErrorCode = "invalid_request" | "sign_in_required" | "forbidden" | "not_found" | "access_required" | "access_revoked" | "course_archived" | "video_processing" | "video_unavailable" | "conflict" | "rate_limited" | "feature_disabled" | "service_unavailable";
+export type IntegrationErrorCode = "invalid_request" | "sign_in_required" | "forbidden" | "not_found" | "access_required" | "access_revoked" | "participation_suspended" | "course_archived" | "video_processing" | "video_unavailable" | "conflict" | "rate_limited" | "feature_disabled" | "service_unavailable";
 const messages: Record<IntegrationErrorCode, string> = {
   invalid_request: "The request is invalid.", sign_in_required: "Sign in to continue.", forbidden: "This operation is not permitted.",
   not_found: "This resource is unavailable.", access_required: "Course access is required.", access_revoked: "Course access has been revoked.",
   conflict: "This operation conflicts with the current state. Refresh and try again.", rate_limited: "Please wait before trying again.",
+  participation_suspended: "Participation in this course space is suspended.",
   course_archived: "This course is archived.", video_processing: "This video is still processing.", video_unavailable: "This video is unavailable.",
   feature_disabled: "This feature is unavailable.", service_unavailable: "The service is temporarily unavailable.",
 };

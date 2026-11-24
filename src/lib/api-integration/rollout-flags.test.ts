@@ -22,10 +22,10 @@ function isolatedFlags(t: test.TestContext) {
   });
 }
 
-test("the six integration controls are server-only names and all default off", t => {
+test("the seven integration controls are server-only names and all default off", t => {
   isolatedFlags(t);
-  assert.equal(features.length, 6);
-  assert.equal(new Set(Object.values(INTEGRATION_ROLLOUT_FLAGS)).size, 6);
+  assert.equal(features.length, 7);
+  assert.equal(new Set(Object.values(INTEGRATION_ROLLOUT_FLAGS)).size, 7);
   for (const feature of features) {
     assert.equal(isIntegrationFeatureEnabled(feature), false);
     assert.ok(!INTEGRATION_ROLLOUT_FLAGS[feature].startsWith("NEXT_PUBLIC_"));

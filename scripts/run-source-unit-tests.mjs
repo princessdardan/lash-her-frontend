@@ -102,6 +102,10 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/structured-data.test.ts",
 ]);
 
+const MODULE_MOCK_TEST_FILES = new Set([
+  "src/lib/api-integration/community-discussions.test.mts",
+]);
+
 const DB_TEST_FILES = new Set([
   "src/lib/customer-lifecycle/faults.db.test.ts",
   "src/lib/customer-lifecycle/store.db.test.ts",
@@ -166,6 +170,7 @@ const testDatabaseUrl = mode === "--db-only" ? requireIsolatedTestDatabaseUrl() 
 const testFiles = (await listTestFiles("src")).sort();
 const registeredTestFiles = new Set([
   ...SERVER_ONLY_TEST_FILES,
+  ...MODULE_MOCK_TEST_FILES,
   ...DB_TEST_FILES,
   ...PURE_ENV_POLICY_TEST_FILES,
 ]);
@@ -212,16 +217,22 @@ if (incorrectlyRegisteredDbTestFiles.length > 0) {
 }
 
 const regularTestFiles = testFiles.filter(
-  (file) => !SERVER_ONLY_TEST_FILES.has(file) && !DB_TEST_FILES.has(file),
+  (file) => !SERVER_ONLY_TEST_FILES.has(file) && !MODULE_MOCK_TEST_FILES.has(file) && !DB_TEST_FILES.has(file),
 );
 const serverOnlyTestFiles = testFiles.filter((file) =>
   SERVER_ONLY_TEST_FILES.has(file),
 );
+const moduleMockTestFiles = testFiles.filter((file) => MODULE_MOCK_TEST_FILES.has(file));
 const dbTestFiles = testFiles.filter((file) => DB_TEST_FILES.has(file));
 
 if (mode === "--no-db") {
   runTests(regularTestFiles, []);
   runTests(serverOnlyTestFiles, [
+    "--import",
+    "./scripts/register-server-only-test.mjs",
+  ]);
+  runTests(moduleMockTestFiles, [
+    "--experimental-test-module-mocks",
     "--import",
     "./scripts/register-server-only-test.mjs",
   ]);
@@ -271,7 +282,7 @@ async function listTestFiles(directory) {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await listTestFiles(entryPath)));
-    } else if (entry.isFile() && entry.name.endsWith(".test.ts")) {
+    } else if (entry.isFile() && /\.test\.(?:ts|mts)$/u.test(entry.name)) {
       files.push(entryPath);
     }
   }

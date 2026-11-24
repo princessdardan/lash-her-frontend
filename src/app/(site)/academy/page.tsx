@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { communityPagesEnabled } from "@/lib/community/session";
 import { getCourseClient } from "@/lib/api-integration/course-client";
 import { readLearningPage } from "@/lib/learning/page-result";
 import { learningRoutesEnabled } from "@/lib/learning/rollout";
@@ -14,7 +15,9 @@ export default async function AcademyPage() {
   const result = await readLearningPage(() => getCourseClient().listMyCourses());
   if (result.error) return <LearningShell><LearningNavigation /><LearningFailure error={result.error} retryHref="/academy" /></LearningShell>;
   const { courses } = result.data;
-    return <LearningShell><LearningNavigation /><header className="mb-10"><p className="eyebrow-label text-lh-primary">Your learning space</p><h1 className="mt-4 font-heading text-5xl sm:text-6xl">My academy</h1><p className="mt-5 max-w-2xl leading-relaxed">Return to a lesson, revisit your notes, and keep building your practice.</p></header>
+    return <LearningShell><LearningNavigation /><header className="mb-10"><p className="eyebrow-label text-lh-primary">Your learning space</p><h1 className="mt-4 font-heading text-5xl sm:text-6xl">My academy</h1><p className="mt-5 max-w-2xl leading-relaxed">Return to a lesson, revisit your notes, and keep building your practice.</p>
+        {communityPagesEnabled() && <Link className={`${learningSecondaryAction} mt-6`} href="/community">Community</Link>}
+      </header>
       {!courses.length ? <section className="border border-lh-primary/20 p-8"><h2 className="font-heading text-3xl">Your first course starts here</h2><p className="my-5">Explore the catalog and enroll to save your progress with your account.</p><Link className={learningAction} href="/courses">Find a course</Link></section> :
         <ul className="grid gap-8 lg:grid-cols-2">{courses.map(course => <li key={course.id} className="flex flex-col border border-lh-primary/20 p-6 sm:p-8">
           <h2 className="font-heading text-3xl">{course.title}</h2>{course.description ? <p className="mt-3 line-clamp-3 leading-relaxed text-lh-muted">{course.description}</p> : null}
