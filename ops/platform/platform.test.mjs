@@ -256,6 +256,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     const prefix = scan.with.output.split("/").at(-1).replace("-raw-scan.json", "");
     const source = prefix.startsWith("course-") ? "course-api/ops" : prefix.startsWith("community-") ? "community-api/ops" : "frontend/ops/gateway";
     assert.ok(next.run.startsWith(`node sources/lash-her-${source}/runtime/verify.mjs `));
+    assert.equal(next.env?.FRONTEND_RUNTIME_IMAGE, prefix === "frontend-migration" ? "migration" : undefined);
     assert.ok(next.run.includes(scan.with["image-ref"]));
     assert.ok(next.run.includes(`"$RUNNER_TEMP/platform-evidence/${prefix}-raw-scan.json"`));
     assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);

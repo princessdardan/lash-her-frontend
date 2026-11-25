@@ -205,9 +205,10 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched frontend-migration runtime and enforce scan
         run: |-
-          FRONTEND_RUNTIME_IMAGE=migration node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime"
+          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime"
           cp "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-scan.json"
         env:
+          FRONTEND_RUNTIME_IMAGE: migration
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain frontend-migration runtime evidence even on refusal
