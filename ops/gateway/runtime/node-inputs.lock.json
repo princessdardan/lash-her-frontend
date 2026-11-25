@@ -2,7 +2,26 @@
   "nodeVersion": "24.22.3",
   "nodeSourceSha256": "48ca3aa8a9b02133356922ef4fc80200e00598c80a4ef446f7c39a459222593d",
   "opensslVersion": "3.5.9",
-  "opensslFix": "f3acb0a3328046741479482c51cec815839e1b05",
-  "opensslPatchSha256": "8d31b7ad5393fe1e206e905a2d73d98d963052ce0370bd3d40669ca186d76192",
-  "patchedSourceSha256": "7bceb5bdc408c3e5a46eb38944f5d16727b812e3e049dae6f2b2e4cdadce3616"
+  "zstdVersion": "1.5.7",
+  "patches": {
+    "openssl-cve-2026-107494.patch": {
+      "directory": "deps/openssl/openssl",
+      "sha256": "c1726a50d589b2dc289727865c184382c2bd846733ddb139427062713ebeb5bd"
+    },
+    "openssl-cve-2026-124709.patch": {
+      "directory": "deps/openssl/openssl",
+      "sha256": "8d31b7ad5393fe1e206e905a2d73d98d963052ce0370bd3d40669ca186d76192"
+    },
+    "zstd-cve-2026-124851.patch": {
+      "directory": "deps/zstd",
+      "sha256": "6093ac3e24ef7e08c8b669736137502ff12209a857af6ada3795d8c978a64edd"
+    }
+  },
+  "patchedSources": {
+    "deps/openssl/openssl/include/internal/quic_channel.h": "3baf3cf15d701f818d08207824f2b9750c2976444a1d9d623192547a268fdc22",
+    "deps/openssl/openssl/ssl/quic/quic_channel.c": "f2d149fc745d3e0862d62ec94517c6558e7c813d0788e7862763d00a114e55a1",
+    "deps/openssl/openssl/ssl/quic/quic_channel_local.h": "81e651ba367dcaa6c6a8582d66d315d69f9ad89e8221467fcf7bf25bc87b0346",
+    "deps/openssl/openssl/ssl/quic/quic_stream_map.c": "7bceb5bdc408c3e5a46eb38944f5d16727b812e3e049dae6f2b2e4cdadce3616",
+    "deps/zstd/lib/decompress/zstd_decompress_block.c": "8b926462567512c2c71fbcfe4d53fa991821720dd666e6fb23f9ca01692762d1"
+  }
 }
