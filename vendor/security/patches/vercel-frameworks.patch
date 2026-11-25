@@ -1,0 +1,40 @@
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+-  "name": "@vercel/frameworks",
+-  "version": "3.29.0",
++  "name": "@lash-her/vercel-frameworks",
++  "version": "3.29.0-lash-her.1",
+   "main": "./dist/frameworks.js",
+   "types": "./dist/frameworks.d.ts",
+   "files": [
+@@ -13,8 +13,8 @@
+   },
+   "license": "Apache-2.0",
+   "dependencies": {
+-    "smol-toml": "1.5.2",
+-    "js-yaml": "3.13.1",
++    "smol-toml": "1.9.1",
++    "js-yaml": "4.3.2",
+     "@vercel/error-utils": "2.2.0"
+   },
+   "devDependencies": {
+@@ -33,4 +33,4 @@
+     "vitest-run": "vitest -c ../../vitest.config.mts",
+     "vitest-unit": "glob --absolute 'test/**/*.test.js' 'test/**/*.test.ts' 'test/**/*.test.mjs' 'test/**/*.test.mts' 'tests/**/*.test.js' 'tests/**/*.test.ts'"
+   }
+-}
+\ No newline at end of file
++}
+--- a/dist/read-config-file.js
++++ b/dist/read-config-file.js
+@@ -61,7 +61,7 @@
+       } else if (name.endsWith(".toml")) {
+         return (0, import_smol_toml.parse)(str);
+       } else if (name.endsWith(".yaml") || name.endsWith(".yml")) {
+-        return import_js_yaml.default.safeLoad(str, { filename: name });
++        return import_js_yaml.default.load(str, { filename: name });
+       }
+     }
+   }
