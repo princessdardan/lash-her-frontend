@@ -75,8 +75,6 @@
       "archive": "lash-her-auth-core-0.41.3-lash-her.1.tgz",
       "integrity": "sha512-Y+orI+mAzZrcqIwJcnLTvmxiSj5+T9tsiG0tbsiPsN2sbXQd/cElT+eN4JICngf/fL0wLIHVPKbB7iPpvvr1mw==",
       "files": {
-        "LICENSE": "c886e96e9dea78ac2526e820e92f11b82b090c9dda36c7737d00797f539f0216",
-        "README.md": "da80549f5670b16395f6a951c4d6823a15e35ac2642980653260a42132a9087c",
         "adapters.d.ts": "1d8cb20cc48192ce78a3df0173127d715fdb5c83f963302f281124cabc627b07",
         "adapters.d.ts.map": "a68d16bde5d317c4267f54e6c11543fedcdc08b68db11082f32bdb30bdf4c7c2",
         "adapters.js": "5426e522fd96102b71efe4d1de9ac24807dd7355e49037710caa1f45076ce6b8",
@@ -197,6 +195,7 @@
         "lib/vendored/cookie.d.ts": "9ff14883e1efdad28173211bfc163baf5373e9e056a876bd46c057a9e43b98fa",
         "lib/vendored/cookie.d.ts.map": "c337f9de62036654fa5c7611827f609b47c58273b373a5316e02d0e3a3997f44",
         "lib/vendored/cookie.js": "89190d783bb5526fdda168b4a955bfde71f296beb2aa68b9a90faa1d471d3f5f",
+        "LICENSE": "c886e96e9dea78ac2526e820e92f11b82b090c9dda36c7737d00797f539f0216",
         "package.json": "681f29f4b8404600f64026ac96dc7f318eef772f254a173772405b8cf420e10c",
         "providers/42-school.d.ts": "4086890ff1ca1bc95d58eac76cd760ffa841a4afc151c735278e8581543d0e7c",
         "providers/42-school.d.ts.map": "0cf9828efd8df9e38a5e005d34a62682608b6909625cd7ddb318fe6170adc91f",
@@ -519,6 +518,7 @@
         "providers/zoom.d.ts": "cb9dbfb276d3cb7fba2ac825837caae5b71f8c1b26dfc54161a28bad5ebc80b9",
         "providers/zoom.d.ts.map": "06dce7d189822cbc9e1acfd5f68051475fed5301a14ce35e5fa3b5406c0f18ad",
         "providers/zoom.js": "005b4b5d938458cc3e30de5335004b888f3b7e3a1c1af3b40f22a3f35d96ae86",
+        "README.md": "da80549f5670b16395f6a951c4d6823a15e35ac2642980653260a42132a9087c",
         "src/adapters.ts": "79a26c496247bbc7dd4c4c77c85c5f951fe10703898d0f9d9ca9915fe320f757",
         "src/errors.ts": "a272c1180c1a0fa54b77e44ce9842c83874a2f329e4dc87cca39fdfb7a0ddd50",
         "src/index.ts": "92d9f0b02111efe195e11daee365b0e90a711da9867c64206585d4fb3e79ccf0",
@@ -675,6 +675,43 @@
         "warnings.d.ts": "cf4ba104de3f7a71d6f901fca2ea266c1966149d48170a76f456f35b05a133dd",
         "warnings.d.ts.map": "1817beb02f993a7b368e33170036c9fa1b467995406a58d44b46cca5a272685b",
         "warnings.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"
+      }
+    },
+    {
+      "dependency": "@vercel/frameworks",
+      "directory": "vercel-frameworks",
+      "upstream": {
+        "name": "@vercel/frameworks",
+        "version": "3.29.0",
+        "url": "https://registry.npmjs.org/@vercel/frameworks/-/frameworks-3.29.0.tgz",
+        "integrity": "sha512-qqkIhTkSkWdaGOs6+oOTliY/1bLd8cLLNQYCBVYSRFU5RiPjm5pM2fhZGFJaosQpFBBBOLEKeCZqYhTcphs6OQ==",
+        "license": "Apache-2.0"
+      },
+      "advisories": [
+        "GHSA-hp3w-g68c-fv3c",
+        "GHSA-mh29-5h37-fv8m",
+        "GHSA-h67p-54hq-rp68",
+        "GHSA-52cp-r559-cp3m",
+        "GHSA-5p4m-2wfm-xmqj",
+        "GHSA-2883-xcg3-v3hh",
+        "GHSA-v3rj-xjv7-4jmq",
+        "GHSA-7w5x-hrqm-74c2",
+        "GHSA-r4xh-jqrq-34v2"
+      ],
+      "reason": "Use the supported YAML safe default loader and patched TOML parser in Sanity CLI framework detection.",
+      "name": "@lash-her/vercel-frameworks",
+      "version": "3.29.0-lash-her.1",
+      "archive": "lash-her-vercel-frameworks-3.29.0-lash-her.1.tgz",
+      "integrity": "sha512-njCjsiWLO0TI089YBWDSEcwoi6r/1vHrZKPO49m9AjR4+WjGM/v9wVvZV8aOwzyW1UFx2K50tx8dCzlqN333nA==",
+      "files": {
+        "dist/frameworks.d.ts": "517f4a7afde11ac0e20ccfdacfe4e6aa3973229a0b2218726b7c724de377bf55",
+        "dist/frameworks.js": "32aa5233f821e94fd094d6817b479b6398c39a43566ae15a2dddcab782c9e9f2",
+        "dist/read-config-file.d.ts": "28eec06191aba2e5483b06826323a8ab255de9eed416b65af725aab281ea5386",
+        "dist/read-config-file.js": "064ae66ab0c1723f12b16e02173920017f8f0cfd72c13230e2fb3b4b33ba6ebe",
+        "dist/types.d.ts": "5f5fc1602cee2a836bcedca28d1b3c1365de1e98fa8ebaed991cd697dd6984c8",
+        "dist/types.js": "4e4d8fa8a86983748bad7e158d3e58b2ba98806699a7fb66d04a644b7ae01e45",
+        "LICENSE": "b070d77bfb2c52a1dd6996de0ce5f64c49a0ca55c889b163a963ddf5cb001ee2",
+        "package.json": "8ba1d5367a3ca4fb99e8a2ce734a3f15b136b37164b3b1e43dac262eac91db89"
       }
     }
   ]
