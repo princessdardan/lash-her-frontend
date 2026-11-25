@@ -43,15 +43,16 @@ with patched parsers and the dependency verification commands pass.
 
 ## Auth.js configuration isolation
 
-`@lash-her/auth-core@0.41.3-lash-her.1` derives from the integrity-pinned
+`@lash-her/auth-core@0.41.3-lash-her.2` derives from the integrity-pinned
 `@auth/core@0.41.3` archive. This corrects a configuration isolation defect;
 no published security advisory is claimed. Upstream `assertConfig` retains
 `hasCredentials`, `hasEmail` and `hasWebAuthn` between configurations. After
 the customer email configuration runs, the separate Google/JWT admin profile
 incorrectly fails with `MissingAdapter`. All three flags now belong to each
 validation invocation. Built JavaScript and supplied TypeScript carry the same
-minimal change. Provider checks, cookies, adapters, sessions and cryptographic
-behavior otherwise retain upstream implementation. The original ISC license
+configuration change. The fork also hashes email verification tokens before
+starting delivery and persistence. Both operations stay concurrent and their
+failures propagate through the request without an unhandled rejection. The original ISC license
 and all unchanged upstream files remain in the verified archive.
 
 Package identity/version and a package metadata export support the existing

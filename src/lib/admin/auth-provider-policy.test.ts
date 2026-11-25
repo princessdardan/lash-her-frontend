@@ -23,7 +23,7 @@ test("admin authentication remains Auth.js based with no Clerk runtime dependenc
   };
 
   assert.equal(packageJson.dependencies?.["next-auth"], "5.0.0-beta.32");
-  assert.equal(packageJson.dependencies?.["@auth/core"], "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz");
+  assert.equal(packageJson.dependencies?.["@auth/core"], "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.2.tgz");
   assert.deepEqual(
     Object.keys(dependencies).filter((name) =>
       name.toLowerCase().includes("clerk"),
@@ -38,7 +38,7 @@ test("admin authentication remains Auth.js based with no Clerk runtime dependenc
 
   const core = lockfileJson.packages?.["node_modules/@auth/core"];
   assert.deepEqual({ name: core?.name, version: core?.version, resolved: core?.resolved }, {
-    name: "@lash-her/auth-core", version: "0.41.3-lash-her.1", resolved: "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz",
+    name: "@lash-her/auth-core", version: "0.41.3-lash-her.2", resolved: "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.2.tgz",
   });
   const inventory = JSON.parse(await readFile(path.join(root, "vendor/security/forks.json"), "utf8")) as {
     forks: Array<{ dependency: string; name: string; version: string; upstream: { name: string; version: string } }>;

@@ -110,7 +110,7 @@
     "styled-components": "^6.1.18",
     "tailwind-merge": "^3.5.0",
     "@vercel/oidc": "4.0.5",
-    "@auth/core": "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz",
+    "@auth/core": "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.2.tgz",
     "ws": "8.21.0",
     "@vercel/frameworks": "file:vendor/security/lash-her-vercel-frameworks-3.29.0-lash-her.1.tgz"
   },
