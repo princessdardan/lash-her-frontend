@@ -43,7 +43,7 @@ with patched parsers and the dependency verification commands pass.
 
 ## Auth.js configuration isolation
 
-`@lash-her/auth-core@0.41.3-lash-her.2` derives from the integrity-pinned
+`@lash-her/auth-core@0.41.3-lash-her.3` derives from the integrity-pinned
 `@auth/core@0.41.3` archive. This corrects a configuration isolation defect;
 no published security advisory is claimed. Upstream `assertConfig` retains
 `hasCredentials`, `hasEmail` and `hasWebAuthn` between configurations. After

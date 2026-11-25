@@ -62,31 +62,29 @@ export async function sendToken(
   const baseUrl = new URL(options.basePath, options.url.origin)
 
   const hashedToken = await createHash(`${token}${secret}`)
-  // Observe both operations before either callback can reject.
-  await Promise.all([
-    Promise.resolve().then(() =>
-      provider.sendVerificationRequest({
-        identifier: email,
-        token,
-        expires,
-        url: `${baseUrl}/callback/${provider.id}?${new URLSearchParams({
-          callbackUrl,
-          token,
-          email,
-        })}`,
-        provider,
-        theme,
-        request: toRequest(request),
-      }),
-    ),
-    Promise.resolve().then(() =>
-      adapter!.createVerificationToken?.({
-        identifier: email,
-        token: hashedToken,
-        expires,
-      }),
-    ),
-  ])
+  const sendRequest = provider.sendVerificationRequest({
+    identifier: email,
+    token,
+    expires,
+    url: `${baseUrl}/callback/${provider.id}?${new URLSearchParams({
+      callbackUrl,
+      token,
+      email,
+    })}`,
+    provider,
+    theme,
+    request: toRequest(request),
+  })
+
+  // Join immediately so an asynchronous delivery rejection reaches the caller.
+  const createToken = Promise.resolve().then(() =>
+    adapter!.createVerificationToken?.({
+      identifier: email,
+      token: hashedToken,
+      expires,
+    }),
+  )
+  await Promise.all([sendRequest, createToken])
 
   return {
     redirect: `${baseUrl}/verify-request?${new URLSearchParams({

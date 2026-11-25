@@ -44,111 +44,62 @@
  
 --- a/lib/actions/signin/send-token.js
 +++ b/lib/actions/signin/send-token.js
-@@ -45,25 +45,32 @@
+@@ -45,6 +45,7 @@
      const expires = new Date(Date.now() + (provider.maxAge ?? ONE_DAY_IN_SECONDS) * 1000);
      const secret = provider.secret ?? options.secret;
      const baseUrl = new URL(options.basePath, options.url.origin);
--    const sendRequest = provider.sendVerificationRequest({
--        identifier: email,
--        token,
--        expires,
--        url: `${baseUrl}/callback/${provider.id}?${new URLSearchParams({
--            callbackUrl,
--            token,
--            email,
--        })}`,
--        provider,
--        theme,
--        request: toRequest(request),
--    });
++    const hashedToken = await createHash(`${token}${secret}`);
+     const sendRequest = provider.sendVerificationRequest({
+         identifier: email,
+         token,
+@@ -58,11 +59,14 @@
+         theme,
+         request: toRequest(request),
+     });
 -    const createToken = adapter.createVerificationToken?.({
 -        identifier: email,
 -        token: await createHash(`${token}${secret}`),
 -        expires,
 -    });
--    await Promise.all([sendRequest, createToken]);
-+    const hashedToken = await createHash(`${token}${secret}`);
-+    // Observe both operations before either callback can reject.
-+    await Promise.all([
-+        Promise.resolve().then(() =>
-+            provider.sendVerificationRequest({
-+                identifier: email,
-+                token,
-+                expires,
-+                url: `${baseUrl}/callback/${provider.id}?${new URLSearchParams({
-+                    callbackUrl,
-+                    token,
-+                    email,
-+                })}`,
-+                provider,
-+                theme,
-+                request: toRequest(request),
-+            }),
-+        ),
-+        Promise.resolve().then(() =>
-+            adapter.createVerificationToken?.({
-+                identifier: email,
-+                token: hashedToken,
-+                expires,
-+            }),
-+        ),
-+    ]);
++    // Join immediately so an asynchronous delivery rejection reaches the caller.
++    const createToken = Promise.resolve().then(() =>
++        adapter.createVerificationToken?.({
++            identifier: email,
++            token: hashedToken,
++            expires,
++        }),
++    );
+     await Promise.all([sendRequest, createToken]);
      return {
          redirect: `${baseUrl}/verify-request?${new URLSearchParams({
-             provider: provider.id,
 --- a/src/lib/actions/signin/send-token.ts
 +++ b/src/lib/actions/signin/send-token.ts
-@@ -61,27 +61,32 @@
+@@ -61,6 +61,7 @@
  
    const baseUrl = new URL(options.basePath, options.url.origin)
  
--  const sendRequest = provider.sendVerificationRequest({
--    identifier: email,
--    token,
--    expires,
--    url: `${baseUrl}/callback/${provider.id}?${new URLSearchParams({
--      callbackUrl,
--      token,
--      email,
--    })}`,
--    provider,
--    theme,
--    request: toRequest(request),
--  })
--
++  const hashedToken = await createHash(`${token}${secret}`)
+   const sendRequest = provider.sendVerificationRequest({
+     identifier: email,
+     token,
+@@ -75,12 +76,14 @@
+     request: toRequest(request),
+   })
+ 
 -  const createToken = adapter!.createVerificationToken?.({
 -    identifier: email,
 -    token: await createHash(`${token}${secret}`),
 -    expires,
 -  })
 -
--  await Promise.all([sendRequest, createToken])
-+  const hashedToken = await createHash(`${token}${secret}`)
-+  // Observe both operations before either callback can reject.
-+  await Promise.all([
-+    Promise.resolve().then(() =>
-+      provider.sendVerificationRequest({
-+        identifier: email,
-+        token,
-+        expires,
-+        url: `${baseUrl}/callback/${provider.id}?${new URLSearchParams({
-+          callbackUrl,
-+          token,
-+          email,
-+        })}`,
-+        provider,
-+        theme,
-+        request: toRequest(request),
-+      }),
-+    ),
-+    Promise.resolve().then(() =>
-+      adapter!.createVerificationToken?.({
-+        identifier: email,
-+        token: hashedToken,
-+        expires,
-+      }),
-+    ),
-+  ])
++  // Join immediately so an asynchronous delivery rejection reaches the caller.
++  const createToken = Promise.resolve().then(() =>
++    adapter!.createVerificationToken?.({
++      identifier: email,
++      token: hashedToken,
++      expires,
++    }),
++  )
+   await Promise.all([sendRequest, createToken])
  
    return {
-     redirect: `${baseUrl}/verify-request?${new URLSearchParams({

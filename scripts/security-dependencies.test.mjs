@@ -70,6 +70,10 @@ test("Auth.js observes a verification provider failure throughout token hashing"
     await rejected;
     assert.equal(adapterCalls, 1);
     assert.deepEqual(unhandled, []);
+
+    options.provider.sendVerificationRequest = () => { throw failure; };
+    await assert.rejects(sendToken(request, options), error => error === failure);
+    assert.equal(adapterCalls, 1, "a synchronously refused provider must not start another write");
   `], { cwd: root, timeout: 5_000 });
 });
 
