@@ -19417,89 +19417,165 @@
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "courseId": {
-                    "format": "uuid",
-                    "type": "string"
-                  },
-                  "expiresAt": {
-                    "anyOf": [
-                      {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "courseId": {
+                        "format": "uuid",
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "externalPaymentId": {
+                        "type": "string"
+                      },
+                      "grantedAt": {
                         "format": "date-time",
                         "type": "string"
                       },
-                      {
-                        "type": "null"
+                      "grantReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "purchase"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "promotion"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "import"
+                            ],
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "idempotencyKey": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "orderId": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "provider": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "helcim"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "square"
+                            ],
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "userId": {
+                        "format": "uuid",
+                        "type": "string"
                       }
-                    ]
+                    },
+                    "required": [
+                      "userId",
+                      "courseId",
+                      "orderId",
+                      "idempotencyKey",
+                      "grantedAt",
+                      "grantReason"
+                    ],
+                    "type": "object"
                   },
-                  "externalPaymentId": {
-                    "type": "string"
-                  },
-                  "grantedAt": {
-                    "format": "date-time",
-                    "type": "string"
-                  },
-                  "grantReason": {
-                    "anyOf": [
-                      {
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "courseId": {
+                        "format": "uuid",
+                        "type": "string"
+                      },
+                      "disputeStartedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "externalPaymentId": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "grantedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "grantReason": {
                         "enum": [
-                          "purchase"
+                          "dispute_resolution"
                         ],
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "promotion"
-                        ],
+                      "idempotencyKey": {
+                        "minLength": 1,
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "import"
-                        ],
-                        "type": "string"
-                      }
-                    ]
-                  },
-                  "idempotencyKey": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "orderId": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "provider": {
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "helcim"
-                        ],
+                      "orderId": {
+                        "minLength": 1,
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "square"
-                        ],
+                      "provider": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "helcim"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "square"
+                            ],
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "purchaseCapturedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "userId": {
+                        "format": "uuid",
                         "type": "string"
                       }
-                    ]
-                  },
-                  "userId": {
-                    "format": "uuid",
-                    "type": "string"
+                    },
+                    "required": [
+                      "userId",
+                      "courseId",
+                      "orderId",
+                      "idempotencyKey",
+                      "grantedAt",
+                      "grantReason",
+                      "externalPaymentId",
+                      "provider",
+                      "purchaseCapturedAt",
+                      "disputeStartedAt"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "userId",
-                  "courseId",
-                  "orderId",
-                  "idempotencyKey",
-                  "grantReason",
-                  "grantedAt"
-                ],
-                "type": "object"
+                ]
               }
             }
           },
@@ -20365,59 +20441,126 @@
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "courseId": {
-                    "format": "uuid",
-                    "type": "string"
-                  },
-                  "idempotencyKey": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "orderId": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "revokedAt": {
-                    "format": "date-time",
-                    "type": "string"
-                  },
-                  "revokeReason": {
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "refund"
-                        ],
+                "anyOf": [
+                  {
+                    "properties": {
+                      "courseId": {
+                        "format": "uuid",
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "dispute"
-                        ],
+                      "idempotencyKey": {
+                        "minLength": 1,
                         "type": "string"
                       },
-                      {
-                        "enum": [
-                          "expiry"
-                        ],
+                      "orderId": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "revokedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "revokeReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "refund"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "dispute"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "expiry"
+                            ],
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "userId": {
+                        "format": "uuid",
                         "type": "string"
                       }
-                    ]
+                    },
+                    "required": [
+                      "userId",
+                      "courseId",
+                      "orderId",
+                      "idempotencyKey",
+                      "revokedAt",
+                      "revokeReason"
+                    ],
+                    "type": "object"
                   },
-                  "userId": {
-                    "format": "uuid",
-                    "type": "string"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "courseId": {
+                        "format": "uuid",
+                        "type": "string"
+                      },
+                      "financialReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "refund"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "enum": [
+                              "dispute"
+                            ],
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "grantIdempotencyKey": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "idempotencyKey": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "orderId": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "revokedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "revokeReason": {
+                        "enum": [
+                          "purchase_fence"
+                        ],
+                        "type": "string"
+                      },
+                      "userId": {
+                        "format": "uuid",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "userId",
+                      "courseId",
+                      "orderId",
+                      "idempotencyKey",
+                      "revokedAt",
+                      "revokeReason",
+                      "financialReason",
+                      "grantIdempotencyKey"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "userId",
-                  "courseId",
-                  "orderId",
-                  "revokeReason",
-                  "idempotencyKey",
-                  "revokedAt"
-                ],
-                "type": "object"
+                ]
               }
             }
           },
@@ -20486,6 +20629,14 @@
               }
             },
             "description": "Default Response",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "204": {
+            "description": "Purchase grant fence committed",
             "headers": {
               "X-Request-ID": {
                 "$ref": "#/components/headers/RequestId"

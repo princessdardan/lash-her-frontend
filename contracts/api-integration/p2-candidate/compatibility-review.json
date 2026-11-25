@@ -7,7 +7,7 @@
     "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488"
   },
   "candidate": {
-    "manifestSha256": "6f0207d3ab46a7abfef3cbfd7c9015cc07891761e98764e863ed63afb3563540"
+    "manifestSha256": "6bc8e67f6d92aaa3b4107f05fa6845296a5f2527b307862c7411e13c17c72cd8"
   },
   "changes": [
     {
@@ -707,6 +707,30 @@
       "change": "added",
       "beforeSha256": null,
       "afterSha256": "974cc020616ad631b6661ccd6fab4fd1850e0bbcc2311ae8c9e10283fa480973"
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "post /v1/internal/entitlements/grants",
+      "change": "changed",
+      "beforeSha256": "94e39cd45f213c2e3cf0e6982da8aad34bcc1b78f5da376cacdff161eab46d02",
+      "afterSha256": "7e4488b71929581f8c7f668610e10dd598829928d71a9e03b140f2dbe8dbe387",
+      "requirementIds": [
+        "P4-04"
+      ],
+      "reason": "Accept the purchase-scoped dispute resolution grant with the payment and provider timeline while preserving the existing grant request. Reconciliation can restore an eligible purchase without overriding independent grants or administrator revocations."
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "post /v1/internal/entitlements/revocations",
+      "change": "changed",
+      "beforeSha256": "95ac3b47c0c883816ffc200b4f8a8b77186921c7b7f94e98e464fafb5b28b403",
+      "afterSha256": "1bfee7c99825714e71c257226c1bd13422b785ddc7cf9ecbaf2891d48e9c3db3",
+      "requirementIds": [
+        "P4-04"
+      ],
+      "reason": "Accept a purchase fence tied to the exact grant idempotency key and financial reason while preserving the existing order revocation request. The purchase-fence command returns 204 on success without an entitlement response body."
     },
     {
       "document": "course",

@@ -16,28 +16,31 @@ version = lock['nodeVersion']
 source = f'https://nodejs.org/dist/v{version}/node-v{version}.tar.xz'
 subprocess.run(['curl', '--fail', '--silent', '--show-error', '--location', '--retry', '3',
                 '--proto', '=https', '--proto-redir', '=https', source, '-o', 'node.tar.xz'], check=True)
-for path, digest in (
-    ('node.tar.xz', lock['nodeSourceSha256']),
-    ('/node-runtime/openssl-cve-2026-124709.patch', lock['opensslPatchSha256']),
-):
-    with Path(path).open('rb') as source_file:
-        if hashlib.file_digest(source_file, 'sha256').hexdigest() != digest:
-            raise SystemExit(f'Unexpected hash for {path}')
+with Path('node.tar.xz').open('rb') as archive:
+    if hashlib.file_digest(archive, 'sha256').hexdigest() != lock['nodeSourceSha256']:
+        raise SystemExit('Unexpected hash for Node release archive')
 PY
 
 mkdir source
 tar -xJf node.tar.xz -C source --strip-components=1
 cd source
-patch --batch --forward --fuzz=0 -p1 -d deps/openssl/openssl -i /node-runtime/openssl-cve-2026-124709.patch
 python3 - <<'PY'
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
-expected = json.loads(Path('/node-runtime/node-inputs.lock.json').read_text())['patchedSourceSha256']
-source = Path('deps/openssl/openssl/ssl/quic/quic_stream_map.c')
-if hashlib.sha256(source.read_bytes()).hexdigest() != expected:
-    raise SystemExit('OpenSSL patched source hash mismatch')
+patch_directory = Path('/node-runtime')
+lock = json.loads((patch_directory / 'node-inputs.lock.json').read_text())
+for name, metadata in lock['patches'].items():
+    patch = patch_directory / name
+    if hashlib.sha256(patch.read_bytes()).hexdigest() != metadata['sha256']:
+        raise SystemExit(f'Unexpected hash for {name}')
+    subprocess.run(['patch', '--batch', '--forward', '--fuzz=0', '--no-backup-if-mismatch',
+                    '-p1', '-d', metadata['directory'], '-i', str(patch)], check=True)
+for path, digest in lock['patchedSources'].items():
+    if hashlib.sha256(Path(path).read_bytes()).hexdigest() != digest:
+        raise SystemExit(f'Unexpected patched source hash for {path}')
 PY
 
 ./configure --prefix=/nodejs --without-npm --without-corepack

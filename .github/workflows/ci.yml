@@ -16,7 +16,7 @@ jobs:
   frontend-operator-migrations:
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 140
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -42,7 +42,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build the immutable frontend migration image without publishing
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
-        timeout-minutes: 110
+        timeout-minutes: 160
         id: build-frontend-migration
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
@@ -217,7 +217,7 @@ jobs:
       - name: Scan frontend migration image against verified backport evidence
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: >-
-          node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci
+          FRONTEND_RUNTIME_IMAGE=migration node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci
           "$RUNNER_TEMP/frontend-runtime-raw.json" "$RUNNER_TEMP/frontend-runtime"
       - name: Retain frontend-runtime qualification
         if: ${{ !cancelled() && steps.image-inputs.outputs.changed == 'true' }}
@@ -232,7 +232,7 @@ jobs:
   gateway-and-platform:
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 140
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -305,7 +305,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
-        timeout-minutes: 110
+        timeout-minutes: 160
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ops/gateway

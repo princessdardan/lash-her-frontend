@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { validateRuntimeEvidence, runtimeVex, verifyRuntimeImage, validateQualifiedRuntimeScan } from '../gateway/runtime/verify.mjs';
+import { validateRuntimeEvidence, runtimeVex, verifyRuntimeImage, validateQualifiedRuntimeScan, verifyRecordedRuntime } from '../gateway/runtime/verify.mjs';
 
 const lockBytes = readFileSync(new URL('../gateway/runtime/inputs.lock.json', import.meta.url));
 const lock = JSON.parse(lockBytes), digest = 'a'.repeat(64);
@@ -16,11 +16,12 @@ function fixture() {
   const build = { inputsLockSha256: createHash('sha256').update(lockBytes).digest('hex'), inputs: structuredClone(lock),
     librarySha256: digest, packageSha256: digest, regressionBinarySha256: digest,
     regression: { unpatched: 'EXPECTED_ASSERTION_FAILURE', patched: 'PASS', shared: 'PASS', upstreamTests: 'PASS' } };
-  return { lock: structuredClone(lock), lockSha256: build.inputsLockSha256, build, nodeLock,
+  const nodeBuild = { version: 1, inputs: structuredClone(nodeLock), nodeSha256: digest };
+  return { lock: structuredClone(lock), lockSha256: build.inputsLockSha256, build, nodeLock, nodeBuild,
     observed: { evidence: structuredClone(build), librarySha256: digest, regressionBinarySha256: digest,
-      nodeRuntime: { evidence: { version: 1, inputs: structuredClone(nodeLock), nodeSha256: digest },
+      nodeRuntime: { evidence: structuredClone(nodeBuild),
         executableSha256: digest, nodeVersion: `v${nodeLock.nodeVersion}`, opensslVersion: nodeLock.opensslVersion,
-        sharedOpenSSL: false, quic: false },
+        zstdVersion: nodeLock.zstdVersion, sharedOpenSSL: false, sharedZstd: false, quic: false },
       regressionStatus: 0, uid: 65532, architecture: 'amd64', packageStatus: `Status: install ok installed\nVersion: ${lock.packageVersion}\n` },
     image: { Id: id, RepoDigests: [ref], Architecture: 'amd64', Os: 'linux' },
     scan: { Metadata: { ImageID: id, RepoDigests: [ref], OS: { Family: 'debian', Name: '13.7' } },
@@ -41,8 +42,13 @@ test('runtime fixed statements bind the proven image and exact custom package on
 
 for (const [name, change] of Object.entries({
   'unexpected Debian OpenSSL package': f => { f.scan.Results[0].Packages.push({ Name: 'libssl3t64' }); },
+  'missing independent Node build receipt': f => { delete f.nodeBuild; },
+  'unrelated independent Node build receipt': f => { f.nodeBuild.nodeSha256 = 'b'.repeat(64); },
   'changed patched Node binary': f => { f.observed.nodeRuntime.executableSha256 = 'b'.repeat(64); },
-  'changed OpenSSL fix commit': f => { f.observed.nodeRuntime.evidence.inputs.opensslFix = 'b'.repeat(40); },
+  'changed OpenSSL patch': f => { f.observed.nodeRuntime.evidence.inputs.patches['openssl-cve-2026-124709.patch'].sha256 = 'b'.repeat(64); },
+  'unexpected Debian Zstandard package': f => { f.sbom.components.push({ name: 'libzstd1' }); },
+  'missing bundled Zstandard version': f => { delete f.observed.nodeRuntime.zstdVersion; },
+  'shared Zstandard': f => { f.observed.nodeRuntime.sharedZstd = true; },
   'shared OpenSSL': f => { f.observed.nodeRuntime.sharedOpenSSL = true; },
   'experimental Node QUIC': f => { f.observed.nodeRuntime.quic = true; },
   'changed library': f => { f.observed.librarySha256 = 'b'.repeat(64); },
@@ -68,39 +74,51 @@ test('build inputs and patches remain bound to the reviewed lock', () => {
   for (const [file, expected] of Object.entries({ ...lock.patches, ...lock.implementation })) {
     assert.equal(createHash('sha256').update(readFileSync(new URL(`../gateway/runtime/${file}`, import.meta.url))).digest('hex'), expected);
   }
-  const opensslPatch = readFileSync(new URL('../gateway/runtime/openssl-cve-2026-124709.patch', import.meta.url));
-  assert.equal(createHash('sha256').update(opensslPatch).digest('hex'), nodeLock.opensslPatchSha256);
+  for (const [file, { sha256 }] of Object.entries(nodeLock.patches)) {
+    assert.equal(createHash('sha256').update(readFileSync(new URL(`../gateway/runtime/${file}`, import.meta.url))).digest('hex'), sha256);
+  }
 });
 
-test('an unresolved HIGH finding still fails the verified-runtime scan', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'runtime-gate-'));
-  const f = fixture(), raw = join(directory, 'raw.json'), output = join(directory, 'verified');
-  writeFileSync(raw, JSON.stringify({ ...f.scan, Metadata: { ...f.scan.Metadata, ImageConfig: { architecture: 'amd64' } } }));
-  let gated = false;
-  const execute = (command, args) => {
-    if (command === 'docker') {
-      if (args.includes('inspect')) return JSON.stringify([f.image]);
-      if (args.includes('cat')) return JSON.stringify(f.build);
-      if (args.includes('node')) return JSON.stringify(f.observed);
-      return '';
-    }
-    assert.equal(command, 'trivy');
-    if (args.includes('cyclonedx')) {
-      writeFileSync(args[args.indexOf('--output') + 1], JSON.stringify(f.sbom));
-      return '';
-    }
-    assert.equal(args[args.indexOf('--exit-code') + 1], '1');
-    assert.equal(args[args.indexOf('--severity') + 1], 'HIGH,CRITICAL');
-    assert.equal(args.includes('--ignore-unfixed'), false);
-    gated = true;
-    throw new Error('UNRESOLVED_HIGH_FINDING');
-  };
-  try {
-    assert.throws(() => verifyRuntimeImage({ imageRef: ref, rawScan: raw, output, execute }), /UNRESOLVED_HIGH_FINDING/);
-    assert.equal(gated, true);
-    assert.equal(JSON.parse(readFileSync(join(output, 'fixed.vex.json'))).statements.length, 2);
-  } finally { rmSync(directory, { recursive: true, force: true }); }
-});
+for (const migration of [false, true]) {
+  test(`an unresolved HIGH finding fails the ${migration ? 'migration' : 'gateway'} image scan`, () => {
+    const directory = mkdtempSync(join(tmpdir(), 'runtime-gate-'));
+    const f = fixture(), raw = join(directory, 'raw.json'), output = join(directory, 'verified');
+    writeFileSync(raw, JSON.stringify({ ...f.scan, Metadata: { ...f.scan.Metadata, ImageConfig: { architecture: 'amd64' } } }));
+    let gated = false;
+    const execute = (command, args) => {
+      if (command === 'docker') {
+        if (args[0] === 'buildx') {
+          const dockerfile = args.includes('-f') ? args[args.indexOf('-f') + 1] : undefined;
+          assert.equal(dockerfile?.endsWith('/ops/platform/Dockerfile.frontend-migration'), migration ? true : undefined);
+          assert.equal(args.at(-1).endsWith('/ops/gateway'), !migration);
+        }
+        if (args.includes('inspect')) return JSON.stringify([f.image]);
+        if (args.includes('cat')) return JSON.stringify(f.build);
+        if (args.includes('node-reference')) {
+          const [, destination] = args[args.indexOf('--output') + 1].split('dest=');
+          writeFileSync(join(destination, 'node.json'), JSON.stringify(f.nodeBuild));
+        }
+        if (args.includes('node')) return JSON.stringify(f.observed);
+        return '';
+      }
+      assert.equal(command, 'trivy');
+      if (args.includes('cyclonedx')) {
+        writeFileSync(args[args.indexOf('--output') + 1], JSON.stringify(f.sbom));
+        return '';
+      }
+      assert.equal(args[args.indexOf('--exit-code') + 1], '1');
+      assert.equal(args[args.indexOf('--severity') + 1], 'HIGH,CRITICAL');
+      assert.equal(args.includes('--ignore-unfixed'), false);
+      gated = true;
+      throw new Error('UNRESOLVED_HIGH_FINDING');
+    };
+    try {
+      assert.throws(() => verifyRuntimeImage({ imageRef: ref, rawScan: raw, output, migration, execute }), /UNRESOLVED_HIGH_FINDING/);
+      assert.equal(gated, true);
+      assert.equal(JSON.parse(readFileSync(join(output, 'fixed.vex.json'))).statements.length, 2);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+}
 
 function qualified() {
   const f = fixture(), binding = validateRuntimeEvidence(f);
@@ -109,7 +127,7 @@ function qualified() {
   const rawScan = { ...f.scan, ArtifactName: ref,
     Results: [{ ...f.scan.Results[0], Vulnerabilities: [finding] }] };
   return { lock: f.lock, nodeLock, lockSha256: f.lockSha256, expectedImage: ref, sbom: f.sbom,
-    record: { status: 'PATCHED_RUNTIME_VERIFIED', image: f.image, build: f.build, observed: f.observed, binding },
+    record: { status: 'PATCHED_RUNTIME_VERIFIED', image: f.image, build: f.build, nodeBuild: f.nodeBuild, observed: f.observed, binding },
     rawScan, vex: runtimeVex(binding, lock), filteredScan: { ...rawScan,
       Results: [{ ExperimentalModifiedFindings: [{ Type: 'vulnerability', Status: 'fixed', Finding: finding }] }] } };
 }
@@ -129,3 +147,49 @@ for (const [name, change] of Object.entries({
   const f = qualified(); change(f);
   assert.throws(() => validateQualifiedRuntimeScan(f));
 });
+
+for (const historical of [false, true]) {
+  test(`recorded runtime evidence verifies with its ${historical ? 'historical' : 'current'} source lock`, () => {
+    const directory = mkdtempSync(join(tmpdir(), 'runtime-record-'));
+    const f = qualified();
+    try {
+      const runtime = join(directory, 'ops/gateway/runtime');
+      const receipts = join(directory, 'gateway-runtime');
+      mkdirSync(runtime, { recursive: true });
+      mkdirSync(receipts);
+      const originalPatch = 'openssl-cve-2026-124709.patch';
+      const sourceLock = historical ? {
+        nodeVersion: nodeLock.nodeVersion, nodeSourceSha256: nodeLock.nodeSourceSha256,
+        opensslVersion: nodeLock.opensslVersion, opensslFix: 'f3acb0a3328046741479482c51cec815839e1b05',
+        opensslPatchSha256: nodeLock.patches[originalPatch].sha256,
+        patchedSourceSha256: nodeLock.patchedSources['deps/openssl/openssl/ssl/quic/quic_stream_map.c'],
+      } : nodeLock;
+      if (historical) {
+        delete f.record.nodeBuild;
+        const observed = f.record.observed.nodeRuntime;
+        observed.evidence.inputs = sourceLock;
+        delete observed.zstdVersion;
+        delete observed.sharedZstd;
+      }
+      for (const file of historical ? [originalPatch] : Object.keys(nodeLock.patches)) {
+        writeFileSync(join(runtime, file), readFileSync(new URL(`../gateway/runtime/${file}`, import.meta.url)));
+      }
+      writeFileSync(join(runtime, 'inputs.lock.json'), lockBytes);
+      writeFileSync(join(runtime, 'node-inputs.lock.json'), JSON.stringify(sourceLock));
+      for (const [path, value, digestKey] of [
+        [join(directory, 'gateway-raw-scan.json'), f.rawScan, 'rawScanSha256'],
+        [join(directory, 'gateway-scan.json'), f.filteredScan, 'scanSha256'],
+        [join(receipts, 'sbom.json'), f.sbom, 'sbomSha256'],
+        [join(receipts, 'fixed.vex.json'), f.vex, 'vexSha256'],
+      ]) {
+        const bytes = JSON.stringify(value);
+        writeFileSync(path, bytes);
+        f.record[digestKey] = createHash('sha256').update(bytes).digest('hex');
+      }
+      writeFileSync(join(receipts, 'verification.json'), JSON.stringify(f.record));
+      assert.deepEqual(verifyRecordedRuntime(directory, 'gateway', ref, directory), { product, component });
+      writeFileSync(join(runtime, originalPatch), 'substituted patch');
+      assert.throws(() => verifyRecordedRuntime(directory, 'gateway', ref, directory));
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+}

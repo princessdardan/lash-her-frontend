@@ -2,11 +2,11 @@
 
 Both frontend-owned distroless Node images use this build. No image is deployed by these scripts.
 
-## OpenSSL CVE-2026-124709
+## Bundled OpenSSL and Zstandard
 
-The gateway and frontend migration images use the digest-pinned Debian 13 Distroless base without system OpenSSL. `build-node.sh` builds Node 24 from the official source archive using the vendored [upstream OpenSSL fix](https://github.com/openssl/openssl/commit/f3acb0a3328046741479482c51cec815839e1b05) for the bundled copy. The lock pins the archive, patch, and resulting source file hashes. The image retains the Node license, the C++ runtime package records, and the Node executable hash. The verifier checks that executable against its receipt and source lock, verifies TLS initialization, and checks the filesystem, SBOM, and raw scan for the Debian OpenSSL package.
+The gateway and frontend migration images use a digest-pinned Debian 13 Distroless base without system OpenSSL or Zstandard. The shared Node build uses the official Node source and applies upstream patches for CVE-2026-107494, CVE-2026-124709, and CVE-2026-124851. The lock binds the archive, patches, and resulting source files. The verifier checks the installed executable against its receipt and source lock, initializes TLS, runs a Zstandard round trip, and checks the image filesystem, SBOM, and raw package inventory for shared OpenSSL and Zstandard. Historical receipts remain tied to their original source lock.
 
-The OpenSSL repair needs no VEX statement. The existing package and digest verification for the zlib backport still applies. Replace the custom Node build once a maintained, digest-pinned Distroless Node image includes a fixed bundled OpenSSL and a fixed system OpenSSL package. Qualify both images with the normal exact-image scan before removing the build and its verification.
+These bundled repairs require no VEX statements. The zlib VEX path continues to apply only to the exact custom Debian zlib component.
 
 ## zlib backport
 
@@ -16,7 +16,7 @@ Debian's pinned zlib 1.3.1 source contains the stale caller-input pointer after 
 
 ## Build and verify
 
-Build the gateway with `docker build -t lash-her-gateway:local ops/gateway`. The migration image uses its existing root-context build and source-commit argument. Both Dockerfiles use the same `zlib-build` target and this directory. Verification requires Docker and Trivy 0.76.1 on PATH:
+Build the gateway with `docker build -t lash-her-gateway:local ops/gateway`. The migration image uses its existing root-context build and source-commit argument. Both Dockerfiles use the same `zlib-build` and `node-reference` targets. Use the same Buildx builder for the image and verifier so the reference export can reuse the candidate build stage. Set `FRONTEND_RUNTIME_IMAGE=migration` when verifying the migration image. Verification requires Docker and Trivy 0.76.1 on PATH:
 
 ```sh
 trivy image --list-all-pkgs --format json --output /tmp/gateway-raw.json lash-her-gateway:local
