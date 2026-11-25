@@ -217,7 +217,7 @@ jobs:
       - name: Scan frontend migration image against verified backport evidence
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
         run: >-
-          node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci
+          FRONTEND_RUNTIME_IMAGE=migration node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci
           "$RUNNER_TEMP/frontend-runtime-raw.json" "$RUNNER_TEMP/frontend-runtime"
       - name: Retain frontend-runtime qualification
         if: ${{ !cancelled() && steps.image-inputs.outputs.changed == 'true' }}
