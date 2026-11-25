@@ -83,7 +83,7 @@ export function VariantCombinationInput(props: ArrayOfObjectsInputProps) {
   }
 
   return (
-    <Stack space={4}>
+    <Stack gap={4}>
       {axes.map((axis) => {
         const current = chosen.get(axis.normalizedName) ?? "";
         const currentIsKnown =
@@ -91,7 +91,7 @@ export function VariantCombinationInput(props: ArrayOfObjectsInputProps) {
           axis.choices.some((choice) => choice.value === current);
 
         return (
-          <Stack space={2} key={axis.key}>
+          <Stack gap={2} key={axis.key}>
             <Text size={1} weight="medium">
               {axis.name}
             </Text>

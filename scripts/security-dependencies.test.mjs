@@ -11,13 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(new URL("../package.json", import.meta.url));
 const braces = require("braces");
-const requirePreferred = createRequire(
-  require.resolve("preferred-pm/package.json"),
-);
-const requireWhich = createRequire(
-  requirePreferred.resolve("which-pm/package.json"),
-);
-const loadYamlFile = requireWhich("load-yaml-file");
+const loadYamlFile = require("load-yaml-file");
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "lash-security-"));
@@ -123,7 +117,8 @@ test("micromatch and fast-glob preserve real file selection", async (t) => {
 
 test("chokidar retains brace glob watching", { timeout: 10000 }, async (t) => {
   const directory = await fixture(t);
-  const watcher = require("chokidar").watch(
+  const requireCodegen = createRequire(import.meta.resolve("@sanity/codegen"));
+  const watcher = requireCodegen("chokidar").watch(
     path.join(directory, "*.{ts,tsx}"),
     { ignoreInitial: true, usePolling: true, interval: 25 },
   );
@@ -161,27 +156,33 @@ test("YAML loader preserves both APIs, BOM handling, errors, and safe parsing", 
   }
 });
 
-test("Sanity's CommonJS package-manager detection reads pnpm metadata", async (t) => {
-  const directory = await fixture(t);
-  await mkdir(path.join(directory, "node_modules"));
-  await writeFile(
-    path.join(directory, "node_modules/.modules.yaml"),
-    "packageManager: pnpm@9.0.0\n",
+test("Sanity CLI detects pnpm and npm from their user agents", async () => {
+  const { getBinCommand } = await import("@sanity/cli-core/package-manager");
+  assert.equal(
+    getBinCommand({ userAgent: "pnpm/9.0.0 npm/?" }),
+    "pnpm exec sanity",
   );
-  assert.deepEqual(await requirePreferred("which-pm")(directory), {
-    name: "pnpm",
-    version: "9.0.0",
-  });
-  const preferredPM = require("preferred-pm");
-  assert.deepEqual(await preferredPM(directory), {
-    name: "pnpm",
-    version: "9.0.0",
-  });
-  await writeFile(path.join(directory, "package-lock.json"), "{}");
-  assert.deepEqual(await preferredPM(directory), {
-    name: "npm",
-    version: ">=5",
-  });
+  assert.equal(getBinCommand({ userAgent: "npm/11.17.0" }), "npx sanity");
+});
+
+test("Vercel framework detection reads YAML and TOML with patched parsers", async (t) => {
+  const requireSanityCli = createRequire(import.meta.resolve("@sanity/cli"));
+  const { readConfigFile } = requireSanityCli(
+    "@vercel/frameworks/dist/read-config-file.js",
+  );
+  const directory = await fixture(t);
+  const yaml = path.join(directory, "config.yaml");
+  const toml = path.join(directory, "config.toml");
+  await writeFile(yaml, 'build:\n  output: "public"\n');
+  await writeFile(toml, '[build]\noutput = "public"\n');
+  const yamlConfig = await readConfigFile([
+    path.join(directory, "missing.yaml"),
+    yaml,
+  ]);
+  assert.deepEqual(yamlConfig, { build: { output: "public" } });
+  assert.equal((await readConfigFile(toml)).build.output, "public");
+  await writeFile(yaml, "build: [");
+  await assert.rejects(readConfigFile(yaml), { name: "YAMLException" });
 });
 
 test("Tailwind typography generates selectors using the patched parser", async () => {
@@ -220,26 +221,34 @@ test("selected fixed dependencies are installed at the reviewed versions", async
     await readFile(path.join(root, "package-lock.json"), "utf8"),
   );
   const versions = {
-    "markdown-it": "15.0.3",
-    vite: "7.3.7",
-    postcss: "8.5.31",
-    "source-map-js": "1.2.2",
-    "postcss-selector-parser": "7.1.7",
-    undici: "6.29.1",
-    zod: "4.6.6",
+    "markdown-it": ["15.0.3"],
+    i18next: ["26.7.2"],
+    "js-yaml": ["4.3.2"],
+    "smol-toml": ["1.9.1"],
+    vite: ["8.3.8"],
+    postcss: ["8.5.31"],
+    "source-map-js": ["1.2.2"],
+    "postcss-selector-parser": ["7.1.7"],
+    undici: ["6.29.1", "7.30.1", "8.13.1"],
+    zod: ["4.6.6"],
   };
-  for (const [name, version] of Object.entries(versions)) {
+  for (const [name, reviewedVersions] of Object.entries(versions)) {
     const entries = Object.entries(lock.packages).filter(
       ([location]) =>
         location.endsWith(`/node_modules/${name}`) ||
         location === `node_modules/${name}`,
     );
     assert(entries.length, `${name} installed`);
-    for (const [, entry] of entries) assert.equal(entry.version, version, name);
+    for (const [, entry] of entries) {
+      assert(
+        reviewedVersions.includes(entry.version),
+        `${name}@${entry.version} reviewed`,
+      );
+    }
   }
 });
 
-test("Sanity codegen retains config defaults and validation with patched Zod", async (t) => {
+test("Sanity codegen retains config defaults and validation", async (t) => {
   const { readConfig } = await import("@sanity/codegen");
   const directory = await fixture(t);
   const configPath = path.join(directory, "sanity-typegen.json");
@@ -262,7 +271,7 @@ test("Sanity codegen retains config defaults and validation with patched Zod", a
   await writeFile(configPath, JSON.stringify({ path: 123 }));
   await assert.rejects(
     readConfig(configPath),
-    (error) => error.name === "ZodError" && error.issues.length > 0,
+    (error) => error.name === "ValiError" && error.issues.length > 0,
   );
 });
 

@@ -28,9 +28,18 @@ It replaces `js-yaml@3`/`safeLoad` with `js-yaml@4.3.2`/`load`, preserving the
 CommonJS callable async API, `.sync`, BOM stripping, and file errors. This removes
 the legacy `argparse@1` and `sprintf-js` dependency chain implicated by
 [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c).
-YAML follows js-yaml 4's safe default schema; JavaScript tags are rejected.
-Sanity's existing CommonJS package-manager detection remains compatible, including
-reading pnpm's `.modules.yaml`.
+YAML follows js-yaml 4's safe default schema and rejects JavaScript tags.
+
+## Vercel framework detection
+
+`@lash-her/vercel-frameworks@3.29.0-lash-her.1` derives from
+`@vercel/frameworks@3.29.0` used by Sanity CLI. The configuration reader uses
+`js-yaml@4.3.2` with its safe default loader and `smol-toml@1.9.1`. This removes
+the legacy YAML parser's `argparse@1` and `sprintf-js` chain and resolves the
+YAML and TOML advisories recorded in `forks.json`. The reader still accepts both
+YAML extensions and retains JSON and TOML support, first-match lookup, and parse
+errors. Remove the fork when Sanity CLI resolves a compatible upstream package
+with patched parsers and the dependency verification commands pass.
 
 ## Auth.js configuration isolation
 
@@ -54,8 +63,8 @@ Original failed evidence is preserved under the Phase 2 admission baselines.
 ## Installation and verification
 
 The root manifest directly declares the archive dependencies under the
-original import names. Root overrides reference those declarations with `$braces`
-and `$load-yaml-file` (and `$@auth/core`), so every transitive caller uses the same installation.
+original import names. Root overrides reference those declarations with npm's
+`$dependency` syntax, so every transitive caller uses the same installation.
 The references also avoid npm resolving a relative tarball separately from each
 transitive package's directory.
 

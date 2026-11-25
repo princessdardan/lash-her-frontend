@@ -80,11 +80,11 @@ export function VariantOverridesInput(props: ArrayOfObjectsInputProps) {
   );
 
   return (
-    <Stack space={4}>
+    <Stack gap={4}>
       <Card border radius={2} padding={3} tone="transparent">
-        <Stack space={3}>
+        <Stack gap={3}>
           <Flex align="flex-start" justify="space-between" gap={3}>
-            <Stack space={2} flex={1}>
+            <Stack gap={2} flex={1}>
               <Text size={1} weight="semibold">
                 Combinations
               </Text>
@@ -106,7 +106,7 @@ export function VariantOverridesInput(props: ArrayOfObjectsInputProps) {
           </Flex>
 
           {open ? (
-            <Grid columns={[1, 2, 3]} gap={2}>
+            <Grid gridTemplateColumns={[1, 2, 3]} gap={2}>
               {combinations.map((combination) => {
                 const existingKey = customizedByFingerprint.get(
                   combination.fingerprint,
@@ -121,14 +121,13 @@ export function VariantOverridesInput(props: ArrayOfObjectsInputProps) {
                     padding={3}
                     tone={isCustomized ? "primary" : "default"}
                   >
-                    <Stack space={3}>
+                    <Stack gap={3}>
                       <Flex align="center" justify="space-between" gap={2}>
                         <Text size={1} weight="medium">
                           {combination.label}
                         </Text>
                         <Badge
                           tone={isCustomized ? "primary" : "default"}
-                          mode="outline"
                           fontSize={0}
                         >
                           {isCustomized ? "Customized" : "Default"}

@@ -78,7 +78,11 @@ describe("service schema editorial contract", () => {
   it("allows services with only a title and slug", () => {
     for (const name of ["description", "shortDescription"]) {
       const field = service.fields.find((field) => field.name === name);
-      assert.equal(field?.validation, undefined);
+      assert.ok(field, `${name} should be configured`);
+      assert.equal(
+        "validation" in field ? field.validation : undefined,
+        undefined,
+      );
     }
   });
 });
