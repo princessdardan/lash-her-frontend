@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Play } from "lucide-react";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { cn } from "@/lib/utils";
 import type { TTrainingProgram } from "@/types";
@@ -6,6 +7,7 @@ import type { TTrainingProgram } from "@/types";
 interface TrainingEditorialHeroProps {
   readonly data: TTrainingProgram;
   readonly hasPurchaseUi?: boolean;
+  readonly previewHref?: string;
 }
 
 function getHeroImage(data: TTrainingProgram) {
@@ -33,18 +35,26 @@ function getSafeCta(cta: TTrainingProgram["primaryCta"] | TTrainingProgram["seco
   return cta;
 }
 
-export function TrainingEditorialHero({ data, hasPurchaseUi = false }: TrainingEditorialHeroProps) {
+export function TrainingEditorialHero({
+  data,
+  hasPurchaseUi = false,
+  previewHref,
+}: TrainingEditorialHeroProps) {
   const heroImage = getHeroImage(data);
   const primaryCta = getSafeCta(data.primaryCta);
   const secondaryCta = getSafeCta(data.secondaryCta);
-  const hasCtas = Boolean(primaryCta || secondaryCta);
+  const hasCtas = Boolean(primaryCta || secondaryCta || previewHref);
   const badges = data.heroBadges?.filter(Boolean) ?? [];
 
   return (
     <section
       className={cn(
         "relative isolate overflow-hidden bg-lh-shadow text-lh-neutral-2",
-        hasPurchaseUi ? "min-h-[620px] lg:min-h-[720px]" : "min-h-[620px] lg:min-h-[760px]",
+        previewHref
+          ? "min-h-[330px] md:min-h-[390px] lg:min-h-[440px]"
+          : hasPurchaseUi
+            ? "min-h-[620px] lg:min-h-[720px]"
+            : "min-h-[620px] lg:min-h-[760px]",
       )}
       data-training-detail-hero="true"
     >
@@ -66,7 +76,10 @@ export function TrainingEditorialHero({ data, hasPurchaseUi = false }: TrainingE
         <div className="absolute -right-32 bottom-[-9rem] h-[28rem] w-[28rem] rounded-full border border-lh-light/35" aria-hidden="true" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-[inherit] w-full max-w-[1380px] items-end px-6 py-14 sm:px-8 md:py-18 lg:px-10 lg:py-20 xl:px-12">
+      <div className={cn(
+        "relative z-10 mx-auto flex min-h-[inherit] w-full max-w-[1380px] px-6 sm:px-8 lg:px-10 xl:px-12",
+        previewHref ? "items-center py-8 md:py-12" : "items-end py-14 md:py-18 lg:py-20",
+      )}>
         <div className={cn("max-w-5xl", hasPurchaseUi && "lg:max-w-[calc(100%-25rem)]")}>
           <p className="eyebrow-label mb-4 text-lh-light">Training Program</p>
           {data.heroSubtitle && (
@@ -74,7 +87,10 @@ export function TrainingEditorialHero({ data, hasPurchaseUi = false }: TrainingE
               {data.heroSubtitle}
             </p>
           )}
-          <h1 className="display-heading text-lh-neutral-2 text-balance">
+          <h1 className={cn(
+            "display-heading text-lh-neutral-2 text-balance",
+            previewHref && "lg:text-[clamp(4rem,5.6vw,5.125rem)]",
+          )}>
             {data.title}
           </h1>
 
@@ -98,7 +114,10 @@ export function TrainingEditorialHero({ data, hasPurchaseUi = false }: TrainingE
           )}
 
           {hasCtas && (
-            <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <div className={cn(
+              "flex flex-col gap-3 sm:flex-row sm:flex-wrap",
+              previewHref ? "mt-6 items-start sm:items-center" : "mt-10",
+            )}>
               {primaryCta && (
                 <Link
                   href={primaryCta.href}
@@ -118,6 +137,15 @@ export function TrainingEditorialHero({ data, hasPurchaseUi = false }: TrainingE
                 >
                   {secondaryCta.label}
                 </Link>
+              )}
+              {previewHref && (
+                <a
+                  href={previewHref}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-lh-neutral-2/55 px-5 py-2.5 font-body text-xs font-semibold text-lh-neutral-2 transition-colors hover:bg-lh-neutral-2/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lh-light"
+                >
+                  <Play aria-hidden="true" className="size-4 shrink-0" />
+                  Watch program preview
+                </a>
               )}
             </div>
           )}

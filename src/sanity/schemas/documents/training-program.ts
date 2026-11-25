@@ -75,6 +75,14 @@ export const trainingProgram = defineType({
       of: [defineArrayMember({ type: "string" })],
     }),
     defineField({
+      name: "previewVideo",
+      title: "Program Preview Video (Mux)",
+      type: "mux.video",
+      group: "overview",
+      description:
+        "Optional. Choose a video with Public playback. It appears above the curriculum once Mux finishes processing.",
+    }),
+    defineField({
       name: "displayOrder",
       title: "Display Order",
       type: "number",
