@@ -74,7 +74,7 @@ test("landing page publication and deletion invalidate landing page data and slu
   `);
 });
 
-test("Mux asset updates invalidate cached course playback metadata", () => {
+test("Mux asset updates invalidate cached course and training preview playback metadata", () => {
   runRouteScenario(`
     const { handler, revalidatedTags, syncedStockIds } = runScenario({
       body: { _type: "mux.videoAsset", _id: "mux-asset-123" },
@@ -82,7 +82,10 @@ test("Mux asset updates invalidate cached course playback metadata", () => {
     });
     const response = await handler(createRequest());
     assert.equal(response.status, 200);
-    assert.deepEqual(revalidatedTags, [{ tag: "shortCourse", profile: { expire: 0 } }]);
+    assert.deepEqual(revalidatedTags, [
+      { tag: "shortCourse", profile: { expire: 0 } },
+      { tag: "trainingProgramPreviewVideo", profile: { expire: 0 } },
+    ]);
     assert.deepEqual(syncedStockIds, []);
   `);
 });
