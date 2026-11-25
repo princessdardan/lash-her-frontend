@@ -61,6 +61,7 @@ export async function sendToken(
 
   const baseUrl = new URL(options.basePath, options.url.origin)
 
+  const hashedToken = await createHash(`${token}${secret}`)
   const sendRequest = provider.sendVerificationRequest({
     identifier: email,
     token,
@@ -75,12 +76,14 @@ export async function sendToken(
     request: toRequest(request),
   })
 
-  const createToken = adapter!.createVerificationToken?.({
-    identifier: email,
-    token: await createHash(`${token}${secret}`),
-    expires,
-  })
-
+  // Join immediately so an asynchronous delivery rejection reaches the caller.
+  const createToken = Promise.resolve().then(() =>
+    adapter!.createVerificationToken?.({
+      identifier: email,
+      token: hashedToken,
+      expires,
+    }),
+  )
   await Promise.all([sendRequest, createToken])
 
   return {

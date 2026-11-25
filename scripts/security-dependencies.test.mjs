@@ -25,6 +25,58 @@ test("every installed security fork matches its reviewed source and archive", ()
   });
 });
 
+test("Auth.js observes a verification provider failure throughout token hashing", () => {
+  execFileSync(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import { sendToken } from "./node_modules/@auth/core/lib/actions/signin/send-token.js";
+
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const hashStarted = Promise.withResolvers();
+    const finishHash = Promise.withResolvers();
+    crypto.subtle.digest = async (...args) => {
+      hashStarted.resolve();
+      await finishHash.promise;
+      return digest(...args);
+    };
+
+    const failure = new Error("fixture persistence failed");
+    const unhandled = [];
+    process.on("unhandledRejection", error => unhandled.push(error));
+    process.on("rejectionHandled", () => {});
+    const url = new URL("https://frontend.example.invalid/");
+    const request = { body: { email: "fixture@example.invalid" }, method: "POST", url };
+    let adapterCalls = 0;
+    const options = {
+      provider: {
+        id: "fixture",
+        type: "email",
+        generateVerificationToken: () => "fixture-token",
+        async sendVerificationRequest() { throw failure; },
+      },
+      callbacks: { signIn: () => true },
+      adapter: {
+        getUserByEmail: () => null,
+        async createVerificationToken() { adapterCalls++; },
+      },
+      url,
+      basePath: "/auth",
+      secret: "fixture-only",
+    };
+
+    const rejected = assert.rejects(sendToken(request, options), error => error === failure);
+    await hashStarted.promise;
+    await new Promise(resolve => setImmediate(resolve));
+    finishHash.resolve();
+    await rejected;
+    assert.equal(adapterCalls, 1);
+    assert.deepEqual(unhandled, []);
+
+    options.provider.sendVerificationRequest = () => { throw failure; };
+    await assert.rejects(sendToken(request, options), error => error === failure);
+    assert.equal(adapterCalls, 1, "a synchronously refused provider must not start another write");
+  `], { cwd: root, timeout: 5_000 });
+});
+
 test("braces retains expansion, ranges, escaping, and malformed-pattern behavior", () => {
   assert.deepEqual(braces.expand("src/{app,lib}/{a,b}.ts"), [
     "src/app/a.ts",
