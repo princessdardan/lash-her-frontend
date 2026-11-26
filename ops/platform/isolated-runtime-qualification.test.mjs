@@ -22,12 +22,14 @@ printf 'node %s %s\n' "$BUILDX_BUILDER" "${"$"}{1##*/}" >> "$CALLS"
 if [[ "$1" == *prewarm-candidate-runtime.mjs ]]; then exit "$PREWARM"; fi
 exit "$VERIFY"
 `, { mode: 0o755 });
-    const result = spawnSync("bash", [helper, "migration", "/source", "a".repeat(40), "/cache", "node", "verify.mjs"],
+    const result = spawnSync("bash", [helper, "api", "/source", "a".repeat(40), "/cache", "node", "verify.mjs"],
       { env: { ...process.env, PATH: tmp + delimiter + process.env.PATH, CALLS: log,
-        BUILDX_BUILDER: "existing-publisher", PREWARM: String(prewarm), VERIFY: String(verify) }, encoding: "utf8" });
+        BUILDX_BUILDER: "existing-publisher", P506_PUBLISHER_BUILDER: "existing-publisher",
+        PREWARM: String(prewarm), VERIFY: String(verify) }, encoding: "utf8" });
     assert.ifError(result.error);
     assert.equal(result.status, prewarm || verify, result.stderr);
     assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), [
+      "docker buildx rm existing-publisher",
       "docker buildx create --driver docker-container --driver-opt default-load=true",
       "node clean-reference-builder prewarm-candidate-runtime.mjs",
       ...(prewarm ? [] : ["node clean-reference-builder verify.mjs"]),

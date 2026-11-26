@@ -236,24 +236,38 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.ok(phase2Index > crossContractIndex && phase2Index < steps.indexOf(builds[0]));
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 6);
-  const builder = steps.find(step => step.id === "runtime-builder");
-  assert.equal(builder.with["driver-opts"], "default-load=true");
+  const seeds = {
+    gateway: "type=gha,scope=ci-platform-gateway",
+    "frontend-migration": "type=gha,scope=frontend-migration",
+    "course-runtime": undefined,
+    "course-migration": "type=local,src=${{ runner.temp }}/platform-course-runtime-reference-cache",
+    "community-runtime": "type=local,src=${{ runner.temp }}/platform-course-runtime-reference-cache",
+    "community-migration": "type=local,src=${{ runner.temp }}/platform-community-runtime-reference-cache",
+  };
   for (const build of builds) {
     assert.ok(steps.indexOf(build) > verifyIndex);
     assert.match(build.with.context, /^https:\/\/github\.com\/princessdardan\/lash-her-/u);
     assert.equal(build.with.platforms, "linux/amd64");
-    assert.equal(build.with.builder, "${{ steps.runtime-builder.outputs.name }}");
     assert.equal(build.with.sbom, true);
     assert.equal(build.with.provenance, "mode=max");
     assert.equal(build.with.push, true);
     assert.equal(build.with.secrets, "GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}");
     const component = build.id.slice("build-".length);
-    assert.ok(build.with["cache-to"].includes("type=local,dest=${{ runner.temp }}/platform-" + component + "-reference-cache,mode=max"));
-    assert.ok(build.with["cache-to"].includes("type=gha,scope=platform-" + component + ",mode=max"));
+    const publisher = steps[steps.indexOf(build) - 1];
+    assert.equal(publisher.id, "publisher-" + component);
+    assert.ok(publisher.uses.startsWith("docker/setup-buildx-action@"));
+    assert.equal(publisher.with.use, false);
+    assert.equal(build.with.builder, "${{ steps.publisher-" + component + ".outputs.name }}");
+    assert.equal(build.with["cache-from"], seeds[component]);
+    assert.equal(build.with.target, ({
+      "course-runtime": "runtime",
+      "course-migration": "migration",
+      "community-runtime": "runtime",
+      "community-migration": "migration",
+    })[component]);
+    assert.equal(build.with["cache-to"], "type=local,dest=${{ runner.temp }}/platform-" + component + "-reference-cache,mode=max");
     assert.equal(build["continue-on-error"], undefined);
   }
-  assert.ok(builds.find(step => step.id === "build-gateway").with["cache-from"].includes("type=gha,scope=ci-platform-gateway"));
-  assert.ok(builds.find(step => step.id === "build-frontend-migration").with["cache-from"].includes("type=gha,scope=frontend-migration"));
   const scans = steps.filter((step) => step.uses?.startsWith("aquasecurity/trivy-action@"));
   assert.equal(scans.length, 6);
   for (const scan of scans) {
@@ -271,7 +285,15 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     const verify = next.run.indexOf(`node ${checkout}/ops/${source === "frontend" ? "gateway/" : ""}runtime/verify.mjs`);
     assert.ok(prewarm >= 0 && verify > prewarm);
     assert.ok(next.run.includes("$RUNNER_TEMP/platform-" + prefix + "-reference-cache"));
-    assert.ok(next.run.includes(`trap 'rm -rf -- "$reference_cache"' EXIT`));
+    const keepsSeed = ["course-runtime", "community-runtime"].includes(prefix);
+    assert.ok(next.run.includes(keepsSeed
+      ? `trap 'if [[ $cache_qualified == false ]]; then rm -rf -- "$reference_cache"; fi' EXIT`
+      : `trap 'rm -rf -- "$reference_cache"' EXIT`));
+    if (keepsSeed) assert.ok(next.run.indexOf("cache_qualified=true") > verify);
+    if (prefix === "course-migration") assert.ok(!next.run.includes('rm -rf -- "$RUNNER_TEMP/platform-course-runtime-reference-cache"'));
+    if (prefix === "community-runtime") assert.ok(next.run.includes('rm -rf -- "$RUNNER_TEMP/platform-course-runtime-reference-cache"'));
+    if (prefix === "community-migration") assert.ok(next.run.includes('rm -rf -- "$RUNNER_TEMP/platform-community-runtime-reference-cache"'));
+    assert.equal(next.env?.P506_PUBLISHER_BUILDER, "${{ steps.publisher-" + prefix + ".outputs.name }}");
     assert.ok(!next.run.includes("GIT_AUTH_TOKEN"));
     assert.equal(next.env?.GIT_AUTH_TOKEN, undefined);
     assert.equal(next.env?.BUILDX_BUILDER, undefined);
