@@ -88,6 +88,35 @@ async function main() {
       git("init", "--quiet"); git("add", "."); git("commit", "--quiet", "-m", "Owned migration fixture"); commit = git("rev-parse", "HEAD").trim();
 
     }
+    if (major === 18) {
+      phase = "p506-physical-witness-pg18";
+      const { P506_FRONTEND_TARGET, verifyP506FrontendSession } =
+        await import(pathToFileURL(join(app, "ops/platform/p506-frontend-bootstrap.mjs")).href);
+      const role = P506_FRONTEND_TARGET.runtimeRole;
+      await admin.query(`create role ${role} nologin`);
+      await admin.query("grant execute on function pg_control_system() to frontend_migration");
+      const { rows: [runtime] } = await admin.query("select oid::text from pg_roles where rolname=$1", [role]);
+      await admin.query("begin read only");
+      try {
+        await admin.query("set local role frontend_migration");
+        const observed = { async query(sql, parameters) {
+          const result = await admin.query(sql, parameters);
+          assert.equal(result.rows[0].runtimeRoleOid, runtime.oid);
+          assert.equal(result.rows[0].runtimeHeld, true);
+          assert.equal(result.rows[0].migrationRestricted, true);
+          return result;
+        } };
+        for (const empty of [true, false]) {
+          await assert.rejects(verifyP506FrontendSession(observed, { runtimeRoleOid: runtime.oid }, empty),
+            { message: "P506_ISOLATED_FRONTEND_REFUSED" });
+        }
+      } finally {
+        await admin.query("rollback");
+        await admin.query("revoke execute on function pg_control_system() from frontend_migration");
+        await admin.query(`drop role ${role}`);
+      }
+      records.push("p506-physical-witness-query-executes-on-pg18-and-refuses-unrelated-cluster");
+    }
     const artifact = frontendMigrationArtifact(app);
     const applyPrefix = async (client, migrations) => {
       await client.query("create schema drizzle"); await client.query("create table drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");

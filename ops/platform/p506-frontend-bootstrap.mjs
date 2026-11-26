@@ -51,7 +51,7 @@ export async function verifyP506FrontendSession(client, witness, empty = false) 
       (select oid::text from pg_database where datname=current_database()) as "databaseOid",
       current_user::regrole::oid::text as "migrationRoleOid",
       ($1::regrole::oid)::text as "runtimeRoleOid",
-      (select not rolcanlogin from pg_roles where rolname=$1) as "runtimeHeld",
+      (select not rolcanlogin from pg_roles where oid=$1::regrole::oid) as "runtimeHeld",
       (select not rolsuper and not rolcreaterole and not rolcreatedb
            and not rolreplication and not rolbypassrls
          from pg_roles where rolname=current_user) as "migrationRestricted",
