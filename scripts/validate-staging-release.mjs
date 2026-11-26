@@ -119,6 +119,7 @@ function checkP506Build(env, manifest) {
     FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
     SQUARE_ENVIRONMENT: "sandbox",
     KV_REST_API_URL: "https://p506-inactive-build.invalid",
+    SANITY_API_READ_TOKEN: "",
   })) requireValue(name, value);
   if (!manifest.sanity.projectId) errors.push("A selected staging Sanity project must be recorded");
   for (const feature of P506_HELD_FEATURES) requireValue(feature, "false");
@@ -127,6 +128,7 @@ function checkP506Build(env, manifest) {
     "STAGING_P4_07_BUILD_PINS", "P407_POSTGRES_RELAY_URL", "P407_POSTGRES_RELAY_DEPLOYMENT_PROOF",
     "P506_POSTGRES_RELAY_DEPLOYMENT_PROOF", "P506_POSTGRES_RELAY_PROOF_SHA256", "P506_POSTGRES_RELAY_PROOF_EXPIRES_AT",
     "FRONTEND_WRITER_PRODUCER_SHA256", "API_GATEWAY_PRODUCTION_ORIGIN",
+    "BOOKING_ADMIN_SETUP_SECRET", "CHECKOUT_PII_ENCRYPTION_KEY",
   ]) requireEmpty(name);
   if (env.PAYMENT_GATEWAY_MODE === "mock") errors.push("The Production target must not use payment mock mode");
 
@@ -156,10 +158,19 @@ function checkP506Build(env, manifest) {
   return errors;
 }
 
+export function hasP506BuildBindings(env) {
+  return env.STAGING_P5_06_BUILD_PINS !== undefined ||
+    env.STAGING_P5_06_MIGRATION_RECEIPT_SHA256 !== undefined ||
+    Object.keys(env).some(name => name.startsWith("P506_POSTGRES_RELAY_"));
+}
+
+export function loadStagingReleaseManifest() {
+  return JSON.parse(readFileSync(new URL("../ops/staging/first-release.json", import.meta.url), "utf8"));
+}
+
 /** Returns configuration errors without including credential values or URLs. */
 export function checkStagingRelease(env, manifest) {
-  if (env.STAGING_P5_06_BUILD_PINS !== undefined ||
-      Object.keys(env).some(name => name.startsWith("P506_POSTGRES_RELAY_"))) {
+  if (hasP506BuildBindings(env)) {
     return checkP506Build(env, manifest);
   }
   const errors = [];
@@ -272,7 +283,7 @@ function main() {
     // Explicit files are snapshots: never merge the repository's production .env.local.
     env = dotenv.parse(readFileSync(args[envIndex + 1]));
   }
-  const manifest = JSON.parse(readFileSync(path.resolve("ops/staging/first-release.json"), "utf8"));
+  const manifest = loadStagingReleaseManifest();
   const errors = checkStagingRelease(env, manifest);
   if (errors.length) {
     console.error("Staging release is blocked:");

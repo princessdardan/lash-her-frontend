@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { checkStagingRelease } from "./validate-staging-release.mjs";
+import { checkStagingRelease, loadStagingReleaseManifest } from "./validate-staging-release.mjs";
 import { VERCEL_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
 function fixture() {
@@ -213,7 +215,7 @@ function p506Fixture() {
   const inactiveProviders = [
     "AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "ADMIN_OWNER_EMAILS",
     "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI",
-    "SANITY_WRITE_TOKEN", "SANITY_WEBHOOK_SECRET",
+    "SANITY_API_READ_TOKEN", "SANITY_WRITE_TOKEN", "SANITY_WEBHOOK_SECRET",
     "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "RESEND_SEGMENT_MARKETING_ID",
     "FROM_EMAIL", "ADMIN_EMAIL", "KV_REST_API_TOKEN", "SQUARE_ACCESS_TOKEN",
     "SQUARE_APPLICATION_ID", "SQUARE_LOCATION_ID", "SQUARE_WEBHOOK_SIGNATURE_KEY",
@@ -309,4 +311,56 @@ test("P5-06 validates the exact build-only target on both database drivers", () 
       assert(!errors.join(" ").includes("do-not-echo-this"));
     }
   }
+});
+
+
+test("the two real prebuild commands accept only the exact isolated P5-06 build", () => {
+  const { env } = p506Fixture();
+  const manifest = loadStagingReleaseManifest();
+  const isolated = {
+    ...env,
+    NEXT_PUBLIC_SANITY_PROJECT_ID: manifest.sanity.projectId,
+    NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
+  };
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const run = (name, bindings) => spawnSync(process.execPath, ["scripts/" + name], {
+    cwd: root, env: bindings, encoding: "utf8",
+  });
+  for (const command of ["validate-staging-release.mjs", "validate-sanity-env.mjs"]) {
+    const accepted = run(command, isolated);
+    assert.equal(accepted.status, 0, accepted.stderr);
+    for (const changes of [
+      { APP_VERCEL_TEAM_ID: "team_unreviewed" },
+      { STAGING_P5_06_BUILD_PINS: "malformed" },
+      { STAGING_P5_06_MIGRATION_RECEIPT_SHA256: "f".repeat(64) },
+      { DATABASE_URL: isolated.DATABASE_URL.replace("p506-inactive-build-fixture", "never-echo-value") },
+      { FRONTEND_WRITER_ADMISSION_TARGET_JSON: '{"environment":"staging"}' },
+      { FRONTEND_WRITER_PRODUCER_SHA256: "f".repeat(64) },
+      { SANITY_API_READ_TOKEN: "never-echo-value" },
+      { SANITY_API_READ_TOKEN: undefined },
+      { BOOKING_ADMIN_SETUP_SECRET: "never-echo-value" },
+      { P506_POSTGRES_RELAY_DEPLOYMENT_PROOF: "never-echo-value" },
+      { SANITY_WRITE_TOKEN: "never-echo-value" },
+      { INTEGRATION_COMMUNITY_WRITES_ENABLED: "true" },
+      { NEXT_PUBLIC_SANITY_DATASET: "production" },
+    ]) {
+      const rejected = run(command, { ...isolated, ...changes });
+      assert.equal(rejected.status, 1, command + " " + Object.keys(changes).join(","));
+      assert.doesNotMatch(rejected.stderr, /never-echo-value/u);
+    }
+  }
+  const ordinary = { ...isolated };
+  for (const name of Object.keys(ordinary)) {
+    if (name.startsWith("STAGING_P5_06_") || name.startsWith("P506_POSTGRES_RELAY_")) delete ordinary[name];
+  }
+  const missing = run("validate-sanity-env.mjs", ordinary);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /Missing env var: AUTH_SECRET/u);
+  assert.match(missing.stderr, /Missing env var: SANITY_API_READ_TOKEN/u);
+  const malformed = run("validate-sanity-env.mjs", {
+    ...ordinary, AUTH_SECRET: "short", GOOGLE_REDIRECT_URI: "not-a-url",
+  });
+  assert.equal(malformed.status, 1);
+  assert.match(malformed.stderr, /Malformed env var: AUTH_SECRET/u);
+  assert.match(malformed.stderr, /Malformed env var: GOOGLE_REDIRECT_URI/u);
 });
