@@ -135,7 +135,9 @@ jobs:
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-frontend.git
             com.lashher.source.revision=${{ inputs.frontend_revision }}
           cache-from: type=gha,scope=platform-gateway
-          cache-to: type=gha,scope=platform-gateway,mode=max
+          cache-to: |
+            type=gha,scope=platform-gateway,mode=max
+            type=local,dest=${{ runner.temp }}/platform-gateway-reference-cache,mode=max
       - name: Retain raw exact gateway digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
@@ -150,9 +152,15 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched gateway runtime and enforce scan
         run: |-
-          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-gateway@${{ steps.build-gateway.outputs.digest }} "$RUNNER_TEMP/platform-evidence/gateway-raw-scan.json" "$RUNNER_TEMP/platform-evidence/gateway-runtime"
+          reference_cache="$RUNNER_TEMP/platform-gateway-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node control/ops/platform/verify-candidate-runtime.mjs gateway "$SOURCE_COMMIT" "$reference_cache" \
+            ghcr.io/princessdardan/lash-her-platform-gateway@${{ steps.build-gateway.outputs.digest }} \
+            "$RUNNER_TEMP/platform-evidence/gateway-raw-scan.json" "$RUNNER_TEMP/platform-evidence/gateway-runtime" publication
           cp "$RUNNER_TEMP/platform-evidence/gateway-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/gateway-scan.json"
         env:
+          SOURCE_COMMIT: ${{ inputs.frontend_revision }}
+          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain gateway runtime evidence even on refusal
@@ -190,7 +198,9 @@ jobs:
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-frontend.git
             com.lashher.source.revision=${{ inputs.frontend_revision }}
           cache-from: type=gha,scope=platform-frontend-migration
-          cache-to: type=gha,scope=platform-frontend-migration,mode=max
+          cache-to: |
+            type=gha,scope=platform-frontend-migration,mode=max
+            type=local,dest=${{ runner.temp }}/platform-frontend-migration-reference-cache,mode=max
       - name: Retain raw exact frontend-migration digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
@@ -205,10 +215,15 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched frontend-migration runtime and enforce scan
         run: |-
-          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime"
+          reference_cache="$RUNNER_TEMP/platform-frontend-migration-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node control/ops/platform/verify-candidate-runtime.mjs frontend-migration "$SOURCE_COMMIT" "$reference_cache" \
+            ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} \
+            "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime" publication
           cp "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-scan.json"
         env:
-          FRONTEND_RUNTIME_IMAGE: migration
+          SOURCE_COMMIT: ${{ inputs.frontend_revision }}
+          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain frontend-migration runtime evidence even on refusal
@@ -244,7 +259,9 @@ jobs:
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-course-api.git
             com.lashher.source.revision=${{ inputs.course_revision }}
           cache-from: type=gha,scope=platform-course-runtime
-          cache-to: type=gha,scope=platform-course-runtime,mode=max
+          cache-to: |
+            type=gha,scope=platform-course-runtime,mode=max
+            type=local,dest=${{ runner.temp }}/platform-course-runtime-reference-cache,mode=max
           target: runtime
       - name: Retain raw exact course-runtime digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
@@ -260,9 +277,15 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched course-runtime runtime and enforce scan
         run: |-
-          node sources/lash-her-course-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-course-runtime@${{ steps.build-course-runtime.outputs.digest }} "$RUNNER_TEMP/platform-evidence/course-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-runtime"
+          reference_cache="$RUNNER_TEMP/platform-course-runtime-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node control/ops/platform/verify-candidate-runtime.mjs course-runtime "$SOURCE_COMMIT" "$reference_cache" \
+            ghcr.io/princessdardan/lash-her-platform-course-runtime@${{ steps.build-course-runtime.outputs.digest }} \
+            "$RUNNER_TEMP/platform-evidence/course-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-runtime" publication
           cp "$RUNNER_TEMP/platform-evidence/course-runtime-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-scan.json"
         env:
+          SOURCE_COMMIT: ${{ inputs.course_revision }}
+          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain course-runtime runtime evidence even on refusal
@@ -299,7 +322,9 @@ jobs:
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-course-api.git
             com.lashher.source.revision=${{ inputs.course_revision }}
           cache-from: type=gha,scope=platform-course-migration
-          cache-to: type=gha,scope=platform-course-migration,mode=max
+          cache-to: |
+            type=gha,scope=platform-course-migration,mode=max
+            type=local,dest=${{ runner.temp }}/platform-course-migration-reference-cache,mode=max
           target: migration
       - name: Retain raw exact course-migration digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
@@ -315,9 +340,15 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched course-migration runtime and enforce scan
         run: |-
-          node sources/lash-her-course-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-course-migration@${{ steps.build-course-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/course-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-runtime"
+          reference_cache="$RUNNER_TEMP/platform-course-migration-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node control/ops/platform/verify-candidate-runtime.mjs course-migration "$SOURCE_COMMIT" "$reference_cache" \
+            ghcr.io/princessdardan/lash-her-platform-course-migration@${{ steps.build-course-migration.outputs.digest }} \
+            "$RUNNER_TEMP/platform-evidence/course-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-runtime" publication
           cp "$RUNNER_TEMP/platform-evidence/course-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-scan.json"
         env:
+          SOURCE_COMMIT: ${{ inputs.course_revision }}
+          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain course-migration runtime evidence even on refusal
@@ -354,7 +385,9 @@ jobs:
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-community-api.git
             com.lashher.source.revision=${{ inputs.community_revision }}
           cache-from: type=gha,scope=platform-community-runtime
-          cache-to: type=gha,scope=platform-community-runtime,mode=max
+          cache-to: |
+            type=gha,scope=platform-community-runtime,mode=max
+            type=local,dest=${{ runner.temp }}/platform-community-runtime-reference-cache,mode=max
           target: runtime
       - name: Retain raw exact community-runtime digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
@@ -370,9 +403,15 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched community-runtime runtime and enforce scan
         run: |-
-          node sources/lash-her-community-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest }} "$RUNNER_TEMP/platform-evidence/community-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-runtime"
+          reference_cache="$RUNNER_TEMP/platform-community-runtime-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node control/ops/platform/verify-candidate-runtime.mjs community-runtime "$SOURCE_COMMIT" "$reference_cache" \
+            ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest }} \
+            "$RUNNER_TEMP/platform-evidence/community-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-runtime" publication
           cp "$RUNNER_TEMP/platform-evidence/community-runtime-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-scan.json"
         env:
+          SOURCE_COMMIT: ${{ inputs.community_revision }}
+          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain community-runtime runtime evidence even on refusal
@@ -409,7 +448,9 @@ jobs:
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-community-api.git
             com.lashher.source.revision=${{ inputs.community_revision }}
           cache-from: type=gha,scope=platform-community-migration
-          cache-to: type=gha,scope=platform-community-migration,mode=max
+          cache-to: |
+            type=gha,scope=platform-community-migration,mode=max
+            type=local,dest=${{ runner.temp }}/platform-community-migration-reference-cache,mode=max
           target: migration
       - name: Retain raw exact community-migration digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
@@ -425,9 +466,15 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify patched community-migration runtime and enforce scan
         run: |-
-          node sources/lash-her-community-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-community-migration@${{ steps.build-community-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/community-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-runtime"
+          reference_cache="$RUNNER_TEMP/platform-community-migration-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node control/ops/platform/verify-candidate-runtime.mjs community-migration "$SOURCE_COMMIT" "$reference_cache" \
+            ghcr.io/princessdardan/lash-her-platform-community-migration@${{ steps.build-community-migration.outputs.digest }} \
+            "$RUNNER_TEMP/platform-evidence/community-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-runtime" publication
           cp "$RUNNER_TEMP/platform-evidence/community-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-scan.json"
         env:
+          SOURCE_COMMIT: ${{ inputs.community_revision }}
+          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain community-migration runtime evidence even on refusal

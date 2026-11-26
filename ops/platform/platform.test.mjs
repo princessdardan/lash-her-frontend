@@ -242,6 +242,11 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.equal(build.with.platforms, "linux/amd64");
     assert.equal(build.with.sbom, true);
     assert.equal(build.with.provenance, "mode=max");
+    assert.equal(build.with.push, true);
+    assert.equal(build.with.secrets, "GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}");
+    const component = build.id.slice("build-".length);
+    assert.ok(build.with["cache-to"].includes("type=local,dest=${{ runner.temp }}/platform-" + component + "-reference-cache,mode=max"));
+    assert.ok(build.with["cache-to"].includes("type=gha,scope=platform-" + component + ",mode=max"));
     assert.equal(build["continue-on-error"], undefined);
   }
   const scans = steps.filter((step) => step.uses?.startsWith("aquasecurity/trivy-action@"));
@@ -254,9 +259,13 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.equal(scan.env.TRIVY_LIST_ALL_PKGS, "true");
     const index = steps.indexOf(scan), next = steps[index + 1], retain = steps[index + 2];
     const prefix = scan.with.output.split("/").at(-1).replace("-raw-scan.json", "");
-    const source = prefix.startsWith("course-") ? "course-api/ops" : prefix.startsWith("community-") ? "community-api/ops" : "frontend/ops/gateway";
-    assert.ok(next.run.startsWith(`node sources/lash-her-${source}/runtime/verify.mjs `));
-    assert.equal(next.env?.FRONTEND_RUNTIME_IMAGE, prefix === "frontend-migration" ? "migration" : undefined);
+    const source = prefix.startsWith("course-") ? "course" : prefix.startsWith("community-") ? "community" : "frontend";
+    assert.ok(next.run.includes(`node control/ops/platform/verify-candidate-runtime.mjs ${prefix} "$SOURCE_COMMIT" "$reference_cache"`));
+    assert.ok(next.run.includes("$RUNNER_TEMP/platform-" + prefix + "-reference-cache"));
+    assert.ok(next.run.includes("publication"));
+    assert.ok(!next.run.includes("GIT_AUTH_TOKEN"));
+    assert.equal(next.env?.GIT_AUTH_TOKEN, "${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}");
+    assert.equal(next.env?.SOURCE_COMMIT, "${{ inputs." + source + "_revision }}");
     assert.ok(next.run.includes(scan.with["image-ref"]));
     assert.ok(next.run.includes(`"$RUNNER_TEMP/platform-evidence/${prefix}-raw-scan.json"`));
     assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);
@@ -285,7 +294,20 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
 test("native qualification uses the explicit supported Ubuntu baseline without altering its verifier", () => {
   const workflow = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"));
   for (const key of ["frontend-operator-migrations", "gateway-and-platform", "browser-tests"]) assert.equal(workflow.jobs[key]["runs-on"], "ubuntu-24.04");
-  for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
-    if (step.run?.includes("ops/gateway/runtime/verify.mjs")) assert.equal(step["continue-on-error"], undefined);
+  for (const [job, component, scope, image] of [
+    ["frontend-operator-migrations", "frontend-migration", "frontend-migration", "lash-her-frontend-migration:ci"],
+    ["gateway-and-platform", "gateway", "ci-platform-gateway", "lash-her-gateway:ci"],
+  ]) {
+    const steps = workflow.jobs[job].steps;
+    const build = steps.find(step => step.with?.tags === image);
+    const verifier = steps.find(step => step.run?.includes("ops/platform/verify-candidate-runtime.mjs"));
+    assert.equal(build.with.platforms, "linux/amd64");
+    assert.equal(build.with.sbom, true);
+    assert.equal(build.with.provenance, "mode=max");
+    assert.ok(build.with["cache-to"].includes("type=local,dest=${{ runner.temp }}/" + scope + "-reference-cache,mode=max"));
+    assert.ok(verifier.run.includes("verify-candidate-runtime.mjs " + component));
+    assert.ok(verifier.run.includes("$RUNNER_TEMP/" + scope + "-reference-cache"));
+    assert.ok(verifier.run.endsWith(" ci"));
+    assert.equal(verifier["continue-on-error"], undefined);
   }
 });
