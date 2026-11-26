@@ -224,12 +224,14 @@ jobs:
       - name: Verify patched frontend-migration runtime and enforce scan
         run: |-
           reference_cache="$RUNNER_TEMP/platform-frontend-migration-reference-cache"
-          trap 'rm -rf -- "$reference_cache"' EXIT
+          cache_qualified=false
+          trap 'if [[ $cache_qualified == false ]]; then rm -rf -- "$reference_cache"; fi' EXIT
           bash control/ops/platform/qualify-isolated-runtime.sh migration sources/lash-her-frontend "$SOURCE_COMMIT" "$reference_cache" \
             node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} \
             "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime"
           cp "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-scan.json"
+          cache_qualified=true
         env:
           P506_PUBLISHER_BUILDER: ${{ steps.publisher-frontend-migration.outputs.name }}
           FRONTEND_RUNTIME_IMAGE: migration
@@ -274,8 +276,12 @@ jobs:
             org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-course-api.git
             com.lashher.source.revision=${{ inputs.course_revision }}
+          cache-from: type=local,src=${{ runner.temp }}/platform-frontend-migration-reference-cache
           cache-to: type=local,dest=${{ runner.temp }}/platform-course-runtime-reference-cache,mode=max
           target: runtime
+      - name: Discard the used frontend-migration build cache
+        if: ${{ always() }}
+        run: rm -rf -- "$RUNNER_TEMP/platform-frontend-migration-reference-cache"
       - name: Retain raw exact course-runtime digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:

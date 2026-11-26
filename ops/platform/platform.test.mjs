@@ -237,9 +237,9 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 6);
   const seeds = {
+    "course-runtime": "type=local,src=${{ runner.temp }}/platform-frontend-migration-reference-cache",
     gateway: "type=gha,scope=ci-platform-gateway",
     "frontend-migration": "type=gha,scope=frontend-migration",
-    "course-runtime": undefined,
     "course-migration": "type=local,src=${{ runner.temp }}/platform-course-runtime-reference-cache",
     "community-runtime": "type=local,src=${{ runner.temp }}/platform-course-runtime-reference-cache",
     "community-migration": "type=local,src=${{ runner.temp }}/platform-community-runtime-reference-cache",
@@ -268,6 +268,11 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.equal(build.with["cache-to"], "type=local,dest=${{ runner.temp }}/platform-" + component + "-reference-cache,mode=max");
     assert.equal(build["continue-on-error"], undefined);
   }
+  const frontendCacheCleanup = steps.indexOf(steps.find((step) => step.name === "Discard the used frontend-migration build cache"));
+  const courseRuntimeBuild = steps.indexOf(steps.find((step) => step.id === "build-course-runtime"));
+  assert.equal(frontendCacheCleanup, courseRuntimeBuild + 1);
+  assert.equal(steps[frontendCacheCleanup].if, "${{ always() }}");
+  assert.equal(steps[frontendCacheCleanup].run, 'rm -rf -- "$RUNNER_TEMP/platform-frontend-migration-reference-cache"');
   const scans = steps.filter((step) => step.uses?.startsWith("aquasecurity/trivy-action@"));
   assert.equal(scans.length, 6);
   for (const scan of scans) {
@@ -285,7 +290,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     const verify = next.run.indexOf(`node ${checkout}/ops/${source === "frontend" ? "gateway/" : ""}runtime/verify.mjs`);
     assert.ok(prewarm >= 0 && verify > prewarm);
     assert.ok(next.run.includes("$RUNNER_TEMP/platform-" + prefix + "-reference-cache"));
-    const keepsSeed = ["course-runtime", "community-runtime"].includes(prefix);
+    const keepsSeed = ["frontend-migration", "course-runtime", "community-runtime"].includes(prefix);
     assert.ok(next.run.includes(keepsSeed
       ? `trap 'if [[ $cache_qualified == false ]]; then rm -rf -- "$reference_cache"; fi' EXIT`
       : `trap 'rm -rf -- "$reference_cache"' EXIT`));
