@@ -1,4 +1,5 @@
 import nextEnv from "@next/env";
+import { checkStagingRelease, hasP506BuildBindings, loadStagingReleaseManifest } from "./validate-staging-release.mjs";
 import { resolveApplicationEnvironment, SANITY_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
 const { loadEnvConfig } = nextEnv;
@@ -111,6 +112,17 @@ const isLaunchEnvironment =
   vercelEnv === "production" ||
   vercelEnv === "preview" ||
   process.env.VERCEL === "1";
+// A P5-06 build uses fixture-only inputs. It must first pass the same
+// source, migration, target, and provider isolation checks as the Vercel build.
+const p506Build = hasP506BuildBindings(process.env);
+if (p506Build) {
+  try {
+    errors.push(...checkStagingRelease(process.env, loadStagingReleaseManifest()));
+  } catch {
+    errors.push("Unable to verify the isolated P5-06 staging build configuration");
+  }
+}
+const requiresLaunchCredentials = isLaunchEnvironment && !p506Build;
 const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
 const isPaymentMockMode = paymentGatewayMode === "mock";
 const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
@@ -125,7 +137,7 @@ const chitchatsUsShippingEnabled = process.env.CHITCHATS_US_SHIPPING_ENABLED;
 const manualProductCheckoutEnabled =
   process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED;
 const isChitchatsShippingEnabled = chitchatsShippingEnabled === "true";
-const requiredEnvVars = isLaunchEnvironment
+const requiredEnvVars = requiresLaunchCredentials
   ? [
       ...publicSanityEnvVars,
       ...launchEnvVars,
@@ -211,7 +223,7 @@ if (
   errors.push("Payment mock mode is not allowed in production");
 }
 
-if (isLaunchEnvironment) {
+if (requiresLaunchCredentials) {
   if (
     vercelEnv === "production" &&
     (appEnv === "staging" || appEnv === "production")
