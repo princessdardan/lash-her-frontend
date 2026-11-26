@@ -24,7 +24,7 @@ function validatePatchedNode({ lock, observed, scan, sbom, nodeBuild }) {
   assert.equal(evidence.version, 1);
   assert.deepEqual(evidence.inputs, lock);
   assert.ok(sha(executableSha256));
-  assert.equal(executableSha256, evidence.nodeSha256);
+  assert.equal(executableSha256, evidence.nodeSha256, "NODE_PACKAGED_EXECUTABLE_MISMATCH");
   assert.equal(nodeVersion, `v${lock.nodeVersion}`);
   assert.equal(opensslVersion, lock.opensslVersion);
   assert.equal(sharedOpenSSL, false);
@@ -33,7 +33,7 @@ function validatePatchedNode({ lock, observed, scan, sbom, nodeBuild }) {
     ...(scan.Results ?? []).flatMap(result => (result.Packages ?? []).map(pkg => pkg.Name))];
   assert.ok(!packages.some(name => /^libssl3(?:t64)?$/u.test(name)), 'Unexpected Debian OpenSSL runtime package');
   if (lock.patches) {
-    assert.deepEqual(evidence, nodeBuild);
+    assert.deepEqual(evidence, nodeBuild, "NODE_REFERENCE_RECEIPT_MISMATCH");
     assert.equal(zstdVersion, lock.zstdVersion);
     assert.equal(sharedZstd, false);
     assert.ok(!packages.includes('libzstd1'), 'Unexpected Debian Zstandard runtime package');
@@ -46,7 +46,7 @@ export function validateRuntimeEvidence({ lock, lockSha256, build, observed, ima
   assert.deepEqual(lock.vulnerabilities, ['CVE-2026-76844', 'CVE-2026-85091']);
   assert.equal(build.inputsLockSha256, lockSha256);
   assert.deepEqual(build.inputs, lock);
-  assert.deepEqual(observed.evidence, build);
+  assert.deepEqual(observed.evidence, build, "ZLIB_REFERENCE_RECEIPT_MISMATCH");
   assert.deepEqual(build.regression, { unpatched: 'EXPECTED_ASSERTION_FAILURE', patched: 'PASS', shared: 'PASS', upstreamTests: 'PASS' });
   for (const name of ['librarySha256', 'regressionBinarySha256', 'packageSha256']) assert.ok(sha(build[name]));
   assert.equal(observed.librarySha256, build.librarySha256);
@@ -201,10 +201,25 @@ export function verifyRuntimeImage({ imageRef, rawScan, output, migration = fals
   writeFileSync(join(output, 'verification.json'), JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
 }
 
+export function runtimeFailure(error) {
+  const reasons = ["NODE_PACKAGED_EXECUTABLE_MISMATCH", "NODE_REFERENCE_RECEIPT_MISMATCH", "ZLIB_REFERENCE_RECEIPT_MISMATCH"];
+  if (!reasons.includes(error?.message)) return { reason: "RUNTIME_EVIDENCE_OR_SCAN_REFUSED" };
+  const reason = error.message;
+  if (sha(error.actual) && sha(error.expected)) return { reason, candidate: error.actual, reference: error.expected };
+  for (const field of ["nodeSha256", "librarySha256", "regressionBinarySha256", "packageSha256"]) {
+    const candidate = error.actual?.[field], reference = error.expected?.[field];
+    if (sha(candidate) && sha(reference) && candidate !== reference) return { reason, field, candidate, reference };
+  }
+  return { reason };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const [imageRef, rawScan, output] = process.argv.slice(2);
     assert.equal(process.argv.length, 5);
     verifyRuntimeImage({ imageRef, rawScan, output, migration: process.env.FRONTEND_RUNTIME_IMAGE === 'migration' });
-  } catch { console.error('PATCHED_RUNTIME_VERIFICATION_FAILED'); process.exitCode = 1; }
+  } catch (error) {
+    console.error('PATCHED_RUNTIME_VERIFICATION_FAILED', JSON.stringify(runtimeFailure(error)));
+    process.exitCode = 1;
+  }
 }
