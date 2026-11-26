@@ -242,6 +242,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.ok(steps.indexOf(build) > verifyIndex);
     assert.match(build.with.context, /^https:\/\/github\.com\/princessdardan\/lash-her-/u);
     assert.equal(build.with.platforms, "linux/amd64");
+    assert.equal(build.with.builder, "${{ steps.runtime-builder.outputs.name }}");
     assert.equal(build.with.sbom, true);
     assert.equal(build.with.provenance, "mode=max");
     assert.equal(build.with.push, true);
@@ -266,14 +267,14 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     const source = prefix.startsWith("course-") ? "course" : prefix.startsWith("community-") ? "community" : "frontend";
     const checkout = "sources/lash-her-" + source + (source === "frontend" ? "" : "-api");
     const kind = prefix === "frontend-migration" ? "migration" : prefix === "gateway" ? "gateway" : "api";
-    const prewarm = next.run.indexOf(`node control/ops/platform/prewarm-candidate-runtime.mjs ${kind} ${checkout} "$SOURCE_COMMIT" "$reference_cache"`);
+    const prewarm = next.run.indexOf(`bash control/ops/platform/qualify-isolated-runtime.sh ${kind} ${checkout} "$SOURCE_COMMIT" "$reference_cache"`);
     const verify = next.run.indexOf(`node ${checkout}/ops/${source === "frontend" ? "gateway/" : ""}runtime/verify.mjs`);
     assert.ok(prewarm >= 0 && verify > prewarm);
     assert.ok(next.run.includes("$RUNNER_TEMP/platform-" + prefix + "-reference-cache"));
     assert.ok(next.run.includes(`trap 'rm -rf -- "$reference_cache"' EXIT`));
     assert.ok(!next.run.includes("GIT_AUTH_TOKEN"));
     assert.equal(next.env?.GIT_AUTH_TOKEN, undefined);
-    assert.equal(next.env?.BUILDX_BUILDER, "${{ steps.runtime-builder.outputs.name }}");
+    assert.equal(next.env?.BUILDX_BUILDER, undefined);
     assert.equal(next.env?.FRONTEND_RUNTIME_IMAGE, kind === "migration" ? "migration" : undefined);
     assert.equal(next.env?.SOURCE_COMMIT, "${{ inputs." + source + "_revision }}");
     assert.ok(next.run.includes(scan.with["image-ref"]));

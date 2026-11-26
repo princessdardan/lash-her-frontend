@@ -57,7 +57,15 @@ test("prewarm refuses a missing cache, wrong source, or same-byte mode drift bef
 
 test("public verifier reports matching-field digest pairs without printing arbitrary error contents", () => {
   const candidate = "a".repeat(64), reference = "b".repeat(64);
-  assert.deepEqual(runtimeFailure({ message: "NODE_REFERENCE_RECEIPT_MISMATCH", actual: { nodeSha256: candidate }, expected: { nodeSha256: reference } }),
-    { reason: "NODE_REFERENCE_RECEIPT_MISMATCH", field: "nodeSha256", candidate, reference });
+  for (const [reason, field] of [
+    ["NODE_REFERENCE_RECEIPT_MISMATCH", "nodeSha256"],
+    ["ZLIB_REFERENCE_RECEIPT_MISMATCH", "librarySha256"],
+  ]) {
+    assert.throws(() => assert.deepEqual({ [field]: candidate, credentials: "unprinted fixture data" },
+      { [field]: reference }, reason), error => {
+      assert.deepEqual(runtimeFailure(error), { reason, field, candidate, reference });
+      return true;
+    });
+  }
   assert.deepEqual(runtimeFailure(new Error("synthetic-private-diagnostic")), { reason: "RUNTIME_EVIDENCE_OR_SCAN_REFUSED" });
 });

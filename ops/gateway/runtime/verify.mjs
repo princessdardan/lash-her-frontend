@@ -203,8 +203,8 @@ export function verifyRuntimeImage({ imageRef, rawScan, output, migration = fals
 
 export function runtimeFailure(error) {
   const reasons = ["NODE_PACKAGED_EXECUTABLE_MISMATCH", "NODE_REFERENCE_RECEIPT_MISMATCH", "ZLIB_REFERENCE_RECEIPT_MISMATCH"];
-  if (!reasons.includes(error?.message)) return { reason: "RUNTIME_EVIDENCE_OR_SCAN_REFUSED" };
-  const reason = error.message;
+  const reason = error instanceof assert.AssertionError ? error.message.split("\n", 1)[0] : undefined;
+  if (!reasons.includes(reason)) return { reason: "RUNTIME_EVIDENCE_OR_SCAN_REFUSED" };
   if (sha(error.actual) && sha(error.expected)) return { reason, candidate: error.actual, reference: error.expected };
   for (const field of ["nodeSha256", "librarySha256", "regressionBinarySha256", "packageSha256"]) {
     const candidate = error.actual?.[field], reference = error.expected?.[field];
