@@ -33,6 +33,7 @@ export interface CrmSource {
   email: string;
   name?: string;
   phone?: string;
+  instagram?: string;
   source: string;
   sourcePath?: string;
   message?: string;
@@ -118,6 +119,7 @@ export async function loadSource(
       email: string;
       name: string;
       phone: string;
+      instagram: string | null;
       source: string;
       source_path: string;
       submitted_at: Date;
@@ -130,7 +132,7 @@ export async function loadSource(
         offerPromotionId?: string;
       };
     }>(
-      sql`select email, name, phone, source, source_path, submitted_at, payload from marketing_contact_submissions where id = ${id}::uuid`,
+      sql`select email, name, phone, instagram, source, source_path, submitted_at, payload from marketing_contact_submissions where id = ${id}::uuid`,
     );
     const row = result.rows[0];
     return row
@@ -138,6 +140,7 @@ export async function loadSource(
           email: row.email,
           name: row.name,
           phone: row.phone,
+          instagram: row.instagram ?? undefined,
           source: row.source,
           sourcePath: row.source_path,
           message:
