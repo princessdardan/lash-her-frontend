@@ -112,7 +112,10 @@ jobs:
           npm ci --ignore-scripts --prefix sources/lash-her-frontend/ops/gateway
           npm ci --prefix sources/lash-her-course-api
           npm ci --prefix sources/lash-her-community-api
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - id: runtime-builder
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        with:
+          driver-opts: default-load=true
       - name: Log in to coordinator-owned candidate registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
@@ -134,7 +137,9 @@ jobs:
             org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-frontend.git
             com.lashher.source.revision=${{ inputs.frontend_revision }}
-          cache-from: type=gha,scope=platform-gateway
+          cache-from: |
+            type=gha,scope=platform-gateway
+            type=gha,scope=ci-platform-gateway
           cache-to: |
             type=gha,scope=platform-gateway,mode=max
             type=local,dest=${{ runner.temp }}/platform-gateway-reference-cache,mode=max
@@ -154,13 +159,14 @@ jobs:
         run: |-
           reference_cache="$RUNNER_TEMP/platform-gateway-reference-cache"
           trap 'rm -rf -- "$reference_cache"' EXIT
-          node control/ops/platform/verify-candidate-runtime.mjs gateway "$SOURCE_COMMIT" "$reference_cache" \
+          node control/ops/platform/prewarm-candidate-runtime.mjs gateway sources/lash-her-frontend "$SOURCE_COMMIT" "$reference_cache"
+          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-gateway@${{ steps.build-gateway.outputs.digest }} \
-            "$RUNNER_TEMP/platform-evidence/gateway-raw-scan.json" "$RUNNER_TEMP/platform-evidence/gateway-runtime" publication
+            "$RUNNER_TEMP/platform-evidence/gateway-raw-scan.json" "$RUNNER_TEMP/platform-evidence/gateway-runtime"
           cp "$RUNNER_TEMP/platform-evidence/gateway-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/gateway-scan.json"
         env:
           SOURCE_COMMIT: ${{ inputs.frontend_revision }}
-          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain gateway runtime evidence even on refusal
@@ -197,7 +203,9 @@ jobs:
             org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
             com.lashher.source.repository=https://github.com/princessdardan/lash-her-frontend.git
             com.lashher.source.revision=${{ inputs.frontend_revision }}
-          cache-from: type=gha,scope=platform-frontend-migration
+          cache-from: |
+            type=gha,scope=platform-frontend-migration
+            type=gha,scope=frontend-migration
           cache-to: |
             type=gha,scope=platform-frontend-migration,mode=max
             type=local,dest=${{ runner.temp }}/platform-frontend-migration-reference-cache,mode=max
@@ -217,13 +225,15 @@ jobs:
         run: |-
           reference_cache="$RUNNER_TEMP/platform-frontend-migration-reference-cache"
           trap 'rm -rf -- "$reference_cache"' EXIT
-          node control/ops/platform/verify-candidate-runtime.mjs frontend-migration "$SOURCE_COMMIT" "$reference_cache" \
+          node control/ops/platform/prewarm-candidate-runtime.mjs migration sources/lash-her-frontend "$SOURCE_COMMIT" "$reference_cache"
+          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} \
-            "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime" publication
+            "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime"
           cp "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-scan.json"
         env:
+          FRONTEND_RUNTIME_IMAGE: migration
           SOURCE_COMMIT: ${{ inputs.frontend_revision }}
-          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain frontend-migration runtime evidence even on refusal
@@ -279,13 +289,14 @@ jobs:
         run: |-
           reference_cache="$RUNNER_TEMP/platform-course-runtime-reference-cache"
           trap 'rm -rf -- "$reference_cache"' EXIT
-          node control/ops/platform/verify-candidate-runtime.mjs course-runtime "$SOURCE_COMMIT" "$reference_cache" \
+          node control/ops/platform/prewarm-candidate-runtime.mjs api sources/lash-her-course-api "$SOURCE_COMMIT" "$reference_cache"
+          node sources/lash-her-course-api/ops/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-course-runtime@${{ steps.build-course-runtime.outputs.digest }} \
-            "$RUNNER_TEMP/platform-evidence/course-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-runtime" publication
+            "$RUNNER_TEMP/platform-evidence/course-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-runtime"
           cp "$RUNNER_TEMP/platform-evidence/course-runtime-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-scan.json"
         env:
           SOURCE_COMMIT: ${{ inputs.course_revision }}
-          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain course-runtime runtime evidence even on refusal
@@ -342,13 +353,14 @@ jobs:
         run: |-
           reference_cache="$RUNNER_TEMP/platform-course-migration-reference-cache"
           trap 'rm -rf -- "$reference_cache"' EXIT
-          node control/ops/platform/verify-candidate-runtime.mjs course-migration "$SOURCE_COMMIT" "$reference_cache" \
+          node control/ops/platform/prewarm-candidate-runtime.mjs api sources/lash-her-course-api "$SOURCE_COMMIT" "$reference_cache"
+          node sources/lash-her-course-api/ops/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-course-migration@${{ steps.build-course-migration.outputs.digest }} \
-            "$RUNNER_TEMP/platform-evidence/course-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-runtime" publication
+            "$RUNNER_TEMP/platform-evidence/course-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-runtime"
           cp "$RUNNER_TEMP/platform-evidence/course-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-scan.json"
         env:
           SOURCE_COMMIT: ${{ inputs.course_revision }}
-          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain course-migration runtime evidence even on refusal
@@ -405,13 +417,14 @@ jobs:
         run: |-
           reference_cache="$RUNNER_TEMP/platform-community-runtime-reference-cache"
           trap 'rm -rf -- "$reference_cache"' EXIT
-          node control/ops/platform/verify-candidate-runtime.mjs community-runtime "$SOURCE_COMMIT" "$reference_cache" \
+          node control/ops/platform/prewarm-candidate-runtime.mjs api sources/lash-her-community-api "$SOURCE_COMMIT" "$reference_cache"
+          node sources/lash-her-community-api/ops/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest }} \
-            "$RUNNER_TEMP/platform-evidence/community-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-runtime" publication
+            "$RUNNER_TEMP/platform-evidence/community-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-runtime"
           cp "$RUNNER_TEMP/platform-evidence/community-runtime-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-scan.json"
         env:
           SOURCE_COMMIT: ${{ inputs.community_revision }}
-          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain community-runtime runtime evidence even on refusal
@@ -468,13 +481,14 @@ jobs:
         run: |-
           reference_cache="$RUNNER_TEMP/platform-community-migration-reference-cache"
           trap 'rm -rf -- "$reference_cache"' EXIT
-          node control/ops/platform/verify-candidate-runtime.mjs community-migration "$SOURCE_COMMIT" "$reference_cache" \
+          node control/ops/platform/prewarm-candidate-runtime.mjs api sources/lash-her-community-api "$SOURCE_COMMIT" "$reference_cache"
+          node sources/lash-her-community-api/ops/runtime/verify.mjs \
             ghcr.io/princessdardan/lash-her-platform-community-migration@${{ steps.build-community-migration.outputs.digest }} \
-            "$RUNNER_TEMP/platform-evidence/community-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-runtime" publication
+            "$RUNNER_TEMP/platform-evidence/community-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-runtime"
           cp "$RUNNER_TEMP/platform-evidence/community-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-scan.json"
         env:
           SOURCE_COMMIT: ${{ inputs.community_revision }}
-          GIT_AUTH_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       - name: Retain community-migration runtime evidence even on refusal

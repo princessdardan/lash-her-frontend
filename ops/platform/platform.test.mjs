@@ -236,6 +236,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.ok(phase2Index > crossContractIndex && phase2Index < steps.indexOf(builds[0]));
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 6);
+  const builder = steps.find(step => step.id === "runtime-builder");
+  assert.equal(builder.with["driver-opts"], "default-load=true");
   for (const build of builds) {
     assert.ok(steps.indexOf(build) > verifyIndex);
     assert.match(build.with.context, /^https:\/\/github\.com\/princessdardan\/lash-her-/u);
@@ -249,6 +251,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.ok(build.with["cache-to"].includes("type=gha,scope=platform-" + component + ",mode=max"));
     assert.equal(build["continue-on-error"], undefined);
   }
+  assert.ok(builds.find(step => step.id === "build-gateway").with["cache-from"].includes("type=gha,scope=ci-platform-gateway"));
+  assert.ok(builds.find(step => step.id === "build-frontend-migration").with["cache-from"].includes("type=gha,scope=frontend-migration"));
   const scans = steps.filter((step) => step.uses?.startsWith("aquasecurity/trivy-action@"));
   assert.equal(scans.length, 6);
   for (const scan of scans) {
@@ -260,11 +264,17 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     const index = steps.indexOf(scan), next = steps[index + 1], retain = steps[index + 2];
     const prefix = scan.with.output.split("/").at(-1).replace("-raw-scan.json", "");
     const source = prefix.startsWith("course-") ? "course" : prefix.startsWith("community-") ? "community" : "frontend";
-    assert.ok(next.run.includes(`node control/ops/platform/verify-candidate-runtime.mjs ${prefix} "$SOURCE_COMMIT" "$reference_cache"`));
+    const checkout = "sources/lash-her-" + source + (source === "frontend" ? "" : "-api");
+    const kind = prefix === "frontend-migration" ? "migration" : prefix === "gateway" ? "gateway" : "api";
+    const prewarm = next.run.indexOf(`node control/ops/platform/prewarm-candidate-runtime.mjs ${kind} ${checkout} "$SOURCE_COMMIT" "$reference_cache"`);
+    const verify = next.run.indexOf(`node ${checkout}/ops/${source === "frontend" ? "gateway/" : ""}runtime/verify.mjs`);
+    assert.ok(prewarm >= 0 && verify > prewarm);
     assert.ok(next.run.includes("$RUNNER_TEMP/platform-" + prefix + "-reference-cache"));
-    assert.ok(next.run.includes("publication"));
+    assert.ok(next.run.includes(`trap 'rm -rf -- "$reference_cache"' EXIT`));
     assert.ok(!next.run.includes("GIT_AUTH_TOKEN"));
-    assert.equal(next.env?.GIT_AUTH_TOKEN, "${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}");
+    assert.equal(next.env?.GIT_AUTH_TOKEN, undefined);
+    assert.equal(next.env?.BUILDX_BUILDER, "${{ steps.runtime-builder.outputs.name }}");
+    assert.equal(next.env?.FRONTEND_RUNTIME_IMAGE, kind === "migration" ? "migration" : undefined);
     assert.equal(next.env?.SOURCE_COMMIT, "${{ inputs." + source + "_revision }}");
     assert.ok(next.run.includes(scan.with["image-ref"]));
     assert.ok(next.run.includes(`"$RUNNER_TEMP/platform-evidence/${prefix}-raw-scan.json"`));
@@ -300,14 +310,16 @@ test("native qualification uses the explicit supported Ubuntu baseline without a
   ]) {
     const steps = workflow.jobs[job].steps;
     const build = steps.find(step => step.with?.tags === image);
-    const verifier = steps.find(step => step.run?.includes("ops/platform/verify-candidate-runtime.mjs"));
+    const verifier = steps.find(step => step.run?.includes("ops/platform/prewarm-candidate-runtime.mjs"));
     assert.equal(build.with.platforms, "linux/amd64");
     assert.equal(build.with.sbom, true);
     assert.equal(build.with.provenance, "mode=max");
     assert.ok(build.with["cache-to"].includes("type=local,dest=${{ runner.temp }}/" + scope + "-reference-cache,mode=max"));
-    assert.ok(verifier.run.includes("verify-candidate-runtime.mjs " + component));
+    const kind = component === "frontend-migration" ? "migration" : "gateway";
+    assert.ok(verifier.run.includes("prewarm-candidate-runtime.mjs " + kind + " ."));
     assert.ok(verifier.run.includes("$RUNNER_TEMP/" + scope + "-reference-cache"));
-    assert.ok(verifier.run.endsWith(" ci"));
+    assert.ok(verifier.run.indexOf("node ops/gateway/runtime/verify.mjs ") > verifier.run.indexOf("prewarm-candidate-runtime.mjs "));
+    assert.equal(verifier.env.BUILDX_BUILDER, "${{ steps.runtime-builder.outputs.name }}");
     assert.equal(verifier["continue-on-error"], undefined);
   }
 });

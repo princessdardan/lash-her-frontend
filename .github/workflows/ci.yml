@@ -39,6 +39,7 @@ jobs:
           daemon-config: |
             {"features":{"containerd-snapshotter":true}}
       - if: ${{ steps.image-inputs.outputs.changed == 'true' }}
+        id: runtime-builder
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build the immutable frontend migration image without publishing
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
@@ -219,10 +220,15 @@ jobs:
           TRIVY_LIST_ALL_PKGS: "true"
       - name: Scan frontend migration image against verified backport evidence
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
-        run: >-
-          node ops/platform/verify-candidate-runtime.mjs frontend-migration
-          "${{ github.event.pull_request.head.sha || github.sha }}" "$RUNNER_TEMP/frontend-migration-reference-cache"
-          lash-her-frontend-migration:ci "$RUNNER_TEMP/frontend-runtime-raw.json" "$RUNNER_TEMP/frontend-runtime" ci
+        env:
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          FRONTEND_RUNTIME_IMAGE: migration
+        run: |
+          reference_cache="$RUNNER_TEMP/frontend-migration-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node ops/platform/prewarm-candidate-runtime.mjs migration . "$SOURCE_COMMIT" "$reference_cache"
+          node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci "$RUNNER_TEMP/frontend-runtime-raw.json" "$RUNNER_TEMP/frontend-runtime"
       - name: Retain frontend-runtime qualification
         if: ${{ !cancelled() && steps.image-inputs.outputs.changed == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -306,6 +312,7 @@ jobs:
         id: image-inputs
         run: node scripts/ci-image-inputs.mjs gateway
       - if: ${{ steps.image-inputs.outputs.changed == 'true' }}
+        id: runtime-builder
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
@@ -345,10 +352,14 @@ jobs:
           TRIVY_LIST_ALL_PKGS: "true"
       - name: Scan gateway image against verified backport evidence
         if: ${{ steps.image-inputs.outputs.changed == 'true' }}
-        run: >-
-          node ops/platform/verify-candidate-runtime.mjs gateway
-          "${{ github.event.pull_request.head.sha || github.sha }}" "$RUNNER_TEMP/ci-platform-gateway-reference-cache"
-          lash-her-gateway:ci "$RUNNER_TEMP/gateway-runtime-raw.json" "$RUNNER_TEMP/gateway-runtime" ci
+        env:
+          BUILDX_BUILDER: ${{ steps.runtime-builder.outputs.name }}
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          reference_cache="$RUNNER_TEMP/ci-platform-gateway-reference-cache"
+          trap 'rm -rf -- "$reference_cache"' EXIT
+          node ops/platform/prewarm-candidate-runtime.mjs gateway . "$SOURCE_COMMIT" "$reference_cache"
+          node ops/gateway/runtime/verify.mjs lash-her-gateway:ci "$RUNNER_TEMP/gateway-runtime-raw.json" "$RUNNER_TEMP/gateway-runtime"
       - name: Retain gateway-runtime qualification
         if: ${{ !cancelled() && steps.image-inputs.outputs.changed == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
