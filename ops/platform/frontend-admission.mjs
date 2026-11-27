@@ -1,6 +1,7 @@
 // Low-level durable ledger only. No live bootstrap, route wiring, historical
 // credential retirement, migration authorization or automatic restoration.
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 const demand = (ok) => { if (!ok) throw new Error("FRONTEND_ADMISSION_REFUSED"); };
 const digest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
@@ -199,7 +200,24 @@ export async function reconcileFrontendOperation(client, target, expectedEpoch, 
   });
 }
 
-export async function runFrontendWriterOperation(client, target, operation, task) {
+const admissionLockDelaysMs = [15, 40, 90];
+
+async function beginFrontendWriterOperation(client, sql, values, retryAdmissionLock) {
+  for (const waitMs of retryAdmissionLock ? admissionLockDelaysMs : []) {
+    try {
+      await client.query(sql, values);
+      return;
+    } catch (error) {
+      // PostgreSQL rejected the CALL. The control lock precedes the insert
+      // and commit, so this attempt cannot have admitted any work.
+      if (error?.code !== "55P03") throw error;
+      await delay(waitMs);
+    }
+  }
+  await client.query(sql, values);
+}
+
+export async function runFrontendWriterOperation(client, target, operation, task, { retryAdmissionLock = false } = {}) {
   const expected = binding(target);
   demand(epoch(operation?.epoch) && digest(operation.producerSha256) && sourceDigest(operation.sourceSha) &&
     ["new-work", "recovery"].includes(operation.kind) && typeof task === "function");
@@ -208,7 +226,7 @@ export async function runFrontendWriterOperation(client, target, operation, task
     // admission acknowledgement never invokes task or retries admission.
     const values = [operation.id, operation.kind, ...expected, operation.epoch, operation.producerSha256, operation.sourceSha];
     if (operation.p407CourseOrderId === undefined) {
-      await client.query("CALL frontend_admission.begin_operation($1,$2,$3,$4,$5,$6,$7)", values);
+      await beginFrontendWriterOperation(client, "CALL frontend_admission.begin_operation($1,$2,$3,$4,$5,$6,$7)", values, retryAdmissionLock);
     } else {
       await client.query("CALL frontend_admission.begin_p407_operation($1,$2,$3,$4,$5,$6,$7,$8)",
         [...values, operation.p407CourseOrderId]);

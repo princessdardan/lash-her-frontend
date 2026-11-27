@@ -24,6 +24,7 @@ export type WriterAdmissionConfiguration = {
   target: WriterAdmissionTarget;
   producerSha256: string;
   sourceSha: string;
+  retryAdmissionLock?: true;
   connection: {
     host: string; port: number; database: string; user: string; password: string;
     ssl: { rejectUnauthorized: true }; enableChannelBinding: true;
@@ -77,6 +78,7 @@ export function resolveWriterAdmissionConfiguration(
         serverMajor: target.serverMajor, targetSha256: target.targetSha256 },
       producerSha256: env.FRONTEND_WRITER_PRODUCER_SHA256,
       sourceSha: env.VERCEL_GIT_COMMIT_SHA,
+      ...(isP506 && { retryAdmissionLock: true as const }),
       connection: { host: target.host, port: target.port, database: target.database, user: target.user,
         password: decodeURIComponent(url.password), ssl: { rejectUnauthorized: true }, enableChannelBinding: true,
         connectionTimeoutMillis: 5_000, statement_timeout: 10_000, lock_timeout: 1_000,

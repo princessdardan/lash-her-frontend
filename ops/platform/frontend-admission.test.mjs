@@ -30,6 +30,41 @@ test("denied or uncertain admission never starts effects or retries", async () =
   assert.equal(effects, 0); assert.equal(client.calls.length, 1);
 });
 
+test("an opted-in ordinary admission retries a PostgreSQL lock refusal before running effects once", async () => {
+  const client = fixture(), query = client.query.bind(client);
+  const input = operation();
+  let effects = 0;
+  client.query = async (sql, values) => {
+    const result = await query(sql, values);
+    if (client.calls.length <= 2) throw Object.assign(new Error("lock not available"), { code: "55P03" });
+    return result;
+  };
+  await runFrontendWriterOperation(client, target, input, () => { effects++; }, { retryAdmissionLock: true });
+  assert.equal(effects, 1);
+  assert.deepEqual(client.calls.slice(0, 3), [client.calls[0], client.calls[0], client.calls[0]]);
+  assert.deepEqual(client.calls[3].values, [input.id, "completed"]);
+});
+
+test("the admission retry is bounded and excludes the default, P4-07 and ambiguous outcomes", async () => {
+  for (const [input, code, retryAdmissionLock, expectedCalls] of [
+    [operation(), "55P03", true, 4],
+    [operation(), "55P03", false, 1],
+    [{ ...operation(), p407CourseOrderId: randomUUID() }, "55P03", true, 1],
+    [operation(), "ECONNRESET", true, 1],
+    [operation(), "P0001", true, 1],
+  ]) {
+    const client = fixture(), query = client.query.bind(client);
+    client.query = async (sql, values) => {
+      await query(sql, values);
+      throw Object.assign(new Error("private-marker"), { code });
+    };
+    await assert.rejects(runFrontendWriterOperation(client, target, input, () => assert.fail("unexpected effect"),
+      { retryAdmissionLock }), /^Error: FRONTEND_ADMISSION_REFUSED$/u);
+    assert.equal(client.calls.length, expectedCalls);
+    assert.ok(client.calls.every(({ sql }) => sql.includes("begin")));
+  }
+});
+
 test("main and deferred failures persist uncertainty only after all deferred work finishes", async () => {
   for (const mainFailure of [false, true]) {
     const client = fixture(); let release;
@@ -46,10 +81,16 @@ test("main and deferred failures persist uncertainty only after all deferred wor
 });
 
 test("a lost settlement response never retries work or settlement", async () => {
-  const client = fixture(), query = client.query.bind(client); let effects = 0;
-  client.query = async (sql, values) => { await query(sql, values); if (sql.includes("finish_operation")) throw new Error("private-marker"); };
-  await assert.rejects(runFrontendWriterOperation(client, target, operation(), () => { effects++; }), /^Error: FRONTEND_OPERATION_OUTCOME_REQUIRES_REVIEW$/u);
-  assert.equal(effects, 1); assert.equal(client.calls.length, 2);
+  for (const code of ["ECONNRESET", "55P03"]) {
+    const client = fixture(), query = client.query.bind(client); let effects = 0;
+    client.query = async (sql, values) => {
+      await query(sql, values);
+      if (sql.includes("finish_operation")) throw Object.assign(new Error("private-marker"), { code });
+    };
+    await assert.rejects(runFrontendWriterOperation(client, target, operation(), () => { effects++; },
+      { retryAdmissionLock: true }), /^Error: FRONTEND_OPERATION_OUTCOME_REQUIRES_REVIEW$/u);
+    assert.equal(effects, 1); assert.equal(client.calls.length, 2);
+  }
 });
 
 test("late deferrals and malformed bindings refuse", async () => {
