@@ -9,7 +9,7 @@ The protected learner portal and Ontario card checkout share one frontend stagin
 | Free Mini Course migration (G3) | Done for revision 7 on staging. Production migration is held. |
 | P4-05 through P4-08 | Done within the recorded held-staging scope. Protected runs covered recovery, checkout, capture, receipt delivery, refunds and grant revocation. Provider-backed disputes and payment-to-access latency were deferred. [Ontario qualification](p4-08-production-commerce-preflight.md) |
 | P4-01 through P4-04 and G4 | P4-01 through P4-04 and G4 are done for held Ontario card checkout. Dardan accepted the paired dispute fixture on November 24. [Phase 4 review](#phase-4-commerce-review) |
-| Community | P5-01 through P5-06 are done. P5-07 propagation, export ownership, suspension and restoration passed on the protected isolated candidate. The 60-second isolated expiry check passed. G5 is blocked on terminal deletion and private-object cleanup. [Community review](#phase-5-community-review) |
+| Community | P5-01 through P5-07 and G5 are done. Protected lifecycle, terminal deletion and physical S3 cleanup passed. The 60-second isolated expiry check and Course-to-Community propagation met the acceptance criteria. [Community review](#phase-5-community-review) |
 | P2-00 and P6 | Shared pending SQL is blocked on a verified writer fence and drain. PostgreSQL 17 and 18 recovery rehearsals were recorded against the separate release candidate. The staged application has no production cutover approval. G6 is open. |
 
 ### Phase 4 commerce review
@@ -32,7 +32,7 @@ Reviewed November 24 against the November 23 isolated checkout and recovery runs
 
 ### Phase 5 Community review
 
-**November 26 decision.** P5-06 is done on staging. The isolated candidate ran frontend `4d217a2c`, Course `31e77326` and Community `fc112ae6`. All five protected Chromium journeys passed with fresh candidate-issued synthetic sessions, including exact reply replay and live Course denial and recovery. G5 remains blocked on P5-07. [Protected qualification](baselines/2026-11-26-p506-protected/verification.md)
+**November 26 decision.** P5-06 is done on staging. The isolated candidate ran frontend `4d217a2c`, Course `31e77326` and Community `fc112ae6`. All five protected Chromium journeys passed with fresh candidate-issued synthetic sessions, including exact reply replay and live Course denial and recovery. [Protected qualification](baselines/2026-11-26-p506-protected/verification.md)
 
 The November 24 review used frontend staging `0a472061`, Community staging `2799fe4` and Course staging `48dbb00`. Earlier portal and API results apply to their recorded revisions.
 
@@ -50,9 +50,9 @@ A second local Chromium run passed all five scenarios against frontend `79c7c228
 
 The first release attempt was blocked by the GitHub-hosted Actions budget and the Sanity dependency audit. The separate Sanity and React upgrade merged in frontend PR #123. Disposable private runners supplied the required exact-main API CI on existing capacity. The selected frontend revision passed exact CI, signed platform publication and the hosted run. [Release and browser evidence](baselines/2026-11-26-p506-protected/verification.md)
 
-**November 27 G5 qualification**
+**G5 closed November 27**
 
-1. **P5-07 · Account lifecycle.** The protected candidate verified owner-only export, immediate session invalidation and protected-access denial on suspension, and ordered restoration. A single receiver acknowledgement kept the account suspended. After both acknowledgements, a fresh Chrome session worked and the independent course participation sanction still applied. Terminal deletion must verify cleanup of content, profile, notifications and export artifacts, physical removal of both original and processed private objects, and preservation of audit records and unrelated accounts. Check ordered recovery or replay of the terminal command. [Account lifecycle worker](../../src/lib/customer-lifecycle/worker.ts)
+1. **P5-07 · Account lifecycle passed.** The protected candidate verified owner-only export, immediate denial after suspension and ordered restoration after both receiver acknowledgements. Terminal deletion on a separate disposable account immediately revoked its session and scrubbed its frontend archive. Normal recovery removed the two API export copies, the profile, preferences and notifications, and redacted test content. Exact-key S3 listings verified physical absence of both private files and preserved the peer file. The moderation audit record, separate participation sanction and original observation account were retained. [Hosted terminal verification](baselines/2026-11-27-p507-protected/verification.md#hosted-terminal-deletion)
 2. **P5-07 · Export expiry passed.** The isolated 60-second check measured 60,886 ms of elapsed time. Owner-only access passed before expiry, retrieval was denied after expiry, and all three services cleaned up the archive. Replay did not recreate it. The original 24-hour staging observation is supplemental evidence for P5-07 and G5. [Expiry verification](baselines/2026-11-27-p507-protected/verification.md#export-expiry-acceptance)
 3. **P5-07 · Enrollment propagation.** On protected staging all 75 timed Course transitions matched their Community projections, with zero pending or failed events. P95 was 1.097 seconds and P99 was 1.162 seconds, within the targets of 60 seconds and five minutes. In the separate backlog drill, all 100 projections were verified within 59.6 seconds of worker admission. The concurrent browser workload covered protected reads. [Launch workload and measurement](../../API-INTEGRATION-PLAN.md#launch-workload-and-capacity-acceptance)
 
