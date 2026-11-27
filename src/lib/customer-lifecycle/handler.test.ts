@@ -229,7 +229,7 @@ test("admin lifecycle uses the candidate origin and validates forwarded headers"
       assert.throws(() => resolveAdminAccountRequestOrigin(request), { status: 403, code: "request_denied" });
     }
 
-    process.env = { CUSTOMER_AUTH_URL: "https://staging.lashher.com" };
+    process.env = { NODE_ENV: "production", CUSTOMER_AUTH_URL: "https://staging.lashher.com" };
     assert.equal(resolveAdminAccountRequestOrigin(new Request("https://staging.lashher.com/api/admin/customer-accounts/fixture/commands")), "https://staging.lashher.com");
     assert.throws(() => resolveAdminAccountRequestOrigin(new Request(url, { headers })), { status: 403, code: "request_denied" });
   } finally {
