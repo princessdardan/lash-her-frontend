@@ -7,6 +7,8 @@ const foundation = Buffer.from([
   "candidate_postgres_major=18", "candidate_system_id=7711876906181357618",
   "shared_system_id=7707405189281873963", "databases=3", "roles_held=7", "networks=2", "published_ports=0", "",
 ].join("\n"));
+const successorId = "7712635123417854000";
+const successorFoundation = Buffer.from(foundation.toString().replace("7711876906181357618", successorId));
 const backup = Buffer.from("Synthetic empty schema backup for input guards only\n");
 const backupSha256 = createHash("sha256").update(backup).digest("hex");
 const sourceCommit = "a".repeat(40);
@@ -62,6 +64,18 @@ test("P5-06 requires its foundation, backup digest, physical IDs, and full opera
   assert.throws(() => select(prepared(), witness, foundation, backup, mode, confirmation.replace(sourceCommit, "b".repeat(40))), refused);
   assert.throws(() => select(prepared(), { ...witness, systemIdentifier: "7707405189281873963" }), refused);
   assert.throws(() => select(prepared(), { ...witness, migrationRoleOid: witness.runtimeRoleOid }), refused);
+});
+
+test("P5-06 binds the successor receipt to its own physical database", async () => {
+  const successor = { ...witness, systemIdentifier: successorId };
+  assert.deepEqual(select(prepared(), successor, successorFoundation).witness, successor);
+  assert.throws(() => select(prepared(), successor, foundation), refused);
+  assert.throws(() => select(prepared(), witness, successorFoundation), refused);
+  const seen = { ...successor, serverAddress: "172.30.56.2", clientAddress: "172.30.56.11",
+    otherSessions: 0, empty: true, runtimeHeld: true, migrationRestricted: true };
+  const client = { query: async () => ({ rows: [seen] }) };
+  await verifyP506FrontendSession(client, successor, true);
+  await assert.rejects(verifyP506FrontendSession(client, witness, true), refused);
 });
 
 test("P5-06 checks the hold and every physical target field on the migration session", async () => {

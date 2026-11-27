@@ -101,7 +101,7 @@ export function createWriterAdmissionRunner(dependencies: {
         // operation even when a domain handler catches its own exception.
         if (connectionLost || options?.uncertainResult?.(result)) throw new Error();
         return result;
-      });
+      }, { retryAdmissionLock: configuration.retryAdmissionLock });
       if (connectionLost) throw new Error();
     } catch { failure = true; }
     finally {

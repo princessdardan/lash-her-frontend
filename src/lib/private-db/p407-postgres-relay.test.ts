@@ -166,6 +166,7 @@ test("writer admission pins both P5-06 database URLs and keeps TLS and channel b
   };
   const configuration = resolveWriterAdmissionConfiguration(environment);
   assert.equal(typeof configuration?.connection.stream, "function");
+  assert.equal(configuration?.retryAdmissionLock, true);
   assert.deepEqual(configuration?.connection.ssl, { rejectUnauthorized: true });
   assert.equal(configuration?.connection.enableChannelBinding, true);
 

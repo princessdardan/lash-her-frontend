@@ -300,6 +300,42 @@ async function main() {
     await eligibleBootstrap.run();
     assert.deepEqual((await eligibleBootstrap.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
     checks.push("explicit-reviewed-recovery-only-stage-follows-verified-bootstrap-and-closes-before-sql");
+    phase = "candidate-admission-lock-contention";
+    const contention = await make("candidate-admission-lock", "existing");
+    await contention.client.query("BEGIN");
+    try {
+      await contention.client.query("SELECT singleton FROM frontend_admission.control FOR UPDATE");
+      const nonCandidate = contention.operation();
+      await assert.rejects(runFrontendWriterOperation(contention.current, contention.target, nonCandidate,
+        () => assert.fail("noncandidate retried a blocked admission")), /FRONTEND_ADMISSION_REFUSED/u);
+      const operation = { ...contention.operation(), kind: "recovery" };
+      let begins = 0, settlements = 0, effects = 0;
+      const writer = {
+        async query(sql, values) {
+          if (sql.includes("finish_operation")) settlements++;
+          if (!sql.includes("begin_operation")) return contention.current.query(sql, values);
+          begins++;
+          assert.equal(values[0], operation.id);
+          try {
+            return await contention.current.query(sql, values);
+          } catch (error) {
+            assert.equal(begins, 1);
+            assert.equal(error.code, "55P03");
+            await contention.client.query("COMMIT");
+            throw error;
+          }
+        },
+      };
+      assert.equal(await runFrontendWriterOperation(writer, contention.target, operation,
+        () => ++effects, { retryAdmissionLock: true }), 1);
+      assert.deepEqual({ begins, settlements, effects }, { begins: 2, settlements: 1, effects: 1 });
+      assert.deepEqual((await contention.client.query("SELECT id, state FROM frontend_admission.operations")).rows,
+        [{ id: operation.id, state: "completed" }]);
+    } finally {
+      await contention.client.query("ROLLBACK");
+    }
+    checks.push("candidate-pre-effect-lock-retry-admits-and-settles-once");
+
     phase = "deferred-admitted-operation";
     const deferred = await make("deferred", "existing");
     let releaseWork, startedWork; const workHeld = new Promise(resolve => { releaseWork = resolve; }), workStarted = new Promise(resolve => { startedWork = resolve; });

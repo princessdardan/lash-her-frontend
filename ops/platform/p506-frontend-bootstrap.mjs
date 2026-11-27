@@ -10,9 +10,12 @@ export const P506_FRONTEND_TARGET = Object.freeze({
   serverMajor: 18,
 });
 
-// Host foundation receipt from /var/lib/lash-her/p5-06/postgres/foundation.receipt.
-const foundationSha256 = "cda6ac840cf728c8df4ddc18bcbbf59677353d4012c0b7bcf310e86e17fc016e";
-const systemIdentifier = "7711876906181357618";
+// Bind each host foundation receipt to its own physical candidate. The
+// successor starts empty and preserves the fenced predecessor's ledger.
+const foundationDigests = new Map([
+  ["7711876906181357618", "cda6ac840cf728c8df4ddc18bcbbf59677353d4012c0b7bcf310e86e17fc016e"],
+  ["7712635123417854000", "923f521a9650d82fb31168cdb36de05991b709adc7219c3827a7bfa473a129c2"],
+]);
 const oidFields = ["databaseOid", "migrationRoleOid", "runtimeRoleOid"];
 const sha40 = /^(?!0+$)[a-f0-9]{40}$/u;
 const refuse = (ok) => { if (!ok) throw new Error("P506_ISOLATED_FRONTEND_REFUSED"); };
@@ -32,19 +35,20 @@ export function prepareP506FrontendScope({ candidate, job, artifact }, witness, 
     refuse(source?.repository === `https://github.com/princessdardan/${repo}.git` &&
       typeof source.commit === "string" && sha40.test(source.commit) && source.requiredChecks === "passed");
   }
-  refuse(Buffer.isBuffer(foundation) && createHash("sha256").update(foundation).digest("hex") === foundationSha256 &&
-    Buffer.isBuffer(backup) && backup.length > 0);
+  refuse(Buffer.isBuffer(foundation) && Buffer.isBuffer(backup) && backup.length > 0);
+  const foundationSha256 = createHash("sha256").update(foundation).digest("hex");
   const backupSha256 = createHash("sha256").update(backup).digest("hex");
   refuse(job.recoveryRef === `p5-06/lightsail/empty-schema/${backupSha256}` &&
     confirmation === `staging/${job.releaseId}/p5-06/${job.sourceCommit}/${backupSha256}`);
   refuse(witness && isDeepStrictEqual(Object.keys(witness).sort(), ["version", "systemIdentifier", ...oidFields].sort()) &&
-    witness.version === 1 && witness.systemIdentifier === systemIdentifier &&
+    witness.version === 1 && foundationDigests.get(witness.systemIdentifier) === foundationSha256 &&
     oidFields.every((key) => typeof witness[key] === "string" && /^[1-9][0-9]{0,9}$/u.test(witness[key]) &&
       Number(witness[key]) <= 4294967295) && witness.migrationRoleOid !== witness.runtimeRoleOid);
   return Object.freeze({ foundationSha256, backupSha256, witness: Object.freeze({ ...witness }) });
 }
 
 export async function verifyP506FrontendSession(client, witness, empty = false) {
+  refuse(foundationDigests.has(witness?.systemIdentifier));
   const { rows: [seen] } = await client.query(`
     select host(inet_server_addr()) as "serverAddress", host(inet_client_addr()) as "clientAddress",
       (select system_identifier::text from pg_control_system()) as "systemIdentifier",
@@ -64,6 +68,6 @@ export async function verifyP506FrontendSession(client, witness, empty = false) 
       ) as empty
   `, [P506_FRONTEND_TARGET.runtimeRole]);
   refuse(seen?.serverAddress === "172.30.56.2" && seen.clientAddress === "172.30.56.11" &&
-    seen.otherSessions === 0 && seen.runtimeHeld === true && seen.migrationRestricted === true && seen.systemIdentifier === systemIdentifier &&
+    seen.otherSessions === 0 && seen.runtimeHeld === true && seen.migrationRestricted === true && seen.systemIdentifier === witness.systemIdentifier &&
     oidFields.every((key) => seen[key] === witness[key]) && (!empty || seen.empty === true));
 }
