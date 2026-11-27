@@ -10,18 +10,40 @@ export const P506_FRONTEND_TARGET = Object.freeze({
   serverMajor: 18,
 });
 
-// Bind each host foundation receipt to its own physical candidate. A fresh
-// candidate starts empty and preserves the fenced predecessors' ledgers.
-const foundationDigests = new Map([
-  ["7711876906181357618", "cda6ac840cf728c8df4ddc18bcbbf59677353d4012c0b7bcf310e86e17fc016e"],
-  ["7712635123417854000", "923f521a9650d82fb31168cdb36de05991b709adc7219c3827a7bfa473a129c2"],
-  ["7712662041236086833", "6ddb3a20b847f1ea75e6c955ee33765f6d313efa9c197d7fcfa4ddd5445e0050"],
+// Each physical candidate has its own reviewed receipt and exact migration
+// network peers. Add a new record only after witnessing both on that foundation.
+const foundations = new Map([
+  ["7711876906181357618", {
+    receiptSha256: "cda6ac840cf728c8df4ddc18bcbbf59677353d4012c0b7bcf310e86e17fc016e",
+    serverAddress: "172.30.56.2",
+    migrationClientAddress: "172.30.56.11",
+  }],
+  ["7712635123417854000", {
+    receiptSha256: "923f521a9650d82fb31168cdb36de05991b709adc7219c3827a7bfa473a129c2",
+    serverAddress: "172.30.56.2",
+    migrationClientAddress: "172.30.56.11",
+  }],
+  ["7712662041236086833", {
+    receiptSha256: "6ddb3a20b847f1ea75e6c955ee33765f6d313efa9c197d7fcfa4ddd5445e0050",
+    serverAddress: "172.30.56.2",
+    migrationClientAddress: "172.30.56.11",
+  }],
+  ["7712937457246089265", {
+    receiptSha256: "a30458f92fd73f4641fd0f1a20bdbb7bbcf7c402a6ae3287f8767104781d4183",
+    serverAddress: "172.30.70.2",
+    migrationClientAddress: "172.30.70.11",
+    requiredFoundationRelease: "p603",
+    frontendOids: { databaseOid: "16388", migrationRoleOid: "16386", runtimeRoleOid: "16387" },
+  }],
 ]);
 const oidFields = ["databaseOid", "migrationRoleOid", "runtimeRoleOid"];
 const sha40 = /^(?!0+$)[a-f0-9]{40}$/u;
 const refuse = (ok) => { if (!ok) throw new Error("P506_ISOLATED_FRONTEND_REFUSED"); };
 const p506Modes = new Set(["--execute-p506-bootstrap", "--execute-p506-current"]);
 
+function matchesFoundationOids(foundation, witness) {
+  return !foundation.frontendOids || oidFields.every(key => witness[key] === foundation.frontendOids[key]);
+}
 
 export function prepareP506FrontendScope({ candidate, job, artifact }, witness, foundation, backup, mode, confirmation) {
   const { target } = job;
@@ -39,17 +61,22 @@ export function prepareP506FrontendScope({ candidate, job, artifact }, witness, 
   refuse(Buffer.isBuffer(foundation) && Buffer.isBuffer(backup) && backup.length > 0);
   const foundationSha256 = createHash("sha256").update(foundation).digest("hex");
   const backupSha256 = createHash("sha256").update(backup).digest("hex");
+  const foundationBinding = foundations.get(witness?.systemIdentifier);
+  const p603Release = new RegExp(`^p5-06-${job.sourceCommit.slice(0, 8)}-p603-[1-9][0-9]*$`, "u").test(job.releaseId);
   refuse(job.recoveryRef === `p5-06/lightsail/empty-schema/${backupSha256}` &&
     confirmation === `staging/${job.releaseId}/p5-06/${job.sourceCommit}/${backupSha256}`);
   refuse(witness && isDeepStrictEqual(Object.keys(witness).sort(), ["version", "systemIdentifier", ...oidFields].sort()) &&
-    witness.version === 1 && foundationDigests.get(witness.systemIdentifier) === foundationSha256 &&
+    witness.version === 1 && foundationBinding?.receiptSha256 === foundationSha256 &&
+    p603Release === (foundationBinding.requiredFoundationRelease === "p603") &&
+    (!/\bp603\b/u.test(job.releaseId) || p603Release) && matchesFoundationOids(foundationBinding, witness) &&
     oidFields.every((key) => typeof witness[key] === "string" && /^[1-9][0-9]{0,9}$/u.test(witness[key]) &&
       Number(witness[key]) <= 4294967295) && witness.migrationRoleOid !== witness.runtimeRoleOid);
   return Object.freeze({ foundationSha256, backupSha256, witness: Object.freeze({ ...witness }) });
 }
 
 export async function verifyP506FrontendSession(client, witness, empty = false) {
-  refuse(foundationDigests.has(witness?.systemIdentifier));
+  const foundation = foundations.get(witness?.systemIdentifier);
+  refuse(foundation && matchesFoundationOids(foundation, witness));
   const { rows: [seen] } = await client.query(`
     select host(inet_server_addr()) as "serverAddress", host(inet_client_addr()) as "clientAddress",
       (select system_identifier::text from pg_control_system()) as "systemIdentifier",
@@ -68,7 +95,7 @@ export async function verifyP506FrontendSession(client, witness, empty = false) 
           and relkind in ('r','p','v','m','f','S')
       ) as empty
   `, [P506_FRONTEND_TARGET.runtimeRole]);
-  refuse(seen?.serverAddress === "172.30.56.2" && seen.clientAddress === "172.30.56.11" &&
+  refuse(seen?.serverAddress === foundation.serverAddress && seen.clientAddress === foundation.migrationClientAddress &&
     seen.otherSessions === 0 && seen.runtimeHeld === true && seen.migrationRestricted === true && seen.systemIdentifier === witness.systemIdentifier &&
     oidFields.every((key) => seen[key] === witness[key]) && (!empty || seen.empty === true));
 }
