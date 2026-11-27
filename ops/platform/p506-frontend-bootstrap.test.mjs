@@ -88,6 +88,24 @@ test("P5-06 refuses an uncompiled foundation before querying the session", async
   }), refused);
 });
 
+test("P6-03 rejects earlier foundations and observes only its reserved peers and exact frontend OIDs", async () => {
+  const p603 = prepared();
+  p603.job.releaseId = `p5-06-${sourceCommit.slice(0, 8)}-p603-45937924797`;
+  const confirm = `staging/${p603.job.releaseId}/p5-06/${sourceCommit}/${backupSha256}`;
+  assert.throws(() => select(p603, witness, foundation, backup, mode, confirm), refused);
+
+  const p603Witness = { version: 1, systemIdentifier: "7712937457246089265", databaseOid: "16388",
+    migrationRoleOid: "16386", runtimeRoleOid: "16387" };
+  const seen = { ...p603Witness, serverAddress: "172.30.70.2", clientAddress: "172.30.70.11",
+    otherSessions: 0, empty: true, runtimeHeld: true, migrationRestricted: true };
+  const session = row => ({ query: async () => ({ rows: [row] }) });
+  await verifyP506FrontendSession(session(seen), p603Witness, true);
+  await assert.rejects(verifyP506FrontendSession(session({ ...seen, serverAddress: "172.30.56.2" }), p603Witness, true), refused);
+  await assert.rejects(verifyP506FrontendSession(session({ ...seen, clientAddress: "172.30.56.11" }), p603Witness, true), refused);
+  await assert.rejects(verifyP506FrontendSession({ query() { assert.fail("Wrong reserved OID queried"); } },
+    { ...p603Witness, runtimeRoleOid: "16390" }, true), refused);
+});
+
 test("P5-06 checks the hold and every physical target field on the migration session", async () => {
   const row = { ...witness, serverAddress: "172.30.56.2", clientAddress: "172.30.56.11",
     otherSessions: 0, empty: true, runtimeHeld: true, migrationRestricted: true };
