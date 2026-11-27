@@ -213,9 +213,14 @@ const interactiveBinding = input => ({ challenge: input.challenge, bindingSha256
 async function reviewedInteractiveInput(plan, challenge, mediaFile) {
   const { p2CertificationParentContext } = await import("./p2-certification.mjs");
   p2CertificationParentContext(plan);
+  const supplement = plan.supplementalOperatorCommit;
+  if (supplement !== undefined) {
+    const { firstOwnerSupplementAllowed } = await import("./p2-certification-transport.mjs");
+    demand(firstOwnerSupplementAllowed(plan, plan.sourceCommit, plan.replacementRelease));
+  }
   demand(plan.mode === "interactive-browser" && plan.version === 2 && plan.maximumSeconds === (plan.scopedAction?.stage === p2StalledRenewalStage ? 900 : 300)
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
-    && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
+    && commit() === (supplement ?? plan.sourceCommit) && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const action = plan.scopedAction;
   demand((action.stage === "media") === (typeof mediaFile === "string"));
   let authoring, learning, lessonEntry, lessonDenial, assessment, resume, restore, ackLoss, exitSave, visibility, staleRevision, paidGrant, learnerAccess, paidRevoke;
@@ -367,7 +372,7 @@ async function reviewedInteractiveInput(plan, challenge, mediaFile) {
 // A separate private pipe carries the permit; IPC carries only control and evidence.
 export async function launchP2InteractiveBrowserRecorder(plan) {
   let input = await reviewedInteractiveInput(plan, randomBytes(32).toString("hex")), binding = interactiveBinding(input);
-  committedProgramBytes(plan.sourceCommit, "ops/platform/p2-lifecycle-suspension-evidence.mjs");
+  committedProgramBytes(plan.supplementalOperatorCommit ?? plan.sourceCommit, "ops/platform/p2-lifecycle-suspension-evidence.mjs");
   const program = Buffer.concat([committedProgramBytes(plan.sourceCommit, "ops/platform/p2-lifecycle-browser-recorder.mjs"),
     Buffer.from(P2_LIFECYCLE_BROWSER_LAUNCHER)]);
   const programSha256 = hash(program), actions = new Set([input.actionId]);

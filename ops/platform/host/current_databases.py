@@ -96,6 +96,39 @@ class CertificationCurrentDatabaseProof:
         self._sha256 = migrate.file_hash(migrate.read_input(output, "certification-current-databases-outcome.json"))
 
 
+# These reviewed modules only correct the managed Neon role reads in the
+# selected staging release's pre-existing API migration images.
+_FIRST_OWNER_ROLE_POLICIES = {
+    "course": ("95963723a4955cc42b845d0aaf1152c2e2ac8535", "b3db0c423e6aa40e3b5af875621c1447eb994969",
+               "c653df952440a765f67cb09028c2479923c112e1da10c97ed2a15e5ad224f7ea"),
+    "community": ("8141533249f6c59a59e67e8663907c2f108c1d34", "0a9d8f6c7f856ebeeaa076c8e23a0dfc0b0a8e8c",
+                  "92c3fdbad1851de64037089089ebd409603d1c9fd31ba45eb3e7529df5024f15"),
+}
+
+
+def _first_owner_role_policies(scope, selected, jobs):
+    plan = scope.certification_plan
+    action = plan.get("scopedAction", {})
+    if not ("supplementalOperatorCommit" in plan and plan.get("mode") == "interactive-browser"
+            and action.get("stage") == "identity" and {"firstOwnerDiscovery", "firstOwner"}.intersection(action)):
+        return {}
+    if selected.get("releaseId") != "p1-43067769975-1":
+        return {}
+    demand(selected.get("environment") == "staging" and "replacementRelease" in plan
+           and scope.candidate_sha256 == "eefe3d6e41d94a1d885a1d9198bfbac381d4227ee7dbd5a6dbe7ee74602280ba",
+           "P2_CERTIFICATION_STAGING_ROLE_POLICY_SCOPE_REFUSED")
+    directory = scope._profiled_broker.results / "certification-readonly-api-role-policy"
+    migrate.private_directory(directory)
+    policies = {}
+    for name, (image_source, policy_source, digest) in _FIRST_OWNER_ROLE_POLICIES.items():
+        demand(jobs[name]["job"]["sourceCommit"] == selected["sources"][name]["commit"] == image_source,
+               "P2_CERTIFICATION_STAGING_ROLE_POLICY_SOURCE_REFUSED")
+        raw = migrate.read_input(directory, name + ".mjs", 65_536)
+        demand(migrate.file_hash(raw) == digest, "P2_CERTIFICATION_STAGING_ROLE_POLICY_BYTES_CHANGED")
+        policies[name] = (raw, {"sourceCommit": policy_source, "sha256": digest})
+    return policies
+
+
 def read_certification_api_proof(proof, scope, selected, jobs, *, expected_profile):
     """Re-read a certification API proof while its exact held scope remains live."""
     from p2_certification_parent import P2CertificationScope
@@ -125,8 +158,16 @@ def read_certification_api_proof(proof, scope, selected, jobs, *, expected_profi
     pins = scope.certification_plan.get("apiJobSha256")
     demand(type(pins) is dict and set(pins) == {"course", "community"},
            "P2_CERTIFICATION_API_JOB_PINS_REQUIRED")
+    policies = _first_owner_role_policies(scope, selected, jobs)
     for name, identity in outcome["databases"].items():
         job_raw = migrate.read_input(proof._output / (name + "-input"), "job.json")
+        if name in policies:
+            raw, pin = policies[name]
+            demand(identity.get("readOnlyRolePolicy") == pin and
+                   migrate.read_input(proof._output / (name + "-input"), "operator-role-policy.mjs") == raw,
+                   "P2_CERTIFICATION_STAGING_ROLE_POLICY_BYTES_CHANGED")
+        else:
+            demand("readOnlyRolePolicy" not in identity, "P2_CERTIFICATION_STAGING_ROLE_POLICY_SCOPE_REFUSED")
         receipt_raw = migrate.read_input(proof._output / name, "database-receipt.json")
         receipt = migrate.read_json(proof._output / name, "database-receipt.json", expected_profile=expected)
         demand(migrate.file_hash(job_raw) == pins[name]
@@ -189,6 +230,7 @@ def check_certification_apis(selected, jobs, output, credentials, checker, check
                "P2_CERTIFICATION_API_JOB_BYTES_CHANGED")
         decoded = decode_qualification_target_json(raw, "carrier")
         demand(decoded == jobs[name]["job"], "P2_CERTIFICATION_API_JOB_BYTES_CHANGED")
+    policies = _first_owner_role_policies(scope, selected, jobs)
     raw_checker = migrate.read_input(checker.parent, checker.name, 65_536)
     demand(migrate.file_hash(raw_checker) == checker_sha256,
            "P2_CERTIFICATION_DATABASE_CHECKER_HASH_MISMATCH")
@@ -226,6 +268,9 @@ def check_certification_apis(selected, jobs, output, credentials, checker, check
             migrate.write_exact_bytes(inputs, "job.json", api_job_bytes[name])
             (inputs / "schema.json").write_bytes(info["schema"])
             (inputs / "current.mjs").write_bytes(raw_checker)
+            policy = policies.get(name)
+            if policy is not None:
+                (inputs / "operator-role-policy.mjs").write_bytes(policy[0])
             for file in inputs.iterdir():
                 file.chmod(0o400)
                 if os.getuid() == 0:
@@ -238,9 +283,12 @@ def check_certification_apis(selected, jobs, output, credentials, checker, check
                     "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
                     "--user", f"{uid}:{gid}", "--memory", "256m", "--cpus", "0.5",
                     "--pids-limit", "64",
-                    "--mount", f"type=bind,src={inputs.resolve()},dst=/check/input,readonly",
-                    "--entrypoint", "node", info["image"], "/check/input/current.mjs",
-                    "--profiled-current", "/check/input/job.json", "/check/input/schema.json"]
+                    "--mount", f"type=bind,src={inputs.resolve()},dst=/check/input,readonly"]
+            if policy is not None:
+                args += ["--mount", f"type=bind,src={inputs / 'operator-role-policy.mjs'},"
+                         "dst=/app/dist-migration/src/db/operator-migration.js,readonly"]
+            args += ["--entrypoint", "node", info["image"], "/check/input/current.mjs",
+                     "--profiled-current", "/check/input/job.json", "/check/input/schema.json"]
             payload = json.dumps({"connectionUrl": credentials[name]}).encode()
             outcome["phase"] = name + "-read-only-current"
             try:
@@ -276,6 +324,8 @@ def check_certification_apis(selected, jobs, output, credentials, checker, check
                 migrate.write_exact_bytes(receipts, "database-receipt.json", result.stdout)
                 records[name] = {"image": info["image"], "jobSha256": pins[name],
                                  "receiptSha256": migrate.file_hash(result.stdout)}
+                if policy is not None:
+                    records[name]["readOnlyRolePolicy"] = policy[1]
             finally:
                 scope.run(["docker", "rm", "--force", container], env=base,
                           capture_output=True, timeout=20)

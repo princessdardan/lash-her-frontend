@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import test from "node:test";
+import { firstOwnerSupplementAllowed } from "./p2-certification-transport.mjs";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import { p2FirstOwnerDiscoveryEmailSha256, p2FirstOwnerIdentitySha256, readP2FirstOwnerSelectionHandoff,
@@ -34,6 +35,18 @@ test("first-owner discovery binds only a normalized allowlisted email until Goog
   assert.equal(validP2FirstOwnerDiscoverySelection({ ...discovery, identitySha256: firstOwner.identitySha256 }), false);
   assert.equal(p2FirstOwnerDiscoveryEmailSha256(nonce, email.toUpperCase()), null);
   assert.notEqual(p2FirstOwnerDiscoveryEmailSha256("8".repeat(32), email), discovery.emailSha256);
+});
+
+test("a different certification operator is only eligible for replacement first-owner identity", () => {
+  const application = "a".repeat(40), operator = "b".repeat(40);
+  const plan = { environment: "staging", mode: "interactive-browser", supplementalOperatorCommit: operator,
+    scopedAction: { stage: "identity", firstOwner } };
+  assert.equal(firstOwnerSupplementAllowed(plan, application, true), true);
+  assert.equal(firstOwnerSupplementAllowed(plan, application, false), false);
+  for (const patch of [{ environment: "production" }, { supplementalOperatorCommit: application },
+    { successorRuntime: {} }, { scopedAction: { stage: "identity", identityEnrollment: {} } }]) {
+    assert.equal(firstOwnerSupplementAllowed({ ...plan, ...patch }, application, true), false);
+  }
 });
 
 test("private first-owner selection handoff requires an owned mode-0600 regular file", () => {
