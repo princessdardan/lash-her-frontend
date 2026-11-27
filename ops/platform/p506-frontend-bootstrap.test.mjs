@@ -73,10 +73,19 @@ test("P5-06 binds each successor receipt to its own physical database", async ()
     assert.throws(() => select(prepared(), witness, receipt), refused);
     const seen = { ...successor, serverAddress: "172.30.56.2", clientAddress: "172.30.56.11",
       otherSessions: 0, empty: true, runtimeHeld: true, migrationRestricted: true };
-    const client = { query: async () => ({ rows: [seen] }) };
-    await verifyP506FrontendSession(client, successor, true);
-    await assert.rejects(verifyP506FrontendSession(client, witness, true), refused);
+    const session = (row) => ({ query: async () => ({ rows: [row] }) });
+    await verifyP506FrontendSession(session(seen), successor, true);
+    await assert.rejects(verifyP506FrontendSession(session(seen), witness, true), refused);
+    await assert.rejects(verifyP506FrontendSession(session({ ...seen, serverAddress: "172.30.57.2" }), successor, true), refused);
+    await assert.rejects(verifyP506FrontendSession(session({ ...seen, clientAddress: "172.30.57.11" }), successor, true), refused);
   }
+});
+
+test("P5-06 refuses an uncompiled foundation before querying the session", async () => {
+  const client = { query() { assert.fail("Unknown foundation must be refused before querying"); } };
+  await assert.rejects(verifyP506FrontendSession(client, {
+    ...witness, systemIdentifier: "7707405189281873963",
+  }), refused);
 });
 
 test("P5-06 checks the hold and every physical target field on the migration session", async () => {
