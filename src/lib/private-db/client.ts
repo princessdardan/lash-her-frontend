@@ -32,6 +32,10 @@ function getPool(): Pool {
     maxLifetimeSeconds: 120,
     idleTimeoutMillis: 20_000,
     statement_timeout: 10_000,
+    // The isolated relay has eight slots across all serverless instances.
+    // Return the tunnel after each checkout instead of waiting for idle
+    // timers that may pause with the function instance.
+    ...(relay.qualification === "P5-06" && { max: 2, maxUses: 1 }),
   } : config);
   if (relay) pool.on("error", () => {
     // An expired relay closes idle clients. pg removes them before emitting.

@@ -10,11 +10,12 @@ export const P506_FRONTEND_TARGET = Object.freeze({
   serverMajor: 18,
 });
 
-// Bind each host foundation receipt to its own physical candidate. The
-// successor starts empty and preserves the fenced predecessor's ledger.
+// Bind each host foundation receipt to its own physical candidate. A fresh
+// candidate starts empty and preserves the fenced predecessors' ledgers.
 const foundationDigests = new Map([
   ["7711876906181357618", "cda6ac840cf728c8df4ddc18bcbbf59677353d4012c0b7bcf310e86e17fc016e"],
   ["7712635123417854000", "923f521a9650d82fb31168cdb36de05991b709adc7219c3827a7bfa473a129c2"],
+  ["7712662041236086833", "6ddb3a20b847f1ea75e6c955ee33765f6d313efa9c197d7fcfa4ddd5445e0050"],
 ]);
 const oidFields = ["databaseOid", "migrationRoleOid", "runtimeRoleOid"];
 const sha40 = /^(?!0+$)[a-f0-9]{40}$/u;

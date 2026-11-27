@@ -5,6 +5,7 @@ import { getVercelOidcToken } from "@vercel/oidc";
 import WebSocket, { createWebSocketStream } from "ws";
 
 const MAX_RELAY_FRAME_BYTES = 256 * 1024;
+const P506_UPGRADE_RETRY_DELAYS_MS = [50, 150, 300];
 
 export type PostgresRelaySocketConfig = { endpoint: string; proof: string; host: string; port: number };
 
@@ -24,6 +25,7 @@ export function createPostgresRelayStream(
 ) {
   let webSocket: WebSocket | undefined;
   let wire: Duplex | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let started = false;
   const socket = new Duplex({
     allowHalfOpen: false,
@@ -46,17 +48,16 @@ export function createPostgresRelayStream(
       else callback();
     },
     destroy(error, callback) {
+      clearTimeout(retryTimer);
       wire?.destroy();
       webSocket?.terminate();
       callback(error);
     },
   });
 
-  async function connect() {
-    const token = await getWorkloadToken();
+  function openWebSocket(token: string, retryCount = 0) {
     if (socket.destroyed) return;
-    if (!token || token.length > 16_384 || !/^[A-Za-z0-9._-]+$/u.test(token)) throw relayFailure(qualification);
-    webSocket = new WebSocket(config.endpoint, {
+    const attempt = new WebSocket(config.endpoint, {
       followRedirects: false,
       handshakeTimeout: 5_000,
       maxPayload: MAX_RELAY_FRAME_BYTES,
@@ -67,21 +68,49 @@ export function createPostgresRelayStream(
         [qualification === "P5-06" ? "x-lash-p506-db-proof" : "x-lash-p407-db-proof"]: config.proof,
       },
     });
-    webSocket.on("message", (_data, binary) => {
+    webSocket = attempt;
+    attempt.on("message", (_data, binary) => {
       if (!binary) socket.destroy(relayFailure(qualification));
     });
-    wire = createWebSocketStream(webSocket);
-    webSocket.once("open", () => socket.emit("connect"));
-    webSocket.once("unexpected-response", (_request, response) => {
+    attempt.once("open", () => {
+      const connected = createWebSocketStream(attempt);
+      wire = connected;
+      connected.on("data", (data: Buffer) => {
+        if (!socket.destroyed && !socket.push(data)) connected.pause();
+      });
+      connected.on("end", () => socket.push(null));
+      connected.on("error", (error) => socket.destroy(relayFailure(qualification, error)));
+      connected.on("close", () => socket.destroy());
+      socket.emit("connect");
+    });
+    attempt.once("error", (error: NodeJS.ErrnoException) => {
+      if (webSocket === attempt && !wire) socket.destroy(relayFailure(qualification, error));
+    });
+    attempt.once("unexpected-response", (_request, response) => {
       response.resume();
+      if (qualification === "P5-06" && response.statusCode === 503) {
+        // The upgrade failed before PostgreSQL connected or received bytes.
+        const waitMs = P506_UPGRADE_RETRY_DELAYS_MS[retryCount];
+        if (waitMs !== undefined) {
+          webSocket = undefined;
+          attempt.terminate();
+          retryTimer = setTimeout(() => {
+            try { openWebSocket(token, retryCount + 1); }
+            catch { socket.destroy(relayFailure(qualification)); }
+          }, waitMs);
+          return;
+        }
+        console.warn("P5-06 PostgreSQL relay rejected upgrade with HTTP 503");
+      }
       socket.destroy(relayFailure(qualification));
     });
-    wire.on("data", (data: Buffer) => {
-      if (!socket.destroyed && !socket.push(data)) wire?.pause();
-    });
-    wire.on("end", () => socket.push(null));
-    wire.on("error", (error) => socket.destroy(relayFailure(qualification, error)));
-    wire.on("close", () => socket.destroy());
+  }
+
+  async function connect() {
+    const token = await getWorkloadToken();
+    if (socket.destroyed) return;
+    if (!token || token.length > 16_384 || !/^[A-Za-z0-9._-]+$/u.test(token)) throw relayFailure(qualification);
+    openWebSocket(token);
   }
 
   return Object.assign(socket, {
