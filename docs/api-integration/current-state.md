@@ -87,6 +87,10 @@ The released integration bundle matched the pinned API source bytes. The publish
 
 The rollout's affected checks, migrations and usable rollback are required for G6. The database switch also requires P6-00 and verified data and payment recovery across the three production targets. Full launch invokes all launch workload and recovery objectives above. SCALE-01 is separate growth testing. P6-06 is the subsequent production switch, including the approved window, final source sync, validation of the production-configured frontend, and controlled activation. [Phase 6 tracker](../../API-INTEGRATION-EXECUTION.md#phase-6--launch-certification-and-production-rollout) · [Release policy](release-policy.md)
 
+### Staging handoff
+
+Dardan will lead the P6-00 staging database move and run the independent P6-02 checks in a separate session. Use the selected candidate above as the evidence baseline and record the actual database target for each check. Use the isolated candidate for checks that need writes while the shared target is being fenced or moved. Verify database-dependent flows again through the switched staging binding. Production remains on hold. The P5-07 candidate is parked with both admission gates closed, and its original hosted export remains preserved for supplemental observation. [Release coordination](briefs/release-coordination.md) · [P5-07 verification](baselines/2026-11-27-p507-protected/verification.md)
+
 ## November 20 Lightsail staging update
 
 Protected staging ran Course `cbe6fd13` and Community `27541ef0`. The synthetic learner exercised course playback, progress and quizzes, and used images, discussions and replies in the Free Mini Course space. The protected portal and the November 23 notification smoke subsequently extended that verification. The latest recorded shared state kept public admission and schedules held.
