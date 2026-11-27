@@ -193,3 +193,46 @@ test("disabled and unauthenticated routes make no store or admission calls; unex
   const disabled = createAccountHandler({ enabled: () => false, session: async () => { throw new Error(); }, store: () => store });
   assert.equal((await disabled(new Request(`${origin}/api/account`))).status, 404);
 });
+
+test("admin lifecycle uses the candidate origin and validates forwarded headers", async () => {
+  const { resolveAdminAccountRequestOrigin } = await import("./admin-handler");
+  const host = "lash-her-frontend-staging-abcdef123-dardan-demiris-projects.vercel.app";
+  const origin = `https://${host}`;
+  const commit = "a".repeat(40);
+  const migrationReceiptSha256 = "b".repeat(64);
+  const database = "postgresql://lash_her_p506_frontend_runtime:fixture@p506-frontend-db.lashher.com:5432/lash_her_p506_frontend?sslmode=verify-full&channel_binding=require";
+  const env = {
+    VERCEL: "1", VERCEL_URL: host, VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
+    VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    APP_ENV: "staging", APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
+    API_GATEWAY_STAGING_ORIGIN: "https://api-p506.lashher.com",
+    P506_POSTGRES_RELAY_URL: "wss://api-p506.lashher.com/internal/p5-06/postgres",
+    P506_POSTGRES_RELAY_DEPLOYMENT_PROOF: "c".repeat(64),
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    DATABASE_URL: database, FRONTEND_WRITER_ADMISSION_DATABASE_URL: database,
+    VERCEL_GIT_COMMIT_SHA: commit, STAGING_P5_06_BUILD_PINS: JSON.stringify({ commit, migrationReceiptSha256 }),
+    STAGING_P5_06_MIGRATION_RECEIPT_SHA256: migrationReceiptSha256,
+  };
+  const originalEnv = process.env;
+  const headers = { host, "x-forwarded-host": host, "x-forwarded-proto": "https" };
+  const url = origin + "/api/admin/customer-accounts/fixture/commands";
+  try {
+    process.env = { ...originalEnv, ...env, AUTH_URL: "", NEXTAUTH_URL: "", CUSTOMER_AUTH_URL: "" };
+    assert.equal(resolveAdminAccountRequestOrigin(new Request(url, { headers })), origin);
+
+    for (const override of [
+      { host: "staging.lashher.com" },
+      { "x-forwarded-host": "staging.lashher.com" },
+      { "x-forwarded-proto": "http" },
+    ]) {
+      const request = new Request(url, { headers: { ...headers, ...override } });
+      assert.throws(() => resolveAdminAccountRequestOrigin(request), { status: 403, code: "request_denied" });
+    }
+
+    process.env = { NODE_ENV: "production", CUSTOMER_AUTH_URL: "https://staging.lashher.com" };
+    assert.equal(resolveAdminAccountRequestOrigin(new Request("https://staging.lashher.com/api/admin/customer-accounts/fixture/commands")), "https://staging.lashher.com");
+    assert.throws(() => resolveAdminAccountRequestOrigin(new Request(url, { headers })), { status: 403, code: "request_denied" });
+  } finally {
+    process.env = originalEnv;
+  }
+});
