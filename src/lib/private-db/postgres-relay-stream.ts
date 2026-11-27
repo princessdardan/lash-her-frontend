@@ -5,14 +5,32 @@ import { getVercelOidcToken } from "@vercel/oidc";
 import WebSocket, { createWebSocketStream } from "ws";
 
 const MAX_RELAY_FRAME_BYTES = 256 * 1024;
-const P506_UPGRADE_RETRY_DELAYS_MS = [50, 150, 300];
+const UPGRADE_RETRY_DELAYS_MS = [50, 150, 300];
 
-export type PostgresRelaySocketConfig = { endpoint: string; proof: string; host: string; port: number };
+const proofHeaders = {
+  "P4-07": "x-lash-p407-db-proof",
+  "P5-06": "x-lash-p506-db-proof",
+  "P6-00": "x-lash-p600-db-proof",
+} as const;
+type RelayQualification = keyof typeof proofHeaders;
 
-function relayFailure(qualification: "P4-07" | "P5-06", cause?: NodeJS.ErrnoException) {
-  const error = new Error(`${qualification} PostgreSQL relay unavailable`) as NodeJS.ErrnoException;
+export type PostgresRelaySocketConfig = {
+  endpoint: string;
+  proof: string;
+  host: string;
+  port: number;
+};
+
+function relayFailure(
+  qualification: RelayQualification,
+  cause?: NodeJS.ErrnoException,
+) {
+  const error = new Error(
+    `${qualification} PostgreSQL relay unavailable`,
+  ) as NodeJS.ErrnoException;
   // pg distinguishes a reset during deliberate shutdown from a live failure.
-  if (cause?.code === "ECONNRESET" || cause?.code === "EPIPE") error.code = cause.code;
+  if (cause?.code === "ECONNRESET" || cause?.code === "EPIPE")
+    error.code = cause.code;
   return error;
 }
 
@@ -20,7 +38,7 @@ function relayFailure(qualification: "P4-07" | "P5-06", cause?: NodeJS.ErrnoExce
 // PostgreSQL TLS session over this duplex. The WebSocket carries only wire bytes.
 export function createPostgresRelayStream(
   config: PostgresRelaySocketConfig,
-  qualification: "P4-07" | "P5-06",
+  qualification: RelayQualification,
   getWorkloadToken: () => Promise<string> = getVercelOidcToken,
 ) {
   let webSocket: WebSocket | undefined;
@@ -29,7 +47,9 @@ export function createPostgresRelayStream(
   let started = false;
   const socket = new Duplex({
     allowHalfOpen: false,
-    read() { wire?.resume(); },
+    read() {
+      wire?.resume();
+    },
     write(chunk: Buffer, _encoding, callback) {
       const connection = wire;
       if (!connection) return callback(relayFailure(qualification));
@@ -65,7 +85,7 @@ export function createPostgresRelayStream(
       rejectUnauthorized: true,
       headers: {
         "x-lash-workload-token": token,
-        [qualification === "P5-06" ? "x-lash-p506-db-proof" : "x-lash-p407-db-proof"]: config.proof,
+        [proofHeaders[qualification]]: config.proof,
       },
     });
     webSocket = attempt;
@@ -79,28 +99,36 @@ export function createPostgresRelayStream(
         if (!socket.destroyed && !socket.push(data)) connected.pause();
       });
       connected.on("end", () => socket.push(null));
-      connected.on("error", (error) => socket.destroy(relayFailure(qualification, error)));
+      connected.on("error", (error) =>
+        socket.destroy(relayFailure(qualification, error)),
+      );
       connected.on("close", () => socket.destroy());
       socket.emit("connect");
     });
     attempt.once("error", (error: NodeJS.ErrnoException) => {
-      if (webSocket === attempt && !wire) socket.destroy(relayFailure(qualification, error));
+      if (webSocket === attempt && !wire)
+        socket.destroy(relayFailure(qualification, error));
     });
     attempt.once("unexpected-response", (_request, response) => {
       response.resume();
-      if (qualification === "P5-06" && response.statusCode === 503) {
+      if (qualification !== "P4-07" && response.statusCode === 503) {
         // The upgrade failed before PostgreSQL connected or received bytes.
-        const waitMs = P506_UPGRADE_RETRY_DELAYS_MS[retryCount];
+        const waitMs = UPGRADE_RETRY_DELAYS_MS[retryCount];
         if (waitMs !== undefined) {
           webSocket = undefined;
           attempt.terminate();
           retryTimer = setTimeout(() => {
-            try { openWebSocket(token, retryCount + 1); }
-            catch { socket.destroy(relayFailure(qualification)); }
+            try {
+              openWebSocket(token, retryCount + 1);
+            } catch {
+              socket.destroy(relayFailure(qualification));
+            }
           }, waitMs);
           return;
         }
-        console.warn("P5-06 PostgreSQL relay rejected upgrade with HTTP 503");
+        console.warn(
+          `${qualification} PostgreSQL relay rejected upgrade with HTTP 503`,
+        );
       }
       socket.destroy(relayFailure(qualification));
     });
@@ -109,7 +137,8 @@ export function createPostgresRelayStream(
   async function connect() {
     const token = await getWorkloadToken();
     if (socket.destroyed) return;
-    if (!token || token.length > 16_384 || !/^[A-Za-z0-9._-]+$/u.test(token)) throw relayFailure(qualification);
+    if (!token || token.length > 16_384 || !/^[A-Za-z0-9._-]+$/u.test(token))
+      throw relayFailure(qualification);
     openWebSocket(token);
   }
 
@@ -124,9 +153,17 @@ export function createPostgresRelayStream(
       return socket;
     },
     // WebSockets manage their own TCP connection and the relay bounds its lifetime.
-    setNoDelay() { return socket; },
-    setKeepAlive() { return socket; },
-    ref() { return socket; },
-    unref() { return socket; },
+    setNoDelay() {
+      return socket;
+    },
+    setKeepAlive() {
+      return socket;
+    },
+    ref() {
+      return socket;
+    },
+    unref() {
+      return socket;
+    },
   });
 }

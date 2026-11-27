@@ -1,4 +1,5 @@
 import nextEnv from "@next/env";
+import { selectsP600Relay } from "../src/lib/private-db/p600-postgres-relay.mjs";
 import { checkStagingRelease, hasP506BuildBindings, loadStagingReleaseManifest } from "./validate-staging-release.mjs";
 import { resolveApplicationEnvironment, SANITY_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
@@ -115,11 +116,11 @@ const isLaunchEnvironment =
 // A P5-06 build uses fixture-only inputs. It must first pass the same
 // source, migration, target, and provider isolation checks as the Vercel build.
 const p506Build = hasP506BuildBindings(process.env);
-if (p506Build) {
+if (p506Build || selectsP600Relay(process.env.DATABASE_URL, process.env)) {
   try {
     errors.push(...checkStagingRelease(process.env, loadStagingReleaseManifest()));
   } catch {
-    errors.push("Unable to verify the isolated P5-06 staging build configuration");
+    errors.push("Unable to verify the staging database release configuration");
   }
 }
 const requiresLaunchCredentials = isLaunchEnvironment && !p506Build;

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import dotenv from "dotenv";
+import { readP600RelayConfig, selectsP600Relay } from "../src/lib/private-db/p600-postgres-relay.mjs";
 import { resolveApplicationEnvironment } from "../src/lib/env/application-environment.mjs";
 
 import {
@@ -170,6 +171,8 @@ export function loadStagingReleaseManifest() {
 
 /** Returns configuration errors without including credential values or URLs. */
 export function checkStagingRelease(env, manifest) {
+  const useLightsail = selectsP600Relay(env.DATABASE_URL, env);
+  if (useLightsail && hasP506BuildBindings(env)) return ["Mixed staging database release scopes"];
   if (hasP506BuildBindings(env)) {
     return checkP506Build(env, manifest);
   }
@@ -246,7 +249,13 @@ export function checkStagingRelease(env, manifest) {
   if (!manifest.frontendDatabase.postgres18CompatibilityVerified) errors.push("PostgreSQL 18 compatibility evidence is required");
   if (!manifest.frontendDatabase.runtimeRoleConfigured) errors.push("Separate frontend runtime and migration roles are required");
   const database = readUrl("DATABASE_URL");
-  if (database && (!["postgres:", "postgresql:"].includes(database.protocol) ||
+  if (useLightsail) {
+    try {
+      readP600RelayConfig(env.DATABASE_URL, env);
+      readP600RelayConfig(env.FRONTEND_WRITER_ADMISSION_DATABASE_URL, env);
+    }
+    catch { errors.push("DATABASE_URL and relay must match the shared Lightsail staging runtime and TLS policy"); }
+  } else if (database && (!["postgres:", "postgresql:"].includes(database.protocol) ||
     (database.port && database.port !== "5432") || database.hostname !== (isolated?.databaseHost ?? manifest.frontendDatabase.pooledHost) ||
     database.pathname !== `/${isolated?.databaseName ?? manifest.frontendDatabase.database}` ||
     decodeURIComponent(database.username) !== (isolated?.databaseRole ?? manifest.frontendDatabase.runtimeRole) ||

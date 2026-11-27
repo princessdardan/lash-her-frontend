@@ -19,7 +19,7 @@ function fixture() {
     "p2-frontend-replacement-abort", "p2-frontend-replacement-written", "p2-frontend-replacement-closed", "frontend-admission-bootstrap"])
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
   for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json",
-    "frontend-managed-neon-catalog.mjs", "managed-neon-replacement-catalog.json", "p407-frontend-bootstrap.mjs", "p506-frontend-bootstrap.mjs"])
+    "frontend-managed-neon-catalog.mjs", "managed-neon-replacement-catalog.json", "p407-frontend-bootstrap.mjs", "p506-frontend-bootstrap.mjs", "p600-offline-rehearsal.mjs"])
     copyFileSync(join(source, "ops/platform", name), join(root, "ops/platform", name));
   for (const name of ["package.json", "package-lock.json"]) copyFileSync(join(source, "ops/platform/frontend-migration-deps", name), join(root, name));
   for (const name of ["src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json"]) copyFileSync(join(source, name), join(root, name));
@@ -77,7 +77,7 @@ test("extra SQL or omitted source cannot silently enter a packaged image", () =>
 });
 
 for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json",
-  "frontend-managed-neon-catalog.mjs", "managed-neon-replacement-catalog.json", "p407-frontend-bootstrap.mjs", "p506-frontend-bootstrap.mjs"]) {
+  "frontend-managed-neon-catalog.mjs", "managed-neon-replacement-catalog.json", "p407-frontend-bootstrap.mjs", "p506-frontend-bootstrap.mjs", "p600-offline-rehearsal.mjs"]) {
   test(`packaged image binds the qualification input ${name}`, () => {
     for (const mode of ["modified", "omitted", "unlisted"]) {
       const root = fixture(), file = `ops/platform/${name}`;

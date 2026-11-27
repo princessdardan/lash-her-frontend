@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { checkStagingRelease, loadStagingReleaseManifest } from "./validate-staging-release.mjs";
+import { P600_HOST, P600_DATABASE, P600_RUNTIME, P600_TARGET_SHA256, p600ProducerSha256 } from "../src/lib/private-db/p600-postgres-relay.mjs";
 import { VERCEL_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
 function fixture() {
@@ -363,4 +364,21 @@ test("the two real prebuild commands accept only the exact isolated P5-06 build"
   assert.equal(malformed.status, 1);
   assert.match(malformed.stderr, /Malformed env var: AUTH_SECRET/u);
   assert.match(malformed.stderr, /Malformed env var: GOOGLE_REDIRECT_URI/u);
+});
+
+test("shared Lightsail binding requires its own protected relay, TLS, and existing provider checks", () => {
+  const {env, manifest} = fixture();
+  const database = "postgresql://lash_her_frontend_staging_runtime_p2:fixture@p600-frontend-db.lashher.com/lash_her_p600_frontend?sslmode=verify-full&channel_binding=require";
+  const selected = {...env, DATABASE_URL: database, FRONTEND_WRITER_ADMISSION_DATABASE_URL: database, FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_PRODUCER_SHA256: p600ProducerSha256(env.VERCEL_GIT_COMMIT_SHA),
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({environment:"staging",host:P600_HOST, port:5432, user:P600_RUNTIME,
+      database:P600_DATABASE, serverMajor:18, targetSha256:P600_TARGET_SHA256}), P600_POSTGRES_RELAY_URL: "wss://api-p600.lashher.com/internal/p6-00/postgres",
+    P600_POSTGRES_RELAY_DEPLOYMENT_PROOF: "a".repeat(64)};
+  assert.deepEqual(checkStagingRelease(selected, manifest), []);
+  for (const change of [{FRONTEND_WRITER_ADMISSION_MODE:"off"}, {FRONTEND_WRITER_ADMISSION_DATABASE_URL: env.DATABASE_URL},
+    {FRONTEND_WRITER_PRODUCER_SHA256:"f".repeat(64)}, {DATABASE_URL: env.DATABASE_URL}, {P600_POSTGRES_RELAY_URL: undefined}, {P600_POSTGRES_RELAY_DEPLOYMENT_PROOF: ""},
+    {DATABASE_URL: database.replace("channel_binding=require", "channel_binding=prefer")}, {DATABASE_URL: database + "&host=other"},
+    {STAGING_P5_06_BUILD_PINS: "{}"}, {VERCEL_ENV: "preview"}, {SQUARE_ENVIRONMENT: "production"}]) {
+    assert.ok(checkStagingRelease({...selected, ...change}, manifest).length);
+  }
 });

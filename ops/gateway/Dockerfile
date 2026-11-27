@@ -21,7 +21,7 @@ COPY --from=node-runtime /node-rootfs/ /
 COPY --from=zlib-build /out/rootfs/ /
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
-COPY server.mjs oidc.mjs policy.mjs admission.mjs assessment-attempt.mjs lesson-resume-position.mjs p2-certification-fault.mjs private-tls.mjs operations.mjs routes.json release-probe.mjs ./
+COPY server.mjs p600-postgres-relay.mjs oidc.mjs policy.mjs admission.mjs assessment-attempt.mjs lesson-resume-position.mjs p2-certification-fault.mjs private-tls.mjs operations.mjs routes.json release-probe.mjs ./
 COPY staging-owner-authoring.mjs staging-owner-authoring-fixture.json staging-review-course.mjs staging-review-media.mjs staging-review-community.mjs staging-review-notifications.mjs ./
 ENV NODE_ENV=production
 ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

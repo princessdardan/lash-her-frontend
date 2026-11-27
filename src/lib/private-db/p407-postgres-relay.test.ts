@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
-import { createP407PostgresStream, readP407PostgresRelay } from "./p407-postgres-relay";
+import {
+  createP407PostgresStream,
+  readP407PostgresRelay,
+} from "./p407-postgres-relay";
 import { resolveWriterAdmissionConfiguration } from "@/lib/writer-admission/config";
 import { readPostgresRelay } from "./postgres-relay";
 
 const endpoint = "wss://api-p407.lashher.com/internal/p4-07/postgres";
 const host = "p4-07-db.lashher.com";
-const database = "postgresql://lash_her_p407_frontend_runtime:fixture-password@" + host +
+const database =
+  "postgresql://lash_her_p407_frontend_runtime:fixture-password@" +
+  host +
   "/lash_her_p407_frontend?sslmode=verify-full";
 const proof = "a".repeat(64);
 const staging = {
@@ -23,8 +28,14 @@ const staging = {
 };
 
 test("the relay is opt-in and has no direct fallback for its isolated database", () => {
-  assert.equal(readP407PostgresRelay("postgresql://shared.example.test/db", {}), undefined);
-  assert.throws(() => readP407PostgresRelay(database, {}), /configuration refused/u);
+  assert.equal(
+    readP407PostgresRelay("postgresql://shared.example.test/db", {}),
+    undefined,
+  );
+  assert.throws(
+    () => readP407PostgresRelay(database, {}),
+    /configuration refused/u,
+  );
   const relay = readP407PostgresRelay(database, staging);
   assert.equal(typeof relay?.stream, "function");
 });
@@ -34,10 +45,16 @@ test("the relay refuses incomplete, preview, production and alternate endpoint s
     { P407_POSTGRES_RELAY_DEPLOYMENT_PROOF: undefined },
     { P407_POSTGRES_RELAY_DEPLOYMENT_PROOF: "0".repeat(64) },
     { VERCEL_ENV: "preview", VERCEL_TARGET_ENV: "preview" },
-    { APP_ENV: "production", VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId },
+    {
+      APP_ENV: "production",
+      VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
+    },
     { P407_POSTGRES_RELAY_URL: endpoint + "?destination=other" },
   ]) {
-    assert.throws(() => readP407PostgresRelay(database, { ...staging, ...override }), /configuration refused/u);
+    assert.throws(
+      () => readP407PostgresRelay(database, { ...staging, ...override }),
+      /configuration refused/u,
+    );
   }
 });
 
@@ -51,16 +68,22 @@ test("the relay refuses a different database identity or weakened PostgreSQL TLS
     database + "&sslmode=verify-full",
     database + "&host=shared.example.test",
   ]) {
-    assert.throws(() => readP407PostgresRelay(candidate, staging), /configuration refused/u);
+    assert.throws(
+      () => readP407PostgresRelay(candidate, staging),
+      /configuration refused/u,
+    );
   }
 });
 
 test("a mismatched socket authority is rejected before obtaining workload proof", async () => {
   let tokenReads = 0;
-  const stream = createP407PostgresStream({ endpoint, proof, host, port: 5432 }, async () => {
-    tokenReads++;
-    return "unused";
-  });
+  const stream = createP407PostgresStream(
+    { endpoint, proof, host, port: 5432 },
+    async () => {
+      tokenReads++;
+      return "unused";
+    },
+  );
   const failed = once(stream, "error");
   stream.connect(5432, "shared.example.test");
   const [error] = await failed;
@@ -69,9 +92,12 @@ test("a mismatched socket authority is rejected before obtaining workload proof"
 });
 
 test("a request-context credential failure closes the stream with a sanitized error", async () => {
-  const stream = createP407PostgresStream({ endpoint, proof, host, port: 5432 }, async () => {
-    throw new Error("private token detail");
-  });
+  const stream = createP407PostgresStream(
+    { endpoint, proof, host, port: 5432 },
+    async () => {
+      throw new Error("private token detail");
+    },
+  );
   const failed = once(stream, "error");
   stream.connect(5432, host);
   const [error] = await failed;
@@ -95,7 +121,10 @@ const p506Environment = {
 };
 
 test("selects the isolated P5-06 stream and retains P4-07 and direct connections", () => {
-  assert.equal(readPostgresRelay("postgresql://shared.example.test/db", {}), undefined);
+  assert.equal(
+    readPostgresRelay("postgresql://shared.example.test/db", {}),
+    undefined,
+  );
   assert.equal(readPostgresRelay(database, staging)?.qualification, "P4-07");
   const p506 = readPostgresRelay(p506Database, p506Environment);
   assert.equal(p506?.qualification, "P5-06");
@@ -106,7 +135,10 @@ test("selects the isolated P5-06 stream and retains P4-07 and direct connections
     p506Database.replace(p506Host, "alias.example.test"),
     `postgresql://shared.example.test/db?host=${p506Host}`,
   ]) {
-    assert.throws(() => readPostgresRelay(candidate, {}), /P5-06 PostgreSQL relay configuration refused/u);
+    assert.throws(
+      () => readPostgresRelay(candidate, {}),
+      /P5-06 PostgreSQL relay configuration refused/u,
+    );
   }
 });
 
@@ -124,8 +156,11 @@ test("P5-06 refuses mixed relay settings and pins the reviewed Vercel project, t
     { VERCEL_TARGET_ENV: "preview" },
     { VERCEL_ENV: "preview", VERCEL_TARGET_ENV: "preview" },
   ]) {
-    assert.throws(() => readPostgresRelay(p506Database, { ...p506Environment, ...override }),
-      /P5-06 PostgreSQL relay configuration refused/u);
+    assert.throws(
+      () =>
+        readPostgresRelay(p506Database, { ...p506Environment, ...override }),
+      /P5-06 PostgreSQL relay configuration refused/u,
+    );
   }
 });
 
@@ -142,7 +177,10 @@ test("P5-06 refuses alternate database identities and insecure or ambiguous driv
     p506Database + "&channel_binding=require",
     p506Database + "&host=shared.example.test",
   ]) {
-    assert.throws(() => readPostgresRelay(candidate, p506Environment), /P5-06 PostgreSQL relay configuration refused/u);
+    assert.throws(
+      () => readPostgresRelay(candidate, p506Environment),
+      /P5-06 PostgreSQL relay configuration refused/u,
+    );
   }
 });
 
@@ -172,12 +210,92 @@ test("writer admission pins both P5-06 database URLs and keeps TLS and channel b
 
   for (const override of [
     { FRONTEND_WRITER_ADMISSION_MODE: "off" },
-    { P506_POSTGRES_RELAY_URL: undefined, P506_POSTGRES_RELAY_DEPLOYMENT_PROOF: undefined },
+    {
+      P506_POSTGRES_RELAY_URL: undefined,
+      P506_POSTGRES_RELAY_DEPLOYMENT_PROOF: undefined,
+    },
     { DATABASE_URL: p506Database.replace(p506Host, "shared.example.test") },
-    { DATABASE_URL: p506Database.replace("channel_binding=require", "channel_binding=prefer") },
-    { FRONTEND_WRITER_ADMISSION_DATABASE_URL: p506Database.replace("verify-full", "require") },
+    {
+      DATABASE_URL: p506Database.replace(
+        "channel_binding=require",
+        "channel_binding=prefer",
+      ),
+    },
+    {
+      FRONTEND_WRITER_ADMISSION_DATABASE_URL: p506Database.replace(
+        "verify-full",
+        "require",
+      ),
+    },
   ]) {
-    assert.throws(() => resolveWriterAdmissionConfiguration({ ...environment, ...override }),
-      /Writer admission configuration/u);
+    assert.throws(
+      () =>
+        resolveWriterAdmissionConfiguration({ ...environment, ...override }),
+      /Writer admission configuration/u,
+    );
+  }
+});
+
+test("shared Lightsail business and admission clients use the reviewed inner CA and registered producer", async () => {
+  const { X509Certificate } = await import("node:crypto");
+  const {
+    P600_HOST,
+    P600_DATABASE,
+    P600_RELAY,
+    P600_RUNTIME,
+    P600_TARGET_SHA256,
+    p600ProducerSha256,
+  } = await import("./p600-postgres-relay.mjs");
+  const commit = "c".repeat(40);
+  const url = `postgresql://${P600_RUNTIME}:fixture@${P600_HOST}/${P600_DATABASE}?sslmode=verify-full&channel_binding=require`;
+  const target = {
+    environment: "staging",
+    host: P600_HOST,
+    port: 5432,
+    database: P600_DATABASE,
+    user: P600_RUNTIME,
+    serverMajor: 18,
+    targetSha256: P600_TARGET_SHA256,
+  };
+  const env = {
+    ...p506Environment,
+    P600_POSTGRES_RELAY_URL: P600_RELAY,
+    P600_POSTGRES_RELAY_DEPLOYMENT_PROOF: "a".repeat(64),
+    VERCEL_GIT_COMMIT_SHA: commit,
+    DATABASE_URL: url,
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    FRONTEND_WRITER_ADMISSION_DATABASE_URL: url,
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify(target),
+    FRONTEND_WRITER_PRODUCER_SHA256: p600ProducerSha256(commit),
+  };
+  const {
+    P506_POSTGRES_RELAY_URL: _url,
+    P506_POSTGRES_RELAY_DEPLOYMENT_PROOF: _proof,
+    ...shared
+  } = env;
+  const relay = readPostgresRelay(url, shared);
+  assert.ok(relay?.qualification === "P6-00");
+  assert.equal(
+    new X509Certificate(relay.connection.ssl.ca).fingerprint256,
+    "F1:74:F6:BA:FA:35:7D:77:F1:95:09:D5:CA:B2:1C:C6:90:E7:4F:5D:B1:EA:A0:D3:FA:78:63:A7:6B:01:06:30",
+  );
+  const { resolveWriterAdmissionConfiguration } =
+    await import("@/lib/writer-admission/config");
+  assert.deepEqual(
+    resolveWriterAdmissionConfiguration(shared)?.connection.ssl,
+    relay.connection.ssl,
+  );
+  assert.equal(relay.connection.ssl.servername, P600_HOST);
+  assert.equal(relay.connection.ssl.rejectUnauthorized, true);
+  for (const change of [
+    { FRONTEND_WRITER_ADMISSION_MODE: "off" },
+    { FRONTEND_WRITER_ADMISSION_DATABASE_URL: p506Database },
+    { DATABASE_URL: p506Database },
+    { FRONTEND_WRITER_PRODUCER_SHA256: "b".repeat(64) },
+  ]) {
+    assert.throws(
+      () => resolveWriterAdmissionConfiguration({ ...shared, ...change }),
+      /Writer admission configuration/u,
+    );
   }
 });
