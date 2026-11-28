@@ -3,6 +3,9 @@ import test from "node:test";
 import { createCourseAdminHandler } from "./course-admin-handler";
 import { createCourseClient } from "./course-client";
 import { createAdminAuth } from "@/lib/admin/auth-service";
+import { createManualCourseGrantHandler } from "@/lib/course-support/manual-grant-handler";
+import { createManualCourseRevokeHandler } from "@/lib/course-support/manual-revoke-handler";
+import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import type { AdminActor } from "@/lib/admin/types";
 import { markWriterOperationUncertain, withWriterOperationContext, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
 import { IntegrationServiceError } from "./service-errors";
@@ -21,6 +24,59 @@ test("admin boundaries require configured origin/CSRF before invoking staff auth
   assert.equal((await handler(req("/api/admin/courses/1", "PATCH", {}, { "content-length": "1048577" }), { courseId: id })).status, 413);
   assert.equal((await handler(req("/api/admin/courses/1", "PATCH", {}), { courseId: "not-an-id" })).status, 400);
   assert.equal(calls, 0);
+});
+
+test("course writes use the pinned P506 origin when Auth.js URLs are empty", async () => {
+  const originalEnv = process.env;
+  const host = "lash-her-frontend-staging-abcdef123-dardan-demiris-projects.vercel.app";
+  const candidate = `https://${host}`;
+  const commit = "a".repeat(40), receipt = "b".repeat(64);
+  const database = "postgresql://lash_her_p506_frontend_runtime:fixture@p506-frontend-db.lashher.com:5432/lash_her_p506_frontend?sslmode=verify-full&channel_binding=require";
+  process.env = {
+    NODE_ENV: "production", AUTH_URL: "", NEXTAUTH_URL: "", VERCEL: "1", VERCEL_URL: host,
+    VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
+    VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    APP_ENV: "staging", APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
+    API_GATEWAY_STAGING_ORIGIN: "https://api-p506.lashher.com",
+    P506_POSTGRES_RELAY_URL: "wss://api-p506.lashher.com/internal/p5-06/postgres",
+    P506_POSTGRES_RELAY_DEPLOYMENT_PROOF: "c".repeat(64), VERCEL_GIT_COMMIT_SHA: commit,
+    STAGING_P5_06_BUILD_PINS: JSON.stringify({ commit, migrationReceiptSha256: receipt }),
+    STAGING_P5_06_MIGRATION_RECEIPT_SHA256: receipt,
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+    DATABASE_URL: database, FRONTEND_WRITER_ADMISSION_DATABASE_URL: database,
+  };
+  const createRequest = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+    new Request(candidate + path, {
+      method: "POST",
+      headers: { host, origin: candidate, "content-type": "application/json", "x-lash-csrf": "1", ...headers },
+      body: JSON.stringify(body),
+    });
+  try {
+    let writes = 0;
+    const create = createCourseAdminHandler("create-course", {
+      enabled: () => true,
+      run: (_kind, work) => work(),
+      client: () => ({ async createCourse() { writes++; return {}; } }) as never,
+    });
+    const path = "/api/admin/courses";
+    const draft = { status: "draft" };
+    assert.equal((await create(createRequest(path, draft, { origin }))).status, 403);
+    assert.equal((await create(createRequest(path, draft, { host: "staging.lashher.com" }))).status, 403);
+    assert.equal((await create(createRequest(path, draft, { "x-lash-csrf": "" }))).status, 403);
+    assert.equal(writes, 0);
+    assert.equal((await create(createRequest(path, draft))).status, 200);
+    assert.equal(writes, 1);
+
+    const grant = createManualCourseGrantHandler({ enabled: () => true });
+    const revoke = createManualCourseRevokeHandler({ enabled: () => true });
+    for (const [handler, suffix] of [[grant, ""], [revoke, "/revoke"]] as const) {
+      const supportPath = `${path}/${id}/manual-grants${suffix}`;
+      assert.equal((await handler(createRequest(supportPath, {}, { origin }), id)).status, 403);
+      assert.equal((await handler(createRequest(supportPath, {}), id)).status, 400);
+    }
+  } finally {
+    process.env = originalEnv;
+  }
 });
 
 test("scoped authoring refuses non-drafts before invoking the authenticated Course client", async () => {

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { resolveP506CandidateOrigin } from "@/lib/env/p506-candidate-origin";
+
 import { stagingOwnerAuthoring, type StagingOwnerAuthoring } from "./staging-owner-authoring";
 import { createCourseClient } from "./course-client";
 import { AdminAuthError } from "@/lib/admin/types";
@@ -55,7 +57,7 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
           query[name] = Number(value);
         } else query[name] = value;
       }
-      const body = request.method === "GET" ? undefined : await readSameOriginJson(request, dependencies.origin?.() ?? process.env.AUTH_URL);
+      const body = request.method === "GET" ? undefined : await readSameOriginJson(request, dependencies.origin?.() ?? resolveP506CandidateOrigin() ?? process.env.AUTH_URL);
       const rotation = operation === "get-course" ? (await readInteractiveBrowserRequest())?.rotationAdmin : undefined;
       if (rotation && (params.courseId !== rotation.courseId || request.url !== `${INTERACTIVE_ORIGIN}/api/admin/courses/${rotation.courseId}`)) {
         throw new IntegrationServiceError("forbidden", 403);

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { resolveP506CandidateOrigin } from "@/lib/env/p506-candidate-origin";
+
 import { isDeepStrictEqual } from "node:util";
 import { requirePermission } from "@/lib/admin/auth";
 import { AdminAuthError } from "@/lib/admin/types";
@@ -78,7 +80,7 @@ export function createManualCourseRevokeHandler(dependencies: {
       if (!uuid.test(courseId)) throw invalid();
       if (request.method !== "GET" && request.method !== "POST") throw new IntegrationServiceError("invalid_request", 405);
       const query = new URL(request.url).searchParams;
-      const origin = dependencies.origin?.() ?? process.env.AUTH_URL;
+      const origin = dependencies.origin?.() ?? resolveP506CandidateOrigin() ?? process.env.AUTH_URL;
       let submitted: Input | undefined;
       if (request.method === "POST") {
         if (query.size) throw invalid();
