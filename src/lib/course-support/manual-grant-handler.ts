@@ -1,5 +1,7 @@
 import "server-only";
 
+import { resolveP506CandidateOrigin } from "@/lib/env/p506-candidate-origin";
+
 import { isDeepStrictEqual } from "node:util";
 import { eq } from "drizzle-orm";
 import { requirePermission } from "@/lib/admin/auth";
@@ -53,7 +55,7 @@ export function createManualCourseGrantHandler(dependencies: {
       let attempt: string;
       if (request.method === "POST") {
         if (query.size) return fail("invalid_request", 400);
-        submitted = input(await readSameOriginJson(request, dependencies.origin?.() ?? process.env.AUTH_URL, 8192));
+        submitted = input(await readSameOriginJson(request, dependencies.origin?.() ?? resolveP506CandidateOrigin() ?? process.env.AUTH_URL, 8192));
         attempt = submitted.idempotencyKey;
       } else {
         if (query.size !== 1 || !uuid.test(query.get("idempotencyKey") ?? "")) return fail("invalid_request", 400);
