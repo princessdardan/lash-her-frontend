@@ -332,6 +332,15 @@ async function main() {
     assert.deepEqual((await since(before)).map(row => row.state), ["completed"]); await reconcile();
     checks.push("customer-email-real-product-backfill-encrypted-claim-provider-key-and-atomic-order-receipt");
 
+    phase = "customer-email-product-already-queued";
+    await seedOutbox("product");
+    const { enqueuePaidProductOrderConfirmationEmail } = await import("../../../src/lib/commerce/order-store.ts");
+    assert.ok(await enqueuePaidProductOrderConfirmationEmail({ orderId: "owned-outbox-product" }));
+    await change(true); before = await operations();
+    assert.equal((await outboxRequest()).status, 200); await assertOutboxSent();
+    assert.deepEqual((await since(before)).map(row => row.state), ["completed"]); await reconcile();
+    checks.push("customer-email-already-queued-product-delivers-once-with-completed-admission");
+
     phase = "customer-email-policy-close-and-expired-lease";
     await seedOutbox(); await change(true); before = await operations();
     let outboxHeld = holdProvider("email"), outboxPending = outboxRequest();

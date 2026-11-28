@@ -14,6 +14,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  notExists,
   notInArray,
   or,
   sql,
@@ -34,6 +35,7 @@ import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
 import {
   checkoutOrders,
   checkoutPaymentEvents,
+  customerEmailOutbox,
   orderPaymentObligations,
   productShipments,
 } from "@/lib/private-db/schema";
@@ -1884,7 +1886,24 @@ export async function listPaidProductOrdersMissingConfirmationOutbox(
   } = {},
 ): Promise<string[]> {
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
-  const rows = await getPrivateDb()
+  const db = getPrivateDb();
+  // Active outbox jobs already belong to the worker. Terminal jobs without
+  // an order receipt still need the existing reconciliation checks.
+  const existingConfirmation = db
+    .select({ id: customerEmailOutbox.id })
+    .from(customerEmailOutbox)
+    .where(
+      and(
+        eq(customerEmailOutbox.orderId, checkoutOrders.id),
+        eq(customerEmailOutbox.kind, "product_order_confirmation"),
+        inArray(customerEmailOutbox.status, ["queued", "sending", "failed"]),
+        eq(
+          customerEmailOutbox.providerIdempotencyKey,
+          sql`'product-confirmation:' || ${checkoutOrders.orderId}`,
+        ),
+      ),
+    );
+  const rows = await db
     .select({ orderId: checkoutOrders.orderId })
     .from(checkoutOrders)
     .where(
@@ -1892,6 +1911,7 @@ export async function listPaidProductOrdersMissingConfirmationOutbox(
         eq(checkoutOrders.status, "paid"),
         eq(checkoutOrders.purpose, "product"),
         isNull(checkoutOrders.productConfirmationEmailSentAt),
+        notExists(existingConfirmation),
       ),
     )
     .orderBy(checkoutOrders.updatedAt)

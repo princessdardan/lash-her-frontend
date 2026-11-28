@@ -20,7 +20,10 @@ const scenario = String.raw`
     failCustomerEmail,
     requeueDeadLetterCustomerEmail,
   } from "./src/lib/commerce/customer-email-outbox.ts";
-  import { enqueuePaidProductOrderConfirmationEmail } from "./src/lib/commerce/order-store.ts";
+  import {
+    enqueuePaidProductOrderConfirmationEmail,
+    listPaidProductOrdersMissingConfirmationOutbox,
+  } from "./src/lib/commerce/order-store.ts";
 
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL.includes("?")
     ? process.env.TEST_DATABASE_URL + "&sslmode=disable"
@@ -58,11 +61,16 @@ const scenario = String.raw`
     }).returning();
     createdOrderIds.push(order.id);
 
+    assert.ok((await listPaidProductOrdersMissingConfirmationOutbox()).includes(order.orderId));
     const queued = await enqueuePaidProductOrderConfirmationEmail({
       orderId: order.orderId,
       now: new Date("2026-08-15T12:00:00.000Z"),
     });
     assert.equal(queued?.orderDatabaseId, order.id);
+    assert.ok(
+      !(await listPaidProductOrdersMissingConfirmationOutbox()).includes(order.orderId),
+      "a paid order with a queued receipt is already handed off to the outbox",
+    );
     // An expired claim can reach INSERT-on-conflict without a new handoff.
     // Keep the ordinary idempotent result, but require reconciliation under
     // admission rather than inferring a completed notification from false.
@@ -73,6 +81,14 @@ const scenario = String.raw`
     const [stored] = await db.select().from(customerEmailOutbox).where(
       eq(customerEmailOutbox.providerIdempotencyKey, "product-confirmation:" + order.orderId),
     );
+    await db.update(customerEmailOutbox).set({ status: "dead_letter" })
+      .where(eq(customerEmailOutbox.id, stored.id));
+    assert.ok(
+      (await listPaidProductOrdersMissingConfirmationOutbox()).includes(order.orderId),
+      "a terminal outbox row without an order receipt still needs review",
+    );
+    await db.update(customerEmailOutbox).set({ status: "queued" })
+      .where(eq(customerEmailOutbox.id, stored.id));
     assert.equal(stored.orderId, order.id, "the durable email keeps its order FK");
     assert.equal(
       stored.redactionDueAt.toISOString(),
