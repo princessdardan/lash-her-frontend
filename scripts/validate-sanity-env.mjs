@@ -1,6 +1,11 @@
 import nextEnv from "@next/env";
 import { selectsP600Relay } from "../src/lib/private-db/p600-postgres-relay.mjs";
-import { checkStagingRelease, hasP506BuildBindings, loadStagingReleaseManifest } from "./validate-staging-release.mjs";
+import {
+  checkStagingRelease,
+  hasP506BuildBindings,
+  loadStagingReleaseManifest,
+  P4_07_SANITY_CLONE_PROJECT_ID,
+} from "./validate-staging-release.mjs";
 import { resolveApplicationEnvironment, SANITY_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
 const { loadEnvConfig } = nextEnv;
@@ -419,10 +424,10 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
-  if (value === "898r3c4e" && process.env.P4_07_SANITY_CLONE === "1") {
+  if (value === P4_07_SANITY_CLONE_PROJECT_ID && process.env.P4_07_SANITY_CLONE === "1") {
     const isolatedCi = appEnv === "local" && !isLaunchEnvironment &&
       process.env.GITHUB_ACTIONS === "true" &&
-      process.env.GITHUB_REF === "refs/tags/p4-07-isolated-sanity-898r3c4e" &&
+      process.env.GITHUB_REF === `refs/tags/p4-07-isolated-sanity-${P4_07_SANITY_CLONE_PROJECT_ID}` &&
       ["push", "workflow_dispatch"].includes(process.env.GITHUB_EVENT_NAME);
     const isolatedDeployment = appEnv === "staging" && vercelEnv === "production" &&
       process.env.SQUARE_ENVIRONMENT === "sandbox" &&
