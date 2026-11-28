@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { loaders } from "@/data/loaders";
 import CheckoutPageClient from "./checkout-page-client";
 import { isChitChatsCheckoutEnabled } from "@/lib/shipping/config";
@@ -17,6 +18,8 @@ export const metadata: Metadata = {
 
 export default async function CheckoutPage() {
   const products = await loaders.getProducts();
+  // The checkout policy depends on runtime configuration.
+  await connection();
   const manualCheckoutPolicy = await loadManualProductCheckoutPolicy();
   const termsRequirement = getProductCheckoutTermsRequirement();
   const shippedRefundPolicy = getShippedRefundPolicyRequirement();
