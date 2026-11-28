@@ -77,6 +77,7 @@ const P506_HELD_FEATURES = [
 ];
 
 const P506_BUILD_INPUT = "p506-inactive-build-fixture";
+export const P4_07_SANITY_CLONE_PROJECT_ID = "898r3c4e";
 
 function checkP506Database(value) {
   try {
@@ -104,13 +105,33 @@ function checkP506Build(env, manifest) {
     if (resolveApplicationEnvironment(env) !== "staging") throw new Error();
   } catch { errors.push("The verified Vercel staging project and team are required for P5-06"); }
 
+  let sanityProjectId = manifest.sanity.projectId;
+  // The operator validates the read-only migration receipt, then pins its digest
+  // and source in deployment build metadata. A build does not contact the DB.
+  try {
+    const { commit, migrationReceiptSha256, sanityFixture } = JSON.parse(env.STAGING_P5_06_BUILD_PINS);
+    const sha = (value, size) => typeof value === "string" &&
+      new RegExp(`^(?!0+$)[a-f0-9]{${size}}$`, "u").test(value);
+    if (!sha(commit, 40) || !sha(migrationReceiptSha256, 64) ||
+        migrationReceiptSha256 !== env.STAGING_P5_06_MIGRATION_RECEIPT_SHA256 ||
+        commit !== env.STAGING_RELEASE_COMMIT || commit !== env.STAGING_MIGRATION_VERIFIED_COMMIT ||
+        commit !== env.VERCEL_GIT_COMMIT_SHA || commit !== env.VERCEL_GIT_COMMIT_REF) throw new Error();
+    if (sanityFixture !== undefined) {
+      if (sanityFixture === "p6-02-isolated-payment" && env.P4_07_SANITY_CLONE === "1") {
+        sanityProjectId = P4_07_SANITY_CLONE_PROJECT_ID;
+      } else {
+        errors.push("The P6-02 payment Sanity fixture pin is invalid");
+      }
+    }
+  } catch { errors.push("The isolated P5-06 source and migration receipt pins are invalid"); }
+
   for (const [name, value] of Object.entries({
     VERCEL: "1",
     VERCEL_PROJECT_ID: manifest.projectId,
     VERCEL_ENV: "production",
     VERCEL_TARGET_ENV: "production",
     NEXT_PUBLIC_SITE_URL: manifest.origin,
-    NEXT_PUBLIC_SANITY_PROJECT_ID: manifest.sanity.projectId,
+    NEXT_PUBLIC_SANITY_PROJECT_ID: sanityProjectId,
     NEXT_PUBLIC_SANITY_DATASET: manifest.sanity.dataset,
     API_GATEWAY_STAGING_ORIGIN: new URL(P506_RELAY_URL).origin.replace(/^wss:/u, "https:"),
     P506_POSTGRES_RELAY_URL: P506_RELAY_URL,
@@ -132,18 +153,6 @@ function checkP506Build(env, manifest) {
     "BOOKING_ADMIN_SETUP_SECRET", "CHECKOUT_PII_ENCRYPTION_KEY",
   ]) requireEmpty(name);
   if (env.PAYMENT_GATEWAY_MODE === "mock") errors.push("The Production target must not use payment mock mode");
-
-  // The operator validates the read-only migration receipt, then pins its digest
-  // and source in deployment build metadata. A build does not contact the DB.
-  try {
-    const { commit, migrationReceiptSha256 } = JSON.parse(env.STAGING_P5_06_BUILD_PINS);
-    const sha = (value, size) => typeof value === "string" &&
-      new RegExp(`^(?!0+$)[a-f0-9]{${size}}$`, "u").test(value);
-    if (!sha(commit, 40) || !sha(migrationReceiptSha256, 64) ||
-        migrationReceiptSha256 !== env.STAGING_P5_06_MIGRATION_RECEIPT_SHA256 ||
-        commit !== env.STAGING_RELEASE_COMMIT || commit !== env.STAGING_MIGRATION_VERIFIED_COMMIT ||
-        commit !== env.VERCEL_GIT_COMMIT_SHA || commit !== env.VERCEL_GIT_COMMIT_REF) throw new Error();
-  } catch { errors.push("The isolated P5-06 source and migration receipt pins are invalid"); }
 
   for (const name of ["DATABASE_URL", "FRONTEND_WRITER_ADMISSION_DATABASE_URL"]) {
     if (!checkP506Database(env[name])) errors.push(`${name} must use the isolated P5-06 database identity and TLS policy`);
