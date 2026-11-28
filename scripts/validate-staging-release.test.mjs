@@ -336,11 +336,37 @@ test("the two real prebuild commands accept only the exact isolated P5-06 build"
       sanityFixture: "p6-02-isolated-payment",
     }),
   };
+  const offerFixture = {
+    ...isolated,
+    NEXT_PUBLIC_SANITY_PROJECT_ID: "cmlb4clg",
+    STAGING_P5_06_BUILD_PINS: JSON.stringify({
+      ...JSON.parse(isolated.STAGING_P5_06_BUILD_PINS),
+      sanityFixture: "p6-02-isolated-offer",
+    }),
+  };
   for (const command of ["validate-staging-release.mjs", "validate-sanity-env.mjs"]) {
     const accepted = run(command, isolated);
     assert.equal(accepted.status, 0, accepted.stderr);
     const fixtureAccepted = run(command, paymentFixture);
     assert.equal(fixtureAccepted.status, 0, fixtureAccepted.stderr);
+    const offerAccepted = run(command, offerFixture);
+    assert.equal(offerAccepted.status, 0, offerAccepted.stderr);
+    for (const changes of [
+      { STAGING_P5_06_BUILD_PINS: isolated.STAGING_P5_06_BUILD_PINS },
+      { STAGING_P5_06_BUILD_PINS: paymentFixture.STAGING_P5_06_BUILD_PINS },
+      { P4_07_SANITY_CLONE: "1" },
+      { NEXT_PUBLIC_SANITY_PROJECT_ID: manifest.sanity.projectId },
+      { NEXT_PUBLIC_SANITY_PROJECT_ID: "898r3c4e" },
+      { NEXT_PUBLIC_SANITY_DATASET: "production" },
+      { VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId },
+      { VERCEL_GIT_COMMIT_REF: "staging" },
+      { SQUARE_ENVIRONMENT: "production" },
+      { SQUARE_COMMERCE_ENABLED: "true" },
+      { LASH_RELEASE_SCHEDULER_PROFILE: "business" },
+    ]) {
+      const rejected = run(command, { ...offerFixture, ...changes });
+      assert.equal(rejected.status, 1, command + " offer fixture " + Object.keys(changes).join(","));
+    }
     for (const changes of [
       { STAGING_P5_06_BUILD_PINS: isolated.STAGING_P5_06_BUILD_PINS },
       {

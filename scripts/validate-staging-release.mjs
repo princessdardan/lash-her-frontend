@@ -78,6 +78,7 @@ const P506_HELD_FEATURES = [
 
 const P506_BUILD_INPUT = "p506-inactive-build-fixture";
 export const P4_07_SANITY_CLONE_PROJECT_ID = "898r3c4e";
+export const P602_OFFER_SANITY_PROJECT_ID = "cmlb4clg";
 
 function checkP506Database(value) {
   try {
@@ -119,8 +120,10 @@ function checkP506Build(env, manifest) {
     if (sanityFixture !== undefined) {
       if (sanityFixture === "p6-02-isolated-payment" && env.P4_07_SANITY_CLONE === "1") {
         sanityProjectId = P4_07_SANITY_CLONE_PROJECT_ID;
+      } else if (sanityFixture === "p6-02-isolated-offer" && !env.P4_07_SANITY_CLONE) {
+        sanityProjectId = P602_OFFER_SANITY_PROJECT_ID;
       } else {
-        errors.push("The P6-02 payment Sanity fixture pin is invalid");
+        errors.push("The P6-02 Sanity fixture pin is invalid");
       }
     }
   } catch { errors.push("The isolated P5-06 source and migration receipt pins are invalid"); }

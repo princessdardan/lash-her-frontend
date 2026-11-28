@@ -5,6 +5,7 @@ import {
   hasP506BuildBindings,
   loadStagingReleaseManifest,
   P4_07_SANITY_CLONE_PROJECT_ID,
+  P602_OFFER_SANITY_PROJECT_ID,
 } from "./validate-staging-release.mjs";
 import { resolveApplicationEnvironment, SANITY_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
@@ -424,6 +425,8 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
+  // The P5-06 release check above requires the exact offer pin and dataset.
+  if (value === P602_OFFER_SANITY_PROJECT_ID && p506Build) return;
   if (value === P4_07_SANITY_CLONE_PROJECT_ID && process.env.P4_07_SANITY_CLONE === "1") {
     const isolatedCi = appEnv === "local" && !isLaunchEnvironment &&
       process.env.GITHUB_ACTIONS === "true" &&
